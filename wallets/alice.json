@@ -1,0 +1,9 @@
+{
+  "spendingKey": "0x89fc58437ed2e79eed6448f4b1917be784b2c200ad664eeabe7802c93099cf86",
+  "nullifyingKey": "0x1ceee1cb48a4509dc7dfa175d7c15526d5bbd67e4fe0bb1f84c7e52ddc5ca53c",
+  "publicKey": [
+    "0x02a2d69f5c1236dd3ad8d4e552d4cc8b8f384b6bcce8aefbd8beda17d7831a89",
+    "0x0d04edc4d8094861181d8cbcb40f4840ac89823ccdab07fe7f6a4614dee95d0c"
+  ],
+  "mpk": "0x244f037125f6ac4b609208ed50df9eee078a6b0626f79724dbb193f7f77dbfdb"
+}

@@ -1,0 +1,118 @@
+{
+  "chains": [
+    {
+      "key": "hub",
+      "name": "Hub Chain",
+      "chainId": 31337,
+      "chainIdHex": "0x7a69",
+      "cctpDomain": 100,
+      "rpcUrls": ["http://localhost:8545"],
+      "explorer": {
+        "baseUrl": "http://localhost:8545",
+        "txPath": "tx",
+        "addressPath": "address",
+        "blockPath": "block"
+      },
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "contracts": {
+        "usdc": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "tokenMessenger": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+        "messageTransmitter": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      },
+      "gasless": {
+        "enabled": false
+      },
+      "estimatedTimes": {
+        "deposit": "< 1 minute",
+        "send": "< 1 minute"
+      },
+      "pollingTimeout": {
+        "depositTimeoutMs": 120000,
+        "paymentTimeoutMs": 120000
+      },
+      "logo": "assets/logos/ethereum-logo.svg",
+      "testnet": true
+    },
+    {
+      "key": "client-a",
+      "name": "Client Chain A",
+      "chainId": 31338,
+      "chainIdHex": "0x7a6a",
+      "cctpDomain": 101,
+      "rpcUrls": ["http://localhost:8546"],
+      "explorer": {
+        "baseUrl": "http://localhost:8546",
+        "txPath": "tx",
+        "addressPath": "address",
+        "blockPath": "block"
+      },
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "contracts": {
+        "usdc": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "tokenMessenger": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+        "messageTransmitter": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      },
+      "gasless": {
+        "enabled": false
+      },
+      "estimatedTimes": {
+        "deposit": "< 1 minute",
+        "send": "< 1 minute"
+      },
+      "pollingTimeout": {
+        "depositTimeoutMs": 120000,
+        "paymentTimeoutMs": 120000
+      },
+      "logo": "assets/logos/arb-logo.svg",
+      "testnet": true
+    },
+    {
+      "key": "client-b",
+      "name": "Client Chain B",
+      "chainId": 31339,
+      "chainIdHex": "0x7a6b",
+      "cctpDomain": 102,
+      "rpcUrls": ["http://localhost:8547"],
+      "explorer": {
+        "baseUrl": "http://localhost:8547",
+        "txPath": "tx",
+        "addressPath": "address",
+        "blockPath": "block"
+      },
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "contracts": {
+        "usdc": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "tokenMessenger": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+        "messageTransmitter": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      },
+      "gasless": {
+        "enabled": false
+      },
+      "estimatedTimes": {
+        "deposit": "< 1 minute",
+        "send": "< 1 minute"
+      },
+      "pollingTimeout": {
+        "depositTimeoutMs": 120000,
+        "paymentTimeoutMs": 120000
+      },
+      "logo": "assets/logos/base-logo.svg",
+      "testnet": true
+    }
+  ],
+  "defaults": {
+    "selectedChainKey": "client-a"
+  }
+}

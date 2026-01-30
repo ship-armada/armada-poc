@@ -1,0 +1,65 @@
+[profile.default]
+src = 'src'
+test = 'tests'
+out = 'out'
+libs = ['lib']
+fs_permissions = [{ access = "read", path = "tests/mocks/JsonBindings.sol" }]
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 100
+bytecode_hash = "none"
+gas_snapshot_check = false
+gas_limit = 1099511627776
+
+[bind_json]
+out = "tests/mocks/JsonBindings.sol"
+include = ["src/libraries/types/EIP712Types.sol"]
+
+[lint]
+ignore = ["src/dependencies/**/*", "tests/**/*"]
+lint_on_build = false
+
+[profile.default.fuzz]
+runs = 1000
+seed = "0x640"
+
+[profile.pr.fuzz]
+runs = 5000
+
+[profile.ci.fuzz]
+runs = 10000
+
+[profile.gas]
+gas_snapshot_check = true
+test = 'tests/gas'
+isolate = true
+
+[rpc_endpoints]
+mainnet = "${RPC_MAINNET}"
+optimism = "${RPC_OPTIMISM}"
+avalanche = "${RPC_AVALANCHE}"
+polygon = "${RPC_POLYGON}"
+arbitrum = "${RPC_ARBITRUM}"
+fantom = "${RPC_FANTOM}"
+harmony = "${RPC_HARMONY}"
+metis = "${RPC_METIS}"
+base = "${RPC_BASE}"
+zkevm = "${RPC_ZKEVM}"
+gnosis = "${RPC_GNOSIS}"
+bnb = "${RPC_BNB}"
+celo = "${RPC_CELO}"
+
+[etherscan]
+mainnet = { key = "${ETHERSCAN_API_KEY_MAINNET}", chainId = 1 }
+optimism = { key = "${ETHERSCAN_API_KEY_OPTIMISM}", chainId = 10 }
+avalanche = { key = "${ETHERSCAN_API_KEY_AVALANCHE}", chainId = 43114 }
+polygon = { key = "${ETHERSCAN_API_KEY_POLYGON}", chainId = 137 }
+arbitrum = { key = "${ETHERSCAN_API_KEY_ARBITRUM}", chainId = 42161 }
+fantom = { key = "${ETHERSCAN_API_KEY_FANTOM}", chainId = 250 }
+metis = { key = "any", chainId = 1088, url = 'https://andromeda-explorer.metis.io/' }
+base = { key = "${ETHERSCAN_API_KEY_BASE}", chainId = 8453 }
+zkevm = { key = "${ETHERSCAN_API_KEY_ZKEVM}", chainId = 1101 }
+gnosis = { key = "${ETHERSCAN_API_KEY_GNOSIS}", chainId = 100 }
+bnb = { key = "${ETHERSCAN_API_KEY_BNB}", chainId = 56 }
+celo = { key = "${ETHERSCAN_API_KEY_CELO}", chainId = 42220 }

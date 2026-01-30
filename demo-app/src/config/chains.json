@@ -1,0 +1,43 @@
+{
+  "chains": [
+    {
+      "id": 31337,
+      "name": "Hub Chain",
+      "type": "hub",
+      "rpcUrl": "http://localhost:8545",
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      }
+    },
+    {
+      "id": 31338,
+      "name": "Client A",
+      "type": "client",
+      "rpcUrl": "http://localhost:8546",
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      }
+    },
+    {
+      "id": 31339,
+      "name": "Client B",
+      "type": "client",
+      "rpcUrl": "http://localhost:8547",
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      }
+    }
+  ],
+  "tokens": {
+    "USDC": {
+      "symbol": "USDC",
+      "decimals": 6
+    }
+  }
+}

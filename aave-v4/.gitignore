@@ -1,0 +1,25 @@
+# build and cache
+cache/
+out/
+
+# general
+.env
+
+# editors
+.idea
+.vscode
+
+package-lock.json
+node_modules
+
+# ignore foundry deploy artifacts
+broadcast/
+
+.idea
+.vscode
+lcov*
+
+report/
+
+.DS_Store
+.venv/

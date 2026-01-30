@@ -1,0 +1,33 @@
+name: Tests-Merge
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    name: Prettier lint check
+    uses: bgd-labs/github-workflows/.github/workflows/foundry-lint-prettier.yml@main
+  test:
+    name: Foundry build n test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.READ_ONLY_PAT || github.token }}
+
+      - name: Run Foundry setup
+        uses: bgd-labs/github-workflows/.github/actions/foundry-setup@main
+        with:
+          FOUNDRY_VERSION: stable
+
+      - name: Run Forge size
+        uses: bgd-labs/github-workflows/.github/actions/foundry-size@main
+
+      - name: Run Forge tests
+        id: test
+        uses: bgd-labs/github-workflows/.github/actions/foundry-test@main
+        with:
+          FOUNDRY_PROFILE: ci

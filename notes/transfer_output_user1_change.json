@@ -1,0 +1,8 @@
+{
+  "commitment": "0xbb543fa60c5a49ceb6efcdaa2f9f93ff68f668836376a98883fd1f3f65f80d4f",
+  "randomness": "0xa21dde5ee85ea5d352ec3f538595bd813571efd85a77f2dd693504186a7fbe77",
+  "amount": "40000000",
+  "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "commitmentIndex": 2,
+  "timestamp": "2026-01-12T17:39:44.804Z"
+}

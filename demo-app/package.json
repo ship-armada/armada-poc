@@ -1,0 +1,50 @@
+{
+  "name": "demo-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "prepare-artifacts": "node scripts/prepare-test-artifacts.js"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.0.1",
+    "@railgun-community/shared-models": "^7.6.1",
+    "@railgun-community/wallet": "^10.4.0",
+    "@scure/bip39": "^2.0.1",
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/react-query": "^5.90.17",
+    "ethers": "^6.13.1",
+    "level-js": "^6.1.0",
+    "poseidon-lite": "^0.3.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "snarkjs": "^0.7.6",
+    "viem": "^2.44.2",
+    "vite-plugin-node-polyfills": "^0.25.0",
+    "wagmi": "^3.3.2",
+    "zustand": "^5.0.10"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.23",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0"
+  }
+}

@@ -54,6 +54,7 @@ interface HubDeploymentInfo {
     verifierModule: string;
     shieldModule: string;
     transactModule: string;
+    relayAdapt: string;
   };
   cctp: {
     tokenMessenger: string;
@@ -203,7 +204,15 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   // To enable for debugging, manually call: privacyPool.setTestingMode(true)
   console.log("\n9. SNARK verification enabled (testing mode disabled)");
 
-  // 10. Set remote pools for client chains (will be updated after client deployments)
+  // 10. Deploy RelayAdapt for cross-contract calls support
+  console.log("\n10. Deploying PrivacyPoolRelayAdapt...");
+  const RelayAdapt = await ethers.getContractFactory("PrivacyPoolRelayAdapt");
+  const relayAdapt = await RelayAdapt.deploy(privacyPoolAddress);
+  await relayAdapt.waitForDeployment();
+  const relayAdaptAddress = await relayAdapt.getAddress();
+  console.log(`   RelayAdapt: ${relayAdaptAddress}`);
+
+  // 11. Set remote pools for client chains (will be updated after client deployments)
   // These will be configured by link_privacy_pool.ts
 
   const deployment: HubDeploymentInfo = {
@@ -216,6 +225,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
       verifierModule: verifierModuleAddress,
       shieldModule: shieldModuleAddress,
       transactModule: transactModuleAddress,
+      relayAdapt: relayAdaptAddress,
     },
     cctp: {
       tokenMessenger: tokenMessengerAddress,

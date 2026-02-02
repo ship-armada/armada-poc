@@ -18,6 +18,7 @@ import {
   formattedYieldSharesAtom,
   hasYieldPositionAtom,
   yieldEarnedAtom,
+  realTimeYieldAssetsAtom,
   type ShieldedWalletState,
 } from '@/atoms/shieldedWalletAtom'
 import { walletAtom } from '@/atoms/walletAtom'
@@ -127,6 +128,7 @@ export function useShieldedWallet(): UseShieldedWalletReturn {
   const formattedYieldShares = useAtomValue(formattedYieldSharesAtom)
   const hasYieldPosition = useAtomValue(hasYieldPositionAtom)
   const yieldEarned = useAtomValue(yieldEarnedAtom)
+  const realTimeYieldAssets = useAtomValue(realTimeYieldAssetsAtom)
 
   const isConnected = walletState.metaMask.isConnected
   const address = walletState.metaMask.account
@@ -395,8 +397,8 @@ export function useShieldedWallet(): UseShieldedWalletReturn {
   const walletId = state.status === 'unlocked' && checkIsUnlocked() ? getWalletId() : null
   const encryptionKey = state.status === 'unlocked' && checkIsUnlocked() ? getEncryptionKey() : null
 
-  // Calculate total balance (USDC + yield assets)
-  const totalBalance = state.shieldedBalance + state.yieldAssetsBalance
+  // Calculate total balance using real-time yield assets (updated by useYieldRate)
+  const totalBalance = state.shieldedBalance + realTimeYieldAssets
 
   return {
     status: state.status,
@@ -404,7 +406,7 @@ export function useShieldedWallet(): UseShieldedWalletReturn {
     shieldedBalance: totalBalance,
     usdcBalance: state.shieldedBalance,
     yieldSharesBalance: state.yieldSharesBalance,
-    yieldAssetsBalance: state.yieldAssetsBalance,
+    yieldAssetsBalance: realTimeYieldAssets, // Use real-time value
     yieldEarned,
     hasYieldPosition,
     formattedBalance,

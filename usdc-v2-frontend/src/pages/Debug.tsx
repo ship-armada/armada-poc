@@ -5,8 +5,6 @@ import { Button } from '@/components/common/Button'
 import { Spinner } from '@/components/common/Spinner'
 import {
   getYieldDeployment,
-  getAaveDeployment,
-  getHubCCTPDeployment,
   areDeploymentsLoaded,
   loadDeployments,
   getHubChain,
@@ -171,8 +169,8 @@ export function Debug() {
       }
 
       const yieldDeployment = getYieldDeployment()
-      const aaveDeployment = getAaveDeployment()
-      const cctpDeployment = getHubCCTPDeployment()
+      // const aaveDeployment = getAaveDeployment()
+      // const cctpDeployment = getHubCCTPDeployment()
 
       if (!yieldDeployment) {
         throw new Error('Yield deployment not found. Run deploy:yield first.')
@@ -231,8 +229,12 @@ export function Debug() {
         aaveSpoke.reserves(yieldDeployment.config.reserveId),
       ])
 
-      // Calculate total yield
-      const totalYield = totalAssets > totalPrincipal ? totalAssets - totalPrincipal : 0n
+      // Calculate total yield (ensure bigint types)
+      const totalAssetsBigInt = BigInt(totalAssets)
+      const totalPrincipalBigInt = BigInt(totalPrincipal)
+      const totalYield = totalAssetsBigInt > totalPrincipalBigInt
+        ? totalAssetsBigInt - totalPrincipalBigInt
+        : 0n
 
       setStats({
         totalAssets,

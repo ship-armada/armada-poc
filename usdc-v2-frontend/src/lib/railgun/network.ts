@@ -23,9 +23,13 @@ let hardhatConfigPatched = false
 // Hardhat network chain ID (must match SDK's NETWORK_CONFIG)
 const HARDHAT_CHAIN_ID = 31337
 
+// Store RelayAdapt address for getHubChainConfig
+let cachedRelayAdaptContract: string | undefined
+
 function patchNetworkConfig(
   networkConfig: Record<string, unknown>,
   railgunProxy: string,
+  relayAdaptContract?: string,
 ): boolean {
   const hardhatNetwork =
     (networkConfig?.Hardhat as Record<string, unknown>) ??
@@ -33,8 +37,8 @@ function patchNetworkConfig(
   if (!hardhatNetwork) return false
 
   hardhatNetwork.proxyContract = railgunProxy
-  hardhatNetwork.relayAdaptContract = ethers.ZeroAddress
-  hardhatNetwork.relayAdaptHistory = ['']
+  hardhatNetwork.relayAdaptContract = relayAdaptContract ?? ethers.ZeroAddress
+  hardhatNetwork.relayAdaptHistory = relayAdaptContract ? [relayAdaptContract] : ['']
   hardhatNetwork.deploymentBlock = 0
   hardhatNetwork.poseidonMerkleAccumulatorV3Contract = ethers.ZeroAddress
   hardhatNetwork.poseidonMerkleVerifierV3Contract = ethers.ZeroAddress
@@ -42,6 +46,9 @@ function patchNetworkConfig(
   hardhatNetwork.deploymentBlockPoseidonMerkleAccumulatorV3 = 0
   hardhatNetwork.supportsV3 = false
   hardhatNetwork.poi = undefined
+
+  // Cache for getHubChainConfig
+  cachedRelayAdaptContract = relayAdaptContract
 
   return true
 }
@@ -52,6 +59,7 @@ async function patchHardhatConfig(): Promise<void> {
   const hubChain = getHubChain()
   // In native CCTP architecture, PrivacyPool serves as the Railgun proxy
   const privacyPool = hubChain.contracts?.privacyPool
+  const relayAdapt = hubChain.contracts?.relayAdapt
 
   if (!privacyPool) {
     console.warn('[network] Missing privacyPool in hub deployment')
@@ -61,10 +69,19 @@ async function patchHardhatConfig(): Promise<void> {
   const patchedPrimary = patchNetworkConfig(
     NETWORK_CONFIG as unknown as Record<string, unknown>,
     privacyPool,
+    relayAdapt,
   )
 
   hardhatConfigPatched = patchedPrimary
   console.log('[network] Patched Hardhat network config for POC deployment')
+  if (relayAdapt) {
+    console.log('[network] RelayAdapt configured:', relayAdapt)
+  }
+
+  // Debug: Verify the patch took effect
+  const verifyNetwork = (NETWORK_CONFIG as Record<string, Record<string, unknown>>)['Hardhat']
+  console.log('[network] Verification - NETWORK_CONFIG.Hardhat.relayAdaptContract:', verifyNetwork?.relayAdaptContract)
+  console.log('[network] Verification - NETWORK_CONFIG.Hardhat.proxyContract:', verifyNetwork?.proxyContract)
 }
 
 /**
@@ -151,8 +168,8 @@ export async function loadHubNetwork(): Promise<void> {
 /**
  * Get the hub chain configuration (using Hardhat chain ID for SDK compatibility)
  */
-export function getHubChainConfig(): { type: number; id: number } {
-  return { type: 0, id: HARDHAT_CHAIN_ID }
+export function getHubChainConfig(): { type: number; id: number; relayAdaptContract?: string } {
+  return { type: 0, id: HARDHAT_CHAIN_ID, relayAdaptContract: cachedRelayAdaptContract }
 }
 
 /**

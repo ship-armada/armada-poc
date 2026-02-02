@@ -6,3 +6,4 @@ export * as modules from "./modules";
 export * as storage from "./storage";
 export { PrivacyPool__factory } from "./PrivacyPool__factory";
 export { PrivacyPoolClient__factory } from "./PrivacyPoolClient__factory";
+export { PrivacyPoolRelayAdapt__factory } from "./PrivacyPoolRelayAdapt__factory";

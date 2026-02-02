@@ -21,6 +21,7 @@ import {
   EarnPanel,
 } from '@/components/dashboard/panels'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
+import { useYieldRate } from '@/hooks/useYieldRate'
 import { Button } from '@/components/common/Button'
 
 type ActivePanel = 'none' | 'deposit' | 'send' | 'earn'
@@ -29,6 +30,10 @@ export function Dashboard() {
   const [openModalTxId, setOpenModalTxId] = useState<string | null>(null)
   const [historyReloadTrigger, setHistoryReloadTrigger] = useState(0)
   const [activePanel, setActivePanel] = useState<ActivePanel>('none')
+
+  // Initialize yield rate polling and event listening
+  // This updates the yieldRateAtom which drives real-time yield display
+  useYieldRate()
 
   // Shielded wallet state
   const {

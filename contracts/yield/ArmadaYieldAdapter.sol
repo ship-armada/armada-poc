@@ -5,6 +5,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../cctp/ICCTPV2.sol";
+import "../privacy-pool/interfaces/IPrivacyPool.sol";
+import "../railgun/logic/Globals.sol";
+import "./YieldAdaptParams.sol";
 
 /**
  * @title IArmadaYieldVault
@@ -96,6 +99,20 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     event TokenMessengerUpdated(address indexed oldMessenger, address indexed newMessenger);
     event PrivacyPoolUpdated(address indexed oldPool, address indexed newPool);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
+
+    /// @notice Emitted when shielded USDC is lent and ayUSDC is re-shielded (trustless)
+    event LendAndShield(
+        bytes32 indexed npk,
+        uint256 usdcAmount,
+        uint256 sharesMinted
+    );
+
+    /// @notice Emitted when shielded ayUSDC is redeemed and USDC is re-shielded (trustless)
+    event RedeemAndShield(
+        bytes32 indexed npk,
+        uint256 sharesBurned,
+        uint256 usdcRedeemed
+    );
 
     // ============ Modifiers ============
 
@@ -360,6 +377,175 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
             finalRecipient,
             nonce
         );
+    }
+
+    // ============ Trustless Shielded Operations ============
+
+    /**
+     * @notice Atomic lend: unshield USDC → deposit → shield ayUSDC
+     * @dev Trustless execution via Railgun's adaptContract/adaptParams pattern:
+     *
+     *      1. User generates unshield proof with:
+     *         - boundParams.adaptContract = address(this)
+     *         - boundParams.adaptParams = hash(npk, encryptedBundle, shieldKey)
+     *         - unshieldPreimage with USDC going to this adapter
+     *
+     *      2. Adapter verifies adaptParams match provided shield parameters
+     *         - If mismatch → revert (adapter cannot change destination)
+     *
+     *      3. PrivacyPool.transact() verifies:
+     *         - SNARK proof validity
+     *         - adaptContract == msg.sender (this adapter)
+     *
+     *      Result: Adapter MUST shield ayUSDC to user's committed npk
+     *
+     * @param _transaction Unshield transaction (proof verified by PrivacyPool)
+     * @param _npk User's note public key for re-shielding ayUSDC
+     * @param _shieldCiphertext Ciphertext for recipient to decrypt
+     * @return shares Amount of ayUSDC shares minted and shielded
+     */
+    function lendAndShield(
+        Transaction calldata _transaction,
+        bytes32 _npk,
+        ShieldCiphertext calldata _shieldCiphertext
+    ) external nonReentrant returns (uint256 shares) {
+        require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
+
+        // 1. Verify this transaction is bound to this adapter
+        require(
+            _transaction.boundParams.adaptContract == address(this),
+            "ArmadaYieldAdapter: invalid adaptContract"
+        );
+
+        // 2. Verify adaptParams binds the npk and ciphertext
+        //    This ensures adapter MUST use user's committed shield destination
+        require(
+            YieldAdaptParams.verify(
+                _transaction.boundParams.adaptParams,
+                _npk,
+                _shieldCiphertext.encryptedBundle,
+                _shieldCiphertext.shieldKey
+            ),
+            "ArmadaYieldAdapter: adaptParams mismatch"
+        );
+
+        // 3. Verify this is an unshield for USDC
+        require(
+            _transaction.unshieldPreimage.token.tokenAddress == address(usdc),
+            "ArmadaYieldAdapter: not USDC unshield"
+        );
+
+        // 4. Execute unshield via PrivacyPool
+        //    - PrivacyPool verifies SNARK proof
+        //    - PrivacyPool checks adaptContract == msg.sender
+        //    - USDC is transferred to this adapter
+        Transaction[] memory txs = new Transaction[](1);
+        txs[0] = _transaction;
+        IPrivacyPool(privacyPool).transact(txs);
+
+        // 5. Get amount from unshield preimage
+        uint256 amount = _transaction.unshieldPreimage.value;
+        require(amount > 0, "ArmadaYieldAdapter: zero amount");
+
+        // 6. Deposit USDC to vault, receive shares to this adapter
+        shares = vault.deposit(amount, address(this));
+
+        // 7. Build shield request for ayUSDC
+        ShieldRequest[] memory shieldRequests = new ShieldRequest[](1);
+        shieldRequests[0] = ShieldRequest({
+            preimage: CommitmentPreimage({
+                npk: _npk,  // User's npk from verified adaptParams
+                token: TokenData({
+                    tokenType: TokenType.ERC20,
+                    tokenAddress: address(shareToken),
+                    tokenSubID: 0
+                }),
+                value: uint120(shares)
+            }),
+            ciphertext: _shieldCiphertext
+        });
+
+        // 8. Shield ayUSDC to user's npk
+        shareToken.approve(privacyPool, shares);
+        IPrivacyPool(privacyPool).shield(shieldRequests);
+
+        emit LendAndShield(_npk, amount, shares);
+    }
+
+    /**
+     * @notice Atomic redeem: unshield ayUSDC → redeem → shield USDC
+     * @dev Trustless execution via Railgun's adaptContract/adaptParams pattern.
+     *      Same security model as lendAndShield - adapter cannot deviate from
+     *      user's committed re-shield destination.
+     *
+     * @param _transaction Unshield transaction for ayUSDC
+     * @param _npk User's note public key for re-shielding USDC
+     * @param _shieldCiphertext Ciphertext for recipient to decrypt
+     * @return assets Amount of USDC redeemed and shielded (after yield fee)
+     */
+    function redeemAndShield(
+        Transaction calldata _transaction,
+        bytes32 _npk,
+        ShieldCiphertext calldata _shieldCiphertext
+    ) external nonReentrant returns (uint256 assets) {
+        require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
+
+        // 1. Verify this transaction is bound to this adapter
+        require(
+            _transaction.boundParams.adaptContract == address(this),
+            "ArmadaYieldAdapter: invalid adaptContract"
+        );
+
+        // 2. Verify adaptParams binds the npk and ciphertext
+        require(
+            YieldAdaptParams.verify(
+                _transaction.boundParams.adaptParams,
+                _npk,
+                _shieldCiphertext.encryptedBundle,
+                _shieldCiphertext.shieldKey
+            ),
+            "ArmadaYieldAdapter: adaptParams mismatch"
+        );
+
+        // 3. Verify this is an unshield for vault shares
+        require(
+            _transaction.unshieldPreimage.token.tokenAddress == address(shareToken),
+            "ArmadaYieldAdapter: not share token unshield"
+        );
+
+        // 4. Execute unshield via PrivacyPool
+        Transaction[] memory txs = new Transaction[](1);
+        txs[0] = _transaction;
+        IPrivacyPool(privacyPool).transact(txs);
+
+        // 5. Get shares from unshield preimage
+        uint256 shares = _transaction.unshieldPreimage.value;
+        require(shares > 0, "ArmadaYieldAdapter: zero shares");
+
+        // 6. Redeem shares from vault (10% yield fee applied by vault)
+        shareToken.approve(address(vault), shares);
+        assets = vault.redeem(shares, address(this), address(this));
+
+        // 7. Build shield request for USDC
+        ShieldRequest[] memory shieldRequests = new ShieldRequest[](1);
+        shieldRequests[0] = ShieldRequest({
+            preimage: CommitmentPreimage({
+                npk: _npk,  // User's npk from verified adaptParams
+                token: TokenData({
+                    tokenType: TokenType.ERC20,
+                    tokenAddress: address(usdc),
+                    tokenSubID: 0
+                }),
+                value: uint120(assets)
+            }),
+            ciphertext: _shieldCiphertext
+        });
+
+        // 8. Shield USDC to user's npk
+        usdc.approve(privacyPool, assets);
+        IPrivacyPool(privacyPool).shield(shieldRequests);
+
+        emit RedeemAndShield(_npk, shares, assets);
     }
 
     // ============ View Functions ============

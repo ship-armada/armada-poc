@@ -80,6 +80,8 @@ export type { PrivacyPool } from "./contracts/privacy-pool/PrivacyPool";
 export { PrivacyPool__factory } from "./factories/contracts/privacy-pool/PrivacyPool__factory";
 export type { PrivacyPoolClient } from "./contracts/privacy-pool/PrivacyPoolClient";
 export { PrivacyPoolClient__factory } from "./factories/contracts/privacy-pool/PrivacyPoolClient__factory";
+export type { PrivacyPoolRelayAdapt } from "./contracts/privacy-pool/PrivacyPoolRelayAdapt";
+export { PrivacyPoolRelayAdapt__factory } from "./factories/contracts/privacy-pool/PrivacyPoolRelayAdapt__factory";
 export type { PrivacyPoolStorage } from "./contracts/privacy-pool/storage/PrivacyPoolStorage";
 export { PrivacyPoolStorage__factory } from "./factories/contracts/privacy-pool/storage/PrivacyPoolStorage__factory";
 export type { Delegator } from "./contracts/railgun/governance/Delegator";

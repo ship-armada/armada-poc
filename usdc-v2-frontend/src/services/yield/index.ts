@@ -3,10 +3,27 @@
  *
  * Handles lend and redeem operations with the ArmadaYieldAdapter.
  * Converts between shielded USDC and shielded ayUSDC (yield-bearing shares).
+ *
+ * Two modes:
+ * 1. Public wallet operations (lend, redeemShares) - for debugging
+ * 2. Shielded operations (executeShieldedLend, executeShieldedRedeem) - trustless via adaptContract
  */
 
 import { ethers } from 'ethers'
 import { loadDeployments, getYieldDeployment, getHubChain } from '@/config/deployments'
+
+// Re-export shielded yield operations
+export {
+  executeShieldedLend,
+  executeShieldedRedeem,
+  validateShieldedLendParams,
+  validateShieldedRedeemParams,
+  type ShieldedYieldProgress,
+  type ShieldedYieldStage,
+  type ShieldedLendParams,
+  type ShieldedRedeemParams,
+  type ShieldedYieldResult,
+} from './shieldedYieldService'
 
 // ABI for ArmadaYieldAdapter
 const ADAPTER_ABI = [

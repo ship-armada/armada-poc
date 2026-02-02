@@ -162,6 +162,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.PrivacyPoolClient__factory>;
     getContractFactory(
+      name: "PrivacyPoolRelayAdapt",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.PrivacyPoolRelayAdapt__factory>;
+    getContractFactory(
       name: "PrivacyPoolStorage",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.PrivacyPoolStorage__factory>;
@@ -424,6 +428,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.PrivacyPoolClient>;
     getContractAt(
+      name: "PrivacyPoolRelayAdapt",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.PrivacyPoolRelayAdapt>;
+    getContractAt(
       name: "PrivacyPoolStorage",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -668,6 +677,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.PrivacyPoolClient>;
     deployContract(
+      name: "PrivacyPoolRelayAdapt",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.PrivacyPoolRelayAdapt>;
+    deployContract(
       name: "PrivacyPoolStorage",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.PrivacyPoolStorage>;
@@ -929,6 +942,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.PrivacyPoolClient>;
+    deployContract(
+      name: "PrivacyPoolRelayAdapt",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.PrivacyPoolRelayAdapt>;
     deployContract(
       name: "PrivacyPoolStorage",
       args: any[],

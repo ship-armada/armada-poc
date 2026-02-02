@@ -9,3 +9,4 @@ import type * as storage from "./storage";
 export type { storage };
 export type { PrivacyPool } from "./PrivacyPool";
 export type { PrivacyPoolClient } from "./PrivacyPoolClient";
+export type { PrivacyPoolRelayAdapt } from "./PrivacyPoolRelayAdapt";

@@ -23,15 +23,155 @@ import type {
   TypedContractMethod,
 } from "../../../common";
 
+export type G1PointStruct = { x: BigNumberish; y: BigNumberish };
+
+export type G1PointStructOutput = [x: bigint, y: bigint] & {
+  x: bigint;
+  y: bigint;
+};
+
+export type G2PointStruct = {
+  x: [BigNumberish, BigNumberish];
+  y: [BigNumberish, BigNumberish];
+};
+
+export type G2PointStructOutput = [x: [bigint, bigint], y: [bigint, bigint]] & {
+  x: [bigint, bigint];
+  y: [bigint, bigint];
+};
+
+export type SnarkProofStruct = {
+  a: G1PointStruct;
+  b: G2PointStruct;
+  c: G1PointStruct;
+};
+
+export type SnarkProofStructOutput = [
+  a: G1PointStructOutput,
+  b: G2PointStructOutput,
+  c: G1PointStructOutput
+] & { a: G1PointStructOutput; b: G2PointStructOutput; c: G1PointStructOutput };
+
+export type CommitmentCiphertextStruct = {
+  ciphertext: [BytesLike, BytesLike, BytesLike, BytesLike];
+  blindedSenderViewingKey: BytesLike;
+  blindedReceiverViewingKey: BytesLike;
+  annotationData: BytesLike;
+  memo: BytesLike;
+};
+
+export type CommitmentCiphertextStructOutput = [
+  ciphertext: [string, string, string, string],
+  blindedSenderViewingKey: string,
+  blindedReceiverViewingKey: string,
+  annotationData: string,
+  memo: string
+] & {
+  ciphertext: [string, string, string, string];
+  blindedSenderViewingKey: string;
+  blindedReceiverViewingKey: string;
+  annotationData: string;
+  memo: string;
+};
+
+export type BoundParamsStruct = {
+  treeNumber: BigNumberish;
+  minGasPrice: BigNumberish;
+  unshield: BigNumberish;
+  chainID: BigNumberish;
+  adaptContract: AddressLike;
+  adaptParams: BytesLike;
+  commitmentCiphertext: CommitmentCiphertextStruct[];
+};
+
+export type BoundParamsStructOutput = [
+  treeNumber: bigint,
+  minGasPrice: bigint,
+  unshield: bigint,
+  chainID: bigint,
+  adaptContract: string,
+  adaptParams: string,
+  commitmentCiphertext: CommitmentCiphertextStructOutput[]
+] & {
+  treeNumber: bigint;
+  minGasPrice: bigint;
+  unshield: bigint;
+  chainID: bigint;
+  adaptContract: string;
+  adaptParams: string;
+  commitmentCiphertext: CommitmentCiphertextStructOutput[];
+};
+
+export type TokenDataStruct = {
+  tokenType: BigNumberish;
+  tokenAddress: AddressLike;
+  tokenSubID: BigNumberish;
+};
+
+export type TokenDataStructOutput = [
+  tokenType: bigint,
+  tokenAddress: string,
+  tokenSubID: bigint
+] & { tokenType: bigint; tokenAddress: string; tokenSubID: bigint };
+
+export type CommitmentPreimageStruct = {
+  npk: BytesLike;
+  token: TokenDataStruct;
+  value: BigNumberish;
+};
+
+export type CommitmentPreimageStructOutput = [
+  npk: string,
+  token: TokenDataStructOutput,
+  value: bigint
+] & { npk: string; token: TokenDataStructOutput; value: bigint };
+
+export type TransactionStruct = {
+  proof: SnarkProofStruct;
+  merkleRoot: BytesLike;
+  nullifiers: BytesLike[];
+  commitments: BytesLike[];
+  boundParams: BoundParamsStruct;
+  unshieldPreimage: CommitmentPreimageStruct;
+};
+
+export type TransactionStructOutput = [
+  proof: SnarkProofStructOutput,
+  merkleRoot: string,
+  nullifiers: string[],
+  commitments: string[],
+  boundParams: BoundParamsStructOutput,
+  unshieldPreimage: CommitmentPreimageStructOutput
+] & {
+  proof: SnarkProofStructOutput;
+  merkleRoot: string;
+  nullifiers: string[];
+  commitments: string[];
+  boundParams: BoundParamsStructOutput;
+  unshieldPreimage: CommitmentPreimageStructOutput;
+};
+
+export type ShieldCiphertextStruct = {
+  encryptedBundle: [BytesLike, BytesLike, BytesLike];
+  shieldKey: BytesLike;
+};
+
+export type ShieldCiphertextStructOutput = [
+  encryptedBundle: [string, string, string],
+  shieldKey: string
+] & { encryptedBundle: [string, string, string]; shieldKey: string };
+
 export interface ArmadaYieldAdapterInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "lend"
+      | "lendAndShield"
       | "lendPrivate"
       | "owner"
       | "previewLend"
       | "previewRedeem"
       | "privacyPool"
+      | "redeemAndShield"
       | "redeemAndUnshield"
       | "redeemAndUnshieldCCTP"
       | "redeemPrivate"
@@ -51,9 +191,11 @@ export interface ArmadaYieldAdapterInterface extends Interface {
   getEvent(
     nameOrSignatureOrTopic:
       | "Lend"
+      | "LendAndShield"
       | "OwnershipTransferred"
       | "PrivacyPoolUpdated"
       | "Redeem"
+      | "RedeemAndShield"
       | "RedeemAndUnshield"
       | "RedeemAndUnshieldCCTP"
       | "RelayerUpdated"
@@ -61,6 +203,10 @@ export interface ArmadaYieldAdapterInterface extends Interface {
   ): EventFragment;
 
   encodeFunctionData(functionFragment: "lend", values: [BigNumberish]): string;
+  encodeFunctionData(
+    functionFragment: "lendAndShield",
+    values: [TransactionStruct, BytesLike, ShieldCiphertextStruct]
+  ): string;
   encodeFunctionData(
     functionFragment: "lendPrivate",
     values: [BigNumberish, AddressLike]
@@ -77,6 +223,10 @@ export interface ArmadaYieldAdapterInterface extends Interface {
   encodeFunctionData(
     functionFragment: "privacyPool",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "redeemAndShield",
+    values: [TransactionStruct, BytesLike, ShieldCiphertextStruct]
   ): string;
   encodeFunctionData(
     functionFragment: "redeemAndUnshield",
@@ -131,6 +281,10 @@ export interface ArmadaYieldAdapterInterface extends Interface {
 
   decodeFunctionResult(functionFragment: "lend", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "lendAndShield",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "lendPrivate",
     data: BytesLike
   ): Result;
@@ -145,6 +299,10 @@ export interface ArmadaYieldAdapterInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "privacyPool",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "redeemAndShield",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -212,6 +370,28 @@ export namespace LendEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace LendAndShieldEvent {
+  export type InputTuple = [
+    npk: BytesLike,
+    usdcAmount: BigNumberish,
+    sharesMinted: BigNumberish
+  ];
+  export type OutputTuple = [
+    npk: string,
+    usdcAmount: bigint,
+    sharesMinted: bigint
+  ];
+  export interface OutputObject {
+    npk: string;
+    usdcAmount: bigint;
+    sharesMinted: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace OwnershipTransferredEvent {
   export type InputTuple = [oldOwner: AddressLike, newOwner: AddressLike];
   export type OutputTuple = [oldOwner: string, newOwner: string];
@@ -251,6 +431,28 @@ export namespace RedeemEvent {
   ];
   export interface OutputObject {
     user: string;
+    sharesBurned: bigint;
+    usdcRedeemed: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RedeemAndShieldEvent {
+  export type InputTuple = [
+    npk: BytesLike,
+    sharesBurned: BigNumberish,
+    usdcRedeemed: BigNumberish
+  ];
+  export type OutputTuple = [
+    npk: string,
+    sharesBurned: bigint,
+    usdcRedeemed: bigint
+  ];
+  export interface OutputObject {
+    npk: string;
     sharesBurned: bigint;
     usdcRedeemed: bigint;
   }
@@ -390,6 +592,16 @@ export interface ArmadaYieldAdapter extends BaseContract {
 
   lend: TypedContractMethod<[amount: BigNumberish], [bigint], "nonpayable">;
 
+  lendAndShield: TypedContractMethod<
+    [
+      _transaction: TransactionStruct,
+      _npk: BytesLike,
+      _shieldCiphertext: ShieldCiphertextStruct
+    ],
+    [bigint],
+    "nonpayable"
+  >;
+
   lendPrivate: TypedContractMethod<
     [amount: BigNumberish, user: AddressLike],
     [bigint],
@@ -403,6 +615,16 @@ export interface ArmadaYieldAdapter extends BaseContract {
   previewRedeem: TypedContractMethod<[shares: BigNumberish], [bigint], "view">;
 
   privacyPool: TypedContractMethod<[], [string], "view">;
+
+  redeemAndShield: TypedContractMethod<
+    [
+      _transaction: TransactionStruct,
+      _npk: BytesLike,
+      _shieldCiphertext: ShieldCiphertextStruct
+    ],
+    [bigint],
+    "nonpayable"
+  >;
 
   redeemAndUnshield: TypedContractMethod<
     [shares: BigNumberish, recipient: AddressLike],
@@ -481,6 +703,17 @@ export interface ArmadaYieldAdapter extends BaseContract {
     nameOrSignature: "lend"
   ): TypedContractMethod<[amount: BigNumberish], [bigint], "nonpayable">;
   getFunction(
+    nameOrSignature: "lendAndShield"
+  ): TypedContractMethod<
+    [
+      _transaction: TransactionStruct,
+      _npk: BytesLike,
+      _shieldCiphertext: ShieldCiphertextStruct
+    ],
+    [bigint],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "lendPrivate"
   ): TypedContractMethod<
     [amount: BigNumberish, user: AddressLike],
@@ -499,6 +732,17 @@ export interface ArmadaYieldAdapter extends BaseContract {
   getFunction(
     nameOrSignature: "privacyPool"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "redeemAndShield"
+  ): TypedContractMethod<
+    [
+      _transaction: TransactionStruct,
+      _npk: BytesLike,
+      _shieldCiphertext: ShieldCiphertextStruct
+    ],
+    [bigint],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "redeemAndUnshield"
   ): TypedContractMethod<
@@ -575,6 +819,13 @@ export interface ArmadaYieldAdapter extends BaseContract {
     LendEvent.OutputObject
   >;
   getEvent(
+    key: "LendAndShield"
+  ): TypedContractEvent<
+    LendAndShieldEvent.InputTuple,
+    LendAndShieldEvent.OutputTuple,
+    LendAndShieldEvent.OutputObject
+  >;
+  getEvent(
     key: "OwnershipTransferred"
   ): TypedContractEvent<
     OwnershipTransferredEvent.InputTuple,
@@ -594,6 +845,13 @@ export interface ArmadaYieldAdapter extends BaseContract {
     RedeemEvent.InputTuple,
     RedeemEvent.OutputTuple,
     RedeemEvent.OutputObject
+  >;
+  getEvent(
+    key: "RedeemAndShield"
+  ): TypedContractEvent<
+    RedeemAndShieldEvent.InputTuple,
+    RedeemAndShieldEvent.OutputTuple,
+    RedeemAndShieldEvent.OutputObject
   >;
   getEvent(
     key: "RedeemAndUnshield"
@@ -636,6 +894,17 @@ export interface ArmadaYieldAdapter extends BaseContract {
       LendEvent.OutputObject
     >;
 
+    "LendAndShield(bytes32,uint256,uint256)": TypedContractEvent<
+      LendAndShieldEvent.InputTuple,
+      LendAndShieldEvent.OutputTuple,
+      LendAndShieldEvent.OutputObject
+    >;
+    LendAndShield: TypedContractEvent<
+      LendAndShieldEvent.InputTuple,
+      LendAndShieldEvent.OutputTuple,
+      LendAndShieldEvent.OutputObject
+    >;
+
     "OwnershipTransferred(address,address)": TypedContractEvent<
       OwnershipTransferredEvent.InputTuple,
       OwnershipTransferredEvent.OutputTuple,
@@ -667,6 +936,17 @@ export interface ArmadaYieldAdapter extends BaseContract {
       RedeemEvent.InputTuple,
       RedeemEvent.OutputTuple,
       RedeemEvent.OutputObject
+    >;
+
+    "RedeemAndShield(bytes32,uint256,uint256)": TypedContractEvent<
+      RedeemAndShieldEvent.InputTuple,
+      RedeemAndShieldEvent.OutputTuple,
+      RedeemAndShieldEvent.OutputObject
+    >;
+    RedeemAndShield: TypedContractEvent<
+      RedeemAndShieldEvent.InputTuple,
+      RedeemAndShieldEvent.OutputTuple,
+      RedeemAndShieldEvent.OutputObject
     >;
 
     "RedeemAndUnshield(address,uint256,uint256,address)": TypedContractEvent<

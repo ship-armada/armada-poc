@@ -87,8 +87,15 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     /// @notice Total principal deposited (for yield calculation)
     uint256 public totalPrincipal;
 
-    /// @notice Per-user principal tracking for accurate yield calculation
-    mapping(address => uint256) public userPrincipal;
+    /// @notice Per-user cost basis per share, scaled by 1e18
+    /// @dev Tracks weighted average deposit price. On deposit, the cost basis is updated
+    ///      as a weighted average of existing and new shares. On redeem, principal is
+    ///      computed as shares * costBasis / COST_BASIS_PRECISION, which is independent
+    ///      of balanceOf() and works correctly with the RelayAdapt pattern.
+    mapping(address => uint256) public userCostBasisPerShare;
+
+    /// @notice Precision scalar for cost basis (1e18)
+    uint256 internal constant COST_BASIS_PRECISION = 1e18;
 
     // ============ Events ============
 
@@ -193,9 +200,17 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         shares = _convertToShares(assets);
         require(shares > 0, "ArmadaYieldVault: zero shares");
 
-        // Track principal
+        // Track principal via weighted average cost basis
         totalPrincipal += assets;
-        userPrincipal[receiver] += assets;
+        uint256 existingShares = balanceOf(receiver);
+        if (existingShares == 0) {
+            // First deposit: cost basis = assets per share
+            userCostBasisPerShare[receiver] = (assets * COST_BASIS_PRECISION) / shares;
+        } else {
+            // Weighted average: ((oldBasis * oldShares) + (assets * PRECISION)) / (oldShares + newShares)
+            uint256 oldBasis = userCostBasisPerShare[receiver];
+            userCostBasisPerShare[receiver] = (oldBasis * existingShares + assets * COST_BASIS_PRECISION) / (existingShares + shares);
+        }
 
         // Transfer underlying from caller
         underlying.safeTransferFrom(msg.sender, address(this), assets);
@@ -236,22 +251,17 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         // Calculate assets from shares (before fees)
         uint256 grossAssets = _convertToAssets(shares);
 
-        // Calculate principal portion for this redemption
-        uint256 ownerShares = balanceOf(owner_);
-        uint256 ownerPrincipal = userPrincipal[owner_];
-        uint256 principalPortion = ownerShares > 0
-            ? (ownerPrincipal * shares) / ownerShares
-            : 0;
+        // Calculate principal portion using cost basis (independent of balanceOf)
+        uint256 costBasis = userCostBasisPerShare[owner_];
+        uint256 principalPortion = (shares * costBasis) / COST_BASIS_PRECISION;
 
-        // Update principal tracking
+        // Clamp to totalPrincipal to avoid underflow
         if (principalPortion > totalPrincipal) {
             principalPortion = totalPrincipal;
         }
-        if (principalPortion > userPrincipal[owner_]) {
-            principalPortion = userPrincipal[owner_];
-        }
         totalPrincipal -= principalPortion;
-        userPrincipal[owner_] -= principalPortion;
+        // Note: costBasisPerShare is not decremented on redeem - it's an average
+        // price that stays valid for remaining shares
 
         // Burn shares
         _burn(owner_, shares);
@@ -326,8 +336,9 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
      * @return yield_ User's yield (assets - principal)
      */
     function getUserYield(address user) external view returns (uint256 yield_) {
-        uint256 assets = _convertToAssets(balanceOf(user));
-        uint256 principal = userPrincipal[user];
+        uint256 userShares = balanceOf(user);
+        uint256 assets = _convertToAssets(userShares);
+        uint256 principal = (userShares * userCostBasisPerShare[user]) / COST_BASIS_PRECISION;
         yield_ = assets > principal ? assets - principal : 0;
     }
 
@@ -340,14 +351,11 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     function previewRedeem(uint256 shares, address owner_) external view returns (uint256 assets) {
         uint256 grossAssets = _convertToAssets(shares);
 
-        // Calculate principal portion
-        uint256 ownerShares = balanceOf(owner_);
-        uint256 ownerPrincipal = userPrincipal[owner_];
-        uint256 principalPortion = ownerShares > 0
-            ? (ownerPrincipal * shares) / ownerShares
-            : 0;
+        // Calculate principal portion using cost basis
+        uint256 costBasis = userCostBasisPerShare[owner_];
+        uint256 principalPortion = (shares * costBasis) / COST_BASIS_PRECISION;
 
-        // Calculate fee (assuming non-adapter)
+        // Calculate fee
         if (grossAssets > principalPortion) {
             uint256 yield_ = grossAssets - principalPortion;
             uint256 yieldFee = (yield_ * YIELD_FEE_BPS) / BPS_DENOMINATOR;

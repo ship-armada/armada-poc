@@ -102,6 +102,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      *      4. Hub receives message, processes shield, adds commitment to tree
      *
      * @param amount Amount of USDC to shield
+     * @param maxFee Maximum CCTP relayer fee (deducted at protocol level, 0 = no fee)
      * @param npk Note public key (recipient's key for claiming the note)
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption by recipient
@@ -111,12 +112,14 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      */
     function crossChainShield(
         uint256 amount,
+        uint256 maxFee,
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
         bytes32 destinationCaller
     ) external override returns (uint64) {
         require(amount > 0, "PrivacyPoolClient: Amount must be > 0");
+        require(maxFee < amount, "PrivacyPoolClient: Fee exceeds amount");
         require(hubPool != bytes32(0), "PrivacyPoolClient: Hub not configured");
 
         // Transfer USDC from user to this contract
@@ -126,6 +129,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         IERC20(usdc).approve(tokenMessenger, amount);
 
         // Create shield data payload
+        // value = gross amount (CCTP deducts fee at protocol level before minting)
         ShieldData memory shieldData = ShieldData({
             npk: npk,
             value: uint120(amount),
@@ -145,7 +149,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
             hubPool,                   // mintRecipient - Hub receives the USDC
             usdc,
             destinationCaller,         // destinationCaller - relayer address or 0 for any
-            0,                         // maxFee - no fee for POC
+            maxFee,                    // maxFee - CCTP relayer fee (deducted from mint amount)
             CCTPFinality.STANDARD,     // minFinalityThreshold - use standard finality
             hookData                   // hookData - contains shield parameters
         );

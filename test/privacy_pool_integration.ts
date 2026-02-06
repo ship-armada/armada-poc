@@ -336,6 +336,7 @@ describe("Privacy Pool Integration", function () {
       // Use bytes32(0) for destinationCaller to allow any relayer
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
+        0,               // maxFee = 0 (no CCTP fee for this test)
         npk,
         encryptedBundle,
         shieldKey,
@@ -356,6 +357,91 @@ describe("Privacy Pool Integration", function () {
       // Verify USDC was burned on client
       const aliceBalance = await clientUsdc.balanceOf(aliceAddress);
       expect(aliceBalance).to.equal(0);
+    });
+
+    it("should complete end-to-end cross-chain shield with maxFee", async function () {
+      const MAX_FEE = ethers.parseUnits("1", 6); // 1 USDC fee
+
+      // Approve PrivacyPoolClient to spend USDC
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+
+      // Create shield parameters
+      const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+      const rawNpk = BigInt(ethers.keccak256(ethers.toUtf8Bytes("alice-cctp-fee-note")));
+      const validNpk = rawNpk % SNARK_SCALAR_FIELD;
+      const npk = ethers.zeroPadValue(ethers.toBeHex(validNpk), 32);
+      const encryptedBundle: [string, string, string] = [
+        ethers.keccak256(ethers.toUtf8Bytes("enc1")),
+        ethers.keccak256(ethers.toUtf8Bytes("enc2")),
+        ethers.keccak256(ethers.toUtf8Bytes("enc3")),
+      ];
+      const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("shield-key"));
+
+      // Execute cross-chain shield with maxFee
+      const tx = await privacyPoolClient.connect(alice).crossChainShield(
+        SHIELD_AMOUNT,
+        MAX_FEE,         // maxFee = 1 USDC (CCTP relayer fee)
+        npk,
+        encryptedBundle,
+        shieldKey,
+        ethers.ZeroHash  // destinationCaller = 0 (any relayer)
+      );
+      const receipt = await tx.wait();
+
+      // Parse the MessageSent event from the client MessageTransmitter
+      const transmitterInterface = clientMessageTransmitter.interface;
+      let messageEvent: any;
+      for (const log of receipt!.logs) {
+        try {
+          const parsed = transmitterInterface.parseLog(log);
+          if (parsed?.name === "MessageSent") {
+            messageEvent = parsed;
+            break;
+          }
+        } catch {
+          // Not from this contract
+        }
+      }
+      expect(messageEvent).to.not.be.undefined;
+
+      // Construct full MessageV2 envelope for receiveMessage
+      const MESSAGE_VERSION = 1;
+      const FINALITY_STANDARD = 2000;
+      const encodedMessage = ethers.solidityPacked(
+        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+        [
+          MESSAGE_VERSION,
+          messageEvent.args.sourceDomain,
+          messageEvent.args.destinationDomain,
+          messageEvent.args.nonce,
+          messageEvent.args.sender,
+          messageEvent.args.recipient,
+          messageEvent.args.destinationCaller,
+          messageEvent.args.minFinalityThreshold,
+          FINALITY_STANDARD,
+          messageEvent.args.messageBody,
+        ]
+      );
+
+      // Record balances before relay
+      const poolBalanceBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      const relayerBalanceBefore = await hubUsdc.balanceOf(relayerAddress);
+      const merkleRootBefore = await privacyPool.merkleRoot();
+
+      // Relay the message to Hub (relayer calls receiveMessage)
+      await hubMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
+
+      // Verify: PrivacyPool received SHIELD_AMOUNT - MAX_FEE
+      const poolBalanceAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+      expect(poolBalanceAfter - poolBalanceBefore).to.equal(SHIELD_AMOUNT - MAX_FEE);
+
+      // Verify: Relayer received MAX_FEE
+      const relayerBalanceAfter = await hubUsdc.balanceOf(relayerAddress);
+      expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(MAX_FEE);
+
+      // Verify: Merkle root changed (commitment was inserted)
+      const merkleRootAfter = await privacyPool.merkleRoot();
+      expect(merkleRootAfter).to.not.equal(merkleRootBefore);
     });
   });
 

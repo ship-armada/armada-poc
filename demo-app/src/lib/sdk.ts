@@ -190,9 +190,28 @@ const FAUCET_ABI = [
 // On public testnets, this should be configured per-chain
 export const DEFAULT_RELAYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
+// Relayer API URL (local devnet)
+const RELAYER_API_URL = 'http://localhost:3001';
+
+/**
+ * Fetch the CCTP relay fee (maxFee) from the relayer API.
+ * Returns 0n if the relayer is unavailable.
+ */
+async function fetchCctpRelayFee(): Promise<bigint> {
+  try {
+    const res = await fetch(`${RELAYER_API_URL}/fees`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return 0n;
+    const data = await res.json();
+    return BigInt(data.fees.crossChainShield);
+  } catch {
+    console.warn('[sdk] Relayer unavailable, using maxFee=0');
+    return 0n;
+  }
+}
+
 // PrivacyPoolClient ABI - used for cross-chain shield from client chains
 export const PRIVACY_POOL_CLIENT_ABI = [
-  'function crossChainShield(uint256 amount, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)',
+  'function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)',
   'event CrossChainShieldInitiated(address indexed sender, uint256 amount, bytes32 indexed npk, uint64 nonce)',
 ];
 
@@ -397,7 +416,11 @@ export async function executeCrossChainShield(
   const relayer = relayerAddress || DEFAULT_RELAYER_ADDRESS;
   const destinationCaller = ethers.zeroPadValue(relayer, 32);
 
-  const tx = await client.crossChainShield(amount, npk, encryptedBundle, shieldKey, destinationCaller);
+  // Fetch CCTP relay fee from the relayer API
+  const maxFee = await fetchCctpRelayFee();
+  console.log(`[sdk] Cross-chain shield: amount=${amount}, maxFee=${maxFee}`);
+
+  const tx = await client.crossChainShield(amount, maxFee, npk, encryptedBundle, shieldKey, destinationCaller);
   const receipt = await tx.wait();
 
   // Parse the CrossChainShieldInitiated event to get nonce

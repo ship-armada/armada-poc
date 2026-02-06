@@ -470,6 +470,14 @@ library BurnMessageV2 {
         require(messageBody.length >= MIN_BURN_MESSAGE_LENGTH, "BurnMessageV2: message too short");
         return bytes32(messageBody[BURN_TOKEN_OFFSET:BURN_TOKEN_OFFSET + 32]);
     }
+
+    /**
+     * @notice Get the maxFee from a burn message
+     */
+    function getMaxFee(bytes calldata messageBody) internal pure returns (uint256) {
+        require(messageBody.length >= MIN_BURN_MESSAGE_LENGTH, "BurnMessageV2: message too short");
+        return uint256(bytes32(messageBody[MAX_FEE_OFFSET:MAX_FEE_OFFSET + 32]));
+    }
 }
 
 // ============================================================================

@@ -1,0 +1,15 @@
+{
+  "chainId": 31337,
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "contracts": {
+    "mockAaveSpoke": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+  },
+  "reserves": {
+    "usdc": {
+      "reserveId": 0,
+      "underlying": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "annualYieldBps": 5000000
+    }
+  },
+  "timestamp": "2026-02-06T17:36:40.771Z"
+}

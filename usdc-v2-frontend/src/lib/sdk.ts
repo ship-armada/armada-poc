@@ -29,6 +29,12 @@ import {
   getHubChainConfig,
   isHubNetworkLoaded,
 } from './railgun/network'
+import {
+  isRelayerEnabled,
+  getRelayerAddress,
+  getRelayerFee,
+  submitAndWaitForConfirmation,
+} from '@/services/relayer'
 
 // ============ Types ============
 
@@ -394,6 +400,19 @@ export async function executePrivateTransfer(
   // Use 'Hardhat' as the network name (matches our registered network)
   const networkName = 'Hardhat' as Parameters<typeof generateTransferProof>[1]
 
+  // Build relayer fee recipient if relayer is enabled
+  const useRelayer = isRelayerEnabled()
+  let broadcasterFee: RailgunERC20AmountRecipient | undefined
+  if (useRelayer) {
+    const fee = await getRelayerFee('transfer')
+    broadcasterFee = {
+      tokenAddress,
+      amount: fee,
+      recipientAddress: getRelayerAddress(),
+    }
+    console.log(`[sdk] Including relayer fee: ${fee.toString()} raw USDC`)
+  }
+
   // Step 1: Generate proof
   console.log('[sdk] Generating transfer proof (this may take 20-30 seconds)...')
   await generateTransferProof(
@@ -405,8 +424,8 @@ export async function executePrivateTransfer(
     undefined, // memoText
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeERC20AmountRecipient
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet — false when using relayer
     undefined, // overallBatchMinGasPrice
     (progress) => {
       // SDK provides progress as 0-100, convert to 0-1 for our callback
@@ -434,8 +453,8 @@ export async function executePrivateTransfer(
     undefined, // memoText
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeERC20AmountRecipient
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     gasDetails,
   )
@@ -443,7 +462,18 @@ export async function executePrivateTransfer(
   console.log('[sdk] Transaction populated, submitting...')
 
   // Step 3: Submit transaction
-  // Get signer from browser wallet
+  if (useRelayer) {
+    // Submit via relayer — no MetaMask popup
+    const txHash = await submitAndWaitForConfirmation({
+      chainId: 31337,
+      to: populateResult.transaction.to!,
+      data: populateResult.transaction.data!,
+    })
+    console.log('[sdk] Transaction confirmed via relayer:', txHash)
+    return { txHash }
+  }
+
+  // Fallback: submit via MetaMask
   if (!window.ethereum) {
     throw new Error('No wallet found')
   }
@@ -451,8 +481,6 @@ export async function executePrivateTransfer(
   const provider = new ethers.BrowserProvider(window.ethereum)
   const signer = await provider.getSigner()
 
-  // The SDK returns a ContractTransaction which may have different field names
-  // Ensure we have the right structure for ethers v6
   const txRequest = {
     to: populateResult.transaction.to,
     data: populateResult.transaction.data,
@@ -463,7 +491,6 @@ export async function executePrivateTransfer(
   const tx = await signer.sendTransaction(txRequest)
   console.log('[sdk] Transaction submitted:', tx.hash)
 
-  // Wait for receipt to confirm
   const receipt = await tx.wait(1)
   if (!receipt || receipt.status === 0) {
     throw new Error('Transfer transaction failed')
@@ -519,6 +546,19 @@ export async function executeUnshield(
   // Use 'Hardhat' as the network name (matches our registered network)
   const networkName = 'Hardhat' as Parameters<typeof generateUnshieldProof>[1]
 
+  // Build relayer fee recipient if relayer is enabled
+  const useRelayer = isRelayerEnabled()
+  let broadcasterFee: RailgunERC20AmountRecipient | undefined
+  if (useRelayer) {
+    const fee = await getRelayerFee('unshield')
+    broadcasterFee = {
+      tokenAddress,
+      amount: fee,
+      recipientAddress: getRelayerAddress(),
+    }
+    console.log(`[sdk] Including relayer fee: ${fee.toString()} raw USDC`)
+  }
+
   // Step 1: Generate proof
   console.log('[sdk] Generating unshield proof (this may take 20-30 seconds)...')
   await generateUnshieldProof(
@@ -528,11 +568,10 @@ export async function executeUnshield(
     encryptionKey,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeERC20AmountRecipient
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     (progress) => {
-      // SDK provides progress as 0-100, convert to 0-1 for our callback
       console.log(`[sdk] Proof progress: ${Math.round(progress)}%`)
       progressCallback?.(progress / 100)
     },
@@ -554,17 +593,27 @@ export async function executeUnshield(
     walletId,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeERC20AmountRecipient
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     gasDetails,
   )
 
   console.log('[sdk] Transaction populated, submitting...')
-  console.log('[sdk] Transaction object:', populateResult.transaction)
-  console.log('[sdk] Transaction TO address:', populateResult.transaction.to)
 
   // Step 3: Submit transaction
+  if (useRelayer) {
+    stageCallback?.('submitting')
+    const txHash = await submitAndWaitForConfirmation({
+      chainId: 31337,
+      to: populateResult.transaction.to!,
+      data: populateResult.transaction.data!,
+    })
+    console.log('[sdk] Transaction confirmed via relayer:', txHash)
+    return { txHash }
+  }
+
+  // Fallback: submit via MetaMask
   if (!window.ethereum) {
     throw new Error('No wallet found')
   }
@@ -578,36 +627,16 @@ export async function executeUnshield(
     value: populateResult.transaction.value ?? 0n,
     gasLimit: gasDetails.gasEstimate,
   }
-  console.log('[sdk] Sending tx request:', txRequest)
-  console.log('[sdk] TX data length:', txRequest.data?.length || 0)
 
-  // Notify signing stage
   stageCallback?.('signing')
-
   const tx = await signer.sendTransaction(txRequest)
   console.log('[sdk] Transaction submitted:', tx.hash)
 
-  // Notify confirming stage
   stageCallback?.('confirming')
-
-  // Wait for receipt to confirm
   const receipt = await tx.wait(1)
-  console.log('[sdk] Receipt:', {
-    status: receipt?.status,
-    gasUsed: receipt?.gasUsed?.toString(),
-    logs: receipt?.logs?.length || 0,
-    blockNumber: receipt?.blockNumber,
-  })
 
   if (!receipt || receipt.status === 0) {
     throw new Error('Unshield transaction failed')
-  }
-
-  // Log if no events were emitted (suspicious - unshield should emit events)
-  if (receipt.logs.length === 0) {
-    console.warn('[sdk] WARNING: Transaction succeeded but emitted no events!')
-  } else {
-    console.log('[sdk] Transaction emitted', receipt.logs.length, 'events')
   }
 
   console.log('[sdk] Transaction confirmed in block:', receipt.blockNumber)
@@ -673,6 +702,19 @@ export async function executeUnshieldToClientChain(
 
   const networkName = 'Hardhat' as Parameters<typeof generateUnshieldProof>[1]
 
+  // Build relayer fee recipient if relayer is enabled
+  const useRelayer = isRelayerEnabled()
+  let broadcasterFee: RailgunERC20AmountRecipient | undefined
+  if (useRelayer) {
+    const fee = await getRelayerFee('unshield')
+    broadcasterFee = {
+      tokenAddress,
+      amount: fee,
+      recipientAddress: getRelayerAddress(),
+    }
+    console.log(`[sdk] Including relayer fee: ${fee.toString()} raw USDC`)
+  }
+
   // Step 1: Generate proof
   console.log('[sdk] Generating unshield proof (this may take 20-30 seconds)...')
   await generateUnshieldProof(
@@ -682,8 +724,8 @@ export async function executeUnshieldToClientChain(
     encryptionKey,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeERC20AmountRecipient
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     (progress) => {
       console.log(`[sdk] Proof progress: ${Math.round(progress)}%`)
@@ -707,8 +749,8 @@ export async function executeUnshieldToClientChain(
     walletId,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeERC20AmountRecipient
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     gasDetails,
   )
@@ -765,7 +807,28 @@ export async function executeUnshieldToClientChain(
   const mutableTransaction = convertToBigInt(transaction)
   console.log('[sdk] Extracted Transaction struct from proof')
 
-  // Step 4: Get signer from browser wallet
+  // Step 4: Encode atomicCrossChainUnshield calldata
+  const destinationCaller = ethers.zeroPadValue(DEFAULT_RELAYER_ADDRESS, 32)
+
+  const privacyPoolInterface = new ethers.Interface(PRIVACY_POOL_ABI)
+  const encodedCalldata = privacyPoolInterface.encodeFunctionData(
+    'atomicCrossChainUnshield',
+    [mutableTransaction, destinationDomain, finalRecipient, destinationCaller],
+  )
+
+  // Step 5: Submit transaction
+  if (useRelayer) {
+    console.log('[sdk] Submitting cross-chain unshield via relayer...')
+    const txHash = await submitAndWaitForConfirmation({
+      chainId: 31337,
+      to: privacyPoolAddress,
+      data: encodedCalldata,
+    })
+    console.log('[sdk] Cross-chain unshield confirmed via relayer:', txHash)
+    return { txHash }
+  }
+
+  // Fallback: submit via MetaMask
   if (!window.ethereum) {
     throw new Error('No wallet found')
   }
@@ -773,17 +836,11 @@ export async function executeUnshieldToClientChain(
   const provider = new ethers.BrowserProvider(window.ethereum)
   const signer = await provider.getSigner()
 
-  // Step 5: Call atomicCrossChainUnshield on PrivacyPool
-  console.log('[sdk] Calling PrivacyPool.atomicCrossChainUnshield...')
-
   const privacyPool = new ethers.Contract(
     privacyPoolAddress,
     PRIVACY_POOL_ABI,
     signer,
   )
-
-  // Convert relayer address to bytes32 for destinationCaller
-  const destinationCaller = ethers.zeroPadValue(DEFAULT_RELAYER_ADDRESS, 32)
 
   const tx = await privacyPool.atomicCrossChainUnshield(
     mutableTransaction,
@@ -794,10 +851,7 @@ export async function executeUnshieldToClientChain(
   )
 
   console.log('[sdk] Transaction submitted:', tx.hash)
-  console.log('[sdk] Atomic cross-chain unshield initiated!')
-  console.log('[sdk] User will receive tokens on client chain after CCTP relay')
 
-  // Wait for receipt to confirm
   const receipt = await tx.wait(1)
   if (!receipt || receipt.status === 0) {
     throw new Error('Cross-chain unshield transaction failed')

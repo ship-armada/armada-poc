@@ -85,8 +85,12 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         // Verify caller is the router (self, since we're called via delegatecall)
         // This is implicitly enforced by the router only calling this on valid CCTP messages
 
-        // Verify amount matches payload
-        require(amount == data.value, "ShieldModule: Amount mismatch");
+        // Verify amount doesn't exceed declared value
+        // amount = grossAmount - feeExecuted (CCTP deducts fee at protocol level)
+        // data.value = gross amount the user burned on the client chain
+        require(amount <= uint256(data.value), "ShieldModule: Amount exceeds declared value");
+
+        uint256 commitmentAmount = amount;
 
         // Construct shield request from CCTP data
         // Token is always USDC on Hub
@@ -99,7 +103,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                     tokenAddress: usdc,
                     tokenSubID: 0
                 }),
-                value: data.value
+                value: uint120(commitmentAmount)
             }),
             ciphertext: ShieldCiphertext({
                 encryptedBundle: data.encryptedBundle,

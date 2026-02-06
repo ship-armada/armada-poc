@@ -26,8 +26,8 @@ npm run chains
 # 3. In a new terminal: compile & deploy contracts
 npm run setup
 
-# 4. Start the CCTP message relayer
-npm run relayer
+# 4. Start the Armada Relayer (HTTP fee API + CCTP relay)
+npm run armada-relayer
 
 # 5. In a new terminal: start the demo app
 npm run demo
@@ -142,7 +142,8 @@ This ensures the dashboard shows accurate yield even though yield accrues passiv
 |--------|-------------|
 | `npm run chains` | Start 3 local Anvil chains (hub + 2 clients) |
 | `npm run setup` | Compile & deploy all contracts |
-| `npm run relayer` | Start the CCTP message relayer |
+| `npm run armada-relayer` | Start the unified relayer (HTTP fee API + CCTP relay) |
+| `npm run relayer` | Start legacy CCTP-only relay (no HTTP API) |
 | `npm run demo` | Start the frontend demo app |
 | `npm run test` | Run integration tests |
 | `npm run clean` | Remove deployments and build artifacts |
@@ -197,8 +198,12 @@ poc/
 - Run `npm run setup` first to deploy contracts
 
 **Relayer errors or transactions not completing**
-- Ensure relayer is running: `npm run relayer`
+- Ensure the Armada Relayer is running: `npm run armada-relayer`
 - Check that all 3 Anvil chains are running
+
+**Frontend shows `ERR_CONNECTION_REFUSED` on `/fees`**
+- The frontend requires the Armada Relayer's HTTP API (`localhost:3001`)
+- Make sure you started `npm run armada-relayer`, **not** `npm run relayer` — the legacy `relayer` script has no HTTP API
 
 **Frontend shows "Error Loading Stats"**
 - Chains may not be running - start with `npm run chains`

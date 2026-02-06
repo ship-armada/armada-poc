@@ -33,6 +33,12 @@ import { loadHubNetwork, isHubNetworkLoaded, getHubChainConfig } from '@/lib/rai
 import { initializeProver, isProverReady } from '@/lib/railgun/prover'
 import { loadDeployments, getYieldDeployment, getHubChain } from '@/config/deployments'
 import { parseUSDC } from '@/lib/sdk'
+import {
+  isRelayerEnabled,
+  getRelayerAddress,
+  getRelayerFee,
+  submitAndWaitForConfirmation,
+} from '@/services/relayer'
 
 // ============ Types ============
 
@@ -240,6 +246,19 @@ export async function executeShieldedLend(
     },
   ]
 
+  // Build relayer fee if enabled
+  const useRelayer = isRelayerEnabled()
+  let broadcasterFee: { tokenAddress: string; amount: bigint; recipientAddress: string } | undefined
+  if (useRelayer) {
+    const fee = await getRelayerFee('crossContract')
+    broadcasterFee = {
+      tokenAddress: usdcAddress,
+      amount: fee,
+      recipientAddress: getRelayerAddress(),
+    }
+    console.log(`[shielded-yield] Including relayer fee: ${fee.toString()} raw USDC`)
+  }
+
   // Step 5: Generate cross-contract calls proof
   onProgress?.({
     stage: 'generating-proof',
@@ -259,8 +278,8 @@ export async function executeShieldedLend(
     relayAdaptShieldERC20Recipients,
     [], // No NFT recipients
     crossContractCalls,
-    undefined, // No broadcaster fee
-    true, // sendWithPublicWallet
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     undefined, // minGasLimit
     (progress) => {
@@ -292,8 +311,8 @@ export async function executeShieldedLend(
     relayAdaptShieldERC20Recipients,
     [],
     crossContractCalls,
-    undefined,
-    true,
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined,
     gasDetails,
   )
@@ -301,12 +320,28 @@ export async function executeShieldedLend(
   // Debug: Log transaction details
   console.log('[shielded-yield] Transaction target (to):', populateResult.transaction.to)
   console.log('[shielded-yield] Expected RelayAdapt:', relayAdaptAddress)
-  console.log('[shielded-yield] Cross-contract calls:', crossContractCalls.length)
-  crossContractCalls.forEach((call, i) => {
-    console.log(`[shielded-yield]   Call ${i}: to=${call.to}, data=${(call.data as string).slice(0, 10)}...`)
-  })
 
-  // Step 7: Get signer and submit
+  // Step 7: Submit transaction
+  if (useRelayer) {
+    onProgress?.({ stage: 'confirming', message: 'Submitting to relayer...' })
+    const txHash = await submitAndWaitForConfirmation({
+      chainId: 31337,
+      to: populateResult.transaction.to!,
+      data: populateResult.transaction.data!,
+    })
+
+    onProgress?.({ stage: 'success', message: 'Shielded lend complete!' })
+    console.log('[shielded-yield] Shielded lend confirmed via relayer:', txHash)
+
+    return {
+      txHash,
+      inputAmount: amount,
+      outputAmount: amount,
+      type: 'lend',
+    }
+  }
+
+  // Fallback: submit via MetaMask
   if (!window.ethereum) {
     throw new Error('No wallet found')
   }
@@ -343,7 +378,7 @@ export async function executeShieldedLend(
   return {
     txHash: receipt.hash,
     inputAmount: amount,
-    outputAmount: amount, // Approximate - actual shares may differ
+    outputAmount: amount,
     type: 'lend',
   }
 }
@@ -425,6 +460,20 @@ export async function executeShieldedRedeem(
     },
   ]
 
+  // Build relayer fee if enabled
+  const useRelayer = isRelayerEnabled()
+  let broadcasterFee: { tokenAddress: string; amount: bigint; recipientAddress: string } | undefined
+  if (useRelayer) {
+    const fee = await getRelayerFee('crossContract')
+    // For redeem, fee is paid in USDC (the output token)
+    broadcasterFee = {
+      tokenAddress: usdcAddress,
+      amount: fee,
+      recipientAddress: getRelayerAddress(),
+    }
+    console.log(`[shielded-yield] Including relayer fee: ${fee.toString()} raw USDC`)
+  }
+
   // Step 5: Generate cross-contract calls proof
   onProgress?.({
     stage: 'generating-proof',
@@ -444,8 +493,8 @@ export async function executeShieldedRedeem(
     relayAdaptShieldERC20Recipients,
     [],
     crossContractCalls,
-    undefined,
-    true,
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined,
     undefined,
     (progress) => {
@@ -477,8 +526,8 @@ export async function executeShieldedRedeem(
     relayAdaptShieldERC20Recipients,
     [],
     crossContractCalls,
-    undefined,
-    true,
+    broadcasterFee,
+    !useRelayer, // sendWithPublicWallet
     undefined,
     gasDetails,
   )
@@ -486,12 +535,28 @@ export async function executeShieldedRedeem(
   // Debug: Log transaction details
   console.log('[shielded-yield] Redeem transaction target (to):', populateResult.transaction.to)
   console.log('[shielded-yield] Expected RelayAdapt:', relayAdaptAddress)
-  console.log('[shielded-yield] Cross-contract calls:', crossContractCalls.length)
-  crossContractCalls.forEach((call, i) => {
-    console.log(`[shielded-yield]   Call ${i}: to=${call.to}, data=${(call.data as string).slice(0, 10)}...`)
-  })
 
-  // Step 7: Get signer and submit
+  // Step 7: Submit transaction
+  if (useRelayer) {
+    onProgress?.({ stage: 'confirming', message: 'Submitting to relayer...' })
+    const txHash = await submitAndWaitForConfirmation({
+      chainId: 31337,
+      to: populateResult.transaction.to!,
+      data: populateResult.transaction.data!,
+    })
+
+    onProgress?.({ stage: 'success', message: 'Shielded redeem complete!' })
+    console.log('[shielded-yield] Shielded redeem confirmed via relayer:', txHash)
+
+    return {
+      txHash,
+      inputAmount: shares,
+      outputAmount: shares,
+      type: 'redeem',
+    }
+  }
+
+  // Fallback: submit via MetaMask
   if (!window.ethereum) {
     throw new Error('No wallet found')
   }
@@ -528,7 +593,7 @@ export async function executeShieldedRedeem(
   return {
     txHash: receipt.hash,
     inputAmount: shares,
-    outputAmount: shares, // Approximate - actual USDC may differ
+    outputAmount: shares,
     type: 'redeem',
   }
 }

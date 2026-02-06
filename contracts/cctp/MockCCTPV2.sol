@@ -179,7 +179,8 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
         uint32 sourceDomain,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
-        bytes calldata messageBody
+        bytes calldata messageBody,
+        address relayerAddress
     ) external returns (bool) {
         require(msg.sender == messageTransmitter, "Only MessageTransmitter");
 
@@ -190,7 +191,7 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
             bytes memory hookData
         ) = BurnMessageV2.decodeForHook(messageBody);
 
-        // Calculate actual mint amount (in mock, feeExecuted is always 0)
+        // Calculate actual mint amount (feeExecuted = maxFee set at burn time)
         uint256 actualMintAmount = amount - feeExecuted;
 
         // Get mint recipient from message
@@ -199,6 +200,11 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
 
         // Mint tokens to recipient
         IMockMintable(usdc).mint(recipient, actualMintAmount);
+
+        // Mint fee to relayer (simulates CCTP protocol-level fee payment)
+        if (feeExecuted > 0 && relayerAddress != address(0)) {
+            IMockMintable(usdc).mint(relayerAddress, feeExecuted);
+        }
 
         // If recipient is a contract and there's hook data, call the handler
         if (_isContract(recipient) && hookData.length > 0) {
@@ -375,7 +381,7 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
             params.amount,
             params.messageSender,
             params.maxFee,
-            0,  // feeExecuted - always 0 in mock
+            params.maxFee,  // feeExecuted = maxFee (mock simulates relayer claiming full fee)
             0,  // expirationBlock - always 0 for standard finality
             hookData
         );
@@ -461,7 +467,8 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
             sourceDomain,
             sender,
             finalityThresholdExecuted,
-            MessageV2.getMessageBody(message)
+            MessageV2.getMessageBody(message),
+            msg.sender  // relayer address (for CCTP fee payment)
         );
     }
 }

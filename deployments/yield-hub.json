@@ -1,0 +1,16 @@
+{
+  "chainId": 31337,
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "contracts": {
+    "armadaTreasury": "0x59b670e9fA9D0A427751Af201D676719a970857b",
+    "armadaYieldVault": "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1",
+    "armadaYieldAdapter": "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
+  },
+  "config": {
+    "usdc": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "mockAaveSpoke": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+    "reserveId": 0,
+    "yieldFeeBps": 1000
+  },
+  "timestamp": "2026-02-06T17:36:47.727Z"
+}

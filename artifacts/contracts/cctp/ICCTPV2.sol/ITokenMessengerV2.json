@@ -1,0 +1,114 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "ITokenMessengerV2",
+  "sourceName": "contracts/cctp/ICCTPV2.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint32",
+          "name": "destinationDomain",
+          "type": "uint32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "mintRecipient",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "burnToken",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "destinationCaller",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxFee",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint32",
+          "name": "minFinalityThreshold",
+          "type": "uint32"
+        }
+      ],
+      "name": "depositForBurn",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "nonce",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint32",
+          "name": "destinationDomain",
+          "type": "uint32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "mintRecipient",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "burnToken",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "destinationCaller",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxFee",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint32",
+          "name": "minFinalityThreshold",
+          "type": "uint32"
+        },
+        {
+          "internalType": "bytes",
+          "name": "hookData",
+          "type": "bytes"
+        }
+      ],
+      "name": "depositForBurnWithHook",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "nonce",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

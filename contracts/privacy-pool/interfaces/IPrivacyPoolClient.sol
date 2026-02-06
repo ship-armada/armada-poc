@@ -77,6 +77,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      * @dev Burns USDC via CCTP, Hub will create commitment in merkle tree
      *
      * @param amount Amount of USDC to shield
+     * @param maxFee Maximum CCTP relayer fee (deducted at protocol level, 0 = no fee)
      * @param npk Note public key
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption
@@ -86,6 +87,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      */
     function crossChainShield(
         uint256 amount,
+        uint256 maxFee,
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,

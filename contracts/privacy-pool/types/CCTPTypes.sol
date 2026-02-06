@@ -34,7 +34,7 @@ struct CCTPPayload {
  *      Token information is not included - Hub uses its local USDC address
  *
  * @param npk Note public key - Poseidon hash representing note ownership
- * @param value Amount being shielded (must match CCTP transfer amount)
+ * @param value Amount being shielded (gross amount before CCTP fee deduction)
  * @param encryptedBundle Shield ciphertext encrypted bundle [3 x bytes32]
  * @param shieldKey Public key for shared secret derivation
  */

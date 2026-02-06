@@ -15,6 +15,7 @@ import {
   isHubChain,
   type ChainConfig,
 } from '@/config/deployments'
+import { isRelayerEnabled, getRelayerFee } from '@/services/relayer'
 
 // ============ Contract ABIs ============
 
@@ -33,7 +34,7 @@ const PRIVACY_POOL_ABI = [
 
 // PrivacyPoolClient ABI - used for cross-chain shield from client chains
 const PRIVACY_POOL_CLIENT_ABI = [
-  'function crossChainShield(uint256 amount, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)',
+  'function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)',
   'event CrossChainShieldInitiated(address indexed sender, uint256 amount, bytes32 indexed npk, uint64 nonce)',
 ]
 
@@ -289,8 +290,15 @@ export async function executeCrossChainShield(
   const relayer = relayerAddress || DEFAULT_RELAYER_ADDRESS
   const destinationCaller = ethers.zeroPadValue(relayer, 32)
 
+  // Fetch CCTP maxFee for cross-chain shield relay
+  let maxFee = 0n
+  if (isRelayerEnabled()) {
+    maxFee = await getRelayerFee('crossChainShield')
+  }
+
   const tx = await client.crossChainShield(
     params.amount,
+    maxFee,
     params.npk,
     params.encryptedBundle,
     params.shieldKey,

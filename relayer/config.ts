@@ -80,6 +80,22 @@ export const relayerSettings = {
   pollIntervalMs: 2000, // How often to check for new burns
 };
 
+// Armada relayer settings (privacy relay + unified service)
+export const armadaRelayerSettings = {
+  /** HTTP API port */
+  port: 3001,
+  /** Fee markup over gas cost (1000 = 10%) */
+  profitMarginBps: 1000,
+  /** Hardcoded ETH/USDC price for local dev */
+  ethUsdcPrice: 2000,
+  /** Fee quote validity in seconds */
+  feeTtlSeconds: 300,
+  /** Gas price tolerance (2000 = 20%) */
+  feeVarianceBufferBps: 2000,
+  /** CCTP poll interval */
+  cctpPollIntervalMs: relayerSettings.pollIntervalMs,
+};
+
 // Legacy config export for backward compatibility
 export const config = {
   clientChain: clientChains[0],  // Client A for backward compat

@@ -17,22 +17,25 @@ A proof-of-concept demonstrating **cross-chain privacy with shielded yield** by 
 ### Setup & Run
 
 ```bash
-# 1. Install dependencies
-npm install
+# 1. Install dependencies(Atm might need some legacy dep support to avoid npm errors)
+npm install --legacy-peer-deps
 
-# 2. Start local chains (3 Anvil instances)
+# 2. Set permissions
+chmod +x ./scripts/setup_chains.sh
+
+# 3. Start local chains (3 Anvil instances)
 npm run chains
 
-# 3. In a new terminal: compile & deploy contracts
+# 4. In a new terminal: compile & deploy contracts
 npm run setup
 
-# 4. Start the Armada Relayer (HTTP fee API + CCTP relay)
+# 5. Start the Armada Relayer (HTTP fee API + CCTP relay)
 npm run armada-relayer
 
-# 5. In a new terminal: start the demo app
+# 6. In a new terminal: start the demo app
 npm run demo
 
-# 6. Open http://localhost:5173 in your browser
+# 7. Open http://localhost:5173 in your browser
 ```
 
 ### Add Local Chains to MetaMask

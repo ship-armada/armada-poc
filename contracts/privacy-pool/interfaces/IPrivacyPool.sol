@@ -106,6 +106,18 @@ interface IPrivacyPool is IMessageHandlerV2 {
     ) external;
 
     /**
+     * @notice Set the shield fee in basis points
+     * @param feeBps Fee in basis points (50 = 0.50%)
+     */
+    function setShieldFee(uint120 feeBps) external;
+
+    /**
+     * @notice Set the treasury address for fee collection
+     * @param _treasury Address to receive protocol fees
+     */
+    function setTreasury(address payable _treasury) external;
+
+    /**
      * @notice Enable or disable testing mode
      * @dev POC ONLY - bypasses SNARK verification
      * @param enabled Whether to enable testing mode

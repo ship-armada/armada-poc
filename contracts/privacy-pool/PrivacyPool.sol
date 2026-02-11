@@ -247,6 +247,25 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
+     * @notice Set the shield fee in basis points
+     * @param _feeBps Fee in basis points (50 = 0.50%)
+     */
+    function setShieldFee(uint120 _feeBps) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        require(_feeBps <= 10000, "PrivacyPool: Fee too high");
+        shieldFee = _feeBps;
+    }
+
+    /**
+     * @notice Set the treasury address for fee collection
+     * @param _treasury Address to receive protocol fees
+     */
+    function setTreasury(address payable _treasury) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        treasury = _treasury;
+    }
+
+    /**
      * @notice Enable or disable testing mode
      * @dev POC ONLY - bypasses SNARK verification
      * @param _enabled Whether to enable testing mode

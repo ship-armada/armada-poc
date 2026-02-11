@@ -14,6 +14,13 @@ import {
 
 // ============ Types ============
 
+interface ShieldFeeStats {
+  treasuryBalance: bigint
+  feeBps: bigint
+  treasuryAddress: string
+  poolBalance: bigint
+}
+
 interface YieldStats {
   // Vault stats
   totalAssets: bigint
@@ -55,6 +62,11 @@ const AAVE_SPOKE_ABI = [
   'function getUserSuppliedAssets(uint256 reserveId, address user) view returns (uint256)',
   // Matches the Reserve struct: underlying, totalShares, totalDeposited, liquidityIndex, lastUpdateTimestamp, annualYieldBps, mintableYield
   'function reserves(uint256 reserveId) view returns (address underlying, uint256 totalShares, uint256 totalDeposited, uint256 liquidityIndex, uint256 lastUpdateTimestamp, uint256 annualYieldBps, bool mintableYield)',
+]
+
+const PRIVACY_POOL_ABI = [
+  'function treasury() view returns (address)',
+  'function shieldFee() view returns (uint120)',
 ]
 
 const ERC20_ABI = [
@@ -153,6 +165,7 @@ export function Debug() {
   const [addresses, setAddresses] = useState<SystemAddresses | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [shieldFeeStats, setShieldFeeStats] = useState<ShieldFeeStats | null>(null)
 
   // Faucet state
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null)
@@ -253,6 +266,39 @@ export function Debug() {
     } catch (err) {
       console.error('[Debug] Failed to fetch stats:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch stats')
+    }
+
+    // Fetch shield fee stats separately (doesn't depend on yield deployment)
+    try {
+      const hubChain = getHubChain()
+      const privacyPoolAddress = hubChain.contracts?.privacyPool
+      const usdcAddress = hubChain.contracts?.usdc
+
+      if (privacyPoolAddress && usdcAddress) {
+        const provider = new ethers.JsonRpcProvider(hubChain.rpcUrl)
+        const pool = new ethers.Contract(privacyPoolAddress, PRIVACY_POOL_ABI, provider)
+        const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider)
+
+        const [treasuryAddr, feeBps, poolBal] = await Promise.all([
+          pool.treasury(),
+          pool.shieldFee(),
+          usdc.balanceOf(privacyPoolAddress),
+        ])
+
+        let treasuryBal = 0n
+        if (treasuryAddr !== ethers.ZeroAddress) {
+          treasuryBal = await usdc.balanceOf(treasuryAddr)
+        }
+
+        setShieldFeeStats({
+          treasuryBalance: treasuryBal,
+          feeBps: BigInt(feeBps),
+          treasuryAddress: treasuryAddr,
+          poolBalance: poolBal,
+        })
+      }
+    } catch (err) {
+      console.error('[Debug] Failed to fetch shield fee stats:', err)
     }
   }, [])
 
@@ -676,6 +722,39 @@ export function Debug() {
                     ${stats ? formatUSDC(stats.treasuryTotalCollected - stats.treasuryBalance) : '--'}
                   </p>
                   <p className="text-xs text-muted-foreground">Collected - Balance</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Shield Fee Stats */}
+          <section>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-success" />
+              Shield Fee (Privacy Pool)
+            </h2>
+            <div className="card">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div>
+                  <p className="text-sm text-muted-foreground">Fee Rate</p>
+                  <p className="text-2xl font-bold">
+                    {shieldFeeStats ? `${Number(shieldFeeStats.feeBps) / 100}%` : '--'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{shieldFeeStats ? `${shieldFeeStats.feeBps.toString()} bps` : 'basis points'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Treasury Balance</p>
+                  <p className="text-2xl font-bold text-primary">
+                    ${shieldFeeStats ? formatUSDC(shieldFeeStats.treasuryBalance) : '--'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{shieldFeeStats ? truncateAddress(shieldFeeStats.treasuryAddress) : 'Shield fee recipient'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Pool Balance</p>
+                  <p className="text-2xl font-bold">
+                    ${shieldFeeStats ? formatUSDC(shieldFeeStats.poolBalance) : '--'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">USDC held in PrivacyPool</p>
                 </div>
               </div>
             </div>

@@ -204,6 +204,21 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   // To enable for debugging, manually call: privacyPool.setTestingMode(true)
   console.log("\n9. SNARK verification enabled (testing mode disabled)");
 
+  // 9b. Configure shield fee (50 bps = 0.50%) and treasury
+  console.log("\n9b. Configuring shield fee...");
+  const yieldDeployment = loadDeployment("yield-hub.json");
+  let treasuryAddress = deployer.address;
+  if (yieldDeployment?.contracts?.armadaTreasury) {
+    treasuryAddress = yieldDeployment.contracts.armadaTreasury;
+    console.log("   Using ArmadaTreasury from yield deployment");
+  } else {
+    console.log("   Warning: yield deployment not found, using deployer as treasury");
+  }
+  await (await privacyPool.setTreasury(treasuryAddress)).wait();
+  await (await privacyPool.setShieldFee(50)).wait();
+  console.log("   Treasury: " + treasuryAddress);
+  console.log("   Shield fee: 50 bps (0.50%)");
+
   // 10. Deploy RelayAdapt for cross-contract calls support
   console.log("\n10. Deploying PrivacyPoolRelayAdapt...");
   const RelayAdapt = await ethers.getContractFactory("PrivacyPoolRelayAdapt");

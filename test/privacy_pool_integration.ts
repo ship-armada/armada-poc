@@ -66,6 +66,7 @@ describe("Privacy Pool Integration", function () {
   let relayerAddress: string;
   let privacyPoolAddress: string;
   let clientAddress: string;
+  let treasuryAddress: string;
 
   before(async function () {
     [deployer, alice, bob, relayer] = await ethers.getSigners();
@@ -82,6 +83,11 @@ describe("Privacy Pool Integration", function () {
 
     // Link deployments
     await linkDeployments();
+
+    // Configure shield fee: 50 bps (0.50%) to deployer as treasury
+    treasuryAddress = deployerAddress;
+    await privacyPool.setTreasury(treasuryAddress);
+    await privacyPool.setShieldFee(50);
   });
 
   async function deployHubChain() {
@@ -296,12 +302,21 @@ describe("Privacy Pool Integration", function () {
       };
 
       // Execute shield
+      const treasuryBalanceBefore = await hubUsdc.balanceOf(treasuryAddress);
       const tx = await privacyPool.connect(alice).shield([shieldRequest]);
       await tx.wait();
 
-      // Verify USDC was transferred
+      // 50 bps fee: base = 100 - (100 * 50 / 10000) = 99.50 USDC, fee = 0.50 USDC
+      const EXPECTED_FEE = SHIELD_AMOUNT * 50n / 10000n; // 500000 (0.50 USDC)
+      const EXPECTED_BASE = SHIELD_AMOUNT - EXPECTED_FEE;  // 99500000 (99.50 USDC)
+
+      // Verify pool received base amount
       const poolBalance = await hubUsdc.balanceOf(privacyPoolAddress);
-      expect(poolBalance).to.equal(SHIELD_AMOUNT);
+      expect(poolBalance).to.equal(EXPECTED_BASE);
+
+      // Verify treasury received fee
+      const treasuryBalanceAfter = await hubUsdc.balanceOf(treasuryAddress);
+      expect(treasuryBalanceAfter - treasuryBalanceBefore).to.equal(EXPECTED_FEE);
 
       // Verify merkle root changed (tree number should still be 0)
       const treeNumber = await privacyPool.treeNumber();
@@ -428,18 +443,28 @@ describe("Privacy Pool Integration", function () {
       // Record balances before relay
       const poolBalanceBefore = await hubUsdc.balanceOf(privacyPoolAddress);
       const relayerBalanceBefore = await hubUsdc.balanceOf(relayerAddress);
+      const treasuryBalanceBefore = await hubUsdc.balanceOf(treasuryAddress);
       const merkleRootBefore = await privacyPool.merkleRoot();
 
       // Relay the message to Hub (relayer calls receiveMessage)
       await hubMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
 
-      // Verify: PrivacyPool received SHIELD_AMOUNT - MAX_FEE
-      const poolBalanceAfter = await hubUsdc.balanceOf(privacyPoolAddress);
-      expect(poolBalanceAfter - poolBalanceBefore).to.equal(SHIELD_AMOUNT - MAX_FEE);
+      // CCTP mints (SHIELD_AMOUNT - MAX_FEE) to pool, then shield fee is deducted
+      const amountAfterCCTP = SHIELD_AMOUNT - MAX_FEE; // 99 USDC
+      const shieldFeeAmount = amountAfterCCTP * 50n / 10000n; // 0.50% of 99 USDC
+      const poolNetReceived = amountAfterCCTP - shieldFeeAmount;
 
-      // Verify: Relayer received MAX_FEE
+      // Verify: PrivacyPool kept base amount (after shield fee deduction)
+      const poolBalanceAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+      expect(poolBalanceAfter - poolBalanceBefore).to.equal(poolNetReceived);
+
+      // Verify: Relayer received MAX_FEE (CCTP fee on hub chain)
       const relayerBalanceAfter = await hubUsdc.balanceOf(relayerAddress);
       expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(MAX_FEE);
+
+      // Verify: Treasury received shield fee
+      const treasuryBalanceAfter = await hubUsdc.balanceOf(treasuryAddress);
+      expect(treasuryBalanceAfter - treasuryBalanceBefore).to.equal(shieldFeeAmount);
 
       // Verify: Merkle root changed (commitment was inserted)
       const merkleRootAfter = await privacyPool.merkleRoot();

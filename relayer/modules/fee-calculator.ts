@@ -26,6 +26,7 @@ const GAS_ESTIMATES: Record<string, bigint> = {
   unshield: 500_000n,
   crossContract: 2_000_000n,
   crossChainShield: 500_000n,
+  crossChainUnshield: 500_000n,
 };
 
 /** USDC has 6 decimals */
@@ -87,12 +88,13 @@ export class FeeCalculator {
    * Generate a new fee schedule
    */
   async generateFeeSchedule(): Promise<FeeSchedule> {
-    const [transferFee, unshieldFee, crossContractFee, crossChainShieldFee] =
+    const [transferFee, unshieldFee, crossContractFee, crossChainShieldFee, crossChainUnshieldFee] =
       await Promise.all([
         this.calculateFeeForGas(GAS_ESTIMATES.transfer),
         this.calculateFeeForGas(GAS_ESTIMATES.unshield),
         this.calculateFeeForGas(GAS_ESTIMATES.crossContract),
         this.calculateFeeForGas(GAS_ESTIMATES.crossChainShield),
+        this.calculateFeeForGas(GAS_ESTIMATES.crossChainUnshield),
       ]);
 
     this.scheduleCounter++;
@@ -107,6 +109,7 @@ export class FeeCalculator {
         unshield: unshieldFee.toString(),
         crossContract: crossContractFee.toString(),
         crossChainShield: crossChainShieldFee.toString(),
+        crossChainUnshield: crossChainUnshieldFee.toString(),
       },
     };
 
@@ -142,7 +145,7 @@ export class FeeCalculator {
    * Get the fee for a specific operation type from the current schedule
    */
   getFeeForOperation(
-    operationType: "transfer" | "unshield" | "crossContract" | "crossChainShield"
+    operationType: "transfer" | "unshield" | "crossContract" | "crossChainShield" | "crossChainUnshield"
   ): string | null {
     if (!this.currentSchedule) return null;
     return this.currentSchedule.fees[operationType];

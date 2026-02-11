@@ -108,7 +108,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller
+        bytes32 destinationCaller,
+        uint256 maxFee
     ) external override returns (uint64 nonce) {
         // Validate inputs
         _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient);
@@ -117,7 +118,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         _processAtomicUnshieldTransaction(_transaction);
 
         // Execute the CCTP burn and return nonce
-        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, destinationCaller);
+        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee);
     }
 
     /**
@@ -175,11 +176,15 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller
+        bytes32 destinationCaller,
+        uint256 maxFee
     ) internal returns (uint64 nonce) {
         // Calculate unshield amount (after fees)
         uint120 unshieldAmount = _transaction.unshieldPreimage.value;
         (uint120 base, uint120 fee) = _getFee(uint136(unshieldAmount), true, unshieldFee);
+
+        // Validate maxFee does not exceed base amount after protocol fee
+        require(maxFee <= base, "TransactModule: maxFee exceeds base");
 
         // Transfer fee to treasury
         if (fee > 0 && treasury != address(0)) {
@@ -199,8 +204,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             destinationDomain,
             remotePools[destinationDomain],
             usdc,
-            destinationCaller,  // Relayer address or 0 for any
-            0,                  // No max fee for POC
+            destinationCaller,
+            maxFee,
             CCTPFinality.STANDARD,
             hookData
         );

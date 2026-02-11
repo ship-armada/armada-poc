@@ -17,6 +17,8 @@ export interface FeeSchedule {
     crossContract: string;
     /** Fee in USDC raw units for cross-chain shield hub-side execution */
     crossChainShield: string;
+    /** Fee in USDC raw units for cross-chain unshield client-side relay */
+    crossChainUnshield: string;
   };
 }
 

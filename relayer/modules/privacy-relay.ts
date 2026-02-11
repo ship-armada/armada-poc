@@ -18,8 +18,8 @@ import type { FeeCalculator } from "./fee-calculator";
 const ALLOWED_SELECTORS: Record<string, string> = {
   // PrivacyPool.transact(Transaction[]) — transfers and unshields
   "0xd8ae136a": "transact",
-  // PrivacyPool.atomicCrossChainUnshield(...) — cross-chain unshields
-  "0x88382c8e": "atomicCrossChainUnshield",
+  // PrivacyPool.atomicCrossChainUnshield(..., uint256 maxFee) — cross-chain unshields
+  "0xe484d408": "atomicCrossChainUnshield",
   // PrivacyPoolRelayAdapt.relay(Transaction[], ActionData) — cross-contract calls
   "0x28223a77": "relay",
 };

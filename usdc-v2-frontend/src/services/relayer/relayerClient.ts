@@ -18,6 +18,7 @@ export interface FeeSchedule {
     unshield: string
     crossContract: string
     crossChainShield: string
+    crossChainUnshield: string
   }
 }
 
@@ -84,7 +85,7 @@ export async function getFees(): Promise<FeeSchedule> {
  * @returns Fee in USDC raw units (6 decimals)
  */
 export async function getRelayerFee(
-  operationType: 'transfer' | 'unshield' | 'crossContract' | 'crossChainShield',
+  operationType: 'transfer' | 'unshield' | 'crossContract' | 'crossChainShield' | 'crossChainUnshield',
 ): Promise<bigint> {
   const fees = await getFees()
   return BigInt(fees.fees[operationType])

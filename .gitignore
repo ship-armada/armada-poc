@@ -1,4 +1,21 @@
+# Dependencies
 node_modules/
+
+# Hardhat
+artifacts/
+cache/
+typechain-types/
+
+# Build output
 dist/
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# Logs
 *.log
+
+# OS
+.DS_Store

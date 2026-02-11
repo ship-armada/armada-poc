@@ -111,19 +111,21 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param finalRecipient Address to receive USDC on client chain
      * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
      *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
+     * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
      * @return nonce CCTP message nonce
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller
+        bytes32 destinationCaller,
+        uint256 maxFee
     ) external override returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
                 ITransactModule.atomicCrossChainUnshield,
-                (_transaction, destinationDomain, finalRecipient, destinationCaller)
+                (_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee)
             )
         );
         return abi.decode(result, (uint64));

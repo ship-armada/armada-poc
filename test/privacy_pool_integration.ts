@@ -17,6 +17,8 @@ import { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
+// @ts-ignore - circomlibjs doesn't have types
+import { buildPoseidon } from "circomlibjs";
 
 // Load Poseidon bytecode for deployment
 const poseidonBytecode = JSON.parse(
@@ -442,6 +444,174 @@ describe("Privacy Pool Integration", function () {
       // Verify: Merkle root changed (commitment was inserted)
       const merkleRootAfter = await privacyPool.merkleRoot();
       expect(merkleRootAfter).to.not.equal(merkleRootBefore);
+    });
+  });
+
+  describe("Cross-Chain Unshield with maxFee", function () {
+    const SHIELD_AMOUNT = ethers.parseUnits("100", 6); // 100 USDC
+    const UNSHIELD_AMOUNT = ethers.parseUnits("50", 6); // 50 USDC
+    const MAX_FEE = ethers.parseUnits("1", 6); // 1 USDC CCTP fee
+
+    let poseidon: any;
+    let F: any;
+
+    before(async function () {
+      // Initialize Poseidon for commitment hashing
+      poseidon = await buildPoseidon();
+      F = poseidon.F;
+
+      // Enable testing mode to bypass SNARK proof verification
+      await privacyPool.setTestingMode(true);
+
+      // Mint USDC to Alice on hub and shield to fund the pool
+      await hubUsdc.mint(aliceAddress, SHIELD_AMOUNT);
+      await hubUsdc.connect(alice).approve(privacyPoolAddress, SHIELD_AMOUNT);
+
+      const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+      const rawNpk = BigInt(ethers.keccak256(ethers.toUtf8Bytes("alice-unshield-test-npk")));
+      const validNpk = rawNpk % SNARK_SCALAR_FIELD;
+      const npk = ethers.zeroPadValue(ethers.toBeHex(validNpk), 32);
+
+      const shieldRequest = {
+        preimage: {
+          npk: npk,
+          token: {
+            tokenType: 0,
+            tokenAddress: await hubUsdc.getAddress(),
+            tokenSubID: 0,
+          },
+          value: SHIELD_AMOUNT,
+        },
+        ciphertext: {
+          encryptedBundle: [
+            ethers.keccak256(ethers.toUtf8Bytes("unshield-enc1")),
+            ethers.keccak256(ethers.toUtf8Bytes("unshield-enc2")),
+            ethers.keccak256(ethers.toUtf8Bytes("unshield-enc3")),
+          ],
+          shieldKey: ethers.keccak256(ethers.toUtf8Bytes("unshield-key")),
+        },
+      };
+
+      await privacyPool.connect(alice).shield([shieldRequest]);
+    });
+
+    after(async function () {
+      // Disable testing mode after tests
+      await privacyPool.setTestingMode(false);
+    });
+
+    it("should complete end-to-end cross-chain unshield with maxFee", async function () {
+      // Get current merkle root (valid after the shield in before())
+      const merkleRoot = await privacyPool.merkleRoot();
+
+      // Compute the unshield commitment hash using Poseidon
+      // npk is the PrivacyPool address encoded as bytes32 (used by atomicCrossChainUnshield)
+      const npkBigInt = BigInt(privacyPoolAddress);
+      const usdcAddress = await hubUsdc.getAddress();
+      const tokenId = BigInt(usdcAddress); // For ERC20: bytes32(uint256(uint160(tokenAddress)))
+      const valueBigInt = BigInt(UNSHIELD_AMOUNT);
+
+      const commitmentHash = poseidon([F.e(npkBigInt), F.e(tokenId), F.e(valueBigInt)]);
+      const commitmentHashBytes32 = ethers.zeroPadValue(
+        ethers.toBeHex(BigInt(F.toString(commitmentHash))),
+        32
+      );
+
+      // Use a unique nullifier
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("unshield-nullifier-1"));
+
+      // Construct the Transaction struct
+      const transaction = {
+        proof: {
+          a: { x: 0, y: 0 },
+          b: { x: [0, 0], y: [0, 0] },
+          c: { x: 0, y: 0 },
+        },
+        merkleRoot: merkleRoot,
+        nullifiers: [nullifier],
+        commitments: [commitmentHashBytes32], // Single commitment = unshield output
+        boundParams: {
+          treeNumber: 0,
+          minGasPrice: 0,
+          unshield: 1, // UnshieldType.NORMAL
+          chainID: 31337,
+          adaptContract: ethers.ZeroAddress,
+          adaptParams: ethers.ZeroHash,
+          commitmentCiphertext: [], // length = commitments.length - 1 = 0
+        },
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(privacyPoolAddress, 32),
+          token: {
+            tokenType: 0,
+            tokenAddress: usdcAddress,
+            tokenSubID: 0,
+          },
+          value: UNSHIELD_AMOUNT,
+        },
+      };
+
+      // Set destinationCaller = relayer address (bytes32)
+      const destinationCaller = ethers.ZeroHash; // Allow any relayer
+
+      // Record balances before
+      const recipientBalanceBefore = await clientUsdc.balanceOf(bobAddress);
+      const relayerBalanceBefore = await clientUsdc.balanceOf(relayerAddress);
+
+      // Execute atomic cross-chain unshield with maxFee
+      const tx = await privacyPool.atomicCrossChainUnshield(
+        transaction,
+        DOMAINS.client,
+        bobAddress,         // finalRecipient on client chain
+        destinationCaller,
+        MAX_FEE,
+      );
+      const receipt = await tx.wait();
+
+      // Parse the MessageSent event from the hub MessageTransmitter
+      const transmitterInterface = hubMessageTransmitter.interface;
+      let messageEvent: any;
+      for (const log of receipt!.logs) {
+        try {
+          const parsed = transmitterInterface.parseLog(log);
+          if (parsed?.name === "MessageSent") {
+            messageEvent = parsed;
+            break;
+          }
+        } catch {
+          // Not from this contract
+        }
+      }
+      expect(messageEvent).to.not.be.undefined;
+
+      // Construct full MessageV2 envelope for receiveMessage on client chain
+      const MESSAGE_VERSION = 1;
+      const FINALITY_STANDARD = 2000;
+      const encodedMessage = ethers.solidityPacked(
+        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+        [
+          MESSAGE_VERSION,
+          messageEvent.args.sourceDomain,
+          messageEvent.args.destinationDomain,
+          messageEvent.args.nonce,
+          messageEvent.args.sender,
+          messageEvent.args.recipient,
+          messageEvent.args.destinationCaller,
+          messageEvent.args.minFinalityThreshold,
+          FINALITY_STANDARD,
+          messageEvent.args.messageBody,
+        ]
+      );
+
+      // Relay the message to client chain (relayer calls receiveMessage)
+      await clientMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
+
+      // Verify: Recipient (Bob) received UNSHIELD_AMOUNT - MAX_FEE on client chain
+      const recipientBalanceAfter = await clientUsdc.balanceOf(bobAddress);
+      expect(recipientBalanceAfter - recipientBalanceBefore).to.equal(UNSHIELD_AMOUNT - MAX_FEE);
+
+      // Verify: Relayer received MAX_FEE on client chain
+      const relayerBalanceAfter = await clientUsdc.balanceOf(relayerAddress);
+      expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(MAX_FEE);
     });
   });
 

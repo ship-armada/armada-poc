@@ -31,7 +31,6 @@ import {
 } from './railgun/network'
 import {
   isRelayerEnabled,
-  getRelayerAddress,
   getRelayerFee,
   submitAndWaitForConfirmation,
 } from '@/services/relayer'
@@ -355,7 +354,8 @@ const PRIVACY_POOL_ABI = [
     ) _transaction,
     uint32 destinationDomain,
     address finalRecipient,
-    bytes32 destinationCaller
+    bytes32 destinationCaller,
+    uint256 maxFee
   ) external returns (uint64)`,
 ]
 
@@ -400,18 +400,10 @@ export async function executePrivateTransfer(
   // Use 'Hardhat' as the network name (matches our registered network)
   const networkName = 'Hardhat' as Parameters<typeof generateTransferProof>[1]
 
-  // Build relayer fee recipient if relayer is enabled
+  // Our HTTP relayer doesn't have a Railgun wallet, so we can't include
+  // in-proof broadcaster fees (which require a 0zk... Railgun address).
+  // The relayer is compensated via the HTTP fee API + gas on Anvil.
   const useRelayer = isRelayerEnabled()
-  let broadcasterFee: RailgunERC20AmountRecipient | undefined
-  if (useRelayer) {
-    const fee = await getRelayerFee('transfer')
-    broadcasterFee = {
-      tokenAddress,
-      amount: fee,
-      recipientAddress: getRelayerAddress(),
-    }
-    console.log(`[sdk] Including relayer fee: ${fee.toString()} raw USDC`)
-  }
 
   // Step 1: Generate proof
   console.log('[sdk] Generating transfer proof (this may take 20-30 seconds)...')
@@ -424,8 +416,8 @@ export async function executePrivateTransfer(
     undefined, // memoText
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    broadcasterFee,
-    !useRelayer, // sendWithPublicWallet — false when using relayer
+    undefined, // broadcasterFee — not used with our HTTP relayer
+    true, // sendWithPublicWallet — always true (relayer submits raw calldata)
     undefined, // overallBatchMinGasPrice
     (progress) => {
       // SDK provides progress as 0-100, convert to 0-1 for our callback
@@ -453,8 +445,8 @@ export async function executePrivateTransfer(
     undefined, // memoText
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    broadcasterFee,
-    !useRelayer, // sendWithPublicWallet
+    undefined, // broadcasterFee
+    true, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     gasDetails,
   )
@@ -546,18 +538,8 @@ export async function executeUnshield(
   // Use 'Hardhat' as the network name (matches our registered network)
   const networkName = 'Hardhat' as Parameters<typeof generateUnshieldProof>[1]
 
-  // Build relayer fee recipient if relayer is enabled
+  // See executePrivateTransfer for why we don't include broadcaster fees
   const useRelayer = isRelayerEnabled()
-  let broadcasterFee: RailgunERC20AmountRecipient | undefined
-  if (useRelayer) {
-    const fee = await getRelayerFee('unshield')
-    broadcasterFee = {
-      tokenAddress,
-      amount: fee,
-      recipientAddress: getRelayerAddress(),
-    }
-    console.log(`[sdk] Including relayer fee: ${fee.toString()} raw USDC`)
-  }
 
   // Step 1: Generate proof
   console.log('[sdk] Generating unshield proof (this may take 20-30 seconds)...')
@@ -568,8 +550,8 @@ export async function executeUnshield(
     encryptionKey,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    broadcasterFee,
-    !useRelayer, // sendWithPublicWallet
+    undefined, // broadcasterFee — not used with our HTTP relayer
+    true, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     (progress) => {
       console.log(`[sdk] Proof progress: ${Math.round(progress)}%`)
@@ -593,8 +575,8 @@ export async function executeUnshield(
     walletId,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    broadcasterFee,
-    !useRelayer, // sendWithPublicWallet
+    undefined, // broadcasterFee
+    true, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     gasDetails,
   )
@@ -702,18 +684,8 @@ export async function executeUnshieldToClientChain(
 
   const networkName = 'Hardhat' as Parameters<typeof generateUnshieldProof>[1]
 
-  // Build relayer fee recipient if relayer is enabled
+  // See executePrivateTransfer for why we don't include broadcaster fees
   const useRelayer = isRelayerEnabled()
-  let broadcasterFee: RailgunERC20AmountRecipient | undefined
-  if (useRelayer) {
-    const fee = await getRelayerFee('unshield')
-    broadcasterFee = {
-      tokenAddress,
-      amount: fee,
-      recipientAddress: getRelayerAddress(),
-    }
-    console.log(`[sdk] Including relayer fee: ${fee.toString()} raw USDC`)
-  }
 
   // Step 1: Generate proof
   console.log('[sdk] Generating unshield proof (this may take 20-30 seconds)...')
@@ -724,8 +696,8 @@ export async function executeUnshieldToClientChain(
     encryptionKey,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    broadcasterFee,
-    !useRelayer, // sendWithPublicWallet
+    undefined, // broadcasterFee — not used with our HTTP relayer
+    true, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     (progress) => {
       console.log(`[sdk] Proof progress: ${Math.round(progress)}%`)
@@ -749,8 +721,8 @@ export async function executeUnshieldToClientChain(
     walletId,
     erc20AmountRecipients,
     [], // nftAmountRecipients
-    broadcasterFee,
-    !useRelayer, // sendWithPublicWallet
+    undefined, // broadcasterFee
+    true, // sendWithPublicWallet
     undefined, // overallBatchMinGasPrice
     gasDetails,
   )
@@ -810,10 +782,17 @@ export async function executeUnshieldToClientChain(
   // Step 4: Encode atomicCrossChainUnshield calldata
   const destinationCaller = ethers.zeroPadValue(DEFAULT_RELAYER_ADDRESS, 32)
 
+  // Fetch CCTP maxFee for the cross-chain unshield
+  let maxFee = 0n
+  if (isRelayerEnabled()) {
+    maxFee = await getRelayerFee('crossChainUnshield')
+    console.log(`[sdk] CCTP maxFee for cross-chain unshield: ${maxFee.toString()} raw USDC`)
+  }
+
   const privacyPoolInterface = new ethers.Interface(PRIVACY_POOL_ABI)
   const encodedCalldata = privacyPoolInterface.encodeFunctionData(
     'atomicCrossChainUnshield',
-    [mutableTransaction, destinationDomain, finalRecipient, destinationCaller],
+    [mutableTransaction, destinationDomain, finalRecipient, destinationCaller, maxFee],
   )
 
   // Step 5: Submit transaction
@@ -847,6 +826,7 @@ export async function executeUnshieldToClientChain(
     destinationDomain,
     finalRecipient,
     destinationCaller,
+    maxFee,
     { gasLimit: 3000000n },
   )
 

@@ -106,6 +106,7 @@ async function main() {
   console.log(`  Unshield:           ${FeeCalculator.formatUsdcFee(initialFees.fees.unshield)}`);
   console.log(`  Cross-contract:     ${FeeCalculator.formatUsdcFee(initialFees.fees.crossContract)}`);
   console.log(`  Cross-chain shield: ${FeeCalculator.formatUsdcFee(initialFees.fees.crossChainShield)}`);
+  console.log(`  Cross-chain unshield: ${FeeCalculator.formatUsdcFee(initialFees.fees.crossChainUnshield)}`);
   console.log(`  Cache ID:           ${initialFees.cacheId}`);
   console.log(`  Expires:            ${new Date(initialFees.expiresAt).toISOString()}`);
   console.log();
@@ -128,7 +129,9 @@ async function main() {
   console.log("[armada] Initializing CCTP relay module...");
   const cctpRelay = new CCTPRelayModule(async () => {
     const fees = await feeCalculator.getCurrentFees();
-    return BigInt(fees.fees.crossChainShield);
+    const shieldFee = BigInt(fees.fees.crossChainShield);
+    const unshieldFee = BigInt(fees.fees.crossChainUnshield);
+    return shieldFee < unshieldFee ? shieldFee : unshieldFee;
   });
   const cctpInitialized = await cctpRelay.initialize();
   if (!cctpInitialized) {

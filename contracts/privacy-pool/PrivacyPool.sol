@@ -357,6 +357,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _leafHashes Array of leaf hashes to insert
      */
     function insertLeaves(bytes32[] memory _leafHashes) external {
+        require(msg.sender == address(this), "Only self");
         _delegatecall(merkleModule, abi.encodeCall(IMerkleModule.insertLeaves, (_leafHashes)));
     }
 

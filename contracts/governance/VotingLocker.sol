@@ -5,12 +5,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "./IArmadaGovernance.sol";
 
 /// @title VotingLocker — Lock ARM tokens to gain voting power
 /// @notice Holds ARM tokens on behalf of voters with per-user checkpointing.
 ///         The ArmadaGovernor reads voting power from this contract via getPastLockedBalance().
 ///         Checkpoint pattern adapted from OpenZeppelin ERC20Votes.
-contract VotingLocker is ReentrancyGuard {
+contract VotingLocker is ReentrancyGuard, IVotingLocker {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -49,13 +50,14 @@ contract VotingLocker is ReentrancyGuard {
     function lock(uint256 amount) external nonReentrant {
         require(amount > 0, "VotingLocker: zero amount");
 
-        armToken.safeTransferFrom(msg.sender, address(this), amount);
-
+        // CEI: update state before external call
         uint256 oldBalance = _getLatestLockedBalance(msg.sender);
         uint256 newBalance = oldBalance + amount;
 
         _writeCheckpoint(_checkpoints[msg.sender], newBalance);
         _writeCheckpoint(_totalLockedCheckpoints, _getLatestTotalLocked() + amount);
+
+        armToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit TokensLocked(msg.sender, amount, newBalance);
     }

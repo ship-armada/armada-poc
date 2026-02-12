@@ -39,3 +39,10 @@ struct StewardAction {
     bool executed;
     bool vetoed;
 }
+
+// ========== Interfaces ==========
+
+interface IVotingLocker {
+    function getPastLockedBalance(address account, uint256 blockNumber) external view returns (uint256);
+    function totalLocked() external view returns (uint256);
+}

@@ -6,11 +6,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./IArmadaGovernance.sol";
 
-interface IVotingLocker {
-    function getPastLockedBalance(address account, uint256 blockNumber) external view returns (uint256);
-    function totalLocked() external view returns (uint256);
-}
-
 /// @title ArmadaGovernor — Custom governance with typed proposals and token locking
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
 ///         voting via locked tokens, and timelock execution.
@@ -53,7 +48,7 @@ contract ArmadaGovernor is ReentrancyGuard {
     IVotingLocker public immutable votingLocker;
     IERC20 public immutable armToken;
     TimelockController public immutable timelock;
-    address public treasuryAddress;
+    address public immutable treasuryAddress;
 
     uint256 public proposalCount;
     mapping(uint256 => Proposal) private _proposals;
@@ -91,6 +86,10 @@ contract ArmadaGovernor is ReentrancyGuard {
         address payable _timelock,
         address _treasuryAddress
     ) {
+        require(_votingLocker != address(0), "ArmadaGovernor: zero votingLocker");
+        require(_armToken != address(0), "ArmadaGovernor: zero armToken");
+        require(_timelock != address(0), "ArmadaGovernor: zero timelock");
+        require(_treasuryAddress != address(0), "ArmadaGovernor: zero treasury");
         votingLocker = IVotingLocker(_votingLocker);
         armToken = IERC20(_armToken);
         timelock = TimelockController(_timelock);

@@ -12,8 +12,8 @@ contract TreasurySteward is ReentrancyGuard {
 
     // ============ State ============
 
-    address public timelock;     // TimelockController address (governance-controlled)
-    address public treasury;     // ArmadaTreasuryGov address
+    address public immutable timelock;     // TimelockController address (governance-controlled)
+    address public immutable treasury;     // ArmadaTreasuryGov address
     address public currentSteward;
 
     uint256 public termStart;
@@ -54,6 +54,8 @@ contract TreasurySteward is ReentrancyGuard {
     /// @param _treasury ArmadaTreasuryGov address
     /// @param _actionDelay Delay before steward actions can execute (veto window)
     constructor(address _timelock, address _treasury, uint256 _actionDelay) {
+        require(_timelock != address(0), "TreasurySteward: zero timelock");
+        require(_treasury != address(0), "TreasurySteward: zero treasury");
         timelock = _timelock;
         treasury = _treasury;
         actionDelay = _actionDelay;

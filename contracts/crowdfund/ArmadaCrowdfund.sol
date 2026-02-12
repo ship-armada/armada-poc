@@ -35,7 +35,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     // ============ State ============
 
-    address public admin;
+    address public immutable admin;
     Phase public phase;
 
     // Timing
@@ -57,9 +57,15 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     // Finalization results
     uint256 public saleSize;
-    uint256 public totalAllocated;       // ARM (18 dec)
-    uint256 public totalAllocatedUsdc;   // USDC (6 dec)
-    bool public proceedsWithdrawn;
+    uint256 public totalAllocated;       // ARM (18 dec) — hop-level upper bound
+    uint256 public totalAllocatedUsdc;   // USDC (6 dec) — hop-level upper bound
+    uint256[3] public finalReserves;     // hop reserves after rollover (stored at finalization)
+    uint256[3] public finalDemands;      // hop demands (stored at finalization)
+
+    // Lazy evaluation accumulators (tracked during claims)
+    uint256 public totalProceedsAccrued; // exact sum of allocUsdc from claims
+    uint256 public totalArmClaimed;      // exact sum of allocArm from claims
+    uint256 public proceedsWithdrawnAmount;
     bool public unallocatedArmWithdrawn;
 
     // ============ Events ============
@@ -90,6 +96,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     // ============ Constructor ============
 
     constructor(address _usdc, address _armToken, address _admin) {
+        require(_admin != address(0), "ArmadaCrowdfund: zero admin");
         usdc = IERC20(_usdc);
         armToken = IERC20(_armToken);
         admin = _admin;
@@ -195,8 +202,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
         bool firstCommit = (p.committed == 0);
 
-        usdc.safeTransferFrom(msg.sender, address(this), amount);
-
+        // CEI: update state before external call
         p.committed += amount;
         hopStats[hop].totalCommitted += amount;
         totalCommitted += amount;
@@ -204,6 +210,8 @@ contract ArmadaCrowdfund is ReentrancyGuard {
         if (firstCommit) {
             hopStats[hop].uniqueCommitters++;
         }
+
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Committed(msg.sender, amount, p.committed, hop);
     }
@@ -275,32 +283,20 @@ contract ArmadaCrowdfund is ReentrancyGuard {
             // Over-subscribed: no leftover (all reserve used), no rollover
         }
 
-        // Step 3: Compute individual allocations
+        // Step 3: Store hop-level data for lazy evaluation in claim()
+        // Individual allocations are computed on-the-fly in claim() and getAllocation()
+        // using finalReserves[hop] and finalDemands[hop], making finalize() O(1).
         uint256 totalAllocUsdc_ = 0;
         uint256 totalAllocArm_ = 0;
 
-        for (uint256 i = 0; i < participantList.length; i++) {
-            address addr = participantList[i];
-            Participant storage p = participants[addr];
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            finalReserves[h] = reserves[h];
+            finalDemands[h] = demands[h];
 
-            if (p.committed == 0) continue;
-
-            uint8 h = p.hop;
-            uint256 allocUsdc;
-
-            if (demands[h] <= reserves[h]) {
-                allocUsdc = p.committed; // full allocation
-            } else {
-                // Pro-rata: allocUsdc = (committed * reserve) / demand
-                allocUsdc = (p.committed * reserves[h]) / demands[h];
-            }
-
-            uint256 allocArm = (allocUsdc * 1e18) / ARM_PRICE;
-            p.allocation = allocArm;
-            p.refund = p.committed - allocUsdc;
-
-            totalAllocUsdc_ += allocUsdc;
-            totalAllocArm_ += allocArm;
+            // Hop-level totals (upper bounds due to per-participant integer division)
+            uint256 hopAlloc = demands[h] <= reserves[h] ? demands[h] : reserves[h];
+            totalAllocUsdc_ += hopAlloc;
+            totalAllocArm_ += (hopAlloc * 1e18) / ARM_PRICE;
         }
 
         totalAllocatedUsdc = totalAllocUsdc_;
@@ -313,6 +309,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     // ============ Claims & Withdrawals ============
 
     /// @notice Claim ARM allocation and USDC refund after finalization
+    /// @dev Allocation is computed lazily from stored hop-level reserves/demands
     function claim() external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
 
@@ -320,16 +317,22 @@ contract ArmadaCrowdfund is ReentrancyGuard {
         require(p.committed > 0, "ArmadaCrowdfund: no commitment");
         require(!p.claimed, "ArmadaCrowdfund: already claimed");
 
+        (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(p.committed, p.hop);
+
         p.claimed = true;
+        p.allocation = allocArm;    // store for record-keeping
+        p.refund = refundUsdc;      // store for record-keeping
+        totalProceedsAccrued += allocUsdc;
+        totalArmClaimed += allocArm;
 
-        if (p.allocation > 0) {
-            armToken.safeTransfer(msg.sender, p.allocation);
+        if (allocArm > 0) {
+            armToken.safeTransfer(msg.sender, allocArm);
         }
-        if (p.refund > 0) {
-            usdc.safeTransfer(msg.sender, p.refund);
+        if (refundUsdc > 0) {
+            usdc.safeTransfer(msg.sender, refundUsdc);
         }
 
-        emit Claimed(msg.sender, p.allocation, p.refund);
+        emit Claimed(msg.sender, allocArm, refundUsdc);
     }
 
     /// @notice Full USDC refund if sale was canceled (below minimum)
@@ -349,18 +352,23 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     }
 
     /// @notice Admin withdraws USDC sale proceeds to treasury
+    /// @dev Proceeds accrue as participants claim. Can be called multiple times.
     function withdrawProceeds(address treasury) external onlyAdmin {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(treasury != address(0), "ArmadaCrowdfund: zero address");
-        require(!proceedsWithdrawn, "ArmadaCrowdfund: already withdrawn");
 
-        proceedsWithdrawn = true;
-        usdc.safeTransfer(treasury, totalAllocatedUsdc);
+        uint256 available = totalProceedsAccrued - proceedsWithdrawnAmount;
+        require(available > 0, "ArmadaCrowdfund: no proceeds");
 
-        emit ProceedsWithdrawn(treasury, totalAllocatedUsdc);
+        proceedsWithdrawnAmount += available;
+        usdc.safeTransfer(treasury, available);
+
+        emit ProceedsWithdrawn(treasury, available);
     }
 
     /// @notice Admin withdraws unallocated ARM tokens to treasury
+    /// @dev Uses hop-level totalAllocated (upper bound) minus claimed ARM to compute unallocated.
+    ///      Safe: unallocated = initialFunding - totalAllocated_upper >= 0.
     function withdrawUnallocatedArm(address treasury) external onlyAdmin {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(treasury != address(0), "ArmadaCrowdfund: zero address");
@@ -368,7 +376,8 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
         unallocatedArmWithdrawn = true;
         uint256 armBalance = armToken.balanceOf(address(this));
-        uint256 unallocated = armBalance - totalAllocated;
+        uint256 armStillOwed = totalAllocated - totalArmClaimed;
+        uint256 unallocated = armBalance - armStillOwed;
 
         if (unallocated > 0) {
             armToken.safeTransfer(treasury, unallocated);
@@ -431,6 +440,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     }
 
     /// @notice Get allocation details (only after finalization)
+    /// @dev Computes allocation on the fly from stored hop-level data if not yet claimed
     function getAllocation(address addr) external view returns (
         uint256 allocation,
         uint256 _refund,
@@ -438,11 +448,39 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         Participant storage p = participants[addr];
-        return (p.allocation, p.refund, p.claimed);
+        if (p.claimed) {
+            return (p.allocation, p.refund, true);
+        }
+        (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, p.hop);
+        return (allocArm, refundUsdc, false);
     }
 
     /// @notice Get total number of participants (whitelisted addresses)
     function getParticipantCount() external view returns (uint256) {
         return participantList.length;
+    }
+
+    // ============ Internal ============
+
+    /// @dev Compute allocation for a participant from stored hop-level reserves/demands.
+    ///      Identical math to the original finalize() loop, but evaluated lazily.
+    function _computeAllocation(uint256 committed, uint8 hop) internal view returns (
+        uint256 allocArm,
+        uint256 allocUsdc,
+        uint256 refundUsdc
+    ) {
+        if (committed == 0) return (0, 0, 0);
+
+        if (finalDemands[hop] <= finalReserves[hop]) {
+            // Under-subscribed: full allocation
+            allocUsdc = committed;
+            allocArm = (committed * 1e18) / ARM_PRICE;
+        } else {
+            // Over-subscribed: pro-rata
+            allocUsdc = (committed * finalReserves[hop]) / finalDemands[hop];
+            // Compute ARM directly to avoid divide-before-multiply precision loss
+            allocArm = (committed * finalReserves[hop] * 1e18) / (finalDemands[hop] * ARM_PRICE);
+        }
+        refundUsdc = committed - allocUsdc;
     }
 }

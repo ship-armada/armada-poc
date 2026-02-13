@@ -145,14 +145,13 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      *      - feeExecuted: Fee deducted (actualMint = amount - feeExecuted)
      *      - hookData: Our CCTPPayload with shield data
      *
-     * @param remoteDomain Source chain's CCTP domain
      * @param sender Sender address on source chain (as bytes32, typically remote TokenMessenger)
      * @param finalityThresholdExecuted The finality threshold that was met (>=2000 for finalized)
      * @param messageBody BurnMessageV2 encoded message containing hookData
      * @return success Always returns true on success (reverts on failure)
      */
     function handleReceiveFinalizedMessage(
-        uint32 remoteDomain,
+        uint32,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
@@ -363,12 +362,11 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
     /**
      * @notice Get the tree number and starting index for new commitments
-     * @param _newCommitments Number of commitments to be inserted
      * @return treeNum Tree number where commitments will be inserted
      * @return startIndex Starting leaf index within that tree
      */
     function getInsertionTreeNumberAndStartingIndex(
-        uint256 _newCommitments
+        uint256
     ) external view returns (uint256 treeNum, uint256 startIndex) {
         return (treeNumber, nextLeafIndex);
     }

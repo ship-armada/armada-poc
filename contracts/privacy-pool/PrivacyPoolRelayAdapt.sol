@@ -50,7 +50,7 @@ contract PrivacyPoolRelayAdapt is ReentrancyGuard {
     event CallError(uint256 callIndex, bytes revertReason);
 
     // External contract addresses
-    IPrivacyPool public privacyPool;
+    IPrivacyPool public immutable privacyPool;
 
     /**
      * @notice Only allows self calls if contract is executing

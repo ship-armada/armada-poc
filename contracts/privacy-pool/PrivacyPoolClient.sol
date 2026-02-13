@@ -126,7 +126,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve TokenMessenger to spend USDC
-        IERC20(usdc).approve(tokenMessenger, amount);
+        IERC20(usdc).safeApprove(tokenMessenger, 0);
+        IERC20(usdc).safeApprove(tokenMessenger, amount);
 
         // Create shield data payload
         // value = gross amount (CCTP deducts fee at protocol level before minting)

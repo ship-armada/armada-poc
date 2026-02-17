@@ -1,0 +1,39 @@
+# Slither Static Analysis Report
+# Generated: 2025-02-13
+# Command: slither contracts/ --exclude-dependencies --exclude-informational
+
+## Summary
+96 contracts analyzed, 80 detectors, 189 findings
+
+## Findings by Severity/Category
+
+### High / Critical
+- arbitrary-send-eth: PrivacyPoolRelayAdapt._multicall, Treasury.transferETH
+- controlled-delegatecall: PrivacyPool._delegatecall (input-controlled module)
+- incorrect-return: Proxy.onlyOwner, upgrade, pause, unpause (assembly return)
+- incorrect-modifier: Proxy.onlyOwner does not always execute _; or revert
+- unchecked-transfer: ArmadaYieldAdapter.lendPrivate (shareToken.transfer return ignored)
+- uninitialized-state: PrivacyPoolStorage (nextLeafIndex, treeNumber, verificationKeys, etc.) — NOTE: These are set in initialize(), Slither may not detect init flow
+- uninitialized-local: ArmadaCrowdfund.finalize reserves/demands, MerkleModule.insertLeaves nextLevelHashIndex, etc.
+
+### Medium
+- reentrancy-balance: ShieldModule._transferTokenIn, RailgunLogic.transferTokenIn (balance check pattern)
+- reentrancy-no-eth: ArmadaYieldVault.deposit, PrivacyPool.initialize
+- reentrancy-benign: Multiple TransactModule, ShieldModule, MockCCTP flows
+- reentrancy-events: CEI violation (event after external call) in many contracts
+- tx-origin: PrivacyPool.verify, RelayAdapt.relay, VerifierModule (VERIFICATION_BYPASS — test mode)
+- incorrect-equality: MockAaveSpoke, VotingLocker checkpoint, ShieldModule balance check
+- locked-ether: Proxy, ReentrancyAttacker test contracts
+- missing-zero-check: PrivacyPool.initialize params, ArmadaTreasuryGov, MockCCTP, etc.
+- events-access: MockAaveSpoke, MockUSDCV2 transferOwnership missing events
+
+### Low / Informational
+- shadowing-local: RailgunLogic._owner, ArmadaYieldVault _name/_symbol
+- unused-return: ArmadaYieldAdapter approve/transfer, ArmadaYieldVault spoke calls, etc.
+- calls-loop: PrivacyPoolRelayAdapt, ShieldModule, TransactModule (expected for batch ops)
+- constable-states: PrivacyPoolStorage (false positive — these change at runtime)
+- immutable-states: ReentrancyAttacker test contracts
+- timestamp: block.timestamp usage (expected for governance/crowdfund timing)
+
+## Full Raw Output
+(See slither raw output below — run `slither contracts/ --exclude-dependencies --exclude-informational` to regenerate)

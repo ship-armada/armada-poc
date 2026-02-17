@@ -1,0 +1,4 @@
+# Halmos config for Railgun CCTP POC
+# foundry.toml uses out = "forge-out", so Halmos must use the same path
+[global]
+forge-build-out = "forge-out"

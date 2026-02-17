@@ -256,7 +256,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
 
         // In production: shield shares to user's npk
         // For POC: transfer shares to user
-        shareToken.transfer(user, shares);
+        shareToken.safeTransfer(user, shares);
 
         emit Lend(user, amount, shares);
     }

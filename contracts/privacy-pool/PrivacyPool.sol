@@ -62,6 +62,14 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address _owner
     ) external override {
         require(!initialized, "PrivacyPool: Already initialized");
+        require(_shieldModule != address(0), "PrivacyPool: zero shieldModule");
+        require(_transactModule != address(0), "PrivacyPool: zero transactModule");
+        require(_merkleModule != address(0), "PrivacyPool: zero merkleModule");
+        require(_verifierModule != address(0), "PrivacyPool: zero verifierModule");
+        require(_tokenMessenger != address(0), "PrivacyPool: zero tokenMessenger");
+        require(_messageTransmitter != address(0), "PrivacyPool: zero messageTransmitter");
+        require(_usdc != address(0), "PrivacyPool: zero usdc");
+        require(_owner != address(0), "PrivacyPool: zero owner");
 
         // Set module addresses
         shieldModule = _shieldModule;
@@ -261,6 +269,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      */
     function setTreasury(address payable _treasury) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
+        require(_treasury != address(0), "PrivacyPool: zero treasury");
         treasury = _treasury;
     }
 

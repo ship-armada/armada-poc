@@ -61,6 +61,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     // ============ Constructor ============
 
     constructor(address _owner) {
+        require(_owner != address(0), "ArmadaTreasuryGov: zero owner");
         owner = _owner; // Should be the timelock address
     }
 

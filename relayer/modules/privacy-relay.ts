@@ -53,7 +53,7 @@ export class PrivacyRelay {
    *
    * Checks:
    * 1. Chain ID matches hub chain
-   * 2. Target contract is allowed (PrivacyPool or RelayAdapt)
+   * 2. Target contract is allowed (PrivacyPool or ArmadaYieldAdapter)
    * 3. Fee cache ID is valid and not expired
    * 4. Calldata has a recognized function selector
    * 5. Gas estimation succeeds (transaction won't revert)

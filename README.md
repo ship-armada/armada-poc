@@ -75,9 +75,9 @@ Client Chain A/B                          Hub Chain
 │                      │                 │           │                    │
 │                      │                 │     Transfer (private)         │
 │                      │                 │           │                    │
-│                      │                 │     ┌─────▼─────┐              │
-│                      │                 │     │ RelayAdapt │              │
-│                      │                 │     └─────┬─────┘              │
+│                      │                 │     ┌─────▼─────────────┐     │
+│                      │                 │     │ ArmadaYieldAdapter │     │
+│                      │                 │     └─────┬─────────────┘     │
 │                      │                 │           │                    │
 │                      │                 │  ┌────────▼────────┐           │
 │                      │                 │  │ ArmadaYieldVault │           │
@@ -106,30 +106,29 @@ The POC includes a complete shielded yield system that allows users to earn yiel
 
 4. **Fee Collection**: A 10% yield fee is collected on withdrawal and sent to the ArmadaTreasury.
 
-### Cross-Contract Calls (RelayAdapt)
+### Cross-Contract Calls (ArmadaYieldAdapter)
 
-Shielded yield uses the Railgun SDK's cross-contract calls pattern via `PrivacyPoolRelayAdapt`:
+Shielded yield uses the Railgun SDK's adapt pattern via `ArmadaYieldAdapter`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    RelayAdapt.relay()                           │
-│  1. Unshield tokens from PrivacyPool → RelayAdapt receives      │
-│  2. Execute multicall (approve + deposit/redeem on vault)       │
-│  3. Shield resulting tokens back to user                        │
+│              ArmadaYieldAdapter.lendAndShield / redeemAndShield  │
+│  1. Unshield tokens from PrivacyPool → Adapter receives          │
+│  2. Deposit/redeem on vault (USDC ↔ ayUSDC)                      │
+│  3. Shield resulting tokens back to user (proof-bound npk)       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-This enables complex DeFi interactions while maintaining privacy - the proof commits to the entire operation, ensuring atomicity.
+The proof commits `adaptParams = hash(npk, encryptedBundle, shieldKey)`, so the adapter cannot deviate from the user's intended shield destination. This enables trustless DeFi interactions while maintaining privacy.
 
 ### Yield Contracts
 
 | Contract | Description |
 |----------|-------------|
 | `ArmadaYieldVault` | ERC4626 vault wrapping Aave, issues non-rebasing ayUSDC shares |
-| `ArmadaYieldAdapter` | Privileged adapter for fee-free deposits (future use) |
+| `ArmadaYieldAdapter` | Trustless bridge: unshield → deposit/redeem → shield (adaptParams binds destination) |
 | `ArmadaTreasury` | Collects 10% yield fees on redemptions |
 | `MockAaveSpoke` | Simulated Aave V4 spoke for local testing |
-| `PrivacyPoolRelayAdapt` | Enables SDK cross-contract calls with PrivacyPool |
 
 ### Real-Time Yield Display
 
@@ -169,7 +168,6 @@ poc/
 ├── contracts/              # Solidity contracts
 │   ├── privacy-pool/       # Hub chain shielded pool
 │   │   ├── PrivacyPool.sol
-│   │   ├── PrivacyPoolRelayAdapt.sol  # Cross-contract calls support
 │   │   └── modules/        # Modular pool components
 │   ├── client/             # Client chain contracts
 │   │   └── PrivacyPoolClient.sol
@@ -215,7 +213,7 @@ poc/
 **Shielded lend/withdraw fails**
 - Ensure you have shielded USDC (for lend) or shielded ayUSDC (for withdraw)
 - Check browser console for detailed error messages
-- Verify RelayAdapt is deployed: check Debug page for contract addresses
+- Verify ArmadaYieldAdapter is deployed: check Debug page for contract addresses
 
 **Yield not updating**
 - The dashboard polls every 30 seconds; wait or trigger a vault event

@@ -23,7 +23,7 @@ let hardhatConfigPatched = false
 // Hardhat network chain ID (must match SDK's NETWORK_CONFIG)
 const HARDHAT_CHAIN_ID = 31337
 
-// Store RelayAdapt address for getHubChainConfig
+// Store adapt contract address (ArmadaYieldAdapter) for yield flows / getHubChainConfig
 let cachedRelayAdaptContract: string | undefined
 
 function patchNetworkConfig(
@@ -59,7 +59,7 @@ async function patchHardhatConfig(): Promise<void> {
   const hubChain = getHubChain()
   // In native CCTP architecture, PrivacyPool serves as the Railgun proxy
   const privacyPool = hubChain.contracts?.privacyPool
-  // Use armadaYieldAdapter for yield flows (replaces RelayAdapt)
+  // ArmadaYieldAdapter serves as adapt contract for lend/redeem (SDK relayAdaptContract field)
   const yieldDeployment = getYieldDeployment()
   const adaptContract = yieldDeployment?.contracts?.armadaYieldAdapter
 

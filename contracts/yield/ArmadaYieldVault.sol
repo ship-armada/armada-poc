@@ -91,7 +91,7 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     /// @dev Tracks weighted average deposit price. On deposit, the cost basis is updated
     ///      as a weighted average of existing and new shares. On redeem, principal is
     ///      computed as shares * costBasis / COST_BASIS_PRECISION, which is independent
-    ///      of balanceOf() and works correctly with the RelayAdapt pattern.
+    ///      of balanceOf() and works correctly with the ArmadaYieldAdapter pattern.
     mapping(address => uint256) public userCostBasisPerShare;
 
     /// @notice Precision scalar for cost basis (1e18)

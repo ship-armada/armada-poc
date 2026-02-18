@@ -1,3 +1,8 @@
+/**
+ * DEPRECATED: Use armada-relayer.ts. This file is kept for reference only.
+ * npm run relayer now runs armada-relayer (CCTP + Privacy Relay + HTTP API).
+ */
+
 import { ethers } from "ethers";
 import {
   ChainConfig,

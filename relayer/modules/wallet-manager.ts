@@ -2,7 +2,8 @@
  * Wallet Manager
  *
  * Manages the relayer's hot wallet for transaction submission.
- * Handles nonce tracking, wallet locking, and gas balance monitoring.
+ * Fetches fresh nonce from chain before each tx (shared account with CCTP relay).
+ * Handles wallet locking and gas balance monitoring.
  */
 
 import { ethers } from "ethers";
@@ -20,7 +21,6 @@ interface SubmitResult {
 export class WalletManager {
   private provider: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet;
-  private pendingNonce: number | null = null;
   private locked: boolean = false;
   private txCache: Map<string, { txHash: string; timestamp: number }> =
     new Map();
@@ -34,21 +34,20 @@ export class WalletManager {
   }
 
   /**
-   * Initialize: verify connection and fetch initial nonce
+   * Initialize: verify connection and check balance
    */
   async initialize(): Promise<void> {
     const blockNumber = await this.provider.getBlockNumber();
-    this.pendingNonce = await this.provider.getTransactionCount(
+    const nonce = await this.provider.getTransactionCount(
       this.wallet.address,
       "pending"
     );
-
     const balance = await this.provider.getBalance(this.wallet.address);
     const ethBalance = ethers.formatEther(balance);
 
     console.log(`[wallet-manager] Initialized`);
     console.log(`  Address: ${this.wallet.address}`);
-    console.log(`  Nonce: ${this.pendingNonce}`);
+    console.log(`  Next nonce: ${nonce}`);
     console.log(`  ETH Balance: ${ethBalance}`);
     console.log(`  Block: ${blockNumber}`);
 
@@ -109,13 +108,14 @@ export class WalletManager {
     this.locked = true;
 
     try {
-      // Refresh nonce if needed
-      if (this.pendingNonce === null) {
-        this.pendingNonce = await this.provider.getTransactionCount(
-          this.wallet.address,
-          "pending"
-        );
-      }
+      // Always fetch fresh nonce from chain. WalletManager shares the deployer
+      // account with CCTPRelayModule; CCTP may have submitted txs (e.g. receiveMessage
+      // for cross-chain deposits) that consumed nonces. Caching would cause
+      // "nonce already used" when Privacy Relay submits after CCTP.
+      const nonce = await this.provider.getTransactionCount(
+        this.wallet.address,
+        "pending"
+      );
 
       // Estimate gas if not provided
       let estimatedGas = gasLimit;
@@ -133,7 +133,6 @@ export class WalletManager {
         }
       }
 
-      const nonce = this.pendingNonce;
       console.log(
         `[wallet-manager] Submitting tx (nonce=${nonce}, gas=${estimatedGas})`
       );
@@ -146,9 +145,6 @@ export class WalletManager {
         nonce,
         gasLimit: estimatedGas,
       });
-
-      // Increment nonce optimistically
-      this.pendingNonce = nonce + 1;
 
       console.log(`[wallet-manager] Tx submitted: ${tx.hash}`);
 
@@ -172,14 +168,14 @@ export class WalletManager {
 
       return { txHash: tx.hash, receipt };
     } catch (e: any) {
-      // Reset nonce on nonce-related errors
       if (
         e.message?.includes("nonce") ||
         e.message?.includes("NONCE") ||
         e.code === "NONCE_EXPIRED"
       ) {
-        console.warn("[wallet-manager] Nonce error, will refresh on next tx");
-        this.pendingNonce = null;
+        console.warn(
+          "[wallet-manager] Nonce error (another process may have used the account)"
+        );
       }
       throw e;
     } finally {

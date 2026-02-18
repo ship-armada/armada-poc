@@ -18,7 +18,7 @@ export const hubChain: ChainConfig = {
   rpc: "http://localhost:8545",
   chainId: 31337,
   name: "Hub",
-  deploymentFile: "hub.json",
+  deploymentFile: "hub-v3.json",
 };
 
 // Client chains configuration (array for N chains)
@@ -27,13 +27,13 @@ export const clientChains: ChainConfig[] = [
     rpc: "http://localhost:8546",
     chainId: 31338,
     name: "Client A",
-    deploymentFile: "client.json",
+    deploymentFile: "client-v3.json",
   },
   {
     rpc: "http://localhost:8547",
     chainId: 31339,
     name: "Client B",
-    deploymentFile: "clientB.json",
+    deploymentFile: "clientB-v3.json",
   },
 ];
 

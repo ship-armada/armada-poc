@@ -24,7 +24,8 @@
     "deploy:faucets": "hardhat run scripts/deploy_faucet.ts",
     "link": "hardhat run scripts/link_privacy_pool.ts --network hub",
     "load:vk-1x1": "hardhat run scripts/load_verification_key_1x1.ts --network hub",
-    "relayer": "npx ts-node relayer/relay-v2.ts",
+    "derive:relayer-railgun": "npx ts-node scripts/derive_relayer_railgun_address.ts",
+    "relayer": "npx ts-node relayer/armada-relayer.ts",
     "armada-relayer": "npx ts-node relayer/armada-relayer.ts",
     "deploy:governance": "hardhat run scripts/deploy_governance.ts --network hub",
     "deploy:crowdfund": "hardhat run scripts/deploy_crowdfund.ts --network hub",
@@ -41,8 +42,7 @@
     "demo:crowdfund": "hardhat run scripts/crowdfund_demo.ts",
     "clean": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
     "demo": "cd usdc-v2-frontend && npm run dev",
-    "demo:build": "cd usdc-v2-frontend && npm run build",
-    "demo:old": "cd demo-app && npm run prepare-artifacts && npm run dev"
+    "demo:build": "cd usdc-v2-frontend && npm run build"
   },
   "dependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",

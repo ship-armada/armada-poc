@@ -54,7 +54,6 @@ interface HubDeploymentInfo {
     verifierModule: string;
     shieldModule: string;
     transactModule: string;
-    relayAdapt: string;
   };
   cctp: {
     tokenMessenger: string;

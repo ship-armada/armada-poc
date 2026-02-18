@@ -112,6 +112,12 @@ interface IPrivacyPool is IMessageHandlerV2 {
     function setShieldFee(uint120 feeBps) external;
 
     /**
+     * @notice Set the unshield fee in basis points
+     * @param feeBps Fee in basis points (50 = 0.50%)
+     */
+    function setUnshieldFee(uint120 feeBps) external;
+
+    /**
      * @notice Set the treasury address for fee collection
      * @param _treasury Address to receive protocol fees
      */
@@ -123,6 +129,13 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param enabled Whether to enable testing mode
      */
     function setTestingMode(bool enabled) external;
+
+    /**
+     * @notice Set privileged shield caller (bypasses shield/unshield fees)
+     * @param caller Address to configure (e.g. yield adapter)
+     * @param privileged True to exempt from fees
+     */
+    function setPrivilegedShieldCaller(address caller, bool privileged) external;
 
     // Note: View functions (merkleRoot, treeNumber, nullifiers, rootHistory, remotePools)
     // are implemented via public storage variables in PrivacyPoolStorage

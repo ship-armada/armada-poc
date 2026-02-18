@@ -54,6 +54,7 @@ async function main() {
   console.log("\n--- Verification Keys Check ---");
 
   const commonConfigs = [
+    [1, 1], // 1 nullifier, 1 commitment (lend/redeem)
     [1, 2], // 1 nullifier, 2 commitments
     [2, 2], // 2 nullifiers, 2 commitments
     [1, 3], // 1 nullifier, 3 commitments
@@ -68,17 +69,6 @@ async function main() {
     } catch (e) {
       console.log(`  VK[${nullifiers}x${commitments}]: ✗ Error reading`);
     }
-  }
-
-  // Check RelayAdapt if deployed
-  if (deployment.contracts.relayAdapt) {
-    console.log("\n--- RelayAdapt ---");
-    console.log("RelayAdapt address:", deployment.contracts.relayAdapt);
-
-    const relayAdapt = await ethers.getContractAt("PrivacyPoolRelayAdapt", deployment.contracts.relayAdapt);
-    const linkedPool = await relayAdapt.privacyPool();
-    console.log("Linked PrivacyPool:", linkedPool);
-    console.log("Match:", linkedPool.toLowerCase() === privacyPoolAddress.toLowerCase() ? "✓" : "✗");
   }
 
   console.log("\n=== Verification Complete ===");

@@ -219,15 +219,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   console.log("   Treasury: " + treasuryAddress);
   console.log("   Shield fee: 50 bps (0.50%)");
 
-  // 10. Deploy RelayAdapt for cross-contract calls support
-  console.log("\n10. Deploying PrivacyPoolRelayAdapt...");
-  const RelayAdapt = await ethers.getContractFactory("PrivacyPoolRelayAdapt");
-  const relayAdapt = await RelayAdapt.deploy(privacyPoolAddress);
-  await relayAdapt.waitForDeployment();
-  const relayAdaptAddress = await relayAdapt.getAddress();
-  console.log(`   RelayAdapt: ${relayAdaptAddress}`);
-
-  // 11. Set remote pools for client chains (will be updated after client deployments)
+  // 10. Set remote pools for client chains (will be updated after client deployments)
   // These will be configured by link_privacy_pool.ts
 
   const deployment: HubDeploymentInfo = {
@@ -240,7 +232,6 @@ async function deployHub(): Promise<HubDeploymentInfo> {
       verifierModule: verifierModuleAddress,
       shieldModule: shieldModuleAddress,
       transactModule: transactModuleAddress,
-      relayAdapt: relayAdaptAddress,
     },
     cctp: {
       tokenMessenger: tokenMessengerAddress,

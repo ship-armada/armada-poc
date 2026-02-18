@@ -83,7 +83,7 @@ export interface ArmadaRelayerConfig {
   /** Contract addresses loaded from deployments */
   contracts: {
     privacyPool: string;
-    relayAdapt: string;
+    armadaYieldAdapter: string;
     usdc: string;
     messageTransmitter: string;
     tokenMessenger: string;
@@ -102,7 +102,6 @@ export interface PrivacyPoolDeployment {
     verifierModule: string;
     shieldModule: string;
     transactModule: string;
-    relayAdapt: string;
   };
   cctp: {
     tokenMessenger: string;

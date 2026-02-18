@@ -24,7 +24,6 @@ describe("Yield Integration", function () {
   // Signers
   let deployer: SignerWithAddress;
   let user: SignerWithAddress;
-  let relayer: SignerWithAddress;
 
   // Constants
   const USDC_DECIMALS = 6;
@@ -36,7 +35,7 @@ describe("Yield Integration", function () {
   const ONE_YEAR = 365 * 24 * 60 * 60;
 
   beforeEach(async function () {
-    [deployer, user, relayer] = await ethers.getSigners();
+    [deployer, user] = await ethers.getSigners();
 
     // 1. Deploy MockUSDCV2
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
@@ -85,10 +84,7 @@ describe("Yield Integration", function () {
     // 8. Configure vault adapter
     await armadaYieldVault.setAdapter(await armadaYieldAdapter.getAddress());
 
-    // 9. Add relayer
-    await armadaYieldAdapter.setRelayer(relayer.address, true);
-
-    // 10. Mint USDC to user
+    // 9. Mint USDC to user
     await usdc.mint(user.address, INITIAL_BALANCE);
   });
 
@@ -220,247 +216,14 @@ describe("Yield Integration", function () {
   });
 
   describe("ArmadaYieldAdapter", function () {
-    // CCTP contracts for cross-chain tests
-    let mockMessageTransmitter: any;
-    let mockTokenMessenger: any;
-
-    // Deploy CCTP contracts for tests that need them
-    async function deployCCTP() {
-      // Deploy MessageTransmitter
-      const MockMessageTransmitterV2 = await ethers.getContractFactory("MockMessageTransmitterV2");
-      mockMessageTransmitter = await MockMessageTransmitterV2.deploy(0, deployer.address); // domain 0, relayer = deployer
-      await mockMessageTransmitter.waitForDeployment();
-
-      // Deploy TokenMessenger
-      const MockTokenMessengerV2 = await ethers.getContractFactory("MockTokenMessengerV2");
-      mockTokenMessenger = await MockTokenMessengerV2.deploy(
-        await mockMessageTransmitter.getAddress(),
-        await usdc.getAddress(),
-        0 // localDomain
-      );
-      await mockTokenMessenger.waitForDeployment();
-
-      // Link them together
-      await mockMessageTransmitter.setTokenMessenger(await mockTokenMessenger.getAddress());
-
-      // Add TokenMessenger as USDC minter (for receiving messages)
-      await usdc.addMinter(await mockTokenMessenger.getAddress());
-
-      // Configure adapter with TokenMessenger
-      await armadaYieldAdapter.setTokenMessenger(await mockTokenMessenger.getAddress());
-    }
-
-    it("should allow lend via adapter (POC mode)", async function () {
-      // Approve adapter
-      await usdc.connect(user).approve(
-        await armadaYieldAdapter.getAddress(),
-        DEPOSIT_AMOUNT
-      );
-
-      // Lend
-      const tx = await armadaYieldAdapter.connect(user).lend(DEPOSIT_AMOUNT);
-      await tx.wait();
-
-      // User should have vault shares
-      const shares = await armadaYieldVault.balanceOf(user.address);
-      expect(shares).to.equal(DEPOSIT_AMOUNT);
-
-      // User should have spent USDC
-      const userUSDC = await usdc.balanceOf(user.address);
-      expect(userUSDC).to.equal(INITIAL_BALANCE - DEPOSIT_AMOUNT);
+    it("should preview lend (shares for USDC amount)", async function () {
+      const shares = await armadaYieldAdapter.previewLend(DEPOSIT_AMOUNT);
+      expect(shares).to.be.closeTo(DEPOSIT_AMOUNT, 10n); // 1:1 at start
     });
 
-    it("should allow redeem via adapter (POC mode)", async function () {
-      // First, lend via adapter
-      await usdc.connect(user).approve(
-        await armadaYieldAdapter.getAddress(),
-        DEPOSIT_AMOUNT
-      );
-      await armadaYieldAdapter.connect(user).lend(DEPOSIT_AMOUNT);
-
-      // Fast forward 1 year
-      await time.increase(ONE_YEAR);
-
-      // Approve adapter to take shares
-      const shares = await armadaYieldVault.balanceOf(user.address);
-      await armadaYieldVault.connect(user).approve(
-        await armadaYieldAdapter.getAddress(),
-        shares
-      );
-
-      // Redeem via adapter
-      await armadaYieldAdapter.connect(user).redeemShares(shares);
-
-      // User should have no shares
-      const sharesAfter = await armadaYieldVault.balanceOf(user.address);
-      expect(sharesAfter).to.equal(0);
-
-      // User should have more USDC than initial (yield - fee)
-      const userUSDC = await usdc.balanceOf(user.address);
-      expect(userUSDC).to.be.gt(INITIAL_BALANCE);
-    });
-
-    it("should allow relayer to execute private operations", async function () {
-      // Mint USDC to adapter (simulating unshield)
-      await usdc.mint(await armadaYieldAdapter.getAddress(), DEPOSIT_AMOUNT);
-
-      // Relayer executes lendPrivate
-      await armadaYieldAdapter.connect(relayer).lendPrivate(
-        DEPOSIT_AMOUNT,
-        user.address
-      );
-
-      // User should have shares
-      const shares = await armadaYieldVault.balanceOf(user.address);
-      expect(shares).to.equal(DEPOSIT_AMOUNT);
-    });
-
-    it("should allow redeemAndUnshield (pay directly to recipient)", async function () {
-      // First, lend via adapter
-      await usdc.connect(user).approve(
-        await armadaYieldAdapter.getAddress(),
-        DEPOSIT_AMOUNT
-      );
-      await armadaYieldAdapter.connect(user).lend(DEPOSIT_AMOUNT);
-
-      // Fast forward 1 year for yield
-      await time.increase(ONE_YEAR);
-
-      // Transfer shares to adapter (simulating unshield)
-      const shares = await armadaYieldVault.balanceOf(user.address);
-      await armadaYieldVault.connect(user).transfer(
-        await armadaYieldAdapter.getAddress(),
-        shares
-      );
-
-      // Relayer calls redeemAndUnshield to send directly to recipient
-      const recipient = relayer.address; // Use relayer as recipient for this test
-      const recipientBefore = await usdc.balanceOf(recipient);
-
-      await armadaYieldAdapter.connect(relayer).redeemAndUnshield(shares, recipient);
-
-      // Recipient should have received USDC
-      const recipientAfter = await usdc.balanceOf(recipient);
-      expect(recipientAfter).to.be.gt(recipientBefore);
-
-      // Adapter has no cost basis (shares were transferred, not deposited through it),
-      // so the vault treats the full gross amount as yield and charges 10% fee.
-      // Expected: ~1050 gross * 0.9 = ~945
-      const received = recipientAfter - recipientBefore;
-      const grossExpected = DEPOSIT_AMOUNT + (DEPOSIT_AMOUNT * BigInt(YIELD_BPS)) / 10000n;
-      const netExpected = grossExpected - (grossExpected * BigInt(YIELD_FEE_BPS)) / 10000n;
-      expect(received).to.be.closeTo(netExpected, ONE_USDC);
-    });
-
-    it("should allow redeemAndUnshieldCCTP for cross-chain yield redemption", async function () {
-      // Deploy CCTP contracts
-      await deployCCTP();
-
-      // First, lend via adapter
-      await usdc.connect(user).approve(
-        await armadaYieldAdapter.getAddress(),
-        DEPOSIT_AMOUNT
-      );
-      await armadaYieldAdapter.connect(user).lend(DEPOSIT_AMOUNT);
-
-      // Fast forward 1 year for yield
-      await time.increase(ONE_YEAR);
-
-      // Get shares
-      const shares = await armadaYieldVault.balanceOf(user.address);
-
-      // Transfer shares to adapter (simulating unshield of ayUSDC)
-      await armadaYieldVault.connect(user).transfer(
-        await armadaYieldAdapter.getAddress(),
-        shares
-      );
-
-      // Total supply of USDC before burn
-      const totalSupplyBefore = await usdc.totalSupply();
-
-      // Relayer calls redeemAndUnshieldCCTP to bridge USDC to another chain
-      const destinationDomain = 1; // Simulate destination chain domain
-      const finalRecipient = user.address;
-      const destinationCaller = ethers.ZeroHash; // Anyone can call receiveMessage
-
-      const tx = await armadaYieldAdapter.connect(relayer).redeemAndUnshieldCCTP(
-        shares,
-        destinationDomain,
-        finalRecipient,
-        destinationCaller
-      );
-      const receipt = await tx.wait();
-
-      // Check event was emitted
-      const event = receipt.logs.find(
-        (log: any) => log.fragment?.name === "RedeemAndUnshieldCCTP"
-      );
-      expect(event).to.not.be.undefined;
-
-      // USDC should have been burned (total supply decreased)
-      const totalSupplyAfter = await usdc.totalSupply();
-      expect(totalSupplyAfter).to.be.lt(totalSupplyBefore);
-
-      // Adapter has no cost basis, so full gross treated as yield with 10% fee.
-      // The burned amount is the net assets after fee (fee goes to treasury, not burned).
-      // Additionally, MockAaveSpoke mints yield tokens which affects total supply accounting.
-      const burnedAmount = totalSupplyBefore - totalSupplyAfter;
-      expect(burnedAmount).to.be.gt(0); // USDC was burned for cross-chain transfer
-
-      // Adapter should have no remaining USDC or shares
-      const adapterUsdc = await usdc.balanceOf(await armadaYieldAdapter.getAddress());
-      const adapterShares = await armadaYieldVault.balanceOf(await armadaYieldAdapter.getAddress());
-      expect(adapterUsdc).to.equal(0);
-      expect(adapterShares).to.equal(0);
-
-      console.log(`   CCTP burn completed: ${ethers.formatUnits(burnedAmount, 6)} USDC burned for cross-chain transfer`);
-    });
-
-    it("should reject redeemAndUnshieldCCTP without TokenMessenger configured", async function () {
-      // Deploy a fresh adapter without CCTP configuration
-      const ArmadaYieldAdapter = await ethers.getContractFactory("ArmadaYieldAdapter");
-      const freshAdapter = await ArmadaYieldAdapter.deploy(
-        await usdc.getAddress(),
-        await armadaYieldVault.getAddress()
-      );
-      await freshAdapter.waitForDeployment();
-      await freshAdapter.setRelayer(relayer.address, true);
-
-      // Try to call redeemAndUnshieldCCTP - should fail
-      await expect(
-        freshAdapter.connect(relayer).redeemAndUnshieldCCTP(
-          DEPOSIT_AMOUNT,
-          1, // destinationDomain
-          user.address,
-          ethers.ZeroHash
-        )
-      ).to.be.revertedWith("ArmadaYieldAdapter: no tokenMessenger");
-    });
-
-    it("should reject redeemAndUnshieldCCTP with zero shares", async function () {
-      await deployCCTP();
-
-      await expect(
-        armadaYieldAdapter.connect(relayer).redeemAndUnshieldCCTP(
-          0, // zero shares
-          1,
-          user.address,
-          ethers.ZeroHash
-        )
-      ).to.be.revertedWith("ArmadaYieldAdapter: zero shares");
-    });
-
-    it("should reject redeemAndUnshieldCCTP with zero recipient", async function () {
-      await deployCCTP();
-
-      await expect(
-        armadaYieldAdapter.connect(relayer).redeemAndUnshieldCCTP(
-          DEPOSIT_AMOUNT,
-          1,
-          ethers.ZeroAddress, // zero recipient
-          ethers.ZeroHash
-        )
-      ).to.be.revertedWith("ArmadaYieldAdapter: zero recipient");
+    it("should preview redeem (USDC for shares amount)", async function () {
+      const assets = await armadaYieldAdapter.previewRedeem(DEPOSIT_AMOUNT);
+      expect(assets).to.be.closeTo(DEPOSIT_AMOUNT, 10n); // 1:1 at start
     });
   });
 

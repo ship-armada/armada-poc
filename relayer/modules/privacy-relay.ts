@@ -14,14 +14,16 @@ import type { FeeCalculator } from "./fee-calculator";
 
 // ============ Constants ============
 
-/** Known function selectors for allowed operations */
+/** Known function selectors for allowed operations (from compiled contracts) */
 const ALLOWED_SELECTORS: Record<string, string> = {
   // PrivacyPool.transact(Transaction[]) — transfers and unshields
   "0xd8ae136a": "transact",
   // PrivacyPool.atomicCrossChainUnshield(..., uint256 maxFee) — cross-chain unshields
   "0xe484d408": "atomicCrossChainUnshield",
-  // PrivacyPoolRelayAdapt.relay(Transaction[], ActionData) — cross-contract calls
-  "0x28223a77": "relay",
+  // ArmadaYieldAdapter.lendAndShield — shielded lend
+  "0xf2987ad1": "lendAndShield",
+  // ArmadaYieldAdapter.redeemAndShield — shielded redeem
+  "0x0793b70e": "redeemAndShield",
 };
 
 // ============ Privacy Relay ============
@@ -34,7 +36,7 @@ export class PrivacyRelay {
   constructor(
     walletManager: WalletManager,
     feeCalculator: FeeCalculator,
-    allowedContracts: { privacyPool: string; relayAdapt: string }
+    allowedContracts: { privacyPool: string; armadaYieldAdapter: string }
   ) {
     this.walletManager = walletManager;
     this.feeCalculator = feeCalculator;
@@ -42,7 +44,7 @@ export class PrivacyRelay {
     // Normalize addresses to lowercase for comparison
     this.allowedTargets = new Set([
       allowedContracts.privacyPool.toLowerCase(),
-      allowedContracts.relayAdapt.toLowerCase(),
+      allowedContracts.armadaYieldAdapter.toLowerCase(),
     ]);
   }
 

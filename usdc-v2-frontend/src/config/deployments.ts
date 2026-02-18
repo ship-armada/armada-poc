@@ -15,7 +15,7 @@ export interface ContractDeployment {
   usdc?: string
   messageTransmitter?: string
   tokenMessenger?: string
-  relayAdapt?: string
+  armadaYieldAdapter?: string
 }
 
 export interface ChainConfig {
@@ -33,7 +33,6 @@ export interface HubDeployment {
     verifierModule?: string
     shieldModule?: string
     transactModule?: string
-    relayAdapt?: string
   }
   cctp?: {
     usdc?: string
@@ -214,12 +213,13 @@ export function getHubChain(): ChainConfig {
     contracts: {},
   }
 
-  // Add PrivacyPool and RelayAdapt from hub deployment
+  // Add PrivacyPool from hub deployment
   if (hubDeployment?.contracts?.privacyPool) {
     config.contracts!.privacyPool = hubDeployment.contracts.privacyPool
   }
-  if (hubDeployment?.contracts?.relayAdapt) {
-    config.contracts!.relayAdapt = hubDeployment.contracts.relayAdapt
+  // Add ArmadaYieldAdapter from yield deployment
+  if (yieldDeployment?.contracts?.armadaYieldAdapter) {
+    config.contracts!.armadaYieldAdapter = yieldDeployment.contracts.armadaYieldAdapter
   }
 
   // Add USDC/CCTP contracts from hub-v3 deployment

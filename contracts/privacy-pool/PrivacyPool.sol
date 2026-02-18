@@ -264,6 +264,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
+     * @notice Set the unshield fee in basis points
+     * @param _feeBps Fee in basis points (50 = 0.50%)
+     */
+    function setUnshieldFee(uint120 _feeBps) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        require(_feeBps <= 10000, "PrivacyPool: Fee too high");
+        unshieldFee = _feeBps;
+    }
+
+    /**
      * @notice Set the treasury address for fee collection
      * @param _treasury Address to receive protocol fees
      */
@@ -285,6 +295,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
             abi.encodeCall(IVerifierModule.setTestingMode, (_enabled))
         );
         emit TestingModeSet(_enabled);
+    }
+
+    /**
+     * @notice Set privileged shield caller (bypasses shield/unshield fees)
+     * @param caller Address to configure (e.g. yield adapter)
+     * @param privileged True to exempt from fees
+     */
+    function setPrivilegedShieldCaller(address caller, bool privileged) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        privilegedShieldCallers[caller] = privileged;
     }
 
     // ══════════════════════════════════════════════════════════════════════════

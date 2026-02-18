@@ -1,32 +1,22 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, X, ArrowRight, Loader2, Percent, ArrowDownUp, Wallet, Shield } from 'lucide-react'
+import { TrendingUp, X, ArrowRight, Loader2, Percent, ArrowDownUp } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { usePublicYieldBalance } from '@/hooks/usePublicYieldBalance'
-import { useYieldTransaction } from '@/hooks/useYieldTransaction'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { useShieldedYieldTransaction } from '@/hooks/useShieldedYieldTransaction'
 import { previewLend, previewRedeem, getCurrentAPY } from '@/services/yield'
-import { useAtomValue } from 'jotai'
-import { walletAtom } from '@/atoms/walletAtom'
 
 interface EarnPanelProps {
   onClose: () => void
 }
 
 type EarnMode = 'lend' | 'redeem'
-type WalletMode = 'public' | 'shielded'
 
 export function EarnPanel({ onClose }: EarnPanelProps) {
   const [mode, setMode] = useState<EarnMode>('lend')
-  const [walletMode, setWalletMode] = useState<WalletMode>('public')
   const [amount, setAmount] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [currentAPY, setCurrentAPY] = useState<number | null>(null)
-
-  // Check wallet connection
-  const walletState = useAtomValue(walletAtom)
-  const isConnected = walletState.metaMask.isConnected
 
   // Shielded wallet state
   const {
@@ -48,27 +38,6 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
       .catch((err) => console.error('[earn-panel] Failed to fetch APY:', err))
   }, [])
 
-  // Public wallet hooks
-  const {
-    formattedUsdc: formattedPublicUsdc,
-    formattedAyUsdcShares: formattedPublicShares,
-    formattedAyUsdcAssets: formattedPublicYieldAssets,
-    hasYieldPosition: hasPublicYieldPosition,
-    isLoading: isPublicLoading,
-    usdcBalance: publicUsdcBalance,
-    ayUsdcShares: publicSharesBalance,
-    refresh: refreshPublicBalances,
-  } = usePublicYieldBalance()
-
-  // Public transaction hook
-  const {
-    submitLend: submitPublicLend,
-    submitRedeem: submitPublicRedeem,
-    isSubmitting: isPublicSubmitting,
-    stageMessage: publicStageMessage,
-    error: publicTxError,
-  } = useYieldTransaction()
-
   // Shielded transaction hook
   const {
     submitShieldedLend,
@@ -79,35 +48,12 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
     error: shieldedTxError,
   } = useShieldedYieldTransaction()
 
-  // Derived state based on wallet mode
-  const isShieldedMode = walletMode === 'shielded'
-  const isSubmitting = isShieldedMode ? isShieldedSubmitting : isPublicSubmitting
-  const stageMessage = isShieldedMode ? shieldedStageMessage : publicStageMessage
-  const txError = isShieldedMode ? shieldedTxError : publicTxError
-
-  // Balance based on mode
+  // Balance based on mode (shielded only)
   const availableBalance =
-    mode === 'lend'
-      ? isShieldedMode
-        ? formattedShieldedUsdc
-        : formattedPublicUsdc
-      : isShieldedMode
-        ? formattedShieldedShares
-        : formattedPublicShares
+    mode === 'lend' ? formattedShieldedUsdc : formattedShieldedShares
 
   const availableRaw =
-    mode === 'lend'
-      ? isShieldedMode
-        ? shieldedUsdcBalance
-        : publicUsdcBalance
-      : isShieldedMode
-        ? shieldedSharesBalance
-        : publicSharesBalance
-
-  const hasYieldPosition = isShieldedMode ? hasShieldedYieldPosition : hasPublicYieldPosition
-  const isLoading = isShieldedMode ? isShieldedScanning : isPublicLoading
-  const formattedYieldAssets = isShieldedMode ? formattedShieldedYieldAssets : formattedPublicYieldAssets
-  const formattedYieldShares = isShieldedMode ? formattedShieldedShares : formattedPublicShares
+    mode === 'lend' ? shieldedUsdcBalance : shieldedSharesBalance
 
   // Preview calculation with debounce
   useEffect(() => {
@@ -143,75 +89,40 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
   const exceedsBalance = amountRaw > availableRaw && availableRaw > 0n
 
   // Overall validity
-  const walletReady = isShieldedMode ? isShieldedUnlocked : isConnected
-  const isValid = walletReady && isValidAmount && !exceedsBalance && !isSubmitting
+  const isValid = isShieldedUnlocked && isValidAmount && !exceedsBalance && !isShieldedSubmitting
 
   // Validation error message
-  const validationError = isShieldedMode
-    ? !isShieldedUnlocked
-      ? 'Unlock shielded wallet first'
-      : !amount.trim()
-        ? `Enter amount to ${mode}`
-        : parseFloat(amount) <= 0
-          ? 'Amount must be greater than 0'
-          : exceedsBalance
-            ? 'Insufficient shielded balance'
-            : null
-    : !isConnected
-      ? 'Connect wallet first'
-      : !amount.trim()
-        ? `Enter amount to ${mode}`
-        : parseFloat(amount) <= 0
-          ? 'Amount must be greater than 0'
-          : exceedsBalance
-            ? 'Insufficient balance'
-            : null
+  const validationError = !isShieldedUnlocked
+    ? 'Unlock shielded wallet first'
+    : !amount.trim()
+      ? `Enter amount to ${mode}`
+      : parseFloat(amount) <= 0
+        ? 'Amount must be greater than 0'
+        : exceedsBalance
+          ? 'Insufficient shielded balance'
+          : null
 
   const handleSubmit = async () => {
     if (!isValid) return
 
-    if (isShieldedMode) {
-      // Shielded operations
-      if (mode === 'lend') {
-        await submitShieldedLend({
-          amount,
-          onSuccess: () => {
-            setAmount('')
-            setPreview(null)
-            refreshShieldedBalance()
-          },
-        })
-      } else {
-        await submitShieldedRedeem({
-          shares: amount,
-          onSuccess: () => {
-            setAmount('')
-            setPreview(null)
-            refreshShieldedBalance()
-          },
-        })
-      }
+    if (mode === 'lend') {
+      await submitShieldedLend({
+        amount,
+        onSuccess: () => {
+          setAmount('')
+          setPreview(null)
+          refreshShieldedBalance()
+        },
+      })
     } else {
-      // Public operations
-      if (mode === 'lend') {
-        await submitPublicLend({
-          amount,
-          onSuccess: () => {
-            setAmount('')
-            setPreview(null)
-            refreshPublicBalances()
-          },
-        })
-      } else {
-        await submitPublicRedeem({
-          shares: amount,
-          onSuccess: () => {
-            setAmount('')
-            setPreview(null)
-            refreshPublicBalances()
-          },
-        })
-      }
+      await submitShieldedRedeem({
+        shares: amount,
+        onSuccess: () => {
+          setAmount('')
+          setPreview(null)
+          refreshShieldedBalance()
+        },
+      })
     }
   }
 
@@ -221,13 +132,13 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
 
   // Button content based on state
   const getButtonContent = () => {
-    if (isSubmitting) {
+    if (isShieldedSubmitting) {
       return (
         <>
           <Loader2 className="h-4 w-4 animate-spin" />
           <span className="ml-2">
-            {stageMessage ||
-              (isShieldedMode && proofProgress !== null
+            {shieldedStageMessage ||
+              (proofProgress !== null
                 ? `Proving ${Math.round(proofProgress * 100)}%`
                 : 'Processing...')}
           </span>
@@ -258,71 +169,16 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
       </div>
 
       <p className="text-sm text-muted-foreground mb-6">
-        Deposit USDC to earn yield via the Armada Yield Vault.
+        Deposit shielded USDC to earn yield via the Armada Yield Vault.
         {currentAPY !== null && ` Funds earn ~${currentAPY.toLocaleString()}% APY.`}
       </p>
 
       <div className="space-y-4">
-        {/* Wallet Mode Toggle */}
-        <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
-          <button
-            onClick={() => {
-              setWalletMode('public')
-              setAmount('')
-              setPreview(null)
-            }}
-            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-              walletMode === 'public'
-                ? 'bg-card text-foreground border border-border'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Wallet className="h-4 w-4" />
-            Public Wallet
-          </button>
-          <button
-            onClick={() => {
-              setWalletMode('shielded')
-              setAmount('')
-              setPreview(null)
-            }}
-            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-              walletMode === 'shielded'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            disabled={!isShieldedUnlocked}
-            title={!isShieldedUnlocked ? 'Unlock shielded wallet first' : undefined}
-          >
-            <Shield className="h-4 w-4" />
-            Shielded
-          </button>
-        </div>
-
-        {/* Info Box - explain the mode */}
-        <div
-          className={`p-3 border rounded-lg ${
-            isShieldedMode
-              ? 'bg-primary/10 border-primary/20'
-              : 'bg-info/10 border-info/20'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {isShieldedMode ? (
-              <Shield className="h-4 w-4 text-primary" />
-            ) : (
-              <Wallet className="h-4 w-4 text-info-foreground" />
-            )}
-            <span
-              className={`text-xs ${
-                isShieldedMode ? 'text-primary' : 'text-info-foreground'
-              }`}
-            >
-              {isShieldedMode
-                ? 'Deposit/withdraw from your shielded balance with full privacy'
-                : 'Deposit/withdraw from your public wallet balance'}
-            </span>
-          </div>
+        {/* Info Box */}
+        <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <span className="text-xs text-primary">
+            Deposit/withdraw from your shielded balance with full privacy
+          </span>
         </div>
 
         {/* APY Info Box */}
@@ -339,18 +195,18 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
         </div>
 
         {/* Current Position (if any) */}
-        {hasYieldPosition && (
+        {hasShieldedYieldPosition && (
           <div className="p-3 bg-muted/50 border border-border rounded-lg">
             <p className="text-xs text-muted-foreground mb-2">
-              Your {isShieldedMode ? 'Shielded' : 'Public'} Yield Position
+              Your Shielded Yield Position
             </p>
             <div className="flex justify-between text-sm">
               <span>Deposited (ayUSDC):</span>
-              <span className="font-mono">{formattedYieldShares}</span>
+              <span className="font-mono">{formattedShieldedShares}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span>Current Value:</span>
-              <span className="font-mono text-success">${formattedYieldAssets}</span>
+              <span className="font-mono text-success">${formattedShieldedYieldAssets}</span>
             </div>
           </div>
         )}
@@ -382,7 +238,7 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
-            disabled={!hasYieldPosition}
+            disabled={!hasShieldedYieldPosition}
           >
             Withdraw
           </button>
@@ -396,12 +252,12 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
             </label>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                Available: {isLoading ? '...' : availableBalance}
+                Available: {isShieldedScanning ? '...' : availableBalance}
               </span>
               <button
                 onClick={handleMaxClick}
                 className="text-xs text-primary hover:underline"
-                disabled={isSubmitting}
+                disabled={isShieldedSubmitting}
               >
                 MAX
               </button>
@@ -412,7 +268,6 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
               type="text"
               value={amount}
               onChange={(e) => {
-                // Only allow valid number input
                 const val = e.target.value
                 if (val === '' || /^\d*\.?\d*$/.test(val)) {
                   setAmount(val)
@@ -420,7 +275,7 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
               }}
               placeholder="0.00"
               className="w-full px-4 py-3 bg-background border border-input rounded-lg text-foreground font-mono text-lg focus:outline-none focus:ring-2 focus:ring-ring shadow-sm pr-20"
-              disabled={isSubmitting}
+              disabled={isShieldedSubmitting}
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">
               {mode === 'lend' ? 'USDC' : 'ayUSDC'}
@@ -450,8 +305,8 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
           </div>
         )}
 
-        {/* Proof Progress (shielded mode only) */}
-        {isShieldedMode && isSubmitting && proofProgress !== null && (
+        {/* Proof Progress */}
+        {isShieldedSubmitting && proofProgress !== null && (
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>Generating ZK proof...</span>
@@ -467,9 +322,9 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
         )}
 
         {/* Transaction Error */}
-        {txError && (
+        {shieldedTxError && (
           <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-            <p className="text-xs text-destructive">{txError}</p>
+            <p className="text-xs text-destructive">{shieldedTxError}</p>
           </div>
         )}
 
@@ -483,7 +338,7 @@ export function EarnPanel({ onClose }: EarnPanelProps) {
                   {mode === 'lend' ? 'Start earning' : 'Withdraw funds'}
                 </span>
               </div>
-              {!isValid && validationError && !isSubmitting && (
+              {!isValid && validationError && !isShieldedSubmitting && (
                 <p className="text-xs text-warning ml-6">{validationError}</p>
               )}
             </div>

@@ -8,7 +8,7 @@
  * - CCTP message spoofing & validation
  * - Shield input validation (value, npk, token blocklist)
  * - Unshield input validation (domain, recipient, fees)
- * - RelayAdapt guard enforcement
+ * - Privileged shield caller fee exemption
  * - Merkle tree edge cases (rollover, root history)
  */
 
@@ -41,8 +41,6 @@ describe("Privacy Pool Adversarial", function () {
   let verifierModule: Contract;
   let shieldModule: Contract;
   let transactModule: Contract;
-  let relayAdapt: Contract;
-
   let clientUsdc: Contract;
   let clientTokenMessenger: Contract;
   let clientMessageTransmitter: Contract;
@@ -124,10 +122,6 @@ describe("Privacy Pool Adversarial", function () {
     await privacyPool.setTestingMode(true);
     await privacyPool.setTreasury(deployerAddress);
     await privacyPool.setShieldFee(50); // 0.50%
-
-    // Deploy RelayAdapt
-    const RelayAdapt = await ethers.getContractFactory("PrivacyPoolRelayAdapt");
-    relayAdapt = await RelayAdapt.deploy(privacyPoolAddress);
 
     // ──── Deploy Client Chain ────
     clientUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -315,6 +309,101 @@ describe("Privacy Pool Adversarial", function () {
           0, 0, ethers.ZeroHash, ethers.ZeroAddress
         )
       ).to.be.revertedWith("PrivacyPoolClient: Already initialized");
+    });
+
+    it("non-owner cannot call setPrivilegedShieldCaller", async function () {
+      await expect(
+        privacyPool.connect(attacker).setPrivilegedShieldCaller(attackerAddress, true)
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PRIVILEGED SHIELD CALLERS (fee exemption)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Privileged Shield Callers", function () {
+    it("privileged caller bypasses shield fee", async function () {
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      await privacyPool.setPrivilegedShieldCaller(await forwarder.getAddress(), true);
+
+      const amount = ethers.parseUnits("100", 6);
+      await hubUsdc.mint(await forwarder.getAddress(), amount);
+      const usdcAddr = await hubUsdc.getAddress();
+
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+
+      const req = makeShieldRequest(usdcAddr, amount);
+      await forwarder.approveAndShield(usdcAddr, amount, [req]);
+
+      const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
+      const poolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+
+      expect(treasuryAfter - treasuryBefore).to.equal(0n);
+      expect(poolAfter - poolBefore).to.equal(amount);
+    });
+
+    it("non-privileged caller pays shield fee", async function () {
+      const amount = ethers.parseUnits("100", 6);
+      await hubUsdc.mint(aliceAddress, amount);
+      await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
+
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+
+      const usdcAddr = await hubUsdc.getAddress();
+      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)]);
+
+      const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
+      const poolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+
+      const expectedFee = amount * 50n / 10000n;
+      expect(treasuryAfter - treasuryBefore).to.equal(expectedFee);
+      expect(poolAfter - poolBefore).to.equal(amount - expectedFee);
+    });
+
+    it("privileged unshield recipient bypasses unshield fee", async function () {
+      await privacyPool.setUnshieldFee(50);
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      await privacyPool.setPrivilegedShieldCaller(await forwarder.getAddress(), true);
+
+      const amount = ethers.parseUnits("100", 6);
+      const root = await shieldAndGetRoot(amount);
+      const usdcAddr = await hubUsdc.getAddress();
+      const recipientAddr = await forwarder.getAddress();
+      const npkBigInt = BigInt(recipientAddr);
+      const tokenId = BigInt(usdcAddr);
+      const unshieldAmount = ethers.parseUnits("50", 6);
+      const commitHash = computeCommitmentHash(npkBigInt, tokenId, unshieldAmount);
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("priv-unshield-null"));
+
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(recipientAddr, 32),
+          token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
+          value: unshieldAmount,
+        },
+      });
+
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const recipientBefore = await hubUsdc.balanceOf(recipientAddr);
+
+      await privacyPool.transact([tx]);
+
+      const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
+      const recipientAfter = await hubUsdc.balanceOf(recipientAddr);
+
+      expect(treasuryAfter - treasuryBefore).to.equal(0n);
+      expect(recipientAfter - recipientBefore).to.equal(unshieldAmount);
+
+      await privacyPool.setUnshieldFee(0);
     });
   });
 
@@ -636,69 +725,6 @@ describe("Privacy Pool Adversarial", function () {
           tx, DOMAINS.client, bobAddress, ethers.ZeroHash, ethers.parseUnits("100", 6)
         )
       ).to.be.revertedWith("TransactModule: maxFee exceeds base");
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  // RELAY ADAPT
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe("RelayAdapt Guards", function () {
-    // NOTE: onlySelfIfExecuting allows external calls when isExecuting=false (no-ops on empty args).
-    // The guard blocks external calls DURING execution (reentrancy protection).
-
-    it("empty shield/transfer/multicall succeed as no-ops when not executing", async function () {
-      // These are allowed when not executing — empty arrays are no-ops
-      await relayAdapt.connect(attacker).shield([]);
-      await relayAdapt.connect(attacker).transfer([]);
-      await relayAdapt.connect(attacker).multicall(true, []);
-    });
-
-    it("relay with empty transactions reverts at transact level", async function () {
-      await expect(
-        relayAdapt.connect(attacker).relay([], {
-          random: ethers.hexlify(ethers.randomBytes(31)),
-          requireSuccess: true,
-          minGasLimit: 0,
-          calls: [],
-        })
-      ).to.be.revertedWith("TransactModule: No transactions");
-    });
-
-    it("multicall cannot target PrivacyPool address", async function () {
-      // Calls to PrivacyPool are silently skipped (not reverted)
-      // With requireSuccess=true, this triggers a failure since success=false
-      const callToPool = {
-        to: privacyPoolAddress,
-        data: privacyPool.interface.encodeFunctionData("treeNumber"),
-        value: 0,
-      };
-      await expect(
-        relayAdapt.connect(attacker).multicall(true, [callToPool])
-      ).to.be.revertedWithCustomError(relayAdapt, "CallFailed");
-    });
-
-    it("multicall with requireSuccess=false emits CallError on failure", async function () {
-      const callToPool = {
-        to: privacyPoolAddress,
-        data: privacyPool.interface.encodeFunctionData("treeNumber"),
-        value: 0,
-      };
-      const tx = await relayAdapt.connect(attacker).multicall(false, [callToPool]);
-      const receipt = await tx.wait();
-
-      // Should emit CallError event
-      const event = receipt?.logs.find((log: any) => {
-        try {
-          return relayAdapt.interface.parseLog(log)?.name === "CallError";
-        } catch { return false; }
-      });
-      expect(event).to.not.be.undefined;
-    });
-
-    it("privacyPool address stored as immutable", async function () {
-      const stored = await relayAdapt.privacyPool();
-      expect(stored).to.equal(privacyPoolAddress);
     });
   });
 

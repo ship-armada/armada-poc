@@ -14,7 +14,7 @@
 import { ethers } from 'ethers'
 import { loadProvider } from '@railgun-community/wallet'
 import { NETWORK_CONFIG, NetworkName } from '@railgun-community/shared-models'
-import { loadDeployments, getHubChain } from '@/config/deployments'
+import { loadDeployments, getHubChain, getYieldDeployment } from '@/config/deployments'
 
 // Track loaded networks
 let hubNetworkLoaded = false
@@ -59,7 +59,9 @@ async function patchHardhatConfig(): Promise<void> {
   const hubChain = getHubChain()
   // In native CCTP architecture, PrivacyPool serves as the Railgun proxy
   const privacyPool = hubChain.contracts?.privacyPool
-  const relayAdapt = hubChain.contracts?.relayAdapt
+  // Use armadaYieldAdapter for yield flows (replaces RelayAdapt)
+  const yieldDeployment = getYieldDeployment()
+  const adaptContract = yieldDeployment?.contracts?.armadaYieldAdapter
 
   if (!privacyPool) {
     console.warn('[network] Missing privacyPool in hub deployment')
@@ -69,13 +71,13 @@ async function patchHardhatConfig(): Promise<void> {
   const patchedPrimary = patchNetworkConfig(
     NETWORK_CONFIG as unknown as Record<string, unknown>,
     privacyPool,
-    relayAdapt,
+    adaptContract,
   )
 
   hardhatConfigPatched = patchedPrimary
   console.log('[network] Patched Hardhat network config for POC deployment')
-  if (relayAdapt) {
-    console.log('[network] RelayAdapt configured:', relayAdapt)
+  if (adaptContract) {
+    console.log('[network] ArmadaYieldAdapter configured:', adaptContract)
   }
 
   // Debug: Verify the patch took effect

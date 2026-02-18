@@ -5,7 +5,9 @@
  * - Shielded USDC -> Shielded ayUSDC (lend)
  * - Shielded ayUSDC -> Shielded USDC (redeem)
  *
- * Uses Railgun's adaptContract/adaptParams pattern for trustless execution.
+ * Trust model (see docs/RELAYER_SPEC.md): ArmadaYieldAdapter cannot deviate from
+ * the proof; adaptParams binds re-shield destination. Relayer pays gas, may charge
+ * fee, but cannot steal funds.
  */
 
 import { useState, useCallback } from 'react'
@@ -20,8 +22,7 @@ import {
   type ShieldedYieldStage,
   type ShieldedYieldResult,
 } from '@/services/yield'
-// Note: shieldPrivateKey is no longer needed - we use SDK cross-contract calls
-// which handle shielding automatically via RelayAdapt
+// Shielded yield uses ArmadaYieldAdapter.lendAndShield/redeemAndShield
 import { sanitizeError } from '@/utils/errorSanitizer'
 import { parseUSDC } from '@/lib/sdk'
 
@@ -86,7 +87,7 @@ export function useShieldedYieldTransaction(): UseShieldedYieldTransactionReturn
   const [lastResult, setLastResult] = useState<ShieldedYieldResult | null>(null)
 
   // Note: Shield private key is no longer needed with cross-contract calls approach
-  // The SDK's generateCrossContractCallsProof handles shielding via RelayAdapt
+  // Proof module generates trustless lend/redeem via ArmadaYieldAdapter
 
   // Submit shielded lend transaction
   const submitShieldedLend = useCallback(

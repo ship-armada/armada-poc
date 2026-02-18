@@ -69,6 +69,9 @@ abstract contract PrivacyPoolStorage {
     /// @notice NFT fee in basis points, default 0 for POC (required for SDK compatibility)
     uint120 public nftFee;
 
+    /// @notice Addresses that bypass shield/unshield fees (e.g. yield adapter)
+    mapping(address => bool) public privilegedShieldCallers;
+
     // ══════════════════════════════════════════════════════════════════════════
     // TOKEN MANAGEMENT
     // ══════════════════════════════════════════════════════════════════════════
@@ -145,5 +148,5 @@ abstract contract PrivacyPoolStorage {
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 }

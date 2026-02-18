@@ -43,8 +43,15 @@ The relayer eliminates the need for users to hold native tokens (ETH). Users onl
 |-----------|--------------|---------------------|
 | **Transfer** (private → private) | Fee from shielded USDC output (SDK built-in) | Hide sender's Ethereum address |
 | **Unshield** (private → public) | Fee from shielded USDC output (SDK built-in) | Hide sender's Ethereum address; prevent linking to unshield recipient |
-| **Cross-contract calls** (shielded lend/redeem) | Fee from shielded USDC output (SDK built-in) | Hide sender's Ethereum address |
+| **Shielded lend/redeem** (via ArmadaYieldAdapter) | Fee from shielded USDC output (SDK built-in) | Hide sender's Ethereum address |
 | **Cross-chain shield** (hub-side execution) | Fee deducted from shield amount on-chain (Option A) | User can't pay gas on hub chain; relayer executes `receiveMessage` |
+
+### Trust Model: Shielded Yield (lendAndShield / redeemAndShield)
+
+Shielded lend and redeem are **trustless** with respect to the adapter and relayer:
+
+- **ArmadaYieldAdapter** cannot deviate from the user's proof. The proof binds `adaptParams = hash(npk, encryptedBundle, shieldKey)`. The adapter verifies that the provided shield parameters match before executing. If they don't match, the transaction reverts. The adapter MUST shield to the user's committed destination.
+- **Relayer** pays gas and may charge a fee (included in the proof). The relayer cannot steal funds — the proof commits to all outputs. The relayer simply submits the transaction on behalf of the user.
 
 ### User-submitted (no privacy concern)
 
@@ -219,7 +226,7 @@ Reference: noble-cctp-relayer's WebSocket + worker pool pattern
 Accepts shielded transaction requests and submits them on behalf of users.
 
 - **Request validation**:
-  - Decode transaction data to verify it targets expected contracts (PrivacyPool, PrivacyPoolRelayAdapt)
+  - Decode transaction data to verify it targets expected contracts (PrivacyPool, ArmadaYieldAdapter)
   - Verify `feesCacheId` matches a recently advertised fee schedule (within TTL)
   - Estimate gas and verify fee covers cost + margin
   - Reject if transaction data is malformed or targets unexpected contracts

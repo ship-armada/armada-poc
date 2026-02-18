@@ -169,6 +169,19 @@ async function main() {
   await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, hubTokenMessengerBytes32);
   console.log(`✓ Hub TokenMessenger self-reference set`);
 
+  // Configure ArmadaYieldAdapter if yield is deployed
+  const yieldDeployment = loadDeployment("yield-hub.json");
+  if (yieldDeployment?.contracts?.armadaYieldAdapter) {
+    const adapterAddress = yieldDeployment.contracts.armadaYieldAdapter;
+    console.log("");
+    console.log("Configuring ArmadaYieldAdapter...");
+    const adapter = await ethers.getContractAt("ArmadaYieldAdapter", adapterAddress);
+    await (await adapter.setPrivacyPool(hubPoolAddress)).wait();
+    console.log(`  ✓ Adapter privacy pool set to: ${hubPoolAddress}`);
+    await (await privacyPool.setPrivilegedShieldCaller(adapterAddress, true)).wait();
+    console.log(`  ✓ Adapter set as privileged shield caller (fee exemption)`);
+  }
+
   console.log("");
   console.log("=== Linking Complete ===");
   console.log("");

@@ -125,11 +125,11 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         // Validate the commitment preimage
         _validateCommitmentPreimageMemory(_request.preimage);
 
-        // Calculate fee (if any)
+        // Calculate fee (if any). Privileged callers bypass fee.
         uint256 fee = 0;
         CommitmentPreimage memory adjustedPreimage = _request.preimage;
 
-        if (shieldFee > 0) {
+        if (shieldFee > 0 && !privilegedShieldCallers[msg.sender]) {
             (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
             adjustedPreimage.value = base;
             fee = feeAmount;
@@ -212,8 +212,15 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
 
         IERC20 token = IERC20(_note.token.tokenAddress);
 
-        // Calculate base and fee amounts
-        (uint120 base, uint120 feeAmount) = _getFee(_note.value, true, shieldFee);
+        // Privileged callers (e.g. yield adapter) bypass shield fee
+        uint120 base;
+        uint120 feeAmount;
+        if (privilegedShieldCallers[msg.sender]) {
+            base = _note.value;
+            feeAmount = 0;
+        } else {
+            (base, feeAmount) = _getFee(_note.value, true, shieldFee);
+        }
 
         // Create adjusted preimage with fee-reduced value
         adjustedNote = CommitmentPreimage({

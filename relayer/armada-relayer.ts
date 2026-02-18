@@ -31,9 +31,14 @@ function loadJson<T>(filename: string): T | null {
   return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
 }
 
+interface YieldDeployment {
+  chainId: number;
+  contracts: { armadaYieldAdapter: string };
+}
+
 interface ContractAddresses {
   privacyPool: string;
-  relayAdapt: string;
+  armadaYieldAdapter: string;
   usdc: string;
   messageTransmitter: string;
   tokenMessenger: string;
@@ -48,6 +53,14 @@ function loadContractAddresses(): ContractAddresses {
     );
   }
 
+  // Load yield deployment for ArmadaYieldAdapter
+  const yieldDeployment = loadJson<YieldDeployment>("yield-hub.json");
+  if (!yieldDeployment?.contracts?.armadaYieldAdapter) {
+    throw new Error(
+      "yield-hub.json with armadaYieldAdapter not found. Run deploy_yield.ts first."
+    );
+  }
+
   // Load CCTP hub deployment
   const cctpDeployment = loadJson<CCTPDeployment>("hub-v3.json");
   if (!cctpDeployment) {
@@ -58,7 +71,7 @@ function loadContractAddresses(): ContractAddresses {
 
   return {
     privacyPool: ppDeployment.contracts.privacyPool,
-    relayAdapt: ppDeployment.contracts.relayAdapt,
+    armadaYieldAdapter: yieldDeployment.contracts.armadaYieldAdapter,
     usdc: cctpDeployment.contracts.usdc,
     messageTransmitter: cctpDeployment.contracts.messageTransmitter,
     tokenMessenger: cctpDeployment.contracts.tokenMessenger,
@@ -85,7 +98,7 @@ async function main() {
 
   console.log("[armada] Contract addresses:");
   console.log(`  PrivacyPool:        ${contracts.privacyPool}`);
-  console.log(`  RelayAdapt:         ${contracts.relayAdapt}`);
+  console.log(`  ArmadaYieldAdapter: ${contracts.armadaYieldAdapter}`);
   console.log(`  USDC:               ${contracts.usdc}`);
   console.log(`  MessageTransmitter: ${contracts.messageTransmitter}`);
   console.log(`  TokenMessenger:     ${contracts.tokenMessenger}`);
@@ -115,7 +128,7 @@ async function main() {
   console.log("[armada] Initializing privacy relay...");
   const privacyRelay = new PrivacyRelay(walletManager, feeCalculator, {
     privacyPool: contracts.privacyPool,
-    relayAdapt: contracts.relayAdapt,
+    armadaYieldAdapter: contracts.armadaYieldAdapter,
   });
 
   // Initialize HTTP API

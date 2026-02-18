@@ -52,10 +52,19 @@ export function isRelayerEnabled(): boolean {
 }
 
 /**
- * Get the relayer's Ethereum address (for fee recipient in proofs)
+ * Get the relayer's Ethereum address (for display, gas payment)
  */
 export function getRelayerAddress(): string {
   return RELAYER_CONFIG.relayerAddress
+}
+
+/**
+ * Get the relayer's Railgun address (0zk...) for broadcaster fee recipient.
+ * The Railgun SDK requires a Railgun address for broadcasterFeeRecipient — fees are
+ * paid to the broadcaster's shielded balance. If unset, fee is omitted from proof.
+ */
+export function getRelayerRailgunAddress(): string | undefined {
+  return RELAYER_CONFIG.relayerRailgunAddress
 }
 
 /**

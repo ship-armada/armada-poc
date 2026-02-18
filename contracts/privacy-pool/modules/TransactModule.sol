@@ -338,11 +338,18 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
 
         IERC20 token = IERC20(_note.token.tokenAddress);
 
-        // Calculate base and fee
-        (uint120 base, uint120 fee) = _getFee(_note.value, true, unshieldFee);
-
         // Get recipient from npk (address encoded as bytes32)
         address recipient = address(uint160(uint256(_note.npk)));
+
+        // Privileged recipients (e.g. yield adapter) bypass unshield fee
+        uint120 base;
+        uint120 fee;
+        if (privilegedShieldCallers[recipient]) {
+            base = _note.value;
+            fee = 0;
+        } else {
+            (base, fee) = _getFee(_note.value, true, unshieldFee);
+        }
 
         // Transfer to recipient
         token.safeTransfer(recipient, base);

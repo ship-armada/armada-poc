@@ -202,6 +202,7 @@ The goal is a concrete, executable plan that the Executor can follow step-by-ste
 
 ## Lessons
 
+- **Relayer function selectors (2025-02-13):** The relayer's `ALLOWED_SELECTORS` must match the compiled contract ABI. Use `forge-out/ArmadaYieldAdapter.sol/ArmadaYieldAdapter.json` to derive selectors: `lendAndShield` = 0xf2987ad1, `redeemAndShield` = 0x0793b70e. Do not hardcode selectors from documentation or older builds.
 - **Slither fixes applied (2025-02-13):** ArmadaYieldAdapter.lendPrivate (shareToken.safeTransfer), PrivacyPool.initialize (zero-checks for all address params), PrivacyPool.setTreasury (zero-check), ArmadaTreasuryGov.constructor (zero-check). All 262 tests pass.
 - **Foundry:** Use `forge test --offline` in sandboxed environments to avoid SCDynamicStoreBuilder crash (macOS proxy lookup).
 - **Halmos:** foundry.toml uses `out = "forge-out"`. Add `[global] forge-build-out = "forge-out"` to `halmos.toml` so Halmos finds the build output.

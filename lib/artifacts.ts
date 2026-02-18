@@ -50,6 +50,7 @@ export interface SolidityVerifyingKey {
  * These cover the most common use cases for shield/transfer/unshield
  */
 export const TESTING_ARTIFACT_CONFIGS: ArtifactConfig[] = [
+  { nullifiers: 1, commitments: 1 },  // Cross-contract: lend/redeem (1 unshield -> 1 shield)
   { nullifiers: 1, commitments: 2 },  // Shield: 1 input -> 2 outputs
   { nullifiers: 2, commitments: 2 },  // Simple transfer
   { nullifiers: 2, commitments: 3 },  // Transfer with change

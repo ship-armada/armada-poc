@@ -23,6 +23,7 @@
     "deploy:yield": "npm run deploy:yield:hub",
     "deploy:faucets": "hardhat run scripts/deploy_faucet.ts",
     "link": "hardhat run scripts/link_privacy_pool.ts --network hub",
+    "load:vk-1x1": "hardhat run scripts/load_verification_key_1x1.ts --network hub",
     "relayer": "npx ts-node relayer/relay-v2.ts",
     "armada-relayer": "npx ts-node relayer/armada-relayer.ts",
     "deploy:governance": "hardhat run scripts/deploy_governance.ts --network hub",

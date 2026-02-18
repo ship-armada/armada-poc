@@ -1,6 +1,7 @@
 export {
   isRelayerEnabled,
   getRelayerAddress,
+  getRelayerRailgunAddress,
   getFees,
   getRelayerFee,
   submitTransaction,

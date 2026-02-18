@@ -70,9 +70,7 @@ async function main() {
   }
   const cctpDeployment = JSON.parse(fs.readFileSync(cctpDeploymentFile, "utf8"));
   const usdcAddress = cctpDeployment.contracts.usdc;
-  const tokenMessengerAddress = cctpDeployment.contracts.tokenMessenger;
   console.log(`Using USDC at: ${usdcAddress}`);
-  console.log(`Using TokenMessenger at: ${tokenMessengerAddress}`);
 
   // Load Aave Mock deployment
   const aaveDeploymentFile = path.join(deploymentsDir, `aave-mock-${networkName}.json`);
@@ -125,15 +123,7 @@ async function main() {
   await (await armadaYieldVault.setAdapter(armadaYieldAdapterAddress)).wait();
   console.log(`   Adapter set to: ${armadaYieldAdapterAddress}`);
 
-  // 5. Configure ArmadaYieldAdapter
-  console.log("\n5. Configuring ArmadaYieldAdapter...");
-  await (await armadaYieldAdapter.setRelayer(deployer.address, true)).wait();
-  console.log(`   Relayer added: ${deployer.address}`);
-
-  // 6. Set TokenMessenger for cross-chain CCTP support
-  console.log("\n6. Setting TokenMessenger for CCTP...");
-  await (await armadaYieldAdapter.setTokenMessenger(tokenMessengerAddress)).wait();
-  console.log(`   TokenMessenger set to: ${tokenMessengerAddress}`);
+  // 5. Note: setPrivacyPool and setPrivilegedShieldCaller are configured by link_privacy_pool or configure_privileged_adapter
 
   // Save deployment
   const deployment: YieldDeployment = {

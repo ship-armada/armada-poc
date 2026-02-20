@@ -9,13 +9,21 @@
  * - ArmadaGovernor
  * - TreasurySteward
  *
- * Usage:
+ * Usage (local):
  *   npx hardhat run scripts/deploy_governance.ts --network hub
+ *
+ * Usage (sepolia):
+ *   npx hardhat run scripts/deploy_governance.ts --network sepoliaHub
  */
 
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  getNetworkConfig,
+  getChainRole,
+  getGovernanceDeploymentFile,
+} from "../config/networks";
 
 interface GovernanceDeployment {
   chainId: number;
@@ -41,14 +49,24 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
+  const config = getNetworkConfig();
+
+  const role = getChainRole(chainId);
+  if (!role) {
+    console.error(`Unknown chain ID: ${chainId}`);
+    process.exit(1);
+  }
+
+  const timelockDelay = config.timelockDelay;
+  const stewardDelay = config.stewardDelay;
 
   console.log("=== Deploying Armada Governance Contracts ===");
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
+  console.log(`Environment: ${config.env}`);
+  console.log(`Timelock delay: ${timelockDelay}s`);
+  console.log(`Steward delay: ${stewardDelay}s`);
   console.log("");
-
-  const TWO_DAYS = 2 * 86400;
-  const ONE_DAY = 86400;
 
   // 1. Deploy ArmadaToken
   console.log("1. Deploying ArmadaToken...");
@@ -70,7 +88,7 @@ async function main() {
   console.log("3. Deploying TimelockController...");
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(
-    TWO_DAYS, [], [], deployer.address
+    timelockDelay, [], [], deployer.address
   );
   await timelock.waitForDeployment();
   const timelockAddress = await timelock.getAddress();
@@ -97,7 +115,7 @@ async function main() {
   // 6. Deploy TreasurySteward
   console.log("6. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-  const steward = await TreasurySteward.deploy(timelockAddress, treasuryAddress, ONE_DAY);
+  const steward = await TreasurySteward.deploy(timelockAddress, treasuryAddress, stewardDelay);
   await steward.waitForDeployment();
   const stewardAddress = await steward.getAddress();
   console.log(`   TreasurySteward: ${stewardAddress}`);
@@ -123,15 +141,6 @@ async function main() {
   console.log(`   Sent 65M ARM to treasury`);
 
   // Save deployment
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-
-  let networkName = "hub";
-  if (chainId === 31338) networkName = "client";
-  else if (chainId === 31339) networkName = "clientB";
-
   const deployment: GovernanceDeployment = {
     chainId,
     deployer: deployer.address,
@@ -144,18 +153,27 @@ async function main() {
       steward: stewardAddress,
     },
     config: {
-      timelockMinDelay: TWO_DAYS,
-      stewardActionDelay: ONE_DAY,
+      timelockMinDelay: timelockDelay,
+      stewardActionDelay: stewardDelay,
       totalSupply: "100000000",
       treasuryAllocation: "65000000",
     },
     timestamp: new Date().toISOString(),
   };
 
-  const outputFile = path.join(deploymentsDir, `governance-${networkName}.json`);
-  fs.writeFileSync(outputFile, JSON.stringify(deployment, null, 2));
-  console.log(`\nDeployment saved to: ${outputFile}`);
+  const outputFile = getGovernanceDeploymentFile();
+  saveDeployment(outputFile, deployment);
+  console.log(`\nDeployment saved to: deployments/${outputFile}`);
   console.log("\n=== Governance deployment complete ===");
+}
+
+function saveDeployment(filename: string, data: any): void {
+  const deploymentsDir = path.join(__dirname, "..", "deployments");
+  if (!fs.existsSync(deploymentsDir)) {
+    fs.mkdirSync(deploymentsDir, { recursive: true });
+  }
+  const filePath = path.join(deploymentsDir, filename);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 main()

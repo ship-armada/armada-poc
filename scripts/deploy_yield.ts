@@ -2,21 +2,32 @@
  * Deploy Armada Yield Contracts
  *
  * Deploys the yield infrastructure:
+ * - ArmadaTreasury
  * - ArmadaYieldVault: ERC-20 wrapper around Aave Spoke
  * - ArmadaYieldAdapter: Lend/redeem operations for privacy pool
  *
  * Prerequisites:
- *   - CCTP infrastructure deployed (for USDC address)
+ *   - CCTP infrastructure deployed/configured (for USDC address)
  *   - Mock Aave deployed (for MockAaveSpoke address)
- *   - Run deploy_cctp_v3.ts and deploy_aave_mock.ts first
  *
- * Usage:
+ * Usage (local):
  *   npx hardhat run scripts/deploy_yield.ts --network hub
+ *
+ * Usage (sepolia):
+ *   npx hardhat run scripts/deploy_yield.ts --network sepoliaHub
  */
 
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  getNetworkConfig,
+  getChainRole,
+  getCCTPDeploymentFile,
+  getAaveMockDeploymentFile,
+  getYieldDeploymentFile,
+  type ChainRole,
+} from "../config/networks";
 
 interface YieldDeployment {
   chainId: number;
@@ -39,47 +50,37 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
+  const config = getNetworkConfig();
 
-  console.log("=== Deploying Armada Yield Contracts ===");
-  console.log(`Deployer: ${deployer.address}`);
-  console.log(`Chain ID: ${chainId}`);
-  console.log("");
-
-  // Load dependencies
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-
-  // Determine network name
-  let networkName: string;
-  if (chainId === 31337) {
-    networkName = "hub";
-  } else if (chainId === 31338) {
-    networkName = "client";
-  } else if (chainId === 31339) {
-    networkName = "clientB";
-  } else {
+  const role = getChainRole(chainId);
+  if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
     process.exit(1);
   }
 
+  console.log("=== Deploying Armada Yield Contracts ===");
+  console.log(`Deployer: ${deployer.address}`);
+  console.log(`Chain ID: ${chainId}`);
+  console.log(`Environment: ${config.env}`);
+  console.log("");
+
   // Load CCTP deployment for USDC
-  const cctpDeploymentFile = path.join(deploymentsDir, `${networkName}-v3.json`);
-  if (!fs.existsSync(cctpDeploymentFile)) {
-    console.error(`CCTP deployment not found: ${cctpDeploymentFile}`);
-    console.error("Run deploy_cctp_v3.ts first");
+  const cctpFilename = getCCTPDeploymentFile(role);
+  const cctpDeployment = loadDeployment(cctpFilename);
+  if (!cctpDeployment) {
+    console.error(`CCTP deployment not found: ${cctpFilename}`);
     process.exit(1);
   }
-  const cctpDeployment = JSON.parse(fs.readFileSync(cctpDeploymentFile, "utf8"));
   const usdcAddress = cctpDeployment.contracts.usdc;
   console.log(`Using USDC at: ${usdcAddress}`);
 
   // Load Aave Mock deployment
-  const aaveDeploymentFile = path.join(deploymentsDir, `aave-mock-${networkName}.json`);
-  if (!fs.existsSync(aaveDeploymentFile)) {
-    console.error(`Aave Mock deployment not found: ${aaveDeploymentFile}`);
-    console.error("Run deploy_aave_mock.ts first");
+  const aaveFilename = getAaveMockDeploymentFile(role);
+  const aaveDeployment = loadDeployment(aaveFilename);
+  if (!aaveDeployment) {
+    console.error(`Aave Mock deployment not found: ${aaveFilename}`);
     process.exit(1);
   }
-  const aaveDeployment = JSON.parse(fs.readFileSync(aaveDeploymentFile, "utf8"));
   const mockAaveSpokeAddress = aaveDeployment.contracts.mockAaveSpoke;
   const reserveId = aaveDeployment.reserves.usdc.reserveId;
   console.log(`Using MockAaveSpoke at: ${mockAaveSpokeAddress}`);
@@ -123,8 +124,6 @@ async function main() {
   await (await armadaYieldVault.setAdapter(armadaYieldAdapterAddress)).wait();
   console.log(`   Adapter set to: ${armadaYieldAdapterAddress}`);
 
-  // 5. Note: setPrivacyPool and setPrivilegedShieldCaller are configured by link_privacy_pool or configure_privileged_adapter
-
   // Save deployment
   const deployment: YieldDeployment = {
     chainId,
@@ -143,20 +142,29 @@ async function main() {
     timestamp: new Date().toISOString(),
   };
 
-  const outputFile = path.join(deploymentsDir, `yield-${networkName}.json`);
-  fs.writeFileSync(outputFile, JSON.stringify(deployment, null, 2));
+  const outputFile = getYieldDeploymentFile();
+  saveDeployment(outputFile, deployment);
 
   console.log("\n=== Deployment Complete ===");
-  console.log(`Saved to: ${outputFile}`);
-  console.log("\nContracts:");
-  console.log(`  ArmadaTreasury:     ${armadaTreasuryAddress}`);
-  console.log(`  ArmadaYieldVault:   ${armadaYieldVaultAddress}`);
-  console.log(`  ArmadaYieldAdapter: ${armadaYieldAdapterAddress}`);
-  console.log("\nConfiguration:");
-  console.log(`  USDC:           ${usdcAddress}`);
-  console.log(`  MockAaveSpoke:  ${mockAaveSpokeAddress}`);
-  console.log(`  Reserve ID:     ${reserveId}`);
-  console.log(`  Yield Fee:      10%`);
+  console.log(`Saved to: deployments/${outputFile}`);
+}
+
+function loadDeployment(filename: string): any | null {
+  const deploymentsDir = path.join(__dirname, "..", "deployments");
+  const filePath = path.join(deploymentsDir, filename);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+}
+
+function saveDeployment(filename: string, data: any): void {
+  const deploymentsDir = path.join(__dirname, "..", "deployments");
+  if (!fs.existsSync(deploymentsDir)) {
+    fs.mkdirSync(deploymentsDir, { recursive: true });
+  }
+  const filePath = path.join(deploymentsDir, filename);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 main()

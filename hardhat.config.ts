@@ -5,7 +5,10 @@ import "./tasks/governance";
 import "./tasks/crowdfund";
 
 // Anvil default account private key (Account 0)
-const DEPLOYER_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const ANVIL_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+// Deployer key: use env var for testnets, Anvil default for local
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || ANVIL_KEY;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -21,23 +24,47 @@ const config: HardhatUserConfig = {
     hardhat: {
       accounts: { count: 200 },
     },
+
+    // ========== Local Anvil Networks ==========
+
     // Hub Chain (uses 31337 and port 8545 to match Railgun SDK's Hardhat network config)
     hub: {
       url: process.env.HUB_RPC || "http://localhost:8545",
       chainId: 31337,
-      accounts: [DEPLOYER_PRIVATE_KEY],
+      accounts: [ANVIL_KEY],
     },
     // Client Chain A
     client: {
-      url: process.env.CLIENT_RPC || "http://localhost:8546",
+      url: process.env.CLIENT_A_RPC || process.env.CLIENT_RPC || "http://localhost:8546",
       chainId: 31338,
-      accounts: [DEPLOYER_PRIVATE_KEY],
+      accounts: [ANVIL_KEY],
     },
     // Client Chain B
     clientB: {
       url: process.env.CLIENT_B_RPC || "http://localhost:8547",
       chainId: 31339,
-      accounts: [DEPLOYER_PRIVATE_KEY],
+      accounts: [ANVIL_KEY],
+    },
+
+    // ========== Sepolia Testnet Networks ==========
+
+    // Hub: Ethereum Sepolia
+    sepoliaHub: {
+      url: process.env.HUB_RPC || "https://ethereum-sepolia-rpc.publicnode.com",
+      chainId: 11155111,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+    },
+    // Client A: Base Sepolia
+    sepoliaClientA: {
+      url: process.env.CLIENT_A_RPC || "https://sepolia.base.org",
+      chainId: 84532,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+    },
+    // Client B: Arbitrum Sepolia
+    sepoliaClientB: {
+      url: process.env.CLIENT_B_RPC || "https://sepolia-rollup.arbitrum.io/rpc",
+      chainId: 421614,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
     },
   },
   paths: {

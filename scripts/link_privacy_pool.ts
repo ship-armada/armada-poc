@@ -1,17 +1,20 @@
 /**
  * Link Privacy Pool Deployments
  *
- * This script links the Hub PrivacyPool with Client PrivacyPoolClients:
+ * Links the Hub PrivacyPool with Client PrivacyPoolClients:
  *   - Sets remote pool addresses on Hub for each client domain
- *   - Updates client deployments with hub pool address
- *   - Configures CCTP TokenMessenger remote addresses
+ *   - Configures CCTP TokenMessenger remote addresses (mock mode only)
+ *   - Configures ArmadaYieldAdapter if deployed
  *
  * Prerequisites:
- *   - CCTP V2 contracts deployed on all chains
+ *   - CCTP V2 contracts deployed/configured on all chains
  *   - Privacy Pool contracts deployed on all chains
  *
- * Usage:
+ * Usage (local):
  *   npx hardhat run scripts/link_privacy_pool.ts --network hub
+ *
+ * Usage (sepolia):
+ *   npx hardhat run scripts/link_privacy_pool.ts --network sepoliaHub
  *
  * Note: Run this on the Hub chain after all deployments are complete.
  */
@@ -19,46 +22,49 @@
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
-
-// Domain IDs (matching CCTPDomains library)
-const DOMAINS = {
-  hub: 100,
-  client: 101,
-  clientB: 102,
-};
+import {
+  getNetworkConfig,
+  getCCTPDeploymentFile,
+  getPrivacyPoolDeploymentFile,
+  getYieldDeploymentFile,
+  isCCTPReal,
+  type ChainRole,
+} from "../config/networks";
 
 interface LinkConfig {
+  role: ChainRole;
   domain: number;
-  deploymentFile: string;
-  cctpFile: string;
   name: string;
 }
 
-const CLIENT_CONFIGS: LinkConfig[] = [
-  {
-    domain: DOMAINS.client,
-    deploymentFile: "privacy-pool-client.json",
-    cctpFile: "client-v3.json",
-    name: "Client A",
-  },
-  {
-    domain: DOMAINS.clientB,
-    deploymentFile: "privacy-pool-clientB.json",
-    cctpFile: "clientB-v3.json",
-    name: "Client B",
-  },
-];
-
 async function main() {
   const [signer] = await ethers.getSigners();
+  const config = getNetworkConfig();
+
+  const clientConfigs: LinkConfig[] = [
+    {
+      role: "clientA",
+      domain: config.clientA.cctpDomain,
+      name: config.clientA.name,
+    },
+    {
+      role: "clientB",
+      domain: config.clientB.cctpDomain,
+      name: config.clientB.name,
+    },
+  ];
+
   console.log("=== Linking Privacy Pool Deployments ===");
   console.log(`Signer: ${signer.address}`);
+  console.log(`Environment: ${config.env}`);
+  console.log(`CCTP Mode: ${config.cctpMode}`);
   console.log("");
 
   // Load Hub deployment
-  const hubDeployment = loadDeployment("privacy-pool-hub.json");
+  const hubFilename = getPrivacyPoolDeploymentFile("hub");
+  const hubDeployment = loadDeployment(hubFilename);
   if (!hubDeployment) {
-    throw new Error("Hub deployment not found. Run deploy_privacy_pool.ts on hub first.");
+    throw new Error(`Hub deployment not found (${hubFilename}). Run deploy_privacy_pool.ts on hub first.`);
   }
 
   const hubPoolAddress = hubDeployment.contracts.privacyPool;
@@ -67,29 +73,26 @@ async function main() {
   // Get PrivacyPool contract instance
   const privacyPool = await ethers.getContractAt("PrivacyPool", hubPoolAddress);
 
-  // Load Hub CCTP deployment for TokenMessenger configuration
-  const hubCctp = loadDeployment("hub-v3.json");
+  // Load Hub CCTP deployment
+  const hubCctpFilename = getCCTPDeploymentFile("hub");
+  const hubCctp = loadDeployment(hubCctpFilename);
   if (!hubCctp) {
-    throw new Error("Hub CCTP deployment not found.");
+    throw new Error(`Hub CCTP deployment not found (${hubCctpFilename}).`);
   }
-
-  const hubTokenMessenger = await ethers.getContractAt(
-    "MockTokenMessengerV2",
-    hubCctp.contracts.tokenMessenger
-  );
 
   console.log("");
   console.log("Linking clients to Hub...");
   console.log("");
 
   // Process each client
-  for (const config of CLIENT_CONFIGS) {
-    console.log(`--- ${config.name} (Domain ${config.domain}) ---`);
+  for (const clientConfig of clientConfigs) {
+    console.log(`--- ${clientConfig.name} (Domain ${clientConfig.domain}) ---`);
 
     // Load client privacy pool deployment
-    const clientDeployment = loadDeployment(config.deploymentFile);
+    const clientFilename = getPrivacyPoolDeploymentFile(clientConfig.role);
+    const clientDeployment = loadDeployment(clientFilename);
     if (!clientDeployment) {
-      console.log(`  Warning: ${config.name} deployment not found, skipping`);
+      console.log(`  Warning: ${clientConfig.name} deployment not found (${clientFilename}), skipping`);
       continue;
     }
 
@@ -99,87 +102,100 @@ async function main() {
 
     // Set remote pool on Hub
     console.log(`  Setting remote pool on Hub...`);
-    const setRemoteTx = await privacyPool.setRemotePool(config.domain, clientBytes32);
+    const setRemoteTx = await privacyPool.setRemotePool(clientConfig.domain, clientBytes32);
     await setRemoteTx.wait();
-    console.log(`  ✓ Remote pool set for domain ${config.domain}`);
+    console.log(`  Remote pool set for domain ${clientConfig.domain}`);
 
-    // Load client CCTP deployment for TokenMessenger linking
-    const clientCctp = loadDeployment(config.cctpFile);
-    if (clientCctp) {
-      // Set remote TokenMessenger on Hub TokenMessenger (Hub -> Client)
-      const clientTokenMessengerBytes32 = ethers.zeroPadValue(
-        clientCctp.contracts.tokenMessenger,
-        32
-      );
-      console.log(`  Setting remote TokenMessenger on Hub...`);
-      const setRemoteMessengerTx = await hubTokenMessenger.setRemoteTokenMessenger(
-        config.domain,
-        clientTokenMessengerBytes32
-      );
-      await setRemoteMessengerTx.wait();
-      console.log(`  ✓ Remote TokenMessenger set for domain ${config.domain}`);
+    // In mock mode, we need to configure TokenMessenger cross-references
+    // In real CCTP mode, Circle manages this - skip
+    if (!isCCTPReal()) {
+      const clientCctpFilename = getCCTPDeploymentFile(clientConfig.role);
+      const clientCctp = loadDeployment(clientCctpFilename);
+      if (clientCctp) {
+        // Set remote TokenMessenger on Hub (Hub -> Client)
+        const hubTokenMessenger = await ethers.getContractAt(
+          "MockTokenMessengerV2",
+          hubCctp.contracts.tokenMessenger
+        );
+        const clientTokenMessengerBytes32 = ethers.zeroPadValue(
+          clientCctp.contracts.tokenMessenger,
+          32
+        );
+        console.log(`  Setting remote TokenMessenger on Hub...`);
+        await (await hubTokenMessenger.setRemoteTokenMessenger(
+          clientConfig.domain,
+          clientTokenMessengerBytes32
+        )).wait();
+        console.log(`  Remote TokenMessenger set for domain ${clientConfig.domain}`);
+      }
     }
 
     console.log("");
   }
 
-  // IMPORTANT: Configure Client TokenMessengers to know about Hub TokenMessenger
-  // This is needed for Client -> Hub messages (cross-chain shields)
-  const hubTokenMessengerBytes32 = ethers.zeroPadValue(
-    hubCctp.contracts.tokenMessenger,
-    32
-  );
-
-  console.log("Configuring Client TokenMessengers with Hub address...");
-  console.log("");
-
-  for (const config of CLIENT_CONFIGS) {
-    const clientCctp = loadDeployment(config.cctpFile);
-    if (!clientCctp) continue;
-
-    // Connect to client chain
-    const clientRpc = config.domain === DOMAINS.client
-      ? process.env.CLIENT_RPC || "http://localhost:8546"
-      : process.env.CLIENT_B_RPC || "http://localhost:8547";
-
-    const clientProvider = new ethers.JsonRpcProvider(clientRpc);
-    const clientSigner = new ethers.Wallet(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // Anvil deployer
-      clientProvider
+  // In mock mode, configure Client TokenMessengers to know about Hub
+  if (!isCCTPReal()) {
+    const hubTokenMessengerBytes32 = ethers.zeroPadValue(
+      hubCctp.contracts.tokenMessenger,
+      32
     );
 
-    const clientTokenMessenger = new ethers.Contract(
-      clientCctp.contracts.tokenMessenger,
-      ["function setRemoteTokenMessenger(uint32 domain, bytes32 tokenMessenger) external"],
-      clientSigner
-    );
+    console.log("Configuring Client TokenMessengers with Hub address...");
+    console.log("");
 
-    console.log(`  Setting Hub TokenMessenger on ${config.name}...`);
-    const tx = await clientTokenMessenger.setRemoteTokenMessenger(
-      DOMAINS.hub,
-      hubTokenMessengerBytes32
+    for (const clientConfig of clientConfigs) {
+      const clientCctpFilename = getCCTPDeploymentFile(clientConfig.role);
+      const clientCctp = loadDeployment(clientCctpFilename);
+      if (!clientCctp) continue;
+
+      // Connect to client chain
+      const chain = clientConfig.role === "clientA" ? config.clientA : config.clientB;
+      const clientProvider = new ethers.JsonRpcProvider(chain.rpc);
+      const clientSigner = new ethers.Wallet(
+        config.deployerPrivateKey,
+        clientProvider
+      );
+
+      const clientTokenMessenger = new ethers.Contract(
+        clientCctp.contracts.tokenMessenger,
+        ["function setRemoteTokenMessenger(uint32 domain, bytes32 tokenMessenger) external"],
+        clientSigner
+      );
+
+      console.log(`  Setting Hub TokenMessenger on ${clientConfig.name}...`);
+      const tx = await clientTokenMessenger.setRemoteTokenMessenger(
+        config.hub.cctpDomain,
+        hubTokenMessengerBytes32
+      );
+      await tx.wait();
+      console.log(`  Hub TokenMessenger set on ${clientConfig.name}`);
+    }
+
+    console.log("");
+
+    // Set Hub TokenMessenger self-reference (for local operations)
+    const hubTokenMessenger = await ethers.getContractAt(
+      "MockTokenMessengerV2",
+      hubCctp.contracts.tokenMessenger
     );
-    await tx.wait();
-    console.log(`  ✓ Hub TokenMessenger set on ${config.name}`);
+    await hubTokenMessenger.setRemoteTokenMessenger(config.hub.cctpDomain, hubTokenMessengerBytes32);
+    console.log(`Hub TokenMessenger self-reference set`);
+  } else {
+    console.log("CCTP Mode: real — skipping TokenMessenger configuration (managed by Circle)");
   }
 
-  console.log("");
-
-  // Set Hub TokenMessenger as remote on Hub (for local operations, if needed)
-  await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, hubTokenMessengerBytes32);
-  console.log(`✓ Hub TokenMessenger self-reference set`);
-
   // Configure ArmadaYieldAdapter if yield is deployed
-  const yieldDeployment = loadDeployment("yield-hub.json");
+  const yieldFilename = getYieldDeploymentFile();
+  const yieldDeployment = loadDeployment(yieldFilename);
   if (yieldDeployment?.contracts?.armadaYieldAdapter) {
     const adapterAddress = yieldDeployment.contracts.armadaYieldAdapter;
     console.log("");
     console.log("Configuring ArmadaYieldAdapter...");
     const adapter = await ethers.getContractAt("ArmadaYieldAdapter", adapterAddress);
     await (await adapter.setPrivacyPool(hubPoolAddress)).wait();
-    console.log(`  ✓ Adapter privacy pool set to: ${hubPoolAddress}`);
+    console.log(`  Adapter privacy pool set to: ${hubPoolAddress}`);
     await (await privacyPool.setPrivilegedShieldCaller(adapterAddress, true)).wait();
-    console.log(`  ✓ Adapter set as privileged shield caller (fee exemption)`);
+    console.log(`  Adapter set as privileged shield caller (fee exemption)`);
   }
 
   console.log("");
@@ -189,9 +205,9 @@ async function main() {
   console.log(`  Hub PrivacyPool: ${hubPoolAddress}`);
 
   // Verify remote pools
-  for (const config of CLIENT_CONFIGS) {
-    const remotePool = await privacyPool.remotePools(config.domain);
-    console.log(`  ${config.name} (Domain ${config.domain}): ${remotePool}`);
+  for (const clientConfig of clientConfigs) {
+    const remotePool = await privacyPool.remotePools(clientConfig.domain);
+    console.log(`  ${clientConfig.name} (Domain ${clientConfig.domain}): ${remotePool}`);
   }
 }
 

@@ -263,7 +263,7 @@ describe("Gas Benchmarks", function () {
       for (const c of claimGas) {
         const diff = c.gas > baseGas ? c.gas - baseGas : baseGas - c.gas;
         const pctDiff = (diff * 100n) / baseGas;
-        expect(pctDiff).to.be.lessThan(20n, `claim() gas should be roughly constant, got ${pctDiff}% diff for ${c.position}`);
+        expect(Number(pctDiff)).to.be.lessThan(20, `claim() gas should be roughly constant, got ${pctDiff}% diff for ${c.position}`);
       }
     });
   });

@@ -19,3 +19,13 @@ dist/
 
 # OS
 .DS_Store
+*.swp
+
+# Local chain data
+nodes/
+
+# Generated deployment artifacts
+deployments/
+
+# Foundry build output
+forge-out/

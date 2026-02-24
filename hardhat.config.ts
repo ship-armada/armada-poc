@@ -4,8 +4,10 @@ import "dotenv/config";
 import "./tasks/governance";
 import "./tasks/crowdfund";
 
-// Anvil default account private key (Account 0)
-const DEPLOYER_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+if (!process.env.DEPLOYER_PRIVATE_KEY) {
+  throw new Error("DEPLOYER_PRIVATE_KEY is not set. Copy .env.example to .env and fill in values.");
+}
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
 
 const config: HardhatUserConfig = {
   solidity: {

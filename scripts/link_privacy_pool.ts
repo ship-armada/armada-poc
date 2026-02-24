@@ -16,6 +16,7 @@
  * Note: Run this on the Hub chain after all deployments are complete.
  */
 
+import "dotenv/config";
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
@@ -144,7 +145,7 @@ async function main() {
 
     const clientProvider = new ethers.JsonRpcProvider(clientRpc);
     const clientSigner = new ethers.Wallet(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // Anvil deployer
+      process.env.DEPLOYER_PRIVATE_KEY!,
       clientProvider
     );
 

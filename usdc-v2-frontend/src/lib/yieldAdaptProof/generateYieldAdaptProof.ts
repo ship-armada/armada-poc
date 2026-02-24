@@ -18,6 +18,7 @@ import {
   type RailgunERC20AmountRecipient,
 } from '@railgun-community/shared-models'
 import { encodeYieldAdaptParams } from './yieldAdaptParams'
+import { getRailgunNetworkNameString } from '@/config/networkConfig'
 import { normalizeTransactionForAdapter } from './normalizeTransaction'
 
 export type YieldAdaptMode = 'lend' | 'redeem'
@@ -106,7 +107,7 @@ export async function generateYieldAdaptProofCore(
 
   const { provedTransactions } = await generateProofTransactions(
     ProofType.CrossContractCalls,
-    'Hardhat' as NetworkName,
+    getRailgunNetworkNameString() as NetworkName,
     walletId,
     TXIDVersion.V2_PoseidonMerkle,
     encryptionKey,

@@ -9,6 +9,7 @@
 
 import { ethers } from 'ethers'
 import { loadDeployments, getYieldDeployment } from '@/config/deployments'
+import { getHubRpcUrl } from '@/config/networkConfig'
 
 // Re-export shielded yield operations
 export {
@@ -57,7 +58,7 @@ export async function previewLend(amount: string): Promise<string> {
     throw new Error('Yield deployment not found')
   }
 
-  const provider = new ethers.JsonRpcProvider('http://localhost:8545')
+  const provider = new ethers.JsonRpcProvider(getHubRpcUrl())
   const adapter = new ethers.Contract(
     yieldDeployment.contracts.armadaYieldAdapter,
     ADAPTER_ABI,
@@ -80,7 +81,7 @@ export async function previewRedeem(shares: string): Promise<string> {
     throw new Error('Yield deployment not found')
   }
 
-  const provider = new ethers.JsonRpcProvider('http://localhost:8545')
+  const provider = new ethers.JsonRpcProvider(getHubRpcUrl())
   const adapter = new ethers.Contract(
     yieldDeployment.contracts.armadaYieldAdapter,
     ADAPTER_ABI,
@@ -104,7 +105,7 @@ export async function getCurrentAPY(): Promise<number> {
     throw new Error('Yield deployment not found')
   }
 
-  const provider = new ethers.JsonRpcProvider('http://localhost:8545')
+  const provider = new ethers.JsonRpcProvider(getHubRpcUrl())
   const aaveSpoke = new ethers.Contract(
     yieldDeployment.config.mockAaveSpoke,
     AAVE_SPOKE_ABI,

@@ -101,6 +101,7 @@ export {
   markCCTPMintConfirmed as markShieldCCTPMintConfirmed,
   waitForShieldConfirmation,
   waitForCCTPBurnConfirmation,
+  trackCrossChainShieldCompletion,
 } from './shieldTxTracker'
 
 export type { ShieldTxParams, ShieldTxCallbacks } from './shieldTxTracker'

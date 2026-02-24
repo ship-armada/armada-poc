@@ -4,6 +4,7 @@
  */
 
 import { ethers } from 'ethers'
+import { getHubChainId } from '@/config/networkConfig'
 
 export function normalizeTransactionForAdapter(tx: unknown): {
   proof: { a: { x: bigint; y: bigint }; b: { x: [bigint, bigint]; y: [bigint, bigint] }; c: { x: bigint; y: bigint } }
@@ -102,7 +103,7 @@ export function normalizeTransactionForAdapter(tx: unknown): {
       treeNumber: Number(bp?.treeNumber ?? 0),
       minGasPrice: toBigInt(bp?.minGasPrice),
       unshield: Number(bp?.unshield ?? 1),
-      chainID: toBigInt(bp?.chainID) || 31337n,
+      chainID: toBigInt(bp?.chainID) || BigInt(getHubChainId()),
       adaptContract: (bp?.adaptContract != null ? String(bp.adaptContract) : ethers.ZeroAddress) as string,
       adaptParams: toHex(bp?.adaptParams) || ethers.ZeroHash,
       commitmentCiphertext,

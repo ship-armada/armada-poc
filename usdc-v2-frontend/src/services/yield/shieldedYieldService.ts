@@ -27,6 +27,7 @@ import {
   getRelayerFee,
   submitAndWaitForConfirmation,
 } from '@/services/relayer'
+import { getHubChainId } from '@/config/networkConfig'
 
 // ============ Types ============
 
@@ -170,7 +171,7 @@ export async function executeShieldedLend(
   if (useRelayer) {
     onProgress?.({ stage: 'confirming', message: 'Submitting to relayer...' })
     const txHash = await submitAndWaitForConfirmation({
-      chainId: 31337,
+      chainId: getHubChainId(),
       to: transaction.to,
       data: transaction.data,
     })
@@ -321,7 +322,7 @@ export async function executeShieldedRedeem(
   if (useRelayer) {
     onProgress?.({ stage: 'confirming', message: 'Submitting to relayer...' })
     const txHash = await submitAndWaitForConfirmation({
-      chainId: 31337,
+      chainId: getHubChainId(),
       to: transaction.to,
       data: transaction.data,
     })

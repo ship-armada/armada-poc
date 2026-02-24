@@ -5,6 +5,7 @@
  * Supports both direct hub shielding and cross-chain shielding via CCTP.
  */
 
+import { ethers } from 'ethers'
 import type { StoredTransaction } from '@/types/transaction'
 import { createTransaction, SHIELD_STAGES } from '@/types/transaction'
 import {
@@ -20,6 +21,12 @@ import {
   updateCCTPMetadata,
 } from './privacyPoolTxStorage'
 import { waitForTransaction } from './privacyPoolEventPoller'
+import { getEvmProvider } from '@/services/evm/evmNetworkService'
+import { extractMessageSent, pollIrisAttestation } from '@/services/polling/irisAttestationService'
+import { queryMessageReceivedByNonce } from '@/services/polling/evmPoller'
+import { fetchEvmChainsConfig } from '@/services/config/chainConfigService'
+import { findChainByKey } from '@/config/chains'
+import { isSepoliaMode } from '@/config/networkConfig'
 
 // ============ Types ============
 
@@ -523,4 +530,208 @@ export async function waitForCCTPBurnConfirmation(
   }
 
   return getTransaction(txId)
+}
+
+// ============ Cross-Chain Shield Completion Tracking ============
+
+/**
+ * Sleep utility
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Track the full cross-chain shield CCTP flow in the background.
+ *
+ * Progresses through: burn confirmed → attestation → relay detected → mint confirmed → completed.
+ *
+ * This function is fire-and-forget — it catches all errors internally and marks the
+ * transaction as failed at the appropriate stage. It never throws.
+ */
+export async function trackCrossChainShieldCompletion(
+  txId: string,
+  burnTxHash: string,
+  sourceChainKey: string,
+  hubChainKey: string = 'hub',
+  callbacks?: ShieldTxCallbacks,
+): Promise<StoredTransaction | undefined> {
+  const LOG_TAG = '[shield-cctp-tracker]'
+
+  try {
+    // ── Phase 1: Wait for burn tx confirmation on client chain ──
+    console.log(`${LOG_TAG} Phase 1: Waiting for burn tx confirmation on ${sourceChainKey}...`)
+    const burnResult = await waitForCCTPBurnConfirmation(txId, burnTxHash, sourceChainKey, callbacks)
+
+    // Check if burn confirmation failed (transaction was marked as failed inside)
+    const txAfterBurn = getTransaction(txId)
+    if (!txAfterBurn || txAfterBurn.status === 'error') {
+      console.error(`${LOG_TAG} Burn confirmation failed, stopping`)
+      return txAfterBurn
+    }
+
+    // ── Phase 2: Extract MessageSent data and poll Iris attestation ──
+    console.log(`${LOG_TAG} Phase 2: Extracting MessageSent event from burn tx...`)
+
+    let provider: ethers.JsonRpcProvider
+    try {
+      provider = await getEvmProvider(sourceChainKey)
+    } catch (err) {
+      console.error(`${LOG_TAG} Failed to get provider for ${sourceChainKey}:`, err)
+      return markShieldFailed(txId, new Error(`Failed to get provider for ${sourceChainKey}`), SHIELD_STAGES.CCTP_BURN_CONFIRMED, callbacks)
+    }
+
+    const extraction = await extractMessageSent(burnTxHash, sourceChainKey, provider)
+    if (!extraction.success || !extraction.data) {
+      console.error(`${LOG_TAG} Failed to extract MessageSent:`, extraction.error)
+      return markShieldFailed(txId, new Error(extraction.error || 'Failed to extract MessageSent event'), SHIELD_STAGES.CCTP_BURN_CONFIRMED, callbacks)
+    }
+
+    const { irisLookupID, nonce, sourceDomain, destinationDomain, messageBytes } = extraction.data
+
+    console.log(`${LOG_TAG} MessageSent extracted: nonce=${nonce}, irisLookupID=${irisLookupID}`)
+
+    // Store CCTP metadata
+    updateCCTPMetadata(txId, { nonce, sourceDomain, destinationDomain, messageHash: irisLookupID })
+
+    // Mark attestation pending
+    markAttestationPending(txId, callbacks)
+
+    if (isSepoliaMode()) {
+      // Real Iris attestation polling (Sepolia)
+      console.log(`${LOG_TAG} Phase 2b: Polling Iris API for attestation (up to 30 min)...`)
+
+      const irisResult = await pollIrisAttestation(
+        {
+          txHash: burnTxHash,
+          chainId: sourceChainKey,
+          flowId: txId,
+          timeoutMs: 1_800_000, // 30 minutes
+          pollIntervalMs: 5_000,
+          sourceDomain, // enables v2 API: /v2/messages/{sourceDomain}?transactionHash={txHash}
+        },
+        irisLookupID,
+      )
+
+      if (!irisResult.success || !irisResult.attestation) {
+        console.error(`${LOG_TAG} Iris attestation polling failed:`, irisResult.error)
+        return markShieldFailed(txId, new Error(irisResult.error || 'Attestation polling timed out'), SHIELD_STAGES.CCTP_ATTESTATION_PENDING, callbacks)
+      }
+
+      console.log(`${LOG_TAG} Attestation received`)
+      markAttestationReceived(txId, irisResult.attestation, ethers.hexlify(messageBytes), callbacks)
+    } else {
+      // Local mode: skip attestation polling (mock relayer auto-relays)
+      console.log(`${LOG_TAG} Local mode: skipping Iris attestation polling`)
+      // Mark attestation stages as confirmed to advance the timeline
+      confirmTxStage(txId, SHIELD_STAGES.CCTP_ATTESTATION_PENDING, {
+        message: 'Attestation skipped (local mode)',
+      })
+    }
+
+    // ── Phase 3: Detect relay on hub chain ──
+    console.log(`${LOG_TAG} Phase 3: Detecting relay on hub chain...`)
+    markRelayPending(txId, callbacks)
+
+    let hubProvider: ethers.JsonRpcProvider
+    try {
+      hubProvider = await getEvmProvider(hubChainKey)
+    } catch (err) {
+      console.error(`${LOG_TAG} Failed to get hub provider:`, err)
+      return markShieldFailed(txId, new Error(`Failed to get provider for ${hubChainKey}`), SHIELD_STAGES.CCTP_RELAY_PENDING, callbacks)
+    }
+
+    // Get messageTransmitter address from hub chain config
+    const chainsConfig = await fetchEvmChainsConfig()
+    const hubChain = findChainByKey(chainsConfig, hubChainKey)
+    const messageTransmitterAddress = hubChain?.contracts?.messageTransmitter
+    if (!messageTransmitterAddress) {
+      console.error(`${LOG_TAG} No messageTransmitter address configured for ${hubChainKey}`)
+      return markShieldFailed(txId, new Error(`MessageTransmitter address not configured for ${hubChainKey}`), SHIELD_STAGES.CCTP_RELAY_PENDING, callbacks)
+    }
+
+    // Start polling from a few blocks back for safety
+    const currentBlock = await hubProvider.getBlockNumber()
+    const fromBlock = BigInt(Math.max(0, currentBlock - 10))
+    const maxBlockRange = 2000n
+    const relayTimeoutMs = 1_800_000 // 30 minutes
+    const relayPollIntervalMs = isSepoliaMode() ? 10_000 : 2_000
+    const relayDeadline = Date.now() + relayTimeoutMs
+    let currentFromBlock = fromBlock
+
+    console.log(`${LOG_TAG} Polling for MessageReceived with nonce=${nonce} on hub from block ${fromBlock}`)
+
+    let relayTxHash: string | undefined
+    let relayBlockNumber: number | undefined
+
+    while (Date.now() < relayDeadline) {
+      try {
+        const latestBlock = BigInt(await hubProvider.getBlockNumber())
+        if (latestBlock < currentFromBlock) {
+          await sleep(relayPollIntervalMs)
+          continue
+        }
+
+        // Query in block range chunks
+        let chunkStart = currentFromBlock
+        while (chunkStart <= latestBlock) {
+          const chunkEnd = chunkStart + maxBlockRange - 1n < latestBlock
+            ? chunkStart + maxBlockRange - 1n
+            : latestBlock
+
+          const logs = await queryMessageReceivedByNonce(hubProvider, {
+            messageTransmitterAddress,
+            nonce,
+            fromBlock: chunkStart,
+            toBlock: chunkEnd,
+          })
+
+          if (logs.length > 0) {
+            const log = logs[0]
+            relayTxHash = log.transactionHash
+            relayBlockNumber = log.blockNumber
+            break
+          }
+
+          chunkStart = chunkEnd + 1n
+        }
+
+        if (relayTxHash) break
+
+        currentFromBlock = latestBlock + 1n
+        await sleep(relayPollIntervalMs)
+      } catch (err) {
+        console.warn(`${LOG_TAG} Relay poll error (will retry):`, err instanceof Error ? err.message : err)
+        await sleep(relayPollIntervalMs)
+      }
+    }
+
+    if (!relayTxHash || relayBlockNumber === undefined) {
+      console.error(`${LOG_TAG} Relay detection timed out after ${relayTimeoutMs}ms`)
+      return markShieldFailed(txId, new Error('CCTP relay detection timed out'), SHIELD_STAGES.CCTP_RELAY_PENDING, callbacks)
+    }
+
+    console.log(`${LOG_TAG} Relay detected: tx=${relayTxHash}, block=${relayBlockNumber}`)
+
+    // ── Phase 4: Complete ──
+    markCCTPMintConfirmed(txId, relayTxHash, relayBlockNumber, callbacks)
+    markBalanceUpdating(txId, callbacks)
+    const completedTx = markShieldCompleted(txId, callbacks)
+
+    console.log(`${LOG_TAG} Cross-chain shield completed successfully`)
+    return completedTx
+  } catch (err) {
+    console.error(`${LOG_TAG} Unexpected error:`, err)
+    // Try to mark as failed at whatever stage we're at
+    const currentTx = getTransaction(txId)
+    if (currentTx && currentTx.status === 'pending') {
+      return markShieldFailed(
+        txId,
+        err instanceof Error ? err : new Error(String(err)),
+        currentTx.currentStageId,
+        callbacks,
+      )
+    }
+    return currentTx
+  }
 }

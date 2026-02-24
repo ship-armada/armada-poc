@@ -5,15 +5,17 @@
  * Provides chain configuration and domain mapping for cross-chain transfers.
  */
 
-// Chain ID to CCTP domain mapping (matches CCTPDomains library in contracts)
-const CHAIN_TO_DOMAIN: Record<number, number> = {
-  31337: 100, // Hub
-  31338: 101, // Client A
-  31339: 102, // Client B
-}
+import {
+  getChainToDomain as getChainToDomainMap,
+  getRelayerAddress,
+  getAllDestinationChains as getAllDestsFromConfig,
+} from '@/config/networkConfig'
 
-// Default relayer address (first Hardhat account - used for local devnet)
-export const DEFAULT_RELAYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+// Chain ID to CCTP domain mapping (from network config)
+const CHAIN_TO_DOMAIN = getChainToDomainMap()
+
+// Default relayer address (from network config)
+export const DEFAULT_RELAYER_ADDRESS = getRelayerAddress()
 
 /**
  * Get CCTP domain for a chain ID
@@ -35,11 +37,7 @@ export function getAllDestinationChains(): {
   name: string
   isHub: boolean
 }[] {
-  return [
-    { key: 'hub', chainId: 31337, name: 'Hub', isHub: true },
-    { key: 'client-a', chainId: 31338, name: 'Client Chain A', isHub: false },
-    { key: 'client-b', chainId: 31339, name: 'Client Chain B', isHub: false },
-  ]
+  return getAllDestsFromConfig()
 }
 
 /**

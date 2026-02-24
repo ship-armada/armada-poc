@@ -35,6 +35,12 @@ import {
   getRelayerRailgunAddress,
   submitAndWaitForConfirmation,
 } from '@/services/relayer'
+import {
+  getHubChainId,
+  getChainToDomain as getChainToDomainMap,
+  getRailgunNetworkNameString,
+  getRelayerAddress as getDefaultRelayerAddress,
+} from '@/config/networkConfig'
 
 // ============ Types ============
 
@@ -227,7 +233,7 @@ export async function getShieldedBalance(
     const balance = await balanceForERC20Token(
       TXIDVersion.V2_PoseidonMerkle,
       wallet,
-      'Hardhat' as Parameters<typeof balanceForERC20Token>[2], // Use Hardhat as placeholder network name for our custom chain
+      getRailgunNetworkNameString() as Parameters<typeof balanceForERC20Token>[2],
       tokenAddress,
       false, // onlySpendable - false to include all balances
     )
@@ -310,15 +316,11 @@ export type ProofProgressCallback = (progress: number) => void
 /** Stage callback for transaction lifecycle updates */
 export type StageCallback = (stage: 'signing' | 'submitting' | 'confirming') => void
 
-// Chain ID to CCTP domain mapping (matches CCTPDomains library in contracts)
-const CHAIN_TO_DOMAIN: Record<number, number> = {
-  31337: 100, // Hub
-  31338: 101, // Client A
-  31339: 102, // Client B
-}
+// Chain ID to CCTP domain mapping (from network config)
+const CHAIN_TO_DOMAIN = getChainToDomainMap()
 
-// Default relayer address (first Hardhat account - used for local devnet)
-const DEFAULT_RELAYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+// Default relayer address (from network config)
+const DEFAULT_RELAYER_ADDRESS = getDefaultRelayerAddress()
 
 // PrivacyPool ABI for atomicCrossChainUnshield
 const PRIVACY_POOL_ABI = [
@@ -398,8 +400,7 @@ export async function executePrivateTransfer(
     },
   ]
 
-  // Use 'Hardhat' as the network name (matches our registered network)
-  const networkName = 'Hardhat' as Parameters<typeof generateTransferProof>[1]
+  const networkName = getRailgunNetworkNameString() as Parameters<typeof generateTransferProof>[1]
 
   const useRelayer = isRelayerEnabled()
   let broadcasterFeeRecipient: RailgunERC20AmountRecipient | undefined
@@ -468,7 +469,7 @@ export async function executePrivateTransfer(
   if (useRelayer) {
     // Submit via relayer — no MetaMask popup
     const txHash = await submitAndWaitForConfirmation({
-      chainId: 31337,
+      chainId: getHubChainId(),
       to: populateResult.transaction.to!,
       data: populateResult.transaction.data!,
     })
@@ -546,8 +547,7 @@ export async function executeUnshield(
     },
   ]
 
-  // Use 'Hardhat' as the network name (matches our registered network)
-  const networkName = 'Hardhat' as Parameters<typeof generateUnshieldProof>[1]
+  const networkName = getRailgunNetworkNameString() as Parameters<typeof generateUnshieldProof>[1]
 
   const useRelayer = isRelayerEnabled()
   let broadcasterFeeRecipient: RailgunERC20AmountRecipient | undefined
@@ -610,7 +610,7 @@ export async function executeUnshield(
   if (useRelayer) {
     stageCallback?.('submitting')
     const txHash = await submitAndWaitForConfirmation({
-      chainId: 31337,
+      chainId: getHubChainId(),
       to: populateResult.transaction.to!,
       data: populateResult.transaction.data!,
     })
@@ -705,7 +705,7 @@ export async function executeUnshieldToClientChain(
     },
   ]
 
-  const networkName = 'Hardhat' as Parameters<typeof generateUnshieldProof>[1]
+  const networkName = getRailgunNetworkNameString() as Parameters<typeof generateUnshieldProof>[1]
 
   const useRelayer = isRelayerEnabled()
   let broadcasterFeeRecipient: RailgunERC20AmountRecipient | undefined
@@ -838,7 +838,7 @@ export async function executeUnshieldToClientChain(
   if (useRelayer) {
     console.log('[sdk] Submitting cross-chain unshield via relayer...')
     const txHash = await submitAndWaitForConfirmation({
-      chainId: 31337,
+      chainId: getHubChainId(),
       to: privacyPoolAddress,
       data: encodedCalldata,
     })

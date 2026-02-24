@@ -38,7 +38,7 @@ import {
   // CCTP stages for cross-chain shield
   markCCTPBurnPending,
   markCCTPBurnSubmitted,
-  markShieldCCTPMintConfirmed,
+  trackCrossChainShieldCompletion,
   type ShieldTxParams,
   type ChainScope,
 } from '@/services/tx'
@@ -260,28 +260,43 @@ export function useShieldTransaction(): UseShieldTransactionReturn {
           },
         )
 
-        // Update tracker with tx hash and mark complete
+        // Update tracker with tx hash
         if (details.txHash) {
           if (isCrossChain) {
-            // For cross-chain, mark CCTP burn submitted
-            // Note: The full CCTP flow (attestation, relay) is handled by backend/polling
+            // Mark CCTP burn as submitted (burn tx is on the client chain)
             markCCTPBurnSubmitted(txId, details.txHash)
-            // For now, we mark as complete since the CCTP relay happens asynchronously
-            // TODO: Implement full CCTP tracking with attestation polling
-            markShieldCCTPMintConfirmed(txId, details.txHash, 0)
+
+            // Fire-and-forget background CCTP tracking
+            // Progresses: burn confirmed → attestation → relay → mint confirmed → completed
+            trackCrossChainShieldCompletion(txId, details.txHash, chainKey, 'hub')
+              .then(() => {
+                console.log('[shield-tx] CCTP tracking completed for', txId)
+                // Refresh balance now that relay is confirmed
+                refreshBalance()
+              })
+              .catch((err) => {
+                console.error('[shield-tx] CCTP tracking error:', err)
+              })
+
+            // Transaction stays 'pending' — UI tracks progress via stage updates
           } else {
             markShieldSubmitted(txId, details.txHash)
+            markShieldCompleted(txId)
           }
         }
-        markShieldCompleted(txId)
 
         setLastTransaction(details)
-        setStage('success')
-        setStageMessage('Shield complete!')
 
-        // Refresh shielded balance after successful shield
-        console.log('[shield-tx] Triggering balance refresh...')
-        refreshBalance()
+        if (!isCrossChain) {
+          setStage('success')
+          setStageMessage('Shield complete!')
+          // Refresh shielded balance after successful direct shield
+          console.log('[shield-tx] Triggering balance refresh...')
+          refreshBalance()
+        } else {
+          setStage('success')
+          setStageMessage('Cross-chain shield initiated — tracking CCTP progress...')
+        }
 
         onSuccess?.(details)
       } catch (err) {

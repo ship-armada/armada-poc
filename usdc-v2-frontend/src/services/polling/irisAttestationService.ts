@@ -56,6 +56,15 @@ export interface AttestationResponse {
   status: 'pending_confirmations' | 'complete'
 }
 
+/** CCTP v2 Iris API response format */
+export interface IrisV2Response {
+  messages: Array<{
+    attestation: string
+    message: string
+    status: string
+  }>
+}
+
 export interface IrisPollingParams {
   txHash: string
   chainId: string
@@ -64,6 +73,8 @@ export interface IrisPollingParams {
   pollIntervalMs: number
   requestTimeoutMs?: number
   abortSignal?: AbortSignal
+  /** CCTP source domain (required for v2 API) */
+  sourceDomain?: number
 }
 
 export interface IrisPollingResult {
@@ -413,7 +424,12 @@ async function extractNonceFromDepositForBurn(
 }
 
 /**
- * Poll Iris API for attestation status
+ * Poll Iris API for attestation status.
+ *
+ * Supports two modes:
+ * - **v2 (preferred)**: When `sourceDomain` is provided in params, uses
+ *   `GET /v2/messages/{sourceDomain}?transactionHash={txHash}`.
+ * - **v1 (legacy)**: Falls back to `GET /attestations/{messageHash}`.
  */
 export async function pollIrisAttestation(
   params: IrisPollingParams,
@@ -421,21 +437,37 @@ export async function pollIrisAttestation(
 ): Promise<IrisPollingResult> {
   const { flowId, timeoutMs, pollIntervalMs = 3000, requestTimeoutMs = 5000, abortSignal } = params
 
-  // Get base URL from env
-  const baseURL = env.irisAttestationBaseUrl()
-  const httpClient = createIrisHttpClient(baseURL)
+  // Determine API version based on whether sourceDomain is available
+  const useV2 = params.sourceDomain !== undefined
 
-  // Ensure irisLookupID has 0x prefix for API call
-  const lookupID = irisLookupID.startsWith('0x') ? irisLookupID : `0x${irisLookupID}`
-  const url = lookupID
-  const fullUrl = `${baseURL}${url}`
+  // Build base URL — strip trailing path segments so we have just the origin
+  const configuredBaseUrl = env.irisAttestationBaseUrl()
+  // For v2, we need just the origin (e.g., https://iris-api-sandbox.circle.com)
+  // The configured URL may be "https://iris-api-sandbox.circle.com/attestations/"
+  let baseOrigin: string
+  try {
+    const parsed = new URL(configuredBaseUrl)
+    baseOrigin = parsed.origin
+  } catch {
+    baseOrigin = configuredBaseUrl.replace(/\/attestations\/?$/, '')
+  }
+
+  let fullUrl: string
+  if (useV2) {
+    fullUrl = `${baseOrigin}/v2/messages/${params.sourceDomain}?transactionHash=${params.txHash}`
+  } else {
+    // Legacy v1 path
+    const lookupID = irisLookupID.startsWith('0x') ? irisLookupID : `0x${irisLookupID}`
+    const normalizedBase = configuredBaseUrl.endsWith('/') ? configuredBaseUrl : `${configuredBaseUrl}/`
+    fullUrl = `${normalizedBase}${lookupID}`
+  }
 
   const deadline = Date.now() + timeoutMs
   let attemptCount = 0
 
   logger.info('[IrisAttestation] Starting iris attestation polling', {
     flowId,
-    irisLookupID: lookupID,
+    apiVersion: useV2 ? 'v2' : 'v1',
     url: fullUrl,
     timeoutMs,
     pollIntervalMs,
@@ -462,13 +494,29 @@ export async function pollIrisAttestation(
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs)
 
-      const response = await httpClient.get<AttestationResponse>(url, {
+      const response = await axios.get(fullUrl, {
         signal: controller.signal,
+        timeout: requestTimeoutMs,
       })
 
       clearTimeout(timeoutId)
 
-      const { status, attestation } = response.data
+      // Parse response based on API version
+      let status: string | undefined
+      let attestation: string | undefined
+
+      if (useV2) {
+        // v2 response: { messages: [{ attestation, message, status }] }
+        const v2Data = response.data as IrisV2Response
+        const msg = v2Data?.messages?.[0]
+        status = msg?.status
+        attestation = msg?.attestation
+      } else {
+        // v1 response: { attestation, status }
+        const v1Data = response.data as AttestationResponse
+        status = v1Data?.status
+        attestation = v1Data?.attestation
+      }
 
       logger.debug('[IrisAttestation] Iris API response received', {
         flowId,
@@ -480,24 +528,23 @@ export async function pollIrisAttestation(
       if (status === 'complete' && attestation) {
         logger.info('[IrisAttestation] Attestation complete', {
           flowId,
-          irisLookupID: lookupID,
           attemptCount,
         })
 
         return {
           success: true,
           attestation,
-          irisLookupID: lookupID,
+          irisLookupID: irisLookupID.startsWith('0x') ? irisLookupID : `0x${irisLookupID}`,
           status: 'complete',
         }
       }
 
-      if (status === 'pending_confirmations') {
+      if (status === 'pending_confirmations' || status === 'pending') {
         // Continue polling
-        logger.debug('[IrisAttestation] Attestation pending confirmations, continuing to poll', {
+        logger.debug('[IrisAttestation] Attestation pending, continuing to poll', {
           flowId,
           attemptCount,
-          url: fullUrl,
+          status,
         })
       } else {
         logger.warn('[IrisAttestation] Unexpected attestation status', {
@@ -516,10 +563,10 @@ export async function pollIrisAttestation(
           url: fullUrl,
         })
       } else if (axios.isAxiosError(error)) {
-        const status = error.response?.status
+        const httpStatus = error.response?.status
 
         // 404 means attestation not ready yet (still processing)
-        if (status === 404) {
+        if (httpStatus === 404) {
           logger.debug('[IrisAttestation] Attestation not found (still processing)', {
             flowId,
             attemptCount,
@@ -530,7 +577,7 @@ export async function pollIrisAttestation(
             flowId,
             attemptCount,
             url: fullUrl,
-            status,
+            status: httpStatus,
             error: error.message,
           })
         }
@@ -554,14 +601,13 @@ export async function pollIrisAttestation(
 
   logger.warn('[IrisAttestation] Iris attestation polling timed out', {
     flowId,
-    irisLookupID: lookupID,
     attemptCount,
     timeoutMs,
   })
 
   return {
     success: false,
-    irisLookupID: lookupID,
+    irisLookupID: irisLookupID.startsWith('0x') ? irisLookupID : `0x${irisLookupID}`,
     error: `Attestation polling timed out after ${timeoutMs}ms (${attemptCount} attempts)`,
   }
 }

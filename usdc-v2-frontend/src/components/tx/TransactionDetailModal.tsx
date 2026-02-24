@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useAtomValue } from 'jotai'
 import { Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import type { StoredTransaction } from '@/types/transaction'
+import { chainConfigAtom } from '@/atoms/appAtom'
+import { getChainDisplayName } from '@/config/chains'
+import { buildExplorerUrlSync } from '@/utils/explorerUtils'
 import { TransactionDetailModalHeader } from './TransactionDetailModalHeader'
 import { AddressDisplaySection } from './AddressDisplaySection'
 import { TransactionHashCard } from './TransactionHashCard'
@@ -59,16 +63,14 @@ function getTotalDurationLabel(tx: StoredTransaction): string {
 }
 
 /**
- * Get source chain name
+ * Get source chain display name
  */
-function getSourceChainName(tx: StoredTransaction): string {
+function getSourceChainName(tx: StoredTransaction, chainConfig: Parameters<typeof getChainDisplayName>[0]): string {
   switch (tx.flowType) {
     case 'shield':
-      // Shield comes from public address on source chain
-      return tx.sourceChain.charAt(0).toUpperCase() + tx.sourceChain.slice(1)
+      return getChainDisplayName(chainConfig, tx.sourceChain)
     case 'transfer':
     case 'unshield':
-      // Transfer/unshield comes from shielded wallet (always hub)
       return 'Shielded'
     default:
       return tx.sourceChain
@@ -76,20 +78,15 @@ function getSourceChainName(tx: StoredTransaction): string {
 }
 
 /**
- * Get destination chain name
+ * Get destination chain display name
  */
-function getDestinationChainName(tx: StoredTransaction): string {
+function getDestinationChainName(tx: StoredTransaction, chainConfig: Parameters<typeof getChainDisplayName>[0]): string {
   switch (tx.flowType) {
     case 'shield':
-      // Shield goes to shielded wallet
-      return 'Shielded'
     case 'transfer':
-      // Transfer goes to another shielded wallet
       return 'Shielded'
     case 'unshield':
-      // Unshield goes to public address on destination chain
-      const destChain = tx.destinationChain || 'hub'
-      return destChain.charAt(0).toUpperCase() + destChain.slice(1)
+      return getChainDisplayName(chainConfig, tx.destinationChain || 'hub')
     default:
       return tx.destinationChain || 'Unknown'
   }
@@ -164,6 +161,7 @@ export function TransactionDetailModal({
   open,
   onClose,
 }: TransactionDetailModalProps) {
+  const chainConfig = useAtomValue(chainConfigAtom)
   const [isStageTimelineExpanded, setIsStageTimelineExpanded] = useState(false)
   const [showSenderAddress, setShowSenderAddress] = useState(false)
   const [showReceiverAddress, setShowReceiverAddress] = useState(false)
@@ -215,8 +213,8 @@ export function TransactionDetailModal({
   const receiverAddress = getReceiverAddress(transaction)
 
   // Get chain names
-  const sourceChainName = getSourceChainName(transaction)
-  const destinationChainName = getDestinationChainName(transaction)
+  const sourceChainName = getSourceChainName(transaction, chainConfig)
+  const destinationChainName = getDestinationChainName(transaction, chainConfig)
 
   // Get transaction hashes
   const mainTxHash = getMainTxHash(transaction)
@@ -224,6 +222,23 @@ export function TransactionDetailModal({
 
   // Get transaction status
   const txStatus = getTxStatus(transaction)
+
+  // Build explorer URLs
+  const senderExplorerUrl = senderAddress && !senderAddress.startsWith('0zk')
+    ? buildExplorerUrlSync(senderAddress, 'address', 'evm', transaction.sourceChain, chainConfig ?? null)
+    : undefined
+  const receiverExplorerUrl = receiverAddress && !receiverAddress.startsWith('0zk')
+    ? buildExplorerUrlSync(receiverAddress, 'address', 'evm', transaction.destinationChain ?? transaction.sourceChain, chainConfig ?? null)
+    : undefined
+  // For shields, the main tx is the deposit on the source (client) chain.
+  // For transfers/unshields, it's the PrivacyPool transact on the hub chain.
+  const mainTxChainKey = transaction.flowType === 'shield' ? transaction.sourceChain : 'hub'
+  const mainTxExplorerUrl = mainTxHash
+    ? buildExplorerUrlSync(mainTxHash, 'tx', 'evm', mainTxChainKey, chainConfig ?? null)
+    : undefined
+  const relayTxExplorerUrl = relayTxHash
+    ? buildExplorerUrlSync(relayTxHash, 'tx', 'evm', transaction.destinationChain ?? 'hub', chainConfig ?? null)
+    : undefined
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -253,7 +268,7 @@ export function TransactionDetailModal({
                 <AddressDisplaySection
                   address={senderAddress}
                   label={`From ${sourceChainName}`}
-                  explorerUrl={undefined}
+                  explorerUrl={senderExplorerUrl}
                   isSender={true}
                   showAddress={showSenderAddress}
                   onToggleShowAddress={() => setShowSenderAddress(!showSenderAddress)}
@@ -266,7 +281,7 @@ export function TransactionDetailModal({
                 <AddressDisplaySection
                   address={receiverAddress}
                   label={`To ${destinationChainName}`}
-                  explorerUrl={undefined}
+                  explorerUrl={receiverExplorerUrl}
                   isSender={false}
                   showAddress={showReceiverAddress}
                   onToggleShowAddress={() => setShowReceiverAddress(!showReceiverAddress)}
@@ -320,14 +335,14 @@ export function TransactionDetailModal({
               label="Main Transaction"
               txHash={mainTxHash}
               status={txStatus}
-              explorerUrl={undefined}
+              explorerUrl={mainTxExplorerUrl}
             />
             {transaction.isCrossChain && (
               <TransactionHashCard
                 label="Relay Transaction"
                 txHash={relayTxHash}
                 status={relayTxHash ? 'confirmed' : 'pending'}
-                explorerUrl={undefined}
+                explorerUrl={relayTxExplorerUrl}
               />
             )}
           </div>

@@ -1,0 +1,118 @@
+{
+  "chains": [
+    {
+      "key": "hub",
+      "name": "Ethereum Sepolia",
+      "chainId": 11155111,
+      "chainIdHex": "0xaa36a7",
+      "cctpDomain": 0,
+      "rpcUrls": ["https://ethereum-sepolia-rpc.publicnode.com"],
+      "explorer": {
+        "baseUrl": "https://sepolia.etherscan.io",
+        "txPath": "tx",
+        "addressPath": "address",
+        "blockPath": "block"
+      },
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "contracts": {
+        "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+        "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"
+      },
+      "gasless": {
+        "enabled": false
+      },
+      "estimatedTimes": {
+        "deposit": "~2 minutes",
+        "send": "~2 minutes"
+      },
+      "pollingTimeout": {
+        "depositTimeoutMs": 600000,
+        "paymentTimeoutMs": 600000
+      },
+      "logo": "assets/logos/ethereum-logo.svg",
+      "testnet": true
+    },
+    {
+      "key": "client-a",
+      "name": "Base Sepolia",
+      "chainId": 84532,
+      "chainIdHex": "0x14a34",
+      "cctpDomain": 6,
+      "rpcUrls": ["https://base-sepolia-rpc.publicnode.com"],
+      "explorer": {
+        "baseUrl": "https://sepolia.basescan.org",
+        "txPath": "tx",
+        "addressPath": "address",
+        "blockPath": "block"
+      },
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "contracts": {
+        "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+        "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"
+      },
+      "gasless": {
+        "enabled": false
+      },
+      "estimatedTimes": {
+        "deposit": "~5 minutes",
+        "send": "~5 minutes"
+      },
+      "pollingTimeout": {
+        "depositTimeoutMs": 600000,
+        "paymentTimeoutMs": 600000
+      },
+      "logo": "assets/logos/base-logo.svg",
+      "testnet": true
+    },
+    {
+      "key": "client-b",
+      "name": "Arbitrum Sepolia",
+      "chainId": 421614,
+      "chainIdHex": "0x66eee",
+      "cctpDomain": 3,
+      "rpcUrls": ["https://arbitrum-sepolia-rpc.publicnode.com"],
+      "explorer": {
+        "baseUrl": "https://sepolia.arbiscan.io",
+        "txPath": "tx",
+        "addressPath": "address",
+        "blockPath": "block"
+      },
+      "nativeCurrency": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "contracts": {
+        "usdc": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+        "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+        "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"
+      },
+      "gasless": {
+        "enabled": false
+      },
+      "estimatedTimes": {
+        "deposit": "~5 minutes",
+        "send": "~5 minutes"
+      },
+      "pollingTimeout": {
+        "depositTimeoutMs": 600000,
+        "paymentTimeoutMs": 600000
+      },
+      "logo": "assets/logos/arb-logo.svg",
+      "testnet": true
+    }
+  ],
+  "defaults": {
+    "selectedChainKey": "client-a"
+  }
+}

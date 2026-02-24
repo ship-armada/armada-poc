@@ -11,6 +11,7 @@ import {
   getClientChain,
   type ChainConfig,
 } from '@/config/deployments'
+import { getHubRpcUrl, getHubChainId } from '@/config/networkConfig'
 
 // ============ Types ============
 
@@ -199,7 +200,7 @@ export function Debug() {
       })
 
       // Connect to hub chain
-      const provider = new ethers.JsonRpcProvider('http://localhost:8545')
+      const provider = new ethers.JsonRpcProvider(getHubRpcUrl())
 
       // Create contract instances
       const vault = new ethers.Contract(
@@ -598,7 +599,7 @@ export function Debug() {
                               <span className="flex items-center gap-2">
                                 <span
                                   className={`w-2 h-2 rounded-full ${
-                                    b.chain.id === 31337 ? 'bg-primary' : 'bg-success'
+                                    b.chain.id === getHubChainId() ? 'bg-primary' : 'bg-success'
                                   }`}
                                 />
                                 {b.chain.name}

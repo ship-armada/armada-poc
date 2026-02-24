@@ -11,6 +11,7 @@ import { RelayError } from "../types";
 import type { RelayRequest, TransactionStatus } from "../types";
 import type { WalletManager } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
+import { hubChain } from "../config";
 
 // ============ Constants ============
 
@@ -64,10 +65,10 @@ export class PrivacyRelay {
     const { chainId, to, data, feesCacheId } = request;
 
     // 1. Validate chain ID
-    if (chainId !== 31337) {
+    if (chainId !== hubChain.chainId) {
       throw new RelayError(
         "INVALID_CHAIN",
-        `Unsupported chain ID: ${chainId}. Only hub chain (31337) is supported.`
+        `Unsupported chain ID: ${chainId}. Only hub chain (${hubChain.chainId}) is supported.`
       );
     }
 

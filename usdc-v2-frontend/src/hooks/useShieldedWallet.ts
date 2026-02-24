@@ -44,6 +44,7 @@ import {
 } from '@/lib/sdk'
 import { isRailgunInitialized, initRailgun } from '@/lib/railgun'
 import { loadDeployments, getHubChain, getYieldDeployment } from '@/config/deployments'
+import { getHubRpcUrl } from '@/config/networkConfig'
 
 // ABI for vault's convertToAssets function
 const VAULT_ABI = ['function convertToAssets(uint256 shares) view returns (uint256)']
@@ -105,7 +106,7 @@ async function convertSharesToAssets(
   if (shares === 0n) return 0n
 
   try {
-    const provider = new ethers.JsonRpcProvider('http://localhost:8545')
+    const provider = new ethers.JsonRpcProvider(getHubRpcUrl())
     const vault = new ethers.Contract(vaultAddress, VAULT_ABI, provider)
     const assets = await vault.convertToAssets(shares)
     return assets

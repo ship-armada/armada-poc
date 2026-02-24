@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useAtomValue } from 'jotai'
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -17,8 +18,12 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import type { StoredTransaction, FlowType, TxStatus } from '@/types/transaction'
+import { chainConfigAtom } from '@/atoms/appAtom'
+import { getChainDisplayName } from '@/config/chains'
+import { buildExplorerUrlSync } from '@/utils/explorerUtils'
 import { PrivacyPoolTimeline } from './PrivacyPoolTimeline'
 import { CopyButton } from '@/components/common/CopyButton'
+import { ExplorerLink } from '@/components/common/ExplorerLink'
 import { repairTransaction } from '@/services/tx'
 
 // ============ Types ============
@@ -154,9 +159,10 @@ interface AddressRowProps {
   label: string
   address?: string
   isRailgun?: boolean
+  explorerUrl?: string
 }
 
-function AddressRow({ label, address, isRailgun = false }: AddressRowProps) {
+function AddressRow({ label, address, isRailgun = false, explorerUrl }: AddressRowProps) {
   if (!address) return null
 
   return (
@@ -170,6 +176,9 @@ function AddressRow({ label, address, isRailgun = false }: AddressRowProps) {
           {formatAddress(address)}
         </span>
         <CopyButton text={address} size="sm" />
+        {explorerUrl && (
+          <ExplorerLink url={explorerUrl} label={`View address in explorer`} size="sm" iconOnly />
+        )}
       </div>
     </div>
   )
@@ -178,9 +187,10 @@ function AddressRow({ label, address, isRailgun = false }: AddressRowProps) {
 interface TxHashRowProps {
   label: string
   hash?: string
+  explorerUrl?: string
 }
 
-function TxHashRow({ label, hash }: TxHashRowProps) {
+function TxHashRow({ label, hash, explorerUrl }: TxHashRowProps) {
   if (!hash) return null
 
   return (
@@ -189,6 +199,9 @@ function TxHashRow({ label, hash }: TxHashRowProps) {
       <div className="flex items-center gap-2">
         <span className="text-sm font-mono">{formatTxHash(hash)}</span>
         <CopyButton text={hash} size="sm" />
+        {explorerUrl && (
+          <ExplorerLink url={explorerUrl} label={`View ${label.toLowerCase()} tx in explorer`} size="sm" iconOnly />
+        )}
       </div>
     </div>
   )
@@ -202,6 +215,7 @@ export function PrivacyPoolTxDetailModal({
   onClose,
   onRepair,
 }: PrivacyPoolTxDetailModalProps) {
+  const chainConfig = useAtomValue(chainConfigAtom)
   const [isRepairing, setIsRepairing] = useState(false)
   const [localTx, setLocalTx] = useState<StoredTransaction | null>(null)
 
@@ -251,13 +265,22 @@ export function PrivacyPoolTxDetailModal({
     }
   }
 
+  // Build explorer URLs for addresses and tx hashes
+  const evmConfig = chainConfig ?? null
+  const buildAddrUrl = (addr: string | undefined, chainKey: string) =>
+    addr && !addr.startsWith('0zk')
+      ? buildExplorerUrlSync(addr, 'address', 'evm', chainKey, evmConfig)
+      : undefined
+  const buildTxUrl = (hash: string | undefined, chainKey: string) =>
+    hash ? buildExplorerUrlSync(hash, 'tx', 'evm', chainKey, evmConfig) : undefined
+
   // Determine addresses to display based on flow type
   const getAddressDisplay = () => {
     switch (flowType) {
       case 'shield':
         return (
           <>
-            <AddressRow label="From (Public)" address={publicAddress} />
+            <AddressRow label="From (Public)" address={publicAddress} explorerUrl={buildAddrUrl(publicAddress, sourceChain)} />
             <AddressRow label="To (Shielded)" address={railgunAddress} isRailgun />
           </>
         )
@@ -272,7 +295,7 @@ export function PrivacyPoolTxDetailModal({
         return (
           <>
             <AddressRow label="From (Shielded)" address={railgunAddress} isRailgun />
-            <AddressRow label="To (Public)" address={recipientAddress} />
+            <AddressRow label="To (Public)" address={recipientAddress} explorerUrl={buildAddrUrl(recipientAddress, destinationChain ?? 'hub')} />
           </>
         )
       default:
@@ -341,11 +364,11 @@ export function PrivacyPoolTxDetailModal({
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Chain</h3>
               <div className="flex items-center gap-2 text-sm">
-                <span className="capitalize">{sourceChain}</span>
+                <span>{getChainDisplayName(chainConfig, sourceChain)}</span>
                 {isCrossChain && destinationChain && destinationChain !== sourceChain && (
                   <>
                     <span className="text-muted-foreground">→</span>
-                    <span className="capitalize">{destinationChain}</span>
+                    <span>{getChainDisplayName(chainConfig, destinationChain)}</span>
                   </>
                 )}
                 {isCrossChain && (
@@ -383,9 +406,9 @@ export function PrivacyPoolTxDetailModal({
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Transaction Hashes</h3>
               <div className="space-y-2">
-                <TxHashRow label="Approval" hash={txHashes.approval} />
-                <TxHashRow label="Main" hash={txHashes.main} />
-                <TxHashRow label="Relay" hash={txHashes.relay} />
+                <TxHashRow label="Approval" hash={txHashes.approval} explorerUrl={buildTxUrl(txHashes.approval, sourceChain)} />
+                <TxHashRow label="Main" hash={txHashes.main} explorerUrl={buildTxUrl(txHashes.main, flowType === 'shield' ? sourceChain : 'hub')} />
+                <TxHashRow label="Relay" hash={txHashes.relay} explorerUrl={buildTxUrl(txHashes.relay, destinationChain ?? 'hub')} />
               </div>
             </div>
           )}

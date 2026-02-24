@@ -1,5 +1,8 @@
+import { useAtomValue } from 'jotai'
 import { X, CheckCircle2, XCircle, Clock, AlertCircle } from 'lucide-react'
 import type { StoredTransaction, FlowType } from '@/types/transaction'
+import { chainConfigAtom } from '@/atoms/appAtom'
+import { getChainDisplayName } from '@/config/chains'
 import { cn } from '@/lib/utils'
 
 // ============ Helper functions ============
@@ -57,10 +60,11 @@ export function TransactionDetailModalHeader({
     statusIcon = <AlertCircle className="h-5 w-5" />
   }
 
-  // Get chain display for cross-chain transactions
-  const sourceChain = transaction.sourceChain.charAt(0).toUpperCase() + transaction.sourceChain.slice(1)
+  // Get chain display names from config
+  const chainConfig = useAtomValue(chainConfigAtom)
+  const sourceChain = getChainDisplayName(chainConfig, transaction.sourceChain)
   const destChain = transaction.destinationChain
-    ? transaction.destinationChain.charAt(0).toUpperCase() + transaction.destinationChain.slice(1)
+    ? getChainDisplayName(chainConfig, transaction.destinationChain)
     : 'Shielded'
 
   return (

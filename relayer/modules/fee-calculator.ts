@@ -14,7 +14,7 @@
  */
 
 import { ethers } from "ethers";
-import { armadaRelayerSettings } from "../config";
+import { armadaRelayerSettings, hubChain } from "../config";
 import type { FeeSchedule } from "../types";
 import type { WalletManager } from "./wallet-manager";
 
@@ -103,7 +103,7 @@ export class FeeCalculator {
     this.currentSchedule = {
       cacheId,
       expiresAt: Date.now() + this.feeTtlSeconds * 1000,
-      chainId: 31337, // Hub chain
+      chainId: hubChain.chainId,
       fees: {
         transfer: transferFee.toString(),
         unshield: unshieldFee.toString(),

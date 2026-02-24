@@ -80,6 +80,14 @@ function fundGasEndpoint() {
             return
           }
 
+          // Faucet not available on Sepolia
+          if (process.env.VITE_NETWORK === 'sepolia') {
+            res.statusCode = 503
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'Faucet not available on Sepolia. Use a testnet faucet to get tokens.' }))
+            return
+          }
+
           // Parse JSON body
           let body = ''
           req.on('data', (chunk: any) => {

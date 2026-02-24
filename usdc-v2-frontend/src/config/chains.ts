@@ -92,6 +92,18 @@ export function getDefaultChainKey(file: EvmChainsFile | undefined): string | un
   return file?.defaults?.selectedChainKey
 }
 
+/**
+ * Resolve a chain key (e.g. 'hub', 'client-a') to its display name
+ * (e.g. 'Ethereum Sepolia', 'Base Sepolia') from the loaded chain config.
+ * Falls back to capitalizing the key if config isn't loaded yet.
+ */
+export function getChainDisplayName(file: EvmChainsFile | undefined, key: string): string {
+  const chain = findChainByKey(file, key)
+  if (chain) return chain.name
+  // Fallback: capitalize first letter of each word
+  return key.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
 // Polling configuration (used by EVM chains)
 export interface PollingConfig {
   blockWindowBackscan?: number // Number of blocks to scan backwards on startup

@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAtom } from 'jotai'
 import { ethers } from 'ethers'
 import { loadDeployments, getYieldDeployment } from '@/config/deployments'
+import { getHubRpcUrl, isSepoliaMode } from '@/config/networkConfig'
 import { yieldRateAtom } from '@/atoms/shieldedWalletAtom'
 
 // Vault ABI - only the functions/events we need
@@ -74,7 +75,7 @@ export function useYieldRate(): UseYieldRateReturn {
 
       // Create provider if needed
       if (!providerRef.current) {
-        providerRef.current = new ethers.JsonRpcProvider('http://localhost:8545')
+        providerRef.current = new ethers.JsonRpcProvider(getHubRpcUrl())
       }
 
       // Create vault contract if needed
@@ -159,7 +160,7 @@ export function useYieldRate(): UseYieldRateReturn {
         const vaultAddress = yieldDeployment.contracts.armadaYieldVault
 
         // Create provider
-        providerRef.current = new ethers.JsonRpcProvider('http://localhost:8545')
+        providerRef.current = new ethers.JsonRpcProvider(getHubRpcUrl())
 
         // Create vault contract
         vaultRef.current = new ethers.Contract(
@@ -173,17 +174,19 @@ export function useYieldRate(): UseYieldRateReturn {
           await fetchExchangeRate()
         }
 
-        // Set up event listeners
-        const handleVaultEvent = () => {
-          if (mounted) {
-            debouncedRefresh()
+        // Set up event listeners (skip on Sepolia — public RPCs don't support eth_newFilter)
+        if (!isSepoliaMode()) {
+          const handleVaultEvent = () => {
+            if (mounted) {
+              debouncedRefresh()
+            }
           }
+
+          vaultRef.current.on('Deposit', handleVaultEvent)
+          vaultRef.current.on('Withdraw', handleVaultEvent)
+
+          console.log('[useYieldRate] Listening for vault events at:', vaultAddress)
         }
-
-        vaultRef.current.on('Deposit', handleVaultEvent)
-        vaultRef.current.on('Withdraw', handleVaultEvent)
-
-        console.log('[useYieldRate] Listening for vault events at:', vaultAddress)
 
         // Set up polling
         pollTimerRef.current = setInterval(() => {

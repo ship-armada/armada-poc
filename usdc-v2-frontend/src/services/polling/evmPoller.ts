@@ -173,7 +173,7 @@ function parseMessageReceivedEvent(log: ethers.Log): ParsedMessageReceived | nul
  * Query MessageReceived events filtered by nonce
  * First tries the configured MessageTransmitter address, then falls back to searching all addresses
  */
-async function queryMessageReceivedByNonce(
+export async function queryMessageReceivedByNonce(
   provider: ethers.JsonRpcProvider,
   params: {
     messageTransmitterAddress: string

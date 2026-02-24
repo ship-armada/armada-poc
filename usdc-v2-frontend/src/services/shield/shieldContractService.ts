@@ -16,6 +16,7 @@ import {
   type ChainConfig,
 } from '@/config/deployments'
 import { isRelayerEnabled, getRelayerFee } from '@/services/relayer'
+import { getRelayerAddress } from '@/config/networkConfig'
 
 // ============ Contract ABIs ============
 
@@ -38,8 +39,8 @@ const PRIVACY_POOL_CLIENT_ABI = [
   'event CrossChainShieldInitiated(address indexed sender, uint256 amount, bytes32 indexed npk, uint64 nonce)',
 ]
 
-// Default relayer address (first Hardhat account - used for local devnet)
-const DEFAULT_RELAYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+// Default relayer address (from network config)
+const DEFAULT_RELAYER_ADDRESS = getRelayerAddress()
 
 // ============ Types ============
 

@@ -1,6 +1,7 @@
 import type { EvmChainsFile } from '@/config/chains'
+import { isSepoliaMode } from '@/config/networkConfig'
 
-const CHAINS_ENDPOINT = '/evm-chains.json'
+const CHAINS_ENDPOINT = isSepoliaMode() ? '/evm-chains-sepolia.json' : '/evm-chains.json'
 
 export async function fetchEvmChainsConfig(): Promise<EvmChainsFile> {
   const response = await fetch(CHAINS_ENDPOINT, {

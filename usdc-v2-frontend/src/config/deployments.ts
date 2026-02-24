@@ -100,6 +100,14 @@ export interface ClientDeployment {
   }
 }
 
+import {
+  getHubChainId,
+  getHubRpcUrl,
+  getHubChainName,
+  getClientChains,
+  getDeploymentFileName,
+} from './networkConfig'
+
 // ============ State ============
 
 let deploymentsLoaded = false
@@ -127,7 +135,7 @@ export async function loadDeployments(): Promise<void> {
 
   try {
     // Load privacy pool hub deployment
-    const hubRes = await fetch('/api/deployments/privacy-pool-hub.json')
+    const hubRes = await fetch(`/api/deployments/${getDeploymentFileName('privacy-pool-hub')}.json`)
     if (hubRes.ok) {
       hubDeployment = await hubRes.json()
       console.log('[deployments] Loaded privacy-pool-hub.json')
@@ -136,7 +144,7 @@ export async function loadDeployments(): Promise<void> {
     }
 
     // Load hub CCTP deployment (for USDC address)
-    const hubCCTPRes = await fetch('/api/deployments/hub-v3.json')
+    const hubCCTPRes = await fetch(`/api/deployments/${getDeploymentFileName('hub-v3')}.json`)
     if (hubCCTPRes.ok) {
       hubCCTPDeployment = await hubCCTPRes.json()
       console.log('[deployments] Loaded hub-v3.json')
@@ -145,7 +153,7 @@ export async function loadDeployments(): Promise<void> {
     }
 
     // Load yield deployment (for yield vault, adapter, treasury)
-    const yieldRes = await fetch('/api/deployments/yield-hub.json')
+    const yieldRes = await fetch(`/api/deployments/${getDeploymentFileName('yield-hub')}.json`)
     if (yieldRes.ok) {
       yieldDeployment = await yieldRes.json()
       console.log('[deployments] Loaded yield-hub.json')
@@ -154,7 +162,7 @@ export async function loadDeployments(): Promise<void> {
     }
 
     // Load Aave mock deployment (for MockAaveSpoke)
-    const aaveRes = await fetch('/api/deployments/aave-mock-hub.json')
+    const aaveRes = await fetch(`/api/deployments/${getDeploymentFileName('aave-mock-hub')}.json`)
     if (aaveRes.ok) {
       aaveDeployment = await aaveRes.json()
       console.log('[deployments] Loaded aave-mock-hub.json')
@@ -165,12 +173,14 @@ export async function loadDeployments(): Promise<void> {
     // Load client chain deployments
     for (const chainKey of CLIENT_CHAIN_KEYS) {
       // Determine deployment file name based on chain key
-      const privacyPoolFile = chainKey === 'client-a'
-        ? 'privacy-pool-client.json'
-        : 'privacy-pool-clientB.json'
-      const cctpFile = chainKey === 'client-a'
-        ? 'client-v3.json'
-        : 'clientB-v3.json'
+      const privacyPoolBase = chainKey === 'client-a'
+        ? 'privacy-pool-client'
+        : 'privacy-pool-clientB'
+      const cctpBase = chainKey === 'client-a'
+        ? 'client-v3'
+        : 'clientB-v3'
+      const privacyPoolFile = `${getDeploymentFileName(privacyPoolBase)}.json`
+      const cctpFile = `${getDeploymentFileName(cctpBase)}.json`
 
       // Load privacy pool client deployment
       const clientRes = await fetch(`/api/deployments/${privacyPoolFile}`)
@@ -207,9 +217,9 @@ export async function loadDeployments(): Promise<void> {
 export function getHubChain(): ChainConfig {
   // Default hub chain config
   const config: ChainConfig = {
-    id: 31337,
-    name: 'Hub',
-    rpcUrl: 'http://localhost:8545',
+    id: getHubChainId(),
+    name: getHubChainName(),
+    rpcUrl: getHubRpcUrl(),
     contracts: {},
   }
 
@@ -268,16 +278,13 @@ export function getClientChain(chainKey: string): ChainConfig | null {
     return null
   }
 
-  // Determine RPC URL based on chain key
-  const rpcUrls: Record<string, string> = {
-    'client-a': 'http://localhost:8546',
-    'client-b': 'http://localhost:8547',
-  }
+  // Look up RPC URL and name from network config
+  const clientChainDef = getClientChains().find((c) => c.key === chainKey)
 
   const config: ChainConfig = {
     id: deployment.chainId,
-    name: chainKey === 'client-a' ? 'Client Chain A' : 'Client Chain B',
-    rpcUrl: rpcUrls[chainKey] || 'http://localhost:8546',
+    name: clientChainDef?.name || (chainKey === 'client-a' ? 'Client Chain A' : 'Client Chain B'),
+    rpcUrl: clientChainDef?.rpcUrl || 'http://localhost:8546',
     contracts: {
       privacyPoolClient: deployment.contracts.privacyPoolClient,
     },

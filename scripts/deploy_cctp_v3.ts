@@ -1,13 +1,12 @@
 /**
- * Deploy CCTP V2 Infrastructure
+ * Deploy CCTP V2 Infrastructure (Mock Mode)
  *
  * This script deploys the mock CCTP V2 infrastructure needed for cross-chain messaging:
  *   - MockUSDCV2 (simple ERC20 with mint/burn)
  *   - MockMessageTransmitterV2 (message passing simulation)
  *   - MockTokenMessengerV2 (token burn/mint logic)
  *
- * The PrivacyPool contracts (which use this CCTP infrastructure) are deployed
- * separately by deploy_privacy_pool.ts.
+ * For real CCTP (Sepolia testnet), use deploy_cctp_sepolia.ts instead.
  *
  * Usage:
  *   npx hardhat run scripts/deploy_cctp_v3.ts --network hub
@@ -18,25 +17,19 @@
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
-
-// Domain IDs (matching CCTPDomains library)
-const DOMAINS = {
-  hub: 100,      // Local Hub
-  client: 101,   // Local Client A
-  clientB: 102,  // Local Client B
-};
-
-// Chain IDs
-const CHAIN_IDS = {
-  hub: 31337,
-  client: 31338,
-  clientB: 31339,
-};
+import {
+  getNetworkConfig,
+  getChainRole,
+  getCCTPDeploymentFile,
+  type ChainRole,
+} from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 interface DeploymentInfo {
   chainId: number;
   domain: number;
   deployer: string;
+  cctpMode: "mock";
   contracts: {
     usdc: string;
     messageTransmitter: string;
@@ -45,12 +38,18 @@ interface DeploymentInfo {
   timestamp: string;
 }
 
-async function deployCCTP(chainName: string, domain: number): Promise<DeploymentInfo> {
+async function deployCCTP(role: ChainRole): Promise<DeploymentInfo> {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
+  const config = getNetworkConfig();
+  const chain = role === "hub" ? config.hub
+    : role === "clientA" ? config.clientA
+    : config.clientB;
+  const domain = chain.cctpDomain;
+  const nm = await createNonceManager(deployer);
 
-  console.log(`=== Deploying CCTP V2 Infrastructure to ${chainName} ===`);
+  console.log(`=== Deploying CCTP V2 Infrastructure to ${chain.name} ===`);
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
   console.log(`Domain ID: ${domain}`);
@@ -59,16 +58,16 @@ async function deployCCTP(chainName: string, domain: number): Promise<Deployment
   // 1. Deploy MockUSDCV2
   console.log("1. Deploying MockUSDCV2...");
   const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
-  const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
-  await usdc.waitForDeployment();
+  const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC", nm.override());
+  await usdc.deploymentTransaction()!.wait();
   const usdcAddress = await usdc.getAddress();
   console.log(`   USDC: ${usdcAddress}`);
 
   // 2. Deploy MockMessageTransmitterV2
   console.log("\n2. Deploying MockMessageTransmitterV2...");
   const MockMessageTransmitterV2 = await ethers.getContractFactory("MockMessageTransmitterV2");
-  const messageTransmitter = await MockMessageTransmitterV2.deploy(domain, deployer.address);
-  await messageTransmitter.waitForDeployment();
+  const messageTransmitter = await MockMessageTransmitterV2.deploy(domain, deployer.address, nm.override());
+  await messageTransmitter.deploymentTransaction()!.wait();
   const messageTransmitterAddress = await messageTransmitter.getAddress();
   console.log(`   MessageTransmitter: ${messageTransmitterAddress}`);
 
@@ -78,25 +77,27 @@ async function deployCCTP(chainName: string, domain: number): Promise<Deployment
   const tokenMessenger = await MockTokenMessengerV2.deploy(
     messageTransmitterAddress,
     usdcAddress,
-    domain
+    domain,
+    nm.override()
   );
-  await tokenMessenger.waitForDeployment();
+  await tokenMessenger.deploymentTransaction()!.wait();
   const tokenMessengerAddress = await tokenMessenger.getAddress();
   console.log(`   TokenMessenger: ${tokenMessengerAddress}`);
 
   // 4. Link MessageTransmitter to TokenMessenger
   console.log("\n4. Linking contracts...");
-  await (await messageTransmitter.setTokenMessenger(tokenMessengerAddress)).wait();
+  await (await messageTransmitter.setTokenMessenger(tokenMessengerAddress, nm.override())).wait();
   console.log("   MessageTransmitter linked to TokenMessenger");
 
   // 5. Add TokenMessenger as minter on USDC
-  await (await usdc.addMinter(tokenMessengerAddress)).wait();
+  await (await usdc.addMinter(tokenMessengerAddress, nm.override())).wait();
   console.log("   TokenMessenger added as USDC minter");
 
   const deployment: DeploymentInfo = {
     chainId,
     domain,
     deployer: deployer.address,
+    cctpMode: "mock",
     contracts: {
       usdc: usdcAddress,
       messageTransmitter: messageTransmitterAddress,
@@ -120,24 +121,17 @@ function saveDeployment(filename: string, data: DeploymentInfo): void {
 async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
+  const config = getNetworkConfig();
 
-  let deployment: DeploymentInfo;
-  let filename: string;
-
-  if (chainId === CHAIN_IDS.hub) {
-    deployment = await deployCCTP("Hub", DOMAINS.hub);
-    filename = "hub-v3.json";
-  } else if (chainId === CHAIN_IDS.client) {
-    deployment = await deployCCTP("Client A", DOMAINS.client);
-    filename = "client-v3.json";
-  } else if (chainId === CHAIN_IDS.clientB) {
-    deployment = await deployCCTP("Client B", DOMAINS.clientB);
-    filename = "clientB-v3.json";
-  } else {
+  const role = getChainRole(chainId);
+  if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
-    console.error("Expected: 31337 (hub), 31338 (client), or 31339 (clientB)");
+    console.error(`Configured chains: hub=${config.hub.chainId}, clientA=${config.clientA.chainId}, clientB=${config.clientB.chainId}`);
     process.exit(1);
   }
+
+  const deployment = await deployCCTP(role);
+  const filename = getCCTPDeploymentFile(role);
 
   saveDeployment(filename, deployment);
   console.log(`\n=== Deployment Complete ===`);

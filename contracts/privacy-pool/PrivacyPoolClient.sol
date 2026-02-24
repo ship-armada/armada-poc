@@ -144,7 +144,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         // Burn USDC and send message to Hub
         // The Hub is the mint recipient and message handler
         // destinationCaller restricts who can call receiveMessage on the destination chain
-        uint64 nonce = ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
+        ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             amount,
             hubDomain,
             hubPool,                   // mintRecipient - Hub receives the USDC
@@ -155,9 +155,9 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
             hookData                   // hookData - contains shield parameters
         );
 
-        emit CrossChainShieldInitiated(msg.sender, amount, npk, nonce);
+        emit CrossChainShieldInitiated(msg.sender, amount, npk, 0);
 
-        return nonce;
+        return 0;
     }
 
     // ══════════════════════════════════════════════════════════════════════════

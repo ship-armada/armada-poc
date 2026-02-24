@@ -5,6 +5,10 @@
  * 1. Privacy Relay: Submit shielded transactions on behalf of users
  * 2. CCTP Relay: Forward cross-chain CCTP messages between all chains
  *
+ * Environment-aware:
+ *   - Local (CCTP_MODE=mock): Uses mock message relay with no attestation
+ *   - Testnet (CCTP_MODE=real): Uses Circle's Iris attestation service
+ *
  * Loads contract addresses from deployment JSONs and starts all modules.
  */
 
@@ -16,7 +20,9 @@ import { FeeCalculator } from "./modules/fee-calculator";
 import { PrivacyRelay } from "./modules/privacy-relay";
 import { HttpApi } from "./modules/http-api";
 import { CCTPRelayModule } from "./modules/cctp-relay";
+import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment } from "./types";
+import { getNetworkConfig } from "../config/networks";
 
 // ============ Deployment Loading ============
 
@@ -45,27 +51,33 @@ interface ContractAddresses {
 }
 
 function loadContractAddresses(): ContractAddresses {
+  const netConfig = getNetworkConfig();
+  const suffix = netConfig.env === "local" ? "" : `-${netConfig.env}`;
+
   // Load privacy pool hub deployment
-  const ppDeployment = loadJson<PrivacyPoolDeployment>("privacy-pool-hub.json");
+  const ppFile = `privacy-pool-hub${suffix}.json`;
+  const ppDeployment = loadJson<PrivacyPoolDeployment>(ppFile);
   if (!ppDeployment) {
     throw new Error(
-      "privacy-pool-hub.json not found. Run 'npm run setup' to deploy contracts."
+      `${ppFile} not found. Run deployment scripts first.`
     );
   }
 
   // Load yield deployment for ArmadaYieldAdapter
-  const yieldDeployment = loadJson<YieldDeployment>("yield-hub.json");
+  const yieldFile = `yield-hub${suffix}.json`;
+  const yieldDeployment = loadJson<YieldDeployment>(yieldFile);
   if (!yieldDeployment?.contracts?.armadaYieldAdapter) {
     throw new Error(
-      "yield-hub.json with armadaYieldAdapter not found. Run deploy_yield.ts first."
+      `${yieldFile} with armadaYieldAdapter not found. Run deploy_yield.ts first.`
     );
   }
 
   // Load CCTP hub deployment
-  const cctpDeployment = loadJson<CCTPDeployment>("hub-v3.json");
+  const cctpFile = `hub${suffix}-v3.json`;
+  const cctpDeployment = loadJson<CCTPDeployment>(cctpFile);
   if (!cctpDeployment) {
     throw new Error(
-      "hub-v3.json not found. Run 'npm run setup' to deploy contracts."
+      `${cctpFile} not found. Run deployment scripts first.`
     );
   }
 
@@ -81,8 +93,12 @@ function loadContractAddresses(): ContractAddresses {
 // ============ Main ============
 
 async function main() {
+  const netConfig = getNetworkConfig();
+
   console.log("=".repeat(60));
   console.log("  ARMADA RELAYER");
+  console.log(`  Environment: ${netConfig.env}`);
+  console.log(`  CCTP Mode: ${netConfig.cctpMode}`);
   console.log("=".repeat(60));
   console.log();
 
@@ -138,20 +154,30 @@ async function main() {
     feeCalculator
   );
 
-  // Initialize CCTP relay module (with fee validation from fee calculator)
-  console.log("[armada] Initializing CCTP relay module...");
-  const cctpRelay = new CCTPRelayModule(async () => {
-    const fees = await feeCalculator.getCurrentFees();
-    const shieldFee = BigInt(fees.fees.crossChainShield);
-    const unshieldFee = BigInt(fees.fees.crossChainUnshield);
-    return shieldFee < unshieldFee ? shieldFee : unshieldFee;
-  });
-  const cctpInitialized = await cctpRelay.initialize();
-  if (!cctpInitialized) {
-    console.warn(
-      "[armada] Some CCTP chains failed to initialize. " +
-        "Cross-chain relay may not work for all chains."
-    );
+  // Initialize CCTP relay module — select based on CCTP mode
+  let cctpRelayModule: { start: () => void; stop: () => void; chainCount: number };
+
+  if (armadaRelayerSettings.cctpReal) {
+    console.log("[armada] Initializing REAL CCTP relay (Iris attestation)...");
+    const irisRelay = new IrisRelayModule();
+    const initialized = await irisRelay.initialize();
+    if (!initialized) {
+      console.warn("[armada] Some chains failed to initialize for Iris relay.");
+    }
+    cctpRelayModule = irisRelay;
+  } else {
+    console.log("[armada] Initializing MOCK CCTP relay module...");
+    const cctpRelay = new CCTPRelayModule(async () => {
+      const fees = await feeCalculator.getCurrentFees();
+      const shieldFee = BigInt(fees.fees.crossChainShield);
+      const unshieldFee = BigInt(fees.fees.crossChainUnshield);
+      return shieldFee < unshieldFee ? shieldFee : unshieldFee;
+    });
+    const initialized = await cctpRelay.initialize();
+    if (!initialized) {
+      console.warn("[armada] Some CCTP chains failed to initialize.");
+    }
+    cctpRelayModule = cctpRelay;
   }
   console.log();
 
@@ -159,17 +185,18 @@ async function main() {
   await httpApi.start();
 
   // Start CCTP relay polling (background)
-  cctpRelay.start();
+  cctpRelayModule.start();
 
   console.log();
   console.log("=".repeat(60));
   console.log("  ARMADA RELAYER RUNNING");
+  console.log(`  Mode: ${armadaRelayerSettings.cctpReal ? "REAL CCTP (Iris)" : "MOCK CCTP"}`);
   console.log("=".repeat(60));
   console.log();
   console.log("Services:");
   console.log(`  Privacy Relay:  http://localhost:${armadaRelayerSettings.port}/relay`);
   console.log(`  Fee API:        http://localhost:${armadaRelayerSettings.port}/fees`);
-  console.log(`  CCTP Relay:     Polling ${cctpRelay.chainCount} chain(s)`);
+  console.log(`  CCTP Relay:     Polling ${cctpRelayModule.chainCount} chain(s)`);
   console.log();
 
   // Periodic dedup cache cleanup (every 5 minutes)
@@ -181,7 +208,7 @@ async function main() {
   const shutdown = () => {
     console.log("\n[armada] Shutting down...");
     clearInterval(cleanupInterval);
-    cctpRelay.stop();
+    cctpRelayModule.stop();
     httpApi.stop();
     process.exit(0);
   };

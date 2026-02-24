@@ -4,45 +4,42 @@
  * This script deploys the new modular privacy pool system:
  *   Hub Chain:
  *     - PrivacyPool (router)
- *     - MerkleModule
- *     - VerifierModule
- *     - ShieldModule
- *     - TransactModule
+ *     - MerkleModule, VerifierModule, ShieldModule, TransactModule
  *
  *   Client Chain:
  *     - PrivacyPoolClient
  *
  * Prerequisites:
- *   - CCTP V2 contracts must be deployed (deploy_cctp_v3.ts)
+ *   - CCTP V2 contracts must be deployed/configured
  *
- * Usage:
+ * Usage (local):
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network hub
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network client
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network clientB
+ *
+ * Usage (sepolia):
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaHub
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientA
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientB
  */
 
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  getNetworkConfig,
+  getChainRole,
+  getCCTPDeploymentFile,
+  getPrivacyPoolDeploymentFile,
+  getYieldDeploymentFile,
+  type ChainRole,
+} from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 // Load Poseidon bytecode for library deployment
 const poseidonBytecode = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "lib", "poseidon_bytecode.json"), "utf-8")
 );
-
-// Domain IDs (matching CCTPDomains library)
-const DOMAINS = {
-  hub: 100,      // Local Hub
-  client: 101,   // Local Client A
-  clientB: 102,  // Local Client B
-};
-
-// Chain IDs
-const CHAIN_IDS = {
-  hub: 31337,
-  client: 31338,
-  clientB: 31339,
-};
 
 interface HubDeploymentInfo {
   chainId: number;
@@ -86,18 +83,22 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const domain = DOMAINS.hub;
+  const config = getNetworkConfig();
+  const domain = config.hub.cctpDomain;
+  const nm = await createNonceManager(deployer);
 
   console.log("=== Deploying Privacy Pool Modules to Hub Chain ===");
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
-  console.log(`Domain ID: ${domain}`);
+  console.log(`CCTP Domain: ${domain}`);
+  console.log(`Environment: ${config.env}`);
   console.log("");
 
   // Load CCTP deployment
-  const cctpDeployment = loadDeployment("hub-v3.json");
+  const cctpFilename = getCCTPDeploymentFile("hub");
+  const cctpDeployment = loadDeployment(cctpFilename);
   if (!cctpDeployment) {
-    throw new Error("CCTP deployment not found. Run deploy_cctp_v3.ts first.");
+    throw new Error(`CCTP deployment not found (${cctpFilename}). Run deploy_cctp first.`);
   }
 
   const usdcAddress = cctpDeployment.contracts.usdc;
@@ -114,6 +115,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   console.log("1. Deploying Poseidon libraries...");
   const poseidonT3Tx = await deployer.sendTransaction({
     data: poseidonBytecode.PoseidonT3.bytecode,
+    ...nm.override(),
   });
   const poseidonT3Receipt = await poseidonT3Tx.wait();
   const poseidonT3Address = poseidonT3Receipt!.contractAddress!;
@@ -121,6 +123,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
 
   const poseidonT4Tx = await deployer.sendTransaction({
     data: poseidonBytecode.PoseidonT4.bytecode,
+    ...nm.override(),
   });
   const poseidonT4Receipt = await poseidonT4Tx.wait();
   const poseidonT4Address = poseidonT4Receipt!.contractAddress!;
@@ -129,52 +132,46 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   // 2. Deploy MerkleModule (requires PoseidonT3)
   console.log("\n2. Deploying MerkleModule...");
   const MerkleModule = await ethers.getContractFactory("MerkleModule", {
-    libraries: {
-      PoseidonT3: poseidonT3Address,
-    },
+    libraries: { PoseidonT3: poseidonT3Address },
   });
-  const merkleModule = await MerkleModule.deploy();
-  await merkleModule.waitForDeployment();
+  const merkleModule = await MerkleModule.deploy(nm.override());
+  await merkleModule.deploymentTransaction()!.wait();
   const merkleModuleAddress = await merkleModule.getAddress();
   console.log(`   MerkleModule: ${merkleModuleAddress}`);
 
   // 3. Deploy VerifierModule
   console.log("\n3. Deploying VerifierModule...");
   const VerifierModule = await ethers.getContractFactory("VerifierModule");
-  const verifierModule = await VerifierModule.deploy();
-  await verifierModule.waitForDeployment();
+  const verifierModule = await VerifierModule.deploy(nm.override());
+  await verifierModule.deploymentTransaction()!.wait();
   const verifierModuleAddress = await verifierModule.getAddress();
   console.log(`   VerifierModule: ${verifierModuleAddress}`);
 
   // 4. Deploy ShieldModule (requires PoseidonT4)
   console.log("\n4. Deploying ShieldModule...");
   const ShieldModule = await ethers.getContractFactory("ShieldModule", {
-    libraries: {
-      PoseidonT4: poseidonT4Address,
-    },
+    libraries: { PoseidonT4: poseidonT4Address },
   });
-  const shieldModule = await ShieldModule.deploy();
-  await shieldModule.waitForDeployment();
+  const shieldModule = await ShieldModule.deploy(nm.override());
+  await shieldModule.deploymentTransaction()!.wait();
   const shieldModuleAddress = await shieldModule.getAddress();
   console.log(`   ShieldModule: ${shieldModuleAddress}`);
 
   // 5. Deploy TransactModule (requires PoseidonT4)
   console.log("\n5. Deploying TransactModule...");
   const TransactModule = await ethers.getContractFactory("TransactModule", {
-    libraries: {
-      PoseidonT4: poseidonT4Address,
-    },
+    libraries: { PoseidonT4: poseidonT4Address },
   });
-  const transactModule = await TransactModule.deploy();
-  await transactModule.waitForDeployment();
+  const transactModule = await TransactModule.deploy(nm.override());
+  await transactModule.deploymentTransaction()!.wait();
   const transactModuleAddress = await transactModule.getAddress();
   console.log(`   TransactModule: ${transactModuleAddress}`);
 
   // 6. Deploy PrivacyPool (router)
   console.log("\n6. Deploying PrivacyPool (router)...");
   const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
-  const privacyPool = await PrivacyPool.deploy();
-  await privacyPool.waitForDeployment();
+  const privacyPool = await PrivacyPool.deploy(nm.override());
+  await privacyPool.deploymentTransaction()!.wait();
   const privacyPoolAddress = await privacyPool.getAddress();
   console.log(`   PrivacyPool: ${privacyPoolAddress}`);
 
@@ -189,7 +186,8 @@ async function deployHub(): Promise<HubDeploymentInfo> {
     messageTransmitterAddress,
     usdcAddress,
     domain,
-    deployer.address
+    deployer.address,
+    nm.override()
   );
   await initTx.wait();
   console.log("   PrivacyPool initialized");
@@ -199,27 +197,26 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   const { loadVerificationKeys, TESTING_ARTIFACT_CONFIGS } = await import("../lib/artifacts");
   await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, true);
 
-  // 9. Testing mode is DISABLED by default for proper SNARK verification
-  // To enable for debugging, manually call: privacyPool.setTestingMode(true)
+  // 9. SNARK verification enabled
   console.log("\n9. SNARK verification enabled (testing mode disabled)");
 
-  // 9b. Configure shield fee (50 bps = 0.50%) and treasury
+  // 9b. Configure shield fee and treasury
   console.log("\n9b. Configuring shield fee...");
-  const yieldDeployment = loadDeployment("yield-hub.json");
+  const yieldDeployment = loadDeployment(getYieldDeploymentFile());
   let treasuryAddress = deployer.address;
-  if (yieldDeployment?.contracts?.armadaTreasury) {
+  if (config.treasuryAddress) {
+    treasuryAddress = config.treasuryAddress;
+    console.log("   Using TREASURY_ADDRESS from env");
+  } else if (yieldDeployment?.contracts?.armadaTreasury) {
     treasuryAddress = yieldDeployment.contracts.armadaTreasury;
     console.log("   Using ArmadaTreasury from yield deployment");
   } else {
-    console.log("   Warning: yield deployment not found, using deployer as treasury");
+    console.log("   Warning: no treasury configured, using deployer as treasury");
   }
   await (await privacyPool.setTreasury(treasuryAddress)).wait();
   await (await privacyPool.setShieldFee(50)).wait();
   console.log("   Treasury: " + treasuryAddress);
   console.log("   Shield fee: 50 bps (0.50%)");
-
-  // 10. Set remote pools for client chains (will be updated after client deployments)
-  // These will be configured by link_privacy_pool.ts
 
   const deployment: HubDeploymentInfo = {
     chainId,
@@ -240,33 +237,37 @@ async function deployHub(): Promise<HubDeploymentInfo> {
     timestamp: new Date().toISOString(),
   };
 
-  saveDeployment("privacy-pool-hub.json", deployment);
+  const filename = getPrivacyPoolDeploymentFile("hub");
+  saveDeployment(filename, deployment);
 
   console.log("\n=== Hub Privacy Pool Deployment Complete ===");
-  console.log(`Deployment saved to: deployments/privacy-pool-hub.json`);
+  console.log(`Deployment saved to: deployments/${filename}`);
 
   return deployment;
 }
 
-async function deployClient(isClientB: boolean = false): Promise<ClientDeploymentInfo> {
+async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const domain = isClientB ? DOMAINS.clientB : DOMAINS.client;
-  const name = isClientB ? "Client B" : "Client A";
-  const cctpFilename = isClientB ? "clientB-v3.json" : "client-v3.json";
-  const filename = isClientB ? "privacy-pool-clientB.json" : "privacy-pool-client.json";
+  const config = getNetworkConfig();
+  const chain = role === "clientA" ? config.clientA : config.clientB;
+  const domain = chain.cctpDomain;
+  const name = chain.name;
+  const nm = await createNonceManager(deployer);
 
   console.log(`=== Deploying PrivacyPoolClient to ${name} Chain ===`);
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
-  console.log(`Domain ID: ${domain}`);
+  console.log(`CCTP Domain: ${domain}`);
+  console.log(`Environment: ${config.env}`);
   console.log("");
 
   // Load CCTP deployment for this chain
+  const cctpFilename = getCCTPDeploymentFile(role);
   const cctpDeployment = loadDeployment(cctpFilename);
   if (!cctpDeployment) {
-    throw new Error(`CCTP deployment not found for ${name}. Run deploy_cctp_v3.ts first.`);
+    throw new Error(`CCTP deployment not found (${cctpFilename}). Run deploy_cctp first.`);
   }
 
   const usdcAddress = cctpDeployment.contracts.usdc;
@@ -280,9 +281,11 @@ async function deployClient(isClientB: boolean = false): Promise<ClientDeploymen
   console.log("");
 
   // Load Hub deployment
-  const hubDeployment = loadDeployment("privacy-pool-hub.json");
+  const hubFilename = getPrivacyPoolDeploymentFile("hub");
+  const hubDeployment = loadDeployment(hubFilename);
   let hubPoolAddress = ethers.ZeroAddress;
   let hubPoolBytes32 = ethers.zeroPadValue(ethers.ZeroAddress, 32);
+  const hubDomain = config.hub.cctpDomain;
 
   if (hubDeployment) {
     hubPoolAddress = hubDeployment.contracts.privacyPool;
@@ -296,8 +299,8 @@ async function deployClient(isClientB: boolean = false): Promise<ClientDeploymen
   // 1. Deploy PrivacyPoolClient
   console.log("1. Deploying PrivacyPoolClient...");
   const PrivacyPoolClient = await ethers.getContractFactory("PrivacyPoolClient");
-  const privacyPoolClient = await PrivacyPoolClient.deploy();
-  await privacyPoolClient.waitForDeployment();
+  const privacyPoolClient = await PrivacyPoolClient.deploy(nm.override());
+  await privacyPoolClient.deploymentTransaction()!.wait();
   const clientAddress = await privacyPoolClient.getAddress();
   console.log(`   PrivacyPoolClient: ${clientAddress}`);
 
@@ -308,9 +311,10 @@ async function deployClient(isClientB: boolean = false): Promise<ClientDeploymen
     messageTransmitterAddress,
     usdcAddress,
     domain,
-    DOMAINS.hub,
+    hubDomain,
     hubPoolBytes32,
-    deployer.address
+    deployer.address,
+    nm.override()
   );
   await initTx.wait();
   console.log("   PrivacyPoolClient initialized");
@@ -328,12 +332,13 @@ async function deployClient(isClientB: boolean = false): Promise<ClientDeploymen
       usdc: usdcAddress,
     },
     hub: {
-      domain: DOMAINS.hub,
+      domain: hubDomain,
       privacyPool: hubPoolAddress,
     },
     timestamp: new Date().toISOString(),
   };
 
+  const filename = getPrivacyPoolDeploymentFile(role);
   saveDeployment(filename, deployment);
 
   console.log(`\n=== ${name} PrivacyPoolClient Deployment Complete ===`);
@@ -363,17 +368,19 @@ function saveDeployment(filename: string, data: any): void {
 async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
+  const config = getNetworkConfig();
 
-  if (chainId === CHAIN_IDS.hub) {
-    await deployHub();
-  } else if (chainId === CHAIN_IDS.client) {
-    await deployClient(false);
-  } else if (chainId === CHAIN_IDS.clientB) {
-    await deployClient(true);
-  } else {
+  const role = getChainRole(chainId);
+  if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
-    console.error("Expected: 31337 (hub), 31338 (client), or 31339 (clientB)");
+    console.error(`Configured chains: hub=${config.hub.chainId}, clientA=${config.clientA.chainId}, clientB=${config.clientB.chainId}`);
     process.exit(1);
+  }
+
+  if (role === "hub") {
+    await deployHub();
+  } else {
+    await deployClient(role);
   }
 }
 

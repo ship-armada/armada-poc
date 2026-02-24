@@ -23,6 +23,7 @@ import {
   getCCTPDeploymentFile,
   type ChainRole,
 } from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 interface DeploymentInfo {
   chainId: number;
@@ -46,6 +47,7 @@ async function deployCCTP(role: ChainRole): Promise<DeploymentInfo> {
     : role === "clientA" ? config.clientA
     : config.clientB;
   const domain = chain.cctpDomain;
+  const nm = await createNonceManager(deployer);
 
   console.log(`=== Deploying CCTP V2 Infrastructure to ${chain.name} ===`);
   console.log(`Deployer: ${deployer.address}`);
@@ -56,16 +58,16 @@ async function deployCCTP(role: ChainRole): Promise<DeploymentInfo> {
   // 1. Deploy MockUSDCV2
   console.log("1. Deploying MockUSDCV2...");
   const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
-  const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
-  await usdc.waitForDeployment();
+  const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC", nm.override());
+  await usdc.deploymentTransaction()!.wait();
   const usdcAddress = await usdc.getAddress();
   console.log(`   USDC: ${usdcAddress}`);
 
   // 2. Deploy MockMessageTransmitterV2
   console.log("\n2. Deploying MockMessageTransmitterV2...");
   const MockMessageTransmitterV2 = await ethers.getContractFactory("MockMessageTransmitterV2");
-  const messageTransmitter = await MockMessageTransmitterV2.deploy(domain, deployer.address);
-  await messageTransmitter.waitForDeployment();
+  const messageTransmitter = await MockMessageTransmitterV2.deploy(domain, deployer.address, nm.override());
+  await messageTransmitter.deploymentTransaction()!.wait();
   const messageTransmitterAddress = await messageTransmitter.getAddress();
   console.log(`   MessageTransmitter: ${messageTransmitterAddress}`);
 
@@ -75,19 +77,20 @@ async function deployCCTP(role: ChainRole): Promise<DeploymentInfo> {
   const tokenMessenger = await MockTokenMessengerV2.deploy(
     messageTransmitterAddress,
     usdcAddress,
-    domain
+    domain,
+    nm.override()
   );
-  await tokenMessenger.waitForDeployment();
+  await tokenMessenger.deploymentTransaction()!.wait();
   const tokenMessengerAddress = await tokenMessenger.getAddress();
   console.log(`   TokenMessenger: ${tokenMessengerAddress}`);
 
   // 4. Link MessageTransmitter to TokenMessenger
   console.log("\n4. Linking contracts...");
-  await (await messageTransmitter.setTokenMessenger(tokenMessengerAddress)).wait();
+  await (await messageTransmitter.setTokenMessenger(tokenMessengerAddress, nm.override())).wait();
   console.log("   MessageTransmitter linked to TokenMessenger");
 
   // 5. Add TokenMessenger as minter on USDC
-  await (await usdc.addMinter(tokenMessengerAddress)).wait();
+  await (await usdc.addMinter(tokenMessengerAddress, nm.override())).wait();
   console.log("   TokenMessenger added as USDC minter");
 
   const deployment: DeploymentInfo = {

@@ -199,7 +199,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         // Burn via CCTP
         IERC20(usdc).safeApprove(tokenMessenger, base);
 
-        nonce = ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
+        ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             base,
             destinationDomain,
             remotePools[destinationDomain],
@@ -209,6 +209,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             CCTPFinality.STANDARD,
             hookData
         );
+        nonce = 0; // CCTP V2 depositForBurnWithHook does not return nonce
 
         // Emit events
         emit CrossChainUnshieldInitiated(destinationDomain, finalRecipient, base, nonce);

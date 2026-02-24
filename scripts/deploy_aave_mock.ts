@@ -25,6 +25,7 @@ import {
   isCCTPReal,
   type ChainRole,
 } from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 interface AaveMockDeployment {
   chainId: number;
@@ -47,6 +48,7 @@ async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
+  const nm = await createNonceManager(deployer);
 
   const role = getChainRole(chainId);
   if (!role) {
@@ -77,8 +79,8 @@ async function main() {
   // 1. Deploy MockAaveSpoke
   console.log("\n1. Deploying MockAaveSpoke...");
   const MockAaveSpoke = await ethers.getContractFactory("MockAaveSpoke");
-  const mockAaveSpoke = await MockAaveSpoke.deploy();
-  await mockAaveSpoke.waitForDeployment();
+  const mockAaveSpoke = await MockAaveSpoke.deploy(nm.override());
+  await mockAaveSpoke.deploymentTransaction()!.wait();
   const mockAaveSpokeAddress = await mockAaveSpoke.getAddress();
   console.log(`   MockAaveSpoke: ${mockAaveSpokeAddress}`);
 
@@ -86,7 +88,7 @@ async function main() {
   if (!isCCTPReal()) {
     console.log("\n2. Adding MockAaveSpoke as USDC minter...");
     const usdc = await ethers.getContractAt("MockUSDCV2", usdcAddress);
-    await (await usdc.addMinter(mockAaveSpokeAddress)).wait();
+    await (await usdc.addMinter(mockAaveSpokeAddress, nm.override())).wait();
     console.log("   MockAaveSpoke added as USDC minter");
   } else {
     console.log("\n2. Skipping minter setup (using real USDC - mock will use transfer-based yield)");
@@ -97,7 +99,8 @@ async function main() {
   const tx = await mockAaveSpoke.addReserve(
     usdcAddress,
     yieldBps,
-    !isCCTPReal() // mintableYield only works with mock USDC
+    !isCCTPReal(), // mintableYield only works with mock USDC
+    nm.override()
   );
   await tx.wait();
   console.log(`   USDC reserve added (reserveId: 0, APY: ${yieldBps / 100}%)`);

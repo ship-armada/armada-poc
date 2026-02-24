@@ -61,7 +61,9 @@
     "deploy:governance:sepolia": "hardhat run scripts/deploy_governance.ts --network sepoliaHub",
     "deploy:crowdfund:sepolia": "hardhat run scripts/deploy_crowdfund.ts --network sepoliaHub",
     "link:sepolia": "hardhat run scripts/link_privacy_pool.ts --network sepoliaHub",
-    "relayer:sepolia": "npx ts-node relayer/armada-relayer.ts"
+    "relayer:sepolia": "npx ts-node relayer/armada-relayer.ts",
+    "test:sepolia": "npx ts-node scripts/test_sepolia.ts",
+    "set-treasury:sepolia": "hardhat run scripts/set_treasury.ts --network sepoliaHub"
   },
   "dependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",

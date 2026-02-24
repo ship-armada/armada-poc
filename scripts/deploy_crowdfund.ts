@@ -25,6 +25,7 @@ import {
   getCrowdfundDeploymentFile,
   isCCTPReal,
 } from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -49,6 +50,7 @@ async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
+  const nm = await createNonceManager(deployer);
 
   const role = getChainRole(chainId);
   if (!role) {
@@ -65,8 +67,8 @@ async function main() {
   // 1. Deploy ArmadaToken
   console.log("1. Deploying ArmadaToken...");
   const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-  const armToken = await ArmadaToken.deploy(deployer.address);
-  await armToken.waitForDeployment();
+  const armToken = await ArmadaToken.deploy(deployer.address, nm.override());
+  await armToken.deploymentTransaction()!.wait();
   const armTokenAddress = await armToken.getAddress();
   console.log(`   ArmadaToken: ${armTokenAddress}`);
 
@@ -85,8 +87,8 @@ async function main() {
     // Deploy fresh MockUSDCV2 for isolated crowdfund testing
     console.log("2. Deploying MockUSDCV2...");
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
-    const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
-    await usdc.waitForDeployment();
+    const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC", nm.override());
+    await usdc.deploymentTransaction()!.wait();
     usdcAddress = await usdc.getAddress();
     console.log(`   MockUSDCV2: ${usdcAddress}`);
   }
@@ -94,15 +96,15 @@ async function main() {
   // 3. Deploy ArmadaCrowdfund
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
-  const crowdfund = await ArmadaCrowdfund.deploy(usdcAddress, armTokenAddress, deployer.address);
-  await crowdfund.waitForDeployment();
+  const crowdfund = await ArmadaCrowdfund.deploy(usdcAddress, armTokenAddress, deployer.address, nm.override());
+  await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();
   console.log(`   ArmadaCrowdfund: ${crowdfundAddress}`);
 
   // 4. Fund ARM to crowdfund (MAX_SALE worth = 1.8M ARM)
   const armFundAmount = ethers.parseUnits("1800000", 18);
   console.log("4. Funding ARM to crowdfund...");
-  await armToken.transfer(crowdfundAddress, armFundAmount);
+  await (await armToken.transfer(crowdfundAddress, armFundAmount, nm.override())).wait();
   console.log(`   Sent 1,800,000 ARM to crowdfund contract`);
 
   // Save deployment

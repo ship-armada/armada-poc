@@ -109,7 +109,7 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external returns (uint64 nonce) {
+    ) external {
         require(burnToken == usdc, "Unsupported token");
         require(amount > 0, "Amount must be > 0");
         require(mintRecipient != bytes32(0), "Invalid recipient");
@@ -120,7 +120,7 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
         IMockBurnable(usdc).burn(amount);
 
         // Get nonce
-        nonce = nextNonce++;
+        uint64 nonce = nextNonce++;
 
         // Send message to transmitter using struct to avoid stack issues
         _sendBurnMessage(
@@ -134,8 +134,6 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
             minFinalityThreshold,
             hookData
         );
-
-        return nonce;
     }
 
     /**
@@ -243,19 +241,19 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
  *      attestations from Circle's attestation service. Here we skip attestation
  *      verification but use the same message format.
  *
- * Message Format (MessageV2):
+ * Message Format (Mock — uses uint64 nonce, not bytes32 like real V2):
  * | Field                     | Bytes | Offset |
  * |---------------------------|-------|--------|
  * | version                   | 4     | 0      |
  * | sourceDomain              | 4     | 4      |
  * | destinationDomain         | 4     | 8      |
- * | nonce                     | 8     | 12     |
- * | sender                    | 32    | 20     |
- * | recipient                 | 32    | 52     |
- * | destinationCaller         | 32    | 84     |
- * | minFinalityThreshold      | 4     | 116    |
- * | finalityThresholdExecuted | 4     | 120    |
- * | messageBody               | var   | 124    |
+ * | nonce                     | 8     | 12     |  (real V2: 32 bytes / bytes32)
+ * | sender                    | 32    | 20     |  (real V2: offset 44)
+ * | recipient                 | 32    | 52     |  (real V2: offset 76)
+ * | destinationCaller         | 32    | 84     |  (real V2: offset 108)
+ * | minFinalityThreshold      | 4     | 116    |  (real V2: offset 140)
+ * | finalityThresholdExecuted | 4     | 120    |  (real V2: offset 144)
+ * | messageBody               | var   | 124    |  (real V2: offset 148)
  */
 
 /**

@@ -28,6 +28,7 @@ import {
   getYieldDeploymentFile,
   type ChainRole,
 } from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 interface YieldDeployment {
   chainId: number;
@@ -51,6 +52,7 @@ async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
+  const nm = await createNonceManager(deployer);
 
   const role = getChainRole(chainId);
   if (!role) {
@@ -89,8 +91,8 @@ async function main() {
   // 1. Deploy ArmadaTreasury
   console.log("\n1. Deploying ArmadaTreasury...");
   const ArmadaTreasury = await ethers.getContractFactory("ArmadaTreasury");
-  const armadaTreasury = await ArmadaTreasury.deploy();
-  await armadaTreasury.waitForDeployment();
+  const armadaTreasury = await ArmadaTreasury.deploy(nm.override());
+  await armadaTreasury.deploymentTransaction()!.wait();
   const armadaTreasuryAddress = await armadaTreasury.getAddress();
   console.log(`   ArmadaTreasury: ${armadaTreasuryAddress}`);
 
@@ -102,9 +104,10 @@ async function main() {
     reserveId,
     armadaTreasuryAddress,
     "Armada Yield USDC",
-    "ayUSDC"
+    "ayUSDC",
+    nm.override()
   );
-  await armadaYieldVault.waitForDeployment();
+  await armadaYieldVault.deploymentTransaction()!.wait();
   const armadaYieldVaultAddress = await armadaYieldVault.getAddress();
   console.log(`   ArmadaYieldVault: ${armadaYieldVaultAddress}`);
 
@@ -113,15 +116,16 @@ async function main() {
   const ArmadaYieldAdapter = await ethers.getContractFactory("ArmadaYieldAdapter");
   const armadaYieldAdapter = await ArmadaYieldAdapter.deploy(
     usdcAddress,
-    armadaYieldVaultAddress
+    armadaYieldVaultAddress,
+    nm.override()
   );
-  await armadaYieldAdapter.waitForDeployment();
+  await armadaYieldAdapter.deploymentTransaction()!.wait();
   const armadaYieldAdapterAddress = await armadaYieldAdapter.getAddress();
   console.log(`   ArmadaYieldAdapter: ${armadaYieldAdapterAddress}`);
 
   // 4. Configure ArmadaYieldVault to recognize adapter
   console.log("\n4. Configuring ArmadaYieldVault...");
-  await (await armadaYieldVault.setAdapter(armadaYieldAdapterAddress)).wait();
+  await (await armadaYieldVault.setAdapter(armadaYieldAdapterAddress, nm.override())).wait();
   console.log(`   Adapter set to: ${armadaYieldAdapterAddress}`);
 
   // Save deployment

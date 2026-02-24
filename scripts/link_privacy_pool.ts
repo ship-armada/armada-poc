@@ -178,7 +178,7 @@ async function main() {
       "MockTokenMessengerV2",
       hubCctp.contracts.tokenMessenger
     );
-    await hubTokenMessenger.setRemoteTokenMessenger(config.hub.cctpDomain, hubTokenMessengerBytes32);
+    await (await hubTokenMessenger.setRemoteTokenMessenger(config.hub.cctpDomain, hubTokenMessengerBytes32)).wait();
     console.log(`Hub TokenMessenger self-reference set`);
   } else {
     console.log("CCTP Mode: real — skipping TokenMessenger configuration (managed by Circle)");

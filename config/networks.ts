@@ -63,6 +63,8 @@ export interface NetworkConfig {
   relayerPort: number;
   /** Hardcoded ETH/USDC price for fee calculation */
   ethUsdcPrice: number;
+  /** Optional treasury address override (if empty, deployer is used) */
+  treasuryAddress: string;
 }
 
 // ============================================================================
@@ -182,6 +184,7 @@ export function getNetworkConfig(): NetworkConfig {
     stewardDelay: numEnv("STEWARD_DELAY", 86400),
     relayerPort: numEnv("RELAYER_PORT", 3001),
     ethUsdcPrice: numEnv("ETH_USDC_PRICE", 2000),
+    treasuryAddress: process.env.TREASURY_ADDRESS ?? "",
   };
 
   return _cachedConfig;

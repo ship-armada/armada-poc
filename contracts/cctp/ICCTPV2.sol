@@ -59,7 +59,6 @@ interface ITokenMessengerV2 {
      * @param maxFee Maximum fee willing to pay for fast finality
      * @param minFinalityThreshold Minimum finality level (1000=fast, 2000=standard)
      * @param hookData Arbitrary data passed to destination for custom logic
-     * @return nonce Unique identifier for this burn
      */
     function depositForBurnWithHook(
         uint256 amount,
@@ -70,7 +69,7 @@ interface ITokenMessengerV2 {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external returns (uint64 nonce);
+    ) external;
 }
 
 /**
@@ -188,19 +187,25 @@ library CCTPFinality {
  * @notice Library for encoding/decoding CCTP V2 message envelope
  * @dev This is the outer message format used by MessageTransmitter.receiveMessage()
  *
- * Real CCTP V2 Message format:
+ * Real CCTP V2 Message format (Circle's MessageTransmitterV2):
  * | Field                     | Bytes | Offset |
  * |---------------------------|-------|--------|
  * | version                   | 4     | 0      |
  * | sourceDomain              | 4     | 4      |
  * | destinationDomain         | 4     | 8      |
- * | nonce                     | 8     | 12     |
- * | sender                    | 32    | 20     |
- * | recipient                 | 32    | 52     |
- * | destinationCaller         | 32    | 84     |
- * | minFinalityThreshold      | 4     | 116    |
- * | finalityThresholdExecuted | 4     | 120    |
- * | messageBody               | var   | 124    |
+ * | nonce                     | 32    | 12     |  <-- bytes32 in real V2
+ * | sender                    | 32    | 44     |
+ * | recipient                 | 32    | 76     |
+ * | destinationCaller         | 32    | 108    |
+ * | minFinalityThreshold      | 4     | 140    |
+ * | finalityThresholdExecuted | 4     | 144    |
+ * | messageBody               | var   | 148    |
+ *
+ * NOTE: This mock uses uint64 (8-byte) nonce for simplicity, which shifts all
+ * subsequent offsets. This doesn't affect real CCTP integration because our
+ * contracts never decode the outer MessageV2 on-chain — Circle's
+ * MessageTransmitterV2 does that. Our contracts only decode BurnMessageV2
+ * (the inner messageBody), whose format matches real V2 exactly.
  */
 library MessageV2 {
     // Byte offsets for message fields

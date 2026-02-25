@@ -5,16 +5,18 @@
  */
 
 /**
- * Parses a Message struct from raw bytes
- * Message structure (from CCTP contracts):
+ * Parses a MessageV2 struct from raw bytes
+ * CCTP V2 Message structure (matches Circle's MessageTransmitterV2):
  * - Version: uint32 (4 bytes, offset 0)
  * - SourceDomain: uint32 (4 bytes, offset 4)
  * - DestinationDomain: uint32 (4 bytes, offset 8)
- * - Nonce: uint64 (8 bytes, offset 12)
- * - Sender: bytes32 (32 bytes, offset 20)
- * - Recipient: bytes32 (32 bytes, offset 52)
- * - DestinationCaller: bytes32 (32 bytes, offset 84)
- * - MessageBody: variable length (starts at offset 116)
+ * - Nonce: bytes32 (32 bytes, offset 12)
+ * - Sender: bytes32 (32 bytes, offset 44)
+ * - Recipient: bytes32 (32 bytes, offset 76)
+ * - DestinationCaller: bytes32 (32 bytes, offset 108)
+ * - MinFinalityThreshold: uint32 (4 bytes, offset 140)
+ * - FinalityThresholdExecuted: uint32 (4 bytes, offset 144)
+ * - MessageBody: variable length (starts at offset 148)
  */
 export function parseMessage(bytes: Uint8Array): {
   version: number
@@ -26,8 +28,8 @@ export function parseMessage(bytes: Uint8Array): {
   destinationCaller: Uint8Array
   messageBody: Uint8Array
 } {
-  if (bytes.length < 116) {
-    throw new Error(`Message too short: ${bytes.length} bytes, need at least 116`)
+  if (bytes.length < 148) {
+    throw new Error(`Message too short: ${bytes.length} bytes, need at least 148`)
   }
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -36,15 +38,23 @@ export function parseMessage(bytes: Uint8Array): {
   const sourceDomain = view.getUint32(4, false)
   const destinationDomain = view.getUint32(8, false)
 
-  // Nonce is uint64 at offset 12
-  const nonceHigh = view.getUint32(12, false)
-  const nonceLow = view.getUint32(16, false)
-  const nonce = Number((BigInt(nonceHigh) << 32n) | BigInt(nonceLow))
+  // Nonce is bytes32 (32 bytes) at offset 12 in V2
+  // Convert to number (safe for practical nonce values)
+  const nonceBytes = bytes.slice(12, 44)
+  let nonce = 0
+  for (let i = 0; i < 32; i++) {
+    if (nonceBytes[i] !== 0) {
+      // Use BigInt for full precision, then convert to number
+      const hex = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+      nonce = Number(BigInt('0x' + hex))
+      break
+    }
+  }
 
-  const sender = bytes.slice(20, 52)
-  const recipient = bytes.slice(52, 84)
-  const destinationCaller = bytes.slice(84, 116)
-  const messageBody = bytes.slice(116)
+  const sender = bytes.slice(44, 76)
+  const recipient = bytes.slice(76, 108)
+  const destinationCaller = bytes.slice(108, 140)
+  const messageBody = bytes.slice(148)
 
   return {
     version,
@@ -59,17 +69,20 @@ export function parseMessage(bytes: Uint8Array): {
 }
 
 /**
- * Parses a BurnMessage struct from MessageBody bytes
- * BurnMessage structure:
+ * Parses a BurnMessageV2 struct from MessageBody bytes
+ * BurnMessageV2 structure (CCTP V2):
  * - Version: uint32 (4 bytes, offset 0)
- * - BurnToken: address (20 bytes, offset 4) - padded to 32 bytes
+ * - BurnToken: bytes32 (32 bytes, offset 4)
  * - MintRecipient: bytes32 (32 bytes, offset 36)
  * - Amount: uint256 (32 bytes, offset 68)
- * - MessageSender: address (20 bytes, offset 100) - padded to 32 bytes
- * Total length: 132 bytes
+ * - MessageSender: bytes32 (32 bytes, offset 100)
+ * - MaxFee: uint256 (32 bytes, offset 132)
+ * - FeeExecuted: uint256 (32 bytes, offset 164)
+ * - ExpirationBlock: uint256 (32 bytes, offset 196)
+ * - HookData: variable length (starts at offset 228)
+ * Total minimum length: 228 bytes
  *
- * Note: MessageBody may contain additional data beyond the BurnMessage (e.g., 140 bytes total),
- * so we parse only the first 132 bytes as the BurnMessage.
+ * We only parse the first 132 bytes (common fields) for backward compatibility.
  */
 export function parseBurnMessage(bytes: Uint8Array): {
   version: number

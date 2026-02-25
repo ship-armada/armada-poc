@@ -18,7 +18,7 @@ const USDC_ABI = [
 ] as const
 
 const TOKEN_MESSENGER_ABI = [
-  'function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken) external returns (uint64 nonce)',
+  'function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold) external',
 ] as const
 
 export interface DepositForBurnParams {
@@ -257,19 +257,33 @@ export async function depositForBurn(
   )
 
   try {
-    logger.info('[EvmContractService] 📝 Calling depositForBurn with parameters:', {
+    // CCTP V2 depositForBurn params:
+    // destinationCaller = bytes32(0) → anyone with valid attestation can relay
+    // maxFee = 0 → no CCTP relay fee
+    // minFinalityThreshold = 2000 → standard finality
+    const destinationCallerBytes32 = ethers.zeroPadValue('0x', 32)
+    const maxFee = 0n
+    const minFinalityThreshold = 2000
+
+    logger.info('[EvmContractService] Calling depositForBurn with parameters:', {
       amount: amountWei.toString(),
       amountFormatted: ethers.formatUnits(amountWei, 6),
       destinationDomain: cctpDomain,
       mintRecipient: forwardingAddressBytes32,
       burnToken: usdcAddress,
+      destinationCaller: destinationCallerBytes32,
+      maxFee: maxFee.toString(),
+      minFinalityThreshold,
     })
 
     const tx = await tokenMessenger.depositForBurn(
       amountWei,
       cctpDomain,
       forwardingAddressBytes32,
-      usdcAddress
+      usdcAddress,
+      destinationCallerBytes32,
+      maxFee,
+      minFinalityThreshold,
     )
 
     logger.info('[EvmContractService] 📤 depositForBurn transaction submitted', {

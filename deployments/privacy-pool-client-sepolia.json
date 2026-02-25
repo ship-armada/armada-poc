@@ -3,8 +3,8 @@
   "domain": 6,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
-    "privacyPoolClient": "0xb8d0EE35262178c8F148cf5af3a8BfDA3deE9453",
-    "hookRouter": "0x362b8E1f9EfDa0DeEcC0d3c8A913EF56826236fC"
+    "privacyPoolClient": "0xb3a0A6A3C5fDbAB3e46fE5Bd1e168b623Cc17DA1",
+    "hookRouter": "0x6606beD83AfD7B8FE3bB287bC7E0134e39a7815e"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
@@ -13,7 +13,7 @@
   },
   "hub": {
     "domain": 0,
-    "privacyPool": "0xd65Ab9A2965c10320ad50b027f9ba1C61F3c5390"
+    "privacyPool": "0x174c999080260622B52b3db9fa8789AaFbA67a55"
   },
-  "timestamp": "2026-02-25T16:50:07.677Z"
+  "timestamp": "2026-02-25T18:28:31.242Z"
 }

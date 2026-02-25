@@ -22,8 +22,9 @@ function sleep(ms: number): Promise<void> {
 // This is the first topic in the event log
 const MESSAGE_SENT_EVENT_TOPIC = '0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036'
 
-// DepositForBurn event signature: keccak256("DepositForBurn(uint64,address,uint256,address,bytes32,uint32,bytes32,bytes32)")
-const DEPOSIT_FOR_BURN_EVENT_TOPIC = '0x2fa9ca894982930190727e75500a97d8dc500233a5065e0f3126c48fbe0343c0'
+// DepositForBurn V2 event signature: keccak256("DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)")
+// Note: V2 no longer includes nonce in DepositForBurn event. Nonce is only in MessageSent.
+const DEPOSIT_FOR_BURN_EVENT_TOPIC = '0x0c8c1cbdc5190613ebd485511d4e2812cfa45eecb79d845893331fedad5130a5'
 
 /**
  * Keccak256 hash function using ethers.js
@@ -363,8 +364,9 @@ export async function extractMessageSent(
 }
 
 /**
- * Fallback: Extract nonce from DepositForBurn event
- * This is less reliable but can be used if MessageSent extraction fails
+ * Fallback: Detect DepositForBurn event existence
+ * In CCTP V2, DepositForBurn no longer includes nonce. If MessageSent extraction
+ * fails but DepositForBurn exists, we know the burn happened but can't extract nonce.
  */
 async function extractNonceFromDepositForBurn(
   receipt: ethers.TransactionReceipt,
@@ -383,30 +385,21 @@ async function extractNonceFromDepositForBurn(
 
     const tokenMessengerAddressLower = tokenMessengerAddress.toLowerCase()
 
-    // Find DepositForBurn event
+    // Find DepositForBurn V2 event
+    // V2: DepositForBurn(address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller, uint256 maxFee, uint32 indexed minFinalityThreshold, bytes hookData)
     for (const log of receipt.logs) {
       const logAddress = log.address?.toLowerCase()
       if (
         logAddress === tokenMessengerAddressLower &&
         log.topics?.[0] === DEPOSIT_FOR_BURN_EVENT_TOPIC
       ) {
-        // DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)
-        // Nonce is in topics[1] (indexed uint64, padded to 32 bytes)
-        if (log.topics.length >= 2) {
-          const nonceTopic = log.topics[1]
-          const nonce = Number(BigInt(nonceTopic))
+        logger.info('[IrisAttestation] DepositForBurn V2 event found but nonce not available in this event', {
+          chainKey,
+        })
 
-          logger.info('[IrisAttestation] Extracted nonce from DepositForBurn event', {
-            chainKey,
-            nonce,
-          })
-
-          // Note: This fallback doesn't provide irisLookupID, so it's not ideal
-          // But it allows us to proceed with nonce-based polling
-          return {
-            success: false,
-            error: 'MessageSent event not found. DepositForBurn nonce extracted but irisLookupID unavailable.',
-          }
+        return {
+          success: false,
+          error: 'MessageSent event not found. DepositForBurn detected but V2 does not include nonce in this event.',
         }
       }
     }
@@ -418,7 +411,7 @@ async function extractNonceFromDepositForBurn(
   } catch (error) {
     return {
       success: false,
-      error: `Failed to extract nonce from DepositForBurn: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Failed to check DepositForBurn: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
 }

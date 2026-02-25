@@ -29,8 +29,8 @@ import { updateChainStageIncremental } from './pollingStateManager'
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const DEFAULT_EVM_MAX_BLOCK_RANGE = 2000n
 
-// MessageReceived event signature: keccak256("MessageReceived(address,uint32,uint64,bytes32,bytes)")
-const MESSAGE_RECEIVED_TOPIC = '0x58200b4c34ae05ee816d710053fff3fb75af4395915d3d2a771b24aa10e3cc5d'
+// MessageReceived V2 event signature: keccak256("MessageReceived(address,uint32,bytes32,bytes32,uint32,bytes)")
+const MESSAGE_RECEIVED_TOPIC = '0xff48c13eda96b1cceacc6b9edeedc9e9db9d6226afbc30146b720c19d3addb1c'
 
 /**
  * Sleep utility
@@ -56,7 +56,7 @@ function toHexQuantity(n: bigint): string {
 
 /**
  * Convert nonce to padded hex topic for event filtering
- * Nonce is uint64, padded to 32 bytes (64 hex characters)
+ * Nonce is bytes32 in CCTP V2, padded to 32 bytes (64 hex characters)
  */
 function toPaddedNonceTopic(nonce: number): string {
   return `0x${BigInt(nonce).toString(16).padStart(64, '0')}`
@@ -73,8 +73,10 @@ function extractEvmAddressFromBytes32(bytes32: string): string {
 }
 
 /**
- * Parse MessageReceived event data
- * Event structure: MessageReceived(address indexed caller, uint32 sourceDomain, uint64 indexed nonce, bytes32 sender, bytes messageBody)
+ * Parse MessageReceived V2 event data
+ * Event structure: MessageReceived(address indexed caller, uint32 sourceDomain, bytes32 indexed nonce, bytes32 sender, uint32 indexed finalityThresholdExecuted, bytes messageBody)
+ * Topics: [sig, caller, nonce, finalityThresholdExecuted]
+ * Data: ABI-encoded (uint32 sourceDomain, bytes32 sender, bytes messageBody)
  */
 interface ParsedMessageReceived {
   nonce: number
@@ -86,11 +88,11 @@ interface ParsedMessageReceived {
 
 function parseMessageReceivedEvent(log: ethers.Log): ParsedMessageReceived | null {
   try {
-    if (!log.topics || log.topics.length < 3 || !log.data) {
+    if (!log.topics || log.topics.length < 4 || !log.data) {
       return null
     }
 
-    // Extract nonce from topics[2] (indexed uint64, padded to 32 bytes)
+    // Extract nonce from topics[2] (indexed bytes32 in V2)
     const nonceTopic = log.topics[2]
     const nonce = Number(BigInt(nonceTopic))
 

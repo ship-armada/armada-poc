@@ -69,7 +69,7 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
         bytes32 destinationCaller,
         uint256 maxFee,
         uint32 minFinalityThreshold
-    ) external returns (uint64 nonce) {
+    ) external {
         require(burnToken == usdc, "Unsupported token");
         require(amount > 0, "Amount must be > 0");
         require(mintRecipient != bytes32(0), "Invalid recipient");
@@ -79,7 +79,7 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
         IMockBurnable(usdc).burn(amount);
 
         // Get nonce
-        nonce = nextNonce++;
+        uint64 nonce = nextNonce++;
 
         // Send message to transmitter (emits MessageSent event)
         _sendBurnMessage(
@@ -93,8 +93,6 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
             minFinalityThreshold,
             "" // No hook data
         );
-
-        return nonce;
     }
 
     /**
@@ -219,19 +217,19 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
  *      attestations from Circle's attestation service. Here we skip attestation
  *      verification but use the same message format.
  *
- * Message Format (Mock — uses uint64 nonce, not bytes32 like real V2):
+ * Message Format (matches real CCTP V2 — bytes32 nonce):
  * | Field                     | Bytes | Offset |
  * |---------------------------|-------|--------|
  * | version                   | 4     | 0      |
  * | sourceDomain              | 4     | 4      |
  * | destinationDomain         | 4     | 8      |
- * | nonce                     | 8     | 12     |  (real V2: 32 bytes / bytes32)
- * | sender                    | 32    | 20     |  (real V2: offset 44)
- * | recipient                 | 32    | 52     |  (real V2: offset 76)
- * | destinationCaller         | 32    | 84     |  (real V2: offset 108)
- * | minFinalityThreshold      | 4     | 116    |  (real V2: offset 140)
- * | finalityThresholdExecuted | 4     | 120    |  (real V2: offset 144)
- * | messageBody               | var   | 124    |  (real V2: offset 148)
+ * | nonce                     | 32    | 12     |  bytes32
+ * | sender                    | 32    | 44     |
+ * | recipient                 | 32    | 76     |
+ * | destinationCaller         | 32    | 108    |
+ * | minFinalityThreshold      | 4     | 140    |
+ * | finalityThresholdExecuted | 4     | 144    |
+ * | messageBody               | var   | 148    |
  */
 
 /**
@@ -270,12 +268,13 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
     // The single `bytes` param contains the full MessageV2 envelope (header + body).
     event MessageSent(bytes message);
 
-    // Matches real CCTP v2: MessageReceived(address indexed caller, uint32 sourceDomain, uint64 indexed nonce, bytes32 sender, bytes messageBody)
+    // Matches real CCTP v2: MessageReceived(address indexed caller, uint32 sourceDomain, bytes32 indexed nonce, bytes32 sender, uint32 indexed finalityThresholdExecuted, bytes messageBody)
     event MessageReceived(
         address indexed caller,
         uint32 sourceDomain,
-        uint64 indexed nonce,
+        bytes32 indexed nonce,
         bytes32 sender,
+        uint32 indexed finalityThresholdExecuted,
         bytes messageBody
     );
 
@@ -361,7 +360,7 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
         bytes memory fullMessage = MessageV2.encode(
             localDomain,
             params.destinationDomain,
-            nonce,
+            bytes32(uint256(nonce)),
             MessageV2.addressToBytes32(tokenMessenger),
             params.destinationTokenMessenger,
             params.destinationCaller,
@@ -423,10 +422,10 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
 
         // Get fields needed for processing
         uint32 sourceDomain = MessageV2.getSourceDomain(message);
-        uint64 nonce = MessageV2.getNonce(message);
+        bytes32 nonceBytes = MessageV2.getNonce(message);
 
         // Check replay protection using (sourceDomain, nonce)
-        bytes32 nonceKey = keccak256(abi.encodePacked(sourceDomain, nonce));
+        bytes32 nonceKey = keccak256(abi.encodePacked(sourceDomain, nonceBytes));
         require(!usedNonces[nonceKey], "Message already processed");
         usedNonces[nonceKey] = true;
 
@@ -434,7 +433,7 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
         bytes32 sender = MessageV2.getSender(message);
         uint32 finalityThresholdExecuted = MessageV2.getFinalityThresholdExecuted(message);
 
-        emit MessageReceived(msg.sender, sourceDomain, nonce, sender, MessageV2.getMessageBody(message));
+        emit MessageReceived(msg.sender, sourceDomain, nonceBytes, sender, finalityThresholdExecuted, MessageV2.getMessageBody(message));
 
         // Forward to TokenMessenger to handle minting
         // The recipient in the message header is the remote TokenMessenger

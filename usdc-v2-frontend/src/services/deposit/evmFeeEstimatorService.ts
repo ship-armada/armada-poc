@@ -32,7 +32,7 @@ const USDC_ABI = [
 ] as const
 
 const TOKEN_MESSENGER_ABI = [
-  'function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken) external returns (uint64 nonce)',
+  'function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold) external',
 ] as const
 
 /**
@@ -388,6 +388,9 @@ export async function estimateDepositFeeForDisplay(
         4, // noble domain default
         dummyMintRecipient, // non-zero placeholder mintRecipient (bytes32)
         usdcAddress,
+        ethers.zeroPadValue('0x', 32), // destinationCaller = bytes32(0) (any caller)
+        0n, // maxFee = 0
+        2000, // minFinalityThreshold = STANDARD
       )
       const txForEst: any = { ...estimateTx, from: wallet }
       if (gasPrice > 0n) {

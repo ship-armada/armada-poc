@@ -145,19 +145,20 @@ function loadDeploymentV3(filename: string): DeploymentV3 | null {
 }
 
 /**
- * MessageV2 byte offsets (matches ICCTPV2.sol MessageV2 library).
- * version(4) | sourceDomain(4) | destinationDomain(4) | nonce(8) |
+ * MessageV2 byte offsets (matches ICCTPV2.sol MessageV2 library and real CCTP V2).
+ * version(4) | sourceDomain(4) | destinationDomain(4) | nonce(32) |
  * sender(32) | recipient(32) | destinationCaller(32) |
  * minFinalityThreshold(4) | finalityThresholdExecuted(4) | messageBody(var)
  */
 const MSG_SOURCE_DOMAIN_OFFSET = 4;
 const MSG_DEST_DOMAIN_OFFSET = 8;
 const MSG_NONCE_OFFSET = 12;
-const MSG_SENDER_OFFSET = 20;
-const MSG_RECIPIENT_OFFSET = 52;
-const MSG_DEST_CALLER_OFFSET = 84;
-const MSG_MIN_FINALITY_OFFSET = 116;
-const MSG_BODY_OFFSET = 124;
+const MSG_NONCE_LENGTH = 32; // bytes32 in real CCTP V2
+const MSG_SENDER_OFFSET = 44;
+const MSG_RECIPIENT_OFFSET = 76;
+const MSG_DEST_CALLER_OFFSET = 108;
+const MSG_MIN_FINALITY_OFFSET = 140;
+const MSG_BODY_OFFSET = 148;
 
 /**
  * Parse raw MessageV2 bytes into structured fields.
@@ -170,7 +171,7 @@ function parseMessageV2Bytes(hex: string): Omit<MessageEvent, "txHash" | "blockN
   return {
     sourceDomain: Number(BigInt(slice(MSG_SOURCE_DOMAIN_OFFSET, 4))),
     destinationDomain: Number(BigInt(slice(MSG_DEST_DOMAIN_OFFSET, 4))),
-    nonce: BigInt(slice(MSG_NONCE_OFFSET, 8)),
+    nonce: BigInt(slice(MSG_NONCE_OFFSET, MSG_NONCE_LENGTH)),
     sender: slice(MSG_SENDER_OFFSET, 32),
     recipient: slice(MSG_RECIPIENT_OFFSET, 32),
     destinationCaller: slice(MSG_DEST_CALLER_OFFSET, 32),

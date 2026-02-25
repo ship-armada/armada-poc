@@ -37,7 +37,6 @@ interface ITokenMessengerV2 {
      * @param destinationCaller Address allowed to call receiveMessage (bytes32), or 0 for any
      * @param maxFee Maximum fee willing to pay for fast finality
      * @param minFinalityThreshold Minimum finality level (1000=fast, 2000=standard)
-     * @return nonce Unique identifier for this burn
      */
     function depositForBurn(
         uint256 amount,
@@ -47,7 +46,7 @@ interface ITokenMessengerV2 {
         bytes32 destinationCaller,
         uint256 maxFee,
         uint32 minFinalityThreshold
-    ) external returns (uint64 nonce);
+    ) external;
 
     /**
      * @notice Deposits and burns tokens with hook data for destination chain execution
@@ -187,13 +186,13 @@ library CCTPFinality {
  * @notice Library for encoding/decoding CCTP V2 message envelope
  * @dev This is the outer message format used by MessageTransmitter.receiveMessage()
  *
- * Real CCTP V2 Message format (Circle's MessageTransmitterV2):
+ * CCTP V2 Message format (matches Circle's MessageTransmitterV2 exactly):
  * | Field                     | Bytes | Offset |
  * |---------------------------|-------|--------|
  * | version                   | 4     | 0      |
  * | sourceDomain              | 4     | 4      |
  * | destinationDomain         | 4     | 8      |
- * | nonce                     | 32    | 12     |  <-- bytes32 in real V2
+ * | nonce                     | 32    | 12     |  bytes32
  * | sender                    | 32    | 44     |
  * | recipient                 | 32    | 76     |
  * | destinationCaller         | 32    | 108    |
@@ -201,27 +200,27 @@ library CCTPFinality {
  * | finalityThresholdExecuted | 4     | 144    |
  * | messageBody               | var   | 148    |
  *
- * NOTE: This mock uses uint64 (8-byte) nonce for simplicity, which shifts all
- * subsequent offsets. This doesn't affect real CCTP integration because our
- * contracts never decode the outer MessageV2 on-chain — Circle's
- * MessageTransmitterV2 does that. Our contracts only decode BurnMessageV2
- * (the inner messageBody), whose format matches real V2 exactly.
+ * Byte layout matches real CCTP V2 exactly (bytes32 nonce = 32 bytes):
+ * version(4) + sourceDomain(4) + destDomain(4) + nonce(32) + sender(32) +
+ * recipient(32) + destCaller(32) + minFinality(4) + finalityExecuted(4) = 148 byte header
+ *
+ * This allows CCTPHookRouter to decode real CCTP V2 messages on-chain.
  */
 library MessageV2 {
-    // Byte offsets for message fields
+    // Byte offsets for message fields (matches real CCTP V2 — bytes32 nonce)
     uint256 constant VERSION_OFFSET = 0;
     uint256 constant SOURCE_DOMAIN_OFFSET = 4;
     uint256 constant DESTINATION_DOMAIN_OFFSET = 8;
     uint256 constant NONCE_OFFSET = 12;
-    uint256 constant SENDER_OFFSET = 20;
-    uint256 constant RECIPIENT_OFFSET = 52;
-    uint256 constant DESTINATION_CALLER_OFFSET = 84;
-    uint256 constant MIN_FINALITY_THRESHOLD_OFFSET = 116;
-    uint256 constant FINALITY_THRESHOLD_EXECUTED_OFFSET = 120;
-    uint256 constant MESSAGE_BODY_OFFSET = 124;
+    uint256 constant SENDER_OFFSET = 44;
+    uint256 constant RECIPIENT_OFFSET = 76;
+    uint256 constant DESTINATION_CALLER_OFFSET = 108;
+    uint256 constant MIN_FINALITY_THRESHOLD_OFFSET = 140;
+    uint256 constant FINALITY_THRESHOLD_EXECUTED_OFFSET = 144;
+    uint256 constant MESSAGE_BODY_OFFSET = 148;
 
     // Minimum message length (header only, no body)
-    uint256 constant MIN_MESSAGE_LENGTH = 124;
+    uint256 constant MIN_MESSAGE_LENGTH = 148;
 
     // Current message version
     uint32 constant MESSAGE_VERSION = 1;
@@ -232,7 +231,7 @@ library MessageV2 {
     function encode(
         uint32 sourceDomain,
         uint32 destinationDomain,
-        uint64 nonce,
+        bytes32 nonce,
         bytes32 sender,
         bytes32 recipient,
         bytes32 destinationCaller,
@@ -261,7 +260,7 @@ library MessageV2 {
         uint32 version,
         uint32 sourceDomain,
         uint32 destinationDomain,
-        uint64 nonce,
+        bytes32 nonce,
         bytes32 sender,
         bytes32 recipient,
         bytes32 destinationCaller,
@@ -274,7 +273,7 @@ library MessageV2 {
         version = uint32(bytes4(message[VERSION_OFFSET:VERSION_OFFSET + 4]));
         sourceDomain = uint32(bytes4(message[SOURCE_DOMAIN_OFFSET:SOURCE_DOMAIN_OFFSET + 4]));
         destinationDomain = uint32(bytes4(message[DESTINATION_DOMAIN_OFFSET:DESTINATION_DOMAIN_OFFSET + 4]));
-        nonce = uint64(bytes8(message[NONCE_OFFSET:NONCE_OFFSET + 8]));
+        nonce = bytes32(message[NONCE_OFFSET:NONCE_OFFSET + 32]);
         sender = bytes32(message[SENDER_OFFSET:SENDER_OFFSET + 32]);
         recipient = bytes32(message[RECIPIENT_OFFSET:RECIPIENT_OFFSET + 32]);
         destinationCaller = bytes32(message[DESTINATION_CALLER_OFFSET:DESTINATION_CALLER_OFFSET + 32]);
@@ -316,9 +315,9 @@ library MessageV2 {
         return uint32(bytes4(message[DESTINATION_DOMAIN_OFFSET:DESTINATION_DOMAIN_OFFSET + 4]));
     }
 
-    function getNonce(bytes calldata message) internal pure returns (uint64) {
+    function getNonce(bytes calldata message) internal pure returns (bytes32) {
         require(message.length >= MIN_MESSAGE_LENGTH, "MessageV2: message too short");
-        return uint64(bytes8(message[NONCE_OFFSET:NONCE_OFFSET + 8]));
+        return bytes32(message[NONCE_OFFSET:NONCE_OFFSET + 32]);
     }
 
     function getSender(bytes calldata message) internal pure returns (bytes32) {

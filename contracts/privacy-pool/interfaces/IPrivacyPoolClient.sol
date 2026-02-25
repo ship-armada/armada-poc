@@ -105,6 +105,12 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      */
     function setHubPool(uint32 _hubDomain, bytes32 _hubPool) external;
 
+    /**
+     * @notice Set the CCTP Hook Router address
+     * @param _hookRouter Address of the CCTPHookRouter contract
+     */
+    function setHookRouter(address _hookRouter) external;
+
     // ══════════════════════════════════════════════════════════════════════════
     // VIEW FUNCTIONS
     // ══════════════════════════════════════════════════════════════════════════
@@ -129,4 +135,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
 
     /// @notice Contract owner
     function owner() external view returns (address);
+
+    /// @notice CCTP Hook Router address
+    function hookRouter() external view returns (address);
 }

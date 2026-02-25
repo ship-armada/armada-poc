@@ -1,0 +1,19 @@
+{
+  "chainId": 84532,
+  "domain": 6,
+  "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
+  "contracts": {
+    "privacyPoolClient": "0xb8d0EE35262178c8F148cf5af3a8BfDA3deE9453",
+    "hookRouter": "0x362b8E1f9EfDa0DeEcC0d3c8A913EF56826236fC"
+  },
+  "cctp": {
+    "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+    "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  },
+  "hub": {
+    "domain": 0,
+    "privacyPool": "0xd65Ab9A2965c10320ad50b027f9ba1C61F3c5390"
+  },
+  "timestamp": "2026-02-25T16:50:07.677Z"
+}

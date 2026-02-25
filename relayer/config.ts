@@ -21,6 +21,7 @@ export interface ChainConfig {
   chainId: number;
   name: string;
   deploymentFile: string;
+  privacyPoolDeploymentFile: string;
   cctpDomain: number;
 }
 
@@ -31,6 +32,7 @@ function toChainConfig(net: NetChainConfig, env: string): ChainConfig {
     chainId: net.chainId,
     name: net.name,
     deploymentFile: `${net.deploymentPrefix}${suffix}-v3.json`,
+    privacyPoolDeploymentFile: `privacy-pool-${net.deploymentPrefix}${suffix}.json`,
     cctpDomain: net.cctpDomain,
   };
 }

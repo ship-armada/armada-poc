@@ -142,11 +142,14 @@ abstract contract PrivacyPoolStorage {
     /// @notice Whether the contract has been initialized
     bool public initialized;
 
+    /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
+    address public hookRouter;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[49] private __gap;
+    uint256[48] private __gap;
 }

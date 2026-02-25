@@ -1,0 +1,19 @@
+{
+  "chainId": 11155111,
+  "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
+  "contracts": {
+    "armToken": "0x65997E314Cb486c5dDed329c2974ABc20eB25942",
+    "votingLocker": "0x88f3eeAf53aADd50947042300e90Ff8F7653B6C9",
+    "timelockController": "0xaFBd427736Ca6b60EEeb9A032619DAC5fa86F148",
+    "treasury": "0x40f74a5c9d686B270bF11a5F283fA8f5a50Dcca4",
+    "governor": "0x7a6298e1390EC675C61135E5f3878aeD16496b67",
+    "steward": "0xf09c2b52A2Da7eF32fb8f0E2066E75d26beEE48A"
+  },
+  "config": {
+    "timelockMinDelay": 60,
+    "stewardActionDelay": 30,
+    "totalSupply": "100000000",
+    "treasuryAllocation": "65000000"
+  },
+  "timestamp": "2026-02-25T16:53:25.468Z"
+}

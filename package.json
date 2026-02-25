@@ -40,7 +40,8 @@
     "halmos:fee": "halmos --contract HalmosFeeTest --match-test '^(check_feeConservation|check_zeroFeeReturnsFullAmount)'",
     "demo:governance": "hardhat run scripts/governance_demo.ts",
     "demo:crowdfund": "hardhat run scripts/crowdfund_demo.ts",
-    "clean": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
+    "clean": "find deployments -name '*.json' ! -name '*sepolia*' -delete 2>/dev/null; rm -rf artifacts cache typechain-types data/railgun-db",
+    "clean:all": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
     "demo": "cd usdc-v2-frontend && npm run dev",
     "demo:build": "cd usdc-v2-frontend && npm run build",
 

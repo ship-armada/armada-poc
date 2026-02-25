@@ -204,33 +204,11 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
             IMockMintable(usdc).mint(relayerAddress, feeExecuted);
         }
 
-        // If recipient is a contract and there's hook data, call the handler
-        if (_isContract(recipient) && hookData.length > 0) {
-            // Determine which handler to call based on finality
-            if (finalityThresholdExecuted >= CCTPFinality.STANDARD) {
-                IMessageHandlerV2(recipient).handleReceiveFinalizedMessage(
-                    sourceDomain,
-                    sender,
-                    finalityThresholdExecuted,
-                    messageBody
-                );
-            } else {
-                IMessageHandlerV2(recipient).handleReceiveUnfinalizedMessage(
-                    sourceDomain,
-                    sender,
-                    finalityThresholdExecuted,
-                    messageBody
-                );
-            }
-        }
+        // Hook dispatch removed — handled by CCTPHookRouter (matches real CCTP v2 behavior).
+        // Real CCTP does not auto-dispatch hooks; hook execution is left to the integrator.
+        // The CCTPHookRouter atomically calls receiveMessage() + handleReceiveFinalizedMessage().
 
         return true;
-    }
-
-    function _isContract(address addr) internal view returns (bool) {
-        uint256 size;
-        assembly { size := extcodesize(addr) }
-        return size > 0;
     }
 }
 
@@ -288,25 +266,17 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
     // Message nonce counter
     uint64 public nextMessageNonce;
 
-    // Events - keeping indexed fields for relayer convenience
-    // Note: Real CCTP emits `event MessageSent(bytes message)` with full message bytes
-    // We keep the indexed version for easier local relayer parsing
-    event MessageSent(
-        uint64 indexed nonce,
-        uint32 indexed sourceDomain,
-        uint32 indexed destinationDomain,
-        bytes32 sender,
-        bytes32 recipient,
-        bytes32 destinationCaller,
-        uint32 minFinalityThreshold,
-        bytes messageBody
-    );
+    // Matches real CCTP v2: event MessageSent(bytes message)
+    // The single `bytes` param contains the full MessageV2 envelope (header + body).
+    event MessageSent(bytes message);
 
+    // Matches real CCTP v2: MessageReceived(address indexed caller, uint32 sourceDomain, uint64 indexed nonce, bytes32 sender, bytes messageBody)
     event MessageReceived(
+        address indexed caller,
+        uint32 sourceDomain,
         uint64 indexed nonce,
-        uint32 indexed sourceDomain,
-        bytes32 indexed sender,
-        uint32 finalityThresholdExecuted
+        bytes32 sender,
+        bytes messageBody
     );
 
     constructor(uint32 _localDomain, address _relayer) {
@@ -372,7 +342,7 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
     function _emitBurnMessage(BurnMessageParams memory params, bytes memory hookData) internal {
         uint64 nonce = nextMessageNonce++;
 
-        // Encode the BurnMessageV2 body
+        // Encode the BurnMessageV2 body (inner message)
         bytes memory messageBody = BurnMessageV2.encode(
             MessageV2.addressToBytes32(params.burnToken),
             params.mintRecipient,
@@ -384,16 +354,24 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
             hookData
         );
 
-        emit MessageSent(
-            nonce,
+        // Encode the full MessageV2 envelope (header + body)
+        // In real CCTP, finalityThresholdExecuted is set by the attestation service.
+        // In mock, we set it to STANDARD (2000) to simulate finalized messages.
+        uint32 FINALITY_STANDARD = 2000;
+        bytes memory fullMessage = MessageV2.encode(
             localDomain,
             params.destinationDomain,
+            nonce,
             MessageV2.addressToBytes32(tokenMessenger),
             params.destinationTokenMessenger,
             params.destinationCaller,
             params.minFinalityThreshold,
+            FINALITY_STANDARD,
             messageBody
         );
+
+        // Emit real CCTP v2 event: single bytes param with full encoded message
+        emit MessageSent(fullMessage);
     }
 
     /**
@@ -456,7 +434,7 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
         bytes32 sender = MessageV2.getSender(message);
         uint32 finalityThresholdExecuted = MessageV2.getFinalityThresholdExecuted(message);
 
-        emit MessageReceived(nonce, sourceDomain, sender, finalityThresholdExecuted);
+        emit MessageReceived(msg.sender, sourceDomain, nonce, sender, MessageV2.getMessageBody(message));
 
         // Forward to TokenMessenger to handle minting
         // The recipient in the message header is the remote TokenMessenger

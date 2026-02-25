@@ -496,7 +496,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPool.connect(attacker).handleReceiveFinalizedMessage(
           DOMAINS.client, ethers.ZeroHash, 2000, "0x"
         )
-      ).to.be.revertedWith("PrivacyPool: Only TokenMessenger");
+      ).to.be.revertedWith("PrivacyPool: Unauthorized caller");
     });
 
     it("Client rejects handleReceiveFinalizedMessage from non-TokenMessenger", async function () {
@@ -504,7 +504,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(attacker).handleReceiveFinalizedMessage(
           DOMAINS.hub, ethers.ZeroHash, 2000, "0x"
         )
-      ).to.be.revertedWith("PrivacyPoolClient: Only TokenMessenger");
+      ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
     it("Hub rejects fast finality (handleReceiveUnfinalizedMessage)", async function () {

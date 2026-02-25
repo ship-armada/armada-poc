@@ -4,7 +4,7 @@
 
 The Armada Relayer is a unified service that handles two core functions:
 
-1. **CCTP Relay**: Monitor for cross-chain `MessageSent` events, fetch attestations, and call `receiveMessage` on the destination chain.
+1. **CCTP Relay**: Monitor for cross-chain `MessageSent` events, fetch attestations, and call `hookRouter.relayWithHook()` on the destination chain (atomically calls `receiveMessage` + hook dispatch via `CCTPHookRouter`).
 2. **Privacy Relay**: Accept shielded transaction requests from users, validate fees, and submit transactions on their behalf — so the user's Ethereum address never appears on-chain for privacy-preserving operations.
 
 The relayer eliminates the need for users to hold native tokens (ETH). Users only need USDC — relayer fees are paid from within the shielded transaction or deducted from shield amounts.
@@ -197,12 +197,14 @@ User (client chain)                      Relayer                        Hub Chai
      │                                       │     (stub locally,           │
      │                                       │      Circle API on testnet)  │
      │                                       │                              │
-     │                                       │  7. receiveMessage() ───────→│
-     │                                       │     → Mint USDC              │
-     │                                       │     → Create commitment for  │
-     │                                       │       (amount - relayerFee)  │
-     │                                       │     → Transfer relayerFee    │
-     │                                       │       to msg.sender (relayer)│
+     │                                       │  7. hookRouter               │
+     │                                       │     .relayWithHook() ──────→ │
+     │                                       │     → receiveMessage()       │
+     │                                       │       → Mint USDC to pool    │
+     │                                       │     → handleReceiveFinalized │
+     │                                       │       Message() on pool      │
+     │                                       │       → Create commitment    │
+     │                                       │       → Deduct relayerFee    │
      │                                       │                              │
      │                                       │  8. Confirm receipt          │
 ```
@@ -218,6 +220,7 @@ Extends the existing POC relayer with:
 - **Attestation fetching**: Stub locally (auto-approve), Circle API on testnet
 - **Deduplication**: Check on-chain `UsedNonces` before attempting relay
 - **Fee validation**: Parse `relayerFee` from cross-chain shield messages, skip if below minimum
+- **CCTPHookRouter**: The relayer calls `hookRouter.relayWithHook()` instead of `messageTransmitter.receiveMessage()` directly. The CCTPHookRouter atomically calls `receiveMessage()` (mints USDC) then `handleReceiveFinalizedMessage()` (processes the hook). This is required because real CCTP v2 does not auto-dispatch hooks.
 
 Reference: noble-cctp-relayer's WebSocket + worker pool pattern
 

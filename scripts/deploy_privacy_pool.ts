@@ -51,6 +51,7 @@ interface HubDeploymentInfo {
     verifierModule: string;
     shieldModule: string;
     transactModule: string;
+    hookRouter: string;
   };
   cctp: {
     tokenMessenger: string;
@@ -66,6 +67,7 @@ interface ClientDeploymentInfo {
   deployer: string;
   contracts: {
     privacyPoolClient: string;
+    hookRouter: string;
   };
   cctp: {
     tokenMessenger: string;
@@ -192,16 +194,24 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   await initTx.wait();
   console.log("   PrivacyPool initialized");
 
-  // 8. Load verification keys for SNARK proof verification
-  console.log("\n8. Loading verification keys...");
+  // 8. Deploy CCTPHookRouter
+  console.log("\n8. Deploying CCTPHookRouter...");
+  const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
+  const hookRouter = await CCTPHookRouter.deploy(messageTransmitterAddress, nm.override());
+  await hookRouter.deploymentTransaction()!.wait();
+  const hookRouterAddress = await hookRouter.getAddress();
+  console.log(`   CCTPHookRouter: ${hookRouterAddress}`);
+
+  // 9. Load verification keys for SNARK proof verification
+  console.log("\n9. Loading verification keys...");
   const { loadVerificationKeys, TESTING_ARTIFACT_CONFIGS } = await import("../lib/artifacts");
   await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, true);
 
-  // 9. SNARK verification enabled
-  console.log("\n9. SNARK verification enabled (testing mode disabled)");
+  // 10. SNARK verification enabled
+  console.log("\n10. SNARK verification enabled (testing mode disabled)");
 
-  // 9b. Configure shield fee and treasury
-  console.log("\n9b. Configuring shield fee...");
+  // 10b. Configure shield fee and treasury
+  console.log("\n10b. Configuring shield fee...");
   const yieldDeployment = loadDeployment(getYieldDeploymentFile());
   let treasuryAddress = deployer.address;
   if (config.treasuryAddress) {
@@ -228,6 +238,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
       verifierModule: verifierModuleAddress,
       shieldModule: shieldModuleAddress,
       transactModule: transactModuleAddress,
+      hookRouter: hookRouterAddress,
     },
     cctp: {
       tokenMessenger: tokenMessengerAddress,
@@ -319,12 +330,21 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   await initTx.wait();
   console.log("   PrivacyPoolClient initialized");
 
+  // 3. Deploy CCTPHookRouter
+  console.log("\n3. Deploying CCTPHookRouter...");
+  const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
+  const hookRouter = await CCTPHookRouter.deploy(messageTransmitterAddress, nm.override());
+  await hookRouter.deploymentTransaction()!.wait();
+  const hookRouterAddress = await hookRouter.getAddress();
+  console.log(`   CCTPHookRouter: ${hookRouterAddress}`);
+
   const deployment: ClientDeploymentInfo = {
     chainId,
     domain,
     deployer: deployer.address,
     contracts: {
       privacyPoolClient: clientAddress,
+      hookRouter: hookRouterAddress,
     },
     cctp: {
       tokenMessenger: tokenMessengerAddress,

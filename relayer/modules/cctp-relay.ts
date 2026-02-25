@@ -37,6 +37,7 @@ interface MessageEvent {
   destinationCaller: string;
   minFinalityThreshold: number;
   messageBody: string;
+  rawMessage: string; // Full encoded MessageV2 bytes (from event)
   txHash: string;
   blockNumber: number;
 }
@@ -47,6 +48,7 @@ interface ChainState {
   wallet: ethers.Wallet;
   messageTransmitter: string;
   tokenMessenger: string;
+  hookRouter: string | null;
   domain: number;
   lastProcessedBlock: number;
   processedMessages: Set<string>; // "sourceDomain-nonce" format
@@ -90,16 +92,29 @@ interface DeploymentV3 {
   };
 }
 
+/** Privacy pool deployment (hub or client) — used to load hookRouter address */
+interface PrivacyPoolDeployment {
+  contracts: {
+    hookRouter?: string;
+    [key: string]: string | undefined;
+  };
+}
+
 // ============ ABIs ============
 
+// Real CCTP v2 event signature: MessageSent(bytes message)
 const MESSAGE_SENT_ABI = [
-  "event MessageSent(uint64 indexed nonce, uint32 indexed sourceDomain, uint32 indexed destinationDomain, bytes32 sender, bytes32 recipient, bytes32 destinationCaller, uint32 minFinalityThreshold, bytes messageBody)",
+  "event MessageSent(bytes message)",
 ];
 
 const MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes calldata message, bytes calldata attestation) external returns (bool)",
   "function relayer() view returns (address)",
   "function localDomain() view returns (uint32)",
+];
+
+const HOOK_ROUTER_ABI = [
+  "function relayWithHook(bytes calldata message, bytes calldata attestation) external returns (bool)",
 ];
 
 // ============ Domain Mapping ============
@@ -130,36 +145,38 @@ function loadDeploymentV3(filename: string): DeploymentV3 | null {
 }
 
 /**
- * Encode a full MessageV2 from event data.
- * Matches the byte layout expected by MockMessageTransmitterV2.receiveMessage().
+ * MessageV2 byte offsets (matches ICCTPV2.sol MessageV2 library).
+ * version(4) | sourceDomain(4) | destinationDomain(4) | nonce(8) |
+ * sender(32) | recipient(32) | destinationCaller(32) |
+ * minFinalityThreshold(4) | finalityThresholdExecuted(4) | messageBody(var)
  */
-function encodeMessageV2(event: MessageEvent): string {
-  return ethers.solidityPacked(
-    [
-      "uint32",  // version
-      "uint32",  // sourceDomain
-      "uint32",  // destinationDomain
-      "uint64",  // nonce
-      "bytes32", // sender
-      "bytes32", // recipient
-      "bytes32", // destinationCaller
-      "uint32",  // minFinalityThreshold
-      "uint32",  // finalityThresholdExecuted
-      "bytes",   // messageBody
-    ],
-    [
-      MESSAGE_VERSION,
-      event.sourceDomain,
-      event.destinationDomain,
-      event.nonce,
-      event.sender,
-      event.recipient,
-      event.destinationCaller,
-      event.minFinalityThreshold,
-      FINALITY_STANDARD,
-      event.messageBody,
-    ]
-  );
+const MSG_SOURCE_DOMAIN_OFFSET = 4;
+const MSG_DEST_DOMAIN_OFFSET = 8;
+const MSG_NONCE_OFFSET = 12;
+const MSG_SENDER_OFFSET = 20;
+const MSG_RECIPIENT_OFFSET = 52;
+const MSG_DEST_CALLER_OFFSET = 84;
+const MSG_MIN_FINALITY_OFFSET = 116;
+const MSG_BODY_OFFSET = 124;
+
+/**
+ * Parse raw MessageV2 bytes into structured fields.
+ * The message is already the full encoded envelope from the MessageSent event.
+ */
+function parseMessageV2Bytes(hex: string): Omit<MessageEvent, "txHash" | "blockNumber" | "rawMessage"> {
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const slice = (offset: number, len: number) => "0x" + h.slice(offset * 2, (offset + len) * 2);
+
+  return {
+    sourceDomain: Number(BigInt(slice(MSG_SOURCE_DOMAIN_OFFSET, 4))),
+    destinationDomain: Number(BigInt(slice(MSG_DEST_DOMAIN_OFFSET, 4))),
+    nonce: BigInt(slice(MSG_NONCE_OFFSET, 8)),
+    sender: slice(MSG_SENDER_OFFSET, 32),
+    recipient: slice(MSG_RECIPIENT_OFFSET, 32),
+    destinationCaller: slice(MSG_DEST_CALLER_OFFSET, 32),
+    minFinalityThreshold: Number(BigInt(slice(MSG_MIN_FINALITY_OFFSET, 4))),
+    messageBody: "0x" + h.slice(MSG_BODY_OFFSET * 2),
+  };
 }
 
 /**
@@ -186,15 +203,13 @@ function parseMessageEvent(log: ethers.Log): MessageEvent | null {
 
     if (!parsed) return null;
 
+    // MessageSent(bytes message) — single param is the full encoded MessageV2
+    const rawMessage: string = parsed.args.message;
+    const fields = parseMessageV2Bytes(rawMessage);
+
     return {
-      nonce: parsed.args.nonce,
-      sourceDomain: Number(parsed.args.sourceDomain),
-      destinationDomain: Number(parsed.args.destinationDomain),
-      sender: parsed.args.sender,
-      recipient: parsed.args.recipient,
-      destinationCaller: parsed.args.destinationCaller,
-      minFinalityThreshold: Number(parsed.args.minFinalityThreshold),
-      messageBody: parsed.args.messageBody,
+      ...fields,
+      rawMessage,
       txHash: log.transactionHash,
       blockNumber: log.blockNumber,
     };
@@ -236,6 +251,13 @@ export class CCTPRelayModule {
       31339: "clientB-v3.json",
     };
 
+    /** Privacy pool deployment files — used to load hookRouter address */
+    const privacyPoolFiles: Record<number, string> = {
+      31337: "privacy-pool-hub.json",
+      31338: "privacy-pool-client.json",
+      31339: "privacy-pool-clientB.json",
+    };
+
     let allInitialized = true;
 
     for (const chainConfig of allChains) {
@@ -245,7 +267,8 @@ export class CCTPRelayModule {
         continue;
       }
 
-      const state = await this.initChain(chainConfig, deploymentFile);
+      const ppFile = privacyPoolFiles[chainConfig.chainId];
+      const state = await this.initChain(chainConfig, deploymentFile, ppFile);
       if (state) {
         this.chains.set(state.domain, state);
         console.log(
@@ -253,6 +276,7 @@ export class CCTPRelayModule {
         );
         console.log(`    MessageTransmitter: ${state.messageTransmitter}`);
         console.log(`    TokenMessenger: ${state.tokenMessenger}`);
+        console.log(`    HookRouter: ${state.hookRouter || "not configured"}`);
       } else {
         console.log(
           `  [cctp-relay] ${chainConfig.name} (${chainConfig.chainId}): Failed to initialize`
@@ -272,7 +296,8 @@ export class CCTPRelayModule {
    */
   private async initChain(
     chainConfig: ChainConfig,
-    deploymentFile: string
+    deploymentFile: string,
+    privacyPoolFile?: string
   ): Promise<ChainState | null> {
     try {
       const deployment = loadDeploymentV3(deploymentFile);
@@ -285,6 +310,15 @@ export class CCTPRelayModule {
       if (!messageTransmitter || !tokenMessenger) {
         console.error(`    Missing CCTP contracts in deployment`);
         return null;
+      }
+
+      // Load hookRouter from privacy pool deployment
+      let hookRouter: string | null = null;
+      if (privacyPoolFile) {
+        const ppDeployment = loadDeploymentV3(privacyPoolFile) as unknown as PrivacyPoolDeployment | null;
+        if (ppDeployment?.contracts?.hookRouter) {
+          hookRouter = ppDeployment.contracts.hookRouter;
+        }
       }
 
       const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
@@ -301,6 +335,7 @@ export class CCTPRelayModule {
         wallet,
         messageTransmitter,
         tokenMessenger,
+        hookRouter,
         domain,
         lastProcessedBlock: 0,
         processedMessages: new Set(),
@@ -391,20 +426,37 @@ export class CCTPRelayModule {
 
       const txNonce = destState.pendingNonce;
 
-      const encodedMessage = encodeMessageV2(event);
+      const encodedMessage = event.rawMessage;
       console.log(
         `\n  Encoded MessageV2 length: ${(encodedMessage.length - 2) / 2} bytes`
       );
 
-      console.log(
-        `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
-      );
-
-      const tx = await messageTransmitter.receiveMessage(
-        encodedMessage,
-        "0x", // Empty attestation — mock skips verification
-        { nonce: txNonce }
-      );
+      // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
+      let tx: ethers.ContractTransactionResponse;
+      if (destState.hookRouter) {
+        const hookRouter = new ethers.Contract(
+          destState.hookRouter,
+          HOOK_ROUTER_ABI,
+          destState.wallet
+        );
+        console.log(
+          `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
+        );
+        tx = await hookRouter.relayWithHook(
+          encodedMessage,
+          "0x", // Empty attestation — mock skips verification
+          { nonce: txNonce }
+        );
+      } else {
+        console.log(
+          `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
+        );
+        tx = await messageTransmitter.receiveMessage(
+          encodedMessage,
+          "0x", // Empty attestation — mock skips verification
+          { nonce: txNonce }
+        );
+      }
 
       destState.pendingNonce = txNonce + 1;
 
@@ -522,12 +574,6 @@ export class CCTPRelayModule {
     }
 
     try {
-      const messageTransmitter = new ethers.Contract(
-        destState.messageTransmitter,
-        MESSAGE_TRANSMITTER_ABI,
-        destState.wallet
-      );
-
       if (destState.pendingNonce === null) {
         destState.pendingNonce = await destState.provider.getTransactionCount(
           destState.wallet.address,
@@ -536,13 +582,33 @@ export class CCTPRelayModule {
       }
 
       const txNonce = destState.pendingNonce;
-      const encodedMessage = encodeMessageV2(event);
+      const encodedMessage = event.rawMessage;
 
-      const tx = await messageTransmitter.receiveMessage(
-        encodedMessage,
-        "0x",
-        { nonce: txNonce }
-      );
+      // Use hookRouter.relayWithHook() if available
+      let tx: ethers.ContractTransactionResponse;
+      if (destState.hookRouter) {
+        const hookRouter = new ethers.Contract(
+          destState.hookRouter,
+          HOOK_ROUTER_ABI,
+          destState.wallet
+        );
+        tx = await hookRouter.relayWithHook(
+          encodedMessage,
+          "0x",
+          { nonce: txNonce }
+        );
+      } else {
+        const messageTransmitter = new ethers.Contract(
+          destState.messageTransmitter,
+          MESSAGE_TRANSMITTER_ABI,
+          destState.wallet
+        );
+        tx = await messageTransmitter.receiveMessage(
+          encodedMessage,
+          "0x",
+          { nonce: txNonce }
+        );
+      }
 
       destState.pendingNonce = txNonce + 1;
 

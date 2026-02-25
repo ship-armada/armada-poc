@@ -44,6 +44,8 @@ describe("Privacy Pool Integration Hardening", function () {
   let clientTokenMessenger: Contract;
   let clientMessageTransmitter: Contract;
   let privacyPoolClient: Contract;
+  let hubHookRouter: Contract;
+  let clientHookRouter: Contract;
 
   let deployer: Signer;
   let alice: Signer;
@@ -149,6 +151,19 @@ describe("Privacy Pool Integration Hardening", function () {
       ethers.zeroPadValue(privacyPoolAddress, 32),
       deployerAddress
     );
+
+    // Deploy CCTPHookRouters
+    const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
+    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress());
+    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress());
+
+    // Set hookRouter on contracts
+    await privacyPool.setHookRouter(await hubHookRouter.getAddress());
+    await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
+
+    // Set mock MessageTransmitter relayer to hookRouter (so hookRouter can call receiveMessage)
+    await hubMessageTransmitter.connect(relayer).setRelayer(await hubHookRouter.getAddress());
+    await clientMessageTransmitter.connect(relayer).setRelayer(await clientHookRouter.getAddress());
 
     // Link deployments
     await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
@@ -431,31 +446,22 @@ describe("Privacy Pool Integration Hardening", function () {
       );
       const clientReceipt = await clientTx.wait();
 
-      // Step 2: Relay to Hub
+      // Step 2: Relay to Hub — extract full MessageV2 from MessageSent(bytes) event
       const transmitterInterface = clientMessageTransmitter.interface;
-      let messageEvent: any;
+      let encodedMessage: string | undefined;
       for (const log of clientReceipt!.logs) {
         try {
           const parsed = transmitterInterface.parseLog(log);
           if (parsed?.name === "MessageSent") {
-            messageEvent = parsed;
+            encodedMessage = parsed.args.message;
             break;
           }
         } catch { /* skip */ }
       }
-
-      const encodedMessage = ethers.solidityPacked(
-        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
-        [
-          1, messageEvent.args.sourceDomain, messageEvent.args.destinationDomain,
-          messageEvent.args.nonce, messageEvent.args.sender, messageEvent.args.recipient,
-          messageEvent.args.destinationCaller, messageEvent.args.minFinalityThreshold,
-          2000, messageEvent.args.messageBody,
-        ]
-      );
+      expect(encodedMessage).to.not.be.undefined;
 
       const hubPoolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
-      await hubMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
+      await hubHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x");
       const hubPoolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
 
       // Pool should have received SHIELD_AMOUNT minus shield fee
@@ -487,33 +493,22 @@ describe("Privacy Pool Integration Hardening", function () {
       );
       const unshieldReceipt = await unshieldTx.wait();
 
-      // Verify CCTP message was sent
+      // Step 4: Extract MessageSent(bytes) from unshield tx and relay to Client
       const hubTransmitterInterface = hubMessageTransmitter.interface;
-      let hubMessageEvent: any;
+      let unshieldEncodedMessage: string | undefined;
       for (const log of unshieldReceipt!.logs) {
         try {
           const parsed = hubTransmitterInterface.parseLog(log);
           if (parsed?.name === "MessageSent") {
-            hubMessageEvent = parsed;
+            unshieldEncodedMessage = parsed.args.message;
             break;
           }
         } catch { /* skip */ }
       }
-      expect(hubMessageEvent).to.not.be.undefined;
-
-      // Step 4: Relay unshield to Client
-      const unshieldEncodedMessage = ethers.solidityPacked(
-        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
-        [
-          1, hubMessageEvent.args.sourceDomain, hubMessageEvent.args.destinationDomain,
-          hubMessageEvent.args.nonce, hubMessageEvent.args.sender, hubMessageEvent.args.recipient,
-          hubMessageEvent.args.destinationCaller, hubMessageEvent.args.minFinalityThreshold,
-          2000, hubMessageEvent.args.messageBody,
-        ]
-      );
+      expect(unshieldEncodedMessage).to.not.be.undefined;
 
       const bobBefore = await clientUsdc.balanceOf(bobAddress);
-      await clientMessageTransmitter.connect(relayer).receiveMessage(unshieldEncodedMessage, "0x");
+      await clientHookRouter.connect(relayer).relayWithHook(unshieldEncodedMessage, "0x");
       const bobAfter = await clientUsdc.balanceOf(bobAddress);
 
       // Bob should receive the unshield amount on the client chain

@@ -372,36 +372,20 @@ describe("Privacy Pool Gas Profiling", function () {
       const receipt = await tx.wait();
       recordGas("crossChainShield (client-side)", Number(receipt!.gasUsed));
 
-      // Now relay to Hub
+      // Extract full MessageV2 from MessageSent(bytes) event and relay to Hub
       const transmitterInterface = clientMessageTransmitter.interface;
-      let messageEvent: any;
+      let encodedMessage: string | undefined;
       for (const log of receipt!.logs) {
         try {
           const parsed = transmitterInterface.parseLog(log);
           if (parsed?.name === "MessageSent") {
-            messageEvent = parsed;
+            encodedMessage = parsed.args.message;
             break;
           }
         } catch { /* skip */ }
       }
 
-      const encodedMessage = ethers.solidityPacked(
-        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
-        [
-          1, // VERSION
-          messageEvent.args.sourceDomain,
-          messageEvent.args.destinationDomain,
-          messageEvent.args.nonce,
-          messageEvent.args.sender,
-          messageEvent.args.recipient,
-          messageEvent.args.destinationCaller,
-          messageEvent.args.minFinalityThreshold,
-          2000, // FINALITY_STANDARD
-          messageEvent.args.messageBody,
-        ]
-      );
-
-      const relayTx = await hubMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
+      const relayTx = await hubMessageTransmitter.connect(relayer).receiveMessage(encodedMessage!, "0x");
       const relayReceipt = await relayTx.wait();
       recordGas("receiveMessage (hub-side shield)", Number(relayReceipt!.gasUsed));
     });

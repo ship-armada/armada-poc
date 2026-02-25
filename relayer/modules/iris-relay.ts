@@ -67,6 +67,7 @@ interface ChainState {
   provider: ethers.JsonRpcProvider;
   wallet: ethers.Wallet;
   messageTransmitter: string;
+  hookRouter: string | null;
   domain: number;
   lastProcessedBlock: number;
   processedMessages: Set<string>;
@@ -87,6 +88,10 @@ const REAL_MESSAGE_SENT_ABI = [
 const REAL_MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes calldata message, bytes calldata attestation) external returns (bool)",
   "function localDomain() view returns (uint32)",
+];
+
+const HOOK_ROUTER_ABI = [
+  "function relayWithHook(bytes calldata message, bytes calldata attestation) external returns (bool)",
 ];
 
 /**
@@ -234,6 +239,7 @@ export class IrisRelayModule {
           `  [iris-relay] ${chainConfig.name} (Chain ${chainConfig.chainId}, Domain ${state.domain})`
         );
         console.log(`    MessageTransmitter: ${state.messageTransmitter}`);
+        console.log(`    HookRouter: ${state.hookRouter || "not configured"}`);
       } else {
         console.log(
           `  [iris-relay] ${chainConfig.name} (${chainConfig.chainId}): Failed to initialize`
@@ -262,6 +268,13 @@ export class IrisRelayModule {
         return null;
       }
 
+      // Load hookRouter from privacy pool deployment
+      let hookRouter: string | null = null;
+      const ppDeployment = loadDeployment(chainConfig.privacyPoolDeploymentFile);
+      if (ppDeployment?.contracts?.hookRouter) {
+        hookRouter = ppDeployment.contracts.hookRouter;
+      }
+
       const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
       const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
 
@@ -273,6 +286,7 @@ export class IrisRelayModule {
         provider,
         wallet,
         messageTransmitter,
+        hookRouter,
         domain: chainConfig.cctpDomain,
         lastProcessedBlock: 0,
         processedMessages: new Set(),
@@ -473,19 +487,30 @@ export class IrisRelayModule {
     }
 
     try {
-      const messageTransmitter = new ethers.Contract(
-        destState.messageTransmitter,
-        REAL_MESSAGE_TRANSMITTER_ABI,
-        destState.wallet
-      );
-
       // Prefer the message from Iris (may include finalityThresholdExecuted filled in)
       const msgToRelay = irisMessage || msg.messageBytes;
 
-      console.log(`  Sending receiveMessage to ${destState.config.name}...`);
       console.log(`  Source Tx: ${msg.sourceTxHash}`);
 
-      const tx = await messageTransmitter.receiveMessage(msgToRelay, attestation);
+      // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
+      let tx: ethers.ContractTransactionResponse;
+      if (destState.hookRouter) {
+        const hookRouter = new ethers.Contract(
+          destState.hookRouter,
+          HOOK_ROUTER_ABI,
+          destState.wallet
+        );
+        console.log(`  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter...`);
+        tx = await hookRouter.relayWithHook(msgToRelay, attestation);
+      } else {
+        const messageTransmitter = new ethers.Contract(
+          destState.messageTransmitter,
+          REAL_MESSAGE_TRANSMITTER_ABI,
+          destState.wallet
+        );
+        console.log(`  Sending receiveMessage to ${destState.config.name}...`);
+        tx = await messageTransmitter.receiveMessage(msgToRelay, attestation);
+      }
       console.log(`  Tx hash: ${tx.hash}`);
 
       const receipt = await tx.wait();

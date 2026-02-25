@@ -1,0 +1,12 @@
+{
+  "chainId": 421614,
+  "domain": 3,
+  "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
+  "cctpMode": "real",
+  "contracts": {
+    "usdc": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+    "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA"
+  },
+  "timestamp": "2026-02-25T16:46:30.719Z"
+}

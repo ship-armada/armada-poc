@@ -1,0 +1,12 @@
+{
+  "chainId": 11155111,
+  "domain": 0,
+  "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
+  "cctpMode": "real",
+  "contracts": {
+    "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA"
+  },
+  "timestamp": "2026-02-25T16:46:20.680Z"
+}

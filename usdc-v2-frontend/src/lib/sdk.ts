@@ -40,6 +40,7 @@ import {
   getChainToDomain as getChainToDomainMap,
   getRailgunNetworkNameString,
   getRelayerAddress as getDefaultRelayerAddress,
+  getHookRouterAddress,
 } from '@/config/networkConfig'
 
 // ============ Types ============
@@ -819,7 +820,12 @@ export async function executeUnshieldToClientChain(
   console.log('[sdk] Extracted Transaction struct from proof')
 
   // Step 4: Encode atomicCrossChainUnshield calldata
-  const destinationCaller = ethers.zeroPadValue(DEFAULT_RELAYER_ADDRESS, 32)
+  // Set destinationCaller to the client chain's hookRouter (restricts who can call receiveMessage)
+  const hookRouterAddr = getHookRouterAddress('client')
+  const destinationCaller =
+    hookRouterAddr !== ethers.ZeroAddress
+      ? ethers.zeroPadValue(hookRouterAddr, 32)
+      : ethers.ZeroHash // bytes32(0) = allow any caller
 
   // Fetch CCTP maxFee for the cross-chain unshield
   let maxFee = 0n

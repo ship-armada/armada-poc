@@ -16,7 +16,7 @@ import {
   type ChainConfig,
 } from '@/config/deployments'
 import { isRelayerEnabled, getRelayerFee } from '@/services/relayer'
-import { getRelayerAddress } from '@/config/networkConfig'
+import { getRelayerAddress, getHookRouterAddress } from '@/config/networkConfig'
 
 // ============ Contract ABIs ============
 
@@ -287,9 +287,13 @@ export async function executeCrossChainShield(
     signer,
   )
 
-  // Convert relayer address to bytes32 for destinationCaller
-  const relayer = relayerAddress || DEFAULT_RELAYER_ADDRESS
-  const destinationCaller = ethers.zeroPadValue(relayer, 32)
+  // Set destinationCaller to the hookRouter address (restricts who can call receiveMessage)
+  // The hookRouter atomically calls receiveMessage + handleReceiveFinalizedMessage
+  const hookRouterAddr = getHookRouterAddress('hub')
+  const destinationCaller =
+    hookRouterAddr !== ethers.ZeroAddress
+      ? ethers.zeroPadValue(hookRouterAddr, 32)
+      : ethers.ZeroHash // bytes32(0) = allow any caller
 
   // Fetch CCTP maxFee for cross-chain shield relay
   let maxFee = 0n

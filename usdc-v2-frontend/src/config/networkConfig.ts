@@ -8,6 +8,7 @@
  */
 
 import { NetworkName } from '@railgun-community/shared-models'
+import { ethers } from 'ethers'
 
 export type NetworkMode = 'local' | 'sepolia'
 
@@ -149,6 +150,15 @@ export function getRailgunNetworkName(): NetworkName {
 
 export function getRailgunNetworkNameString(): string {
   return 'Hardhat'
+}
+
+// ── CCTP Hook Router ──
+
+export function getHookRouterAddress(destination: 'hub' | 'client' = 'hub'): string {
+  if (destination === 'hub') {
+    return (import.meta.env.VITE_HUB_HOOK_ROUTER as string) || ethers.ZeroAddress
+  }
+  return (import.meta.env.VITE_CLIENT_HOOK_ROUTER as string) || ethers.ZeroAddress
 }
 
 // ── Relayer Config ──

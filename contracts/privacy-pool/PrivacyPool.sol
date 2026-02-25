@@ -145,8 +145,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
     /**
      * @notice Handle finalized CCTP message (cross-chain shields from Clients)
-     * @dev Called by TokenMessenger after CCTP attestation is verified and tokens minted.
-     *      USDC has already been minted to this contract.
+     * @dev Called by CCTPHookRouter (or TokenMessenger in mock mode) after CCTP message
+     *      is received and tokens minted. USDC has already been minted to this contract.
      *
      *      Message format: BurnMessageV2 (see ICCTPV2.sol for byte layout)
      *      - amount: Gross amount before fee deduction
@@ -164,9 +164,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
-        // Only accept from TokenMessenger (which is called by MessageTransmitter)
-        // In CCTP V2, TokenMessenger handles the token minting and then calls the recipient's handler
-        require(msg.sender == tokenMessenger, "PrivacyPool: Only TokenMessenger");
+        // Accept from CCTPHookRouter (real CCTP) or TokenMessenger (mock auto-dispatch)
+        require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
 
         // Verify finality threshold (should be >= 2000 for finalized messages)
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPool: Insufficient finality");
@@ -305,6 +304,17 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     function setPrivilegedShieldCaller(address caller, bool privileged) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         privilegedShieldCallers[caller] = privileged;
+    }
+
+    /**
+     * @notice Set the CCTP Hook Router address
+     * @dev The hook router is authorized to call handleReceiveFinalizedMessage
+     *      after atomically calling receiveMessage on the MessageTransmitter
+     * @param _hookRouter Address of the CCTPHookRouter contract
+     */
+    function setHookRouter(address _hookRouter) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        hookRouter = _hookRouter;
     }
 
     // ══════════════════════════════════════════════════════════════════════════

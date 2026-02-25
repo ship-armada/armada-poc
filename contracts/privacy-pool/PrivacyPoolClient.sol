@@ -50,6 +50,9 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     /// @notice Contract owner
     address public override owner;
 
+    /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
+    address public override hookRouter;
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -166,8 +169,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
 
     /**
      * @notice Handle finalized CCTP message (cross-chain unshields from Hub)
-     * @dev Called by TokenMessenger after CCTP attestation is verified and tokens minted.
-     *      USDC has already been minted to this contract by CCTP.
+     * @dev Called by CCTPHookRouter (or TokenMessenger in mock mode) after CCTP message
+     *      is received and tokens minted. USDC has already been minted to this contract.
      *      We decode the message and forward USDC to the final recipient.
      *
      *      Message format: BurnMessageV2 (see ICCTPV2.sol for byte layout)
@@ -187,9 +190,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
-        // Only accept from TokenMessenger (which is called by MessageTransmitter)
-        // In CCTP V2, TokenMessenger handles the token minting and then calls the recipient's handler
-        require(msg.sender == tokenMessenger, "PrivacyPoolClient: Only TokenMessenger");
+        // Accept from CCTPHookRouter (real CCTP) or TokenMessenger (mock auto-dispatch)
+        require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPoolClient: Unauthorized caller");
 
         // Verify finality threshold (should be >= 2000 for finalized messages)
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPoolClient: Insufficient finality");
@@ -259,5 +261,16 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         hubDomain = _hubDomain;
         hubPool = _hubPool;
         emit HubPoolSet(_hubDomain, _hubPool);
+    }
+
+    /**
+     * @notice Set the CCTP Hook Router address
+     * @dev The hook router is authorized to call handleReceiveFinalizedMessage
+     *      after atomically calling receiveMessage on the MessageTransmitter
+     * @param _hookRouter Address of the CCTPHookRouter contract
+     */
+    function setHookRouter(address _hookRouter) external override {
+        require(msg.sender == owner, "PrivacyPoolClient: Only owner");
+        hookRouter = _hookRouter;
     }
 }

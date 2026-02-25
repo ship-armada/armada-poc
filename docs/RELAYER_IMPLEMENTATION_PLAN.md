@@ -306,6 +306,7 @@ Key changes from current relay-v2.ts:
 - Use shared `WalletManager` instead of managing its own wallet/nonce
 - Export as a module class instead of standalone script
 - Keep the same polling + relay logic
+- **CCTPHookRouter**: `cctp-relay.ts` calls `hookRouter.relayWithHook()` instead of `messageTransmitter.receiveMessage()`. The hookRouter address is loaded from the privacy pool deployment JSON. This atomically calls `receiveMessage()` + `handleReceiveFinalizedMessage()` on the destination contract, matching real CCTP v2 behavior where hooks are not auto-dispatched.
 
 ### 3.2 Unified Entry Point (`armada-relayer.ts`)
 

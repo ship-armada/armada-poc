@@ -42,6 +42,7 @@ describe("Privacy Pool Integration", function () {
   let hubUsdc: Contract;
   let hubTokenMessenger: Contract;
   let hubMessageTransmitter: Contract;
+  let hubHookRouter: Contract;
   let privacyPool: Contract;
   let merkleModule: Contract;
   let verifierModule: Contract;
@@ -51,6 +52,7 @@ describe("Privacy Pool Integration", function () {
   let clientUsdc: Contract;
   let clientTokenMessenger: Contract;
   let clientMessageTransmitter: Contract;
+  let clientHookRouter: Contract;
   let privacyPoolClient: Contract;
 
   // Signers
@@ -178,11 +180,17 @@ describe("Privacy Pool Integration", function () {
       deployerAddress
     );
 
+    // Deploy CCTPHookRouter for hub
+    const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
+    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress());
+    await hubHookRouter.waitForDeployment();
+
     // Load verification keys for SNARK proof verification
     console.log("  Loading verification keys...");
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
 
     console.log("  PrivacyPool:", privacyPoolAddress);
+    console.log("  HubHookRouter:", await hubHookRouter.getAddress());
   }
 
   async function deployClientChain() {
@@ -228,7 +236,13 @@ describe("Privacy Pool Integration", function () {
       deployerAddress
     );
 
+    // Deploy CCTPHookRouter for client
+    const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
+    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress());
+    await clientHookRouter.waitForDeployment();
+
     console.log("  PrivacyPoolClient:", clientAddress);
+    console.log("  ClientHookRouter:", await clientHookRouter.getAddress());
   }
 
   async function linkDeployments() {
@@ -249,6 +263,16 @@ describe("Privacy Pool Integration", function () {
 
     await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.client, clientTmBytes32);
     await clientTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, hubTmBytes32);
+
+    // Set hookRouter on PrivacyPool and PrivacyPoolClient
+    await privacyPool.setHookRouter(await hubHookRouter.getAddress());
+    await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
+
+    // Set mock MessageTransmitter relayer to hookRouter
+    // (so hookRouter can call receiveMessage on mock)
+    // setRelayer() requires msg.sender == current relayer
+    await hubMessageTransmitter.connect(relayer).setRelayer(await hubHookRouter.getAddress());
+    await clientMessageTransmitter.connect(relayer).setRelayer(await clientHookRouter.getAddress());
 
     console.log("  Linking complete");
   }
@@ -405,62 +429,45 @@ describe("Privacy Pool Integration", function () {
       );
       const receipt = await tx.wait();
 
-      // Parse the MessageSent event from the client MessageTransmitter
+      // Extract MessageSent(bytes) event — contains the full encoded MessageV2
       const transmitterInterface = clientMessageTransmitter.interface;
-      let messageEvent: any;
+      let encodedMessage: string | undefined;
       for (const log of receipt!.logs) {
         try {
           const parsed = transmitterInterface.parseLog(log);
           if (parsed?.name === "MessageSent") {
-            messageEvent = parsed;
+            encodedMessage = parsed.args.message;
             break;
           }
         } catch {
           // Not from this contract
         }
       }
-      expect(messageEvent).to.not.be.undefined;
-
-      // Construct full MessageV2 envelope for receiveMessage
-      const MESSAGE_VERSION = 1;
-      const FINALITY_STANDARD = 2000;
-      const encodedMessage = ethers.solidityPacked(
-        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
-        [
-          MESSAGE_VERSION,
-          messageEvent.args.sourceDomain,
-          messageEvent.args.destinationDomain,
-          messageEvent.args.nonce,
-          messageEvent.args.sender,
-          messageEvent.args.recipient,
-          messageEvent.args.destinationCaller,
-          messageEvent.args.minFinalityThreshold,
-          FINALITY_STANDARD,
-          messageEvent.args.messageBody,
-        ]
-      );
+      expect(encodedMessage).to.not.be.undefined;
 
       // Record balances before relay
       const poolBalanceBefore = await hubUsdc.balanceOf(privacyPoolAddress);
-      const relayerBalanceBefore = await hubUsdc.balanceOf(relayerAddress);
+      const hookRouterAddress = await hubHookRouter.getAddress();
+      const hookRouterBalanceBefore = await hubUsdc.balanceOf(hookRouterAddress);
       const treasuryBalanceBefore = await hubUsdc.balanceOf(treasuryAddress);
       const merkleRootBefore = await privacyPool.merkleRoot();
 
-      // Relay the message to Hub (relayer calls receiveMessage)
-      await hubMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
+      // Relay the message to Hub via CCTPHookRouter (atomically calls receiveMessage + hook)
+      await hubHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x");
 
       // CCTP mints (SHIELD_AMOUNT - MAX_FEE) to pool, then shield fee is deducted
-      const amountAfterCCTP = SHIELD_AMOUNT - MAX_FEE; // 99 USDC
-      const shieldFeeAmount = amountAfterCCTP * 50n / 10000n; // 0.50% of 99 USDC
+      const amountAfterCCTP = SHIELD_AMOUNT - MAX_FEE; // 49 USDC
+      const shieldFeeAmount = amountAfterCCTP * 50n / 10000n; // 0.50% of 49 USDC
       const poolNetReceived = amountAfterCCTP - shieldFeeAmount;
 
       // Verify: PrivacyPool kept base amount (after shield fee deduction)
       const poolBalanceAfter = await hubUsdc.balanceOf(privacyPoolAddress);
       expect(poolBalanceAfter - poolBalanceBefore).to.equal(poolNetReceived);
 
-      // Verify: Relayer received MAX_FEE (CCTP fee on hub chain)
-      const relayerBalanceAfter = await hubUsdc.balanceOf(relayerAddress);
-      expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(MAX_FEE);
+      // Verify: CCTP fee was minted to hookRouter (msg.sender of receiveMessage in mock)
+      // In real CCTP, the fee goes to the relayer EOA. In mock, it goes to msg.sender of receiveMessage.
+      const hookRouterBalanceAfter = await hubUsdc.balanceOf(hookRouterAddress);
+      expect(hookRouterBalanceAfter - hookRouterBalanceBefore).to.equal(MAX_FEE);
 
       // Verify: Treasury received shield fee
       const treasuryBalanceAfter = await hubUsdc.balanceOf(treasuryAddress);
@@ -580,7 +587,8 @@ describe("Privacy Pool Integration", function () {
 
       // Record balances before
       const recipientBalanceBefore = await clientUsdc.balanceOf(bobAddress);
-      const relayerBalanceBefore = await clientUsdc.balanceOf(relayerAddress);
+      const clientHookRouterAddress = await clientHookRouter.getAddress();
+      const hookRouterBalanceBefore = await clientUsdc.balanceOf(clientHookRouterAddress);
 
       // Execute atomic cross-chain unshield with maxFee
       const tx = await privacyPool.atomicCrossChainUnshield(
@@ -592,51 +600,32 @@ describe("Privacy Pool Integration", function () {
       );
       const receipt = await tx.wait();
 
-      // Parse the MessageSent event from the hub MessageTransmitter
+      // Extract MessageSent(bytes) event — contains the full encoded MessageV2
       const transmitterInterface = hubMessageTransmitter.interface;
-      let messageEvent: any;
+      let encodedMessage: string | undefined;
       for (const log of receipt!.logs) {
         try {
           const parsed = transmitterInterface.parseLog(log);
           if (parsed?.name === "MessageSent") {
-            messageEvent = parsed;
+            encodedMessage = parsed.args.message;
             break;
           }
         } catch {
           // Not from this contract
         }
       }
-      expect(messageEvent).to.not.be.undefined;
+      expect(encodedMessage).to.not.be.undefined;
 
-      // Construct full MessageV2 envelope for receiveMessage on client chain
-      const MESSAGE_VERSION = 1;
-      const FINALITY_STANDARD = 2000;
-      const encodedMessage = ethers.solidityPacked(
-        ["uint32", "uint32", "uint32", "uint64", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
-        [
-          MESSAGE_VERSION,
-          messageEvent.args.sourceDomain,
-          messageEvent.args.destinationDomain,
-          messageEvent.args.nonce,
-          messageEvent.args.sender,
-          messageEvent.args.recipient,
-          messageEvent.args.destinationCaller,
-          messageEvent.args.minFinalityThreshold,
-          FINALITY_STANDARD,
-          messageEvent.args.messageBody,
-        ]
-      );
-
-      // Relay the message to client chain (relayer calls receiveMessage)
-      await clientMessageTransmitter.connect(relayer).receiveMessage(encodedMessage, "0x");
+      // Relay the message to client chain via CCTPHookRouter (atomically calls receiveMessage + hook)
+      await clientHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x");
 
       // Verify: Recipient (Bob) received UNSHIELD_AMOUNT - MAX_FEE on client chain
       const recipientBalanceAfter = await clientUsdc.balanceOf(bobAddress);
       expect(recipientBalanceAfter - recipientBalanceBefore).to.equal(UNSHIELD_AMOUNT - MAX_FEE);
 
-      // Verify: Relayer received MAX_FEE on client chain
-      const relayerBalanceAfter = await clientUsdc.balanceOf(relayerAddress);
-      expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(MAX_FEE);
+      // Verify: CCTP fee was minted to hookRouter (msg.sender of receiveMessage in mock)
+      const hookRouterBalanceAfter = await clientUsdc.balanceOf(clientHookRouterAddress);
+      expect(hookRouterBalanceAfter - hookRouterBalanceBefore).to.equal(MAX_FEE);
     });
   });
 

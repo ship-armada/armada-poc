@@ -133,6 +133,79 @@ async function main() {
     console.log("");
   }
 
+  // Set hookRouter on Hub PrivacyPool
+  const hubHookRouterAddress = hubDeployment.contracts.hookRouter;
+  if (hubHookRouterAddress) {
+    console.log("Setting hookRouter on Hub PrivacyPool...");
+    await (await privacyPool.setHookRouter(hubHookRouterAddress)).wait();
+    console.log(`  hookRouter set to: ${hubHookRouterAddress}`);
+    console.log("");
+  }
+
+  // Set hookRouter on each Client PrivacyPoolClient
+  for (const clientConfig of clientConfigs) {
+    const clientFilename = getPrivacyPoolDeploymentFile(clientConfig.role);
+    const clientDeployment = loadDeployment(clientFilename);
+    if (!clientDeployment?.contracts?.hookRouter) continue;
+
+    const chain = clientConfig.role === "clientA" ? config.clientA : config.clientB;
+    const clientProvider = new ethers.JsonRpcProvider(chain.rpc);
+    const clientSigner = new ethers.Wallet(config.deployerPrivateKey, clientProvider);
+
+    const clientPoolContract = new ethers.Contract(
+      clientDeployment.contracts.privacyPoolClient,
+      ["function setHookRouter(address _hookRouter) external"],
+      clientSigner
+    );
+
+    console.log(`Setting hookRouter on ${clientConfig.name} PrivacyPoolClient...`);
+    await (await clientPoolContract.setHookRouter(clientDeployment.contracts.hookRouter)).wait();
+    console.log(`  hookRouter set to: ${clientDeployment.contracts.hookRouter}`);
+    console.log("");
+  }
+
+  // In mock mode, set MessageTransmitter relayer to hookRouter
+  // so hookRouter can call receiveMessage on mock
+  if (!isCCTPReal()) {
+    console.log("Setting mock MessageTransmitter relayers to hookRouter...");
+
+    // Hub MessageTransmitter
+    if (hubHookRouterAddress) {
+      const hubMessageTransmitter = await ethers.getContractAt(
+        "MockMessageTransmitterV2",
+        hubCctp.contracts.messageTransmitter
+      );
+      await (await hubMessageTransmitter.setRelayer(hubHookRouterAddress)).wait();
+      console.log(`  Hub MessageTransmitter relayer set to hookRouter`);
+    }
+
+    // Client MessageTransmitters
+    for (const clientConfig of clientConfigs) {
+      const clientFilename = getPrivacyPoolDeploymentFile(clientConfig.role);
+      const clientDeployment = loadDeployment(clientFilename);
+      if (!clientDeployment?.contracts?.hookRouter) continue;
+
+      const clientCctpFilename = getCCTPDeploymentFile(clientConfig.role);
+      const clientCctp = loadDeployment(clientCctpFilename);
+      if (!clientCctp) continue;
+
+      const chain = clientConfig.role === "clientA" ? config.clientA : config.clientB;
+      const clientProvider = new ethers.JsonRpcProvider(chain.rpc);
+      const clientSigner = new ethers.Wallet(config.deployerPrivateKey, clientProvider);
+
+      const clientMessageTransmitter = new ethers.Contract(
+        clientCctp.contracts.messageTransmitter,
+        ["function setRelayer(address _relayer) external"],
+        clientSigner
+      );
+
+      await (await clientMessageTransmitter.setRelayer(clientDeployment.contracts.hookRouter)).wait();
+      console.log(`  ${clientConfig.name} MessageTransmitter relayer set to hookRouter`);
+    }
+
+    console.log("");
+  }
+
   // In mock mode, configure Client TokenMessengers to know about Hub
   if (!isCCTPReal()) {
     const hubTokenMessengerBytes32 = ethers.zeroPadValue(

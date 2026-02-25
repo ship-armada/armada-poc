@@ -137,6 +137,12 @@ interface IPrivacyPool is IMessageHandlerV2 {
      */
     function setPrivilegedShieldCaller(address caller, bool privileged) external;
 
+    /**
+     * @notice Set the CCTP Hook Router address
+     * @param _hookRouter Address of the CCTPHookRouter contract
+     */
+    function setHookRouter(address _hookRouter) external;
+
     // Note: View functions (merkleRoot, treeNumber, nullifiers, rootHistory, remotePools)
     // are implemented via public storage variables in PrivacyPoolStorage
 }

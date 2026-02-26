@@ -39,6 +39,13 @@ data/
 # Logs
 *.log
 
+# Secrets and credentials
+*.key
+*.pem
+*.secret
+*.wallet
+*.keystore
+
 # OS
 .DS_Store
 Thumbs.db

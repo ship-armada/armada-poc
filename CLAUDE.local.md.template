@@ -1,0 +1,11 @@
+# Local Development Notes
+#
+# Copy this file to CLAUDE.local.md and customize for your setup.
+# CLAUDE.local.md is gitignored automatically by Claude Code.
+#
+# Examples of what to put here:
+# - Local Anvil ports if you use non-default ones
+# - Paths to local tools or custom scripts
+# - Your preferred test subset for quick iteration
+# - Sandbox URLs or test wallet addresses
+# - Any machine-specific quirks

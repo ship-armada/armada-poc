@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run compile)",
+      "Bash(npm run test)",
+      "Bash(npm run test:*)",
+      "Bash(npm run halmos:*)",
+      "Bash(npm run halmos)",
+      "Bash(forge test:*)",
+      "Bash(npx hardhat compile)",
+      "Bash(hardhat compile)",
+      "Bash(npm run clean)",
+      "Bash(wc:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

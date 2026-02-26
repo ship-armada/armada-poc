@@ -28,6 +28,7 @@ import { getEvmProvider } from '@/services/evm/evmNetworkService'
 import { extractMessageSent, pollIrisAttestation } from '@/services/polling/irisAttestationService'
 import { queryMessageReceivedByNonce } from '@/services/polling/evmPoller'
 import { fetchEvmChainsConfig } from '@/services/config/chainConfigService'
+import { getAttestationTimeoutMs, getRelayTimeoutMs } from '@/config/networkConfig'
 import { findChainByKey } from '@/config/chains'
 import { isSepoliaMode } from '@/config/networkConfig'
 
@@ -605,14 +606,15 @@ export async function trackCrossChainShieldCompletion(
 
     if (isSepoliaMode()) {
       // Real Iris attestation polling (Sepolia)
-      console.log(`${LOG_TAG} Phase 2b: Polling Iris API for attestation (up to 30 min)...`)
+      const attestationTimeoutSec = Math.round(getAttestationTimeoutMs() / 1000)
+      console.log(`${LOG_TAG} Phase 2b: Polling Iris API for attestation (up to ${attestationTimeoutSec}s)...`)
 
       const irisResult = await pollIrisAttestation(
         {
           txHash: burnTxHash,
           chainId: sourceChainKey,
           flowId: txId,
-          timeoutMs: 1_800_000, // 30 minutes
+          timeoutMs: getAttestationTimeoutMs(),
           pollIntervalMs: 5_000,
           sourceDomain, // enables v2 API: /v2/messages/{sourceDomain}?transactionHash={txHash}
         },
@@ -675,7 +677,7 @@ export async function trackCrossChainShieldCompletion(
     const blocksBack = relayBlocksBack ?? 10
     const fromBlock = BigInt(Math.max(0, currentBlock - blocksBack))
     const maxBlockRange = 2000n
-    const relayTimeoutMs = 1_800_000 // 30 minutes
+    const relayTimeoutMs = getRelayTimeoutMs()
     const relayPollIntervalMs = isSepoliaMode() ? 10_000 : 2_000
     const relayDeadline = Date.now() + relayTimeoutMs
     let currentFromBlock = fromBlock

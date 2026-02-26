@@ -44,6 +44,12 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      */
     event HubPoolSet(uint32 hubDomain, bytes32 hubPool);
 
+    /// @notice Emitted when fast finality acceptance is toggled
+    event FastFinalitySet(bool enabled);
+
+    /// @notice Emitted when default finality threshold is changed
+    event DefaultFinalityThresholdSet(uint32 threshold);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -110,6 +116,18 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      * @param _hookRouter Address of the CCTPHookRouter contract
      */
     function setHookRouter(address _hookRouter) external;
+
+    /**
+     * @notice Enable or disable acceptance of fast finality CCTP messages
+     * @param _enabled Whether to accept fast finality messages
+     */
+    function setFastFinalityEnabled(bool _enabled) external;
+
+    /**
+     * @notice Set the default finality threshold for outbound CCTP burns
+     * @param _threshold Finality threshold (FAST=1000 or STANDARD=2000)
+     */
+    function setDefaultFinalityThreshold(uint32 _threshold) external;
 
     // ══════════════════════════════════════════════════════════════════════════
     // VIEW FUNCTIONS

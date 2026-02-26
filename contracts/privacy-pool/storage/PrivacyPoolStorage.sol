@@ -162,11 +162,17 @@ abstract contract PrivacyPoolStorage {
     /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
     address public hookRouter;
 
+    /// @notice Whether fast finality (CCTP "confirmed" level) is accepted for incoming messages
+    bool public fastFinalityEnabled;
+
+    /// @notice Default finality threshold for outbound CCTP burns (STANDARD=2000, FAST=1000)
+    uint32 public defaultFinalityThreshold;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 }

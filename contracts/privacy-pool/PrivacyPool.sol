@@ -164,17 +164,44 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
-        // Accept from CCTPHookRouter (real CCTP) or TokenMessenger (mock auto-dispatch)
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
-
-        // Verify finality threshold (should be >= 2000 for finalized messages)
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPool: Insufficient finality");
-
-        // Verify sender is a known PrivacyPoolClient (sender is the remote TokenMessenger)
-        // The actual originator info is encoded in the hookData
-        // For now, we trust that TokenMessenger only forwards valid messages
         (sender); // Silence unused variable warning
 
+        return _handleCCTPMessage(messageBody);
+    }
+
+    /**
+     * @notice Handle unfinalized CCTP message (fast finality / "confirmed" level)
+     * @dev Called by CCTPHookRouter when finalityThresholdExecuted < STANDARD (2000).
+     *      Must be explicitly enabled via setFastFinalityEnabled(true).
+     *      Circle bears the reorg risk for fast transfers via off-chain insurance.
+     *
+     * @param sender Sender address on source chain (as bytes32)
+     * @param finalityThresholdExecuted The finality threshold that was met (e.g. 1000 for FAST)
+     * @param messageBody BurnMessageV2 encoded message containing hookData
+     * @return success Always returns true on success (reverts on failure)
+     */
+    function handleReceiveUnfinalizedMessage(
+        uint32,
+        bytes32 sender,
+        uint32 finalityThresholdExecuted,
+        bytes calldata messageBody
+    ) external override returns (bool) {
+        require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
+        require(fastFinalityEnabled, "PrivacyPool: Fast finality not enabled");
+        require(finalityThresholdExecuted >= CCTPFinality.FAST, "PrivacyPool: Finality below minimum");
+        (sender); // Silence unused variable warning
+
+        return _handleCCTPMessage(messageBody);
+    }
+
+    /**
+     * @notice Shared CCTP message processing logic for both finalized and unfinalized paths
+     * @param messageBody BurnMessageV2 encoded message containing hookData
+     * @return success Always returns true on success (reverts on failure)
+     */
+    function _handleCCTPMessage(bytes calldata messageBody) internal returns (bool) {
         // Decode the BurnMessageV2 to get amount, feeExecuted, and hookData
         (
             uint256 grossAmount,
@@ -183,7 +210,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         ) = BurnMessageV2.decodeForHook(messageBody);
 
         // Calculate actual amount received (gross - fee)
-        // In local mock, feeExecuted is always 0. On real CCTP, fee may be deducted.
+        // In local mock, feeExecuted may equal maxFee. On real CCTP, fee is set by attestation service.
         uint256 actualAmount = grossAmount - feeExecuted;
 
         // Decode our CCTP payload
@@ -204,19 +231,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         }
 
         return true;
-    }
-
-    /**
-     * @notice Handle unfinalized CCTP message (fast finality)
-     * @dev We don't support fast finality in the POC
-     */
-    function handleReceiveUnfinalizedMessage(
-        uint32,
-        bytes32,
-        uint32,
-        bytes calldata
-    ) external pure override returns (bool) {
-        revert("PrivacyPool: Fast finality not supported");
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -315,6 +329,35 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         hookRouter = _hookRouter;
+    }
+
+    /**
+     * @notice Enable or disable acceptance of fast finality CCTP messages
+     * @dev When enabled, handleReceiveUnfinalizedMessage() will accept messages
+     *      with finalityThresholdExecuted >= FAST (1000). Circle bears the reorg risk.
+     * @param _enabled Whether to accept fast finality messages
+     */
+    function setFastFinalityEnabled(bool _enabled) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        fastFinalityEnabled = _enabled;
+        emit FastFinalitySet(_enabled);
+    }
+
+    /**
+     * @notice Set the default finality threshold for outbound CCTP burns
+     * @dev Controls whether cross-chain unshields request fast or standard finality.
+     *      STANDARD (2000) = wait for hard finality (~15-19 min), no fee.
+     *      FAST (1000) = soft finality (~8-20 sec), 1-1.3 bps fee.
+     * @param _threshold Finality threshold (must be FAST or STANDARD)
+     */
+    function setDefaultFinalityThreshold(uint32 _threshold) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        require(
+            _threshold == CCTPFinality.FAST || _threshold == CCTPFinality.STANDARD,
+            "PrivacyPool: Invalid threshold"
+        );
+        defaultFinalityThreshold = _threshold;
+        emit DefaultFinalityThresholdSet(_threshold);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

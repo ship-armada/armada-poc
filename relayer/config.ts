@@ -105,6 +105,12 @@ export const relayerSettings = {
   pollIntervalMs: isLocal() ? 2000 : netConfig.iris.pollIntervalMs,
 };
 
+// CCTP finality mode from environment
+function getCCTPFinalityMode(): "fast" | "standard" {
+  const mode = process.env.CCTP_FINALITY_MODE?.toLowerCase();
+  return mode === "fast" ? "fast" : "standard";
+}
+
 // Armada relayer settings (privacy relay + unified service)
 export const armadaRelayerSettings = {
   /** HTTP API port */
@@ -123,6 +129,8 @@ export const armadaRelayerSettings = {
   cctpReal: isCCTPReal(),
   /** Iris attestation service config */
   iris: netConfig.iris,
+  /** CCTP finality mode: "fast" (~8-20s, 1-1.3 bps fee) or "standard" (~15-19 min, free) */
+  cctpFinalityMode: getCCTPFinalityMode(),
 };
 
 // Legacy config export for backward compatibility

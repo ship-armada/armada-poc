@@ -12,7 +12,9 @@ import "./ICCTPV2.sol";
  *
  *      This contract solves that by:
  *      1. Calling messageTransmitter.receiveMessage() — mints USDC to mintRecipient
- *      2. Calling handleReceiveFinalizedMessage() on the mintRecipient — processes the hook
+ *      2. Dispatching the appropriate handler on the mintRecipient based on finality:
+ *         - finalityThresholdExecuted >= STANDARD (2000): handleReceiveFinalizedMessage()
+ *         - finalityThresholdExecuted < STANDARD: handleReceiveUnfinalizedMessage()
  *
  *      If the hook call reverts, the entire transaction reverts (no stranded funds).
  *
@@ -55,13 +57,23 @@ contract CCTPHookRouter {
             BurnMessageV2.getMintRecipient(messageBody)
         );
 
-        // 4. Dispatch hook — if this reverts, entire tx reverts (no stranded funds)
-        IMessageHandlerV2(recipient).handleReceiveFinalizedMessage(
-            sourceDomain,
-            sender,
-            finality,
-            messageBody
-        );
+        // 4. Dispatch hook based on finality level — matches real CCTP MessageTransmitter behavior
+        //    If this reverts, entire tx reverts (no stranded funds)
+        if (finality >= CCTPFinality.STANDARD) {
+            IMessageHandlerV2(recipient).handleReceiveFinalizedMessage(
+                sourceDomain,
+                sender,
+                finality,
+                messageBody
+            );
+        } else {
+            IMessageHandlerV2(recipient).handleReceiveUnfinalizedMessage(
+                sourceDomain,
+                sender,
+                finality,
+                messageBody
+            );
+        }
 
         return true;
     }

@@ -102,6 +102,7 @@ export {
   waitForShieldConfirmation,
   waitForCCTPBurnConfirmation,
   trackCrossChainShieldCompletion,
+  resumePendingCrossChainShields,
 } from './shieldTxTracker'
 
 export type { ShieldTxParams, ShieldTxCallbacks } from './shieldTxTracker'

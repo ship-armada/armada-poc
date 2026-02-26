@@ -55,11 +55,13 @@ function toHexQuantity(n: bigint): string {
 }
 
 /**
- * Convert nonce to padded hex topic for event filtering
+ * Convert nonce hex string to padded topic for event filtering
  * Nonce is bytes32 in CCTP V2, padded to 32 bytes (64 hex characters)
+ * Input: 0x-prefixed hex string (e.g., "0x820cc8..." or "0x1")
  */
-function toPaddedNonceTopic(nonce: number): string {
-  return `0x${BigInt(nonce).toString(16).padStart(64, '0')}`
+function toPaddedNonceTopic(nonce: string): string {
+  const clean = nonce.toLowerCase().replace(/^0x/, '')
+  return `0x${clean.padStart(64, '0')}`
 }
 
 /**
@@ -79,7 +81,7 @@ function extractEvmAddressFromBytes32(bytes32: string): string {
  * Data: ABI-encoded (uint32 sourceDomain, bytes32 sender, bytes messageBody)
  */
 interface ParsedMessageReceived {
-  nonce: number
+  nonce: string
   sourceDomain: number
   sender: string
   mintRecipient: string
@@ -93,8 +95,8 @@ function parseMessageReceivedEvent(log: ethers.Log): ParsedMessageReceived | nul
     }
 
     // Extract nonce from topics[2] (indexed bytes32 in V2)
-    const nonceTopic = log.topics[2]
-    const nonce = Number(BigInt(nonceTopic))
+    // Keep as hex string — real CCTP V2 nonces are arbitrary bytes32, too large for JS number
+    const nonce = log.topics[2]
 
     // Parse data field: ABI-encoded (uint32 sourceDomain, bytes32 sender, bytes messageBody)
     if (!log.data || log.data.length < 256) {
@@ -179,7 +181,7 @@ export async function queryMessageReceivedByNonce(
   provider: ethers.JsonRpcProvider,
   params: {
     messageTransmitterAddress: string
-    nonce: number
+    nonce: string
     fromBlock?: bigint
     toBlock?: bigint
   },
@@ -862,7 +864,8 @@ async function pollDepositWithIris(
       )
     }
 
-    const { irisLookupID, nonce, sourceDomain, destinationDomain } = extractionResult.data
+    const { irisLookupID, sourceDomain, destinationDomain } = extractionResult.data
+    let nonce = extractionResult.data.nonce
 
     // Extract block metadata (height, timestamp, tx hash)
     let blockMetadata: { blockHeight?: number | string; blockTimestamp?: number; eventTxHash?: string } = {}
@@ -945,6 +948,7 @@ async function pollDepositWithIris(
         pollIntervalMs,
         requestTimeoutMs,
         abortSignal,
+        sourceDomain, // enables v2 API which returns the attested message with real nonce
       },
       irisLookupID,
     )
@@ -977,6 +981,21 @@ async function pollDepositWithIris(
         ),
         stages,
       }
+    }
+
+    // In real CCTP V2, the nonce is ZERO in the source chain's MessageSent bytes.
+    // The attestation service assigns the real nonce and returns the full attested message.
+    if (irisResult.irisMessage) {
+      const msgHex = irisResult.irisMessage.startsWith('0x')
+        ? irisResult.irisMessage.slice(2)
+        : irisResult.irisMessage
+      const realNonce = '0x' + msgHex.slice(24, 88) // bytes 12-44 = nonce (bytes32)
+      logger.info('[EvmPoller] Real nonce from Iris attested message', {
+        flowId: params.flowId,
+        realNonce,
+        originalNonce: nonce,
+      })
+      nonce = realNonce
     }
 
     // Mark Iris attestation as complete

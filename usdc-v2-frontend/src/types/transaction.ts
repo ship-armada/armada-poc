@@ -242,8 +242,8 @@ export function getStageLabel(stageId: string): string {
  * CCTP-specific metadata for cross-chain operations
  */
 export interface CCTPMetadata {
-  /** CCTP message nonce */
-  nonce?: number
+  /** CCTP message nonce (bytes32 hex string, 0x-prefixed) */
+  nonce?: string
   /** Source CCTP domain */
   sourceDomain?: number
   /** Destination CCTP domain */

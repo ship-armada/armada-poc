@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useAtom } from 'jotai'
 import { appInitAtom, chainConfigAtom } from '@/atoms/appAtom'
 import { initializeApplication } from '@/services/bootstrap/initService'
+import { resumePendingCrossChainShields } from '@/services/tx/shieldTxTracker'
 import { useToast } from '@/hooks/useToast'
 
 export function useAppInitialization() {
@@ -22,6 +23,13 @@ export function useAppInitialization() {
         const result = await initializeApplication()
         setChainConfig(result.chains)
         setInitState({ status: 'ready' })
+
+        // Resume polling for in-progress cross-chain shields after chain config is available
+        // (fire-and-forget — getEvmProvider needs chainConfigAtom to be set first)
+        const resumedCount = resumePendingCrossChainShields()
+        if (resumedCount > 0) {
+          console.log(`[init] Resumed ${resumedCount} pending cross-chain shield(s)`)
+        }
       } catch (error) {
         console.error('App initialization failed', error)
         setInitState({ status: 'error', error: error instanceof Error ? error.message : 'Unknown error' })

@@ -11,6 +11,8 @@ import { createTransaction, SHIELD_STAGES } from '@/types/transaction'
 import {
   saveTransaction,
   getTransaction,
+  getAllTransactions,
+  updateTransaction,
   updateTxStage,
   confirmTxStage,
   completeTx,
@@ -19,6 +21,7 @@ import {
   setApprovalTxHash,
   setRelayTxHash,
   updateCCTPMetadata,
+  getPendingTransactions,
 } from './privacyPoolTxStorage'
 import { waitForTransaction } from './privacyPoolEventPoller'
 import { getEvmProvider } from '@/services/evm/evmNetworkService'
@@ -338,7 +341,7 @@ export function markCCTPBurnSubmitted(
 export function markCCTPBurnConfirmed(
   txId: string,
   blockNumber: number,
-  nonce?: number,
+  nonce?: string,
   messageHash?: string,
   callbacks?: ShieldTxCallbacks,
 ): StoredTransaction | undefined {
@@ -523,7 +526,7 @@ export async function waitForCCTPBurnConfirmation(
     return markCCTPBurnConfirmed(
       txId,
       result.blockNumber,
-      messageSentEvent?.data?.nonce as number | undefined,
+      messageSentEvent?.data?.nonce as string | undefined,
       messageSentEvent?.data?.messageHash as string | undefined,
       callbacks,
     )
@@ -555,6 +558,8 @@ export async function trackCrossChainShieldCompletion(
   sourceChainKey: string,
   hubChainKey: string = 'hub',
   callbacks?: ShieldTxCallbacks,
+  /** How many blocks back from current to start relay detection (default: 10, set higher when resuming) */
+  relayBlocksBack?: number,
 ): Promise<StoredTransaction | undefined> {
   const LOG_TAG = '[shield-cctp-tracker]'
 
@@ -587,7 +592,8 @@ export async function trackCrossChainShieldCompletion(
       return markShieldFailed(txId, new Error(extraction.error || 'Failed to extract MessageSent event'), SHIELD_STAGES.CCTP_BURN_CONFIRMED, callbacks)
     }
 
-    const { irisLookupID, nonce, sourceDomain, destinationDomain, messageBytes } = extraction.data
+    const { irisLookupID, sourceDomain, destinationDomain, messageBytes } = extraction.data
+    let nonce = extraction.data.nonce
 
     console.log(`${LOG_TAG} MessageSent extracted: nonce=${nonce}, irisLookupID=${irisLookupID}`)
 
@@ -618,8 +624,21 @@ export async function trackCrossChainShieldCompletion(
         return markShieldFailed(txId, new Error(irisResult.error || 'Attestation polling timed out'), SHIELD_STAGES.CCTP_ATTESTATION_PENDING, callbacks)
       }
 
+      // In real CCTP V2, the nonce is ZERO in the source chain's MessageSent bytes.
+      // The attestation service assigns the real nonce and returns the full attested message.
+      // Extract the real nonce from the Iris response message for Phase 3 relay detection.
+      if (irisResult.irisMessage) {
+        const irisMsg = irisResult.irisMessage
+        const msgHex = irisMsg.startsWith('0x') ? irisMsg.slice(2) : irisMsg
+        const realNonce = '0x' + msgHex.slice(24, 88) // bytes 12-44 = nonce (bytes32)
+        console.log(`${LOG_TAG} Real nonce from Iris attested message: ${realNonce}`)
+        nonce = realNonce
+        // Update stored CCTP metadata with the real nonce
+        updateCCTPMetadata(txId, { nonce: realNonce })
+      }
+
       console.log(`${LOG_TAG} Attestation received`)
-      markAttestationReceived(txId, irisResult.attestation, ethers.hexlify(messageBytes), callbacks)
+      markAttestationReceived(txId, irisResult.attestation, irisResult.irisMessage || ethers.hexlify(messageBytes), callbacks)
     } else {
       // Local mode: skip attestation polling (mock relayer auto-relays)
       console.log(`${LOG_TAG} Local mode: skipping Iris attestation polling`)
@@ -651,8 +670,10 @@ export async function trackCrossChainShieldCompletion(
     }
 
     // Start polling from a few blocks back for safety
+    // When resuming after page reload, relayBlocksBack is set higher to scan further back
     const currentBlock = await hubProvider.getBlockNumber()
-    const fromBlock = BigInt(Math.max(0, currentBlock - 10))
+    const blocksBack = relayBlocksBack ?? 10
+    const fromBlock = BigInt(Math.max(0, currentBlock - blocksBack))
     const maxBlockRange = 2000n
     const relayTimeoutMs = 1_800_000 // 30 minutes
     const relayPollIntervalMs = isSepoliaMode() ? 10_000 : 2_000
@@ -734,4 +755,94 @@ export async function trackCrossChainShieldCompletion(
     }
     return currentTx
   }
+}
+
+// ============ Resume On Page Load ============
+
+/** Stages where a cross-chain shield can be resumed (past user-interactive phases) */
+const RESUMABLE_SHIELD_STAGES = new Set([
+  SHIELD_STAGES.CCTP_BURN_SUBMITTED,
+  SHIELD_STAGES.CCTP_BURN_CONFIRMED,
+  SHIELD_STAGES.CCTP_ATTESTATION_PENDING,
+  SHIELD_STAGES.CCTP_ATTESTATION_RECEIVED,
+  SHIELD_STAGES.CCTP_RELAY_PENDING,
+  SHIELD_STAGES.CCTP_MINT_CONFIRMED,
+  SHIELD_STAGES.BALANCE_UPDATING,
+])
+
+/**
+ * Resume polling for any in-progress cross-chain shield transactions.
+ *
+ * Called on page load to pick up where we left off after a browser refresh.
+ * Also recovers transactions that were erroneously marked as failed (e.g. due
+ * to a previous race condition where resume ran before chain config was loaded).
+ *
+ * Each resumable transaction gets a fire-and-forget call to
+ * `trackCrossChainShieldCompletion` which re-runs the idempotent phases
+ * (burn confirmation is instant for already-mined txs, Iris returns quickly
+ * for already-attested messages, and relay detection scans from an estimated
+ * earlier block).
+ */
+export function resumePendingCrossChainShields(): number {
+  const LOG_TAG = '[shield-resume]'
+  const allTxs = getAllTransactions()
+
+  // Find cross-chain shields that are either pending or erroneously failed at a CCTP stage
+  const resumable = allTxs.filter((tx) => {
+    if (tx.flowType !== 'shield' || !tx.isCrossChain || !tx.txHashes.main) return false
+    if (!tx.currentStageId || !RESUMABLE_SHIELD_STAGES.has(tx.currentStageId)) return false
+
+    // Pending transactions: resume normally
+    if (tx.status === 'pending') return true
+
+    // Erroneously failed transactions: recover if the error was a config/timing issue
+    // (e.g. "Chain configuration not loaded" from a previous buggy resume attempt)
+    if (tx.status === 'error' && tx.errorMessage?.includes('Chain configuration not loaded')) {
+      return true
+    }
+
+    return false
+  })
+
+  if (resumable.length === 0) return 0
+
+  console.log(`${LOG_TAG} Found ${resumable.length} cross-chain shield(s) to resume`)
+
+  for (const tx of resumable) {
+    const burnTxHash = tx.txHashes.main!
+    const sourceChain = tx.sourceChain
+
+    // Reset erroneously failed transactions back to pending so the tracker can proceed
+    if (tx.status === 'error') {
+      console.log(`${LOG_TAG} Recovering erroneously failed tx ${tx.id}: "${tx.errorMessage}"`)
+      updateTransaction(tx.id, {
+        status: 'pending',
+        errorMessage: undefined,
+      })
+    }
+
+    // Estimate how far back to scan for relay detection on the hub chain.
+    // Use ~12s/block for Sepolia, add a 200-block safety margin.
+    const ageMs = Date.now() - tx.createdAt
+    const estimatedBlocksBack = Math.ceil(ageMs / 12_000) + 200
+
+    console.log(
+      `${LOG_TAG} Resuming ${tx.id}: stage=${tx.currentStageId}, burnTx=${burnTxHash}, ageMs=${ageMs}, blocksBack=${estimatedBlocksBack}`,
+    )
+
+    // Fire-and-forget — trackCrossChainShieldCompletion catches all errors internally
+    trackCrossChainShieldCompletion(
+      tx.id,
+      burnTxHash,
+      sourceChain,
+      'hub',
+      undefined, // no callbacks
+      estimatedBlocksBack,
+    ).catch((err) => {
+      // Should not happen since the function catches internally, but just in case
+      console.error(`${LOG_TAG} Unexpected error resuming ${tx.id}:`, err)
+    })
+  }
+
+  return resumable.length
 }

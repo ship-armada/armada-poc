@@ -22,7 +22,7 @@ export function parseMessage(bytes: Uint8Array): {
   version: number
   sourceDomain: number
   destinationDomain: number
-  nonce: number
+  nonce: string
   sender: Uint8Array
   recipient: Uint8Array
   destinationCaller: Uint8Array
@@ -39,17 +39,9 @@ export function parseMessage(bytes: Uint8Array): {
   const destinationDomain = view.getUint32(8, false)
 
   // Nonce is bytes32 (32 bytes) at offset 12 in V2
-  // Convert to number (safe for practical nonce values)
+  // Return as 0x-prefixed hex string (real CCTP V2 nonces are arbitrary bytes32, too large for JS number)
   const nonceBytes = bytes.slice(12, 44)
-  let nonce = 0
-  for (let i = 0; i < 32; i++) {
-    if (nonceBytes[i] !== 0) {
-      // Use BigInt for full precision, then convert to number
-      const hex = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-      nonce = Number(BigInt('0x' + hex))
-      break
-    }
-  }
+  const nonce = '0x' + Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
 
   const sender = bytes.slice(44, 76)
   const recipient = bytes.slice(76, 108)

@@ -165,8 +165,8 @@ export interface ChainPollParams extends BasePollParams {
 export interface ChainPollMetadata {
   /** Actual chain key (e.g., 'sepolia', 'noble-testnet', 'namada-testnet') */
   chainKey?: string
-  /** CCTP nonce (from EVM MessageSent or Noble DepositForBurn) */
-  cctpNonce?: number
+  /** CCTP nonce (from EVM MessageSent or Noble DepositForBurn) — hex string for V2 bytes32 */
+  cctpNonce?: string
   /** Source domain ID (for CCTP) */
   sourceDomain?: number
   /** Destination domain ID (for CCTP) */

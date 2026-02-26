@@ -38,7 +38,7 @@ function keccak256(data: Uint8Array): string {
 
 export interface MessageSentData {
   irisLookupID: string // Keccak256 hash of MessageSent bytes (hex string without 0x)
-  nonce: number // Message nonce (uint64)
+  nonce: string // Message nonce (bytes32 hex string, 0x-prefixed)
   sourceDomain: number // Source chain domain ID (uint32)
   destinationDomain: number // Destination chain domain ID (uint32)
   messageBytes: Uint8Array // Raw MessageSent event bytes
@@ -82,7 +82,9 @@ export interface IrisPollingResult {
   success: boolean
   attestation?: string // Hex-encoded attestation (when complete)
   irisLookupID?: string
-  nonce?: number
+  nonce?: string
+  /** Full attested message from Iris API (contains the real nonce filled in by attestation service) */
+  irisMessage?: string
   status?: 'pending_confirmations' | 'complete'
   error?: string
 }
@@ -497,6 +499,7 @@ export async function pollIrisAttestation(
       // Parse response based on API version
       let status: string | undefined
       let attestation: string | undefined
+      let irisMessage: string | undefined
 
       if (useV2) {
         // v2 response: { messages: [{ attestation, message, status }] }
@@ -504,6 +507,7 @@ export async function pollIrisAttestation(
         const msg = v2Data?.messages?.[0]
         status = msg?.status
         attestation = msg?.attestation
+        irisMessage = msg?.message // Full attested message (contains real nonce from attestation service)
       } else {
         // v1 response: { attestation, status }
         const v1Data = response.data as AttestationResponse
@@ -516,6 +520,7 @@ export async function pollIrisAttestation(
         attemptCount,
         status,
         hasAttestation: !!attestation,
+        hasIrisMessage: !!irisMessage,
       })
 
       if (status === 'complete' && attestation) {
@@ -527,6 +532,7 @@ export async function pollIrisAttestation(
         return {
           success: true,
           attestation,
+          irisMessage,
           irisLookupID: irisLookupID.startsWith('0x') ? irisLookupID : `0x${irisLookupID}`,
           status: 'complete',
         }

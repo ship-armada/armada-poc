@@ -31,7 +31,7 @@ echo ""
 echo -e "${GREEN}Starting Hub Chain...${NC}"
 echo "  Port: 8545"
 echo "  Chain ID: 31337"
-anvil --port 8545 --chain-id 31337 --block-time 1 &
+anvil --port 8545 --chain-id 31337 --block-time 1 --accounts 200 &
 HUB_PID=$!
 
 # Start Client Chain A

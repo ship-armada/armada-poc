@@ -218,6 +218,10 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     // ============ Finalization ============
 
+    // TODO: finalize() is onlyAdmin with no permissionless fallback. If admin is
+    // unavailable after commitmentEnd, participant funds are permanently locked.
+    // Add a permissionlessCancel() that anyone can call after a grace period
+    // (e.g. commitmentEnd + 30 days) to set phase = Canceled and unlock refunds.
     /// @notice Finalize the crowdfund: compute allocations or cancel
     function finalize() external onlyAdmin nonReentrant {
         require(block.timestamp > commitmentEnd, "ArmadaCrowdfund: commitment not ended");

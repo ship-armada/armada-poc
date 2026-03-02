@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 /**
  * POC Configuration
  *

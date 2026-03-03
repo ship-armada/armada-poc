@@ -3,7 +3,8 @@
   "version": "0.4.0",
   "private": true,
   "workspaces": [
-    "usdc-v2-frontend"
+    "usdc-v2-frontend",
+    "crowdfund-frontend"
   ],
   "scripts": {
     "compile": "hardhat compile",
@@ -44,6 +45,8 @@
     "clean:all": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
     "governance-ui": "npm run --prefix governance-ui dev",
     "demo": "cd usdc-v2-frontend && npm run dev",
+    "crowdfund-ui": "cd crowdfund-frontend && npm run dev",
+    "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
     "demo:build": "cd usdc-v2-frontend && npm run build",
 
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",

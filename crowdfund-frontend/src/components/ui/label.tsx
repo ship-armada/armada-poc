@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Label component wrapping Radix UI's LabelPrimitive.Root.
+// ABOUTME: Applies consistent typography and peer-disabled state styling.
 "use client"
 
 import * as React from "react"

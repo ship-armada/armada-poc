@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Tooltip components wrapping Radix UI's TooltipPrimitive.
+// ABOUTME: Exports TooltipProvider, Tooltip, TooltipTrigger, and TooltipContent with animated positioning.
 import * as React from "react"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
 

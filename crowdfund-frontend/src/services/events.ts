@@ -3,6 +3,18 @@
 import type { Contract } from 'ethers'
 import type { CrowdfundEvent } from '@/types/crowdfund'
 
+/** Extract named args from a parsed log, converting bigint values to strings */
+export function parseEventArgs(
+  parsed: { fragment: { inputs: ReadonlyArray<{ name: string }> }; args: Record<string, unknown> },
+): Record<string, unknown> {
+  const args: Record<string, unknown> = {}
+  for (const input of parsed.fragment.inputs) {
+    const value = parsed.args[input.name]
+    args[input.name] = typeof value === 'bigint' ? value.toString() : value
+  }
+  return args
+}
+
 const EVENT_NAMES = [
   'SeedAdded',
   'InvitationStarted',
@@ -36,17 +48,9 @@ export async function fetchPastEvents(
         })
         if (!parsed) continue
 
-        // ethers v6 Result extends Array — Object.entries() only yields
-        // numeric indices. Use fragment.inputs to extract named args.
-        const args: Record<string, unknown> = {}
-        for (const input of parsed.fragment.inputs) {
-          const value = parsed.args[input.name]
-          args[input.name] = typeof value === 'bigint' ? value.toString() : value
-        }
-
         events.push({
           name: parsed.name,
-          args,
+          args: parseEventArgs(parsed),
           blockNumber: log.blockNumber,
           transactionHash: log.transactionHash,
         })
@@ -81,16 +85,9 @@ export function subscribeToEvents(
       })
       if (!parsed) return
 
-      // ethers v6 Result extends Array — use fragment.inputs for named args
-      const eventArgs: Record<string, unknown> = {}
-      for (const input of parsed.fragment.inputs) {
-        const value = parsed.args[input.name]
-        eventArgs[input.name] = typeof value === 'bigint' ? value.toString() : value
-      }
-
       callback({
         name: parsed.name,
-        args: eventArgs,
+        args: parseEventArgs(parsed),
         blockNumber: log.blockNumber,
         transactionHash: log.transactionHash,
       })

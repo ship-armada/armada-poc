@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Clock, FastForward, SkipForward } from 'lucide-react'
-import { CROWDFUND_CONSTANTS, Phase } from '@/types/crowdfund'
+import { Phase } from '@/types/crowdfund'
 import type { CrowdfundState } from '@/atoms/crowdfund'
 import type { useCrowdfund } from '@/hooks/useCrowdfund'
 
@@ -35,11 +35,13 @@ export function TimeControls({ state, crowdfund }: TimeControlsProps) {
   const invEnd = Number(state.invitationEnd)
   const commitEnd = Number(state.commitmentEnd)
 
-  // Calculate time to skip to commitment window
-  const skipToCommitmentSecs = invEnd > 0 ? CROWDFUND_CONSTANTS.INVITATION_DURATION + 1 : 0
+  const blockTs = state.blockTimestamp
 
-  // Calculate time to skip past commitment
-  const skipPastCommitmentSecs = commitEnd > 0 ? CROWDFUND_CONSTANTS.COMMITMENT_DURATION + 1 : 0
+  // Seconds from now until the invitation window ends (commitment starts)
+  const skipToCommitmentSecs = invEnd > blockTs ? invEnd - blockTs + 1 : 0
+
+  // Seconds from now until the commitment window ends
+  const skipPastCommitmentSecs = commitEnd > blockTs ? commitEnd - blockTs + 1 : 0
 
   return (
     <Card>
@@ -71,7 +73,7 @@ export function TimeControls({ state, crowdfund }: TimeControlsProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleAdvance(skipToCommitmentSecs + skipPastCommitmentSecs)}
+              onClick={() => handleAdvance(skipPastCommitmentSecs)}
               disabled={isAdvancing}
               className="gap-1.5"
             >

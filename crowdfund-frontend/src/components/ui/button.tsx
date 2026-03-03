@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Button component with variant and size support via class-variance-authority.
+// ABOUTME: Renders a button element (or Slot for asChild) with accessible focus and disabled states.
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"

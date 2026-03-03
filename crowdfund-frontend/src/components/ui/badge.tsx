@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Badge component with variant support (default, secondary, destructive, outline).
+// ABOUTME: Renders a styled span (or Slot for asChild) with CVA-driven class composition.
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"

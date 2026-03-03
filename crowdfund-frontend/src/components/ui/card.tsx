@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Card layout components: Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, CardAction.
+// ABOUTME: Semantic sections for building consistent card-based UI panels.
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

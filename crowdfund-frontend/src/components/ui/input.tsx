@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Input component wrapping a native input element with Tailwind styling.
+// ABOUTME: Handles focus-visible, aria-invalid, and file input styling uniformly.
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

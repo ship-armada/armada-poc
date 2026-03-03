@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Textarea component wrapping a native textarea element with Tailwind styling.
+// ABOUTME: Supports field-sizing-content for auto-resize and consistent focus/invalid state styling.
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

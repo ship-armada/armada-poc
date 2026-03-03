@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Select components wrapping Radix UI's Select primitives.
+// ABOUTME: Exports Select, SelectTrigger, SelectContent, SelectItem, SelectGroup, SelectLabel, and SelectSeparator.
 import * as React from "react"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { Select as SelectPrimitive } from "radix-ui"

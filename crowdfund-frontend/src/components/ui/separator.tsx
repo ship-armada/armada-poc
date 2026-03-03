@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Separator component wrapping Radix UI's SeparatorPrimitive.
+// ABOUTME: Renders a horizontal or vertical divider line, decorative by default.
 import * as React from "react"
 import { Separator as SeparatorPrimitive } from "radix-ui"
 

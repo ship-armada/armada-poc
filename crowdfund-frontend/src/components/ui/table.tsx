@@ -1,3 +1,5 @@
+// ABOUTME: shadcn/ui Table components: Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption.
+// ABOUTME: Wraps native HTML table elements with consistent Tailwind styling and overflow handling.
 "use client"
 
 import * as React from "react"

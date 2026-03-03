@@ -9,6 +9,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  define: {
+    'import.meta.env.VITE_NETWORK': '"local"',
+  },
   test: {
     globals: true,
   },

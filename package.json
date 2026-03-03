@@ -44,7 +44,7 @@
     "clean": "find deployments -name '*.json' ! -name '*sepolia*' -delete 2>/dev/null; rm -rf artifacts cache typechain-types data/railgun-db",
     "clean:all": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
     "demo": "cd usdc-v2-frontend && npm run dev",
-    "demo:crowdfund-ui": "cd crowdfund-frontend && npm run dev",
+    "crowdfund-ui": "cd crowdfund-frontend && npm run dev",
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
     "demo:build": "cd usdc-v2-frontend && npm run build",
 

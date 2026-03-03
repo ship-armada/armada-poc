@@ -26,7 +26,15 @@ function serveDeployments() {
         '/api/deployments',
         (req: any, res: any, _next: any) => {
           const filename = req.url?.replace(/^\//, '') || ''
-          const filepath = path.resolve(__dirname, '../deployments', filename)
+          const deploymentsDir = path.resolve(__dirname, '../deployments')
+          const filepath = path.resolve(deploymentsDir, filename)
+
+          // Prevent path traversal — resolved path must stay within deployments/
+          if (!filepath.startsWith(deploymentsDir + path.sep) && filepath !== deploymentsDir) {
+            res.statusCode = 403
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
 
           if (fs.existsSync(filepath)) {
             const content = fs.readFileSync(filepath, 'utf-8')

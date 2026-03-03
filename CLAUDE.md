@@ -42,7 +42,7 @@ npm run test:governance     # Governance lifecycle + adversarial tests
 npm run test:crowdfund      # Crowdfund lifecycle + adversarial tests
 
 # Crowdfund testing tools
-npm run demo:crowdfund-ui   # Start crowdfund frontend (port 5174)
+npm run crowdfund-ui        # Start crowdfund frontend (port 5174)
 npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
 
 # Sepolia testnet

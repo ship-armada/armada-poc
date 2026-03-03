@@ -10,7 +10,7 @@ npm run chains
 npm run setup
 
 # 2. Start the crowdfund UI (port 5174)
-npm run demo:crowdfund-ui
+npm run crowdfund-ui
 ```
 
 Open http://localhost:5174. The UI auto-connects to the local Anvil chain and selects the admin account.
@@ -64,7 +64,7 @@ The script uses Hardhat's auto-generated signers (accounts 11-200) as ephemeral 
 Set `VITE_NETWORK=sepolia` in the environment before starting the dev server:
 
 ```bash
-VITE_NETWORK=sepolia npm run demo:crowdfund-ui
+VITE_NETWORK=sepolia npm run crowdfund-ui
 ```
 
 On Sepolia, the USDC faucet and time controls are disabled. Connect via MetaMask. Contracts must be deployed first (`npm run deploy:crowdfund:sepolia`).

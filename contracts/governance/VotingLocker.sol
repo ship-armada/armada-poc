@@ -64,6 +64,10 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker {
 
     /// @notice Unlock ARM tokens
     /// @param amount Amount of ARM to unlock
+    // TODO: Vote-and-dump vulnerability — there is no unlock cooldown, so a user can
+    //   lock tokens, vote on a proposal, then immediately unlock and sell, bearing no
+    //   economic exposure to the outcome. Consider adding a time-lock (e.g. tokens stay
+    //   locked until the voting period ends for any proposal they voted on).
     function unlock(uint256 amount) external nonReentrant {
         require(amount > 0, "VotingLocker: zero amount");
 

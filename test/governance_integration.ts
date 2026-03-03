@@ -485,9 +485,11 @@ describe("Governance Integration", function () {
         await treasury.getAddress(),
       ];
       const values = [0n, 0n];
+      // setSteward sets the TreasurySteward contract (not the person) as treasury steward,
+      // so that executeAction() → treasury.stewardSpend() works (msg.sender = contract).
       const calldatas = [
         stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-        treasury.interface.encodeFunctionData("setSteward", [dave.address]),
+        treasury.interface.encodeFunctionData("setSteward", [await stewardContract.getAddress()]),
       ];
 
       await passProposal(
@@ -499,7 +501,7 @@ describe("Governance Integration", function () {
 
       expect(await stewardContract.currentSteward()).to.equal(dave.address);
       expect(await stewardContract.isStewardActive()).to.be.true;
-      expect(await treasury.steward()).to.equal(dave.address);
+      expect(await treasury.steward()).to.equal(await stewardContract.getAddress());
     });
 
     it("should use 30% quorum for steward elections", async function () {
@@ -616,7 +618,9 @@ describe("Governance Integration", function () {
   // ============================================================
 
   describe("Treasury Steward", function () {
-    // Helper: elect Dave as steward before each steward test
+    // Helper: elect Dave as steward before each steward test.
+    // Sets the TreasurySteward contract as the treasury's steward so that
+    // executeAction() → treasury.stewardSpend() works (msg.sender = contract).
     async function electDaveSteward() {
       const targets = [
         await stewardContract.getAddress(),
@@ -625,7 +629,7 @@ describe("Governance Integration", function () {
       const values = [0n, 0n];
       const calldatas = [
         stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-        treasury.interface.encodeFunctionData("setSteward", [dave.address]),
+        treasury.interface.encodeFunctionData("setSteward", [await stewardContract.getAddress()]),
       ];
 
       await passProposal(
@@ -643,9 +647,15 @@ describe("Governance Integration", function () {
       const budget = treasuryUsdcBalance / 100n; // 1%
       const spendAmount = budget / 2n; // Spend half the budget
 
-      await treasury.connect(dave).stewardSpend(
+      // Steward spends via action queue (proposeAction → delay → executeAction)
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
         await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
       );
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+      await stewardContract.connect(dave).executeAction(await stewardContract.actionCount());
 
       expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
     });
@@ -656,11 +666,24 @@ describe("Governance Integration", function () {
       const treasuryUsdcBalance = await usdc.balanceOf(await treasury.getAddress());
       const overBudget = (treasuryUsdcBalance / 100n) + 1n; // Just over 1%
 
-      await expect(
-        treasury.connect(dave).stewardSpend(
-          await usdc.getAddress(), carol.address, overBudget
-        )
-      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
+      // Steward proposes over-budget spend via action queue
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, overBudget
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Execution reverts because treasury rejects the over-budget spend.
+      // The nested revert (steward wrapping treasury error) can't be decoded by
+      // Hardhat chai matchers, so we verify the revert manually.
+      try {
+        await stewardContract.connect(dave).executeAction(await stewardContract.actionCount());
+        expect.fail("Expected executeAction to revert");
+      } catch (err: any) {
+        expect(err.message).to.include("execution failed");
+      }
     });
 
     it("should reject steward spending after term expires", async function () {
@@ -719,23 +742,7 @@ describe("Governance Integration", function () {
     });
 
     it("should execute steward action after delay if not vetoed", async function () {
-      // Elect Dave via stewardContract, but set treasury steward to stewardContract
-      // so that when stewardContract calls treasury.stewardSpend(), msg.sender matches
-      const targets = [
-        await stewardContract.getAddress(),
-        await treasury.getAddress(),
-      ];
-      const values = [0n, 0n];
-      const calldatas = [
-        stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-        treasury.interface.encodeFunctionData("setSteward", [await stewardContract.getAddress()]),
-      ];
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.StewardElection, targets, values, calldatas,
-        "Elect Dave (stewardContract as treasury steward)"
-      );
+      await electDaveSteward();
 
       const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
       const spendData = treasury.interface.encodeFunctionData("stewardSpend", [

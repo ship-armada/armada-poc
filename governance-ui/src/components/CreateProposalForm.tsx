@@ -75,13 +75,16 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         'function setSteward(address _steward)',
       ])
 
-      // Two-target batch: elect on steward contract + set on treasury
+      // Two-target batch: elect person on steward contract + set steward CONTRACT
+      // as treasury's steward. The treasury must recognize the TreasurySteward contract
+      // (not the person) because executeAction() calls treasury.stewardSpend() from the
+      // contract's address.
       return {
         targets: [deployment.contracts.steward, deployment.contracts.treasury],
         values: [0n, 0n],
         calldatas: [
           stewardIface.encodeFunctionData('electSteward', [stewardAddress]),
-          treasuryIface.encodeFunctionData('setSteward', [stewardAddress]),
+          treasuryIface.encodeFunctionData('setSteward', [deployment.contracts.steward]),
         ],
       }
     }
@@ -253,7 +256,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
             className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
           />
           <p className="mt-1 text-xs text-neutral-500">
-            Encodes two actions: electSteward() on Steward contract + setSteward() on Treasury
+            Encodes two actions: electSteward(person) on Steward contract + setSteward(stewardContract) on Treasury
           </p>
         </div>
       )}

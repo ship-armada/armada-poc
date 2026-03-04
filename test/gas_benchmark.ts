@@ -61,7 +61,8 @@ describe("Gas Benchmarks", function () {
         const crowdfund = await ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address
+          deployer.address,
+          deployer.address // treasury
         );
 
         // Fund ARM for MAX_SALE
@@ -184,7 +185,8 @@ describe("Gas Benchmarks", function () {
         const crowdfund = await ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address
+          deployer.address,
+          deployer.address // treasury
         );
 
         const seeds = allSigners.slice(1, batchSize + 1);
@@ -219,7 +221,8 @@ describe("Gas Benchmarks", function () {
       const crowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address
+        deployer.address,
+        deployer.address // treasury
       );
 
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
@@ -478,7 +481,8 @@ describe("Gas Benchmarks", function () {
       const crowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address
+        deployer.address,
+        deployer.address // treasury
       );
 
       const seeds = allSigners.slice(1, 4);

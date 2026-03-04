@@ -138,10 +138,10 @@ async function main() {
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
   // 9. Distribute ARM tokens
-  const treasuryAllocation = ethers.parseUnits("65000000", 18); // 65M
+  const treasuryAllocation = ethers.parseUnits(config.armDistribution.treasury, 18);
   console.log("9. Distributing ARM tokens...");
   await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
-  console.log(`   Sent 65M ARM to treasury`);
+  console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
 
   // Save deployment
   const deployment: GovernanceDeployment = {
@@ -159,7 +159,7 @@ async function main() {
       timelockMinDelay: timelockDelay,
       stewardActionDelay: stewardDelay,
       totalSupply: "100000000",
-      treasuryAllocation: "65000000",
+      treasuryAllocation: config.armDistribution.treasury,
     },
     timestamp: new Date().toISOString(),
   };

@@ -28,6 +28,7 @@ describe("Crowdfund Adversarial", function () {
   let usdc: any;
 
   let deployer: SignerWithAddress;
+  let treasuryAddr: SignerWithAddress;
   let allSigners: SignerWithAddress[];
 
   async function fundAndApprove(signer: SignerWithAddress, amount: bigint) {
@@ -38,6 +39,7 @@ describe("Crowdfund Adversarial", function () {
   beforeEach(async function () {
     allSigners = await ethers.getSigners();
     deployer = allSigners[0];
+    treasuryAddr = allSigners[199];
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -51,12 +53,14 @@ describe("Crowdfund Adversarial", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address
+      deployer.address,
+      treasuryAddr.address
     );
     await crowdfund.waitForDeployment();
 
     // Fund ARM for MAX_SALE
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
+    await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
   });
 
   // ============================================================
@@ -205,9 +209,8 @@ describe("Crowdfund Adversarial", function () {
       }
 
       // Admin withdraws proceeds and unallocated ARM
-      const treasury = allSigners[199];
-      await crowdfund.withdrawProceeds(treasury.address);
-      await crowdfund.withdrawUnallocatedArm(treasury.address);
+      await crowdfund.withdrawProceeds();
+      await crowdfund.withdrawUnallocatedArm();
 
       // Contract should have ~0 of both tokens (rounding dust at most)
       const armBalance = await armToken.balanceOf(await crowdfund.getAddress());
@@ -524,26 +527,8 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
 
       await expect(
-        crowdfund.connect(allSigners[1]).withdrawProceeds(allSigners[1].address)
+        crowdfund.connect(allSigners[1]).withdrawProceeds()
       ).to.be.revertedWith("ArmadaCrowdfund: not admin");
-    });
-
-    it("withdrawProceeds to zero address reverts", async function () {
-      const seeds = allSigners.slice(1, 71);
-      await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
-
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
-      }
-      await time.increase(ONE_WEEK + 1);
-      await crowdfund.finalize();
-
-      await expect(
-        crowdfund.withdrawProceeds(ethers.ZeroAddress)
-      ).to.be.revertedWith("ArmadaCrowdfund: zero address");
     });
 
     it("double withdrawProceeds reverts after all proceeds withdrawn", async function () {
@@ -564,11 +549,10 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).claim();
       }
 
-      const treasury = allSigners[199];
-      await crowdfund.withdrawProceeds(treasury.address);
+      await crowdfund.withdrawProceeds();
 
       await expect(
-        crowdfund.withdrawProceeds(treasury.address)
+        crowdfund.withdrawProceeds()
       ).to.be.revertedWith("ArmadaCrowdfund: no proceeds");
     });
 
@@ -585,11 +569,10 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
 
-      const treasury = allSigners[199];
-      await crowdfund.withdrawUnallocatedArm(treasury.address);
+      await crowdfund.withdrawUnallocatedArm();
 
       await expect(
-        crowdfund.withdrawUnallocatedArm(treasury.address)
+        crowdfund.withdrawUnallocatedArm()
       ).to.be.revertedWith("ArmadaCrowdfund: already withdrawn");
     });
 
@@ -599,9 +582,22 @@ describe("Crowdfund Adversarial", function () {
         ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          ethers.ZeroAddress
+          ethers.ZeroAddress,
+          treasuryAddr.address
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero admin");
+    });
+
+    it("constructor rejects zero treasury address", async function () {
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      await expect(
+        ArmadaCrowdfund.deploy(
+          await usdc.getAddress(),
+          await armToken.getAddress(),
+          deployer.address,
+          ethers.ZeroAddress
+        )
+      ).to.be.revertedWith("ArmadaCrowdfund: zero treasury");
     });
 
     it("non-participant cannot claim", async function () {

@@ -49,9 +49,15 @@ contract ArmadaGovernor is ReentrancyGuard {
     IERC20 public immutable armToken;
     TimelockController public immutable timelock;
     address public immutable treasuryAddress;
+    address public immutable deployer;
 
     uint256 public proposalCount;
     mapping(uint256 => Proposal) private _proposals;
+
+    /// @notice Addresses excluded from quorum denominator (e.g. crowdfund contract).
+    /// ARM held by these addresses is non-voteable and should not inflate quorum requirements.
+    address[] private _excludedFromQuorum;
+    bool public excludedAddressesLocked;
 
     // Voter tracking per proposal
     mapping(uint256 => mapping(address => bool)) public hasVoted;
@@ -94,6 +100,7 @@ contract ArmadaGovernor is ReentrancyGuard {
         armToken = IERC20(_armToken);
         timelock = TimelockController(_timelock);
         treasuryAddress = _treasuryAddress;
+        deployer = msg.sender;
 
         // Standard proposals: 2d delay, 5d voting, 2d execution, 20% quorum
         proposalTypeParams[ProposalType.ParameterChange] = ProposalParams({
@@ -117,6 +124,27 @@ contract ArmadaGovernor is ReentrancyGuard {
             executionDelay: 4 days,
             quorumBps: 3000
         });
+    }
+
+    // ============ Quorum Exclusion ============
+
+    /// @notice One-time setter: register addresses whose ARM balances are excluded from quorum.
+    /// Deployer-only; locks permanently after the first call.
+    /// Intended for contracts holding non-voteable ARM (e.g. crowdfund).
+    function setExcludedAddresses(address[] calldata addrs) external {
+        require(msg.sender == deployer, "ArmadaGovernor: not deployer");
+        require(!excludedAddressesLocked, "ArmadaGovernor: already locked");
+
+        excludedAddressesLocked = true;
+        for (uint256 i = 0; i < addrs.length; i++) {
+            require(addrs[i] != address(0), "ArmadaGovernor: zero address");
+            _excludedFromQuorum.push(addrs[i]);
+        }
+    }
+
+    /// @notice View excluded addresses for transparency
+    function getExcludedFromQuorum() external view returns (address[] memory) {
+        return _excludedFromQuorum;
     }
 
     // ============ Proposal Lifecycle ============
@@ -279,12 +307,17 @@ contract ArmadaGovernor is ReentrancyGuard {
         return ProposalState.Succeeded;
     }
 
-    /// @notice Calculate quorum for a proposal: X% of ARM supply outside treasury
+    /// @notice Calculate quorum for a proposal: X% of ARM supply outside non-voteable addresses.
+    /// Non-voteable addresses include the treasury and any addresses registered via setExcludedAddresses
+    /// (e.g. crowdfund contract holding unclaimed ARM).
     function quorum(uint256 proposalId) public view returns (uint256) {
         Proposal storage p = _proposals[proposalId];
         uint256 totalSupply = armToken.totalSupply();
-        uint256 treasuryBalance = armToken.balanceOf(treasuryAddress);
-        uint256 eligibleSupply = totalSupply - treasuryBalance;
+        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
+        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+        }
+        uint256 eligibleSupply = totalSupply - excludedBalance;
         uint256 quorumBps = proposalTypeParams[p.proposalType].quorumBps;
         return (eligibleSupply * quorumBps) / 10000;
     }

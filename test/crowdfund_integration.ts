@@ -87,12 +87,14 @@ describe("Crowdfund Integration", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address
+      deployer.address,
+      treasury.address
     );
     await crowdfund.waitForDeployment();
 
     // Fund ARM to crowdfund (enough for MAX_SALE)
-    const maxArm = ARM(1_800_000);
+    const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
+    const maxArm = CROWDFUND_ARM_FUNDING;
     await armToken.transfer(await crowdfund.getAddress(), maxArm);
 
     // Fund all potential participants with USDC
@@ -563,7 +565,8 @@ describe("Crowdfund Integration", function () {
       const unfundedCrowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address
+        deployer.address,
+        treasury.address
       );
       await unfundedCrowdfund.waitForDeployment();
 
@@ -689,7 +692,7 @@ describe("Crowdfund Integration", function () {
       const totalProceeds = await crowdfund.totalProceedsAccrued();
       expect(totalProceeds).to.be.gt(0);
       const treasuryBefore = await usdc.balanceOf(treasury.address);
-      await crowdfund.withdrawProceeds(treasury.address);
+      await crowdfund.withdrawProceeds();
       const treasuryAfter = await usdc.balanceOf(treasury.address);
 
       expect(treasuryAfter - treasuryBefore).to.equal(totalProceeds);
@@ -717,7 +720,7 @@ describe("Crowdfund Integration", function () {
       const expectedUnalloc = armInContract - totalAlloc;
 
       const treasuryBefore = await armToken.balanceOf(treasury.address);
-      await crowdfund.withdrawUnallocatedArm(treasury.address);
+      await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
       expect(treasuryAfter - treasuryBefore).to.equal(expectedUnalloc);

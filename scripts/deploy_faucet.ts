@@ -12,6 +12,9 @@ import * as path from "path";
 
 const DEPLOYMENTS_DIR = path.join(__dirname, "../deployments");
 
+// Anvil default account 0 — publicly known, acceptable for local dev only
+const ANVIL_DEFAULT_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
 // ABI for adding faucet as minter on MockUSDCV2
 const USDC_V3_ABI = ['function addMinter(address minter) external'];
 
@@ -43,12 +46,11 @@ async function deployFaucet(
 ) {
   console.log(`\nDeploying Faucet to ${chainName}...`);
 
-  // Connect to the chain
+  // Connect to the chain. Use DEPLOYER_PRIVATE_KEY if set, otherwise fall back
+  // to the Anvil default key (local dev only — same pattern as hardhat.config.ts).
   const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const deployer = new ethers.Wallet(
-    process.env.DEPLOYER_PRIVATE_KEY!,
-    provider
-  );
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY || ANVIL_DEFAULT_KEY;
+  const deployer = new ethers.Wallet(privateKey, provider);
 
   console.log(`Deployer: ${deployer.address}`);
 

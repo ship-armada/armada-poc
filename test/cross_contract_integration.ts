@@ -66,16 +66,18 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await usdc.waitForDeployment();
 
     // Deploy crowdfund
+    const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address
+      deployer.address,
+      treasuryAddr.address
     );
     await crowdfund.waitForDeployment();
 
     // Fund ARM to crowdfund (1.8M for MAX_SALE)
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
 
     // Deploy governance
     const VotingLocker = await ethers.getContractFactory("VotingLocker");
@@ -113,7 +115,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     // Deployer starts with 100M - 1.8M (crowdfund) = 98.2M ARM
     // Send 97M to treasury so eligible supply = 100M - 97M = 3M
     // Quorum (20%) = 600K ARM — reachable with deployer lock + seed claims
-    await armToken.transfer(treasuryAddr.address, ARM(97_000_000));
+    const TREASURY_ARM_ALLOCATION = ARM(97_000_000);
+    await armToken.transfer(treasuryAddr.address, TREASURY_ARM_ALLOCATION);
   });
 
   // ============ End-to-End Lifecycle ============
@@ -436,8 +439,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal to withdraw crowdfund proceeds via timelock
       const withdrawCalldata = crowdfund.interface.encodeFunctionData(
-        "withdrawProceeds",
-        [treasuryAddr.address]
+        "withdrawProceeds"
       );
 
       await governor.propose(
@@ -583,6 +585,368 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await expect(
         governor.connect(seeds[0]).castVote(1, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
+    });
+  });
+
+  // ============ Unified Treasury Integration ============
+
+  describe("Unified Treasury Integration", function () {
+    // Mirrors the real deployment sequence:
+    // 1. Deploy canonical ARM token (governance deploys it)
+    // 2. Deploy full governance stack
+    // 3. Send treasury allocation ARM to treasury
+    // 4. Deploy crowdfund with same ARM token + treasury address
+    // 5. Send crowdfund allocation from deployer remainder
+    // 6. Register crowdfund in governor quorum exclusion
+    // 7. Verify balances, run crowdfund, verify quorum shifts, governance works
+
+    // Named constants for this test suite's ARM distribution
+    const TREASURY_ALLOCATION = ARM(65_000_000);  // 65M to treasury
+    const CROWDFUND_ALLOCATION = ARM(1_800_000);  // 1.8M to crowdfund
+    const TOTAL_SUPPLY = ARM(100_000_000);         // 100M total
+
+    let localArmToken: any;
+    let localUsdc: any;
+    let localCrowdfund: any;
+    let localVotingLocker: any;
+    let localTimelockController: any;
+    let localGovernor: any;
+    let localTreasury: any;
+    let localDeployer: SignerWithAddress;
+    let localSeeds: SignerWithAddress[];
+
+    beforeEach(async function () {
+      const signers = await ethers.getSigners();
+      localDeployer = signers[0];
+      localSeeds = signers.slice(2, 82); // 80 seeds
+
+      // Step 1: Deploy canonical ARM token
+      const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+      localArmToken = await ArmadaToken.deploy(localDeployer.address);
+      await localArmToken.waitForDeployment();
+
+      // Step 2: Deploy governance stack
+      const VotingLocker = await ethers.getContractFactory("VotingLocker");
+      localVotingLocker = await VotingLocker.deploy(await localArmToken.getAddress());
+      await localVotingLocker.waitForDeployment();
+
+      const TimelockController = await ethers.getContractFactory("TimelockController");
+      localTimelockController = await TimelockController.deploy(
+        ONE_DAY,
+        [localDeployer.address],
+        [localDeployer.address],
+        localDeployer.address
+      );
+      await localTimelockController.waitForDeployment();
+
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      localTreasury = await ArmadaTreasuryGov.deploy(
+        await localTimelockController.getAddress()
+      );
+      await localTreasury.waitForDeployment();
+
+      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+      localGovernor = await ArmadaGovernor.deploy(
+        await localVotingLocker.getAddress(),
+        await localArmToken.getAddress(),
+        await localTimelockController.getAddress(),
+        await localTreasury.getAddress()
+      );
+      await localGovernor.waitForDeployment();
+
+      // Grant governor roles on timelock
+      const PROPOSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PROPOSER_ROLE"));
+      const EXECUTOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("EXECUTOR_ROLE"));
+      await localTimelockController.grantRole(PROPOSER_ROLE, await localGovernor.getAddress());
+      await localTimelockController.grantRole(EXECUTOR_ROLE, await localGovernor.getAddress());
+
+      // Step 3: Send treasury allocation
+      await localArmToken.transfer(await localTreasury.getAddress(), TREASURY_ALLOCATION);
+
+      // Step 4: Deploy crowdfund with shared ARM + treasury
+      const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
+      localUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
+      await localUsdc.waitForDeployment();
+
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      localCrowdfund = await ArmadaCrowdfund.deploy(
+        await localUsdc.getAddress(),
+        await localArmToken.getAddress(),
+        localDeployer.address,
+        await localTreasury.getAddress()
+      );
+      await localCrowdfund.waitForDeployment();
+
+      // Step 5: Fund crowdfund from deployer remainder
+      await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);
+
+      // Step 6: Register crowdfund in quorum exclusion
+      await localGovernor.setExcludedAddresses([await localCrowdfund.getAddress()]);
+    });
+
+    it("all ARM balances sum to 100M total supply", async function () {
+      const totalSupply = await localArmToken.totalSupply();
+      expect(totalSupply).to.equal(TOTAL_SUPPLY);
+
+      const treasuryBal = await localArmToken.balanceOf(await localTreasury.getAddress());
+      const crowdfundBal = await localArmToken.balanceOf(await localCrowdfund.getAddress());
+      const deployerBal = await localArmToken.balanceOf(localDeployer.address);
+
+      // Treasury + crowdfund + deployer remainder = 100M
+      expect(treasuryBal + crowdfundBal + deployerBal).to.equal(TOTAL_SUPPLY);
+      expect(treasuryBal).to.equal(TREASURY_ALLOCATION);
+      expect(crowdfundBal).to.equal(CROWDFUND_ALLOCATION);
+
+      // Deployer remainder = 100M - 65M - 1.8M = 33.2M
+      const expectedRemainder = TOTAL_SUPPLY - TREASURY_ALLOCATION - CROWDFUND_ALLOCATION;
+      expect(deployerBal).to.equal(expectedRemainder);
+    });
+
+    it("quorum excludes both treasury and crowdfund balances", async function () {
+      // Lock deployer tokens for proposal threshold
+      const deployerLock = ARM(200_000);
+      await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
+      await localVotingLocker.lock(deployerLock);
+      await mine(1);
+
+      // Create a proposal to get quorum value
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      await localGovernor.propose(
+        ProposalType.ParameterChange,
+        [await localTreasury.getAddress()],
+        [0],
+        [dummyCalldata],
+        "Quorum exclusion test"
+      );
+
+      const quorum = await localGovernor.quorum(1);
+      const totalSupply = await localArmToken.totalSupply();
+      const treasuryBal = await localArmToken.balanceOf(await localTreasury.getAddress());
+      const crowdfundBal = await localArmToken.balanceOf(await localCrowdfund.getAddress());
+
+      // eligibleSupply = 100M - 65M(treasury) - 1.8M(crowdfund) = 33.2M
+      const eligibleSupply = totalSupply - treasuryBal - crowdfundBal;
+      const expectedQuorum = (eligibleSupply * 2000n) / 10000n; // 20% of eligible
+
+      expect(quorum).to.equal(expectedQuorum);
+      // 33.2M * 20% = 6.64M
+      expect(quorum).to.equal(ARM(6_640_000));
+    });
+
+    it("quorum denominator shifts as participants claim ARM from crowdfund", async function () {
+      // Run crowdfund lifecycle
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
+      await localCrowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      for (const seed of localSeeds) {
+        const amount = USDC(15_000);
+        await localUsdc.mint(seed.address, amount);
+        await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
+        await localCrowdfund.connect(seed).commit(amount);
+      }
+
+      await time.increase(ONE_WEEK + 1);
+      await localCrowdfund.finalize();
+
+      // Before any claims: crowdfund still holds all ARM
+      const crowdfundArmBefore = await localArmToken.balanceOf(await localCrowdfund.getAddress());
+
+      // Lock deployer tokens for proposal
+      const deployerLock = ARM(200_000);
+      await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
+      await localVotingLocker.lock(deployerLock);
+      await mine(1);
+
+      // Create proposal before claims
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      await localGovernor.propose(
+        ProposalType.ParameterChange,
+        [await localTreasury.getAddress()],
+        [0],
+        [dummyCalldata],
+        "Pre-claim quorum test"
+      );
+      const quorumBefore = await localGovernor.quorum(1);
+
+      // Now all seeds claim their ARM — ARM leaves the crowdfund contract
+      for (const seed of localSeeds) {
+        await localCrowdfund.connect(seed).claim();
+      }
+
+      const crowdfundArmAfter = await localArmToken.balanceOf(await localCrowdfund.getAddress());
+      expect(crowdfundArmAfter).to.be.lt(crowdfundArmBefore);
+
+      // Create another proposal after claims
+      await mine(1);
+      await localGovernor.propose(
+        ProposalType.ParameterChange,
+        [await localTreasury.getAddress()],
+        [0],
+        [dummyCalldata],
+        "Post-claim quorum test"
+      );
+      const quorumAfter = await localGovernor.quorum(2);
+
+      // After claims, crowdfund holds less ARM → excluded balance is smaller →
+      // eligible supply is larger → quorum is larger
+      expect(quorumAfter).to.be.gt(quorumBefore);
+    });
+
+    it("withdrawProceeds sends USDC to treasury contract", async function () {
+      // Run crowdfund
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
+      await localCrowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      for (const seed of localSeeds) {
+        const amount = USDC(15_000);
+        await localUsdc.mint(seed.address, amount);
+        await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
+        await localCrowdfund.connect(seed).commit(amount);
+      }
+
+      await time.increase(ONE_WEEK + 1);
+      await localCrowdfund.finalize();
+
+      // All seeds claim
+      for (const seed of localSeeds) {
+        await localCrowdfund.connect(seed).claim();
+      }
+
+      const treasuryAddress = await localTreasury.getAddress();
+      const usdcBefore = await localUsdc.balanceOf(treasuryAddress);
+
+      await localCrowdfund.withdrawProceeds();
+
+      const usdcAfter = await localUsdc.balanceOf(treasuryAddress);
+      expect(usdcAfter).to.be.gt(usdcBefore);
+
+      // Proceeds should equal totalProceedsAccrued
+      const proceeds = await localCrowdfund.totalProceedsAccrued();
+      expect(usdcAfter - usdcBefore).to.equal(proceeds);
+    });
+
+    it("withdrawUnallocatedArm sends ARM to treasury contract", async function () {
+      // Run crowdfund
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
+      await localCrowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      for (const seed of localSeeds) {
+        const amount = USDC(15_000);
+        await localUsdc.mint(seed.address, amount);
+        await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
+        await localCrowdfund.connect(seed).commit(amount);
+      }
+
+      await time.increase(ONE_WEEK + 1);
+      await localCrowdfund.finalize();
+
+      const treasuryAddress = await localTreasury.getAddress();
+      const armBefore = await localArmToken.balanceOf(treasuryAddress);
+
+      await localCrowdfund.withdrawUnallocatedArm();
+
+      const armAfter = await localArmToken.balanceOf(treasuryAddress);
+      // Unallocated ARM (excess beyond what's owed to claimants) goes to treasury
+      expect(armAfter).to.be.gt(armBefore);
+    });
+
+    it("full lifecycle: crowdfund → claim → lock → propose → vote → execute", async function () {
+      // Run crowdfund
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
+      await localCrowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      for (const seed of localSeeds) {
+        const amount = USDC(15_000);
+        await localUsdc.mint(seed.address, amount);
+        await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
+        await localCrowdfund.connect(seed).commit(amount);
+      }
+
+      await time.increase(ONE_WEEK + 1);
+      await localCrowdfund.finalize();
+
+      // 5 seeds claim
+      const claimedSeeds = localSeeds.slice(0, 5);
+      for (const seed of claimedSeeds) {
+        await localCrowdfund.connect(seed).claim();
+      }
+
+      // Deployer locks enough to propose
+      const deployerLock = ARM(6_700_000); // > 6.64M quorum
+      await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
+      await localVotingLocker.lock(deployerLock);
+
+      // Seeds lock their claimed ARM
+      for (const seed of claimedSeeds) {
+        const balance = await localArmToken.balanceOf(seed.address);
+        await localArmToken.connect(seed).approve(await localVotingLocker.getAddress(), balance);
+        await localVotingLocker.connect(seed).lock(balance);
+      }
+
+      await mine(1);
+
+      // Propose: transfer treasury ownership back to deployer (demo action)
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      await localGovernor.propose(
+        ProposalType.ParameterChange,
+        [await localTreasury.getAddress()],
+        [0],
+        [dummyCalldata],
+        "Full lifecycle integration test"
+      );
+      const proposalId = 1;
+
+      // Vote
+      await time.increase(TWO_DAYS + 1);
+      for (const seed of claimedSeeds) {
+        await localGovernor.connect(seed).castVote(proposalId, Vote.For);
+      }
+      await localGovernor.castVote(proposalId, Vote.For);
+
+      // Wait for voting period
+      await time.increase(FIVE_DAYS + 1);
+      expect(await localGovernor.state(proposalId)).to.equal(ProposalState.Succeeded);
+
+      // Queue and execute
+      await localGovernor.queue(proposalId);
+      await time.increase(TWO_DAYS + 1);
+      await localGovernor.execute(proposalId);
+      expect(await localGovernor.state(proposalId)).to.equal(ProposalState.Executed);
+    });
+
+    it("setExcludedAddresses is one-time only", async function () {
+      // The beforeEach already called setExcludedAddresses once
+      await expect(
+        localGovernor.setExcludedAddresses([localDeployer.address])
+      ).to.be.revertedWith("ArmadaGovernor: already locked");
+    });
+
+    it("getExcludedFromQuorum returns registered addresses", async function () {
+      const excluded = await localGovernor.getExcludedFromQuorum();
+      expect(excluded.length).to.equal(1);
+      expect(excluded[0]).to.equal(await localCrowdfund.getAddress());
+    });
+
+    it("non-deployer cannot call setExcludedAddresses", async function () {
+      // Deploy a fresh governor to test (the existing one already has it locked)
+      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+      const freshGovernor = await ArmadaGovernor.deploy(
+        await localVotingLocker.getAddress(),
+        await localArmToken.getAddress(),
+        await localTimelockController.getAddress(),
+        await localTreasury.getAddress()
+      );
+      await freshGovernor.waitForDeployment();
+
+      // Non-deployer tries to call
+      const nonDeployer = localSeeds[0];
+      await expect(
+        freshGovernor.connect(nonDeployer).setExcludedAddresses([localDeployer.address])
+      ).to.be.revertedWith("ArmadaGovernor: not deployer");
     });
   });
 });

@@ -33,4 +33,6 @@ jobs:
           cache: "npm"
       - run: npm ci
       - uses: foundry-rs/foundry-toolchain@v1
+      - name: Install solc 0.8.17
+        run: svm install 0.8.17
       - run: npm run test:forge

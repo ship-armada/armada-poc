@@ -1041,7 +1041,96 @@ describe("Crowdfund Integration", function () {
   });
 
   // ============================================================
-  // 10. Governance Integration
+  // 10. Emergency Pause
+  // ============================================================
+
+  describe("Emergency Pause", function () {
+    it("pause() blocks invite() and commit()", async function () {
+      await setupWithSeeds([seed1]);
+      await crowdfund.pause();
+
+      await expect(
+        crowdfund.connect(seed1).invite(hop1a.address)
+      ).to.be.revertedWith("Pausable: paused");
+
+      await time.increase(TWO_WEEKS + 1);
+      await expect(
+        crowdfund.connect(seed1).commit(USDC(1_000))
+      ).to.be.revertedWith("Pausable: paused");
+    });
+
+    it("unpause() re-enables invite() and commit()", async function () {
+      await setupWithSeeds([seed1]);
+      await crowdfund.pause();
+      await crowdfund.unpause();
+
+      await crowdfund.connect(seed1).invite(hop1a.address);
+      expect(await crowdfund.isWhitelisted(hop1a.address)).to.be.true;
+
+      await time.increase(TWO_WEEKS + 1);
+      await crowdfund.connect(seed1).commit(USDC(1_000));
+      const [committed] = await crowdfund.getCommitment(seed1.address);
+      expect(committed).to.equal(USDC(1_000));
+    });
+
+    it("claim() works while paused", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      await crowdfund.pause();
+      await crowdfund.connect(seeds[0]).claim();
+      const armBalance = await armToken.balanceOf(seeds[0].address);
+      expect(armBalance).to.be.gt(0);
+    });
+
+    it("refund() works while paused", async function () {
+      await setupWithSeeds([seed1]);
+      await time.increase(TWO_WEEKS + 1);
+      await fundAndApprove(seed1, USDC(1_000));
+      await crowdfund.connect(seed1).commit(USDC(1_000));
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels (below MIN_SALE)
+
+      await crowdfund.pause();
+      const before = await usdc.balanceOf(seed1.address);
+      await crowdfund.connect(seed1).refund();
+      expect(await usdc.balanceOf(seed1.address) - before).to.equal(USDC(1_000));
+    });
+
+    it("finalize() works while paused", async function () {
+      await setupWithSeeds([seed1]);
+      await time.increase(TWO_WEEKS + ONE_WEEK + 1);
+
+      await crowdfund.pause();
+      await crowdfund.finalize();
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+    });
+
+    it("only admin can pause and unpause", async function () {
+      await expect(
+        crowdfund.connect(outsider).pause()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+
+      await crowdfund.pause();
+
+      await expect(
+        crowdfund.connect(outsider).unpause()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+  });
+
+  // ============================================================
+  // 11. Governance Integration
   // ============================================================
 
   describe("Governance Integration", function () {

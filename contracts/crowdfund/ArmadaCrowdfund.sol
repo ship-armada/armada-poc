@@ -4,13 +4,14 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 import "./IArmadaCrowdfund.sol";
 
 /// @title ArmadaCrowdfund — Word-of-mouth whitelist crowdfund with hop-based allocation
 /// @notice Implements the full crowdfund lifecycle: seed management, invitation chains,
 ///         USDC commitment escrow, deterministic allocation with pro-rata scaling and rollover,
 ///         elastic expansion, and refund mechanism.
-contract ArmadaCrowdfund is ReentrancyGuard {
+contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ============ Constants ============
@@ -157,7 +158,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     // ============ Invitation Phase ============
 
     /// @notice Invite an address to participate at (your hop + 1)
-    function invite(address invitee) external {
+    function invite(address invitee) external whenNotPaused {
         require(
             block.timestamp >= invitationStart && block.timestamp <= invitationEnd,
             "ArmadaCrowdfund: not invitation window"
@@ -191,7 +192,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     // ============ Commitment Phase ============
 
     /// @notice Commit USDC to the crowdfund
-    function commit(uint256 amount) external nonReentrant {
+    function commit(uint256 amount) external nonReentrant whenNotPaused {
         require(
             block.timestamp >= commitmentStart && block.timestamp <= commitmentEnd,
             "ArmadaCrowdfund: not commitment window"
@@ -409,6 +410,18 @@ contract ArmadaCrowdfund is ReentrancyGuard {
         }
 
         emit UnallocatedArmWithdrawn(treasury, unallocated);
+    }
+
+    // ============ Emergency Pause ============
+
+    /// @notice Admin pauses invite() and commit() in case of emergency
+    function pause() external onlyAdmin {
+        _pause();
+    }
+
+    /// @notice Admin unpauses to resume normal operations
+    function unpause() external onlyAdmin {
+        _unpause();
     }
 
     // ============ View Functions ============

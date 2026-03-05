@@ -64,7 +64,39 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
-  // 0. Permissionless Cancel — Boundary & Edge Cases
+  // 0a. Emergency Pause — Adversarial
+  // ============================================================
+
+  describe("Emergency Pause Adversarial", function () {
+    it("non-admin cannot pause", async function () {
+      await expect(
+        crowdfund.connect(allSigners[1]).pause()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+
+    it("non-admin cannot unpause", async function () {
+      await crowdfund.pause();
+      await expect(
+        crowdfund.connect(allSigners[1]).unpause()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+
+    it("double pause reverts", async function () {
+      await crowdfund.pause();
+      await expect(
+        crowdfund.pause()
+      ).to.be.revertedWith("Pausable: paused");
+    });
+
+    it("double unpause reverts", async function () {
+      await expect(
+        crowdfund.unpause()
+      ).to.be.revertedWith("Pausable: not paused");
+    });
+  });
+
+  // ============================================================
+  // 0b. Permissionless Cancel — Boundary & Edge Cases
   // ============================================================
 
   describe("Permissionless Cancel Boundaries", function () {

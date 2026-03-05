@@ -375,7 +375,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     /// @notice Admin withdraws USDC sale proceeds to treasury
     /// @dev Proceeds accrue as participants claim. Can be called multiple times.
-    function withdrawProceeds() external onlyAdmin {
+    function withdrawProceeds() external onlyAdmin nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
 
         uint256 available = totalProceedsAccrued - proceedsWithdrawnAmount;
@@ -390,7 +390,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     /// @notice Admin withdraws unallocated ARM tokens to treasury
     /// @dev Uses hop-level totalAllocated (upper bound) minus claimed ARM to compute unallocated.
     ///      Safe: unallocated = initialFunding - totalAllocated_upper >= 0.
-    function withdrawUnallocatedArm() external onlyAdmin {
+    function withdrawUnallocatedArm() external onlyAdmin nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!unallocatedArmWithdrawn, "ArmadaCrowdfund: already withdrawn");
 

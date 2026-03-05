@@ -826,6 +826,55 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: already refunded");
     });
 
+    it("withdrawProceeds() is protected by nonReentrant", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      // Claim some so proceeds accrue
+      await crowdfund.connect(seeds[0]).claim();
+
+      // First withdrawal works
+      await crowdfund.withdrawProceeds();
+
+      // Second withdrawal reverts (no proceeds left)
+      await expect(
+        crowdfund.withdrawProceeds()
+      ).to.be.revertedWith("ArmadaCrowdfund: no proceeds");
+    });
+
+    it("withdrawUnallocatedArm() is protected by nonReentrant", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      // First withdrawal works
+      await crowdfund.withdrawUnallocatedArm();
+
+      // Second withdrawal reverts
+      await expect(
+        crowdfund.withdrawUnallocatedArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: already withdrawn");
+    });
+
     it("commit() is protected by nonReentrant", async function () {
       // Verify commit guard by confirming correct behavior under normal conditions
       await crowdfund.addSeeds([allSigners[1].address]);

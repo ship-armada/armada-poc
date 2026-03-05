@@ -1,11 +1,18 @@
 /**
- * Crowdfund Demo — Narrated end-to-end walkthrough
+ * Crowdfund Demo — Narrated end-to-end walkthrough (standalone)
  *
  * Deploys the crowdfund system and runs through:
  *   Flow 1: Full crowdfund lifecycle (seeds → invite → commit → finalize → claim)
  *   Flow 2: Governance bridge (claimed ARM → lock in VotingLocker → voting power)
  *
  * Uses time.increase() to fast-forward through delays.
+ *
+ * LIMITATIONS: This demo is a standalone crowdfund mechanics walkthrough.
+ *   - Deploys its OWN ArmadaToken (not the shared canonical token from governance)
+ *   - Treasury is a bare address, not the governance-controlled ArmadaTreasuryGov
+ *   - No governance integration — claimed ARM is not connected to governor/timelock
+ *   - For the full integrated lifecycle (crowdfund → treasury → governance → proposals),
+ *     see full_lifecycle_demo.ts instead.
  *
  * Usage:
  *   npx hardhat run scripts/crowdfund_demo.ts --network hub
@@ -71,18 +78,21 @@ async function main() {
   const crowdfund = await ArmadaCrowdfund.deploy(
     await usdc.getAddress(),
     await armToken.getAddress(),
-    deployer.address
+    deployer.address,
+    treasuryAddr.address
   );
   await crowdfund.waitForDeployment();
 
   // Fund ARM to crowdfund
-  const armFund = ethers.parseUnits("1800000", 18);
+  const CROWDFUND_ARM = "1800000"; // matches config.armDistribution.crowdfund default
+  const armFund = ethers.parseUnits(CROWDFUND_ARM, 18);
   await armToken.transfer(await crowdfund.getAddress(), armFund);
 
   log("SETUP", `ARM Token: ${await armToken.getAddress()}`);
   log("SETUP", `USDC Token: ${await usdc.getAddress()}`);
   log("SETUP", `Crowdfund: ${await crowdfund.getAddress()}`);
-  log("SETUP", `Funded 1,800,000 ARM to crowdfund contract`);
+  log("SETUP", `Treasury: ${treasuryAddr.address}`);
+  log("SETUP", `Funded ${CROWDFUND_ARM} ARM to crowdfund contract`);
   console.log("");
 
   // ============ PHASE: SEEDS ============
@@ -200,12 +210,13 @@ async function main() {
   const cf2 = await ArmadaCrowdfund.deploy(
     await usdc.getAddress(),
     await armToken.getAddress(),
-    deployer.address
+    deployer.address,
+    treasuryAddr.address
   );
   await cf2.waitForDeployment();
 
   // Fund ARM
-  await armToken.transfer(await cf2.getAddress(), ethers.parseUnits("1800000", 18));
+  await armToken.transfer(await cf2.getAddress(), ethers.parseUnits(CROWDFUND_ARM, 18));
 
   // Add 80 seeds and have them all commit $15K each = $1.2M
   const bigSeeds = signers.slice(32, 112); // 80 signers

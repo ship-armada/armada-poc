@@ -98,17 +98,21 @@ async function main() {
   const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
   await usdc.waitForDeployment();
 
-  // Distribute
-  const treasuryArm = ethers.parseUnits("65000000", 18);
-  const aliceArm = ethers.parseUnits("20000000", 18);
-  const bobArm = ethers.parseUnits("15000000", 18);
+  // ARM distribution for demo: treasury gets production allocation, remainder split between voters.
+  // Demo uses fixed voter amounts to demonstrate quorum mechanics.
+  const TREASURY_ARM = "65000000";  // matches config.armDistribution.treasury default
+  const ALICE_ARM = "20000000";     // demo-specific: large voter
+  const BOB_ARM = "15000000";       // demo-specific: smaller voter
+  const treasuryArm = ethers.parseUnits(TREASURY_ARM, 18);
+  const aliceArm = ethers.parseUnits(ALICE_ARM, 18);
+  const bobArm = ethers.parseUnits(BOB_ARM, 18);
 
   await armToken.transfer(await treasury.getAddress(), treasuryArm);
   await armToken.transfer(alice.address, aliceArm);
   await armToken.transfer(bob.address, bobArm);
   await usdc.mint(await treasury.getAddress(), ethers.parseUnits("100000", 6));
 
-  log("SETUP", `Distributing ARM: 65M \u2192 treasury, 20M \u2192 Alice, 15M \u2192 Bob`);
+  log("SETUP", `Distributing ARM: ${TREASURY_ARM} \u2192 treasury, ${ALICE_ARM} \u2192 Alice, ${BOB_ARM} \u2192 Bob`);
   log("SETUP", `Minting 100,000 USDC to treasury`);
   console.log("");
 

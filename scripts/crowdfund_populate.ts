@@ -108,13 +108,18 @@ async function main() {
   const signers = await ethers.getSigners();
   const deployer = signers[0];
 
-  // Reserve signers[0] for admin, signers[1-10] for the UI's Anvil accounts
-  // Use signers[11+] for generated participants
+  // Signer allocation mirrors the UI's dropdown (crowdfund-frontend/src/config/accounts.ts):
+  //   signers[0]   = Admin / Deployer
+  //   signers[1-3] = Seed A/B/C (hop-0)   — UI accounts
+  //   signers[4-6] = Hop-1 A/B/C          — UI accounts
+  //   signers[7-9] = Hop-2 A/B/C          — UI accounts
+  //   signers[11+] = generated participants (bulk seeds, extra hop-1/hop-2)
   const availableSigners = signers.slice(11);
 
-  // UI seed accounts (signers[1-3]) — added as seeds and committed so they
-  // appear in the UI dropdown with real participation for testing claims.
-  const uiSeeds = signers.slice(1, 4);
+  // UI accounts — these match the predefined addresses in the UI dropdown
+  const uiSeeds = signers.slice(1, 4);     // Seed A/B/C
+  const uiHop1  = signers.slice(4, 7);     // Hop-1 A/B/C
+  const uiHop2  = signers.slice(7, 10);    // Hop-2 A/B/C
 
   // Calculate participant counts
   let seedCount: number;
@@ -137,18 +142,31 @@ async function main() {
     seedCount = Math.ceil(targetUsdc / SEED_CAP);
   }
 
+  // Build participant arrays: UI accounts first, then generated signers for the rest.
+  // This ensures the UI dropdown addresses are real participants in the crowdfund.
+  const seedSigners = availableSigners.slice(0, seedCount);
+
+  let hop1Signers: typeof seedSigners = [];
+  let hop2Signers: typeof seedSigners = [];
+  if (includeHops) {
+    // UI hop-1 accounts (3) + generated hop-1 for the remainder
+    const generatedHop1 = availableSigners.slice(seedCount, seedCount + hop1Count - uiHop1.length);
+    hop1Signers = [...uiHop1, ...generatedHop1];
+
+    // UI hop-2 accounts (3) + generated hop-2 for the remainder
+    const genHop2Start = seedCount + hop1Count - uiHop1.length;
+    const generatedHop2 = availableSigners.slice(genHop2Start, genHop2Start + hop2Count - uiHop2.length);
+    hop2Signers = [...uiHop2, ...generatedHop2];
+  }
+
   // Ensure we have enough signers
-  const totalParticipants = seedCount + hop1Count + hop2Count;
+  const totalParticipants = seedCount + Math.max(0, hop1Count - uiHop1.length) + Math.max(0, hop2Count - uiHop2.length);
   if (totalParticipants > availableSigners.length) {
     throw new Error(
       `Need ${totalParticipants} signers but only ${availableSigners.length} available.\n` +
       `Reduce TARGET or increase hardhat accounts count.`
     );
   }
-
-  const seedSigners = availableSigners.slice(0, seedCount);
-  const hop1Signers = availableSigners.slice(seedCount, seedCount + hop1Count);
-  const hop2Signers = availableSigners.slice(seedCount + hop1Count, seedCount + hop1Count + hop2Count);
 
   const expectedTotal = (seedCount * SEED_CAP) + (hop1Count * HOP1_CAP) + (hop2Count * HOP2_CAP);
   log("PLAN", `Seeds: ${seedCount} × $${SEED_CAP.toLocaleString()} = $${(seedCount * SEED_CAP).toLocaleString()}`);
@@ -158,6 +176,22 @@ async function main() {
   }
   log("PLAN", `Expected total: $${expectedTotal.toLocaleString()}`);
   console.log("");
+
+  // ============ FUND PARTICIPANTS WITH ETH ============
+  // On Anvil with --network hub, only the first ~10 accounts have ETH.
+  // Participant signers (index 11+) need gas money for invite/approve/commit.
+  console.log("-".repeat(70));
+  log("FUND", "Sending ETH to participant signers for gas...");
+  const ethPerParticipant = ethers.parseEther("1");
+  const allParticipants = [...uiSeeds, ...seedSigners, ...hop1Signers, ...hop2Signers];
+  for (let i = 0; i < allParticipants.length; i += BATCH_SIZE) {
+    const batch = allParticipants.slice(i, i + BATCH_SIZE);
+    for (const p of batch) {
+      const tx = await deployer.sendTransaction({ to: p.address, value: ethPerParticipant });
+      await tx.wait();
+    }
+    log("FUND", `  ${Math.min(i + BATCH_SIZE, allParticipants.length)}/${allParticipants.length} funded`);
+  }
 
   // ============ ADD SEEDS ============
   console.log("-".repeat(70));
@@ -188,16 +222,17 @@ async function main() {
     console.log("-".repeat(70));
     log("INVITE", "Sending invitations...");
 
-    // First 3 seeds each invite 3 hop-1 addresses
+    // UI seeds (signers[1-3]) each invite 3 hop-1 addresses.
+    // This ensures the UI hop-1 dropdown accounts are real participants.
     let h1idx = 0;
-    for (let i = 0; i < 3 && i < seedSigners.length; i++) {
+    for (let i = 0; i < uiSeeds.length; i++) {
       for (let j = 0; j < 3 && h1idx < hop1Signers.length; j++) {
-        const tx = await crowdfund.connect(seedSigners[i]).invite(hop1Signers[h1idx].address);
+        const tx = await crowdfund.connect(uiSeeds[i]).invite(hop1Signers[h1idx].address);
         await tx.wait();
         h1idx++;
       }
     }
-    log("INVITE", `${h1idx} hop-1 addresses invited`);
+    log("INVITE", `${h1idx} hop-1 addresses invited (by UI seeds)`);
 
     // Each hop-1 invites 2 hop-2 addresses
     let h2idx = 0;

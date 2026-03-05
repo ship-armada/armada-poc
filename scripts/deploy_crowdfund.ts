@@ -1,12 +1,13 @@
+// ABOUTME: Deploys ArmadaCrowdfund using shared ARM token and treasury from governance deployment.
+// ABOUTME: Reads USDC from CCTP deployment, sets quorum exclusion, and writes crowdfund-hub manifest.
+
 /**
- * Deploy Armada Crowdfund Contracts
+ * Deploy Armada Crowdfund Contract
  *
- * Deploys:
- * - ArmadaToken (ARM)
- * - ArmadaCrowdfund
+ * Deploys ArmadaCrowdfund using the shared ARM token and treasury from
+ * the governance deployment. Governance must be deployed first.
  *
- * For local dev, deploys a fresh MockUSDCV2.
- * For testnet, uses real USDC from the CCTP deployment.
+ * Uses the shared USDC from the CCTP deployment (both local and testnet).
  *
  * Usage (local):
  *   npx hardhat run scripts/deploy_crowdfund.ts --network hub
@@ -23,7 +24,7 @@ import {
   getChainRole,
   getCCTPDeploymentFile,
   getCrowdfundDeploymentFile,
-  isCCTPReal,
+  getGovernanceDeploymentFile,
 } from "../config/networks";
 import { createNonceManager } from "./deploy-utils";
 
@@ -34,6 +35,8 @@ interface CrowdfundDeployment {
     armToken: string;
     usdc: string;
     crowdfund: string;
+    treasury: string;
+    governor: string;
   };
   config: {
     baseSale: string;
@@ -58,54 +61,69 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("=== Deploying Armada Crowdfund Contracts ===");
+  console.log("=== Deploying Armada Crowdfund ===");
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
   console.log(`Environment: ${config.env}`);
   console.log("");
 
-  // 1. Deploy ArmadaToken
-  console.log("1. Deploying ArmadaToken...");
-  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-  const armToken = await ArmadaToken.deploy(deployer.address, nm.override());
-  await armToken.deploymentTransaction()!.wait();
-  const armTokenAddress = await armToken.getAddress();
-  console.log(`   ArmadaToken: ${armTokenAddress}`);
-
-  // 2. Get or deploy USDC
-  let usdcAddress: string;
-  if (isCCTPReal()) {
-    // Use real USDC from CCTP deployment
-    const cctpFilename = getCCTPDeploymentFile(role);
-    const cctpDeployment = loadDeployment(cctpFilename);
-    if (!cctpDeployment) {
-      throw new Error(`CCTP deployment not found (${cctpFilename}). Run deploy_cctp first.`);
-    }
-    usdcAddress = cctpDeployment.contracts.usdc;
-    console.log(`2. Using real USDC at: ${usdcAddress}`);
-  } else {
-    // Deploy fresh MockUSDCV2 for isolated crowdfund testing
-    console.log("2. Deploying MockUSDCV2...");
-    const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
-    const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC", nm.override());
-    await usdc.deploymentTransaction()!.wait();
-    usdcAddress = await usdc.getAddress();
-    console.log(`   MockUSDCV2: ${usdcAddress}`);
+  // 1. Load governance deployment (required — provides shared ARM token + treasury)
+  console.log("1. Loading governance deployment...");
+  const govFilename = getGovernanceDeploymentFile();
+  const govDeployment = loadDeployment(govFilename);
+  if (!govDeployment) {
+    throw new Error(
+      `Governance deployment not found (${govFilename}). Run deploy_governance first.`
+    );
   }
+  const armTokenAddress = govDeployment.contracts.armToken;
+  const treasuryAddress = govDeployment.contracts.treasury;
+  const governorAddress = govDeployment.contracts.governor;
+  console.log(`   ARM Token (shared): ${armTokenAddress}`);
+  console.log(`   Treasury: ${treasuryAddress}`);
+  console.log(`   Governor: ${governorAddress}`);
 
-  // 3. Deploy ArmadaCrowdfund
+  const armToken = await ethers.getContractAt("ArmadaToken", armTokenAddress);
+
+  // 2. Load shared USDC from CCTP deployment
+  console.log("2. Loading USDC from CCTP deployment...");
+  const cctpFilename = getCCTPDeploymentFile(role);
+  const cctpDeployment = loadDeployment(cctpFilename);
+  if (!cctpDeployment) {
+    throw new Error(`CCTP deployment not found (${cctpFilename}). Run deploy_cctp first.`);
+  }
+  const usdcAddress: string = cctpDeployment.contracts.usdc;
+  console.log(`   USDC (shared): ${usdcAddress}`);
+
+  // 3. Deploy ArmadaCrowdfund (with treasury as immutable destination)
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
-  const crowdfund = await ArmadaCrowdfund.deploy(usdcAddress, armTokenAddress, deployer.address, nm.override());
+  const crowdfund = await ArmadaCrowdfund.deploy(
+    usdcAddress, armTokenAddress, deployer.address, treasuryAddress, nm.override()
+  );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();
   console.log(`   ArmadaCrowdfund: ${crowdfundAddress}`);
 
-  // 4. Fund ARM to crowdfund (MAX_SALE worth = 1.8M ARM)
-  const armFundAmount = ethers.parseUnits("1800000", 18);
-  console.log("4. Funding ARM to crowdfund...");
+  // 4. Fund ARM to crowdfund from deployer's remaining balance
+  const armFundAmount = ethers.parseUnits(config.armDistribution.crowdfund, 18);
+  const deployerArmBalance = await armToken.balanceOf(deployer.address);
+  console.log(`4. Funding ARM to crowdfund...`);
+  console.log(`   Deployer ARM balance: ${ethers.formatUnits(deployerArmBalance, 18)}`);
+  if (deployerArmBalance < armFundAmount) {
+    throw new Error(
+      `Insufficient ARM balance. Need ${config.armDistribution.crowdfund}, ` +
+      `have ${ethers.formatUnits(deployerArmBalance, 18)}`
+    );
+  }
   await (await armToken.transfer(crowdfundAddress, armFundAmount, nm.override())).wait();
-  console.log(`   Sent 1,800,000 ARM to crowdfund contract`);
+  console.log(`   Sent ${config.armDistribution.crowdfund} ARM to crowdfund contract`);
+
+  // 5. Register crowdfund as excluded from quorum denominator
+  console.log("5. Registering crowdfund in governor quorum exclusion...");
+  const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);
+  await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
+  console.log(`   Crowdfund excluded from quorum denominator`);
 
   // Save deployment
   const deployment: CrowdfundDeployment = {
@@ -115,13 +133,15 @@ async function main() {
       armToken: armTokenAddress,
       usdc: usdcAddress,
       crowdfund: crowdfundAddress,
+      treasury: treasuryAddress,
+      governor: governorAddress,
     },
     config: {
       baseSale: "1200000",
       maxSale: "1800000",
       minSale: "1000000",
       armPrice: "1.00",
-      armFunded: "1800000",
+      armFunded: config.armDistribution.crowdfund,
     },
     timestamp: new Date().toISOString(),
   };
@@ -129,6 +149,13 @@ async function main() {
   const outputFile = getCrowdfundDeploymentFile();
   saveDeployment(outputFile, deployment);
   console.log(`\nDeployment saved to: deployments/${outputFile}`);
+
+  // Summary
+  const deployerRemaining = await armToken.balanceOf(deployer.address);
+  console.log("\n=== ARM Distribution Summary ===");
+  console.log(`  Treasury:  ${config.armDistribution.treasury} ARM`);
+  console.log(`  Crowdfund: ${config.armDistribution.crowdfund} ARM`);
+  console.log(`  Deployer:  ${ethers.formatUnits(deployerRemaining, 18)} ARM (remainder — production allocation TBD)`);
   console.log("\n=== Crowdfund deployment complete ===");
 }
 

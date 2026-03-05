@@ -32,10 +32,14 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     IERC20 public immutable usdc;
     IERC20 public immutable armToken;
+    address public immutable admin;
+    /// @notice Protocol treasury — destination for sale proceeds and unallocated ARM.
+    // TODO: Admin is immutable. For production, add an admin transfer function
+    // so governance (timelock) can take over post-sale admin duties.
+    // Tracked in Codeberg issue.
+    address public immutable treasury;
 
     // ============ State ============
-
-    address public immutable admin;
     Phase public phase;
 
     // Timing
@@ -95,11 +99,13 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     // ============ Constructor ============
 
-    constructor(address _usdc, address _armToken, address _admin) {
+    constructor(address _usdc, address _armToken, address _admin, address _treasury) {
         require(_admin != address(0), "ArmadaCrowdfund: zero admin");
+        require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         usdc = IERC20(_usdc);
         armToken = IERC20(_armToken);
         admin = _admin;
+        treasury = _treasury;
         phase = Phase.Setup;
 
         hopConfigs[0] = HopConfig({ reserveBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
@@ -357,9 +363,8 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     /// @notice Admin withdraws USDC sale proceeds to treasury
     /// @dev Proceeds accrue as participants claim. Can be called multiple times.
-    function withdrawProceeds(address treasury) external onlyAdmin {
+    function withdrawProceeds() external onlyAdmin {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(treasury != address(0), "ArmadaCrowdfund: zero address");
 
         uint256 available = totalProceedsAccrued - proceedsWithdrawnAmount;
         require(available > 0, "ArmadaCrowdfund: no proceeds");
@@ -373,9 +378,8 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     /// @notice Admin withdraws unallocated ARM tokens to treasury
     /// @dev Uses hop-level totalAllocated (upper bound) minus claimed ARM to compute unallocated.
     ///      Safe: unallocated = initialFunding - totalAllocated_upper >= 0.
-    function withdrawUnallocatedArm(address treasury) external onlyAdmin {
+    function withdrawUnallocatedArm() external onlyAdmin {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(treasury != address(0), "ArmadaCrowdfund: zero address");
         require(!unallocatedArmWithdrawn, "ArmadaCrowdfund: already withdrawn");
 
         unallocatedArmWithdrawn = true;

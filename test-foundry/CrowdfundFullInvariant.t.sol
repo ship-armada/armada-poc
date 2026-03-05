@@ -183,7 +183,8 @@ contract CrowdfundFullInvariantTest is Test {
         crowdfund = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
-            admin
+            admin,
+            address(0xBEEF) // treasury
         );
 
         // Fund ARM to crowdfund

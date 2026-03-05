@@ -41,6 +41,8 @@ export interface CrowdfundDeployment {
     armToken: string
     usdc: string
     crowdfund: string
+    treasury?: string
+    governor?: string
   }
   config: {
     baseSale: string

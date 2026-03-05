@@ -65,6 +65,18 @@ export interface NetworkConfig {
   ethUsdcPrice: number;
   /** Optional treasury address override (if empty, deployer is used) */
   treasuryAddress: string;
+  /**
+   * ARM token distribution — production numbers TBD, these are POC defaults.
+   * All values are whole-token counts (no decimals). The deployer retains the remainder.
+   *   Treasury:  65M  — protocol treasury, governed by proposals
+   *   Crowdfund: 1.8M — backs MAX_SALE at $1/ARM
+   *   Deployer remainder: 33.2M — production allocation TBD
+   *     (team vesting, future rounds, ecosystem fund, etc.)
+   */
+  armDistribution: {
+    treasury: string;
+    crowdfund: string;
+  };
 }
 
 // ============================================================================
@@ -185,6 +197,10 @@ export function getNetworkConfig(): NetworkConfig {
     relayerPort: numEnv("RELAYER_PORT", 3001),
     ethUsdcPrice: numEnv("ETH_USDC_PRICE", 2000),
     treasuryAddress: process.env.TREASURY_ADDRESS ?? "",
+    armDistribution: {
+      treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "65000000"),
+      crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),
+    },
   };
 
   return _cachedConfig;

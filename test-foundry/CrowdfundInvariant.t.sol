@@ -199,7 +199,7 @@ contract CrowdfundHandler is Test {
         uint256 usdcBefore = usdc.balanceOf(treasury);
 
         vm.prank(admin);
-        try crowdfund.withdrawProceeds(treasury) {
+        try crowdfund.withdrawProceeds() {
             uint256 gained = usdc.balanceOf(treasury) - usdcBefore;
             ghost_proceedsWithdrawn += gained;
         } catch {}
@@ -212,7 +212,7 @@ contract CrowdfundHandler is Test {
         uint256 armBefore = armToken.balanceOf(treasury);
 
         vm.prank(admin);
-        try crowdfund.withdrawUnallocatedArm(treasury) {
+        try crowdfund.withdrawUnallocatedArm() {
             uint256 gained = armToken.balanceOf(treasury) - armBefore;
             ghost_unallocArmWithdrawn += gained;
         } catch {}
@@ -254,7 +254,8 @@ contract CrowdfundInvariantTest is Test {
         crowdfund = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
-            admin
+            admin,
+            address(0xBEEF) // treasury
         );
 
         // Fund ARM to crowdfund

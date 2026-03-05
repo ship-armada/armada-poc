@@ -133,9 +133,20 @@ function AnvilAccountSelector({ wallet }: { wallet: ReturnType<typeof useWallet>
         ))}
       </select>
       {wallet.anvilAccount && (
-        <code className="rounded bg-neutral-900 px-2 py-1 text-xs text-neutral-400">
-          {wallet.anvilAccount.address}
-        </code>
+        <div className="flex items-center gap-1">
+          <code className="rounded bg-neutral-900 px-2 py-1 text-xs text-neutral-400">
+            {wallet.anvilAccount.address}
+          </code>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(wallet.anvilAccount!.address)
+            }}
+            className="rounded bg-neutral-800 px-1.5 py-1 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700 border border-neutral-700 transition-colors"
+            title="Copy address"
+          >
+            Copy
+          </button>
+        </div>
       )}
     </div>
   )

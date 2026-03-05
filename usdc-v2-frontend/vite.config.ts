@@ -50,6 +50,14 @@ function serveDeployments() {
         (req: any, res: any, _next: any) => {
           const filename = req.url?.replace(/^\//, '') || ''
           const filepath = path.resolve(__dirname, '../deployments', filename)
+          const deploymentsDir = path.resolve(__dirname, '../deployments')
+
+          // Prevent path traversal outside the deployments directory
+          if (!filepath.startsWith(deploymentsDir + path.sep) && filepath !== deploymentsDir) {
+            res.statusCode = 403
+            res.end(JSON.stringify({ error: 'Access denied' }))
+            return
+          }
 
           if (fs.existsSync(filepath)) {
             const content = fs.readFileSync(filepath, 'utf-8')

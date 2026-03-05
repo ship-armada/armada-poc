@@ -914,7 +914,90 @@ describe("Crowdfund Integration", function () {
   });
 
   // ============================================================
-  // 9. Governance Integration
+  // 9. Permissionless Cancel (Grace Period Fallback)
+  // ============================================================
+
+  describe("Permissionless Cancel", function () {
+    const THIRTY_DAYS = 30 * ONE_DAY;
+
+    it("reverts if called before grace period elapses", async function () {
+      await setupWithSeeds([seed1]);
+      await time.increase(TWO_WEEKS + ONE_WEEK + 1); // past commitmentEnd
+
+      await expect(
+        crowdfund.connect(outsider).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: grace period not elapsed");
+    });
+
+    it("reverts if sale is already finalized", async function () {
+      // Finalize normally with enough USDC
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+
+      // Grace period passes — but sale is already finalized
+      await time.increase(THIRTY_DAYS + 1);
+      await expect(
+        crowdfund.connect(outsider).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
+    });
+
+    it("succeeds after grace period, sets Phase.Canceled, emits SaleCanceled", async function () {
+      await setupWithSeeds([seed1]);
+      await time.increase(TWO_WEEKS + ONE_WEEK + THIRTY_DAYS + 1);
+
+      await expect(crowdfund.connect(outsider).permissionlessCancel())
+        .to.emit(crowdfund, "SaleCanceled")
+        .withArgs(0); // no commitments
+
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+    });
+
+    it("refund() works for all participants after permissionless cancel", async function () {
+      await setupWithSeeds([seed1, seed2]);
+      await time.increase(TWO_WEEKS + 1);
+      await fundAndApprove(seed1, USDC(15_000));
+      await fundAndApprove(seed2, USDC(10_000));
+      await crowdfund.connect(seed1).commit(USDC(15_000));
+      await crowdfund.connect(seed2).commit(USDC(10_000));
+
+      // Wait past commitment + grace period
+      await time.increase(ONE_WEEK + THIRTY_DAYS + 1);
+      await crowdfund.connect(outsider).permissionlessCancel();
+
+      // Both participants can refund
+      const before1 = await usdc.balanceOf(seed1.address);
+      await crowdfund.connect(seed1).refund();
+      expect(await usdc.balanceOf(seed1.address) - before1).to.equal(USDC(15_000));
+
+      const before2 = await usdc.balanceOf(seed2.address);
+      await crowdfund.connect(seed2).refund();
+      expect(await usdc.balanceOf(seed2.address) - before2).to.equal(USDC(10_000));
+    });
+
+    it("finalize() reverts after permissionless cancel", async function () {
+      await setupWithSeeds([seed1]);
+      await time.increase(TWO_WEEKS + ONE_WEEK + THIRTY_DAYS + 1);
+      await crowdfund.connect(outsider).permissionlessCancel();
+
+      await expect(
+        crowdfund.finalize()
+      ).to.be.revertedWith("ArmadaCrowdfund: already finalized");
+    });
+  });
+
+  // ============================================================
+  // 10. Governance Integration
   // ============================================================
 
   describe("Governance Integration", function () {

@@ -27,6 +27,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     uint256 public constant INVITATION_DURATION = 14 days;
     uint256 public constant COMMITMENT_DURATION = 7 days;
+    uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
 
     // ============ Immutable ============
 
@@ -224,10 +225,21 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     // ============ Finalization ============
 
-    // TODO: finalize() is onlyAdmin with no permissionless fallback. If admin is
-    // unavailable after commitmentEnd, participant funds are permanently locked.
-    // Add a permissionlessCancel() that anyone can call after a grace period
-    // (e.g. commitmentEnd + 30 days) to set phase = Canceled and unlock refunds.
+    /// @notice Anyone can cancel the sale if admin hasn't finalized within the grace period
+    /// @dev Prevents permanent fund lockup if admin key is lost or admin is unresponsive
+    function permissionlessCancel() external {
+        require(
+            phase == Phase.Invitation || phase == Phase.Commitment,
+            "ArmadaCrowdfund: not in active phase"
+        );
+        require(
+            block.timestamp > commitmentEnd + FINALIZE_GRACE_PERIOD,
+            "ArmadaCrowdfund: grace period not elapsed"
+        );
+        phase = Phase.Canceled;
+        emit SaleCanceled(totalCommitted);
+    }
+
     /// @notice Finalize the crowdfund: compute allocations or cancel
     function finalize() external onlyAdmin nonReentrant {
         require(block.timestamp > commitmentEnd, "ArmadaCrowdfund: commitment not ended");

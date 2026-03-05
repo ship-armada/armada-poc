@@ -64,6 +64,82 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
+  // 0. Permissionless Cancel — Boundary & Edge Cases
+  // ============================================================
+
+  describe("Permissionless Cancel Boundaries", function () {
+    const THIRTY_DAYS = 30 * ONE_DAY;
+
+    it("reverts at exact boundary (commitmentEnd + FINALIZE_GRACE_PERIOD)", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      const commitmentEnd = await crowdfund.commitmentEnd();
+
+      // time.increaseTo mines a block at the given timestamp, so the next tx
+      // runs at timestamp + 1. To get block.timestamp == commitmentEnd + 30 days
+      // when permissionlessCancel() executes, we target one second earlier.
+      await time.increaseTo(commitmentEnd + BigInt(THIRTY_DAYS) - 1n);
+
+      await expect(
+        crowdfund.connect(allSigners[2]).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: grace period not elapsed");
+    });
+
+    it("succeeds at boundary + 1 second", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      const commitmentEnd = await crowdfund.commitmentEnd();
+
+      // Mine block at commitmentEnd + 30 days, so next tx runs at + 30 days + 1
+      await time.increaseTo(commitmentEnd + BigInt(THIRTY_DAYS));
+
+      await expect(crowdfund.connect(allSigners[2]).permissionlessCancel())
+        .to.emit(crowdfund, "SaleCanceled");
+
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+    });
+
+    it("admin can still finalize() normally during the grace period", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+
+      // Past commitmentEnd but within grace period
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+    });
+
+    it("reverts in Setup phase", async function () {
+      // Never started invitations, commitmentEnd is 0
+      await expect(
+        crowdfund.connect(allSigners[1]).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
+    });
+
+    it("reverts if already canceled by admin via finalize()", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels (below MIN_SALE)
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+
+      await time.increase(THIRTY_DAYS + 1);
+      await expect(
+        crowdfund.connect(allSigners[2]).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
+    });
+  });
+
+  // ============================================================
   // 1. Precision & Accounting Invariants
   // ============================================================
 

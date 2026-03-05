@@ -125,6 +125,21 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
     });
 
+    it("succeeds from Phase.Commitment (after someone has committed)", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      await fundAndApprove(allSigners[1], USDC(1_000));
+      await crowdfund.connect(allSigners[1]).commit(USDC(1_000));
+      expect(await crowdfund.phase()).to.equal(Phase.Commitment);
+
+      await time.increase(ONE_WEEK + THIRTY_DAYS + 1);
+      await expect(crowdfund.connect(allSigners[2]).permissionlessCancel())
+        .to.emit(crowdfund, "SaleCanceled");
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+    });
+
     it("reverts if already canceled by admin via finalize()", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       await crowdfund.startInvitations();

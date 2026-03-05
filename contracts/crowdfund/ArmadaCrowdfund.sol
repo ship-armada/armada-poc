@@ -197,6 +197,11 @@ contract ArmadaCrowdfund is ReentrancyGuard {
             "ArmadaCrowdfund: not commitment window"
         );
 
+        // Lazy phase transition: first commit advances phase from Invitation
+        if (phase == Phase.Invitation) {
+            phase = Phase.Commitment;
+        }
+
         Participant storage p = participants[msg.sender];
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
         require(amount > 0, "ArmadaCrowdfund: zero amount");

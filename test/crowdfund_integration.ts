@@ -410,6 +410,50 @@ describe("Crowdfund Integration", function () {
   });
 
   // ============================================================
+  // 3b. Phase Transition to Commitment
+  // ============================================================
+
+  describe("Phase Transition to Commitment", function () {
+    it("phase is Invitation before first commit", async function () {
+      await setupThroughCommitment([seed1]);
+      expect(await crowdfund.phase()).to.equal(Phase.Invitation);
+    });
+
+    it("first commit transitions phase to Commitment", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(1_000));
+      expect(await crowdfund.phase()).to.equal(Phase.Commitment);
+    });
+
+    it("phase stays Commitment after subsequent commits", async function () {
+      await setupThroughCommitment([seed1, seed2]);
+      await crowdfund.connect(seed1).commit(USDC(1_000));
+      expect(await crowdfund.phase()).to.equal(Phase.Commitment);
+
+      await crowdfund.connect(seed2).commit(USDC(1_000));
+      expect(await crowdfund.phase()).to.equal(Phase.Commitment);
+    });
+
+    it("finalize() works from Phase.Commitment", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      expect(await crowdfund.phase()).to.equal(Phase.Commitment);
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+    });
+  });
+
+  // ============================================================
   // 4. Allocation Algorithm
   // ============================================================
 

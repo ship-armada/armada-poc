@@ -187,7 +187,7 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
         )}
 
         {/* After commitment window: Finalize */}
-        {phase === Phase.Invitation && (
+        {(phase === Phase.Invitation || phase === Phase.Commitment) && (
           <div className="space-y-2">
             <Button
               onClick={handleFinalize}

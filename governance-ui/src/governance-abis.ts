@@ -41,6 +41,7 @@ export const GOVERNOR_ABI = [
   'function hasVoted(uint256 proposalId, address voter) view returns (bool)',
   'function voteChoice(uint256 proposalId, address voter) view returns (uint8)',
   'function treasuryAddress() view returns (address)',
+  'function getExcludedFromQuorum() view returns (address[])',
   'function votingLocker() view returns (address)',
   'function armToken() view returns (address)',
   // Events

@@ -17,6 +17,7 @@ export interface GovernanceData {
   totalLocked: bigint
   totalSupply: bigint
   proposalThreshold: bigint
+  eligibleSupply: bigint
 
   // Proposals
   proposalCount: number
@@ -56,6 +57,7 @@ const EMPTY_DATA: GovernanceData = {
   totalLocked: 0n,
   totalSupply: 0n,
   proposalThreshold: 0n,
+  eligibleSupply: 0n,
   proposalCount: 0,
   proposals: [],
   treasuryArmBalance: 0n,
@@ -106,6 +108,26 @@ export function useGovernanceData(
         governor.proposalCount(),
       ])
       const proposalCount = Number(proposalCountRaw)
+
+      // Compute eligible supply (totalSupply minus treasury and excluded addresses)
+      let eligibleSupply = totalSupply
+      try {
+        const treasuryAddr = await governor.treasuryAddress()
+        const excludedResult = await governor.getExcludedFromQuorum()
+        // ethers v6 returns a Result object; convert to plain array
+        const excludedAddrs = Array.from(excludedResult) as string[]
+        const allExcluded = [treasuryAddr as string, ...excludedAddrs]
+        const excludedBalances = await Promise.all(
+          allExcluded.map((addr) => armToken.balanceOf(addr)),
+        )
+        let totalExcluded = 0n
+        for (const bal of excludedBalances) {
+          totalExcluded += BigInt(bal)
+        }
+        eligibleSupply = totalSupply - totalExcluded
+      } catch (err) {
+        console.warn('[useGovernanceData] Failed to compute eligible supply:', err)
+      }
 
       // User-specific data
       let armBalance = 0n
@@ -260,6 +282,7 @@ export function useGovernanceData(
         totalLocked,
         totalSupply,
         proposalThreshold,
+        eligibleSupply,
         proposalCount,
         proposals,
         treasuryArmBalance,

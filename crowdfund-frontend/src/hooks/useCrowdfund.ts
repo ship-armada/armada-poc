@@ -350,19 +350,19 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
   )
 
   const withdrawProceeds = useCallback(
-    (treasury: string) =>
+    () =>
       executeTx('Withdrawing proceeds', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.withdrawProceeds(treasury)
+        return contract.withdrawProceeds()
       }),
     [executeTx],
   )
 
   const withdrawUnallocatedArm = useCallback(
-    (treasury: string) =>
+    () =>
       executeTx('Withdrawing unallocated ARM', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.withdrawUnallocatedArm(treasury)
+        return contract.withdrawUnallocatedArm()
       }),
     [executeTx],
   )

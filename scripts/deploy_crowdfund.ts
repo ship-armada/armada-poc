@@ -1,11 +1,13 @@
+// ABOUTME: Deploys ArmadaCrowdfund using shared ARM token and treasury from governance deployment.
+// ABOUTME: Reads USDC from CCTP deployment, sets quorum exclusion, and writes crowdfund-hub manifest.
+
 /**
  * Deploy Armada Crowdfund Contract
  *
  * Deploys ArmadaCrowdfund using the shared ARM token and treasury from
  * the governance deployment. Governance must be deployed first.
  *
- * For local dev, deploys a fresh MockUSDCV2 for USDC.
- * For testnet, uses real USDC from the CCTP deployment.
+ * Uses the shared USDC from the CCTP deployment (both local and testnet).
  *
  * Usage (local):
  *   npx hardhat run scripts/deploy_crowdfund.ts --network hub
@@ -23,7 +25,6 @@ import {
   getCCTPDeploymentFile,
   getCrowdfundDeploymentFile,
   getGovernanceDeploymentFile,
-  isCCTPReal,
 } from "../config/networks";
 import { createNonceManager } from "./deploy-utils";
 
@@ -84,26 +85,15 @@ async function main() {
 
   const armToken = await ethers.getContractAt("ArmadaToken", armTokenAddress);
 
-  // 2. Get or deploy USDC
-  let usdcAddress: string;
-  if (isCCTPReal()) {
-    // Use real USDC from CCTP deployment
-    const cctpFilename = getCCTPDeploymentFile(role);
-    const cctpDeployment = loadDeployment(cctpFilename);
-    if (!cctpDeployment) {
-      throw new Error(`CCTP deployment not found (${cctpFilename}). Run deploy_cctp first.`);
-    }
-    usdcAddress = cctpDeployment.contracts.usdc;
-    console.log(`2. Using real USDC at: ${usdcAddress}`);
-  } else {
-    // Deploy fresh MockUSDCV2 for isolated crowdfund testing
-    console.log("2. Deploying MockUSDCV2...");
-    const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
-    const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC", nm.override());
-    await usdc.deploymentTransaction()!.wait();
-    usdcAddress = await usdc.getAddress();
-    console.log(`   MockUSDCV2: ${usdcAddress}`);
+  // 2. Load shared USDC from CCTP deployment
+  console.log("2. Loading USDC from CCTP deployment...");
+  const cctpFilename = getCCTPDeploymentFile(role);
+  const cctpDeployment = loadDeployment(cctpFilename);
+  if (!cctpDeployment) {
+    throw new Error(`CCTP deployment not found (${cctpFilename}). Run deploy_cctp first.`);
   }
+  const usdcAddress: string = cctpDeployment.contracts.usdc;
+  console.log(`   USDC (shared): ${usdcAddress}`);
 
   // 3. Deploy ArmadaCrowdfund (with treasury as immutable destination)
   console.log("3. Deploying ArmadaCrowdfund...");

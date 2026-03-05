@@ -63,6 +63,14 @@ export function TreasuryPanel({ contracts, wallet, govData }: TreasuryPanelProps
 
   return (
     <div className="space-y-6">
+      {/* Treasury Address */}
+      {contracts.deployment && (
+        <div className="rounded-md bg-neutral-900 px-3 py-2">
+          <span className="text-xs text-neutral-500">Treasury Contract: </span>
+          <span className="font-mono text-xs text-neutral-300">{contracts.deployment.contracts.treasury}</span>
+        </div>
+      )}
+
       {/* Treasury Balances */}
       <div>
         <h3 className="mb-3 text-sm font-medium text-neutral-300">Treasury Balances</h3>

@@ -28,12 +28,16 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
   const [treasuryInput, setTreasuryInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Pre-fill treasury with admin address once it loads
+  // Pre-fill treasury address from deployment manifest (falls back to admin address)
   useEffect(() => {
-    if (state.adminAddress && !treasuryInput) {
+    if (treasuryInput) return
+    const treasuryAddr = crowdfund.deployment?.contracts.treasury
+    if (treasuryAddr) {
+      setTreasuryInput(treasuryAddr)
+    } else if (state.adminAddress) {
       setTreasuryInput(state.adminAddress)
     }
-  }, [state.adminAddress]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [crowdfund.deployment, state.adminAddress]) // eslint-disable-line react-hooks/exhaustive-deps
   const [treasuryUsdc, setTreasuryUsdc] = useState<bigint | null>(null)
   const [treasuryArm, setTreasuryArm] = useState<bigint | null>(null)
 
@@ -105,16 +109,14 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
   }
 
   const handleWithdrawProceeds = async () => {
-    if (!isAddress(treasuryInput)) return
     setIsSubmitting(true)
-    await crowdfund.withdrawProceeds(treasuryInput)
+    await crowdfund.withdrawProceeds()
     setIsSubmitting(false)
   }
 
   const handleWithdrawArm = async () => {
-    if (!isAddress(treasuryInput)) return
     setIsSubmitting(true)
-    await crowdfund.withdrawUnallocatedArm(treasuryInput)
+    await crowdfund.withdrawUnallocatedArm()
     setIsSubmitting(false)
   }
 
@@ -231,7 +233,7 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
             <div className="flex gap-2">
               <Button
                 onClick={handleWithdrawProceeds}
-                disabled={isSubmitting || !isAddress(treasuryInput)}
+                disabled={isSubmitting}
                 size="sm"
                 className="flex-1 gap-1.5"
               >
@@ -240,7 +242,7 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
               </Button>
               <Button
                 onClick={handleWithdrawArm}
-                disabled={isSubmitting || !isAddress(treasuryInput)}
+                disabled={isSubmitting}
                 size="sm"
                 variant="outline"
                 className="flex-1 gap-1.5"

@@ -7,8 +7,8 @@ export const CROWDFUND_ABI = [
   'function addSeeds(address[] calldata seeds) external',
   'function startInvitations() external',
   'function finalize() external',
-  'function withdrawProceeds(address treasury) external',
-  'function withdrawUnallocatedArm(address treasury) external',
+  'function withdrawProceeds() external',
+  'function withdrawUnallocatedArm() external',
 
   // Participant actions
   'function invite(address invitee) external',

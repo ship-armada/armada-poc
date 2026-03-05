@@ -5,6 +5,7 @@
  *   npx hardhat run scripts/deploy_faucet.ts
  */
 
+import "dotenv/config";
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
@@ -45,7 +46,7 @@ async function deployFaucet(
   // Connect to the chain
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const deployer = new ethers.Wallet(
-    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // Anvil account 0
+    process.env.DEPLOYER_PRIVATE_KEY!,
     provider
   );
 

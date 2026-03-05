@@ -19,6 +19,7 @@
  * Note: Run this on the Hub chain after all deployments are complete.
  */
 
+import "dotenv/config";
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";

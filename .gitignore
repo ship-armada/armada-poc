@@ -48,4 +48,8 @@ data/
 
 # OS
 .DS_Store
+*.swp
 Thumbs.db
+
+# Local chain data
+nodes/

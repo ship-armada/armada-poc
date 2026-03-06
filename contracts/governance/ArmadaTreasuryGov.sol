@@ -23,7 +23,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     // ============ State ============
 
-    address public owner; // TimelockController address (governance-controlled)
+    address public immutable owner; // TimelockController address (set once at deployment, cannot be changed)
     address public steward; // Treasury steward (limited powers)
 
     // Claims system
@@ -44,8 +44,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount);
     event StewardUpdated(address indexed oldSteward, address indexed newSteward);
     event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining);
-    event OwnerUpdated(address indexed oldOwner, address indexed newOwner);
-
     // ============ Modifiers ============
 
     modifier onlyOwner() {
@@ -104,13 +102,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function setSteward(address _steward) external onlyOwner {
         emit StewardUpdated(steward, _steward);
         steward = _steward;
-    }
-
-    /// @notice Transfer ownership (governance only)
-    function transferOwnership(address _newOwner) external onlyOwner {
-        require(_newOwner != address(0), "ArmadaTreasuryGov: zero address");
-        emit OwnerUpdated(owner, _newOwner);
-        owner = _newOwner;
     }
 
     // ============ Claim Functions ============

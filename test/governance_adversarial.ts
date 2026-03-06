@@ -696,4 +696,45 @@ describe("Governance Adversarial", function () {
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
     });
   });
+
+  // ============================================================
+  // 7. Treasury Ownership Immutability
+  // ============================================================
+
+  describe("Treasury Ownership Immutability", function () {
+    it("treasury owner is immutable — set at deployment and cannot be changed", async function () {
+      const timelockAddr = await timelockController.getAddress();
+
+      // Owner was set to timelock at deployment
+      expect(await treasuryContract.owner()).to.equal(timelockAddr);
+
+      // There is no transferOwnership function — calling it reverts (no fallback)
+      const transferOwnershipSelector = ethers.id("transferOwnership(address)").slice(0, 10);
+      const encodedCall = transferOwnershipSelector +
+        ethers.AbiCoder.defaultAbiCoder().encode(["address"], [alice.address]).slice(2);
+
+      const treasuryAddr = await treasuryContract.getAddress();
+      await expect(
+        deployer.sendTransaction({ to: treasuryAddr, data: encodedCall })
+      ).to.be.reverted;
+
+      // Owner remains the timelock — unchanged
+      expect(await treasuryContract.owner()).to.equal(timelockAddr);
+    });
+
+    it("owner cannot be changed even by the timelock itself", async function () {
+      const timelockAddr = await timelockController.getAddress();
+
+      // Owner is set at deployment and is immutable
+      expect(await treasuryContract.owner()).to.equal(timelockAddr);
+
+      // The ABI does not contain transferOwnership — confirm by checking the contract interface
+      const treasuryInterface = treasuryContract.interface;
+      const functionNames = Object.keys(treasuryInterface.fragments
+        .filter((f: any) => f.type === "function")
+        .reduce((acc: any, f: any) => { acc[f.name] = true; return acc; }, {}));
+
+      expect(functionNames).to.not.include("transferOwnership");
+    });
+  });
 });

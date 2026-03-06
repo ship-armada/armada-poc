@@ -32,6 +32,7 @@ contract YieldFullHandler is Test {
     uint256 public ghost_lastSharePrice;      // scaled by 1e18
     bool public ghost_sharePriceInitialized;
     uint256 public ghost_sharePriceViolations; // should always be 0
+    bool public ghost_skipNextPriceCheck;     // skip after fee-extracting operations
 
     constructor(
         ArmadaYieldVault _vault,
@@ -77,13 +78,16 @@ contract YieldFullHandler is Test {
 
         // Allow 0.01% (1 bps) rounding tolerance.
         // Decrease > 1 bps would indicate a real share price manipulation.
-        if (ghost_lastSharePrice > 0 && currentPrice < ghost_lastSharePrice) {
+        // Skip the check after redemptions: yield fee extraction legitimately
+        // reduces totalAssets without a proportional share burn.
+        if (!ghost_skipNextPriceCheck && ghost_lastSharePrice > 0 && currentPrice < ghost_lastSharePrice) {
             uint256 decrease = ghost_lastSharePrice - currentPrice;
             // Check if decrease > 0.01% of the share price
             if (decrease * 10000 > ghost_lastSharePrice) {
                 ghost_sharePriceViolations++;
             }
         }
+        ghost_skipNextPriceCheck = false;
 
         // Always update to latest price for next comparison
         ghost_lastSharePrice = currentPrice;
@@ -127,6 +131,9 @@ contract YieldFullHandler is Test {
         vm.prank(actor);
         try vault.redeem(shares, actor, actor) returns (uint256 assets) {
             ghost_totalRedeemed += assets;
+            // Yield fee extraction legitimately reduces totalAssets, so the
+            // share price may drop. Skip the monotonicity check for this step.
+            ghost_skipNextPriceCheck = true;
         } catch {}
 
         _updateSharePrice();

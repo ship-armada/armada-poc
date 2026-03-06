@@ -533,7 +533,90 @@ describe("Governance Adversarial", function () {
   });
 
   // ============================================================
-  // 5. StewardElection Extended Timing
+  // 5. Quorum Snapshot Stability
+  // ============================================================
+
+  describe("Quorum Snapshot Stability", function () {
+    it("quorum stays fixed after treasury balance decreases", async function () {
+      const proposalId = await createProposal(alice);
+
+      // Record quorum at creation time
+      const quorumAtCreation = await governor.quorum(proposalId);
+
+      // Unlock some of alice's ARM and send it to treasury to change the balance.
+      // All ARM is locked, so we must unlock first.
+      const transferAmount = ethers.parseUnits("1000000", ARM_DECIMALS);
+      await votingLocker.connect(alice).unlock(transferAmount);
+      await armToken.connect(alice).transfer(await treasuryContract.getAddress(), transferAmount);
+
+      // Quorum should be unchanged despite treasury now holding more ARM
+      const quorumAfterDeposit = await governor.quorum(proposalId);
+      expect(quorumAfterDeposit).to.equal(quorumAtCreation);
+
+      // Verify the eligible supply is correctly snapshotted via getProposal
+      const proposal = await governor.getProposal(proposalId);
+      const snapshotEligibleSupply = proposal[8]; // new field at index 8
+      // Eligible supply = 100M total - 65M treasury = 35M
+      expect(snapshotEligibleSupply).to.equal(ethers.parseUnits("35000000", ARM_DECIMALS));
+
+      // Quorum = 20% of 35M = 7M
+      expect(quorumAtCreation).to.equal(ethers.parseUnits("7000000", ARM_DECIMALS));
+    });
+
+    it("quorum stays fixed after ARM moves between excluded and non-excluded addresses", async function () {
+      const proposalId = await createProposal(alice);
+      const quorumAtCreation = await governor.quorum(proposalId);
+
+      // Move voting period forward and vote
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(proposalId, Vote.For);
+      await governor.connect(bob).castVote(proposalId, Vote.For);
+
+      // Quorum should still be the same even during active voting
+      const quorumDuringVoting = await governor.quorum(proposalId);
+      expect(quorumDuringVoting).to.equal(quorumAtCreation);
+
+      // End voting
+      await time.increase(FIVE_DAYS + 1);
+
+      // Quorum should still be the same after voting ends
+      const quorumAfterVoting = await governor.quorum(proposalId);
+      expect(quorumAfterVoting).to.equal(quorumAtCreation);
+
+      // Proposal should succeed (35M eligible, 20% quorum = 7M, alice+bob = 35M votes)
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
+    });
+
+    it("concurrent proposals have independent quorum snapshots", async function () {
+      // Create proposal 1
+      const proposalId1 = await createProposal(alice, ProposalType.ParameterChange, "Proposal 1");
+      const quorum1 = await governor.quorum(proposalId1);
+
+      // Unlock 5M of alice's ARM and send to treasury, changing the balance
+      const transferAmount = ethers.parseUnits("5000000", ARM_DECIMALS);
+      await votingLocker.connect(alice).unlock(transferAmount);
+      await armToken.connect(alice).transfer(await treasuryContract.getAddress(), transferAmount);
+      await mineBlock();
+
+      // Create proposal 2 with different treasury balance
+      const proposalId2 = await createProposal(alice, ProposalType.ParameterChange, "Proposal 2");
+      const quorum2 = await governor.quorum(proposalId2);
+
+      // Proposal 1 quorum should reflect original treasury balance (65M excluded)
+      // Eligible = 100M - 65M = 35M, quorum = 20% = 7M
+      expect(quorum1).to.equal(ethers.parseUnits("7000000", ARM_DECIMALS));
+
+      // Proposal 2 quorum should reflect updated treasury balance (70M excluded)
+      // Eligible = 100M - 70M = 30M, quorum = 20% = 6M
+      expect(quorum2).to.equal(ethers.parseUnits("6000000", ARM_DECIMALS));
+
+      // They should be different — independent snapshots
+      expect(quorum1).to.not.equal(quorum2);
+    });
+  });
+
+  // ============================================================
+  // 6. StewardElection Extended Timing
   // ============================================================
 
   describe("Steward Election Timing", function () {

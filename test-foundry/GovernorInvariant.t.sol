@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 // INV-G1: ARM total supply is constant (100_000_000 * 1e18)
 // INV-G2: One vote per address per proposal — voting twice reverts
 // INV-G3: Proposal state transitions are monotonic
+// INV-G5: Quorum for a proposal never changes after creation
 // ══════════════════════════════════════════════════════════════════════════
 
 /// @title GovernorHandler — Stateful fuzz handler for governance invariant testing
@@ -23,9 +24,14 @@ contract GovernorHandler is Test {
 
     address[] public actors;
 
+    address public treasuryAddr;
+
     // Ghost variables
     uint256 public ghost_proposalCount;
     uint256 public ghost_voteCount;
+
+    // Track quorum at creation time for each proposal (INV-G5)
+    mapping(uint256 => uint256) public ghost_quorumAtCreation;
 
     // Track all votes cast: (proposalId, voter) pairs
     struct VoteRecord {
@@ -43,12 +49,14 @@ contract GovernorHandler is Test {
         ArmadaGovernor _governor,
         ArmadaToken _armToken,
         VotingLocker _locker,
-        address[] memory _actors
+        address[] memory _actors,
+        address _treasuryAddr
     ) {
         governor = _governor;
         armToken = _armToken;
         locker = _locker;
         actors = _actors;
+        treasuryAddr = _treasuryAddr;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -172,6 +180,7 @@ contract GovernorHandler is Test {
         ) returns (uint256 proposalId) {
             ghost_proposalCount = proposalId;
             ghost_highestState[proposalId] = 0; // Pending
+            ghost_quorumAtCreation[proposalId] = governor.quorum(proposalId);
         } catch {}
 
         // Update all proposal states
@@ -224,6 +233,19 @@ contract GovernorHandler is Test {
         try governor.queue(proposalIdx) {} catch {}
 
         _checkAndUpdateState(proposalIdx);
+    }
+
+    /// @dev Transfer ARM tokens to/from treasury to attempt quorum manipulation
+    function transferToTreasury(uint256 actorIdx, uint256 amount) external {
+        actorIdx = bound(actorIdx, 0, actors.length - 1);
+        address actor = actors[actorIdx];
+
+        uint256 available = armToken.balanceOf(actor);
+        if (available == 0) return;
+        amount = bound(amount, 1, available);
+
+        vm.prank(actor);
+        armToken.transfer(treasuryAddr, amount);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -306,17 +328,18 @@ contract GovernorInvariantTest is Test {
         vm.warp(block.timestamp + 1 hours);
 
         // Create handler
-        handler = new GovernorHandler(governor, armToken, locker, actors);
+        handler = new GovernorHandler(governor, armToken, locker, actors, treasuryAddr);
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = GovernorHandler.lockTokens.selector;
         selectors[1] = GovernorHandler.unlockTokens.selector;
         selectors[2] = GovernorHandler.createProposal.selector;
         selectors[3] = GovernorHandler.castVote.selector;
         selectors[4] = GovernorHandler.advanceTime.selector;
         selectors[5] = GovernorHandler.queueProposal.selector;
+        selectors[6] = GovernorHandler.transferToTreasury.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -376,6 +399,25 @@ contract GovernorInvariantTest is Test {
             sumLocked,
             "INV-G4: totalLocked != sum of individual balances"
         );
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // INV-G5: Quorum for a proposal never changes after creation
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// @notice Quorum is fixed at proposal creation and unaffected by treasury changes
+    function invariant_quorumImmutable() public view {
+        uint256 count = handler.ghost_proposalCount();
+        for (uint256 i = 1; i <= count; i++) {
+            uint256 creationQuorum = handler.ghost_quorumAtCreation(i);
+            if (creationQuorum == 0) continue; // proposal creation may have failed
+            uint256 currentQuorum = governor.quorum(i);
+            assertEq(
+                currentQuorum,
+                creationQuorum,
+                "INV-G5: Quorum changed after proposal creation"
+            );
+        }
     }
 
     /// @notice ARM token conservation: locker + actors + deployer = 100M

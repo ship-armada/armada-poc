@@ -26,6 +26,10 @@ contract ArmadaGovernor is ReentrancyGuard {
         // Snapshot block for voting power
         uint256 snapshotBlock;
 
+        // Eligible ARM supply at proposal creation (totalSupply minus non-voteable balances).
+        // Stored at creation time so quorum cannot shift during voting.
+        uint256 snapshotEligibleSupply;
+
         // Vote tallies
         uint256 forVotes;
         uint256 againstVotes;
@@ -207,6 +211,14 @@ contract ArmadaGovernor is ReentrancyGuard {
         p.voteEnd = p.voteStart + params.votingPeriod;
         p.executionDelay = params.executionDelay;
         p.description = description;
+
+        // Snapshot eligible supply so quorum is fixed at proposal creation
+        uint256 totalSupply = armToken.totalSupply();
+        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
+        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+        }
+        p.snapshotEligibleSupply = totalSupply - excludedBalance;
     }
 
     /// @notice Cast a vote on a proposal
@@ -307,19 +319,13 @@ contract ArmadaGovernor is ReentrancyGuard {
         return ProposalState.Succeeded;
     }
 
-    /// @notice Calculate quorum for a proposal: X% of ARM supply outside non-voteable addresses.
-    /// Non-voteable addresses include the treasury and any addresses registered via setExcludedAddresses
-    /// (e.g. crowdfund contract holding unclaimed ARM).
+    /// @notice Calculate quorum for a proposal: X% of eligible ARM supply snapshotted at creation.
+    /// Eligible supply excludes non-voteable addresses (treasury, crowdfund, etc.) and is frozen
+    /// at proposal creation so quorum cannot shift during voting.
     function quorum(uint256 proposalId) public view returns (uint256) {
         Proposal storage p = _proposals[proposalId];
-        uint256 totalSupply = armToken.totalSupply();
-        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
-        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
-            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
-        }
-        uint256 eligibleSupply = totalSupply - excludedBalance;
         uint256 quorumBps = proposalTypeParams[p.proposalType].quorumBps;
-        return (eligibleSupply * quorumBps) / 10000;
+        return (p.snapshotEligibleSupply * quorumBps) / 10000;
     }
 
     /// @notice Get proposal details
@@ -331,12 +337,14 @@ contract ArmadaGovernor is ReentrancyGuard {
         uint256 forVotes,
         uint256 againstVotes,
         uint256 abstainVotes,
-        uint256 snapshotBlock
+        uint256 snapshotBlock,
+        uint256 snapshotEligibleSupply
     ) {
         Proposal storage p = _proposals[proposalId];
         return (
             p.proposer, p.proposalType, p.voteStart, p.voteEnd,
-            p.forVotes, p.againstVotes, p.abstainVotes, p.snapshotBlock
+            p.forVotes, p.againstVotes, p.abstainVotes, p.snapshotBlock,
+            p.snapshotEligibleSupply
         );
     }
 

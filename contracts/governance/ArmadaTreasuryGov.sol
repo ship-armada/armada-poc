@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /// @title ArmadaTreasuryGov — Governance-controlled treasury with claims mechanism
-/// @notice Owned by TimelockController. Supports direct distributions, claims (deferred exercise),
-///         and steward operational budget (1% monthly).
+/// @notice Owned by TimelockController (immutable). Supports direct distributions,
+///         claims (deferred exercise), and steward operational budget.
 contract ArmadaTreasuryGov is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -31,11 +31,21 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     mapping(uint256 => Claim) public claims;
     mapping(address => uint256[]) private _beneficiaryClaims;
 
-    // Steward monthly budget tracking
+    // Steward budget tracking (per token)
+    //
+    // The steward can spend up to 1% of the treasury balance per 30-day period.
+    // The budget basis (treasury balance used for the 1% calculation) is snapshotted
+    // once at the start of each period and held constant for the full 30 days.
+    // This prevents mid-period balance changes from shifting the budget.
+    //
+    // The 30-day period starts on the steward's first spend after the previous period
+    // expires (not on a fixed calendar schedule). Changing the steward does not reset
+    // the budget window or the amount already spent.
     uint256 public constant STEWARD_BUDGET_BPS = 100; // 1%
     uint256 public constant BUDGET_PERIOD = 30 days;
-    mapping(address => uint256) public budgetSpentThisPeriod; // per token
-    mapping(address => uint256) public lastBudgetReset; // per token
+    mapping(address => uint256) public budgetSpentThisPeriod; // cumulative spend in current period
+    mapping(address => uint256) public lastBudgetReset; // timestamp when current period started
+    mapping(address => uint256) public budgetBasis; // treasury balance snapshotted at period start
 
     // ============ Events ============
 
@@ -98,7 +108,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         return claimId;
     }
 
-    /// @notice Set the treasury steward (governance only)
+    /// @notice Set the treasury steward (governance only).
+    /// @dev Does not reset the budget window or spending. The new steward inherits the
+    /// current period's remaining budget and timing.
     function setSteward(address _steward) external onlyOwner {
         emit StewardUpdated(steward, _steward);
         steward = _steward;
@@ -123,20 +135,24 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     // ============ Steward Functions ============
 
-    /// @notice Steward: deploy operational budget (up to 1% of treasury balance monthly)
+    /// @notice Steward: spend from operational budget
+    /// @dev The budget is 1% of the treasury balance snapshotted at the start of each 30-day period.
+    /// The period starts on the first spend after the previous period expires. Mid-period balance
+    /// changes (deposits, governance distributions) do not affect the current period's budget.
     function stewardSpend(address token, address recipient, uint256 amount) external onlySteward {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
 
-        // Reset budget period if expired
+        // Start a new budget period if the previous one has expired.
+        // Snapshot the treasury balance as the basis for this period's 1% cap.
         if (block.timestamp >= lastBudgetReset[token] + BUDGET_PERIOD) {
             budgetSpentThisPeriod[token] = 0;
             lastBudgetReset[token] = block.timestamp;
+            budgetBasis[token] = IERC20(token).balanceOf(address(this));
         }
 
-        // Check budget limit: 1% of current treasury balance
-        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
-        uint256 monthlyBudget = (treasuryBalance * STEWARD_BUDGET_BPS) / 10000;
+        // Budget for this period: 1% of the snapshotted balance
+        uint256 monthlyBudget = (budgetBasis[token] * STEWARD_BUDGET_BPS) / 10000;
         require(
             budgetSpentThisPeriod[token] + amount <= monthlyBudget,
             "ArmadaTreasuryGov: exceeds monthly budget"
@@ -164,14 +180,19 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         return c.amount - c.exercised;
     }
 
+    /// @notice View the steward's current budget status for a token
+    /// @dev If the period has expired, returns what the budget *would* be if a new period
+    /// started now (based on current balance). During an active period, returns the
+    /// snapshotted budget basis.
     function getStewardBudget(address token) external view returns (uint256 budget, uint256 spent, uint256 remaining) {
-        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
-        budget = (treasuryBalance * STEWARD_BUDGET_BPS) / 10000;
-
-        // Check if period has reset
         if (block.timestamp >= lastBudgetReset[token] + BUDGET_PERIOD) {
+            // Period expired — show what the next period's budget would be
+            uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+            budget = (treasuryBalance * STEWARD_BUDGET_BPS) / 10000;
             spent = 0;
         } else {
+            // Active period — use snapshotted basis
+            budget = (budgetBasis[token] * STEWARD_BUDGET_BPS) / 10000;
             spent = budgetSpentThisPeriod[token];
         }
         remaining = budget > spent ? budget - spent : 0;

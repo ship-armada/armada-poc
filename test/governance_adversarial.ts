@@ -808,4 +808,129 @@ describe("Governance Adversarial", function () {
       expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
     });
   });
+
+  // ============================================================
+  // 9. Steward Budget Snapshot
+  // ============================================================
+
+  describe("Steward Budget Snapshot", function () {
+    // Deploy a standalone treasury with deployer as owner for direct steward tests.
+    // The main treasuryContract is owned by the timelock, which complicates direct testing.
+    let budgetTreasury: any;
+    const TREASURY_USDC = ethers.parseUnits("1000000", 6); // $1M USDC
+
+    async function setupBudgetTreasury() {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      budgetTreasury = await ArmadaTreasuryGov.deploy(deployer.address);
+      await budgetTreasury.waitForDeployment();
+
+      // Fund with USDC and set carol as steward
+      await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
+      await budgetTreasury.setSteward(carol.address);
+    }
+
+    it("budget is based on snapshotted balance, not current balance", async function () {
+      await setupBudgetTreasury();
+
+      // First spend triggers period reset and snapshots $1M balance
+      // Budget = 1% of $1M = $10K
+      const firstSpend = ethers.parseUnits("5000", 6); // $5K
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, firstSpend
+      );
+
+      // Deposit another $1M into treasury mid-period
+      await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
+
+      // Budget should still be based on original $1M snapshot, not current $1.995M
+      // Remaining = $10K - $5K = $5K
+      const secondSpend = ethers.parseUnits("5000", 6); // $5K — should succeed
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, secondSpend
+      );
+
+      // $10K budget fully used — even $1 more should fail
+      await expect(
+        budgetTreasury.connect(carol).stewardSpend(
+          await usdc.getAddress(), dave.address, 1n
+        )
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
+    });
+
+    it("budget does not shrink when treasury balance decreases mid-period", async function () {
+      await setupBudgetTreasury();
+
+      // First spend triggers snapshot at $1M → budget = $10K
+      const smallSpend = ethers.parseUnits("1000", 6); // $1K
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, smallSpend
+      );
+
+      // Governance distributes $900K out of the treasury (owner = deployer in this test)
+      await budgetTreasury.distribute(
+        await usdc.getAddress(), alice.address, ethers.parseUnits("900000", 6)
+      );
+
+      // Treasury now holds ~$99K, but budget is still based on $1M snapshot
+      // Remaining = $10K - $1K = $9K — steward can still spend up to $9K
+      const largeSpend = ethers.parseUnits("9000", 6);
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, largeSpend
+      );
+
+      expect(await usdc.balanceOf(dave.address)).to.equal(smallSpend + largeSpend);
+    });
+
+    it("new period snapshots the current balance", async function () {
+      await setupBudgetTreasury();
+
+      // First period: snapshot at $1M
+      const spend = ethers.parseUnits("5000", 6);
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, spend
+      );
+
+      // Governance distributes $500K out
+      await budgetTreasury.distribute(
+        await usdc.getAddress(), alice.address, ethers.parseUnits("500000", 6)
+      );
+
+      // Fast-forward past the 30-day period
+      await time.increase(30 * ONE_DAY + 1);
+
+      // New period: snapshot at current balance (~$495K)
+      // New budget = 1% of ~$495K = ~$4,950
+      const newBudget = ethers.parseUnits("4950", 6);
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, newBudget
+      );
+
+      // Exceeding the new (lower) budget should fail
+      await expect(
+        budgetTreasury.connect(carol).stewardSpend(
+          await usdc.getAddress(), dave.address, 1n
+        )
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
+    });
+
+    it("getStewardBudget reflects snapshot during active period", async function () {
+      await setupBudgetTreasury();
+
+      // Trigger first period
+      const spend = ethers.parseUnits("3000", 6);
+      await budgetTreasury.connect(carol).stewardSpend(
+        await usdc.getAddress(), dave.address, spend
+      );
+
+      // Deposit more USDC mid-period
+      await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
+
+      // getStewardBudget should reflect the original snapshot, not current balance
+      const [budget, spent, remaining] = await budgetTreasury.getStewardBudget(await usdc.getAddress());
+      const expectedBudget = TREASURY_USDC / 100n; // 1% of $1M = $10K
+      expect(budget).to.equal(expectedBudget);
+      expect(spent).to.equal(spend);
+      expect(remaining).to.equal(expectedBudget - spend);
+    });
+  });
 });

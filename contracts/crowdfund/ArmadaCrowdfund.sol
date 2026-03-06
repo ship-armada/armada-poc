@@ -29,6 +29,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public constant INVITATION_DURATION = 14 days;
     uint256 public constant COMMITMENT_DURATION = 7 days;
     uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
+    uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
 
     // ============ Immutable ============
 
@@ -205,7 +206,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
         Participant storage p = participants[msg.sender];
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
-        require(amount > 0, "ArmadaCrowdfund: zero amount");
+        require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
 
         uint8 hop = p.hop;
         require(

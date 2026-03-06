@@ -362,17 +362,17 @@ describe("Crowdfund Adversarial", function () {
       expect(committed).to.equal(USDC(15_000));
     });
 
-    it("commit 1 wei over hop cap reverts", async function () {
+    it("commit over hop cap reverts", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
 
-      await fundAndApprove(allSigners[1], USDC(15_001));
+      await fundAndApprove(allSigners[1], USDC(15_010));
       await crowdfund.connect(allSigners[1]).commit(USDC(15_000));
 
-      // 1 more wei should revert
+      // $10 more (meets MIN_COMMIT but exceeds hop cap)
       await expect(
-        crowdfund.connect(allSigners[1]).commit(1n)
+        crowdfund.connect(allSigners[1]).commit(USDC(10))
       ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
     });
 
@@ -515,17 +515,27 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Canceled);
     });
 
-    it("commit 1 wei USDC (smallest possible amount)", async function () {
+    it("commit below MIN_COMMIT ($10 USDC) reverts", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
 
-      await usdc.mint(allSigners[1].address, 1n);
-      await usdc.connect(allSigners[1]).approve(await crowdfund.getAddress(), 1n);
-      await crowdfund.connect(allSigners[1]).commit(1n);
+      await fundAndApprove(allSigners[1], USDC(10));
 
+      // 1 wei reverts
+      await expect(
+        crowdfund.connect(allSigners[1]).commit(1n)
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+
+      // $9.999999 reverts
+      await expect(
+        crowdfund.connect(allSigners[1]).commit(USDC(10) - 1n)
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+
+      // Exactly $10 succeeds
+      await crowdfund.connect(allSigners[1]).commit(USDC(10));
       const [committed] = await crowdfund.getCommitment(allSigners[1].address);
-      expect(committed).to.equal(1n);
+      expect(committed).to.equal(USDC(10));
     });
 
     it("invite self reverts (self not whitelisted initially is ok, but if already whitelisted)", async function () {

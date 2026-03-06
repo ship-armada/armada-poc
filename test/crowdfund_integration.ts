@@ -366,12 +366,24 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: not commitment window");
     });
 
-    it("should reject zero amount commit", async function () {
+    it("should reject commit below $10 USDC minimum", async function () {
       await setupThroughCommitment([seed1]);
 
       await expect(
+        crowdfund.connect(seed1).commit(USDC(9))
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+
+      await expect(
         crowdfund.connect(seed1).commit(0)
-      ).to.be.revertedWith("ArmadaCrowdfund: zero amount");
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+    });
+
+    it("should accept commit of exactly $10 USDC", async function () {
+      await setupThroughCommitment([seed1]);
+
+      await crowdfund.connect(seed1).commit(USDC(10));
+      const [committed] = await crowdfund.getCommitment(seed1.address);
+      expect(committed).to.equal(USDC(10));
     });
 
     it("should track aggregate stats correctly", async function () {

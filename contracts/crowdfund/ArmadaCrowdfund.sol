@@ -162,7 +162,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @notice Invite an address to participate at (your hop + 1)
     function invite(address invitee) external whenNotPaused {
         require(
-            block.timestamp >= invitationStart && block.timestamp <= invitationEnd,
+            block.timestamp >= invitationStart && block.timestamp < invitationEnd,
             "ArmadaCrowdfund: not invitation window"
         );
 

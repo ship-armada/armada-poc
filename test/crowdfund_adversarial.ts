@@ -548,6 +548,50 @@ describe("Crowdfund Adversarial", function () {
         crowdfund.connect(seed).invite(seed.address)
       ).to.be.revertedWith("ArmadaCrowdfund: already whitelisted");
     });
+
+    it("invite reverts at exact invitationEnd (strict < boundary)", async function () {
+      const seed = allSigners[1];
+      const invitee = allSigners[2];
+      await crowdfund.addSeeds([seed.address]);
+      await crowdfund.startInvitations();
+
+      const invitationEnd = await crowdfund.invitationEnd();
+      // Warp to exactly invitationEnd — invite should fail (strict <)
+      await time.increaseTo(invitationEnd);
+      await expect(
+        crowdfund.connect(seed).invite(invitee.address)
+      ).to.be.revertedWith("ArmadaCrowdfund: not invitation window");
+    });
+
+    it("invite succeeds 1 second before invitationEnd", async function () {
+      const seed = allSigners[1];
+      const invitee = allSigners[2];
+      await crowdfund.addSeeds([seed.address]);
+      await crowdfund.startInvitations();
+
+      const invitationEnd = await crowdfund.invitationEnd();
+      // Warp to 2 seconds before invitationEnd — next tx executes at invitationEnd - 1
+      await time.increaseTo(invitationEnd - 2n);
+      await crowdfund.connect(seed).invite(invitee.address);
+
+      const p = await crowdfund.participants(invitee.address);
+      expect(p.isWhitelisted).to.be.true;
+    });
+
+    it("commit succeeds at exact invitationEnd (== commitmentStart)", async function () {
+      const seed = allSigners[1];
+      await crowdfund.addSeeds([seed.address]);
+      await crowdfund.startInvitations();
+
+      const commitmentStart = await crowdfund.commitmentStart();
+      await time.increaseTo(commitmentStart);
+
+      await fundAndApprove(seed, USDC(100));
+      await crowdfund.connect(seed).commit(USDC(100));
+
+      const [committed] = await crowdfund.getCommitment(seed.address);
+      expect(committed).to.equal(USDC(100));
+    });
   });
 
   // ============================================================

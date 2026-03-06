@@ -575,6 +575,34 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.saleSize()).to.be.gt(0);
       // totalAllocated is hop-level upper bound, computed at finalization
       expect(await crowdfund.totalAllocated()).to.be.gt(0);
+      // treasuryLeftoverUsdc is stored on-chain for governance auditability
+      const leftover = await crowdfund.treasuryLeftoverUsdc();
+      expect(leftover).to.be.gte(0);
+    });
+
+    it("treasuryLeftoverUsdc is queryable and reflects unallocated reserve", async function () {
+      // 2 seeds commit $15K each = $30K total, well under BASE_SALE ($1.2M)
+      // This cancels, so test with enough to finalize but under-subscribe hop-0
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      // Only 68 seeds commit — under-subscribes hop-0 (reserve = 70% of $1.2M = $840K)
+      // 68 * $15K = $1.02M committed (above MIN_SALE), but all in hop-0
+      for (const s of seeds.slice(0, 68)) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      // Hop-0 demand ($1.02M) < reserve ($840K) is false, so hop-0 is over-subscribed.
+      // Hop-1 and hop-2 have 0 demand but non-zero reserves → all goes to treasury leftover.
+      const leftover = await crowdfund.treasuryLeftoverUsdc();
+      expect(leftover).to.be.gt(0);
     });
 
     it("should reject finalize before commitment ends", async function () {

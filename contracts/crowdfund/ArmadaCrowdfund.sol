@@ -68,6 +68,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public totalAllocatedUsdc;   // USDC (6 dec) — hop-level upper bound
     uint256[3] public finalReserves;     // hop reserves after rollover (stored at finalization)
     uint256[3] public finalDemands;      // hop demands (stored at finalization)
+    uint256 public treasuryLeftoverUsdc; // USDC (6 dec) — unallocated reserve that goes to treasury
 
     // Lazy evaluation accumulators (tracked during claims)
     uint256 public totalProceedsAccrued; // exact sum of allocUsdc from claims
@@ -330,6 +331,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
         totalAllocatedUsdc = totalAllocUsdc_;
         totalAllocated = totalAllocArm_;
+        treasuryLeftoverUsdc = treasuryLeftover;
         phase = Phase.Finalized;
 
         emit SaleFinalized(saleSize, totalAllocUsdc_, totalAllocArm_, treasuryLeftover);

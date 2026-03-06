@@ -54,6 +54,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount);
     event StewardUpdated(address indexed oldSteward, address indexed newSteward);
     event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining);
+
     // ============ Modifiers ============
 
     modifier onlyOwner() {

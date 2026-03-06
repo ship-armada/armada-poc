@@ -33,7 +33,6 @@ contract TreasurySteward is ReentrancyGuard {
     event ActionProposed(uint256 indexed actionId, address indexed target, uint256 value, uint256 executeAfter);
     event ActionExecuted(uint256 indexed actionId);
     event ActionVetoed(uint256 indexed actionId);
-    event ActionFailed(uint256 indexed actionId, bytes returnData);
     event ActionDelayUpdated(uint256 oldDelay, uint256 newDelay);
 
     // ============ Modifiers ============
@@ -136,8 +135,10 @@ contract TreasurySteward is ReentrancyGuard {
 
         (bool success, bytes memory returnData) = action.target.call{value: action.value}(action.data);
         if (!success) {
-            emit ActionFailed(actionId, returnData);
-            revert("TreasurySteward: execution failed");
+            // Bubble up the original revert data so callers see the real reason
+            assembly {
+                revert(add(returnData, 32), mload(returnData))
+            }
         }
 
         emit ActionExecuted(actionId);

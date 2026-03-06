@@ -960,7 +960,7 @@ describe("Governance Adversarial", function () {
       await testTreasury.setSteward(await testSteward.getAddress());
     }
 
-    it("failed executeAction reverts with a decodable error string", async function () {
+    it("failed executeAction bubbles up the original revert reason", async function () {
       await setupStewardTest();
 
       // Propose a spend that exceeds the budget (budget = 1% of $1M = $10K)
@@ -973,13 +973,13 @@ describe("Governance Adversarial", function () {
       );
       await time.increase(ONE_DAY + 1);
 
-      // The revert reason should be a clean, decodable string
+      // The original revert reason from the treasury is bubbled up
       await expect(
         testSteward.connect(carol).executeAction(await testSteward.actionCount())
-      ).to.be.revertedWith("TreasurySteward: execution failed");
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
     });
 
-    it("successful executeAction emits ActionExecuted, not ActionFailed", async function () {
+    it("successful executeAction emits ActionExecuted", async function () {
       await setupStewardTest();
 
       // Propose a spend within budget (budget = 1% of $1M = $10K)
@@ -994,7 +994,7 @@ describe("Governance Adversarial", function () {
 
       const actionId = await testSteward.actionCount();
 
-      // Successful action emits ActionExecuted, not ActionFailed
+      // Successful action emits ActionExecuted
       await expect(
         testSteward.connect(carol).executeAction(actionId)
       ).to.emit(testSteward, "ActionExecuted").withArgs(actionId);

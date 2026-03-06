@@ -675,10 +675,10 @@ describe("Governance Integration", function () {
       );
       await time.increase(STEWARD_ACTION_DELAY + 1);
 
-      // Execution reverts because treasury rejects the over-budget spend.
+      // Execution reverts — the original treasury revert reason is bubbled up.
       await expect(
         stewardContract.connect(dave).executeAction(await stewardContract.actionCount())
-      ).to.be.revertedWith("TreasurySteward: execution failed");
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
     });
 
     it("should reject steward spending after term expires", async function () {

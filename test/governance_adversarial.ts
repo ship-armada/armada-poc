@@ -230,9 +230,30 @@ describe("Governance Adversarial", function () {
 
       await time.increase(FIVE_DAYS + 1);
 
-      // forVotes + abstainVotes >= quorum → quorum reached
+      // Total participation (35M abstain) >= quorum (7M) → quorum reached
       // But forVotes (0) > againstVotes (0) is false → Defeated
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+    });
+
+    it("against votes count toward quorum (participation model)", async function () {
+      // Eligible supply = 100M - 65M = 35M. Quorum = 20% = 7M.
+      // Bob votes Against with 15M → exceeds quorum on its own.
+      // Proposal should be Defeated (quorum met, but forVotes=0).
+      const proposalId = await createProposal(alice);
+
+      await time.increase(TWO_DAYS + 1);
+
+      await governor.connect(bob).castVote(proposalId, Vote.Against);
+
+      await time.increase(FIVE_DAYS + 1);
+
+      // Quorum reached via against votes alone (15M >= 7M)
+      // Defeated because forVotes (0) > againstVotes (15M) is false
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+
+      // Verify the quorum threshold was indeed met
+      const q = await governor.quorum(proposalId);
+      expect(BOB_AMOUNT).to.be.gte(q);
     });
 
     it("propose with exactly threshold voting power succeeds", async function () {
@@ -276,7 +297,7 @@ describe("Governance Adversarial", function () {
 
       await time.increase(TWO_DAYS + 1);
 
-      // Bob votes against (alone) — quorum not reached → Defeated
+      // Bob votes against (alone) — quorum reached but forVotes=0 → Defeated
       await governor.connect(bob).castVote(proposalId, Vote.Against);
 
       await time.increase(FIVE_DAYS + 1);

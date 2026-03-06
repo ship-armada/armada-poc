@@ -367,8 +367,8 @@ contract ArmadaGovernor is ReentrancyGuard {
 
     function _quorumReached(uint256 proposalId) internal view returns (bool) {
         Proposal storage p = _proposals[proposalId];
-        // Abstain counts toward quorum but not majority
-        return (p.forVotes + p.abstainVotes) >= quorum(proposalId);
+        // Quorum measures total participation — all vote types count
+        return (p.forVotes + p.againstVotes + p.abstainVotes) >= quorum(proposalId);
     }
 
     function _voteSucceeded(uint256 proposalId) internal view returns (bool) {

@@ -33,6 +33,7 @@ contract TreasurySteward is ReentrancyGuard {
     event ActionProposed(uint256 indexed actionId, address indexed target, uint256 value, uint256 executeAfter);
     event ActionExecuted(uint256 indexed actionId);
     event ActionVetoed(uint256 indexed actionId);
+    event ActionFailed(uint256 indexed actionId, bytes returnData);
     event ActionDelayUpdated(uint256 oldDelay, uint256 newDelay);
 
     // ============ Modifiers ============
@@ -134,7 +135,10 @@ contract TreasurySteward is ReentrancyGuard {
         action.executed = true;
 
         (bool success, bytes memory returnData) = action.target.call{value: action.value}(action.data);
-        require(success, string(abi.encodePacked("TreasurySteward: execution failed: ", returnData)));
+        if (!success) {
+            emit ActionFailed(actionId, returnData);
+            revert("TreasurySteward: execution failed");
+        }
 
         emit ActionExecuted(actionId);
     }

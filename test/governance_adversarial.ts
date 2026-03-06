@@ -934,6 +934,75 @@ describe("Governance Adversarial", function () {
     });
   });
 
+  describe("Steward Action Error Encoding", function () {
+    // Deploy a standalone steward with deployer as timelock for direct control.
+    let testSteward: any;
+    let testTreasury: any;
+
+    async function setupStewardTest() {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      testTreasury = await ArmadaTreasuryGov.deploy(deployer.address);
+      await testTreasury.waitForDeployment();
+
+      const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+      testSteward = await TreasurySteward.deploy(
+        deployer.address,                    // deployer acts as timelock
+        await testTreasury.getAddress(),
+        ONE_DAY
+      );
+      await testSteward.waitForDeployment();
+
+      // Elect carol as steward
+      await testSteward.electSteward(carol.address);
+
+      // Fund treasury with USDC and set steward contract as the treasury's steward
+      await usdc.mint(await testTreasury.getAddress(), ethers.parseUnits("1000000", 6));
+      await testTreasury.setSteward(await testSteward.getAddress());
+    }
+
+    it("failed executeAction reverts with a decodable error string", async function () {
+      await setupStewardTest();
+
+      // Propose a spend that exceeds the budget (budget = 1% of $1M = $10K)
+      const overBudget = ethers.parseUnits("20000", 6); // $20K > $10K budget
+      const spendData = testTreasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), dave.address, overBudget
+      ]);
+      await testSteward.connect(carol).proposeAction(
+        await testTreasury.getAddress(), spendData, 0
+      );
+      await time.increase(ONE_DAY + 1);
+
+      // The revert reason should be a clean, decodable string
+      await expect(
+        testSteward.connect(carol).executeAction(await testSteward.actionCount())
+      ).to.be.revertedWith("TreasurySteward: execution failed");
+    });
+
+    it("successful executeAction emits ActionExecuted, not ActionFailed", async function () {
+      await setupStewardTest();
+
+      // Propose a spend within budget (budget = 1% of $1M = $10K)
+      const withinBudget = ethers.parseUnits("5000", 6); // $5K < $10K budget
+      const spendData = testTreasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), dave.address, withinBudget
+      ]);
+      await testSteward.connect(carol).proposeAction(
+        await testTreasury.getAddress(), spendData, 0
+      );
+      await time.increase(ONE_DAY + 1);
+
+      const actionId = await testSteward.actionCount();
+
+      // Successful action emits ActionExecuted, not ActionFailed
+      await expect(
+        testSteward.connect(carol).executeAction(actionId)
+      ).to.emit(testSteward, "ActionExecuted").withArgs(actionId);
+
+      expect(await usdc.balanceOf(dave.address)).to.equal(withinBudget);
+    });
+  });
+
   describe("Treasury ETH Rejection", function () {
     it("treasury rejects direct ETH transfers", async function () {
       await expect(

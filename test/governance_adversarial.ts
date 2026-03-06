@@ -737,4 +737,75 @@ describe("Governance Adversarial", function () {
       expect(functionNames).to.not.include("transferOwnership");
     });
   });
+
+  // ============================================================
+  // 8. Proposal Queue Grace Period
+  // ============================================================
+
+  describe("Proposal Queue Grace Period", function () {
+    const FOURTEEN_DAYS = 14 * ONE_DAY;
+
+    it("succeeded proposal can be queued within 14-day grace period", async function () {
+      const proposalId = await createProposal(alice);
+
+      // Vote it through
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(proposalId, Vote.For);
+      await governor.connect(bob).castVote(proposalId, Vote.For);
+
+      // Wait for voting to end
+      await time.increase(FIVE_DAYS + 1);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
+
+      // Wait 13 days (still within 14-day grace period)
+      await time.increase(13 * ONE_DAY);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
+
+      // Queue succeeds
+      await governor.queue(proposalId);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
+    });
+
+    it("succeeded proposal expires after 14-day grace period", async function () {
+      const proposalId = await createProposal(alice);
+
+      // Vote it through
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(proposalId, Vote.For);
+      await governor.connect(bob).castVote(proposalId, Vote.For);
+
+      // Wait for voting to end
+      await time.increase(FIVE_DAYS + 1);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
+
+      // Wait past the 14-day grace period
+      await time.increase(FOURTEEN_DAYS + 1);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+
+      // Queue now reverts
+      await expect(
+        governor.queue(proposalId)
+      ).to.be.revertedWith("ArmadaGovernor: not succeeded");
+    });
+
+    it("queued proposal is unaffected by grace period expiry", async function () {
+      const proposalId = await createProposal(alice);
+
+      // Vote it through
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(proposalId, Vote.For);
+      await governor.connect(bob).castVote(proposalId, Vote.For);
+
+      // Wait for voting to end and queue immediately
+      await time.increase(FIVE_DAYS + 1);
+      await governor.queue(proposalId);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
+
+      // Wait well past the grace period
+      await time.increase(FOURTEEN_DAYS + FOURTEEN_DAYS);
+
+      // Still Queued — grace period only applies to un-queued proposals
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
+    });
+  });
 });

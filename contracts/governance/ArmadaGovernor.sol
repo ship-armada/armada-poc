@@ -73,6 +73,9 @@ contract ArmadaGovernor is ReentrancyGuard {
     // Proposal threshold: 0.1% = 10 bps
     uint256 public constant PROPOSAL_THRESHOLD_BPS = 10;
 
+    // Succeeded proposals must be queued within this window or they expire
+    uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -316,6 +319,12 @@ contract ArmadaGovernor is ReentrancyGuard {
         }
 
         if (p.queued) return ProposalState.Queued;
+
+        // Succeeded proposals expire if not queued within the grace period
+        if (block.timestamp > p.voteEnd + QUEUE_GRACE_PERIOD) {
+            return ProposalState.Defeated;
+        }
+
         return ProposalState.Succeeded;
     }
 

@@ -675,15 +675,10 @@ describe("Governance Integration", function () {
       );
       await time.increase(STEWARD_ACTION_DELAY + 1);
 
-      // Execution reverts because treasury rejects the over-budget spend.
-      // The nested revert (steward wrapping treasury error) can't be decoded by
-      // Hardhat chai matchers, so we verify the revert manually.
-      try {
-        await stewardContract.connect(dave).executeAction(await stewardContract.actionCount());
-        expect.fail("Expected executeAction to revert");
-      } catch (err: any) {
-        expect(err.message).to.include("execution failed");
-      }
+      // Execution reverts — the original treasury revert reason is bubbled up.
+      await expect(
+        stewardContract.connect(dave).executeAction(await stewardContract.actionCount())
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
     });
 
     it("should reject steward spending after term expires", async function () {

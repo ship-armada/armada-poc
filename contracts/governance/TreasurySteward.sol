@@ -134,7 +134,12 @@ contract TreasurySteward is ReentrancyGuard {
         action.executed = true;
 
         (bool success, bytes memory returnData) = action.target.call{value: action.value}(action.data);
-        require(success, string(abi.encodePacked("TreasurySteward: execution failed: ", returnData)));
+        if (!success) {
+            // Bubble up the original revert data so callers see the real reason
+            assembly {
+                revert(add(returnData, 32), mload(returnData))
+            }
+        }
 
         emit ActionExecuted(actionId);
     }

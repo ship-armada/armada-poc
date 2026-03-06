@@ -107,8 +107,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
 
     // Deploy TreasuryGov (holds ARM for governance distributions)
+    // Owner is set to timelock at deployment and is immutable — governance controls the treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryGov = await ArmadaTreasuryGov.deploy(deployer.address);
+    treasuryGov = await ArmadaTreasuryGov.deploy(await timelockController.getAddress());
     await treasuryGov.waitForDeployment();
 
     // Send most ARM to treasury address to make quorum reachable
@@ -183,11 +184,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const seed0VotingPower = await votingLocker.getLockedBalance(claimedSeeds[0].address);
       expect(seed0VotingPower).to.equal(seed0Arm);
 
-      // 10. Transfer TreasuryGov ownership to timelock so governance can execute on it
-      await treasuryGov.transferOwnership(await timelockController.getAddress());
-
-      // Deployer creates a ParameterChange proposal to transfer ownership back
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      // 10. Create a governance proposal (treasury owner is already the timelock from deployment)
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       const proposalTx = await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -278,7 +276,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create proposal to check quorum
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -330,7 +328,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await votingLocker.connect(pooledSeed).lock(pooledBalance);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await expect(
         governor.connect(pooledSeed).propose(
           ProposalType.ParameterChange,
@@ -385,7 +383,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal (snapshot is taken at current block - 1)
       await mine(1);
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -485,7 +483,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal — snapshot is block.number - 1
       // At snapshot: Alice has voting power, Bob does not
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -529,7 +527,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await votingLocker.connect(alice).lock(aliceBal);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -570,7 +568,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await votingLocker.lock(ARM(200_000));
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -710,7 +708,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create a proposal to get quorum value
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
       await localGovernor.propose(
         ProposalType.ParameterChange,
         [await localTreasury.getAddress()],
@@ -759,7 +757,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create proposal before claims
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
       await localGovernor.propose(
         ProposalType.ParameterChange,
         [await localTreasury.getAddress()],
@@ -889,8 +887,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       await mine(1);
 
-      // Propose: transfer treasury ownership back to deployer (demo action)
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      // Propose: set treasury steward (demo governance action)
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
       await localGovernor.propose(
         ProposalType.ParameterChange,
         [await localTreasury.getAddress()],

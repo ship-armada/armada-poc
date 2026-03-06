@@ -198,7 +198,4 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         remaining = budget > spent ? budget - spent : 0;
     }
 
-    // ============ Receive ============
-
-    receive() external payable {}
 }

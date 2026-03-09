@@ -56,7 +56,9 @@ describe("Governance Integration", function () {
   const ALICE_AMOUNT = ethers.parseUnits("20000000", ARM_DECIMALS); // 20M
   const BOB_AMOUNT = ethers.parseUnits("15000000", ARM_DECIMALS); // 15M
   const USDC_DECIMALS = 6;
-  const STEWARD_ACTION_DELAY = ONE_DAY; // 1 day veto window for tests
+  // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
+  // 9 days * 1.2 = 10.8 days = 933120 seconds
+  const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
 
   // Helper: mine a block so checkpoint reads work
   async function mineBlock() {
@@ -147,6 +149,7 @@ describe("Governance Integration", function () {
     stewardContract = await TreasurySteward.deploy(
       await timelockController.getAddress(),
       await treasury.getAddress(),
+      await governor.getAddress(),
       STEWARD_ACTION_DELAY
     );
     await stewardContract.waitForDeployment();

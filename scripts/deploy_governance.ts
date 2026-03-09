@@ -117,7 +117,7 @@ async function main() {
   // 6. Deploy TreasurySteward
   console.log("6. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-  const steward = await TreasurySteward.deploy(timelockAddress, treasuryAddress, stewardDelay, nm.override());
+  const steward = await TreasurySteward.deploy(timelockAddress, treasuryAddress, governorAddress, stewardDelay, nm.override());
   await steward.deploymentTransaction()!.wait();
   const stewardAddress = await steward.getAddress();
   console.log(`   TreasurySteward: ${stewardAddress}`);

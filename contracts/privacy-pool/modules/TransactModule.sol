@@ -36,7 +36,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      *
      * @param _transactions Array of transactions to process
      */
-    function transact(Transaction[] calldata _transactions) external override {
+    function transact(Transaction[] calldata _transactions) external override onlyDelegatecall {
         require(_transactions.length > 0, "TransactModule: No transactions");
 
         // Calculate total commitments (excluding unshield outputs)
@@ -110,7 +110,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         address finalRecipient,
         bytes32 destinationCaller,
         uint256 maxFee
-    ) external override returns (uint64 nonce) {
+    ) external override onlyDelegatecall returns (uint64 nonce) {
         // Validate inputs
         _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient);
 

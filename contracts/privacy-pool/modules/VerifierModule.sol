@@ -32,7 +32,7 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
         uint256 _nullifiers,
         uint256 _commitments,
         VerifyingKey calldata _verifyingKey
-    ) external override {
+    ) external override onlyDelegatecall {
         require(msg.sender == owner, "VerifierModule: Only owner");
 
         verificationKeys[_nullifiers][_commitments] = _verifyingKey;
@@ -62,7 +62,7 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
      * @param _transaction The transaction to verify
      * @return True if proof is valid
      */
-    function verify(Transaction calldata _transaction) external view override returns (bool) {
+    function verify(Transaction calldata _transaction) external view override onlyDelegatecall returns (bool) {
         // POC: Bypass verification in testing mode
         if (testingMode) {
             return true;
@@ -124,7 +124,7 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
      * @dev POC ONLY - DO NOT USE IN PRODUCTION
      * @param _enabled Whether to enable testing mode
      */
-    function setTestingMode(bool _enabled) external override {
+    function setTestingMode(bool _enabled) external override onlyDelegatecall {
         require(msg.sender == owner, "VerifierModule: Only owner");
 
         testingMode = _enabled;

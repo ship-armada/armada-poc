@@ -18,6 +18,23 @@ import "../../railgun/logic/Globals.sol";
  */
 abstract contract PrivacyPoolStorage {
     // ══════════════════════════════════════════════════════════════════════════
+    // DELEGATECALL GUARD
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @notice The address of the contract itself, set at deploy time (immutable, stored in bytecode)
+    /// @dev Used by onlyDelegatecall to distinguish direct calls from delegatecalls.
+    ///      When called via delegatecall, address(this) is the caller (PrivacyPool router),
+    ///      not the module — so address(this) != _self and the check passes.
+    ///      When called directly on the module, address(this) == _self and it reverts.
+    address private immutable _self = address(this);
+
+    /// @notice Ensures the function is only callable via delegatecall (not directly)
+    modifier onlyDelegatecall() {
+        require(address(this) != _self, "PrivacyPoolStorage: Direct call not allowed");
+        _;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // MODULE ADDRESSES
     // ══════════════════════════════════════════════════════════════════════════
 

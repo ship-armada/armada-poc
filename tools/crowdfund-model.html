@@ -179,7 +179,7 @@
 
   .divider { border-top: 1px solid var(--border); margin: 16px 0; }
 
-  .reserve-warning { font-size: 0.75rem; color: var(--yellow); margin-top: 4px; }
+  .ceiling-info { font-size: 0.75rem; margin-top: 4px; }
 
   .scenario-summary {
     background: var(--surface2);
@@ -234,8 +234,9 @@
       <span class="value" id="minSaleVal"></span>
     </div>
     <div class="param-row">
-      <label>Elastic Trigger</label>
-      <span class="value" id="elasticTriggerVal" style="flex:1; text-align:center; color: var(--text-dim); font-size:0.8rem;"></span>
+      <label>Elastic Trigger (USDC)</label>
+      <input type="range" id="elasticTrigger" min="500000" max="5000000" step="100000" value="1500000">
+      <span class="value" id="elasticTriggerVal"></span>
     </div>
   </div>
 
@@ -243,31 +244,36 @@
     <h2>Hop Configuration</h2>
     <table>
       <thead>
-        <tr><th></th><th class="num">Reserve %</th><th class="num">Cap ($)</th><th class="num">Invites</th></tr>
+        <tr><th></th><th class="num">Ceiling %</th><th class="num">Cap ($)</th><th class="num">Invites</th></tr>
       </thead>
       <tbody>
         <tr>
           <td><span class="hop-label hop0">Hop 0 (Seeds)</span></td>
-          <td class="num"><input type="number" id="res0" min="0" max="100" step="1" value="70">%</td>
+          <td class="num"><input type="number" id="ceil0" min="0" max="100" step="1" value="70">%</td>
           <td class="num">$<input type="number" id="cap0" min="100" max="100000" step="500" value="15000"></td>
           <td class="num"><input type="number" id="inv0" min="0" max="10" step="1" value="3"></td>
         </tr>
         <tr>
           <td><span class="hop-label hop1">Hop 1 (Invited)</span></td>
-          <td class="num"><input type="number" id="res1" min="0" max="100" step="1" value="25">%</td>
+          <td class="num"><input type="number" id="ceil1" min="0" max="100" step="1" value="45">%</td>
           <td class="num">$<input type="number" id="cap1" min="100" max="50000" step="500" value="4000"></td>
           <td class="num"><input type="number" id="inv1" min="0" max="10" step="1" value="2"></td>
         </tr>
         <tr>
           <td><span class="hop-label hop2">Hop 2 (Invited)</span></td>
-          <td class="num"><input type="number" id="res2" min="0" max="100" step="1" value="5">%</td>
+          <td class="num"><input type="number" id="ceil2" min="0" max="100" step="1" value="10">%</td>
           <td class="num">$<input type="number" id="cap2" min="100" max="20000" step="100" value="1000"></td>
           <td class="num">—</td>
         </tr>
       </tbody>
     </table>
-    <div id="reserveWarning" class="reserve-warning"></div>
+    <div id="ceilingInfo" class="ceiling-info"></div>
     <div style="margin-top: 10px;">
+      <div class="param-row">
+        <label>Hop 2 Floor %</label>
+        <input type="number" id="hop2Floor" min="0" max="50" step="1" value="5" style="width:60px">
+        <span style="font-size:0.8rem; color:var(--text-dim)">guaranteed before hop 0/1 ceilings apply</span>
+      </div>
       <div class="param-row">
         <label>Rollover → Hop 1 min</label>
         <input type="number" id="rollMin1" min="0" max="200" step="5" value="30" style="width:60px">
@@ -297,7 +303,7 @@
       <h3>Population</h3>
       <div class="param-row">
         <label>Seed Count</label>
-        <input type="range" id="seeds" min="5" max="200" step="1" value="50">
+        <input type="range" id="seeds" min="5" max="200" step="1" value="130">
         <span class="value" id="seedsVal"></span>
       </div>
       <div id="popBreakdown" style="font-size:0.8rem; color:var(--text-dim); margin-top:4px;"></div>
@@ -370,37 +376,37 @@
 // ============ SCENARIOS ============
 const SCENARIOS = [
   { name: "Ghost Town",
-    desc: "Low seeds, low participation — can we hit minimum?",
-    summary: "Tests the worst-case launch scenario: a small seed group and low enthusiasm across all hops. Most whitelisted people don't commit, and those who do commit conservatively. Only 30% of seeds even bother inviting anyone, so the invitation tree is stunted. The question is whether the raise can even reach the $1M minimum with these parameters, or if we need to lower the minimum, raise the caps, or start with more seeds. If this scenario fails, the crowdfund has no margin for error on launch day.",
-    seeds: 20, invRate: [30,20], part: [30,20,10], avg: [50,50,50] },
+    desc: "Half the seeds no-show, weak participation — can we hit minimum?",
+    summary: "Tests the worst-case launch scenario: only about half the expected 130 seeds actually participate, and enthusiasm is low across all hops. Most whitelisted people don't commit, and those who do commit conservatively. Only 30% of seeds even bother inviting anyone, so the invitation tree is stunted. The question is whether the raise can even reach the $1M minimum with these parameters, or if we need to lower the minimum, raise the caps, or recruit more seeds. If this scenario fails, the crowdfund has no margin for error on launch day.",
+    seeds: 60, invRate: [30,20], part: [30,20,10], avg: [50,50,50] },
   { name: "Seed Heavy",
-    desc: "Many active seeds dominate, weak lower hops",
-    summary: "Models what happens when seeds are highly engaged but the invitation chain doesn't propagate well. Seeds show up in force and commit near their cap, but only half bother to invite, and hop 1 participants barely pass invites along. This tests whether the crowdfund becomes a de facto private sale for insiders. Watch for: hop 0 ARM concentration above 80%, hop 2 pro-rata below 50% (meaning their participation feels pointless), and whether the governance power distribution is healthy or captured by a small seed group.",
-    seeds: 80, invRate: [50,25], part: [80,30,15], avg: [90,60,40] },
+    desc: "Full seed list shows up, but propagation fails",
+    summary: "Models what happens when all 130 seeds are engaged but the invitation chain doesn't propagate well. Seeds show up in force and commit near their cap, but only half bother to invite, and hop 1 participants barely pass invites along. This tests whether the crowdfund becomes a de facto private sale for insiders. Watch for: hop 0 ARM concentration above 80%, hop 2 pro-rata below 50% (meaning their participation feels pointless), and whether the governance power distribution is healthy or captured by a small seed group.",
+    seeds: 130, invRate: [50,25], part: [80,30,15], avg: [90,60,40] },
   { name: "Balanced",
-    desc: "Moderate participation across all hops",
-    summary: "The optimistic-but-reasonable baseline. Decent seed turnout with most seeds inviting friends, participation drops off naturally at each hop, and commitment amounts taper from 70% of cap at hop 0 to 50% at hop 2. This is roughly what we'd hope for if the crowdfund goes \"fine\" — no viral explosion, no ghost town. Use this as the reference point: if the parameters produce healthy results here, they're at least workable.",
-    seeds: 50, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
+    desc: "Expected seed count, moderate participation across all hops",
+    summary: "The expected baseline with all 130 seeds. Most seeds invite friends, participation drops off naturally at each hop, and commitment amounts taper from 70% of cap at hop 0 to 50% at hop 2. This is roughly what we'd hope for if the crowdfund goes \"fine\" — no viral explosion, no ghost town. Use this as the reference point: if the parameters produce healthy results here, they're at least workable.",
+    seeds: 130, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
   { name: "Viral Hop 2",
-    desc: "Strong word-of-mouth — hop 2 is very active",
-    summary: "Tests the scenario where word-of-mouth actually works: hop 1 participants are enthusiastic inviters (80% pass along invites) and hop 2 participants are more engaged than the seeds who started the chain. This can happen if seeds are crypto-native insiders who are lukewarm, but their invitees bring in excited newcomers from outside the bubble. The key question is whether the 5% hop 2 reserve is large enough to reward this enthusiasm, or if hop 2 participants commit $1,000 but only get $150 allocated (85% refund), making the experience feel like a bait-and-switch.",
-    seeds: 30, invRate: [60,80], part: [50,60,80], avg: [70,80,80] },
+    desc: "Fewer seeds but amazing downstream enthusiasm",
+    summary: "Tests the scenario where word-of-mouth actually works: not all 130 seeds show up, but the ones who do are excellent inviters. Hop 1 participants are enthusiastic (80% pass along invites) and hop 2 participants are more engaged than the seeds who started the chain. This can happen if seeds are crypto-native insiders who are lukewarm, but their invitees bring in excited newcomers from outside the bubble. The key question is whether the 10% hop 2 ceiling is large enough to reward this enthusiasm, or if hop 2 participants commit $1,000 but only get a fraction allocated (large refund), making the experience feel like a bait-and-switch. With overlapping ceilings, hop 2 can absorb unused capacity from earlier hops via rollover.",
+    seeds: 80, invRate: [60,80], part: [50,60,80], avg: [70,80,80] },
   { name: "Elastic Hunt",
-    desc: "Can we reach the elastic trigger?",
-    summary: "Specifically probes whether the elastic expansion from BASE_SALE ($1.2M) to MAX_SALE ($1.8M) is realistically achievable. The elastic trigger is set at 1.5× base, and crossing it gives all participants 50% more ARM for the same USDC. This scenario uses optimistic-but-not-absurd numbers (60 seeds, high invite rates, strong average commits) to see if the trigger is within reach or structurally unreachable. If even this favorable scenario can't trigger expansion, the elastic mechanism is decorative and we should either lower the trigger or remove it.",
-    seeds: 60, invRate: [80,70], part: [70,60,50], avg: [85,80,70] },
+    desc: "Can 130 seeds reach the elastic trigger?",
+    summary: "Specifically probes whether the elastic expansion from BASE_SALE ($1.2M) to MAX_SALE ($1.8M) is realistically achievable with the expected 130 seeds. The elastic trigger is set at $1.5M in capped demand, and crossing it expands the sale by 50%. This scenario uses optimistic-but-not-absurd participation and commitment rates to see if the trigger is within reach or structurally unreachable. If even this favorable scenario can't trigger expansion, the elastic mechanism is decorative and we should either lower the trigger or remove it.",
+    seeds: 130, invRate: [80,70], part: [70,60,50], avg: [85,80,70] },
   { name: "Whale Seeds",
-    desc: "Few seeds, all maxing out",
-    summary: "Models a small, high-conviction seed group where every seed commits the maximum $15K. Think: 15 people who are personally close to the team and willing to go all-in. Most seeds invite (they're true believers), but the tree is small because there are so few seeds. Tests whether a small number of large commitments can carry the raise, and what the resulting governance power distribution looks like. With 15 seeds at $15K each ($225K from hop 0), can the lower hops make up the remaining $775K+ to hit minimum?",
-    seeds: 15, invRate: [80,50], part: [100,40,20], avg: [100,80,60] },
+    desc: "Small elite group, all maxing out",
+    summary: "Models a small, high-conviction seed group where every seed commits the maximum $15K. Think: 30 people who are personally close to the team and willing to go all-in. Most seeds invite (they're true believers), but the tree is smaller than the full 130-seed list. Tests whether a small number of large commitments can carry the raise, and what the resulting governance power distribution looks like. With 30 seeds at $15K each ($450K from hop 0), can the lower hops make up the remaining $550K+ to hit minimum?",
+    seeds: 30, invRate: [80,50], part: [100,40,20], avg: [100,80,60] },
   { name: "Full House",
-    desc: "Everything oversubscribed",
-    summary: "The best-case stress test: a large seed group (100), everyone invites, high participation across all hops, and strong average commits. Every hop is oversubscribed, meaning total demand exceeds the reserve for that hop. This tests the pro-rata mechanics under pressure — everyone gets scaled down and receives partial refunds. Watch for: whether the refund experience is acceptable (getting 40% of your money back feels different from getting 5% back), whether the elastic trigger activates, and what the ARM distribution looks like when all hops are competing for a fixed pool.",
-    seeds: 100, invRate: [90,80], part: [90,80,60], avg: [90,90,80] },
+    desc: "Above-estimate turnout, everything oversubscribed — tests ceiling overlap",
+    summary: "The best-case stress test: more seeds than expected (150), nearly everyone invites, high participation across all hops, and strong average commits. Every hop demands more than its ceiling, meaning pro-rata scaling kicks in across the board. With ceilings summing to 125%, this is where the global budget constraint matters — total allocation is capped at sale size, so later hops absorb whatever remains after earlier hops fill up to their ceiling. Watch for: whether the refund experience is acceptable, whether elastic expansion triggers, and how the overlapping ceilings resolve when supply is tight.",
+    seeds: 150, invRate: [90,80], part: [90,80,60], avg: [90,90,80] },
   { name: "Custom",
     desc: "Your own parameters — adjust sliders above",
     summary: "Use the sliders to set your own seed count, invite rates, commit rates, and average commitment levels. This is your sandbox for testing specific hypotheses or modeling scenarios that the presets don't cover. The results panel and comparison grid will update live as you adjust values.",
-    seeds: 50, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
+    seeds: 130, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
 ];
 
 let activeScenario = 2; // Balanced
@@ -416,11 +422,12 @@ function getParams() {
   const baseSale = +$('baseSale').value;
   const maxSale = +$('maxSale').value;
   const minSale = +$('minSale').value;
-  const elasticTrigger = baseSale * 1.5;
+  const elasticTrigger = +$('elasticTrigger').value;
 
   return {
     baseSale, maxSale, minSale, elasticTrigger,
-    reserves: [+$('res0').value, +$('res1').value, +$('res2').value],
+    ceilings: [+$('ceil0').value, +$('ceil1').value, +$('ceil2').value],
+    hop2Floor: +$('hop2Floor').value,
     caps: [+$('cap0').value, +$('cap1').value, +$('cap2').value],
     invites: [+$('inv0').value, +$('inv1').value, 0],
     rollMin: [0, +$('rollMin1').value, +$('rollMin2').value],
@@ -437,15 +444,16 @@ function getScenario() {
 }
 
 // ============ SIMULATION ENGINE ============
-// Mirrors ArmadaCrowdfund.sol finalization logic exactly
+// Mirrors the CROWDFUND.md spec: demand-driven ceilings with overlapping percentages,
+// sequential rollover, and a global budget constraint (total allocation <= sale size).
 function simulate(params, scenario) {
   const p = params;
   const s = scenario;
 
   // Population: invite rate determines how many people actually send invites,
   // which determines the whitelisted population at the next hop.
-  // invRate[0] = fraction of seeds who use their invites → determines hop 1 population
-  // invRate[1] = fraction of hop 1 who use their invites → determines hop 2 population
+  // invRate[0] = fraction of seeds who use their invites -> determines hop 1 population
+  // invRate[1] = fraction of hop 1 who use their invites -> determines hop 2 population
   const inviters = [
     Math.floor(s.seeds * s.invRate[0]),
     0 // computed below
@@ -478,11 +486,12 @@ function simulate(params, scenario) {
     return {
       canceled: true, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
       committers, demands,
-      saleSize: 0, reserves: [0,0,0], allocations: [0,0,0],
+      saleSize: 0, baseCeilings: [0,0,0], allocations: [0,0,0],
       refunds: [0,0,0], proRata: [0,0,0], rollover: [false, false],
       treasuryLeftover: 0, elastic: false,
       armConcentration: [0,0,0], maxIndividualArm: [0,0,0],
-      effectiveReserves: [0,0,0]
+      effectiveCeilings: [0,0,0], budgetCapped: [false, false, false],
+      hop2FloorAmount: 0, netRaise: 0
     };
   }
 
@@ -490,30 +499,75 @@ function simulate(params, scenario) {
   const elastic = totalCommitted >= p.elasticTrigger;
   const saleSize = elastic ? p.maxSale : p.baseSale;
 
-  // Reserves
-  const reserves = [
-    saleSize * p.reserves[0] / 100,
-    saleSize * p.reserves[1] / 100,
-    saleSize * p.reserves[2] / 100
+  // Hop 2 floor: reserved from total before hop 0/1 ceilings are applied.
+  // Guarantees governance breadth even under strong earlier-hop demand.
+  const hop2FloorAmount = saleSize * p.hop2Floor / 100;
+  const netRaise = saleSize - hop2FloorAmount;
+
+  // Base ceilings: hop 0/1 against net raise (after floor), hop 2 against full raise
+  const baseCeilings = [
+    netRaise * p.ceilings[0] / 100,
+    netRaise * p.ceilings[1] / 100,
+    saleSize * p.ceilings[2] / 100
   ];
 
-  // Sequential rollover (mirrors Solidity exactly)
+  // Demand-driven allocation with overlapping ceilings.
+  // Each hop absorbs min(demand, ceiling). Unused ceiling capacity rolls forward
+  // to later hops if rollover thresholds are met. A global budget constraint
+  // ensures total allocation never exceeds sale size.
+  //
+  // The hop 2 floor is carved out before hops 0/1 are processed, then added
+  // back to the remaining budget when hop 2 is processed.
+  const effectiveCeilings = [...baseCeilings];
+  let remaining = netRaise; // hops 0/1 compete for net raise only
   let treasuryLeftover = 0;
   const rollover = [false, false];
+  const allocations = [];
+  const refunds = [];
+  const proRata = [];
+  const budgetCapped = [false, false, false];
 
   for (let h = 0; h < 3; h++) {
-    if (demands[h] <= reserves[h]) {
-      const leftover = reserves[h] - demands[h];
+    // When we reach hop 2, add back the floor reservation to the remaining budget
+    if (h === 2) {
+      remaining += hop2FloorAmount;
+    }
+
+    // Global budget constraint: cap effective ceiling against remaining supply
+    const ceiling = Math.min(effectiveCeilings[h], remaining);
+    if (effectiveCeilings[h] > remaining) {
+      budgetCapped[h] = true;
+    }
+
+    if (demands[h] === 0) {
+      allocations.push(0);
+      refunds.push(0);
+      proRata.push(1);
+    } else if (demands[h] <= ceiling) {
+      allocations.push(demands[h]);
+      refunds.push(0);
+      proRata.push(1);
+    } else {
+      allocations.push(ceiling);
+      refunds.push(demands[h] - ceiling);
+      proRata.push(ceiling / demands[h]);
+    }
+
+    remaining -= allocations[h];
+    const leftover = ceiling - allocations[h];
+
+    // Rollover: unused ceiling capacity flows forward to the next hop
+    if (leftover > 0) {
       if (h === 0) {
         if (committers[1] >= p.rollMin[1]) {
-          reserves[1] += leftover;
+          effectiveCeilings[1] += leftover;
           rollover[0] = true;
         } else {
           treasuryLeftover += leftover;
         }
       } else if (h === 1) {
         if (committers[2] >= p.rollMin[2]) {
-          reserves[2] += leftover;
+          effectiveCeilings[2] += leftover;
           rollover[1] = true;
         } else {
           treasuryLeftover += leftover;
@@ -524,33 +578,13 @@ function simulate(params, scenario) {
     }
   }
 
-  // Allocations
-  const allocations = [];
-  const refunds = [];
-  const proRata = [];
-  for (let h = 0; h < 3; h++) {
-    if (demands[h] === 0) {
-      allocations.push(0);
-      refunds.push(0);
-      proRata.push(1);
-    } else if (demands[h] <= reserves[h]) {
-      allocations.push(demands[h]);
-      refunds.push(0);
-      proRata.push(1);
-    } else {
-      allocations.push(reserves[h]);
-      refunds.push(demands[h] - reserves[h]);
-      proRata.push(reserves[h] / demands[h]);
-    }
-  }
-
   // ARM distribution per hop
   const totalAlloc = allocations[0] + allocations[1] + allocations[2];
   const armConcentration = totalAlloc > 0
     ? allocations.map(a => a / totalAlloc)
     : [0, 0, 0];
 
-  // Max individual ARM (someone who committed at cap, gets pro-rata)
+  // Max individual ARM (someone who committed at avg, gets pro-rata)
   const maxIndividualArm = [
     p.caps[0] * s.avg[0] * proRata[0],
     p.caps[1] * s.avg[1] * proRata[1],
@@ -560,11 +594,10 @@ function simulate(params, scenario) {
   return {
     canceled: false, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
     committers, demands,
-    saleSize, reserves: [saleSize * p.reserves[0]/100, saleSize * p.reserves[1]/100, saleSize * p.reserves[2]/100],
-    effectiveReserves: reserves,
-    allocations, refunds, proRata, rollover,
+    saleSize, baseCeilings, hop2FloorAmount, netRaise,
+    effectiveCeilings, allocations, refunds, proRata, rollover,
     treasuryLeftover, elastic, armConcentration,
-    maxIndividualArm
+    maxIndividualArm, budgetCapped
   };
 }
 
@@ -650,7 +683,7 @@ function renderHopTable(r, params) {
 
   let html = '<table><thead><tr>';
   html += '<th>Hop</th><th class="num">Whitelisted</th><th class="num">Inviters</th><th class="num">Committers</th>';
-  html += '<th class="num">Demand</th><th class="num">Reserve</th><th class="num">Eff. Reserve</th>';
+  html += '<th class="num">Demand</th><th class="num">Ceiling</th><th class="num">Eff. Ceiling</th>';
   html += '<th class="num">Allocated</th><th class="num">Refunded</th><th class="num">Pro-Rata</th>';
   html += '<th class="num">Rollover</th><th class="num">ARM Conc.</th><th class="num">Max Indiv ARM</th>';
   html += '</tr></thead><tbody>';
@@ -660,10 +693,15 @@ function renderHopTable(r, params) {
   let totPop = 0, totInv = 0, totComm = 0, totDem = 0, totAlloc = 0, totRef = 0;
 
   for (let h = 0; h < 3; h++) {
-    const baseRes = r.canceled ? 0 : (r.saleSize * params.reserves[h] / 100);
+    const baseCeil = r.baseCeilings[h];
+    const effCeil = r.effectiveCeilings[h];
     const proRataColor = r.proRata[h] < 0.5 ? 'var(--red)' : r.proRata[h] < 0.8 ? 'var(--yellow)' : 'var(--green)';
     const rollLabel = h < 2 ? (r.rollover[h] ? '<span class="badge badge-pass">YES</span>' : '<span class="badge badge-info">NO</span>') : '—';
     const invLabel = h < 2 ? fmt(r.inviters[h]) : '—';
+    // Show budget cap indicator if this hop's effective ceiling was limited by remaining supply
+    const budgetNote = r.budgetCapped[h] ? ' <span title="Limited by remaining supply" style="color:var(--orange);">*</span>' : '';
+    // Show floor indicator for hop 2
+    const floorNote = (h === 2 && r.hop2FloorAmount > 0) ? ` <span title="Includes $${fmt(Math.round(r.hop2FloorAmount))} floor reservation" style="color:var(--accent);">\u2193</span>` : '';
 
     html += `<tr>`;
     html += `<td><span class="${hopClasses[h]} hop-label">${hopNames[h]}</span></td>`;
@@ -671,8 +709,8 @@ function renderHopTable(r, params) {
     html += `<td class="num">${invLabel}</td>`;
     html += `<td class="num">${fmt(r.committers[h])}</td>`;
     html += `<td class="num">$${fmt(Math.round(r.demands[h]))}</td>`;
-    html += `<td class="num">$${fmt(Math.round(baseRes))}</td>`;
-    html += `<td class="num"${r.effectiveReserves[h] !== baseRes ? ' style="color:var(--green)"' : ''}>$${fmt(Math.round(r.effectiveReserves[h]))}</td>`;
+    html += `<td class="num">$${fmt(Math.round(baseCeil))}${floorNote}</td>`;
+    html += `<td class="num"${effCeil !== baseCeil ? ' style="color:var(--green)"' : ''}>$${fmt(Math.round(effCeil))}${budgetNote}</td>`;
     html += `<td class="num">$${fmt(Math.round(r.allocations[h]))}</td>`;
     html += `<td class="num"${r.refunds[h] > 0 ? ' style="color:var(--yellow)"' : ''}>$${fmt(Math.round(r.refunds[h]))}</td>`;
     html += `<td class="num" style="color:${proRataColor}">${pct(r.proRata[h])}</td>`;
@@ -690,6 +728,19 @@ function renderHopTable(r, params) {
   html += `<td class="num" colspan="4"></td></tr>`;
 
   html += '</tbody></table>';
+
+  // Footnotes
+  const footnotes = [];
+  if (r.hop2FloorAmount > 0) {
+    footnotes.push(`<span style="color:var(--accent);">\u2193</span> Hop 2 ceiling includes $${fmt(Math.round(r.hop2FloorAmount))} floor reservation (hop 0/1 ceilings apply to remaining $${fmt(Math.round(r.netRaise))})`);
+  }
+  if (r.budgetCapped.some(b => b)) {
+    footnotes.push('<span style="color:var(--orange);">*</span> Effective ceiling limited by remaining supply (ceilings sum &gt; 100% of sale size)');
+  }
+  if (footnotes.length > 0) {
+    html += '<div style="font-size:0.72rem; margin-top:4px;">' + footnotes.join('<br>') + '</div>';
+  }
+
   return html;
 }
 
@@ -700,6 +751,11 @@ function renderDiagnostics(r, params) {
   // Check if raise is barely above minimum
   if (r.totalCommitted < params.minSale * 1.15) {
     issues.push({ level: 'warn', msg: `Total committed ($${fmt(r.totalCommitted)}) is within 15% of minimum ($${fmt(params.minSale)}) — fragile` });
+  }
+
+  // Hop 2 floor effectiveness
+  if (r.hop2FloorAmount > 0 && r.allocations[2] > 0 && r.allocations[2] <= r.hop2FloorAmount) {
+    issues.push({ level: 'info', msg: `Hop 2 allocation ($${fmt(Math.round(r.allocations[2]))}) fits within floor reservation ($${fmt(Math.round(r.hop2FloorAmount))}) — floor is protecting hop 2` });
   }
 
   // Check hop 2 meaningfulness
@@ -727,10 +783,16 @@ function renderDiagnostics(r, params) {
     issues.push({ level: 'warn', msg: `No individual can reach proposal threshold (100K ARM). Max possible: ${fmt(Math.round(maxArm))} ARM` });
   }
 
+  // Budget cap triggered
+  if (r.budgetCapped.some(b => b)) {
+    const capped = r.budgetCapped.map((b, i) => b ? `Hop ${i}` : null).filter(Boolean).join(', ');
+    issues.push({ level: 'info', msg: `Global budget constraint active: ${capped} ceiling(s) limited by remaining supply` });
+  }
+
   // Rollover not activating
   for (let h = 0; h < 2; h++) {
     const nextHop = h + 1;
-    if (r.demands[h] < r.effectiveReserves[h] && !r.rollover[h]) {
+    if (r.demands[h] < r.effectiveCeilings[h] && !r.rollover[h]) {
       issues.push({ level: 'info', msg: `Hop ${h} under-subscribed but rollover blocked: Hop ${nextHop} has ${r.committers[nextHop]} committers (need ${params.rollMin[nextHop]})` });
     }
   }
@@ -879,7 +941,10 @@ function updateLabels() {
   $('baseSaleVal').textContent = '$' + fmt(+$('baseSale').value);
   $('maxSaleVal').textContent = '$' + fmt(+$('maxSale').value);
   $('minSaleVal').textContent = '$' + fmt(+$('minSale').value);
-  $('elasticTriggerVal').textContent = 'Auto: $' + fmt(+$('baseSale').value * 1.5) + ' (1.5× base)';
+  const etVal = +$('elasticTrigger').value;
+  const baseVal = +$('baseSale').value;
+  const ratio = baseVal > 0 ? (etVal / baseVal).toFixed(2) : '—';
+  $('elasticTriggerVal').textContent = '$' + fmt(etVal) + ' (' + ratio + '\u00d7 base)';
 
   $('seedsVal').textContent = $('seeds').value;
   $('inv_rate0Val').textContent = $('inv_rate0').value + '%';
@@ -903,16 +968,26 @@ function updateLabels() {
   const hop2pop = inviters1 * inv1;
   $('popBreakdown').innerHTML =
     `Whitelisted: <span class="hop0">${seeds}</span> + ` +
-    `<span class="hop1">${hop1pop}</span> (${inviters0} inviters × ${inv0}) + ` +
-    `<span class="hop2">${hop2pop}</span> (${inviters1} inviters × ${inv1}) = ${seeds + hop1pop + hop2pop}`;
+    `<span class="hop1">${hop1pop}</span> (${inviters0} inviters \u00d7 ${inv0}) + ` +
+    `<span class="hop2">${hop2pop}</span> (${inviters1} inviters \u00d7 ${inv1}) = ${seeds + hop1pop + hop2pop}`;
 
-  // Reserve warning
-  const sum = +$('res0').value + +$('res1').value + +$('res2').value;
-  if (sum !== 100) {
-    $('reserveWarning').textContent = `⚠ Reserves sum to ${sum}% (should be 100%)`;
+  // Ceiling info (overlapping ceilings are by design)
+  const sum = +$('ceil0').value + +$('ceil1').value + +$('ceil2').value;
+  const floor = +$('hop2Floor').value;
+  const info = $('ceilingInfo');
+  let infoText = `Ceilings sum to ${sum}%`;
+  if (sum > 100) {
+    infoText += ` — overlapping by design (earlier hops have priority)`;
+  } else if (sum < 100) {
+    infoText += ` — ${100 - sum}% of sale size is unreachable by any hop`;
   } else {
-    $('reserveWarning').textContent = '';
+    infoText += ` (no overlap)`;
   }
+  if (floor > 0) {
+    infoText += `. Hop 2 floor: ${floor}% reserved; hop 0/1 ceilings apply to remaining ${100 - floor}%`;
+  }
+  info.style.color = (sum < 100) ? 'var(--yellow)' : 'var(--text-dim)';
+  info.textContent = infoText;
 }
 
 function update() {

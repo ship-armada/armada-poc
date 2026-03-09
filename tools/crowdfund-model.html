@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Armada Crowdfund Model</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3348;
+    --text: #e1e4ed;
+    --text-dim: #8b90a5;
+    --accent: #6c8aff;
+    --green: #4ade80;
+    --yellow: #facc15;
+    --red: #f87171;
+    --orange: #fb923c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  h2 { font-size: 1.1rem; color: var(--accent); margin-bottom: 12px; }
+  h3 { font-size: 0.95rem; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .subtitle { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 24px; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .param-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .param-row label {
+    flex: 0 0 160px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+  .param-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 6px;
+  }
+  .param-row .value {
+    flex: 0 0 75px;
+    text-align: right;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .param-row input[type="number"] {
+    width: 75px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 2px 6px;
+    font-size: 0.85rem;
+    text-align: right;
+  }
+  input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 2px solid var(--border);
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  th.num, td.num { text-align: right; }
+  td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr.totals td { border-top: 2px solid var(--border); font-weight: 700; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge-pass { background: #16a34a22; color: var(--green); }
+  .badge-warn { background: #ca8a0422; color: var(--yellow); }
+  .badge-fail { background: #dc262622; color: var(--red); }
+  .badge-info { background: #6c8aff22; color: var(--accent); }
+
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .metric {
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+  }
+  .metric .label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .metric .val { font-size: 1.2rem; font-weight: 700; margin-top: 2px; }
+
+  .scenario-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .scenario-tab {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .scenario-tab:hover { border-color: var(--accent); color: var(--text); }
+  .scenario-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .bar-container { display: flex; height: 24px; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .bar-segment { display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 600; color: #fff; min-width: 24px; }
+  .bar-hop0 { background: #6c8aff; }
+  .bar-hop1 { background: #a78bfa; }
+  .bar-hop2 { background: #f472b6; }
+  .bar-treasury { background: #475569; }
+  .bar-refund { background: #334155; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+  .scenario-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .scenario-card h4 { font-size: 0.9rem; margin-bottom: 4px; }
+  .scenario-card .desc { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 10px; }
+
+  .hop-label { font-weight: 600; }
+  .hop0 { color: #6c8aff; }
+  .hop1 { color: #a78bfa; }
+  .hop2 { color: #f472b6; }
+
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+  .divider { border-top: 1px solid var(--border); margin: 16px 0; }
+
+  .reserve-warning { font-size: 0.75rem; color: var(--yellow); margin-top: 4px; }
+
+  .scenario-summary {
+    background: var(--surface2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .scenario-summary .scenario-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+  .scenario-summary .scenario-question {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+
+  @media (max-width: 900px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .grid-3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Armada Crowdfund Parameter Model</h1>
+<p class="subtitle">Interactive tool for exploring hop distribution, caps, and raise scenarios. Drag sliders or type values — results update instantly.</p>
+
+<!-- =============== PARAMETERS =============== -->
+<div class="grid grid-2" style="margin-bottom: 20px;">
+  <div class="card">
+    <h2>Raise Targets</h2>
+    <div class="param-row">
+      <label>Base Sale (USDC)</label>
+      <input type="range" id="baseSale" min="500000" max="3000000" step="100000" value="1200000">
+      <span class="value" id="baseSaleVal"></span>
+    </div>
+    <div class="param-row">
+      <label>Max Sale (USDC)</label>
+      <input type="range" id="maxSale" min="500000" max="5000000" step="100000" value="1800000">
+      <span class="value" id="maxSaleVal"></span>
+    </div>
+    <div class="param-row">
+      <label>Min Sale (USDC)</label>
+      <input type="range" id="minSale" min="100000" max="2000000" step="100000" value="1000000">
+      <span class="value" id="minSaleVal"></span>
+    </div>
+    <div class="param-row">
+      <label>Elastic Trigger</label>
+      <span class="value" id="elasticTriggerVal" style="flex:1; text-align:center; color: var(--text-dim); font-size:0.8rem;"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Hop Configuration</h2>
+    <table>
+      <thead>
+        <tr><th></th><th class="num">Reserve %</th><th class="num">Cap ($)</th><th class="num">Invites</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="hop-label hop0">Hop 0 (Seeds)</span></td>
+          <td class="num"><input type="number" id="res0" min="0" max="100" step="1" value="70">%</td>
+          <td class="num">$<input type="number" id="cap0" min="100" max="100000" step="500" value="15000"></td>
+          <td class="num"><input type="number" id="inv0" min="0" max="10" step="1" value="3"></td>
+        </tr>
+        <tr>
+          <td><span class="hop-label hop1">Hop 1 (Invited)</span></td>
+          <td class="num"><input type="number" id="res1" min="0" max="100" step="1" value="25">%</td>
+          <td class="num">$<input type="number" id="cap1" min="100" max="50000" step="500" value="4000"></td>
+          <td class="num"><input type="number" id="inv1" min="0" max="10" step="1" value="2"></td>
+        </tr>
+        <tr>
+          <td><span class="hop-label hop2">Hop 2 (Invited)</span></td>
+          <td class="num"><input type="number" id="res2" min="0" max="100" step="1" value="5">%</td>
+          <td class="num">$<input type="number" id="cap2" min="100" max="20000" step="100" value="1000"></td>
+          <td class="num">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <div id="reserveWarning" class="reserve-warning"></div>
+    <div style="margin-top: 10px;">
+      <div class="param-row">
+        <label>Rollover → Hop 1 min</label>
+        <input type="number" id="rollMin1" min="0" max="200" step="5" value="30" style="width:60px">
+        <span style="font-size:0.8rem; color:var(--text-dim)">unique committers</span>
+      </div>
+      <div class="param-row">
+        <label>Rollover → Hop 2 min</label>
+        <input type="number" id="rollMin2" min="0" max="500" step="5" value="50" style="width:60px">
+        <span style="font-size:0.8rem; color:var(--text-dim)">unique committers</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =============== SCENARIOS =============== -->
+<div class="section-header">
+  <h2 style="margin-bottom:0">Scenarios</h2>
+</div>
+
+<div class="scenario-tabs" id="scenarioTabs"></div>
+
+<div id="scenarioSummary" class="scenario-summary"></div>
+
+<div class="card" style="margin-bottom: 16px;" id="scenarioEditor">
+  <div class="grid grid-2">
+    <div>
+      <h3>Population</h3>
+      <div class="param-row">
+        <label>Seed Count</label>
+        <input type="range" id="seeds" min="5" max="200" step="1" value="50">
+        <span class="value" id="seedsVal"></span>
+      </div>
+      <div id="popBreakdown" style="font-size:0.8rem; color:var(--text-dim); margin-top:4px;"></div>
+    </div>
+    <div>
+      <h3>Invite Rate (% who send invites)</h3>
+      <div class="param-row">
+        <label><span class="hop0">Hop 0</span></label>
+        <input type="range" id="inv_rate0" min="0" max="100" step="5" value="70">
+        <span class="value" id="inv_rate0Val"></span>
+      </div>
+      <div class="param-row">
+        <label><span class="hop1">Hop 1</span></label>
+        <input type="range" id="inv_rate1" min="0" max="100" step="5" value="60">
+        <span class="value" id="inv_rate1Val"></span>
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;">Hop 2 cannot invite (0 invite slots)</div>
+    </div>
+    <div>
+      <h3>Commit Rate (% who commit USDC)</h3>
+      <div class="param-row">
+        <label><span class="hop0">Hop 0</span></label>
+        <input type="range" id="part0" min="0" max="100" step="5" value="60">
+        <span class="value" id="part0Val"></span>
+      </div>
+      <div class="param-row">
+        <label><span class="hop1">Hop 1</span></label>
+        <input type="range" id="part1" min="0" max="100" step="5" value="50">
+        <span class="value" id="part1Val"></span>
+      </div>
+      <div class="param-row">
+        <label><span class="hop2">Hop 2</span></label>
+        <input type="range" id="part2" min="0" max="100" step="5" value="40">
+        <span class="value" id="part2Val"></span>
+      </div>
+    </div>
+    <div>
+      <h3>Avg Commit (% of cap)</h3>
+      <div class="param-row">
+        <label><span class="hop0">Hop 0</span></label>
+        <input type="range" id="avg0" min="10" max="100" step="5" value="70">
+        <span class="value" id="avg0Val"></span>
+      </div>
+      <div class="param-row">
+        <label><span class="hop1">Hop 1</span></label>
+        <input type="range" id="avg1" min="10" max="100" step="5" value="60">
+        <span class="value" id="avg1Val"></span>
+      </div>
+      <div class="param-row">
+        <label><span class="hop2">Hop 2</span></label>
+        <input type="range" id="avg2" min="10" max="100" step="5" value="50">
+        <span class="value" id="avg2Val"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =============== RESULTS =============== -->
+<div id="results"></div>
+
+<div class="divider"></div>
+
+<!-- =============== ALL SCENARIOS COMPARISON =============== -->
+<div class="section-header" style="margin-top: 8px;">
+  <h2 style="margin-bottom:0;">All Scenarios Comparison</h2>
+</div>
+<div id="comparison"></div>
+
+<script>
+// ============ SCENARIOS ============
+const SCENARIOS = [
+  { name: "Ghost Town",
+    desc: "Low seeds, low participation — can we hit minimum?",
+    summary: "Tests the worst-case launch scenario: a small seed group and low enthusiasm across all hops. Most whitelisted people don't commit, and those who do commit conservatively. Only 30% of seeds even bother inviting anyone, so the invitation tree is stunted. The question is whether the raise can even reach the $1M minimum with these parameters, or if we need to lower the minimum, raise the caps, or start with more seeds. If this scenario fails, the crowdfund has no margin for error on launch day.",
+    seeds: 20, invRate: [30,20], part: [30,20,10], avg: [50,50,50] },
+  { name: "Seed Heavy",
+    desc: "Many active seeds dominate, weak lower hops",
+    summary: "Models what happens when seeds are highly engaged but the invitation chain doesn't propagate well. Seeds show up in force and commit near their cap, but only half bother to invite, and hop 1 participants barely pass invites along. This tests whether the crowdfund becomes a de facto private sale for insiders. Watch for: hop 0 ARM concentration above 80%, hop 2 pro-rata below 50% (meaning their participation feels pointless), and whether the governance power distribution is healthy or captured by a small seed group.",
+    seeds: 80, invRate: [50,25], part: [80,30,15], avg: [90,60,40] },
+  { name: "Balanced",
+    desc: "Moderate participation across all hops",
+    summary: "The optimistic-but-reasonable baseline. Decent seed turnout with most seeds inviting friends, participation drops off naturally at each hop, and commitment amounts taper from 70% of cap at hop 0 to 50% at hop 2. This is roughly what we'd hope for if the crowdfund goes \"fine\" — no viral explosion, no ghost town. Use this as the reference point: if the parameters produce healthy results here, they're at least workable.",
+    seeds: 50, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
+  { name: "Viral Hop 2",
+    desc: "Strong word-of-mouth — hop 2 is very active",
+    summary: "Tests the scenario where word-of-mouth actually works: hop 1 participants are enthusiastic inviters (80% pass along invites) and hop 2 participants are more engaged than the seeds who started the chain. This can happen if seeds are crypto-native insiders who are lukewarm, but their invitees bring in excited newcomers from outside the bubble. The key question is whether the 5% hop 2 reserve is large enough to reward this enthusiasm, or if hop 2 participants commit $1,000 but only get $150 allocated (85% refund), making the experience feel like a bait-and-switch.",
+    seeds: 30, invRate: [60,80], part: [50,60,80], avg: [70,80,80] },
+  { name: "Elastic Hunt",
+    desc: "Can we reach the elastic trigger?",
+    summary: "Specifically probes whether the elastic expansion from BASE_SALE ($1.2M) to MAX_SALE ($1.8M) is realistically achievable. The elastic trigger is set at 1.5× base, and crossing it gives all participants 50% more ARM for the same USDC. This scenario uses optimistic-but-not-absurd numbers (60 seeds, high invite rates, strong average commits) to see if the trigger is within reach or structurally unreachable. If even this favorable scenario can't trigger expansion, the elastic mechanism is decorative and we should either lower the trigger or remove it.",
+    seeds: 60, invRate: [80,70], part: [70,60,50], avg: [85,80,70] },
+  { name: "Whale Seeds",
+    desc: "Few seeds, all maxing out",
+    summary: "Models a small, high-conviction seed group where every seed commits the maximum $15K. Think: 15 people who are personally close to the team and willing to go all-in. Most seeds invite (they're true believers), but the tree is small because there are so few seeds. Tests whether a small number of large commitments can carry the raise, and what the resulting governance power distribution looks like. With 15 seeds at $15K each ($225K from hop 0), can the lower hops make up the remaining $775K+ to hit minimum?",
+    seeds: 15, invRate: [80,50], part: [100,40,20], avg: [100,80,60] },
+  { name: "Full House",
+    desc: "Everything oversubscribed",
+    summary: "The best-case stress test: a large seed group (100), everyone invites, high participation across all hops, and strong average commits. Every hop is oversubscribed, meaning total demand exceeds the reserve for that hop. This tests the pro-rata mechanics under pressure — everyone gets scaled down and receives partial refunds. Watch for: whether the refund experience is acceptable (getting 40% of your money back feels different from getting 5% back), whether the elastic trigger activates, and what the ARM distribution looks like when all hops are competing for a fixed pool.",
+    seeds: 100, invRate: [90,80], part: [90,80,60], avg: [90,90,80] },
+  { name: "Custom",
+    desc: "Your own parameters — adjust sliders above",
+    summary: "Use the sliders to set your own seed count, invite rates, commit rates, and average commitment levels. This is your sandbox for testing specific hypotheses or modeling scenarios that the presets don't cover. The results panel and comparison grid will update live as you adjust values.",
+    seeds: 50, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
+];
+
+let activeScenario = 2; // Balanced
+
+// ============ DOM HELPERS ============
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+const fmtD = (n, d) => n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = n => (n * 100).toFixed(1) + '%';
+
+// ============ READ PARAMS ============
+function getParams() {
+  const baseSale = +$('baseSale').value;
+  const maxSale = +$('maxSale').value;
+  const minSale = +$('minSale').value;
+  const elasticTrigger = baseSale * 1.5;
+
+  return {
+    baseSale, maxSale, minSale, elasticTrigger,
+    reserves: [+$('res0').value, +$('res1').value, +$('res2').value],
+    caps: [+$('cap0').value, +$('cap1').value, +$('cap2').value],
+    invites: [+$('inv0').value, +$('inv1').value, 0],
+    rollMin: [0, +$('rollMin1').value, +$('rollMin2').value],
+  };
+}
+
+function getScenario() {
+  return {
+    seeds: +$('seeds').value,
+    invRate: [+$('inv_rate0').value / 100, +$('inv_rate1').value / 100],
+    part: [+$('part0').value / 100, +$('part1').value / 100, +$('part2').value / 100],
+    avg: [+$('avg0').value / 100, +$('avg1').value / 100, +$('avg2').value / 100],
+  };
+}
+
+// ============ SIMULATION ENGINE ============
+// Mirrors ArmadaCrowdfund.sol finalization logic exactly
+function simulate(params, scenario) {
+  const p = params;
+  const s = scenario;
+
+  // Population: invite rate determines how many people actually send invites,
+  // which determines the whitelisted population at the next hop.
+  // invRate[0] = fraction of seeds who use their invites → determines hop 1 population
+  // invRate[1] = fraction of hop 1 who use their invites → determines hop 2 population
+  const inviters = [
+    Math.floor(s.seeds * s.invRate[0]),
+    0 // computed below
+  ];
+  const whitelisted = [
+    s.seeds,
+    inviters[0] * p.invites[0],
+    0 // computed below
+  ];
+  inviters[1] = Math.floor(whitelisted[1] * s.invRate[1]);
+  whitelisted[2] = inviters[1] * p.invites[1];
+
+  const maxPop = whitelisted;
+  const committers = [
+    Math.floor(maxPop[0] * s.part[0]),
+    Math.floor(maxPop[1] * s.part[1]),
+    Math.floor(maxPop[2] * s.part[2])
+  ];
+
+  // Demands (USDC)
+  const demands = [
+    committers[0] * p.caps[0] * s.avg[0],
+    committers[1] * p.caps[1] * s.avg[1],
+    committers[2] * p.caps[2] * s.avg[2]
+  ];
+  const totalCommitted = demands[0] + demands[1] + demands[2];
+
+  // Check minimum
+  if (totalCommitted < p.minSale) {
+    return {
+      canceled: true, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
+      committers, demands,
+      saleSize: 0, reserves: [0,0,0], allocations: [0,0,0],
+      refunds: [0,0,0], proRata: [0,0,0], rollover: [false, false],
+      treasuryLeftover: 0, elastic: false,
+      armConcentration: [0,0,0], maxIndividualArm: [0,0,0],
+      effectiveReserves: [0,0,0]
+    };
+  }
+
+  // Elastic expansion
+  const elastic = totalCommitted >= p.elasticTrigger;
+  const saleSize = elastic ? p.maxSale : p.baseSale;
+
+  // Reserves
+  const reserves = [
+    saleSize * p.reserves[0] / 100,
+    saleSize * p.reserves[1] / 100,
+    saleSize * p.reserves[2] / 100
+  ];
+
+  // Sequential rollover (mirrors Solidity exactly)
+  let treasuryLeftover = 0;
+  const rollover = [false, false];
+
+  for (let h = 0; h < 3; h++) {
+    if (demands[h] <= reserves[h]) {
+      const leftover = reserves[h] - demands[h];
+      if (h === 0) {
+        if (committers[1] >= p.rollMin[1]) {
+          reserves[1] += leftover;
+          rollover[0] = true;
+        } else {
+          treasuryLeftover += leftover;
+        }
+      } else if (h === 1) {
+        if (committers[2] >= p.rollMin[2]) {
+          reserves[2] += leftover;
+          rollover[1] = true;
+        } else {
+          treasuryLeftover += leftover;
+        }
+      } else {
+        treasuryLeftover += leftover;
+      }
+    }
+  }
+
+  // Allocations
+  const allocations = [];
+  const refunds = [];
+  const proRata = [];
+  for (let h = 0; h < 3; h++) {
+    if (demands[h] === 0) {
+      allocations.push(0);
+      refunds.push(0);
+      proRata.push(1);
+    } else if (demands[h] <= reserves[h]) {
+      allocations.push(demands[h]);
+      refunds.push(0);
+      proRata.push(1);
+    } else {
+      allocations.push(reserves[h]);
+      refunds.push(demands[h] - reserves[h]);
+      proRata.push(reserves[h] / demands[h]);
+    }
+  }
+
+  // ARM distribution per hop
+  const totalAlloc = allocations[0] + allocations[1] + allocations[2];
+  const armConcentration = totalAlloc > 0
+    ? allocations.map(a => a / totalAlloc)
+    : [0, 0, 0];
+
+  // Max individual ARM (someone who committed at cap, gets pro-rata)
+  const maxIndividualArm = [
+    p.caps[0] * s.avg[0] * proRata[0],
+    p.caps[1] * s.avg[1] * proRata[1],
+    p.caps[2] * s.avg[2] * proRata[2]
+  ];
+
+  return {
+    canceled: false, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
+    committers, demands,
+    saleSize, reserves: [saleSize * p.reserves[0]/100, saleSize * p.reserves[1]/100, saleSize * p.reserves[2]/100],
+    effectiveReserves: reserves,
+    allocations, refunds, proRata, rollover,
+    treasuryLeftover, elastic, armConcentration,
+    maxIndividualArm
+  };
+}
+
+// ============ RENDERING ============
+function renderMetrics(r, params) {
+  const totalAlloc = r.allocations[0] + r.allocations[1] + r.allocations[2];
+  const totalRefund = r.refunds[0] + r.refunds[1] + r.refunds[2];
+  const totalPop = r.committers[0] + r.committers[1] + r.committers[2];
+
+  let html = '<div class="metric-grid">';
+
+  // Total raise
+  const raiseStatus = r.canceled ? 'fail' : r.totalCommitted >= params.minSale ? 'pass' : 'fail';
+  html += `<div class="metric"><div class="label">Total Committed</div><div class="val" style="color:var(--${raiseStatus === 'pass' ? 'green' : 'red'})">$${fmt(r.totalCommitted)}</div></div>`;
+
+  // Sale outcome
+  if (r.canceled) {
+    html += `<div class="metric"><div class="label">Outcome</div><div class="val"><span class="badge badge-fail">CANCELED</span></div></div>`;
+  } else {
+    html += `<div class="metric"><div class="label">Sale Size</div><div class="val">$${fmt(r.saleSize)}</div></div>`;
+  }
+
+  // Elastic
+  html += `<div class="metric"><div class="label">Elastic</div><div class="val"><span class="badge badge-${r.elastic ? 'pass' : 'info'}">${r.elastic ? 'TRIGGERED' : 'BASE'}</span></div></div>`;
+
+  // Committers
+  html += `<div class="metric"><div class="label">Committers</div><div class="val">${fmt(totalPop)}</div></div>`;
+
+  // Total allocated
+  html += `<div class="metric"><div class="label">ARM Allocated</div><div class="val">${fmt(totalAlloc)}</div></div>`;
+
+  // Total refunded
+  html += `<div class="metric"><div class="label">Refunded</div><div class="val" style="color:${totalRefund > 0 ? 'var(--yellow)' : 'var(--text)'}">$${fmt(totalRefund)}</div></div>`;
+
+  // Treasury leftover
+  html += `<div class="metric"><div class="label">Treasury Leftover</div><div class="val">$${fmt(r.treasuryLeftover)}</div></div>`;
+
+  // Governance: max individual ARM
+  const maxArm = Math.max(...r.maxIndividualArm);
+  const govThreshold = 100000;
+  const govReachable = maxArm >= govThreshold;
+  html += `<div class="metric"><div class="label">Max Indiv. ARM</div><div class="val" style="color:var(--${govReachable ? 'green' : 'yellow'})">${fmt(Math.round(maxArm))}</div></div>`;
+
+  html += '</div>';
+  return html;
+}
+
+function renderDistributionBar(r) {
+  if (r.canceled) return '<div style="text-align:center; padding:12px; color:var(--red);">Sale canceled — below minimum raise</div>';
+
+  const totalAlloc = r.allocations[0] + r.allocations[1] + r.allocations[2];
+  const totalRefund = r.refunds[0] + r.refunds[1] + r.refunds[2];
+  const total = totalAlloc + r.treasuryLeftover;
+  if (total === 0) return '';
+
+  const colors = ['bar-hop0', 'bar-hop1', 'bar-hop2'];
+  const labels = ['Hop 0', 'Hop 1', 'Hop 2'];
+  let html = '<div style="margin-bottom:4px; font-size:0.75rem; color:var(--text-dim);">ARM Distribution (of sale size)</div>';
+  html += '<div class="bar-container">';
+  for (let h = 0; h < 3; h++) {
+    const w = (r.allocations[h] / r.saleSize * 100);
+    if (w > 1) html += `<div class="bar-segment ${colors[h]}" style="width:${w}%">${labels[h]} ${w.toFixed(0)}%</div>`;
+  }
+  const tw = r.treasuryLeftover / r.saleSize * 100;
+  if (tw > 1) html += `<div class="bar-segment bar-treasury" style="width:${tw}%">Treasury ${tw.toFixed(0)}%</div>`;
+  html += '</div>';
+
+  if (totalRefund > 0) {
+    html += '<div style="margin-top:8px; margin-bottom:4px; font-size:0.75rem; color:var(--text-dim);">USDC Flow (committed)</div>';
+    html += '<div class="bar-container">';
+    const allocPct = totalAlloc / r.totalCommitted * 100;
+    const refPct = totalRefund / r.totalCommitted * 100;
+    html += `<div class="bar-segment bar-hop0" style="width:${allocPct}%; background:var(--green);">Allocated ${allocPct.toFixed(0)}%</div>`;
+    html += `<div class="bar-segment bar-refund" style="width:${refPct}%">Refunded ${refPct.toFixed(0)}%</div>`;
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function renderHopTable(r, params) {
+  if (r.canceled) return '';
+
+  let html = '<table><thead><tr>';
+  html += '<th>Hop</th><th class="num">Whitelisted</th><th class="num">Inviters</th><th class="num">Committers</th>';
+  html += '<th class="num">Demand</th><th class="num">Reserve</th><th class="num">Eff. Reserve</th>';
+  html += '<th class="num">Allocated</th><th class="num">Refunded</th><th class="num">Pro-Rata</th>';
+  html += '<th class="num">Rollover</th><th class="num">ARM Conc.</th><th class="num">Max Indiv ARM</th>';
+  html += '</tr></thead><tbody>';
+
+  const hopNames = ['Hop 0 (Seeds)', 'Hop 1', 'Hop 2'];
+  const hopClasses = ['hop0', 'hop1', 'hop2'];
+  let totPop = 0, totInv = 0, totComm = 0, totDem = 0, totAlloc = 0, totRef = 0;
+
+  for (let h = 0; h < 3; h++) {
+    const baseRes = r.canceled ? 0 : (r.saleSize * params.reserves[h] / 100);
+    const proRataColor = r.proRata[h] < 0.5 ? 'var(--red)' : r.proRata[h] < 0.8 ? 'var(--yellow)' : 'var(--green)';
+    const rollLabel = h < 2 ? (r.rollover[h] ? '<span class="badge badge-pass">YES</span>' : '<span class="badge badge-info">NO</span>') : '—';
+    const invLabel = h < 2 ? fmt(r.inviters[h]) : '—';
+
+    html += `<tr>`;
+    html += `<td><span class="${hopClasses[h]} hop-label">${hopNames[h]}</span></td>`;
+    html += `<td class="num">${fmt(r.maxPop[h])}</td>`;
+    html += `<td class="num">${invLabel}</td>`;
+    html += `<td class="num">${fmt(r.committers[h])}</td>`;
+    html += `<td class="num">$${fmt(Math.round(r.demands[h]))}</td>`;
+    html += `<td class="num">$${fmt(Math.round(baseRes))}</td>`;
+    html += `<td class="num"${r.effectiveReserves[h] !== baseRes ? ' style="color:var(--green)"' : ''}>$${fmt(Math.round(r.effectiveReserves[h]))}</td>`;
+    html += `<td class="num">$${fmt(Math.round(r.allocations[h]))}</td>`;
+    html += `<td class="num"${r.refunds[h] > 0 ? ' style="color:var(--yellow)"' : ''}>$${fmt(Math.round(r.refunds[h]))}</td>`;
+    html += `<td class="num" style="color:${proRataColor}">${pct(r.proRata[h])}</td>`;
+    html += `<td class="num">${rollLabel}</td>`;
+    html += `<td class="num">${pct(r.armConcentration[h])}</td>`;
+    html += `<td class="num">${fmt(Math.round(r.maxIndividualArm[h]))}</td>`;
+    html += `</tr>`;
+    totPop += r.maxPop[h]; totInv += r.inviters[h]; totComm += r.committers[h]; totDem += r.demands[h]; totAlloc += r.allocations[h]; totRef += r.refunds[h];
+  }
+
+  html += `<tr class="totals">`;
+  html += `<td>Total</td><td class="num">${fmt(totPop)}</td><td class="num">${fmt(totInv)}</td><td class="num">${fmt(totComm)}</td>`;
+  html += `<td class="num">$${fmt(Math.round(totDem))}</td><td class="num" colspan="2"></td>`;
+  html += `<td class="num">$${fmt(Math.round(totAlloc))}</td><td class="num">$${fmt(Math.round(totRef))}</td>`;
+  html += `<td class="num" colspan="4"></td></tr>`;
+
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderDiagnostics(r, params) {
+  if (r.canceled) return '';
+  const issues = [];
+
+  // Check if raise is barely above minimum
+  if (r.totalCommitted < params.minSale * 1.15) {
+    issues.push({ level: 'warn', msg: `Total committed ($${fmt(r.totalCommitted)}) is within 15% of minimum ($${fmt(params.minSale)}) — fragile` });
+  }
+
+  // Check hop 2 meaningfulness
+  if (r.committers[2] > 0 && r.proRata[2] < 0.3) {
+    issues.push({ level: 'warn', msg: `Hop 2 pro-rata is ${pct(r.proRata[2])} — participants get back 70%+ of their USDC as refund` });
+  }
+  if (r.committers[2] > 0 && r.maxIndividualArm[2] < 200) {
+    issues.push({ level: 'warn', msg: `Hop 2 max individual ARM is only ${fmt(Math.round(r.maxIndividualArm[2]))} — barely meaningful for governance` });
+  }
+
+  // Check concentration
+  if (r.armConcentration[0] > 0.8) {
+    issues.push({ level: 'warn', msg: `Hop 0 captures ${pct(r.armConcentration[0])} of ARM — high concentration in seeds` });
+  }
+
+  // Elastic unreachable
+  if (!r.elastic && r.totalCommitted < params.elasticTrigger * 0.8) {
+    issues.push({ level: 'info', msg: `Elastic trigger ($${fmt(params.elasticTrigger)}) is ${pct(1 - r.totalCommitted/params.elasticTrigger)} above total committed` });
+  }
+
+  // Governance threshold
+  const govThreshold = 100000; // 100K ARM for proposal
+  const maxArm = Math.max(...r.maxIndividualArm);
+  if (maxArm < govThreshold) {
+    issues.push({ level: 'warn', msg: `No individual can reach proposal threshold (100K ARM). Max possible: ${fmt(Math.round(maxArm))} ARM` });
+  }
+
+  // Rollover not activating
+  for (let h = 0; h < 2; h++) {
+    const nextHop = h + 1;
+    if (r.demands[h] < r.effectiveReserves[h] && !r.rollover[h]) {
+      issues.push({ level: 'info', msg: `Hop ${h} under-subscribed but rollover blocked: Hop ${nextHop} has ${r.committers[nextHop]} committers (need ${params.rollMin[nextHop]})` });
+    }
+  }
+
+  if (issues.length === 0) {
+    issues.push({ level: 'pass', msg: 'No warnings — parameters look well-balanced for this scenario' });
+  }
+
+  let html = '<div style="margin-top:12px;"><h3>Diagnostics</h3>';
+  for (const i of issues) {
+    const badgeClass = i.level === 'pass' ? 'badge-pass' : i.level === 'warn' ? 'badge-warn' : 'badge-info';
+    const label = i.level === 'pass' ? 'OK' : i.level === 'warn' ? 'WARN' : 'INFO';
+    html += `<div style="margin-bottom:4px;"><span class="badge ${badgeClass}">${label}</span> <span style="font-size:0.82rem;">${i.msg}</span></div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderResults() {
+  const params = getParams();
+  const scenario = getScenario();
+  const r = simulate(params, scenario);
+
+  let html = '';
+  html += renderMetrics(r, params);
+  html += renderDistributionBar(r);
+  html += '<div style="margin-top:16px; overflow-x:auto;">';
+  html += renderHopTable(r, params);
+  html += '</div>';
+  html += renderDiagnostics(r, params);
+
+  $('results').innerHTML = html;
+}
+
+function renderComparison() {
+  const params = getParams();
+  let html = '<div class="comparison-grid">';
+
+  for (let i = 0; i < SCENARIOS.length; i++) {
+    const sc = SCENARIOS[i];
+    let scenario;
+    if (i === SCENARIOS.length - 1) {
+      // Custom — use current slider values
+      scenario = getScenario();
+    } else {
+      scenario = {
+        seeds: sc.seeds,
+        invRate: sc.invRate.map(r => r / 100),
+        part: sc.part.map(p => p / 100),
+        avg: sc.avg.map(a => a / 100),
+      };
+    }
+    const r = simulate(params, scenario);
+    const totalAlloc = r.allocations[0] + r.allocations[1] + r.allocations[2];
+    const maxArm = Math.max(...r.maxIndividualArm);
+
+    html += `<div class="scenario-card" style="${i === activeScenario ? 'border-color:var(--accent);' : ''}">`;
+    html += `<h4>${sc.name}</h4>`;
+    html += `<div class="desc">${sc.desc}</div>`;
+
+    if (r.canceled) {
+      html += `<div class="flex-between" style="margin-bottom:6px;"><span class="badge badge-fail">CANCELED</span><span style="font-size:0.8rem;">$${fmt(r.totalCommitted)} / $${fmt(params.minSale)}</span></div>`;
+    } else {
+      // Mini metrics
+      html += '<table style="font-size:0.78rem;">';
+      html += `<tr><td style="color:var(--text-dim)">Raise</td><td class="num" style="color:var(--green)">$${fmt(r.totalCommitted)}</td>`;
+      html += `<td style="color:var(--text-dim)">Elastic</td><td class="num"><span class="badge badge-${r.elastic ? 'pass' : 'info'}" style="font-size:0.65rem">${r.elastic ? 'YES' : 'NO'}</span></td></tr>`;
+      html += `<tr><td style="color:var(--text-dim)">Committers</td><td class="num">${fmt(r.committers[0] + r.committers[1] + r.committers[2])}</td>`;
+      html += `<td style="color:var(--text-dim)">Allocated</td><td class="num">${fmt(Math.round(totalAlloc))} ARM</td></tr>`;
+
+      // Pro-rata per hop
+      html += `<tr><td style="color:var(--text-dim)">Pro-rata</td><td class="num" colspan="3">`;
+      for (let h = 0; h < 3; h++) {
+        const color = r.proRata[h] < 0.5 ? 'var(--red)' : r.proRata[h] < 0.8 ? 'var(--yellow)' : 'var(--green)';
+        html += `<span class="${['hop0','hop1','hop2'][h]}" style="margin-right:8px;">H${h}:</span><span style="color:${color}">${pct(r.proRata[h])}</span> `;
+      }
+      html += '</td></tr>';
+
+      // Concentration
+      html += `<tr><td style="color:var(--text-dim)">ARM share</td><td class="num" colspan="3">`;
+      for (let h = 0; h < 3; h++) {
+        html += `<span class="${['hop0','hop1','hop2'][h]}" style="margin-right:4px;">H${h}:</span>${pct(r.armConcentration[h])} `;
+      }
+      html += '</td></tr>';
+
+      // Max individual ARM
+      const govColor = maxArm >= 100000 ? 'var(--green)' : 'var(--yellow)';
+      html += `<tr><td style="color:var(--text-dim)">Max indiv</td><td class="num" style="color:${govColor}">${fmt(Math.round(maxArm))} ARM</td>`;
+      html += `<td style="color:var(--text-dim)">Treasury</td><td class="num">$${fmt(Math.round(r.treasuryLeftover))}</td></tr>`;
+
+      html += '</table>';
+
+      // Mini bar
+      html += '<div class="bar-container" style="height:16px; margin-top:6px;">';
+      const colors = ['bar-hop0', 'bar-hop1', 'bar-hop2'];
+      for (let h = 0; h < 3; h++) {
+        const w = r.allocations[h] / r.saleSize * 100;
+        if (w > 0.5) html += `<div class="bar-segment ${colors[h]}" style="width:${w}%; font-size:0.6rem;">${w > 8 ? pct(r.armConcentration[h]) : ''}</div>`;
+      }
+      const tw = r.treasuryLeftover / r.saleSize * 100;
+      if (tw > 0.5) html += `<div class="bar-segment bar-treasury" style="width:${tw}%; font-size:0.6rem;"></div>`;
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  html += '</div>';
+  $('comparison').innerHTML = html;
+}
+
+// ============ TABS ============
+function renderTabs() {
+  let html = '';
+  for (let i = 0; i < SCENARIOS.length; i++) {
+    html += `<div class="scenario-tab ${i === activeScenario ? 'active' : ''}" onclick="selectScenario(${i})">${SCENARIOS[i].name}</div>`;
+  }
+  $('scenarioTabs').innerHTML = html;
+
+  // Render scenario summary
+  const sc = SCENARIOS[activeScenario];
+  $('scenarioSummary').innerHTML =
+    `<div class="scenario-title">${sc.name}</div>` +
+    `<div class="scenario-question">${sc.desc}</div>` +
+    `<div>${sc.summary}</div>`;
+}
+
+function selectScenario(i) {
+  activeScenario = i;
+  const sc = SCENARIOS[i];
+  $('seeds').value = sc.seeds;
+  $('inv_rate0').value = sc.invRate[0];
+  $('inv_rate1').value = sc.invRate[1];
+  $('part0').value = sc.part[0];
+  $('part1').value = sc.part[1];
+  $('part2').value = sc.part[2];
+  $('avg0').value = sc.avg[0];
+  $('avg1').value = sc.avg[1];
+  $('avg2').value = sc.avg[2];
+  renderTabs();
+  update();
+}
+
+// ============ UPDATE LOOP ============
+function updateLabels() {
+  $('baseSaleVal').textContent = '$' + fmt(+$('baseSale').value);
+  $('maxSaleVal').textContent = '$' + fmt(+$('maxSale').value);
+  $('minSaleVal').textContent = '$' + fmt(+$('minSale').value);
+  $('elasticTriggerVal').textContent = 'Auto: $' + fmt(+$('baseSale').value * 1.5) + ' (1.5× base)';
+
+  $('seedsVal').textContent = $('seeds').value;
+  $('inv_rate0Val').textContent = $('inv_rate0').value + '%';
+  $('inv_rate1Val').textContent = $('inv_rate1').value + '%';
+  $('part0Val').textContent = $('part0').value + '%';
+  $('part1Val').textContent = $('part1').value + '%';
+  $('part2Val').textContent = $('part2').value + '%';
+  $('avg0Val').textContent = $('avg0').value + '%';
+  $('avg1Val').textContent = $('avg1').value + '%';
+  $('avg2Val').textContent = $('avg2').value + '%';
+
+  // Population breakdown (accounts for invite rates)
+  const seeds = +$('seeds').value;
+  const inv0 = +$('inv0').value;
+  const inv1 = +$('inv1').value;
+  const ir0 = +$('inv_rate0').value / 100;
+  const ir1 = +$('inv_rate1').value / 100;
+  const inviters0 = Math.floor(seeds * ir0);
+  const hop1pop = inviters0 * inv0;
+  const inviters1 = Math.floor(hop1pop * ir1);
+  const hop2pop = inviters1 * inv1;
+  $('popBreakdown').innerHTML =
+    `Whitelisted: <span class="hop0">${seeds}</span> + ` +
+    `<span class="hop1">${hop1pop}</span> (${inviters0} inviters × ${inv0}) + ` +
+    `<span class="hop2">${hop2pop}</span> (${inviters1} inviters × ${inv1}) = ${seeds + hop1pop + hop2pop}`;
+
+  // Reserve warning
+  const sum = +$('res0').value + +$('res1').value + +$('res2').value;
+  if (sum !== 100) {
+    $('reserveWarning').textContent = `⚠ Reserves sum to ${sum}% (should be 100%)`;
+  } else {
+    $('reserveWarning').textContent = '';
+  }
+}
+
+function update() {
+  // Save custom scenario values if on custom tab
+  if (activeScenario === SCENARIOS.length - 1) {
+    SCENARIOS[activeScenario].seeds = +$('seeds').value;
+    SCENARIOS[activeScenario].invRate = [+$('inv_rate0').value, +$('inv_rate1').value];
+    SCENARIOS[activeScenario].part = [+$('part0').value, +$('part1').value, +$('part2').value];
+    SCENARIOS[activeScenario].avg = [+$('avg0').value, +$('avg1').value, +$('avg2').value];
+  }
+  updateLabels();
+  renderResults();
+  renderComparison();
+}
+
+// ============ EVENT WIRING ============
+document.querySelectorAll('input[type="range"], input[type="number"]').forEach(el => {
+  el.addEventListener('input', () => {
+    // If user changes sliders while on a preset scenario, switch to Custom
+    if (activeScenario !== SCENARIOS.length - 1) {
+      const sc = SCENARIOS[activeScenario];
+      const seeds = +$('seeds').value;
+      const currInvRate = [+$('inv_rate0').value, +$('inv_rate1').value];
+      const currPart = [+$('part0').value, +$('part1').value, +$('part2').value];
+      const currAvg = [+$('avg0').value, +$('avg1').value, +$('avg2').value];
+      // Check if values match current scenario
+      const invRateMatch = sc.invRate.every((r, i) => r === currInvRate[i]);
+      const partMatch = sc.part.every((p, i) => p === currPart[i]);
+      const avgMatch = sc.avg.every((a, i) => a === currAvg[i]);
+      if (seeds !== sc.seeds || !invRateMatch || !partMatch || !avgMatch) {
+        // Only switch to custom for scenario sliders, not params
+        if (['seeds','inv_rate0','inv_rate1','part0','part1','part2','avg0','avg1','avg2'].includes(el.id)) {
+          activeScenario = SCENARIOS.length - 1;
+          renderTabs();
+        }
+      }
+    }
+    update();
+  });
+});
+
+// ============ INIT ============
+renderTabs();
+selectScenario(activeScenario);
+</script>
+
+</body>
+</html>

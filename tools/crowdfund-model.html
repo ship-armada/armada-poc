@@ -270,6 +270,11 @@
     <div id="ceilingInfo" class="ceiling-info"></div>
     <div style="margin-top: 10px;">
       <div class="param-row">
+        <label>Hop 2 Floor %</label>
+        <input type="number" id="hop2Floor" min="0" max="50" step="1" value="5" style="width:60px">
+        <span style="font-size:0.8rem; color:var(--text-dim)">guaranteed before hop 0/1 ceilings apply</span>
+      </div>
+      <div class="param-row">
         <label>Rollover → Hop 1 min</label>
         <input type="number" id="rollMin1" min="0" max="200" step="5" value="30" style="width:60px">
         <span style="font-size:0.8rem; color:var(--text-dim)">unique committers</span>
@@ -422,6 +427,7 @@ function getParams() {
   return {
     baseSale, maxSale, minSale, elasticTrigger,
     ceilings: [+$('ceil0').value, +$('ceil1').value, +$('ceil2').value],
+    hop2Floor: +$('hop2Floor').value,
     caps: [+$('cap0').value, +$('cap1').value, +$('cap2').value],
     invites: [+$('inv0').value, +$('inv1').value, 0],
     rollMin: [0, +$('rollMin1').value, +$('rollMin2').value],
@@ -484,7 +490,8 @@ function simulate(params, scenario) {
       refunds: [0,0,0], proRata: [0,0,0], rollover: [false, false],
       treasuryLeftover: 0, elastic: false,
       armConcentration: [0,0,0], maxIndividualArm: [0,0,0],
-      effectiveCeilings: [0,0,0], budgetCapped: [false, false, false]
+      effectiveCeilings: [0,0,0], budgetCapped: [false, false, false],
+      hop2FloorAmount: 0, netRaise: 0
     };
   }
 
@@ -492,20 +499,27 @@ function simulate(params, scenario) {
   const elastic = totalCommitted >= p.elasticTrigger;
   const saleSize = elastic ? p.maxSale : p.baseSale;
 
-  // Base ceilings (from percentages)
+  // Hop 2 floor: reserved from total before hop 0/1 ceilings are applied.
+  // Guarantees governance breadth even under strong earlier-hop demand.
+  const hop2FloorAmount = saleSize * p.hop2Floor / 100;
+  const netRaise = saleSize - hop2FloorAmount;
+
+  // Base ceilings: hop 0/1 against net raise (after floor), hop 2 against full raise
   const baseCeilings = [
-    saleSize * p.ceilings[0] / 100,
-    saleSize * p.ceilings[1] / 100,
+    netRaise * p.ceilings[0] / 100,
+    netRaise * p.ceilings[1] / 100,
     saleSize * p.ceilings[2] / 100
   ];
 
   // Demand-driven allocation with overlapping ceilings.
   // Each hop absorbs min(demand, ceiling). Unused ceiling capacity rolls forward
   // to later hops if rollover thresholds are met. A global budget constraint
-  // ensures total allocation never exceeds sale size (the spec states this
-  // requirement but the pseudocode omits enforcement).
+  // ensures total allocation never exceeds sale size.
+  //
+  // The hop 2 floor is carved out before hops 0/1 are processed, then added
+  // back to the remaining budget when hop 2 is processed.
   const effectiveCeilings = [...baseCeilings];
-  let remaining = saleSize;
+  let remaining = netRaise; // hops 0/1 compete for net raise only
   let treasuryLeftover = 0;
   const rollover = [false, false];
   const allocations = [];
@@ -514,6 +528,11 @@ function simulate(params, scenario) {
   const budgetCapped = [false, false, false];
 
   for (let h = 0; h < 3; h++) {
+    // When we reach hop 2, add back the floor reservation to the remaining budget
+    if (h === 2) {
+      remaining += hop2FloorAmount;
+    }
+
     // Global budget constraint: cap effective ceiling against remaining supply
     const ceiling = Math.min(effectiveCeilings[h], remaining);
     if (effectiveCeilings[h] > remaining) {
@@ -575,7 +594,7 @@ function simulate(params, scenario) {
   return {
     canceled: false, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
     committers, demands,
-    saleSize, baseCeilings,
+    saleSize, baseCeilings, hop2FloorAmount, netRaise,
     effectiveCeilings, allocations, refunds, proRata, rollover,
     treasuryLeftover, elastic, armConcentration,
     maxIndividualArm, budgetCapped
@@ -681,6 +700,8 @@ function renderHopTable(r, params) {
     const invLabel = h < 2 ? fmt(r.inviters[h]) : '—';
     // Show budget cap indicator if this hop's effective ceiling was limited by remaining supply
     const budgetNote = r.budgetCapped[h] ? ' <span title="Limited by remaining supply" style="color:var(--orange);">*</span>' : '';
+    // Show floor indicator for hop 2
+    const floorNote = (h === 2 && r.hop2FloorAmount > 0) ? ` <span title="Includes $${fmt(Math.round(r.hop2FloorAmount))} floor reservation" style="color:var(--accent);">\u2193</span>` : '';
 
     html += `<tr>`;
     html += `<td><span class="${hopClasses[h]} hop-label">${hopNames[h]}</span></td>`;
@@ -688,7 +709,7 @@ function renderHopTable(r, params) {
     html += `<td class="num">${invLabel}</td>`;
     html += `<td class="num">${fmt(r.committers[h])}</td>`;
     html += `<td class="num">$${fmt(Math.round(r.demands[h]))}</td>`;
-    html += `<td class="num">$${fmt(Math.round(baseCeil))}</td>`;
+    html += `<td class="num">$${fmt(Math.round(baseCeil))}${floorNote}</td>`;
     html += `<td class="num"${effCeil !== baseCeil ? ' style="color:var(--green)"' : ''}>$${fmt(Math.round(effCeil))}${budgetNote}</td>`;
     html += `<td class="num">$${fmt(Math.round(r.allocations[h]))}</td>`;
     html += `<td class="num"${r.refunds[h] > 0 ? ' style="color:var(--yellow)"' : ''}>$${fmt(Math.round(r.refunds[h]))}</td>`;
@@ -708,9 +729,16 @@ function renderHopTable(r, params) {
 
   html += '</tbody></table>';
 
-  // Budget cap footnote
+  // Footnotes
+  const footnotes = [];
+  if (r.hop2FloorAmount > 0) {
+    footnotes.push(`<span style="color:var(--accent);">\u2193</span> Hop 2 ceiling includes $${fmt(Math.round(r.hop2FloorAmount))} floor reservation (hop 0/1 ceilings apply to remaining $${fmt(Math.round(r.netRaise))})`);
+  }
   if (r.budgetCapped.some(b => b)) {
-    html += '<div style="font-size:0.72rem; color:var(--orange); margin-top:4px;">* Effective ceiling limited by remaining supply (ceilings sum &gt; 100% of sale size)</div>';
+    footnotes.push('<span style="color:var(--orange);">*</span> Effective ceiling limited by remaining supply (ceilings sum &gt; 100% of sale size)');
+  }
+  if (footnotes.length > 0) {
+    html += '<div style="font-size:0.72rem; margin-top:4px;">' + footnotes.join('<br>') + '</div>';
   }
 
   return html;
@@ -723,6 +751,11 @@ function renderDiagnostics(r, params) {
   // Check if raise is barely above minimum
   if (r.totalCommitted < params.minSale * 1.15) {
     issues.push({ level: 'warn', msg: `Total committed ($${fmt(r.totalCommitted)}) is within 15% of minimum ($${fmt(params.minSale)}) — fragile` });
+  }
+
+  // Hop 2 floor effectiveness
+  if (r.hop2FloorAmount > 0 && r.allocations[2] > 0 && r.allocations[2] <= r.hop2FloorAmount) {
+    issues.push({ level: 'info', msg: `Hop 2 allocation ($${fmt(Math.round(r.allocations[2]))}) fits within floor reservation ($${fmt(Math.round(r.hop2FloorAmount))}) — floor is protecting hop 2` });
   }
 
   // Check hop 2 meaningfulness
@@ -940,17 +973,21 @@ function updateLabels() {
 
   // Ceiling info (overlapping ceilings are by design)
   const sum = +$('ceil0').value + +$('ceil1').value + +$('ceil2').value;
+  const floor = +$('hop2Floor').value;
   const info = $('ceilingInfo');
+  let infoText = `Ceilings sum to ${sum}%`;
   if (sum > 100) {
-    info.style.color = 'var(--text-dim)';
-    info.textContent = `Ceilings sum to ${sum}% — overlapping by design (earlier hops have priority)`;
+    infoText += ` — overlapping by design (earlier hops have priority)`;
   } else if (sum < 100) {
-    info.style.color = 'var(--yellow)';
-    info.textContent = `Ceilings sum to ${sum}% — ${100 - sum}% of sale size is unreachable by any hop`;
+    infoText += ` — ${100 - sum}% of sale size is unreachable by any hop`;
   } else {
-    info.style.color = 'var(--text-dim)';
-    info.textContent = `Ceilings sum to 100% (no overlap)`;
+    infoText += ` (no overlap)`;
   }
+  if (floor > 0) {
+    infoText += `. Hop 2 floor: ${floor}% reserved; hop 0/1 ceilings apply to remaining ${100 - floor}%`;
+  }
+  info.style.color = (sum < 100) ? 'var(--yellow)' : 'var(--text-dim)';
+  info.textContent = infoText;
 }
 
 function update() {

@@ -6,6 +6,7 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./IArmadaGovernance.sol";
+import "./EmergencyPausable.sol";
 
 /// @title TreasurySteward — Elected steward with action queue and veto mechanism
 /// @notice Steward is elected via governance (StewardElection proposal). Has limited powers:
@@ -13,7 +14,7 @@ import "./IArmadaGovernance.sol";
 ///         can veto actions via governance proposals before they are executed.
 ///         The action delay is enforced to be >= 120% of the fastest governance veto cycle,
 ///         ensuring governance always has time to veto before execution.
-contract TreasurySteward is ReentrancyGuard {
+contract TreasurySteward is ReentrancyGuard, EmergencyPausable {
 
     // ============ Constants ============
 
@@ -72,7 +73,14 @@ contract TreasurySteward is ReentrancyGuard {
     /// @param _treasury ArmadaTreasuryGov address
     /// @param _governor ArmadaGovernor address (used to derive minimum action delay)
     /// @param _actionDelay Delay before steward actions can execute (veto window)
-    constructor(address _timelock, address _treasury, address _governor, uint256 _actionDelay) {
+    constructor(
+        address _timelock,
+        address _treasury,
+        address _governor,
+        uint256 _actionDelay,
+        address _guardian,
+        uint256 _maxPauseDuration
+    ) EmergencyPausable(_guardian, _maxPauseDuration, _timelock) {
         require(_timelock != address(0), "TreasurySteward: zero timelock");
         require(_treasury != address(0), "TreasurySteward: zero treasury");
         require(_governor != address(0), "TreasurySteward: zero governor");
@@ -183,7 +191,7 @@ contract TreasurySteward is ReentrancyGuard {
     }
 
     /// @notice Execute a proposed steward action (after delay, if not vetoed)
-    function executeAction(uint256 actionId) external onlySteward nonReentrant {
+    function executeAction(uint256 actionId) external onlySteward nonReentrant whenNotPaused {
         StewardAction storage action = actions[actionId];
         require(action.id != 0, "TreasurySteward: unknown action");
         require(!action.executed, "TreasurySteward: already executed");

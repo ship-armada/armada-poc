@@ -114,12 +114,7 @@ describe("Governance Integration", function () {
     armToken = await ArmadaToken.deploy(deployer.address);
     await armToken.waitForDeployment();
 
-    // 2. Deploy VotingLocker
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-    await votingLocker.waitForDeployment();
-
-    // 3. Deploy TimelockController (minDelay = 2 days, deployer as temp admin)
+    // 2. Deploy TimelockController (minDelay = 2 days, deployer as temp admin)
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       TWO_DAYS,
@@ -128,10 +123,28 @@ describe("Governance Integration", function () {
       deployer.address // admin
     );
     await timelockController.waitForDeployment();
+    const timelockAddr = await timelockController.getAddress();
+
+    // Emergency pause config: deployer as guardian, 14 day max pause duration
+    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
+
+    // 3. Deploy VotingLocker
+    const VotingLocker = await ethers.getContractFactory("VotingLocker");
+    votingLocker = await VotingLocker.deploy(
+      await armToken.getAddress(),
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION,
+      timelockAddr             // pauseTimelock
+    );
+    await votingLocker.waitForDeployment();
 
     // 4. Deploy ArmadaTreasuryGov (owned by timelock)
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(await timelockController.getAddress());
+    treasury = await ArmadaTreasuryGov.deploy(
+      timelockAddr,
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION
+    );
     await treasury.waitForDeployment();
 
     // 5. Deploy ArmadaGovernor
@@ -139,18 +152,22 @@ describe("Governance Integration", function () {
     governor = await ArmadaGovernor.deploy(
       await votingLocker.getAddress(),
       await armToken.getAddress(),
-      await timelockController.getAddress(),
-      await treasury.getAddress()
+      timelockAddr,
+      await treasury.getAddress(),
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
 
     // 6. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
-      await timelockController.getAddress(),
+      timelockAddr,
       await treasury.getAddress(),
       await governor.getAddress(),
-      STEWARD_ACTION_DELAY
+      STEWARD_ACTION_DELAY,
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
 

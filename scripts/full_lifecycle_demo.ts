@@ -134,21 +134,26 @@ async function main() {
   await armToken.waitForDeployment();
   log("DEPLOY", `ArmadaToken: ${await armToken.getAddress()}`);
 
-  // 1b. VotingLocker
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-  await votingLocker.waitForDeployment();
-  log("DEPLOY", `VotingLocker: ${await votingLocker.getAddress()}`);
+  const MAX_PAUSE = 14 * ONE_DAY;
 
-  // 1c. TimelockController
+  // 1b. TimelockController (deployed first — needed as pauseTimelock)
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(TIMELOCK_MIN_DELAY, [], [], deployer.address);
   await timelock.waitForDeployment();
-  log("DEPLOY", `TimelockController: ${await timelock.getAddress()}`);
+  const tlAddr = await timelock.getAddress();
+  log("DEPLOY", `TimelockController: ${tlAddr}`);
+
+  // 1c. VotingLocker
+  const VotingLocker = await ethers.getContractFactory("VotingLocker");
+  const votingLocker = await VotingLocker.deploy(
+    await armToken.getAddress(), deployer.address, MAX_PAUSE, tlAddr
+  );
+  await votingLocker.waitForDeployment();
+  log("DEPLOY", `VotingLocker: ${await votingLocker.getAddress()}`);
 
   // 1d. Treasury (owned by timelock from the start)
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-  const treasury = await ArmadaTreasuryGov.deploy(await timelock.getAddress());
+  const treasury = await ArmadaTreasuryGov.deploy(tlAddr, deployer.address, MAX_PAUSE);
   await treasury.waitForDeployment();
   log("DEPLOY", `ArmadaTreasuryGov: ${await treasury.getAddress()}`);
 
@@ -157,8 +162,9 @@ async function main() {
   const governor = await ArmadaGovernor.deploy(
     await votingLocker.getAddress(),
     await armToken.getAddress(),
-    await timelock.getAddress(),
-    await treasury.getAddress()
+    tlAddr,
+    await treasury.getAddress(),
+    deployer.address, MAX_PAUSE
   );
   await governor.waitForDeployment();
   log("DEPLOY", `ArmadaGovernor: ${await governor.getAddress()}`);
@@ -166,7 +172,8 @@ async function main() {
   // 1f. TreasurySteward
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const stewardContract = await TreasurySteward.deploy(
-    await timelock.getAddress(), await treasury.getAddress(), await governor.getAddress(), STEWARD_ACTION_DELAY
+    tlAddr, await treasury.getAddress(), await governor.getAddress(), STEWARD_ACTION_DELAY,
+    deployer.address, MAX_PAUSE
   );
   await stewardContract.waitForDeployment();
   log("DEPLOY", `TreasurySteward: ${await stewardContract.getAddress()}`);

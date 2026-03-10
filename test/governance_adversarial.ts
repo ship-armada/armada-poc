@@ -77,26 +77,34 @@ describe("Governance Adversarial", function () {
     armToken = await ArmadaToken.deploy(deployer.address);
     await armToken.waitForDeployment();
 
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-    await votingLocker.waitForDeployment();
-
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       TWO_DAYS, [], [], deployer.address
     );
     await timelockController.waitForDeployment();
+    const timelockAddr = await timelockController.getAddress();
+    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
+
+    const VotingLocker = await ethers.getContractFactory("VotingLocker");
+    votingLocker = await VotingLocker.deploy(
+      await armToken.getAddress(),
+      deployer.address, MAX_PAUSE_DURATION, timelockAddr
+    );
+    await votingLocker.waitForDeployment();
 
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryContract = await ArmadaTreasuryGov.deploy(await timelockController.getAddress());
+    treasuryContract = await ArmadaTreasuryGov.deploy(
+      timelockAddr, deployer.address, MAX_PAUSE_DURATION
+    );
     await treasuryContract.waitForDeployment();
 
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
       await votingLocker.getAddress(),
       await armToken.getAddress(),
-      await timelockController.getAddress(),
-      await treasuryContract.getAddress()
+      timelockAddr,
+      await treasuryContract.getAddress(),
+      deployer.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
 
@@ -104,10 +112,11 @@ describe("Governance Adversarial", function () {
     // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
     const stewardActionDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
     stewardContract = await TreasurySteward.deploy(
-      await timelockController.getAddress(),
+      timelockAddr,
       await treasuryContract.getAddress(),
       await governor.getAddress(),
-      stewardActionDelay
+      stewardActionDelay,
+      deployer.address, MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
 
@@ -485,6 +494,8 @@ describe("Governance Adversarial", function () {
   // ============================================================
 
   describe("Constructor Zero-Address Validation", function () {
+    const MAX_PAUSE = 14 * ONE_DAY;
+
     it("ArmadaGovernor rejects zero votingLocker", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       await expect(
@@ -492,7 +503,8 @@ describe("Governance Adversarial", function () {
           ethers.ZeroAddress,
           await armToken.getAddress(),
           await timelockController.getAddress(),
-          await treasuryContract.getAddress()
+          await treasuryContract.getAddress(),
+          deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("ArmadaGovernor: zero votingLocker");
     });
@@ -504,21 +516,24 @@ describe("Governance Adversarial", function () {
           await votingLocker.getAddress(),
           ethers.ZeroAddress,
           await timelockController.getAddress(),
-          await treasuryContract.getAddress()
+          await treasuryContract.getAddress(),
+          deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("ArmadaGovernor: zero armToken");
     });
 
     it("ArmadaGovernor rejects zero timelock", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+      // Zero timelock is caught by EmergencyPausable first
       await expect(
         ArmadaGovernor.deploy(
           await votingLocker.getAddress(),
           await armToken.getAddress(),
           ethers.ZeroAddress,
-          await treasuryContract.getAddress()
+          await treasuryContract.getAddress(),
+          deployer.address, MAX_PAUSE
         )
-      ).to.be.revertedWith("ArmadaGovernor: zero timelock");
+      ).to.be.revertedWith("EmergencyPausable: zero timelock");
     });
 
     it("ArmadaGovernor rejects zero treasury", async function () {
@@ -528,7 +543,8 @@ describe("Governance Adversarial", function () {
           await votingLocker.getAddress(),
           await armToken.getAddress(),
           await timelockController.getAddress(),
-          ethers.ZeroAddress
+          ethers.ZeroAddress,
+          deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("ArmadaGovernor: zero treasury");
     });
@@ -536,14 +552,16 @@ describe("Governance Adversarial", function () {
     it("TreasurySteward rejects zero timelock", async function () {
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
       const stewardDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
+      // Zero timelock is caught by EmergencyPausable first
       await expect(
         TreasurySteward.deploy(
           ethers.ZeroAddress,
           await treasuryContract.getAddress(),
           await governor.getAddress(),
-          stewardDelay
+          stewardDelay,
+          deployer.address, MAX_PAUSE
         )
-      ).to.be.revertedWith("TreasurySteward: zero timelock");
+      ).to.be.revertedWith("EmergencyPausable: zero timelock");
     });
 
     it("TreasurySteward rejects zero treasury", async function () {
@@ -554,7 +572,8 @@ describe("Governance Adversarial", function () {
           await timelockController.getAddress(),
           ethers.ZeroAddress,
           await governor.getAddress(),
-          stewardDelay
+          stewardDelay,
+          deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("TreasurySteward: zero treasury");
     });
@@ -567,7 +586,8 @@ describe("Governance Adversarial", function () {
           await timelockController.getAddress(),
           await treasuryContract.getAddress(),
           ethers.ZeroAddress,
-          stewardDelay
+          stewardDelay,
+          deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("TreasurySteward: zero governor");
     });
@@ -579,7 +599,8 @@ describe("Governance Adversarial", function () {
           await timelockController.getAddress(),
           await treasuryContract.getAddress(),
           await governor.getAddress(),
-          ONE_DAY // way below minimum
+          ONE_DAY, // way below minimum
+          deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("TreasurySteward: delay below governance cycle");
     });
@@ -853,7 +874,7 @@ describe("Governance Adversarial", function () {
 
     async function setupBudgetTreasury() {
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-      budgetTreasury = await ArmadaTreasuryGov.deploy(deployer.address);
+      budgetTreasury = await ArmadaTreasuryGov.deploy(deployer.address, deployer.address, 14 * ONE_DAY);
       await budgetTreasury.waitForDeployment();
 
       // Fund with USDC and set carol as steward
@@ -975,7 +996,7 @@ describe("Governance Adversarial", function () {
 
     async function setupStewardTest() {
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-      testTreasury = await ArmadaTreasuryGov.deploy(deployer.address);
+      testTreasury = await ArmadaTreasuryGov.deploy(deployer.address, deployer.address, 14 * ONE_DAY);
       await testTreasury.waitForDeployment();
 
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
@@ -983,7 +1004,8 @@ describe("Governance Adversarial", function () {
         deployer.address,                    // deployer acts as timelock
         await testTreasury.getAddress(),
         await governor.getAddress(),
-        testStewardDelay
+        testStewardDelay,
+        deployer.address, 14 * ONE_DAY
       );
       await testSteward.waitForDeployment();
 

@@ -275,9 +275,6 @@ contract GovernorInvariantTest is Test {
         // Deploy ARM token
         armToken = new ArmadaToken(address(this));
 
-        // Deploy VotingLocker
-        locker = new VotingLocker(address(armToken));
-
         // Deploy TimelockController
         address[] memory proposers = new address[](1);
         proposers[0] = address(0); // will be set after governor deploy
@@ -290,6 +287,9 @@ contract GovernorInvariantTest is Test {
             address(this) // admin
         );
 
+        // Deploy VotingLocker
+        locker = new VotingLocker(address(armToken), address(this), 14 days, address(timelock));
+
         treasuryAddr = address(0xBABE);
 
         // Deploy Governor
@@ -297,7 +297,9 @@ contract GovernorInvariantTest is Test {
             address(locker),
             address(armToken),
             payable(address(timelock)),
-            treasuryAddr
+            treasuryAddr,
+            address(this),
+            14 days
         );
 
         // Grant governor the proposer role on timelock

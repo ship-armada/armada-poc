@@ -41,9 +41,6 @@ contract StewardSecurityTest is Test {
         // Deploy ARM token
         armToken = new ArmadaToken(address(this));
 
-        // Deploy VotingLocker
-        locker = new VotingLocker(address(armToken));
-
         // Deploy TimelockController (this test contract acts as admin)
         address[] memory proposers = new address[](0);
         address[] memory executors = new address[](0);
@@ -54,15 +51,20 @@ contract StewardSecurityTest is Test {
             address(this)
         );
 
+        // Deploy VotingLocker
+        locker = new VotingLocker(address(armToken), address(this), 14 days, address(timelock));
+
         // Deploy treasury
-        treasury = new ArmadaTreasuryGov(address(timelock));
+        treasury = new ArmadaTreasuryGov(address(timelock), address(this), 14 days);
 
         // Deploy governor
         governor = new ArmadaGovernor(
             address(locker),
             address(armToken),
             payable(address(timelock)),
-            address(treasury)
+            address(treasury),
+            address(this),
+            14 days
         );
 
         // Deploy steward with governor reference and valid delay
@@ -70,7 +72,9 @@ contract StewardSecurityTest is Test {
             address(this),  // this contract acts as timelock for test convenience
             address(treasury),
             address(governor),
-            TEST_ACTION_DELAY
+            TEST_ACTION_DELAY,
+            address(this),
+            14 days
         );
 
         // Elect steward person
@@ -87,7 +91,9 @@ contract StewardSecurityTest is Test {
             address(this),
             address(treasury),
             address(0),
-            TEST_ACTION_DELAY
+            TEST_ACTION_DELAY,
+            address(this),
+            14 days
         );
     }
 
@@ -97,7 +103,9 @@ contract StewardSecurityTest is Test {
             address(this),
             address(treasury),
             address(governor),
-            1 days // way below the ~10.8 day minimum
+            1 days, // way below the ~10.8 day minimum
+            address(this),
+            14 days
         );
     }
 
@@ -111,7 +119,9 @@ contract StewardSecurityTest is Test {
             address(this),
             address(treasury),
             address(governor),
-            EXPECTED_MIN_DELAY
+            EXPECTED_MIN_DELAY,
+            address(this),
+            14 days
         );
         assertEq(s.actionDelay(), EXPECTED_MIN_DELAY);
     }
@@ -288,7 +298,9 @@ contract StewardSecurityTest is Test {
             address(this),
             address(treasury),
             address(governor),
-            delay
+            delay,
+            address(this),
+            14 days
         );
     }
 

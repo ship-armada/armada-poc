@@ -38,6 +38,7 @@ struct StewardAction {
     uint256 timestamp;
     bool executed;
     bool vetoed;
+    address proposedBy;
 }
 
 // ========== Interfaces ==========

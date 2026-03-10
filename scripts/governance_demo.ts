@@ -61,24 +61,30 @@ async function main() {
   const armToken = await ArmadaToken.deploy(deployer.address);
   await armToken.waitForDeployment();
 
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-  await votingLocker.waitForDeployment();
+  const MAX_PAUSE = 14 * ONE_DAY;
 
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(TWO_DAYS, [], [], deployer.address);
   await timelock.waitForDeployment();
+  const tlAddr = await timelock.getAddress();
+
+  const VotingLocker = await ethers.getContractFactory("VotingLocker");
+  const votingLocker = await VotingLocker.deploy(
+    await armToken.getAddress(), deployer.address, MAX_PAUSE, tlAddr
+  );
+  await votingLocker.waitForDeployment();
 
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-  const treasury = await ArmadaTreasuryGov.deploy(await timelock.getAddress());
+  const treasury = await ArmadaTreasuryGov.deploy(tlAddr, deployer.address, MAX_PAUSE);
   await treasury.waitForDeployment();
 
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governor = await ArmadaGovernor.deploy(
     await votingLocker.getAddress(),
     await armToken.getAddress(),
-    await timelock.getAddress(),
-    await treasury.getAddress()
+    tlAddr,
+    await treasury.getAddress(),
+    deployer.address, MAX_PAUSE
   );
   await governor.waitForDeployment();
 
@@ -86,7 +92,8 @@ async function main() {
   // Steward action delay: 120% of governance cycle (2d + 5d + 2d = 9d)
   const stewardActionDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
   const stewardContract = await TreasurySteward.deploy(
-    await timelock.getAddress(), await treasury.getAddress(), await governor.getAddress(), stewardActionDelay
+    tlAddr, await treasury.getAddress(), await governor.getAddress(), stewardActionDelay,
+    deployer.address, MAX_PAUSE
   );
   await stewardContract.waitForDeployment();
 

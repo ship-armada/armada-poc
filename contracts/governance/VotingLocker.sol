@@ -6,12 +6,13 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "./IArmadaGovernance.sol";
+import "./EmergencyPausable.sol";
 
 /// @title VotingLocker — Lock ARM tokens to gain voting power
 /// @notice Holds ARM tokens on behalf of voters with per-user checkpointing.
 ///         The ArmadaGovernor reads voting power from this contract via getPastLockedBalance().
 ///         Checkpoint pattern adapted from OpenZeppelin ERC20Votes.
-contract VotingLocker is ReentrancyGuard, IVotingLocker {
+contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -39,7 +40,12 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker {
 
     // ============ Constructor ============
 
-    constructor(address _armToken) {
+    constructor(
+        address _armToken,
+        address _guardian,
+        uint256 _maxPauseDuration,
+        address _pauseTimelock
+    ) EmergencyPausable(_guardian, _maxPauseDuration, _pauseTimelock) {
         armToken = IERC20(_armToken);
     }
 
@@ -68,7 +74,7 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker {
     //   lock tokens, vote on a proposal, then immediately unlock and sell, bearing no
     //   economic exposure to the outcome. Consider adding a time-lock (e.g. tokens stay
     //   locked until the voting period ends for any proposal they voted on).
-    function unlock(uint256 amount) external nonReentrant {
+    function unlock(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "VotingLocker: zero amount");
 
         uint256 oldBalance = _getLatestLockedBalance(msg.sender);

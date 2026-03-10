@@ -282,7 +282,7 @@ describe("Gas Benchmarks", function () {
       const armToken = await ArmadaToken.deploy(deployer.address);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      const locker = await VotingLocker.deploy(await armToken.getAddress());
+      const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
 
       const alice = allSigners[1];
 
@@ -345,7 +345,7 @@ describe("Gas Benchmarks", function () {
       const armToken = await ArmadaToken.deploy(deployer.address);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      const locker = await VotingLocker.deploy(await armToken.getAddress());
+      const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
 
       const proposers = [deployer]; // deployer proposes
       const voters = allSigners.slice(1, 6); // 5 voters with varying checkpoint depths
@@ -360,7 +360,9 @@ describe("Gas Benchmarks", function () {
         await locker.getAddress(),
         await armToken.getAddress(),
         await timelock.getAddress(),
-        deployer.address // treasury
+        deployer.address, // treasury
+        deployer.address, // guardian
+        14 * 86400         // maxPauseDuration
       );
 
       // Grant roles

@@ -4,11 +4,12 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "./EmergencyPausable.sol";
 
 /// @title ArmadaTreasuryGov — Governance-controlled treasury with claims mechanism
 /// @notice Owned by TimelockController (immutable). Supports direct distributions,
 ///         claims (deferred exercise), and steward operational budget.
-contract ArmadaTreasuryGov is ReentrancyGuard {
+contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     using SafeERC20 for IERC20;
 
     // ============ Types ============
@@ -69,7 +70,11 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     // ============ Constructor ============
 
-    constructor(address _owner) {
+    constructor(
+        address _owner,
+        address _guardian,
+        uint256 _maxPauseDuration
+    ) EmergencyPausable(_guardian, _maxPauseDuration, _owner) {
         require(_owner != address(0), "ArmadaTreasuryGov: zero owner");
         owner = _owner; // Should be the timelock address
     }
@@ -77,7 +82,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     // ============ Governance Functions (owner = timelock) ============
 
     /// @notice Direct distribution: send tokens to recipient immediately
-    function distribute(address token, address recipient, uint256 amount) external onlyOwner {
+    function distribute(address token, address recipient, uint256 amount) external onlyOwner whenNotPaused {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
         IERC20(token).safeTransfer(recipient, amount);
         emit DirectDistribution(token, recipient, amount);
@@ -122,7 +127,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @notice Exercise a claim — beneficiary receives tokens at their discretion
     /// @param claimId Claim to exercise
     /// @param amount Amount to exercise (can be partial)
-    function exerciseClaim(uint256 claimId, uint256 amount) external nonReentrant {
+    function exerciseClaim(uint256 claimId, uint256 amount) external nonReentrant whenNotPaused {
         Claim storage c = claims[claimId];
         require(c.beneficiary == msg.sender, "ArmadaTreasuryGov: not beneficiary");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
@@ -140,7 +145,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @dev The budget is 1% of the treasury balance snapshotted at the start of each 30-day period.
     /// The period starts on the first spend after the previous period expires. Mid-period balance
     /// changes (deposits, governance distributions) do not affect the current period's budget.
-    function stewardSpend(address token, address recipient, uint256 amount) external onlySteward {
+    function stewardSpend(address token, address recipient, uint256 amount) external onlySteward whenNotPaused {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
 

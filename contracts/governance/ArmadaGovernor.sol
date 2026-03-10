@@ -5,11 +5,12 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./IArmadaGovernance.sol";
+import "./EmergencyPausable.sol";
 
 /// @title ArmadaGovernor — Custom governance with typed proposals and token locking
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
 ///         voting via locked tokens, and timelock execution.
-contract ArmadaGovernor is ReentrancyGuard {
+contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     // ============ Types ============
 
@@ -97,8 +98,10 @@ contract ArmadaGovernor is ReentrancyGuard {
         address _votingLocker,
         address _armToken,
         address payable _timelock,
-        address _treasuryAddress
-    ) {
+        address _treasuryAddress,
+        address _guardian,
+        uint256 _maxPauseDuration
+    ) EmergencyPausable(_guardian, _maxPauseDuration, _timelock) {
         require(_votingLocker != address(0), "ArmadaGovernor: zero votingLocker");
         require(_armToken != address(0), "ArmadaGovernor: zero armToken");
         require(_timelock != address(0), "ArmadaGovernor: zero timelock");
@@ -274,7 +277,7 @@ contract ArmadaGovernor is ReentrancyGuard {
     }
 
     /// @notice Execute a queued proposal after timelock delay
-    function execute(uint256 proposalId) external payable nonReentrant {
+    function execute(uint256 proposalId) external payable nonReentrant whenNotPaused {
         require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
 
         Proposal storage p = _proposals[proposalId];

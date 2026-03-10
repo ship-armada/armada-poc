@@ -1196,7 +1196,9 @@ describe("Crowdfund Integration", function () {
 
       // Deploy VotingLocker and lock ARM
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      const votingLocker = await VotingLocker.deploy(await armToken.getAddress());
+      const votingLocker = await VotingLocker.deploy(
+        await armToken.getAddress(), seeds[0].address, 14 * 86400, seeds[0].address
+      );
       await votingLocker.waitForDeployment();
 
       await armToken.connect(seeds[0]).approve(await votingLocker.getAddress(), armBalance);

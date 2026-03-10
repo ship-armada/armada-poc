@@ -273,7 +273,9 @@ async function main() {
   console.log("");
 
   const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(await armToken.getAddress());
+  const votingLocker = await VotingLocker.deploy(
+    await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address
+  );
   await votingLocker.waitForDeployment();
 
   const armBal = await armToken.balanceOf(bigSeeds[0].address);

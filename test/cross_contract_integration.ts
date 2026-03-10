@@ -80,9 +80,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
 
     // Deploy governance
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-    await votingLocker.waitForDeployment();
+    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
@@ -92,13 +90,21 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       deployer.address
     );
     await timelockController.waitForDeployment();
+    const timelockAddr = await timelockController.getAddress();
+
+    const VotingLocker = await ethers.getContractFactory("VotingLocker");
+    votingLocker = await VotingLocker.deploy(
+      await armToken.getAddress(), deployer.address, MAX_PAUSE_DURATION, timelockAddr
+    );
+    await votingLocker.waitForDeployment();
 
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
       await votingLocker.getAddress(),
       await armToken.getAddress(),
-      await timelockController.getAddress(),
-      treasuryAddr.address
+      timelockAddr,
+      treasuryAddr.address,
+      deployer.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
 
@@ -109,7 +115,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     // Deploy TreasuryGov (holds ARM for governance distributions)
     // Owner is set to timelock at deployment and is immutable — governance controls the treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryGov = await ArmadaTreasuryGov.deploy(await timelockController.getAddress());
+    treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
     await treasuryGov.waitForDeployment();
 
     // Send most ARM to treasury address to make quorum reachable
@@ -624,9 +630,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localArmToken.waitForDeployment();
 
       // Step 2: Deploy governance stack
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      localVotingLocker = await VotingLocker.deploy(await localArmToken.getAddress());
-      await localVotingLocker.waitForDeployment();
+      const LOCAL_MAX_PAUSE = 14 * ONE_DAY;
 
       const TimelockController = await ethers.getContractFactory("TimelockController");
       localTimelockController = await TimelockController.deploy(
@@ -636,10 +640,17 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         localDeployer.address
       );
       await localTimelockController.waitForDeployment();
+      const localTlAddr = await localTimelockController.getAddress();
+
+      const VotingLocker = await ethers.getContractFactory("VotingLocker");
+      localVotingLocker = await VotingLocker.deploy(
+        await localArmToken.getAddress(), localDeployer.address, LOCAL_MAX_PAUSE, localTlAddr
+      );
+      await localVotingLocker.waitForDeployment();
 
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
       localTreasury = await ArmadaTreasuryGov.deploy(
-        await localTimelockController.getAddress()
+        localTlAddr, localDeployer.address, LOCAL_MAX_PAUSE
       );
       await localTreasury.waitForDeployment();
 
@@ -647,8 +658,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       localGovernor = await ArmadaGovernor.deploy(
         await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
-        await localTimelockController.getAddress(),
-        await localTreasury.getAddress()
+        localTlAddr,
+        await localTreasury.getAddress(),
+        localDeployer.address, LOCAL_MAX_PAUSE
       );
       await localGovernor.waitForDeployment();
 
@@ -936,7 +948,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
         await localTimelockController.getAddress(),
-        await localTreasury.getAddress()
+        await localTreasury.getAddress(),
+        localDeployer.address, 14 * ONE_DAY
       );
       await freshGovernor.waitForDeployment();
 

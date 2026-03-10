@@ -96,7 +96,7 @@ contract VotingLockerInvariantTest is Test {
     function setUp() public {
         // Deploy
         armToken = new ArmadaToken(address(this));
-        locker = new VotingLocker(address(armToken));
+        locker = new VotingLocker(address(armToken), address(this), 14 days, address(this));
 
         // Create actors and fund them
         for (uint256 i = 0; i < 10; i++) {

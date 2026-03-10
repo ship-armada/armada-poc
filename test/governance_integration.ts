@@ -763,6 +763,78 @@ describe("Governance Integration", function () {
       await stewardContract.connect(dave).executeAction(1);
       expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
     });
+
+    it("should reject new steward executing previous steward's actions", async function () {
+      // Elect Dave as first steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Elect Carol as new steward (replaces Dave)
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        stewardContract.interface.encodeFunctionData("electSteward", [carol.address]),
+      ];
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.StewardElection, targets, values, calldatas,
+        "Elect Carol as steward"
+      );
+      expect(await stewardContract.currentSteward()).to.equal(carol.address);
+
+      // Wait for action delay to elapse
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Carol (new steward) tries to execute Dave's action — should fail
+      await expect(
+        stewardContract.connect(carol).executeAction(actionId)
+      ).to.be.revertedWith("TreasurySteward: not proposed by current steward");
+    });
+
+    it("should allow steward to execute own actions after re-election", async function () {
+      // Elect Dave as steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Re-elect Dave (same person, new term)
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
+      ];
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.StewardElection, targets, values, calldatas,
+        "Re-elect Dave"
+      );
+
+      // Wait for action delay
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Dave can still execute his own action after re-election
+      await stewardContract.connect(dave).executeAction(actionId);
+      expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
+    });
   });
 
   // ============================================================

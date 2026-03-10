@@ -161,7 +161,8 @@ contract TreasurySteward is ReentrancyGuard {
             value: value,
             timestamp: block.timestamp,
             executed: false,
-            vetoed: false
+            vetoed: false,
+            proposedBy: msg.sender
         });
 
         emit ActionProposed(actionId, target, value, block.timestamp + actionDelay);
@@ -174,6 +175,7 @@ contract TreasurySteward is ReentrancyGuard {
         require(action.id != 0, "TreasurySteward: unknown action");
         require(!action.executed, "TreasurySteward: already executed");
         require(!action.vetoed, "TreasurySteward: vetoed");
+        require(action.proposedBy == currentSteward, "TreasurySteward: not proposed by current steward");
         require(allowedTargets[action.target], "TreasurySteward: target not allowed");
         require(
             block.timestamp >= action.timestamp + actionDelay,
@@ -219,9 +221,10 @@ contract TreasurySteward is ReentrancyGuard {
         uint256 timestamp,
         bool executed,
         bool vetoed,
-        uint256 executeAfter
+        uint256 executeAfter,
+        address proposedBy
     ) {
         StewardAction storage a = actions[actionId];
-        return (a.target, a.value, a.timestamp, a.executed, a.vetoed, a.timestamp + actionDelay);
+        return (a.target, a.value, a.timestamp, a.executed, a.vetoed, a.timestamp + actionDelay, a.proposedBy);
     }
 }

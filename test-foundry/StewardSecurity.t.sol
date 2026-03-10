@@ -310,6 +310,73 @@ contract StewardSecurityTest is Test {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // Issue #38: New steward cannot execute previous steward's actions
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_executeAction_rejectsDifferentStewardProposal() public {
+        // stewardPerson proposes an action
+        vm.prank(stewardPerson);
+        uint256 actionId = steward.proposeAction(address(treasury), "", 0);
+
+        // Elect a new steward (this contract acts as timelock)
+        address newSteward = address(0xCAFE);
+        steward.electSteward(newSteward);
+        assertEq(steward.currentSteward(), newSteward);
+
+        // Warp past the action delay
+        vm.warp(block.timestamp + TEST_ACTION_DELAY + 1);
+
+        // New steward tries to execute old steward's action — should revert
+        vm.prank(newSteward);
+        vm.expectRevert("TreasurySteward: not proposed by current steward");
+        steward.executeAction(actionId);
+    }
+
+    function test_executeAction_allowsReElectedSteward() public {
+        // stewardPerson proposes an action
+        vm.prank(stewardPerson);
+        uint256 actionId = steward.proposeAction(address(treasury), "", 0);
+
+        // Re-elect the same steward (new term, same address)
+        steward.electSteward(stewardPerson);
+
+        // Warp past the action delay
+        vm.warp(block.timestamp + TEST_ACTION_DELAY + 1);
+
+        // Same steward should still be able to execute their own action
+        vm.prank(stewardPerson);
+        // The call may fail for unrelated reasons (empty data to treasury),
+        // but it should NOT fail with "not proposed by current steward"
+        try steward.executeAction(actionId) {
+            // Success — proposedBy check passed
+        } catch (bytes memory reason) {
+            assertTrue(
+                keccak256(reason) != keccak256(abi.encodeWithSignature("Error(string)", "TreasurySteward: not proposed by current steward")),
+                "Should not revert with proposedBy check for re-elected steward"
+            );
+        }
+    }
+
+    function testFuzz_executeAction_rejectsCrossStewardAction(address newStewardAddr) public {
+        vm.assume(newStewardAddr != stewardPerson);
+        vm.assume(newStewardAddr != address(0));
+
+        // Current steward proposes
+        vm.prank(stewardPerson);
+        uint256 actionId = steward.proposeAction(address(treasury), "", 0);
+
+        // Elect different steward
+        steward.electSteward(newStewardAddr);
+
+        vm.warp(block.timestamp + TEST_ACTION_DELAY + 1);
+
+        // New steward tries to execute — should fail
+        vm.prank(newStewardAddr);
+        vm.expectRevert("TreasurySteward: not proposed by current steward");
+        steward.executeAction(actionId);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // End-to-end: propose + execute with realistic delay
     // ══════════════════════════════════════════════════════════════════════
 

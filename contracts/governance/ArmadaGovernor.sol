@@ -31,6 +31,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         // Stored at creation time so quorum cannot shift during voting.
         uint256 snapshotEligibleSupply;
 
+        // Quorum basis points snapshotted at proposal creation.
+        // Stored per-proposal so governance param changes don't retroactively affect in-flight proposals.
+        uint256 snapshotQuorumBps;
+
         // Vote tallies
         uint256 forVotes;
         uint256 againstVotes;
@@ -74,6 +78,16 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     // Proposal threshold: 0.1% = 10 bps
     uint256 public constant PROPOSAL_THRESHOLD_BPS = 10;
 
+    // Bounds for governance-updatable proposal parameters
+    uint256 public constant MIN_VOTING_DELAY = 1 days;
+    uint256 public constant MAX_VOTING_DELAY = 14 days;
+    uint256 public constant MIN_VOTING_PERIOD = 1 days;
+    uint256 public constant MAX_VOTING_PERIOD = 30 days;
+    uint256 public constant MIN_EXECUTION_DELAY = 1 days;
+    uint256 public constant MAX_EXECUTION_DELAY = 14 days;
+    uint256 public constant MIN_QUORUM_BPS = 500;   // 5%
+    uint256 public constant MAX_QUORUM_BPS = 5000;  // 50%
+
     // Succeeded proposals must be queued within this window or they expire
     uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
 
@@ -91,6 +105,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event ProposalQueued(uint256 indexed proposalId, bytes32 timelockId);
     event ProposalExecuted(uint256 indexed proposalId);
     event ProposalCanceled(uint256 indexed proposalId);
+    event ProposalTypeParamsUpdated(ProposalType indexed proposalType, ProposalParams params);
 
     // ============ Constructor ============
 
@@ -157,6 +172,37 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         return _excludedFromQuorum;
     }
 
+    // ============ Governance-Updatable Parameters ============
+
+    /// @notice Update proposal type parameters (timing and quorum).
+    /// @dev Only callable by the timelock (requires a governance vote). All fields are bounded
+    ///      to prevent adversarial parameter changes that could freeze or trivialize governance.
+    function setProposalTypeParams(
+        ProposalType proposalType,
+        ProposalParams calldata params
+    ) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(
+            params.votingDelay >= MIN_VOTING_DELAY && params.votingDelay <= MAX_VOTING_DELAY,
+            "ArmadaGovernor: votingDelay out of bounds"
+        );
+        require(
+            params.votingPeriod >= MIN_VOTING_PERIOD && params.votingPeriod <= MAX_VOTING_PERIOD,
+            "ArmadaGovernor: votingPeriod out of bounds"
+        );
+        require(
+            params.executionDelay >= MIN_EXECUTION_DELAY && params.executionDelay <= MAX_EXECUTION_DELAY,
+            "ArmadaGovernor: executionDelay out of bounds"
+        );
+        require(
+            params.quorumBps >= MIN_QUORUM_BPS && params.quorumBps <= MAX_QUORUM_BPS,
+            "ArmadaGovernor: quorumBps out of bounds"
+        );
+
+        proposalTypeParams[proposalType] = params;
+        emit ProposalTypeParamsUpdated(proposalType, params);
+    }
+
     // ============ Proposal Lifecycle ============
 
     /// @notice Create a new proposal
@@ -218,7 +264,8 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         p.executionDelay = params.executionDelay;
         p.description = description;
 
-        // Snapshot eligible supply so quorum is fixed at proposal creation
+        // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation
+        p.snapshotQuorumBps = params.quorumBps;
         uint256 totalSupply = armToken.totalSupply();
         uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
         for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
@@ -332,12 +379,11 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     }
 
     /// @notice Calculate quorum for a proposal: X% of eligible ARM supply snapshotted at creation.
-    /// Eligible supply excludes non-voteable addresses (treasury, crowdfund, etc.) and is frozen
-    /// at proposal creation so quorum cannot shift during voting.
+    /// Both eligible supply and quorumBps are frozen at proposal creation so quorum cannot
+    /// shift during voting — even if governance updates params mid-flight.
     function quorum(uint256 proposalId) public view returns (uint256) {
         Proposal storage p = _proposals[proposalId];
-        uint256 quorumBps = proposalTypeParams[p.proposalType].quorumBps;
-        return (p.snapshotEligibleSupply * quorumBps) / 10000;
+        return (p.snapshotEligibleSupply * p.snapshotQuorumBps) / 10000;
     }
 
     /// @notice Get proposal details

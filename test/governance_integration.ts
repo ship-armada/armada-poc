@@ -801,6 +801,67 @@ describe("Governance Integration", function () {
       ).to.be.revertedWith("TreasurySteward: not proposed by current steward");
     });
 
+    it("should allow steward to cancel own proposed action", async function () {
+      // Elect Dave as steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Dave cancels the action
+      await expect(
+        stewardContract.connect(dave).cancelAction(actionId)
+      ).to.emit(stewardContract, "ActionCanceled").withArgs(actionId);
+
+      // Wait for action delay
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Action should be blocked from execution (vetoed flag set)
+      await expect(
+        stewardContract.connect(dave).executeAction(actionId)
+      ).to.be.revertedWith("TreasurySteward: vetoed");
+    });
+
+    it("should reject new steward canceling previous steward's action", async function () {
+      // Elect Dave as steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Elect Carol as new steward
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        stewardContract.interface.encodeFunctionData("electSteward", [carol.address]),
+      ];
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.StewardElection, targets, values, calldatas,
+        "Elect Carol as steward"
+      );
+
+      // Carol tries to cancel Dave's action — should fail
+      await expect(
+        stewardContract.connect(carol).cancelAction(actionId)
+      ).to.be.revertedWith("TreasurySteward: not your action");
+    });
+
     it("should allow steward to execute own actions after re-election", async function () {
       // Elect Dave as steward
       await electDaveSteward();

@@ -48,6 +48,7 @@ contract TreasurySteward is ReentrancyGuard {
     event ActionProposed(uint256 indexed actionId, address indexed target, uint256 value, uint256 executeAfter);
     event ActionExecuted(uint256 indexed actionId);
     event ActionVetoed(uint256 indexed actionId);
+    event ActionCanceled(uint256 indexed actionId);
     event ActionDelayUpdated(uint256 oldDelay, uint256 newDelay);
     event TargetAdded(address indexed target);
     event TargetRemoved(address indexed target);
@@ -167,6 +168,18 @@ contract TreasurySteward is ReentrancyGuard {
 
         emit ActionProposed(actionId, target, value, block.timestamp + actionDelay);
         return actionId;
+    }
+
+    /// @notice Cancel a proposed action (steward can only cancel actions they proposed)
+    function cancelAction(uint256 actionId) external onlySteward {
+        StewardAction storage action = actions[actionId];
+        require(action.id != 0, "TreasurySteward: unknown action");
+        require(!action.executed, "TreasurySteward: already executed");
+        require(!action.vetoed, "TreasurySteward: already vetoed");
+        require(action.proposedBy == msg.sender, "TreasurySteward: not your action");
+
+        action.vetoed = true;
+        emit ActionCanceled(actionId);
     }
 
     /// @notice Execute a proposed steward action (after delay, if not vetoed)

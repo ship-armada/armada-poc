@@ -34,6 +34,10 @@
     "test:governance": "hardhat test test/governance_integration.ts test/governance_adversarial.ts",
     "test:crowdfund": "hardhat test test/crowdfund_integration.ts test/crowdfund_adversarial.ts",
     "test:all": "hardhat test",
+    "test:mcp": "npx mocha --require ts-node/register mcp-server/test/unit.test.ts",
+    "test:mcp:integration": "npx mocha --require ts-node/register mcp-server/test/integration.test.ts",
+    "test:mcp:e2e": "npx mocha --require ts-node/register mcp-server/test/e2e.test.ts",
+    "test:mcp:all": "npx mocha --require ts-node/register 'mcp-server/test/**/*.test.ts'",
     "test:forge": "forge test --offline",
     "halmos": "halmos",
     "halmos:allocation": "halmos --contract HalmosAllocationTest --match-test '^(check_allocPlusRefundEqualsCommitted|check_allocNeverExceedsCommitted|check_underSubscribedFullAllocation|check_zeroCommittedReturnsZero)'",
@@ -48,7 +52,6 @@
     "crowdfund-ui": "cd crowdfund-frontend && npm run dev",
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
     "demo:build": "cd usdc-v2-frontend && npm run build",
-
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",
     "setup:sepolia:phase1": "npx ts-node scripts/deploy_sepolia.ts --phase 1",
     "setup:sepolia:phase2": "npx ts-node scripts/deploy_sepolia.ts --phase 2",
@@ -71,6 +74,7 @@
     "set-treasury:sepolia": "hardhat run scripts/set_treasury.ts --network sepoliaHub"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.3",
     "@nomicfoundation/hardhat-network-helpers": "^1.1.2",

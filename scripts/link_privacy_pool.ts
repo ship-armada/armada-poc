@@ -259,8 +259,7 @@ async function main() {
   }
 
   // Configure CCTP fast finality if enabled
-  const cctpFinalityMode = process.env.CCTP_FINALITY_MODE || "standard";
-  const useFastFinality = cctpFinalityMode === "fast";
+  const useFastFinality = config.cctpFinalityMode === "fast";
 
   if (useFastFinality) {
     console.log("Configuring CCTP fast finality...");

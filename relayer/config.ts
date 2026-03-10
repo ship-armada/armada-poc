@@ -105,10 +105,9 @@ export const relayerSettings = {
   pollIntervalMs: isLocal() ? 2000 : netConfig.iris.pollIntervalMs,
 };
 
-// CCTP finality mode from environment
+// CCTP finality mode from unified config
 function getCCTPFinalityMode(): "fast" | "standard" {
-  const mode = process.env.CCTP_FINALITY_MODE?.toLowerCase();
-  return mode === "fast" ? "fast" : "standard";
+  return netConfig.cctpFinalityMode;
 }
 
 // Armada relayer settings (privacy relay + unified service)

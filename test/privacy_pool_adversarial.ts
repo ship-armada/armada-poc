@@ -507,20 +507,20 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
-    it("Hub rejects fast finality (handleReceiveUnfinalizedMessage)", async function () {
+    it("Hub rejects handleReceiveUnfinalizedMessage from non-authorized caller", async function () {
       await expect(
         privacyPool.handleReceiveUnfinalizedMessage(
           DOMAINS.client, ethers.ZeroHash, 1000, "0x"
         )
-      ).to.be.revertedWith("PrivacyPool: Fast finality not supported");
+      ).to.be.revertedWith("PrivacyPool: Unauthorized caller");
     });
 
-    it("Client rejects fast finality (handleReceiveUnfinalizedMessage)", async function () {
+    it("Client rejects handleReceiveUnfinalizedMessage from non-authorized caller", async function () {
       await expect(
         privacyPoolClient.handleReceiveUnfinalizedMessage(
           DOMAINS.hub, ethers.ZeroHash, 1000, "0x"
         )
-      ).to.be.revertedWith("PrivacyPoolClient: Fast finality not supported");
+      ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
     it("Client rejects message from non-Hub domain", async function () {

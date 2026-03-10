@@ -5,6 +5,7 @@ import { type ChainRole, getChainByRole } from "../../../config/networks";
 import { checkRpc, getBalance, hasCode } from "../lib/providers";
 import {
   loadAllDeployments,
+  getPoolAddress,
   type AllDeployments,
 } from "../lib/deployments";
 import { type DeployEnv } from "../../../config/networks";
@@ -75,9 +76,7 @@ async function checkSingleChain(
         : deployments.clientB;
 
   const usdcAddress = chainDeploy.cctp?.contracts.usdc ?? null;
-  // Hub deploys PrivacyPool, client chains deploy PrivacyPoolClient
-  const poolContracts = chainDeploy.privacyPool?.contracts as Record<string, string> | undefined;
-  const poolAddress = poolContracts?.privacyPool ?? poolContracts?.privacyPoolClient ?? null;
+  const poolAddress = chainDeploy.privacyPool ? getPoolAddress(chainDeploy.privacyPool) : null;
   const deployerAddress = chainDeploy.cctp?.deployer ?? chainDeploy.privacyPool?.deployer ?? null;
 
   // Only query on-chain state if RPC is reachable

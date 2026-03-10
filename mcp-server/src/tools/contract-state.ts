@@ -3,7 +3,7 @@
 
 import { type ChainRole, type DeployEnv } from "../../../config/networks";
 import { callView, getProvider } from "../lib/providers";
-import { loadAllDeployments } from "../lib/deployments";
+import { loadAllDeployments, getPoolAddress } from "../lib/deployments";
 import { ethers } from "ethers";
 
 // ============================================================================
@@ -113,7 +113,10 @@ async function queryPrivacyPool(
     return { error: `No privacy pool deployment found for ${role}` };
   }
 
-  const poolAddr = chain.privacyPool.contracts.privacyPool;
+  const poolAddr = getPoolAddress(chain.privacyPool);
+  if (!poolAddr) {
+    return { error: `No pool contract address found in deployment for ${role}` };
+  }
   const usdcAddr = chain.privacyPool.cctp.usdc;
 
   const [testingMode, merkleRoot, nextLeafIndex, usdcBalance] =

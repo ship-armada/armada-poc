@@ -22,16 +22,10 @@ const server = new McpServer({
 
 server.tool(
   "get_deployment_state",
-  "Inspect deployment artifacts for all chains. Reports contract addresses, missing deployments, and cross-reference issues (e.g., USDC address mismatches between pool and CCTP configs).",
-  {
-    env: z
-      .enum(["local", "sepolia"])
-      .optional()
-      .describe("Environment to inspect (defaults to DEPLOY_ENV)"),
-  },
-  async ({ env }) => {
-    const targetEnv = env ?? ENV;
-    const report = getDeploymentState(targetEnv);
+  `Inspect deployment artifacts for all chains. Reports contract addresses, missing deployments, and cross-reference issues (e.g., USDC address mismatches between pool and CCTP configs). Inspects the '${ENV}' environment (set by DEPLOY_ENV at server startup).`,
+  {},
+  async () => {
+    const report = getDeploymentState(ENV);
     return {
       content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
     };

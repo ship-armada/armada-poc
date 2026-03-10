@@ -22,16 +22,11 @@ npx ts-node --project tsconfig.json mcp-server/src/server.ts
 
 The `DEPLOY_ENV` environment variable controls which environment's deployment artifacts are loaded (`local` or `sepolia`). Defaults to `local`.
 
-## Manual Testing
+## Testing
 
 ```bash
-# MCP protocol handshake test
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' \
-  | npx ts-node --project tsconfig.json mcp-server/src/server.ts 2>/dev/null
-
-# Direct tool test (no MCP protocol)
-npx ts-node --project tsconfig.json -e "
-  const { getDeploymentState } = require('./mcp-server/src/tools/deployment-state');
-  console.log(JSON.stringify(getDeploymentState('local'), null, 2));
-"
+npm run test:mcp              # Unit tests (no chains needed)
+npm run test:mcp:e2e          # E2E protocol tests (no chains needed)
+npm run test:mcp:integration  # Integration tests (requires `npm run chains` + `npm run setup`)
+npm run test:mcp:all          # All MCP tests
 ```

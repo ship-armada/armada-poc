@@ -31,16 +31,19 @@ export interface CCTPDeployment {
   timestamp: string;
 }
 
+// Hub deploys PrivacyPool (with modules); client chains deploy PrivacyPoolClient (no modules).
+// Both share the same deployment file structure but differ in the contracts object.
 export interface PrivacyPoolDeployment {
   chainId: number;
   domain: number;
   deployer: string;
   contracts: {
-    privacyPool: string;
-    merkleModule: string;
-    verifierModule: string;
-    shieldModule: string;
-    transactModule: string;
+    privacyPool?: string;
+    privacyPoolClient?: string;
+    merkleModule?: string;
+    verifierModule?: string;
+    shieldModule?: string;
+    transactModule?: string;
     hookRouter?: string;
   };
   cctp: {
@@ -48,7 +51,18 @@ export interface PrivacyPoolDeployment {
     messageTransmitter: string;
     usdc: string;
   };
+  hub?: {
+    domain: number;
+    privacyPool: string;
+  };
   timestamp: string;
+}
+
+/**
+ * Get the pool contract address from a deployment, handling hub vs client key names.
+ */
+export function getPoolAddress(deployment: PrivacyPoolDeployment): string | null {
+  return deployment.contracts.privacyPool ?? deployment.contracts.privacyPoolClient ?? null;
 }
 
 export interface YieldDeployment {

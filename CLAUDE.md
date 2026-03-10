@@ -98,6 +98,7 @@ When writing new code, follow production security practices even though these le
 | `audit-reports/` | AI-assisted security audit (57 findings, Trail of Bits methodology) |
 | `reports/` | Threat models, formal verification notes, analysis reports |
 | `docs/` | Implementation plans and specs |
+| `mcp-server/` | MCP server exposing read-only dev tools for AI coding agents |
 | `_legacy/` | Deprecated earlier approach — do not modify |
 
 ## Environment & Secrets

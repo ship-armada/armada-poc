@@ -23,7 +23,7 @@ contract MerkleModule is PrivacyPoolStorage, IMerkleModule {
      * @dev Must be called once during PrivacyPool initialization.
      *      Calculates the zero values for each level and sets the initial root.
      */
-    function initializeMerkle() external override {
+    function initializeMerkle() external override onlyDelegatecall {
         // Calculate zero values for each level
         // zeros[0] = H("Railgun") % SNARK_SCALAR_FIELD
         // zeros[i] = H(zeros[i-1], zeros[i-1])
@@ -68,7 +68,7 @@ contract MerkleModule is PrivacyPoolStorage, IMerkleModule {
      *
      * @param _leafHashes Array of leaf hashes to insert
      */
-    function insertLeaves(bytes32[] memory _leafHashes) external override {
+    function insertLeaves(bytes32[] memory _leafHashes) external override onlyDelegatecall {
         // Get initial count
         uint256 count = _leafHashes.length;
 
@@ -165,7 +165,7 @@ contract MerkleModule is PrivacyPoolStorage, IMerkleModule {
      */
     function getInsertionTreeNumberAndStartingIndex(
         uint256 _newCommitments
-    ) external view override returns (uint256 treeNum, uint256 startIndex) {
+    ) external view override onlyDelegatecall returns (uint256 treeNum, uint256 startIndex) {
         // New tree will be created if current one can't contain new leaves
         if ((nextLeafIndex + _newCommitments) > (2 ** TREE_DEPTH)) {
             return (treeNumber + 1, 0);

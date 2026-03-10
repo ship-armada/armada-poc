@@ -83,8 +83,10 @@ async function main() {
   await governor.waitForDeployment();
 
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+  // Steward action delay: 120% of governance cycle (2d + 5d + 2d = 9d)
+  const stewardActionDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
   const stewardContract = await TreasurySteward.deploy(
-    await timelock.getAddress(), await treasury.getAddress(), ONE_DAY
+    await timelock.getAddress(), await treasury.getAddress(), await governor.getAddress(), stewardActionDelay
   );
   await stewardContract.waitForDeployment();
 

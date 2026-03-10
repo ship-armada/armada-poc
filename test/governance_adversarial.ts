@@ -101,10 +101,13 @@ describe("Governance Adversarial", function () {
     await governor.waitForDeployment();
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+    // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
+    const stewardActionDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
     stewardContract = await TreasurySteward.deploy(
       await timelockController.getAddress(),
       await treasuryContract.getAddress(),
-      ONE_DAY
+      await governor.getAddress(),
+      stewardActionDelay
     );
     await stewardContract.waitForDeployment();
 
@@ -532,24 +535,53 @@ describe("Governance Adversarial", function () {
 
     it("TreasurySteward rejects zero timelock", async function () {
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+      const stewardDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
       await expect(
         TreasurySteward.deploy(
           ethers.ZeroAddress,
           await treasuryContract.getAddress(),
-          ONE_DAY
+          await governor.getAddress(),
+          stewardDelay
         )
       ).to.be.revertedWith("TreasurySteward: zero timelock");
     });
 
     it("TreasurySteward rejects zero treasury", async function () {
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+      const stewardDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
       await expect(
         TreasurySteward.deploy(
           await timelockController.getAddress(),
           ethers.ZeroAddress,
-          ONE_DAY
+          await governor.getAddress(),
+          stewardDelay
         )
       ).to.be.revertedWith("TreasurySteward: zero treasury");
+    });
+
+    it("TreasurySteward rejects zero governor", async function () {
+      const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+      const stewardDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
+      await expect(
+        TreasurySteward.deploy(
+          await timelockController.getAddress(),
+          await treasuryContract.getAddress(),
+          ethers.ZeroAddress,
+          stewardDelay
+        )
+      ).to.be.revertedWith("TreasurySteward: zero governor");
+    });
+
+    it("TreasurySteward rejects delay below governance cycle", async function () {
+      const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
+      await expect(
+        TreasurySteward.deploy(
+          await timelockController.getAddress(),
+          await treasuryContract.getAddress(),
+          await governor.getAddress(),
+          ONE_DAY // way below minimum
+        )
+      ).to.be.revertedWith("TreasurySteward: delay below governance cycle");
     });
   });
 
@@ -938,6 +970,8 @@ describe("Governance Adversarial", function () {
     // Deploy a standalone steward with deployer as timelock for direct control.
     let testSteward: any;
     let testTreasury: any;
+    // Steward delay: 120% of governance cycle (2d + 5d + 2d = 9d)
+    const testStewardDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
 
     async function setupStewardTest() {
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
@@ -948,7 +982,8 @@ describe("Governance Adversarial", function () {
       testSteward = await TreasurySteward.deploy(
         deployer.address,                    // deployer acts as timelock
         await testTreasury.getAddress(),
-        ONE_DAY
+        await governor.getAddress(),
+        testStewardDelay
       );
       await testSteward.waitForDeployment();
 
@@ -971,7 +1006,7 @@ describe("Governance Adversarial", function () {
       await testSteward.connect(carol).proposeAction(
         await testTreasury.getAddress(), spendData, 0
       );
-      await time.increase(ONE_DAY + 1);
+      await time.increase(testStewardDelay + 1);
 
       // The original revert reason from the treasury is bubbled up
       await expect(
@@ -990,7 +1025,7 @@ describe("Governance Adversarial", function () {
       await testSteward.connect(carol).proposeAction(
         await testTreasury.getAddress(), spendData, 0
       );
-      await time.increase(ONE_DAY + 1);
+      await time.increase(testStewardDelay + 1);
 
       const actionId = await testSteward.actionCount();
 

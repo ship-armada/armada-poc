@@ -1,3 +1,6 @@
+// ABOUTME: Treasury steward contract with action queue, veto mechanism, and target whitelist.
+// ABOUTME: Steward proposes actions targeting whitelisted contracts; governance can veto before execution.
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -6,14 +9,23 @@ import "./IArmadaGovernance.sol";
 
 /// @title TreasurySteward — Elected steward with action queue and veto mechanism
 /// @notice Steward is elected via governance (StewardElection proposal). Has limited powers:
-///         can propose and execute actions on the treasury (within budget), but tokenholders
+///         can propose and execute actions on whitelisted target contracts, but tokenholders
 ///         can veto actions via governance proposals before they are executed.
+///         The action delay is enforced to be >= 120% of the fastest governance veto cycle,
+///         ensuring governance always has time to veto before execution.
 contract TreasurySteward is ReentrancyGuard {
+
+    // ============ Constants ============
+
+    /// @notice Safety margin for action delay over governance cycle (120% = 12000 bps)
+    uint256 private constant DELAY_SAFETY_MARGIN_BPS = 12000;
+    uint256 private constant BPS_DENOMINATOR = 10000;
 
     // ============ State ============
 
     address public immutable timelock;     // TimelockController address (governance-controlled)
     address public immutable treasury;     // ArmadaTreasuryGov address
+    address public immutable governor;     // ArmadaGovernor address (for timing params)
     address public currentSteward;
 
     uint256 public termStart;
@@ -26,6 +38,9 @@ contract TreasurySteward is ReentrancyGuard {
     // Configurable delay for steward actions (veto window)
     uint256 public actionDelay;
 
+    // Target whitelist — only whitelisted addresses can be called by steward actions
+    mapping(address => bool) public allowedTargets;
+
     // ============ Events ============
 
     event StewardElected(address indexed steward, uint256 termStart, uint256 termEnd);
@@ -34,6 +49,8 @@ contract TreasurySteward is ReentrancyGuard {
     event ActionExecuted(uint256 indexed actionId);
     event ActionVetoed(uint256 indexed actionId);
     event ActionDelayUpdated(uint256 oldDelay, uint256 newDelay);
+    event TargetAdded(address indexed target);
+    event TargetRemoved(address indexed target);
 
     // ============ Modifiers ============
 
@@ -52,13 +69,23 @@ contract TreasurySteward is ReentrancyGuard {
 
     /// @param _timelock TimelockController address
     /// @param _treasury ArmadaTreasuryGov address
+    /// @param _governor ArmadaGovernor address (used to derive minimum action delay)
     /// @param _actionDelay Delay before steward actions can execute (veto window)
-    constructor(address _timelock, address _treasury, uint256 _actionDelay) {
+    constructor(address _timelock, address _treasury, address _governor, uint256 _actionDelay) {
         require(_timelock != address(0), "TreasurySteward: zero timelock");
         require(_treasury != address(0), "TreasurySteward: zero treasury");
+        require(_governor != address(0), "TreasurySteward: zero governor");
         timelock = _timelock;
         treasury = _treasury;
+        governor = _governor;
+
+        uint256 minDelay = minActionDelay();
+        require(_actionDelay >= minDelay, "TreasurySteward: delay below governance cycle");
         actionDelay = _actionDelay;
+
+        // Treasury is permanently whitelisted
+        allowedTargets[_treasury] = true;
+        emit TargetAdded(_treasury);
     }
 
     // ============ Governance Functions (via timelock) ============
@@ -90,14 +117,33 @@ contract TreasurySteward is ReentrancyGuard {
 
     /// @notice Update the action delay (veto window)
     function setActionDelay(uint256 _actionDelay) external onlyTimelock {
+        uint256 minDelay = minActionDelay();
+        require(_actionDelay >= minDelay, "TreasurySteward: delay below governance cycle");
         emit ActionDelayUpdated(actionDelay, _actionDelay);
         actionDelay = _actionDelay;
+    }
+
+    /// @notice Add a target to the whitelist (called by timelock after governance proposal)
+    function addAllowedTarget(address target) external onlyTimelock {
+        require(target != address(0), "TreasurySteward: zero target");
+        require(!allowedTargets[target], "TreasurySteward: already allowed");
+        allowedTargets[target] = true;
+        emit TargetAdded(target);
+    }
+
+    /// @notice Remove a target from the whitelist (called by timelock after governance proposal)
+    /// @dev Treasury cannot be removed — it is permanently whitelisted.
+    function removeAllowedTarget(address target) external onlyTimelock {
+        require(target != treasury, "TreasurySteward: cannot remove treasury");
+        require(allowedTargets[target], "TreasurySteward: not allowed");
+        allowedTargets[target] = false;
+        emit TargetRemoved(target);
     }
 
     // ============ Steward Functions ============
 
     /// @notice Propose a steward action (queued for veto window)
-    /// @param target Contract to call
+    /// @param target Contract to call (must be whitelisted)
     /// @param data Encoded function call
     /// @param value ETH value to send
     function proposeAction(
@@ -105,6 +151,8 @@ contract TreasurySteward is ReentrancyGuard {
         bytes calldata data,
         uint256 value
     ) external onlySteward returns (uint256) {
+        require(allowedTargets[target], "TreasurySteward: target not allowed");
+
         uint256 actionId = ++actionCount;
         actions[actionId] = StewardAction({
             id: actionId,
@@ -126,6 +174,7 @@ contract TreasurySteward is ReentrancyGuard {
         require(action.id != 0, "TreasurySteward: unknown action");
         require(!action.executed, "TreasurySteward: already executed");
         require(!action.vetoed, "TreasurySteward: vetoed");
+        require(allowedTargets[action.target], "TreasurySteward: target not allowed");
         require(
             block.timestamp >= action.timestamp + actionDelay,
             "TreasurySteward: delay not elapsed"
@@ -145,6 +194,15 @@ contract TreasurySteward is ReentrancyGuard {
     }
 
     // ============ View Functions ============
+
+    /// @notice Minimum action delay derived from governor timing: 120% of the fastest governance cycle
+    /// @dev Fastest cycle is ParameterChange: votingDelay + votingPeriod + executionDelay
+    function minActionDelay() public view returns (uint256) {
+        (uint256 votingDelay, uint256 votingPeriod, uint256 executionDelay,) =
+            IArmadaGovernorTiming(governor).proposalTypeParams(ProposalType.ParameterChange);
+        uint256 governanceCycle = votingDelay + votingPeriod + executionDelay;
+        return (governanceCycle * DELAY_SAFETY_MARGIN_BPS) / BPS_DENOMINATOR;
+    }
 
     function isStewardActive() external view returns (bool) {
         return currentSteward != address(0) && block.timestamp < termStart + TERM_DURATION;

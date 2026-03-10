@@ -51,7 +51,8 @@ const INVITES_PER_HOP1  = 2;
 const DEPLOYER_LOCK_ARM    = "10000000";  // 10M ARM — team governance stake
 const DISTRIBUTE_AMOUNT    = "10000";     // USDC distributed via treasury proposal
 const STEWARD_SPEND_AMOUNT = "1000";      // USDC spent by steward from operational budget
-const STEWARD_ACTION_DELAY = ONE_DAY;
+// Steward action delay: 120% of governance cycle (2d + 5d + 2d = 9d)
+const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
 const TIMELOCK_MIN_DELAY   = TWO_DAYS;
 
 // Governance enums
@@ -165,7 +166,7 @@ async function main() {
   // 1f. TreasurySteward
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const stewardContract = await TreasurySteward.deploy(
-    await timelock.getAddress(), await treasury.getAddress(), STEWARD_ACTION_DELAY
+    await timelock.getAddress(), await treasury.getAddress(), await governor.getAddress(), STEWARD_ACTION_DELAY
   );
   await stewardContract.waitForDeployment();
   log("DEPLOY", `TreasurySteward: ${await stewardContract.getAddress()}`);

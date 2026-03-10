@@ -1,5 +1,5 @@
-// ABOUTME: Foundry tests for TreasurySteward target whitelist and minimum action delay.
-// ABOUTME: Covers issue #22: unrestricted proposeAction target + insufficient veto window.
+// ABOUTME: Foundry tests for TreasurySteward security: target whitelist, action delay, cancel, and cross-steward guards.
+// ABOUTME: Covers issues #22 (unrestricted target + veto window), #34 (steward self-cancellation), #38 (cross-steward execution).
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -428,13 +428,16 @@ contract StewardSecurityTest is Test {
 
         vm.warp(block.timestamp + TEST_ACTION_DELAY + 1);
 
-        // Execute the action first (empty call, may or may not succeed — force it)
-        vm.prank(stewardPerson);
-        try steward.executeAction(actionId) {} catch {}
+        // Mock treasury to accept the empty call so executeAction succeeds
+        vm.mockCall(address(treasury), bytes(""), abi.encode());
 
-        // Try to cancel — if it was executed, should revert
-        // (If the execute above failed due to treasury call, the action isn't marked executed,
-        //  so we skip this assertion in that case)
+        vm.prank(stewardPerson);
+        steward.executeAction(actionId);
+
+        // Try to cancel an already-executed action — should revert
+        vm.prank(stewardPerson);
+        vm.expectRevert("TreasurySteward: already executed");
+        steward.cancelAction(actionId);
     }
 
     function test_cancelAction_rejectsAlreadyVetoed() public {

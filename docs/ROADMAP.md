@@ -27,7 +27,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [ ] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
 - [ ] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
-- [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
+- [x] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
 - [ ] **3.2-A** #16: Verify steward `allowedTargets` deploy config + write test → _§3.2_
 - [ ] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
 - [ ] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
@@ -181,9 +181,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   When `stewardSpend` is called over budget, the revert propagates through the action queue and garbles the error. Fix so the original revert reason from `ArmadaTreasuryGov` surfaces correctly.
   _Ref: GitHub #29 | `TreasurySteward.sol`_
 
-- [ ] `[BLOCKER]` **H-8: Proposal threshold uses `totalSupply` not eligible supply**
-  `_checkProposalThreshold` computes threshold from `totalSupply` but quorum uses `eligibleSupply` (minus excluded addresses). With large exclusions the threshold is 2.86x higher than intended. Use `eligibleSupply` for the threshold too, or document the discrepancy.
-  _Ref: Audit H-8 | `ArmadaGovernor.sol:162`_
+- [x] `[DONE]` **H-8: Proposal threshold now uses eligible supply**
+  Extracted `_getEligibleSupply()` internal function (totalSupply minus treasury and excluded addresses). Both `_checkProposalThreshold()` and `proposalThreshold()` now use eligible supply, consistent with quorum. 10 Foundry tests (3 unit + 4 fuzz + 3 scenario) verify the fix.
+  _Ref: `ArmadaGovernor.sol:_getEligibleSupply()`, `test-foundry/ProposalThresholdEligibleSupply.t.sol`_
 
 ### 3.2 Verification Required
 

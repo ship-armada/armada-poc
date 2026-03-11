@@ -240,10 +240,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         return proposalId;
     }
 
-    /// @dev Check that proposer has enough locked tokens (0.1% of total supply)
+    /// @dev Check that proposer has enough locked tokens (0.1% of eligible supply)
     function _checkProposalThreshold(address proposer) internal view {
         uint256 proposerVotes = votingLocker.getPastLockedBalance(proposer, block.number - 1);
-        uint256 threshold = (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
+        uint256 threshold = (_getEligibleSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
         require(proposerVotes >= threshold, "ArmadaGovernor: below proposal threshold");
     }
 
@@ -266,12 +266,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
         // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation
         p.snapshotQuorumBps = params.quorumBps;
-        uint256 totalSupply = armToken.totalSupply();
-        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
-        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
-            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
-        }
-        p.snapshotEligibleSupply = totalSupply - excludedBalance;
+        p.snapshotEligibleSupply = _getEligibleSupply();
     }
 
     /// @notice Cast a vote on a proposal
@@ -418,10 +413,21 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     /// @notice Get proposal threshold (minimum locked tokens to propose)
     function proposalThreshold() external view returns (uint256) {
-        return (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
+        return (_getEligibleSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
     }
 
     // ============ Internal ============
+
+    /// @dev Compute eligible supply: total ARM minus treasury and excluded address balances.
+    /// Used for both proposal threshold and quorum denominator.
+    function _getEligibleSupply() internal view returns (uint256) {
+        uint256 totalSupply = armToken.totalSupply();
+        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
+        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+        }
+        return totalSupply - excludedBalance;
+    }
 
     function _quorumReached(uint256 proposalId) internal view returns (bool) {
         Proposal storage p = _proposals[proposalId];

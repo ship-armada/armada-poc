@@ -71,6 +71,7 @@ When writing new code, follow production security practices even though these le
 - Changing anything in `contracts/railgun/logic/` can silently break ZK circuit compatibility. Contracts compile fine, but proofs fail at runtime.
 - Deployment scripts must run in order (see Deployment Order below). Deploying a component before its dependencies will produce silent misconfigurations.
 - The Railgun SDK's LevelDB database (`data/railgun-db/`) can get into a stale state. If shield/transact operations fail unexpectedly after redeploying contracts, delete `data/railgun-db/` and restart.
+- **VotingLocker + Governor pairing:** After deploying a Governor, call `votingLocker.setGovernor(governor.address)`. This is one-time — if a test needs a "standalone" Governor that calls `castVote`, it needs its own VotingLocker instance. Tests that only call `propose` can share the main VotingLocker.
 
 ## Relayer
 

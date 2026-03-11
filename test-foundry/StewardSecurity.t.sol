@@ -67,6 +67,9 @@ contract StewardSecurityTest is Test {
             14 days
         );
 
+        // Set governor on VotingLocker for vote cooldown
+        locker.setGovernor(address(governor));
+
         // Deploy steward with governor reference and valid delay
         steward = new TreasurySteward(
             address(this),  // this contract acts as timelock for test convenience

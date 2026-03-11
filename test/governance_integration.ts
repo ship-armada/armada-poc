@@ -159,6 +159,9 @@ describe("Governance Integration", function () {
     );
     await governor.waitForDeployment();
 
+    // 5b. Set governor on VotingLocker (needed for vote cooldown)
+    await votingLocker.setGovernor(await governor.getAddress());
+
     // 6. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
@@ -986,7 +989,7 @@ describe("Governance Integration", function () {
       ).to.be.revertedWith("ArmadaGovernor: already voted");
     });
 
-    it("should allow unlock after voting (snapshot-based)", async function () {
+    it("should block unlock during voting period (vote cooldown)", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
@@ -998,13 +1001,19 @@ describe("Governance Integration", function () {
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
 
-      // Alice unlocks all tokens while voting is still active
-      await votingLocker.connect(alice).unlock(ALICE_AMOUNT);
-      expect(await armToken.balanceOf(alice.address)).to.equal(ALICE_AMOUNT);
+      // Alice cannot unlock during the voting period (vote cooldown active)
+      await expect(
+        votingLocker.connect(alice).unlock(ALICE_AMOUNT)
+      ).to.be.revertedWith("VotingLocker: vote cooldown active");
 
-      // Vote was already recorded with snapshot, so it still counts
+      // Vote was recorded with snapshot, so it still counts
       const [,,,,forVotes] = await governor.getProposal(1);
       expect(forVotes).to.equal(ALICE_AMOUNT);
+
+      // After voting period ends, Alice can unlock
+      await time.increase(FIVE_DAYS + 1);
+      await votingLocker.connect(alice).unlock(ALICE_AMOUNT);
+      expect(await armToken.balanceOf(alice.address)).to.equal(ALICE_AMOUNT);
     });
   });
 

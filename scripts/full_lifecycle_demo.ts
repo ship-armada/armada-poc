@@ -169,6 +169,9 @@ async function main() {
   await governor.waitForDeployment();
   log("DEPLOY", `ArmadaGovernor: ${await governor.getAddress()}`);
 
+  // Set governor on VotingLocker (needed for vote cooldown)
+  await votingLocker.setGovernor(await governor.getAddress());
+
   // 1f. TreasurySteward
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const stewardContract = await TreasurySteward.deploy(

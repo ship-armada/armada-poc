@@ -73,7 +73,8 @@ An AI-assisted security audit (Trail of Bits methodology) was performed in Febru
 ### High Priority (P1 — Before Production)
 
 - Add `ReentrancyGuard` to privacy pool modules
-- Fix proposal threshold (uses `totalSupply` not eligible supply — threshold is 2.86x too high)
+- ~~Fix proposal threshold (uses `totalSupply` not eligible supply — threshold is 2.86x too high)~~ (Fixed)
+- ~~Add unlock cooldown to VotingLocker to prevent vote-and-dump~~ (Fixed)
 - Implement cross-chain relayer fee deduction
 - Fix cost basis corruption in yield vault (shared adapter identity)
 - Put privacy pool owner behind timelock
@@ -108,6 +109,7 @@ These are the primary integration tests. They require local Anvil chains running
 | `governance_adversarial.ts` | Malicious voting, threshold manipulation |
 | `governance_emergency_pause.ts` | Emergency pause with auto-expiry |
 | `governance_param_updates.ts` | Governance-updatable parameters |
+| `governance_vote_cooldown.ts` | Vote-and-dump prevention (unlock cooldown) |
 | `crowdfund_integration.ts` | Full crowdfund lifecycle (setup → invite → commit → finalize → claim) |
 | `crowdfund_adversarial.ts` | Allocation edge cases, rollover paths |
 | `yield_integration.ts` | Vault mechanics (deposit/withdraw/redeem, share pricing) |
@@ -126,6 +128,7 @@ These run offline (no Anvil needed) and use Foundry's fuzzing engine.
 | `YieldFullInvariant.t.sol` | 9 tests: share price monotonicity, balance conservation, fee correctness |
 | `GovernorInvariant.t.sol` | 5 invariants: voting power consistency, quorum safety |
 | `CrowdfundFullInvariant.t.sol` | 6 invariants: allocation math, phase transitions, USDC conservation |
+| `VoteCooldown.t.sol` | 11 tests: vote cooldown enforcement, lockUntil monotonicity (3 fuzz) |
 | Various fuzz tests | Boundary conditions, allocation math, merkle operations |
 | `OnlyDelegatecall.t.sol` | Reentrancy protection via delegatecall guards |
 

@@ -24,7 +24,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **1.1-B** H-1/H-2: Validate `remoteDomain` + `sender` on cross-chain shields → _§1.1_
 - [ ] **1.1-C** H-5: Add `_disableInitializers()` to PrivacyPool → _§1.1_
 - [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
-- [ ] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
+- [x] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [ ] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
 - [ ] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
 - [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
@@ -169,9 +169,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **#4: Add unlock cooldown to prevent vote-and-dump**
-  A user can lock tokens, cast a vote, immediately unlock and sell, keeping vote weight intact with no skin in the game. Add a minimum lock duration after voting (e.g., until the proposal's voting period ends).
-  _Ref: GitHub #4 | `VotingLocker.sol:73` (TODO in code)_
+- [x] `[DONE]` **#4: Add unlock cooldown to prevent vote-and-dump**
+  Fixed: VotingLocker now tracks `lockUntil[voter]` — the latest voteEnd of any proposal the user voted on. `unlock()` requires `block.timestamp >= lockUntil[msg.sender]`. ArmadaGovernor calls `votingLocker.extendLockUntil(voter, voteEnd)` in `castVote`. Governor address set via one-time `setGovernor()` callable by guardian. Regression tests in `test/governance_vote_cooldown.ts` (17 tests) and `test-foundry/VoteCooldown.t.sol` (11 tests including 3 fuzz).
+  _Ref: GitHub #4 | `VotingLocker.sol`, `ArmadaGovernor.sol`_
 
 - [ ] `[BLOCKER]` **#23: Add revocability to TreasuryGov claims**
   Claims created via governance have no expiry and cannot be revoked. Add `revokeClaim(claimId)` callable only by timelock, and an optional `expiresAt` field.
@@ -233,6 +233,8 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] `[DONE]` #34: Steward self-cancellation for proposed actions (PR #60)
 - [x] `[DONE]` #35: Error encoding fix in TreasurySteward (PR #50)
 - [x] `[DONE]` #38: New steward cannot execute previous steward's actions (PR #60)
+- [x] `[DONE]` #4: Vote-and-dump prevention — `lockUntil` cooldown in VotingLocker, `extendLockUntil` called by Governor on vote
+- [x] `[DONE]` H-8: Proposal threshold uses eligible supply (was totalSupply) — `_eligibleSupply()` helper shared by threshold and quorum
 
 ---
 

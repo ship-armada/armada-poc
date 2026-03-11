@@ -144,6 +144,9 @@ describe("Governance Emergency Pause", function () {
     );
     await governor.waitForDeployment();
 
+    // 5b. Set governor on VotingLocker (needed for vote cooldown)
+    await votingLocker.connect(guardian).setGovernor(await governor.getAddress());
+
     // 6. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
@@ -636,6 +639,7 @@ describe("Governance Emergency Pause", function () {
     // Use a standalone governor with deployer as pauseTimelock for direct control
     let standaloneGovernor: any;
     let standaloneTimelock: any;
+    let standaloneVotingLocker: any;
 
     beforeEach(async function () {
       // Deploy a separate timelock and governor where deployer keeps admin
@@ -646,12 +650,17 @@ describe("Governance Emergency Pause", function () {
       await standaloneTimelock.waitForDeployment();
       const tlAddr = await standaloneTimelock.getAddress();
 
-      // Deploy standalone governor with deployer as pauseTimelock via the guardian constructor param
-      // Actually, the pauseTimelock IS the timelock param. So we need the governor to use
-      // a timelock we control. Let's use the standaloneTimelock but keep deployer as admin.
+      // Deploy a standalone VotingLocker so standalone governor can call extendLockUntil
+      const VotingLocker = await ethers.getContractFactory("VotingLocker");
+      standaloneVotingLocker = await VotingLocker.deploy(
+        await armToken.getAddress(),
+        deployer.address, MAX_PAUSE_DURATION, tlAddr
+      );
+      await standaloneVotingLocker.waitForDeployment();
+
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       standaloneGovernor = await ArmadaGovernor.deploy(
-        await votingLocker.getAddress(),
+        await standaloneVotingLocker.getAddress(),
         await armToken.getAddress(),
         tlAddr,
         await treasury.getAddress(),
@@ -659,11 +668,24 @@ describe("Governance Emergency Pause", function () {
       );
       await standaloneGovernor.waitForDeployment();
 
+      // Set governor on standalone locker
+      await standaloneVotingLocker.setGovernor(await standaloneGovernor.getAddress());
+
       // Grant governor the proposer/executor roles on the timelock
       const PROPOSER_ROLE = await standaloneTimelock.PROPOSER_ROLE();
       const EXECUTOR_ROLE = await standaloneTimelock.EXECUTOR_ROLE();
       await standaloneTimelock.grantRole(PROPOSER_ROLE, await standaloneGovernor.getAddress());
       await standaloneTimelock.grantRole(EXECUTOR_ROLE, await standaloneGovernor.getAddress());
+
+      // Unlock tokens from main locker, then lock in standalone locker for voting
+      await votingLocker.connect(alice).unlock(ALICE_AMOUNT);
+      await armToken.connect(alice).approve(await standaloneVotingLocker.getAddress(), ALICE_AMOUNT);
+      await standaloneVotingLocker.connect(alice).lock(ALICE_AMOUNT);
+
+      await votingLocker.connect(bob).unlock(BOB_AMOUNT);
+      await armToken.connect(bob).approve(await standaloneVotingLocker.getAddress(), BOB_AMOUNT);
+      await standaloneVotingLocker.connect(bob).lock(BOB_AMOUNT);
+      await mine(1);
     });
 
     it("propose still works when paused", async function () {

@@ -153,6 +153,9 @@ describe("Governance Parameter Updates", function () {
     );
     await governor.waitForDeployment();
 
+    // Set governor on VotingLocker (needed for vote cooldown)
+    await votingLocker.setGovernor(await governor.getAddress());
+
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,

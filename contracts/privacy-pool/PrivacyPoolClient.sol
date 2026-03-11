@@ -53,10 +53,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
     address public override hookRouter;
 
-    /// @notice Whether fast finality (CCTP "confirmed" level) is accepted for incoming messages
-    bool public fastFinalityEnabled;
-
     /// @notice Default finality threshold for outbound CCTP burns (STANDARD=2000, FAST=1000)
+    /// @dev Used as fallback when user passes 0 to crossChainShield
     uint32 public defaultFinalityThreshold;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -112,6 +110,10 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      *
      * @param amount Amount of USDC to shield
      * @param maxFee Maximum CCTP relayer fee (deducted at protocol level, 0 = no fee)
+     * @param minFinalityThreshold Finality level for this transfer:
+     *        CCTPFinality.FAST (1000) = ~8-20s, 1-1.3 bps fee (Circle bears reorg risk)
+     *        CCTPFinality.STANDARD (2000) = ~15-19 min, free
+     *        0 = use contract's defaultFinalityThreshold (falls back to STANDARD if unset)
      * @param npk Note public key (recipient's key for claiming the note)
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption by recipient
@@ -122,6 +124,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     function crossChainShield(
         uint256 amount,
         uint256 maxFee,
+        uint32 minFinalityThreshold,
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
@@ -138,36 +141,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         IERC20(usdc).safeApprove(tokenMessenger, 0);
         IERC20(usdc).safeApprove(tokenMessenger, amount);
 
-        // Create shield data payload
-        // value = gross amount (CCTP deducts fee at protocol level before minting)
-        ShieldData memory shieldData = ShieldData({
-            npk: npk,
-            value: uint120(amount),
-            encryptedBundle: encryptedBundle,
-            shieldKey: shieldKey
-        });
-
-        // Encode the CCTP payload
-        bytes memory hookData = CCTPPayloadLib.encodeShield(shieldData);
-
-        // Burn USDC and send message to Hub
-        // The Hub is the mint recipient and message handler
-        // destinationCaller restricts who can call receiveMessage on the destination chain
-        // Use configured finality threshold (STANDARD by default, FAST if enabled)
-        uint32 finality = defaultFinalityThreshold > 0
-            ? defaultFinalityThreshold
-            : CCTPFinality.STANDARD;
-
-        ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
-            amount,
-            hubDomain,
-            hubPool,                   // mintRecipient - Hub receives the USDC
-            usdc,
-            destinationCaller,         // destinationCaller - relayer address or 0 for any
-            maxFee,                    // maxFee - CCTP relayer fee (deducted from mint amount)
-            finality,                  // minFinalityThreshold - STANDARD (2000) or FAST (1000)
-            hookData                   // hookData - contains shield parameters
-        );
+        // Encode shield payload and execute CCTP burn in helper (avoids stack-too-deep)
+        _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, destinationCaller);
 
         emit CrossChainShieldInitiated(msg.sender, amount, npk, 0);
 
@@ -212,8 +187,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     /**
      * @notice Handle unfinalized CCTP message (fast finality / "confirmed" level)
      * @dev Called by CCTPHookRouter when finalityThresholdExecuted < STANDARD (2000).
-     *      Must be explicitly enabled via setFastFinalityEnabled(true).
      *      Circle bears the reorg risk for fast transfers via off-chain insurance.
+     *      Always accepted — users choose fast vs standard finality per-transaction.
      *
      * @param remoteDomain Source chain's CCTP domain
      * @param sender Sender address on source chain (as bytes32)
@@ -228,7 +203,6 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes calldata messageBody
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPoolClient: Unauthorized caller");
-        require(fastFinalityEnabled, "PrivacyPoolClient: Fast finality not enabled");
         require(finalityThresholdExecuted >= CCTPFinality.FAST, "PrivacyPoolClient: Finality below minimum");
         require(remoteDomain == hubDomain, "PrivacyPoolClient: Invalid domain");
         (sender); // Silence unused variable warning
@@ -274,6 +248,56 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         return true;
     }
 
+    /**
+     * @notice Encode shield data and execute CCTP burn (extracted to avoid stack-too-deep)
+     */
+    function _executeCCTPShield(
+        uint256 amount,
+        uint256 maxFee,
+        uint32 minFinalityThreshold,
+        bytes32 npk,
+        bytes32[3] calldata encryptedBundle,
+        bytes32 shieldKey,
+        bytes32 destinationCaller
+    ) internal {
+        bytes memory hookData = CCTPPayloadLib.encodeShield(ShieldData({
+            npk: npk,
+            value: uint120(amount),
+            encryptedBundle: encryptedBundle,
+            shieldKey: shieldKey
+        }));
+
+        ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
+            amount,
+            hubDomain,
+            hubPool,
+            usdc,
+            destinationCaller,
+            maxFee,
+            _resolveFinality(minFinalityThreshold),
+            hookData
+        );
+    }
+
+    /**
+     * @notice Resolve finality threshold from user param, contract default, or STANDARD fallback
+     * @param requested User-supplied threshold (0 = use default)
+     * @return finality Resolved finality threshold
+     */
+    function _resolveFinality(uint32 requested) internal view returns (uint32) {
+        if (requested > 0) {
+            require(
+                requested == CCTPFinality.FAST || requested == CCTPFinality.STANDARD,
+                "PrivacyPoolClient: Invalid finality threshold"
+            );
+            return requested;
+        }
+        if (defaultFinalityThreshold > 0) {
+            return defaultFinalityThreshold;
+        }
+        return CCTPFinality.STANDARD;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // ADMIN FUNCTIONS
     // ══════════════════════════════════════════════════════════════════════════
@@ -299,18 +323,6 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPoolClient: Only owner");
         hookRouter = _hookRouter;
-    }
-
-    /**
-     * @notice Enable or disable acceptance of fast finality CCTP messages
-     * @dev When enabled, handleReceiveUnfinalizedMessage() will accept messages
-     *      with finalityThresholdExecuted >= FAST (1000). Circle bears the reorg risk.
-     * @param _enabled Whether to accept fast finality messages
-     */
-    function setFastFinalityEnabled(bool _enabled) external override {
-        require(msg.sender == owner, "PrivacyPoolClient: Only owner");
-        fastFinalityEnabled = _enabled;
-        emit FastFinalitySet(_enabled);
     }
 
     /**

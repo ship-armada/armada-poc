@@ -1,5 +1,5 @@
 // ABOUTME: Tests for CCTP V2 fast finality (confirmed-level) message handling.
-// ABOUTME: Covers CCTPHookRouter dispatch, PrivacyPool + PrivacyPoolClient accept/reject, admin toggles, and fee accounting.
+// ABOUTME: Covers CCTPHookRouter dispatch, per-transaction finality choice, admin threshold config, and fee accounting.
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
@@ -254,60 +254,25 @@ describe("CCTP V2 Fast Finality", function () {
     };
   }
 
+  // Helper: parse minFinalityThreshold from a CCTP MessageV2 envelope
+  function parseMinFinality(encodedMessage: string): number {
+    const msgHex = encodedMessage.startsWith("0x") ? encodedMessage.slice(2) : encodedMessage;
+    // Offset 140 (4 bytes) = minFinalityThreshold in MessageV2 envelope
+    const minFinalityHex = msgHex.slice(280, 288); // offset 140 * 2 = 280, 4 bytes = 8 hex chars
+    return parseInt(minFinalityHex, 16);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // ADMIN TOGGLE TESTS
+  // ADMIN CONTROLS (defaultFinalityThreshold only — no admin toggle for fast mode)
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe("Admin Controls", function () {
-    it("should default fastFinalityEnabled to false", async function () {
-      expect(await privacyPool.fastFinalityEnabled()).to.be.false;
-      expect(await privacyPoolClient.fastFinalityEnabled()).to.be.false;
-    });
-
     it("should default defaultFinalityThreshold to 0 (interpreted as STANDARD)", async function () {
       expect(await privacyPool.defaultFinalityThreshold()).to.equal(0);
       expect(await privacyPoolClient.defaultFinalityThreshold()).to.equal(0);
     });
 
-    it("should allow owner to enable fast finality on PrivacyPool", async function () {
-      const tx = await privacyPool.setFastFinalityEnabled(true);
-      const receipt = await tx.wait();
-
-      // Check event
-      const event = receipt?.logs.find((log: any) => {
-        try {
-          return privacyPool.interface.parseLog(log)?.name === "FastFinalitySet";
-        } catch {
-          return false;
-        }
-      });
-      expect(event).to.not.be.undefined;
-      expect(await privacyPool.fastFinalityEnabled()).to.be.true;
-
-      // Reset for other tests
-      await privacyPool.setFastFinalityEnabled(false);
-    });
-
-    it("should allow owner to enable fast finality on PrivacyPoolClient", async function () {
-      await privacyPoolClient.setFastFinalityEnabled(true);
-      expect(await privacyPoolClient.fastFinalityEnabled()).to.be.true;
-      // Reset
-      await privacyPoolClient.setFastFinalityEnabled(false);
-    });
-
-    it("should reject non-owner setting fast finality on PrivacyPool", async function () {
-      await expect(
-        privacyPool.connect(alice).setFastFinalityEnabled(true)
-      ).to.be.revertedWith("PrivacyPool: Only owner");
-    });
-
-    it("should reject non-owner setting fast finality on PrivacyPoolClient", async function () {
-      await expect(
-        privacyPoolClient.connect(alice).setFastFinalityEnabled(true)
-      ).to.be.revertedWith("PrivacyPoolClient: Only owner");
-    });
-
-    it("should allow owner to set default finality threshold to FAST", async function () {
+    it("should allow owner to set default finality threshold to FAST on PrivacyPoolClient", async function () {
       const tx = await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
       const receipt = await tx.wait();
 
@@ -325,7 +290,15 @@ describe("CCTP V2 Fast Finality", function () {
       await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
     });
 
-    it("should reject invalid finality threshold values", async function () {
+    it("should allow owner to set default finality threshold on PrivacyPool (Hub)", async function () {
+      await privacyPool.setDefaultFinalityThreshold(FINALITY.FAST);
+      expect(await privacyPool.defaultFinalityThreshold()).to.equal(FINALITY.FAST);
+
+      // Reset
+      await privacyPool.setDefaultFinalityThreshold(FINALITY.STANDARD);
+    });
+
+    it("should reject invalid finality threshold values on PrivacyPoolClient", async function () {
       await expect(
         privacyPoolClient.setDefaultFinalityThreshold(500)
       ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
@@ -339,15 +312,171 @@ describe("CCTP V2 Fast Finality", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
     });
 
-    it("should reject non-owner setting finality threshold", async function () {
+    it("should reject non-owner setting finality threshold on PrivacyPoolClient", async function () {
       await expect(
         privacyPoolClient.connect(alice).setDefaultFinalityThreshold(FINALITY.FAST)
       ).to.be.revertedWith("PrivacyPoolClient: Only owner");
     });
+
+    it("should reject non-owner setting finality threshold on PrivacyPool", async function () {
+      await expect(
+        privacyPool.connect(alice).setDefaultFinalityThreshold(FINALITY.FAST)
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CROSS-CHAIN SHIELD WITH FAST FINALITY
+  // PER-TRANSACTION FINALITY CHOICE ON crossChainShield
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("Per-Transaction Finality Choice", function () {
+    const SHIELD_AMOUNT = ethers.parseUnits("50", 6); // 50 USDC
+
+    beforeEach(async function () {
+      await clientUsdc.mint(aliceAddress, SHIELD_AMOUNT);
+    });
+
+    it("should send with FAST finality when user requests it", async function () {
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("per-tx-fast");
+
+      const tx = await privacyPoolClient.connect(alice).crossChainShield(
+        SHIELD_AMOUNT,
+        0,                    // maxFee
+        FINALITY.FAST,        // minFinalityThreshold — user explicitly picks FAST
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
+      );
+      const receipt = await tx.wait();
+      const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
+
+      const minFinality = parseMinFinality(encodedMessage);
+      expect(minFinality).to.equal(FINALITY.FAST);
+    });
+
+    it("should send with STANDARD finality when user requests it", async function () {
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("per-tx-standard");
+
+      const tx = await privacyPoolClient.connect(alice).crossChainShield(
+        SHIELD_AMOUNT,
+        0,
+        FINALITY.STANDARD,   // user explicitly picks STANDARD
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
+      );
+      const receipt = await tx.wait();
+      const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
+
+      const minFinality = parseMinFinality(encodedMessage);
+      expect(minFinality).to.equal(FINALITY.STANDARD);
+    });
+
+    it("should fall back to contract default when user passes 0", async function () {
+      // Set contract default to FAST
+      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
+
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("per-tx-default-fast");
+
+      const tx = await privacyPoolClient.connect(alice).crossChainShield(
+        SHIELD_AMOUNT,
+        0,
+        0,                    // 0 = use contract default
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
+      );
+      const receipt = await tx.wait();
+      const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
+
+      const minFinality = parseMinFinality(encodedMessage);
+      expect(minFinality).to.equal(FINALITY.FAST);
+
+      // Reset
+      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
+    });
+
+    it("should fall back to STANDARD when user passes 0 and no default set", async function () {
+      // Deploy a fresh client with no default set (defaultFinalityThreshold = 0)
+      const PrivacyPoolClient = await ethers.getContractFactory("PrivacyPoolClient");
+      const freshClient = await PrivacyPoolClient.deploy();
+      await freshClient.waitForDeployment();
+      const freshClientAddress = await freshClient.getAddress();
+
+      await freshClient.initialize(
+        await clientTokenMessenger.getAddress(),
+        await clientMessageTransmitter.getAddress(),
+        await clientUsdc.getAddress(),
+        DOMAINS.client,
+        DOMAINS.hub,
+        ethers.zeroPadValue(privacyPoolAddress, 32),
+        deployerAddress
+      );
+      await freshClient.setHookRouter(await clientHookRouter.getAddress());
+
+      await clientUsdc.mint(aliceAddress, SHIELD_AMOUNT);
+      await clientUsdc.connect(alice).approve(freshClientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("per-tx-default-standard");
+
+      const tx = await freshClient.connect(alice).crossChainShield(
+        SHIELD_AMOUNT,
+        0,
+        0,                    // 0, and defaultFinalityThreshold is also 0 → STANDARD
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
+      );
+      const receipt = await tx.wait();
+      const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
+
+      const minFinality = parseMinFinality(encodedMessage);
+      expect(minFinality).to.equal(FINALITY.STANDARD);
+    });
+
+    it("should reject invalid finality threshold from user (e.g. 500)", async function () {
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("per-tx-invalid");
+
+      await expect(
+        privacyPoolClient.connect(alice).crossChainShield(
+          SHIELD_AMOUNT,
+          0,
+          500,                // invalid — not FAST or STANDARD
+          params.npk,
+          params.encryptedBundle,
+          params.shieldKey,
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWith("PrivacyPoolClient: Invalid finality threshold");
+    });
+
+    it("should reject invalid finality threshold from user (e.g. 1500)", async function () {
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("per-tx-invalid-1500");
+
+      await expect(
+        privacyPoolClient.connect(alice).crossChainShield(
+          SHIELD_AMOUNT,
+          0,
+          1500,               // invalid — between FAST and STANDARD
+          params.npk,
+          params.encryptedBundle,
+          params.shieldKey,
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWith("PrivacyPoolClient: Invalid finality threshold");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CROSS-CHAIN SHIELD WITH FAST FINALITY (end-to-end)
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe("Cross-Chain Shield with Fast Finality", function () {
@@ -357,46 +486,14 @@ describe("CCTP V2 Fast Finality", function () {
       await clientUsdc.mint(aliceAddress, SHIELD_AMOUNT);
     });
 
-    it("should reject fast finality shield when fastFinalityEnabled is false (default)", async function () {
-      // Set client to send with FAST finality
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
-      // Hub fast finality NOT enabled (default)
-
-      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
-      const params = makeShieldParams("fast-reject-test");
-
-      const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        SHIELD_AMOUNT,
-        0,
-        params.npk,
-        params.encryptedBundle,
-        params.shieldKey,
-        ethers.ZeroHash
-      );
-      const receipt = await tx.wait();
-      const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
-
-      // Relay should fail — Hub doesn't accept fast finality
-      await expect(
-        hubHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x")
-      ).to.be.revertedWith("PrivacyPool: Fast finality not enabled");
-
-      // Reset
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
-    });
-
-    it("should accept fast finality shield when enabled", async function () {
-      // Enable fast finality on Hub
-      await privacyPool.setFastFinalityEnabled(true);
-      // Set client to send with FAST finality
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
-
+    it("should accept fast finality shield on Hub (no admin toggle needed)", async function () {
       await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
       const params = makeShieldParams("fast-accept-test");
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
-        0, // no CCTP fee
+        0,                    // no CCTP fee
+        FINALITY.FAST,        // user picks FAST
         params.npk,
         params.encryptedBundle,
         params.shieldKey,
@@ -407,24 +504,16 @@ describe("CCTP V2 Fast Finality", function () {
 
       const merkleRootBefore = await privacyPool.merkleRoot();
 
-      // Relay should succeed
+      // Relay should succeed — Hub always accepts fast finality
       await hubHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x");
 
       // Merkle root should change (commitment inserted)
       const merkleRootAfter = await privacyPool.merkleRoot();
       expect(merkleRootAfter).to.not.equal(merkleRootBefore);
-
-      // Reset
-      await privacyPool.setFastFinalityEnabled(false);
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
     });
 
     it("should correctly account for fees in fast finality shield", async function () {
       const MAX_FEE = ethers.parseUnits("1", 6); // 1 USDC CCTP fee
-
-      // Enable fast finality
-      await privacyPool.setFastFinalityEnabled(true);
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
 
       await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
       const params = makeShieldParams("fast-fee-test");
@@ -432,6 +521,7 @@ describe("CCTP V2 Fast Finality", function () {
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         MAX_FEE,
+        FINALITY.FAST,        // user picks FAST
         params.npk,
         params.encryptedBundle,
         params.shieldKey,
@@ -455,23 +545,17 @@ describe("CCTP V2 Fast Finality", function () {
 
       const treasuryBalanceAfter = await hubUsdc.balanceOf(treasuryAddress);
       expect(treasuryBalanceAfter - treasuryBalanceBefore).to.equal(shieldFeeAmount);
-
-      // Reset
-      await privacyPool.setFastFinalityEnabled(false);
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
     });
 
-    it("should still accept standard finality shield after enabling fast", async function () {
-      // Enable fast finality on Hub but leave client sending STANDARD
-      await privacyPool.setFastFinalityEnabled(true);
-      // defaultFinalityThreshold is 0 → falls back to STANDARD
-
+    it("should accept standard finality shield alongside fast", async function () {
+      // Send with STANDARD — should use handleReceiveFinalizedMessage path
       await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
-      const params = makeShieldParams("standard-with-fast-enabled");
+      const params = makeShieldParams("standard-alongside-fast");
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         0,
+        FINALITY.STANDARD,
         params.npk,
         params.encryptedBundle,
         params.shieldKey,
@@ -482,14 +566,11 @@ describe("CCTP V2 Fast Finality", function () {
 
       const merkleRootBefore = await privacyPool.merkleRoot();
 
-      // Standard finality relay should still work
+      // Standard finality relay should work
       await hubHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x");
 
       const merkleRootAfter = await privacyPool.merkleRoot();
       expect(merkleRootAfter).to.not.equal(merkleRootBefore);
-
-      // Reset
-      await privacyPool.setFastFinalityEnabled(false);
     });
   });
 
@@ -498,34 +579,42 @@ describe("CCTP V2 Fast Finality", function () {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe("Cross-Chain Unshield with Fast Finality", function () {
-    const SHIELD_AMOUNT = ethers.parseUnits("100", 6);
+    it("should accept fast finality unshield on PrivacyPoolClient (always enabled)", async function () {
+      // The Client always accepts both finalized and unfinalized messages.
+      // We verify by calling handleReceiveUnfinalizedMessage from an authorized caller.
+      // Since we can't easily construct a valid BurnMessageV2, we just verify
+      // the authorization + finality checks pass (the handler will revert on
+      // malformed message body, which proves it got past auth checks).
+      const tokenMessengerAddr = await privacyPoolClient.tokenMessenger();
+      const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
+      await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
 
-    // For unshield testing, we need a shielded balance first.
-    // We'll test the Client receiving unfinalized messages from Hub.
-
-    it("should reject fast finality unshield on client when not enabled", async function () {
-      // Enable fast finality on Hub for sending (so Hub sends with FAST threshold)
-      await privacyPool.setDefaultFinalityThreshold(FINALITY.FAST);
-      // Client fast finality NOT enabled (default)
-
-      // Mint USDC to pool to simulate an unshield payout
-      await hubUsdc.mint(privacyPoolAddress, SHIELD_AMOUNT);
-
-      // We can't easily do a full unshield without ZK proofs, but we can test
-      // that the client rejects unfinalized messages by constructing a mock scenario.
-      // The easiest way: verify the flag state is correct
-      expect(await privacyPoolClient.fastFinalityEnabled()).to.be.false;
-
-      // Reset
-      await privacyPool.setDefaultFinalityThreshold(FINALITY.STANDARD);
+      // Should not revert with "Unauthorized caller" or "Finality below minimum"
+      // — will revert on message body decode instead (proving auth passed)
+      await expect(
+        privacyPoolClient.connect(tokenMessengerSigner).handleReceiveUnfinalizedMessage(
+          DOMAINS.hub,
+          ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32),
+          FINALITY.FAST,
+          ethers.ZeroHash  // malformed body — will fail on decode, not auth
+        )
+      ).to.not.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
-    it("should accept fast finality unshield on client when enabled", async function () {
-      await privacyPoolClient.setFastFinalityEnabled(true);
-      expect(await privacyPoolClient.fastFinalityEnabled()).to.be.true;
+    it("should accept fast finality messages on Hub PrivacyPool (always enabled)", async function () {
+      const tokenMessengerAddr = await privacyPool.tokenMessenger();
+      const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
+      await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
 
-      // Reset
-      await privacyPoolClient.setFastFinalityEnabled(false);
+      // Should not revert with auth or finality errors
+      await expect(
+        privacyPool.connect(tokenMessengerSigner).handleReceiveUnfinalizedMessage(
+          DOMAINS.client,
+          ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32),
+          FINALITY.FAST,
+          ethers.ZeroHash
+        )
+      ).to.not.be.revertedWith("PrivacyPool: Unauthorized caller");
     });
   });
 
@@ -541,13 +630,13 @@ describe("CCTP V2 Fast Finality", function () {
     });
 
     it("should dispatch to handleReceiveFinalizedMessage for standard finality", async function () {
-      // Default: client sends with STANDARD finality
       await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
       const params = makeShieldParams("hookrouter-standard");
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         0,
+        FINALITY.STANDARD,
         params.npk,
         params.encryptedBundle,
         params.shieldKey,
@@ -562,17 +651,14 @@ describe("CCTP V2 Fast Finality", function () {
       ).to.not.be.reverted;
     });
 
-    it("should dispatch to handleReceiveUnfinalizedMessage for fast finality", async function () {
-      // Set client to FAST finality
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
-      // Hub fast finality NOT enabled — we expect it to revert in the handler
-
+    it("should dispatch to handleReceiveUnfinalizedMessage for fast finality and succeed", async function () {
       await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
       const params = makeShieldParams("hookrouter-fast");
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         0,
+        FINALITY.FAST,
         params.npk,
         params.encryptedBundle,
         params.shieldKey,
@@ -581,37 +667,10 @@ describe("CCTP V2 Fast Finality", function () {
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
-      // Should revert with the unfinalized handler's error (proving dispatch works)
+      // Should succeed — Hub always accepts fast finality messages
       await expect(
         hubHookRouter.connect(relayer).relayWithHook(encodedMessage, "0x")
-      ).to.be.revertedWith("PrivacyPool: Fast finality not enabled");
-
-      // Now enable and verify it succeeds
-      await privacyPool.setFastFinalityEnabled(true);
-
-      // Need fresh USDC and new shield (nonce was consumed in the failed attempt)
-      await clientUsdc.mint(aliceAddress, SHIELD_AMOUNT);
-      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
-      const params2 = makeShieldParams("hookrouter-fast-retry");
-
-      const tx2 = await privacyPoolClient.connect(alice).crossChainShield(
-        SHIELD_AMOUNT,
-        0,
-        params2.npk,
-        params2.encryptedBundle,
-        params2.shieldKey,
-        ethers.ZeroHash
-      );
-      const receipt2 = await tx2.wait();
-      const encodedMessage2 = extractMessageSent(receipt2, clientMessageTransmitter);
-
-      await expect(
-        hubHookRouter.connect(relayer).relayWithHook(encodedMessage2, "0x")
       ).to.not.be.reverted;
-
-      // Reset
-      await privacyPool.setFastFinalityEnabled(false);
-      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
     });
   });
 
@@ -622,7 +681,7 @@ describe("CCTP V2 Fast Finality", function () {
   describe("Configurable Outbound Finality", function () {
     const SHIELD_AMOUNT = ethers.parseUnits("50", 6);
 
-    it("should use STANDARD finality by default", async function () {
+    it("should use STANDARD finality by default (threshold=0)", async function () {
       // defaultFinalityThreshold may be 0 (initial) or STANDARD (2000) — both mean standard
       const threshold = await privacyPoolClient.defaultFinalityThreshold();
       expect(threshold === 0n || threshold === BigInt(FINALITY.STANDARD)).to.be.true;
@@ -632,20 +691,22 @@ describe("CCTP V2 Fast Finality", function () {
       const params = makeShieldParams("outbound-default");
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        SHIELD_AMOUNT, 0, params.npk, params.encryptedBundle, params.shieldKey, ethers.ZeroHash
+        SHIELD_AMOUNT,
+        0,
+        0,                    // user passes 0 → use contract default → STANDARD
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
       );
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
-      // Parse the message to check minFinalityThreshold
-      // Offset 140 (4 bytes) = minFinalityThreshold in MessageV2 envelope
-      const msgHex = encodedMessage.startsWith("0x") ? encodedMessage.slice(2) : encodedMessage;
-      const minFinalityHex = msgHex.slice(280, 288); // offset 140 * 2 = 280, 4 bytes = 8 hex chars
-      const minFinality = parseInt(minFinalityHex, 16);
+      const minFinality = parseMinFinality(encodedMessage);
       expect(minFinality).to.equal(FINALITY.STANDARD);
     });
 
-    it("should use FAST finality when configured", async function () {
+    it("should use FAST finality when contract default is configured", async function () {
       await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.FAST);
 
       await clientUsdc.mint(aliceAddress, SHIELD_AMOUNT);
@@ -653,19 +714,47 @@ describe("CCTP V2 Fast Finality", function () {
       const params = makeShieldParams("outbound-fast");
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        SHIELD_AMOUNT, 0, params.npk, params.encryptedBundle, params.shieldKey, ethers.ZeroHash
+        SHIELD_AMOUNT,
+        0,
+        0,                    // user passes 0 → uses contract default → FAST
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
       );
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
-      // Parse the message to check minFinalityThreshold
-      const msgHex = encodedMessage.startsWith("0x") ? encodedMessage.slice(2) : encodedMessage;
-      const minFinalityHex = msgHex.slice(280, 288);
-      const minFinality = parseInt(minFinalityHex, 16);
+      const minFinality = parseMinFinality(encodedMessage);
       expect(minFinality).to.equal(FINALITY.FAST);
 
       // Reset
       await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
+    });
+
+    it("user-specified finality overrides contract default", async function () {
+      // Set contract default to STANDARD
+      await privacyPoolClient.setDefaultFinalityThreshold(FINALITY.STANDARD);
+
+      await clientUsdc.mint(aliceAddress, SHIELD_AMOUNT);
+      await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
+      const params = makeShieldParams("outbound-override");
+
+      // User explicitly requests FAST, overriding the STANDARD default
+      const tx = await privacyPoolClient.connect(alice).crossChainShield(
+        SHIELD_AMOUNT,
+        0,
+        FINALITY.FAST,        // user overrides contract default
+        params.npk,
+        params.encryptedBundle,
+        params.shieldKey,
+        ethers.ZeroHash
+      );
+      const receipt = await tx.wait();
+      const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
+
+      const minFinality = parseMinFinality(encodedMessage);
+      expect(minFinality).to.equal(FINALITY.FAST);
     });
   });
 });

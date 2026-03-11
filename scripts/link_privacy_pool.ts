@@ -258,49 +258,20 @@ async function main() {
     console.log("CCTP Mode: real — skipping TokenMessenger configuration (managed by Circle)");
   }
 
-  // Configure CCTP fast finality if enabled
+  // Configure default finality threshold for outbound unshields
+  // (Shields use per-transaction user choice; this only affects unshields via TransactModule)
   const useFastFinality = config.cctpFinalityMode === "fast";
 
   if (useFastFinality) {
-    console.log("Configuring CCTP fast finality...");
-
-    // Enable fast finality acceptance on Hub PrivacyPool
-    await (await privacyPool.setFastFinalityEnabled(true)).wait();
-    console.log("  Hub PrivacyPool: fastFinalityEnabled = true");
+    console.log("Configuring CCTP fast finality defaults for outbound unshields...");
 
     // Set default finality threshold to FAST (1000) on Hub (for outbound unshields)
     await (await privacyPool.setDefaultFinalityThreshold(1000)).wait();
     console.log("  Hub PrivacyPool: defaultFinalityThreshold = FAST (1000)");
 
-    // Enable fast finality on each Client PrivacyPoolClient
-    for (const clientConfig of clientConfigs) {
-      const clientFilename = getPrivacyPoolDeploymentFile(clientConfig.role);
-      const clientDeployment = loadDeployment(clientFilename);
-      if (!clientDeployment?.contracts?.privacyPoolClient) continue;
-
-      const chain = clientConfig.role === "clientA" ? config.clientA : config.clientB;
-      const clientProvider = new ethers.JsonRpcProvider(chain.rpc);
-      const clientSigner = new ethers.Wallet(config.deployerPrivateKey, clientProvider);
-
-      const clientPoolContract = new ethers.Contract(
-        clientDeployment.contracts.privacyPoolClient,
-        [
-          "function setFastFinalityEnabled(bool _enabled) external",
-          "function setDefaultFinalityThreshold(uint32 _threshold) external",
-        ],
-        clientSigner
-      );
-
-      await (await clientPoolContract.setFastFinalityEnabled(true)).wait();
-      console.log(`  ${clientConfig.name} PrivacyPoolClient: fastFinalityEnabled = true`);
-
-      await (await clientPoolContract.setDefaultFinalityThreshold(1000)).wait();
-      console.log(`  ${clientConfig.name} PrivacyPoolClient: defaultFinalityThreshold = FAST (1000)`);
-    }
-
     console.log("");
   } else {
-    console.log("CCTP Finality Mode: standard (fast finality disabled)");
+    console.log("CCTP Finality Mode: standard (unshields use finalized finality)");
     console.log("");
   }
 

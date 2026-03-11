@@ -877,7 +877,7 @@ describe("Privacy Pool Adversarial", function () {
     it("crossChainShield with zero amount reverts", async function () {
       await expect(
         privacyPoolClient.connect(alice).crossChainShield(
-          0, 0, validNpk(),
+          0, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash, ethers.ZeroHash
         )
@@ -888,7 +888,7 @@ describe("Privacy Pool Adversarial", function () {
       const amount = ethers.parseUnits("10", 6);
       await expect(
         privacyPoolClient.connect(alice).crossChainShield(
-          amount, amount, validNpk(),
+          amount, amount, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash, ethers.ZeroHash
         )
@@ -914,7 +914,7 @@ describe("Privacy Pool Adversarial", function () {
 
       await expect(
         freshClient.connect(alice).crossChainShield(
-          amount, 0, validNpk(),
+          amount, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash, ethers.ZeroHash
         )
@@ -927,22 +927,10 @@ describe("Privacy Pool Adversarial", function () {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("Fast Finality Access Control", function () {
-    it("non-owner cannot call setFastFinalityEnabled on PrivacyPool", async function () {
-      await expect(
-        privacyPool.connect(attacker).setFastFinalityEnabled(true)
-      ).to.be.revertedWith("PrivacyPool: Only owner");
-    });
-
     it("non-owner cannot call setDefaultFinalityThreshold on PrivacyPool", async function () {
       await expect(
         privacyPool.connect(attacker).setDefaultFinalityThreshold(1000)
       ).to.be.revertedWith("PrivacyPool: Only owner");
-    });
-
-    it("non-owner cannot call setFastFinalityEnabled on PrivacyPoolClient", async function () {
-      await expect(
-        privacyPoolClient.connect(attacker).setFastFinalityEnabled(true)
-      ).to.be.revertedWith("PrivacyPoolClient: Only owner");
     });
 
     it("non-owner cannot call setDefaultFinalityThreshold on PrivacyPoolClient", async function () {
@@ -999,49 +987,6 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
     });
 
-    it("fast finality messages rejected on PrivacyPool when disabled", async function () {
-      // Ensure fast finality is disabled
-      const isEnabled = await privacyPool.fastFinalityEnabled();
-      if (isEnabled) {
-        await privacyPool.setFastFinalityEnabled(false);
-      }
-
-      // Only hookRouter or tokenMessenger can call, so we impersonate the tokenMessenger
-      const tokenMessengerAddr = await privacyPool.tokenMessenger();
-      const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
-      await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
-
-      await expect(
-        privacyPool.connect(tokenMessengerSigner).handleReceiveUnfinalizedMessage(
-          DOMAINS.client,
-          ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32),
-          1000, // FAST finality
-          ethers.ZeroHash
-        )
-      ).to.be.revertedWith("PrivacyPool: Fast finality not enabled");
-    });
-
-    it("fast finality messages rejected on PrivacyPoolClient when disabled", async function () {
-      // Ensure fast finality is disabled
-      const isEnabled = await privacyPoolClient.fastFinalityEnabled();
-      if (isEnabled) {
-        await privacyPoolClient.setFastFinalityEnabled(false);
-      }
-
-      const tokenMessengerAddr = await privacyPoolClient.tokenMessenger();
-      const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
-      await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
-
-      await expect(
-        privacyPoolClient.connect(tokenMessengerSigner).handleReceiveUnfinalizedMessage(
-          DOMAINS.hub,
-          ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32),
-          1000,
-          ethers.ZeroHash
-        )
-      ).to.be.revertedWith("PrivacyPoolClient: Fast finality not enabled");
-    });
-
     it("unauthorized caller cannot call handleReceiveUnfinalizedMessage on PrivacyPool", async function () {
       await expect(
         privacyPool.connect(attacker).handleReceiveUnfinalizedMessage(
@@ -1064,9 +1009,7 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
-    it("finality below FAST (1000) rejected even when fast finality enabled on PrivacyPool", async function () {
-      await privacyPool.setFastFinalityEnabled(true);
-
+    it("finality below FAST (1000) rejected on PrivacyPool", async function () {
       const tokenMessengerAddr = await privacyPool.tokenMessenger();
       const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
       await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
@@ -1079,14 +1022,9 @@ describe("Privacy Pool Adversarial", function () {
           ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPool: Finality below minimum");
-
-      // Clean up
-      await privacyPool.setFastFinalityEnabled(false);
     });
 
-    it("finality below FAST (1000) rejected even when fast finality enabled on PrivacyPoolClient", async function () {
-      await privacyPoolClient.setFastFinalityEnabled(true);
-
+    it("finality below FAST (1000) rejected on PrivacyPoolClient", async function () {
       const tokenMessengerAddr = await privacyPoolClient.tokenMessenger();
       const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
       await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
@@ -1099,9 +1037,6 @@ describe("Privacy Pool Adversarial", function () {
           ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPoolClient: Finality below minimum");
-
-      // Clean up
-      await privacyPoolClient.setFastFinalityEnabled(false);
     });
   });
 });

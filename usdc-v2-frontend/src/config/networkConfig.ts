@@ -9,6 +9,7 @@
 
 import { NetworkName } from '@railgun-community/shared-models'
 import { ethers } from 'ethers'
+import { getHookRouterFromDeployment } from './deployments'
 
 export type NetworkMode = 'local' | 'sepolia'
 
@@ -155,10 +156,7 @@ export function getRailgunNetworkNameString(): string {
 // ── CCTP Hook Router ──
 
 export function getHookRouterAddress(destination: 'hub' | 'client' = 'hub'): string {
-  if (destination === 'hub') {
-    return (import.meta.env.VITE_HUB_HOOK_ROUTER as string) || ethers.ZeroAddress
-  }
-  return (import.meta.env.VITE_CLIENT_HOOK_ROUTER as string) || ethers.ZeroAddress
+  return getHookRouterFromDeployment(destination) || ethers.ZeroAddress
 }
 
 // ── CCTP Finality Mode ──

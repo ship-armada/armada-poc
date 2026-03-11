@@ -174,8 +174,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     /**
      * @notice Handle unfinalized CCTP message (fast finality / "confirmed" level)
      * @dev Called by CCTPHookRouter when finalityThresholdExecuted < STANDARD (2000).
-     *      Must be explicitly enabled via setFastFinalityEnabled(true).
      *      Circle bears the reorg risk for fast transfers via off-chain insurance.
+     *      Always accepted — users choose fast vs standard finality per-transaction.
      *
      * @param sender Sender address on source chain (as bytes32)
      * @param finalityThresholdExecuted The finality threshold that was met (e.g. 1000 for FAST)
@@ -189,7 +189,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         bytes calldata messageBody
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
-        require(fastFinalityEnabled, "PrivacyPool: Fast finality not enabled");
         require(finalityThresholdExecuted >= CCTPFinality.FAST, "PrivacyPool: Finality below minimum");
         (sender); // Silence unused variable warning
 
@@ -329,18 +328,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         hookRouter = _hookRouter;
-    }
-
-    /**
-     * @notice Enable or disable acceptance of fast finality CCTP messages
-     * @dev When enabled, handleReceiveUnfinalizedMessage() will accept messages
-     *      with finalityThresholdExecuted >= FAST (1000). Circle bears the reorg risk.
-     * @param _enabled Whether to accept fast finality messages
-     */
-    function setFastFinalityEnabled(bool _enabled) external override {
-        require(msg.sender == owner, "PrivacyPool: Only owner");
-        fastFinalityEnabled = _enabled;
-        emit FastFinalitySet(_enabled);
     }
 
     /**

@@ -68,6 +68,8 @@ interface ChainState {
   wallet: ethers.Wallet;
   messageTransmitter: string;
   hookRouter: string | null;
+  /** Known contract addresses that can receive CCTP messages on this chain (lowercase, zero-padded bytes32) */
+  knownRecipients: Set<string>;
   domain: number;
   lastProcessedBlock: number;
   processedMessages: Set<string>;
@@ -114,6 +116,23 @@ const MSG_SOURCE_DOMAIN_OFFSET = 4;
 const MSG_DEST_DOMAIN_OFFSET = 8;
 const MSG_NONCE_OFFSET = 12;
 const MSG_NONCE_LENGTH = 32; // bytes32 in real CCTP V2 (NOT 8-byte uint64)
+const MSG_DEST_CALLER_OFFSET = 108;
+const MSG_DEST_CALLER_LENGTH = 32;
+
+/**
+ * BurnMessageV2 mintRecipient offset within the full MessageV2.
+ *
+ * In real CCTP V2, the MessageV2 `recipient` field (offset 76) is always the destination
+ * TokenMessenger — NOT the final recipient contract. The actual recipient (our PrivacyPool
+ * or PrivacyPoolClient) is in the BurnMessageV2 body's `mintRecipient` field:
+ *   - BurnMessageV2 starts at MessageV2 offset 148 (messageBody)
+ *   - mintRecipient is at BurnMessageV2 offset 36 (after version(4) + burnToken(32))
+ *   - Absolute offset in full message: 148 + 36 = 184
+ */
+const MSG_BODY_OFFSET = 148;
+const BURN_MSG_MINT_RECIPIENT_OFFSET = 36;
+const MINT_RECIPIENT_ABSOLUTE_OFFSET = MSG_BODY_OFFSET + BURN_MSG_MINT_RECIPIENT_OFFSET;
+const MINT_RECIPIENT_LENGTH = 32;
 
 /** Max time to keep polling for an attestation before giving up (ms) */
 const MAX_ATTESTATION_AGE_MS = 30 * 60 * 1000; // 30 minutes
@@ -130,17 +149,29 @@ function loadDeployment(filename: string): any | null {
 function parseMessageFields(messageHex: string): {
   sourceDomain: number;
   destinationDomain: number;
-  nonce: string; // full bytes32 hex
+  nonce: string; // full bytes32 hex (may be zero in event — Iris fills in real nonce)
+  mintRecipient: string; // bytes32 hex (lowercase) — from BurnMessageV2 body
+  destinationCaller: string; // bytes32 hex (lowercase)
 } {
   // Remove 0x prefix
   const hex = messageHex.startsWith("0x") ? messageHex.slice(2) : messageHex;
 
   const sourceDomain = parseInt(hex.slice(MSG_SOURCE_DOMAIN_OFFSET * 2, (MSG_SOURCE_DOMAIN_OFFSET + 4) * 2), 16);
   const destinationDomain = parseInt(hex.slice(MSG_DEST_DOMAIN_OFFSET * 2, (MSG_DEST_DOMAIN_OFFSET + 4) * 2), 16);
-  // Nonce is bytes32 (32 bytes) in real CCTP V2, not uint64 (8 bytes)
+  // In real CCTP V2, the nonce in the MessageSent event is a placeholder (zero).
+  // Iris assigns the real nonce and returns it in the corrected message.
   const nonce = "0x" + hex.slice(MSG_NONCE_OFFSET * 2, (MSG_NONCE_OFFSET + MSG_NONCE_LENGTH) * 2);
+  const destinationCaller = "0x" + hex.slice(MSG_DEST_CALLER_OFFSET * 2, (MSG_DEST_CALLER_OFFSET + MSG_DEST_CALLER_LENGTH) * 2).toLowerCase();
 
-  return { sourceDomain, destinationDomain, nonce };
+  // Parse mintRecipient from BurnMessageV2 body (the actual destination contract).
+  // MessageV2.recipient (offset 76) is always the dest TokenMessenger in real CCTP V2.
+  let mintRecipient = "";
+  const mintRecipientEnd = (MINT_RECIPIENT_ABSOLUTE_OFFSET + MINT_RECIPIENT_LENGTH) * 2;
+  if (hex.length >= mintRecipientEnd) {
+    mintRecipient = "0x" + hex.slice(MINT_RECIPIENT_ABSOLUTE_OFFSET * 2, mintRecipientEnd).toLowerCase();
+  }
+
+  return { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller };
 }
 
 function elapsed(since: number): string {
@@ -240,6 +271,9 @@ export class IrisRelayModule {
         );
         console.log(`    MessageTransmitter: ${state.messageTransmitter}`);
         console.log(`    HookRouter: ${state.hookRouter || "not configured"}`);
+        if (state.knownRecipients.size > 0) {
+          console.log(`    Known recipients: ${Array.from(state.knownRecipients).map(r => r.slice(0, 20) + "...").join(", ")}`);
+        }
       } else {
         console.log(
           `  [iris-relay] ${chainConfig.name} (${chainConfig.chainId}): Failed to initialize`
@@ -268,11 +302,17 @@ export class IrisRelayModule {
         return null;
       }
 
-      // Load hookRouter from privacy pool deployment
+      // Load hookRouter and known recipient addresses from privacy pool deployment
       let hookRouter: string | null = null;
+      const knownRecipients = new Set<string>();
       const ppDeployment = loadDeployment(chainConfig.privacyPoolDeploymentFile);
       if (ppDeployment?.contracts?.hookRouter) {
         hookRouter = ppDeployment.contracts.hookRouter;
+      }
+      // Collect known CCTP recipient addresses for this chain (used to filter foreign messages)
+      const poolAddr = ppDeployment?.contracts?.privacyPool || ppDeployment?.contracts?.privacyPoolClient;
+      if (poolAddr) {
+        knownRecipients.add(ethers.zeroPadValue(poolAddr, 32).toLowerCase());
       }
 
       const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
@@ -287,6 +327,7 @@ export class IrisRelayModule {
         wallet,
         messageTransmitter,
         hookRouter,
+        knownRecipients,
         domain: chainConfig.cctpDomain,
         lastProcessedBlock: 0,
         processedMessages: new Set(),
@@ -367,12 +408,30 @@ export class IrisRelayModule {
     if (sourceState.processedMessages.has(messageHash)) return;
     if (this.pendingMessages.has(messageHash)) return;
 
-    const { sourceDomain, destinationDomain, nonce } = parseMessageFields(messageBytes);
+    const { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller } = parseMessageFields(messageBytes);
 
     const destState = this.getChainByDomain(destinationDomain);
     if (!destState) {
       console.log(`  [iris-relay] Unknown destination domain ${destinationDomain}, skipping`);
       return;
+    }
+
+    // Filter: only relay messages where BurnMessageV2.mintRecipient matches our contracts.
+    // On real CCTP V2, the MessageV2.recipient is always the dest TokenMessenger (shared),
+    // so we check mintRecipient (the actual contract that receives minted tokens).
+    if (destState.knownRecipients.size > 0 && mintRecipient && !destState.knownRecipients.has(mintRecipient)) {
+      // Not our message — someone else's CCTP transfer on the shared MessageTransmitter
+      return;
+    }
+
+    // Filter: if destinationCaller is set and doesn't match our hookRouter, skip
+    const zeroCaller = "0x" + "0".repeat(64);
+    if (destinationCaller !== zeroCaller && destState.hookRouter) {
+      const ourHookRouterBytes32 = ethers.zeroPadValue(destState.hookRouter, 32).toLowerCase();
+      if (destinationCaller !== ourHookRouterBytes32) {
+        console.log(`  [iris-relay] Message destinationCaller ${destinationCaller.slice(0, 20)}... doesn't match our HookRouter, skipping`);
+        return;
+      }
     }
 
     const pending: PendingMessage = {
@@ -397,9 +456,9 @@ export class IrisRelayModule {
       `[iris-relay] QUEUED: ${sourceState.config.name} (Domain ${sourceDomain}) -> ${destState.config.name} (Domain ${destinationDomain})`
     );
     console.log(`${"=".repeat(60)}`);
-    console.log(`  Nonce:       ${nonce}`);
     console.log(`  Msg Hash:    ${messageHash}`);
     console.log(`  Source Tx:   ${log.transactionHash}`);
+    console.log(`  MintRecipient: ${mintRecipient || "unknown"}`);
     console.log(`  Msg length:  ${(messageBytes.length - 2) / 2} bytes`);
     console.log(`  Iris URL:    ${irisUrl}`);
     console.log(`  Queued for attestation polling (non-blocking)`);

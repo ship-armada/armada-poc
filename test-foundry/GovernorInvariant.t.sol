@@ -302,6 +302,9 @@ contract GovernorInvariantTest is Test {
             14 days
         );
 
+        // Wire governor into locker for vote cooldown
+        locker.setGovernor(address(governor));
+
         // Grant governor the proposer role on timelock
         timelock.grantRole(timelock.PROPOSER_ROLE(), address(governor));
         timelock.grantRole(timelock.EXECUTOR_ROLE(), address(governor));

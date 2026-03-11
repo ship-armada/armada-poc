@@ -33,10 +33,20 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
     /// @notice Total locked checkpoint history
     Checkpoint[] private _totalLockedCheckpoints;
 
+    /// @notice Authorized governor that can record vote cooldowns
+    address public governor;
+
+    /// @notice Per-user unlock cooldown: timestamp after which unlock is allowed.
+    /// Updated by the governor each time the user votes. Set to the latest voteEnd
+    /// across all proposals the user has voted on.
+    mapping(address => uint256) public unlockCooldownEnd;
+
     // ============ Events ============
 
     event TokensLocked(address indexed user, uint256 amount, uint256 newLockedBalance);
     event TokensUnlocked(address indexed user, uint256 amount, uint256 newLockedBalance);
+    event GovernorSet(address indexed governor);
+    event VoteCooldownRecorded(address indexed voter, uint256 cooldownEnd);
 
     // ============ Constructor ============
 
@@ -49,7 +59,33 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
         armToken = IERC20(_armToken);
     }
 
+    // ============ Governor Setup ============
+
+    /// @notice Set the governor that may record vote cooldowns.
+    /// Callable by the guardian (initial setup) or the pauseTimelock (governance upgrade).
+    function setGovernor(address _governor) external {
+        require(
+            msg.sender == guardian || msg.sender == pauseTimelock,
+            "VotingLocker: not guardian or timelock"
+        );
+        require(_governor != address(0), "VotingLocker: zero address");
+        governor = _governor;
+        emit GovernorSet(_governor);
+    }
+
     // ============ External Functions ============
+
+    /// @notice Record that a voter has voted on a proposal ending at cooldownEnd.
+    /// Called by the governor on each vote to enforce unlock cooldown.
+    /// @param voter The address that voted
+    /// @param cooldownEnd The proposal's voteEnd timestamp
+    function recordVoteCooldown(address voter, uint256 cooldownEnd) external {
+        require(msg.sender == governor, "VotingLocker: not governor");
+        if (cooldownEnd > unlockCooldownEnd[voter]) {
+            unlockCooldownEnd[voter] = cooldownEnd;
+            emit VoteCooldownRecorded(voter, cooldownEnd);
+        }
+    }
 
     /// @notice Lock ARM tokens to gain voting power
     /// @param amount Amount of ARM to lock
@@ -68,14 +104,15 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
         emit TokensLocked(msg.sender, amount, newBalance);
     }
 
-    /// @notice Unlock ARM tokens
+    /// @notice Unlock ARM tokens. Blocked until the voting period ends for any
+    ///         proposal the user has voted on (prevents vote-and-dump).
     /// @param amount Amount of ARM to unlock
-    // TODO: Vote-and-dump vulnerability — there is no unlock cooldown, so a user can
-    //   lock tokens, vote on a proposal, then immediately unlock and sell, bearing no
-    //   economic exposure to the outcome. Consider adding a time-lock (e.g. tokens stay
-    //   locked until the voting period ends for any proposal they voted on).
     function unlock(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "VotingLocker: zero amount");
+        require(
+            block.timestamp > unlockCooldownEnd[msg.sender],
+            "VotingLocker: cooldown active"
+        );
 
         uint256 oldBalance = _getLatestLockedBalance(msg.sender);
         require(oldBalance >= amount, "VotingLocker: insufficient locked");

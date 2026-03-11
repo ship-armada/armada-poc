@@ -370,6 +370,7 @@ describe("Gas Benchmarks", function () {
       const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
       await timelock.grantRole(PROPOSER_ROLE, await governor.getAddress());
       await timelock.grantRole(EXECUTOR_ROLE, await governor.getAddress());
+      await locker.setGovernor(await governor.getAddress());
 
       // Fund and lock tokens for deployer (proposer needs threshold)
       const deployerLock = ARM(200_000); // 0.2% > 0.1% threshold

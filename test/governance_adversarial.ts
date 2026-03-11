@@ -107,6 +107,7 @@ describe("Governance Adversarial", function () {
       deployer.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
+    await votingLocker.setGovernor(await governor.getAddress());
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)

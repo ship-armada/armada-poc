@@ -124,6 +124,11 @@ async function main() {
   const governorAddress = await governor.getAddress();
   console.log(`   ArmadaGovernor: ${governorAddress}`);
 
+  // 5b. Wire governor into VotingLocker (for vote cooldown enforcement)
+  console.log("5b. Setting governor on VotingLocker...");
+  await (await votingLocker.setGovernor(governorAddress, nm.override())).wait();
+  console.log(`   VotingLocker governor set to: ${governorAddress}`);
+
   // 6. Deploy TreasurySteward
   console.log("6. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");

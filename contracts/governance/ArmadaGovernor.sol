@@ -294,6 +294,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             p.abstainVotes += weight;
         }
 
+        // Record vote cooldown: voter cannot unlock until this proposal's voting period ends.
+        // This prevents vote-and-dump: locking, voting, then immediately unlocking.
+        votingLocker.recordVoteCooldown(msg.sender, p.voteEnd);
+
         emit VoteCast(msg.sender, proposalId, support, weight);
     }
 

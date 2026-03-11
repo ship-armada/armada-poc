@@ -24,19 +24,19 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **1.1-B** H-1/H-2: Validate `remoteDomain` + `sender` on cross-chain shields → _§1.1_
 - [ ] **1.1-C** H-5: Add `_disableInitializers()` to PrivacyPool → _§1.1_
 - [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
-- [ ] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
+- [x] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [ ] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
 - [ ] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
-- [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
-- [ ] **3.2-A** #16: Verify steward `allowedTargets` deploy config + write test → _§3.2_
-- [ ] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
+- [x] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
+- [x] **3.2-A** #16: Verify steward `allowedTargets` deploy config + write test → _§3.2_
+- [x] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
 - [ ] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
 - [ ] **5.1-A** C-4: Add private key startup assertion to relayer → _§5.1_
 - [ ] **7.1-A** Run Aderyn static analysis → _§7.1_
 
 ### Level 1 — Tests & Triage (depends on Level 0 fixes)
 
-- [ ] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
+- [x] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
 - [ ] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
 - [ ] **4.3-A** Cover crowdfund scenarios: cancel+ARM recovery, elastic expansion, permissionlessCancel → _§4.3_
 - [ ] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
@@ -169,9 +169,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **#4: Add unlock cooldown to prevent vote-and-dump**
-  A user can lock tokens, cast a vote, immediately unlock and sell, keeping vote weight intact with no skin in the game. Add a minimum lock duration after voting (e.g., until the proposal's voting period ends).
-  _Ref: GitHub #4 | `VotingLocker.sol:73` (TODO in code)_
+- [x] `[DONE]` **#4: Unlock cooldown prevents vote-and-dump**
+  Added `recordVoteCooldown()` mechanism: when a user votes, ArmadaGovernor records the proposal's `voteEnd` timestamp in VotingLocker. Unlock is blocked until `block.timestamp > unlockCooldownEnd[user]`. Voting on multiple proposals extends cooldown to the latest `voteEnd`. 14 Hardhat tests + 17 Foundry tests (3 unit, 3 fuzz, 8 scenario, 2 invariant + handler) verify the fix.
+  _Ref: `VotingLocker.sol:recordVoteCooldown()`, `ArmadaGovernor.sol:castVote()`, `test-foundry/UnlockCooldown.t.sol`, `test/governance_unlock_cooldown.ts`_
 
 - [ ] `[BLOCKER]` **#23: Add revocability to TreasuryGov claims**
   Claims created via governance have no expiry and cannot be revoked. Add `revokeClaim(claimId)` callable only by timelock, and an optional `expiresAt` field.
@@ -181,23 +181,23 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   When `stewardSpend` is called over budget, the revert propagates through the action queue and garbles the error. Fix so the original revert reason from `ArmadaTreasuryGov` surfaces correctly.
   _Ref: GitHub #29 | `TreasurySteward.sol`_
 
-- [ ] `[BLOCKER]` **H-8: Proposal threshold uses `totalSupply` not eligible supply**
-  `_checkProposalThreshold` computes threshold from `totalSupply` but quorum uses `eligibleSupply` (minus excluded addresses). With large exclusions the threshold is 2.86x higher than intended. Use `eligibleSupply` for the threshold too, or document the discrepancy.
-  _Ref: Audit H-8 | `ArmadaGovernor.sol:162`_
+- [x] `[DONE]` **H-8: Proposal threshold now uses eligible supply**
+  Extracted `_getEligibleSupply()` internal function (totalSupply minus treasury and excluded addresses). Both `_checkProposalThreshold()` and `proposalThreshold()` now use eligible supply, consistent with quorum. 10 Foundry tests (3 unit + 4 fuzz + 3 scenario) verify the fix.
+  _Ref: `ArmadaGovernor.sol:_getEligibleSupply()`, `test-foundry/ProposalThresholdEligibleSupply.t.sol`_
 
 ### 3.2 Verification Required
 
-- [ ] `[BLOCKER]` **#16: Verify deployment script only adds treasury to steward `allowedTargets`**
-  The `allowedTargets` whitelist already exists in `TreasurySteward.sol:43`. The code-level mechanism is in place. Verify that the Sepolia deployment script calls `addAllowedTarget` only for the treasury address and no others. Write a test confirming steward cannot queue actions to non-treasury targets.
-  _Ref: GitHub #16 | `TreasurySteward.sol:43,138,163,200`_
+- [x] `[DONE]` **#16: Verify deployment script only adds treasury to steward `allowedTargets`**
+  Verified: `deploy_governance.ts` passes only `treasuryAddress` to TreasurySteward constructor, which auto-whitelists it (line 96). No `addAllowedTarget` calls in deploy script. 9 Foundry tests (4 unit, 1 fuzz, 4 scenario) confirm steward cannot target governor, locker, timelock, or arbitrary addresses.
+  _Ref: `test-foundry/GovernanceVerification.t.sol:StewardAllowedTargetsTest`_
 
-- [ ] `[BLOCKER]` **#17: Verify `minActionDelay()` covers a full governance veto cycle**
-  `setActionDelay` enforces `_actionDelay >= minActionDelay()`. Verify the returned value actually covers the shortest possible governance cycle (proposal → vote → queue → execute) so governance has time to veto before the steward can execute. Write a test confirming.
-  _Ref: GitHub #17 | `TreasurySteward.sol:128`_
+- [x] `[DONE]` **#17: Verify `minActionDelay()` covers a full governance veto cycle**
+  Verified: `minActionDelay()` = 120% of fastest governance cycle (ParameterChange: 2d+5d+2d = 9d → 10.8d). This gives governance 1.8 days of slack to execute a veto. 8 Foundry tests (5 unit, 2 fuzz, 1 dynamic) prove governance completes veto before steward can execute, and minDelay tracks governor param changes dynamically.
+  _Ref: `test-foundry/GovernanceVerification.t.sol:MinActionDelayVetoCycleTest`_
 
-- [ ] `[BLOCKER]` **#19: Write regression test confirming snapshot quorum doesn't shift during voting**
-  The snapshot quorum fix landed (PR #63 — `snapshotEligibleSupply` stored at creation, line 274). Write a targeted regression test: deposit tokens to treasury mid-vote, confirm quorum for the active proposal does not change.
-  _Ref: GitHub #19 | `ArmadaGovernor.sol:274,386` | `docs/governance-test-scenarios.md` D8-D10_
+- [x] `[DONE]` **#19: Regression test confirming snapshot quorum doesn't shift during voting**
+  8 Foundry tests (6 unit, 1 fuzz, 1 concurrent-proposal) verify quorum is immutable after proposal creation: treasury deposits/withdrawals mid-vote, governance param updates, excluded address changes, and arbitrary fuzzed transfers all leave quorum unchanged. Concurrent proposals snapshot independently.
+  _Ref: `test-foundry/GovernanceVerification.t.sol:SnapshotQuorumRegressionTest`_
 
 ### 3.3 Should Fix
 
@@ -222,6 +222,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.5 Already Fixed
 
+- [x] `[DONE]` #4: Unlock cooldown — `recordVoteCooldown()` prevents vote-and-dump (`VotingLocker.sol`, `ArmadaGovernor.sol`)
 - [x] `[DONE]` #19/#25: Snapshot quorum — `snapshotEligibleSupply` stored at creation (`ArmadaGovernor.sol:274,386`)
 - [x] `[DONE]` #22/#28: Queue grace period — `QUEUE_GRACE_PERIOD = 14 days`, proposals expire (`ArmadaGovernor.sol:92,374`)
 - [x] `[DONE]` #24: `transferOwnership` removed from TreasuryGov (PR #50)

@@ -14,7 +14,7 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 | A1 | Lock tokens, query voting power in next block | Power equals locked amount |
 | A2 | Lock tokens in **same block** as proposal creation | Snapshot is `block.number-1`, so these tokens have **zero** power for that proposal |
 | A3 | Lock additional tokens **after** a proposal's snapshot block | No extra voting power for that proposal |
-| A4 | Vote, then immediately unlock all tokens | Vote still counts at snapshot weight (vote-and-dump, documented in #4) |
+| A4 | Vote, then immediately unlock all tokens | **FIXED:** Unlock reverts with cooldown until voting period ends. Covered by `VotingLockerCooldown.t.sol` and `governance_integration.ts` |
 | A5 | Unlock all tokens during active voting, then re-lock before voting ends | Vote already cast still uses snapshot weight; new lock doesn't affect it |
 | A6 | Lock, unlock, re-lock in **same block** | Single checkpoint reflecting final state |
 | A7 | Multiple locks across many blocks | Each creates a new checkpoint; binary search should find correct historical value |

@@ -107,6 +107,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       deployer.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
+    await votingLocker.setGovernor(await governor.getAddress());
 
     // Grant governor roles on timelock
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
@@ -663,6 +664,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         localDeployer.address, LOCAL_MAX_PAUSE
       );
       await localGovernor.waitForDeployment();
+      await localVotingLocker.setGovernor(await localGovernor.getAddress());
 
       // Grant governor roles on timelock
       const PROPOSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PROPOSER_ROLE"));

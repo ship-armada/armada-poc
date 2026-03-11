@@ -171,6 +171,9 @@ describe("Governance Integration", function () {
     );
     await stewardContract.waitForDeployment();
 
+    // 6b. Register governor on VotingLocker (enables unlock cooldown)
+    await votingLocker.setGovernor(await governor.getAddress());
+
     // 7. Configure timelock roles
     const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();
     const EXECUTOR_ROLE = await timelockController.EXECUTOR_ROLE();
@@ -986,25 +989,31 @@ describe("Governance Integration", function () {
       ).to.be.revertedWith("ArmadaGovernor: already voted");
     });
 
-    it("should allow unlock after voting (snapshot-based)", async function () {
+    it("should block unlock during voting period (cooldown)", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Unlock test"
+        ProposalType.ParameterChange, targets, values, calldatas, "Cooldown test"
       );
 
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
 
-      // Alice unlocks all tokens while voting is still active
-      await votingLocker.connect(alice).unlock(ALICE_AMOUNT);
-      expect(await armToken.balanceOf(alice.address)).to.equal(ALICE_AMOUNT);
+      // Alice cannot unlock while voting period is active
+      await expect(
+        votingLocker.connect(alice).unlock(ALICE_AMOUNT)
+      ).to.be.revertedWith("VotingLocker: tokens locked until voting ends");
 
-      // Vote was already recorded with snapshot, so it still counts
+      // Vote was recorded with snapshot, so it still counts
       const [,,,,forVotes] = await governor.getProposal(1);
       expect(forVotes).to.equal(ALICE_AMOUNT);
+
+      // After voting period ends, unlock succeeds
+      await time.increase(FIVE_DAYS + 1);
+      await votingLocker.connect(alice).unlock(ALICE_AMOUNT);
+      expect(await armToken.balanceOf(alice.address)).to.equal(ALICE_AMOUNT);
     });
   });
 

@@ -27,6 +27,16 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
 
     IERC20 public immutable armToken;
 
+    /// @notice Governor address — authorized to extend lock cooldowns when users vote
+    address public governor;
+
+    /// @notice Deployer address — used for one-time governor setup
+    address public immutable deployerAddress;
+
+    /// @notice Per-user unlock cooldown: tokens cannot be unlocked before this timestamp.
+    /// Updated by the governor each time the user casts a vote (set to proposal's voteEnd).
+    mapping(address => uint256) public unlockableAfter;
+
     /// @notice Per-user checkpoint history
     mapping(address => Checkpoint[]) private _checkpoints;
 
@@ -37,6 +47,8 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
 
     event TokensLocked(address indexed user, uint256 amount, uint256 newLockedBalance);
     event TokensUnlocked(address indexed user, uint256 amount, uint256 newLockedBalance);
+    event GovernorSet(address indexed governor);
+    event LockExtended(address indexed user, uint256 unlockableAfter);
 
     // ============ Constructor ============
 
@@ -47,6 +59,30 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
         address _pauseTimelock
     ) EmergencyPausable(_guardian, _maxPauseDuration, _pauseTimelock) {
         armToken = IERC20(_armToken);
+        deployerAddress = msg.sender;
+    }
+
+    // ============ Governor Setup ============
+
+    /// @notice One-time setter: register the governor that may extend lock cooldowns.
+    /// @dev Must be called after the governor is deployed. Deployer-only; locks permanently.
+    function setGovernor(address _governor) external {
+        require(msg.sender == deployerAddress, "VotingLocker: not deployer");
+        require(governor == address(0), "VotingLocker: governor already set");
+        require(_governor != address(0), "VotingLocker: zero address");
+        governor = _governor;
+        emit GovernorSet(_governor);
+    }
+
+    /// @notice Extend a user's unlock cooldown. Called by the governor when the user votes.
+    /// @dev Only extends — never shortens. If the user votes on multiple proposals, the
+    ///      latest voteEnd wins.
+    function extendLockUntil(address user, uint256 timestamp) external {
+        require(msg.sender == governor, "VotingLocker: not governor");
+        if (timestamp > unlockableAfter[user]) {
+            unlockableAfter[user] = timestamp;
+            emit LockExtended(user, timestamp);
+        }
     }
 
     // ============ External Functions ============
@@ -70,12 +106,14 @@ contract VotingLocker is ReentrancyGuard, IVotingLocker, EmergencyPausable {
 
     /// @notice Unlock ARM tokens
     /// @param amount Amount of ARM to unlock
-    // TODO: Vote-and-dump vulnerability — there is no unlock cooldown, so a user can
-    //   lock tokens, vote on a proposal, then immediately unlock and sell, bearing no
-    //   economic exposure to the outcome. Consider adding a time-lock (e.g. tokens stay
-    //   locked until the voting period ends for any proposal they voted on).
+    /// @dev Enforces unlock cooldown: if the user has voted on an active proposal,
+    ///      tokens stay locked until that proposal's voting period ends.
     function unlock(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "VotingLocker: zero amount");
+        require(
+            block.timestamp >= unlockableAfter[msg.sender],
+            "VotingLocker: tokens locked until voting ends"
+        );
 
         uint256 oldBalance = _getLatestLockedBalance(msg.sender);
         require(oldBalance >= amount, "VotingLocker: insufficient locked");

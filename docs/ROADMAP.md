@@ -24,7 +24,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **1.1-B** H-1/H-2: Validate `remoteDomain` + `sender` on cross-chain shields → _§1.1_
 - [ ] **1.1-C** H-5: Add `_disableInitializers()` to PrivacyPool → _§1.1_
 - [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
-- [ ] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
+- [x] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [ ] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
 - [ ] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
 - [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
@@ -169,9 +169,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **#4: Add unlock cooldown to prevent vote-and-dump**
-  A user can lock tokens, cast a vote, immediately unlock and sell, keeping vote weight intact with no skin in the game. Add a minimum lock duration after voting (e.g., until the proposal's voting period ends).
-  _Ref: GitHub #4 | `VotingLocker.sol:73` (TODO in code)_
+- [x] `[DONE]` **#4: Unlock cooldown prevents vote-and-dump**
+  VotingLocker now enforces an unlock cooldown: when a user votes via ArmadaGovernor, their `unlockableAfter` timestamp is extended to the proposal's `voteEnd`. Tokens cannot be unlocked until all voted proposals' voting periods have ended. Governor calls `extendLockUntil()` on each `castVote()`. The cooldown is monotonically non-decreasing (voting on a later-ending proposal extends it, never shortens). 14 Foundry tests (4 invariant + 10 unit/fuzz) verify the fix.
+  _Ref: `VotingLocker.sol`, `ArmadaGovernor.sol:304`, `test-foundry/VotingLockerCooldown.t.sol`_
 
 - [ ] `[BLOCKER]` **#23: Add revocability to TreasuryGov claims**
   Claims created via governance have no expiry and cannot be revoked. Add `revokeClaim(claimId)` callable only by timelock, and an optional `expiresAt` field.
@@ -213,7 +213,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 - [ ] `[SHOULD]` **Cover priority uncovered governance scenarios**
   223 scenarios documented in `docs/governance-test-scenarios.md`. Priority items for Sepolia confidence:
-  - A4 (vote-and-dump) — must be covered once #4 is fixed
+  - ~~A4 (vote-and-dump) — must be covered once #4 is fixed~~ (covered in VotingLockerCooldown.t.sol)
   - D8/D9/D10 (quorum snapshot regression) — covers #19 verification
   - E-series (state transition timing edge cases)
   - J9 (steward queues action targeting arbitrary contract) — covers #16 verification

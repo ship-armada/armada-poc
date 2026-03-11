@@ -125,6 +125,7 @@ These run offline (no Anvil needed) and use Foundry's fuzzing engine.
 | `PrivacyPoolFullInvariant.t.sol` | 5 invariants: nullifier uniqueness, commitment integrity, merkle safety |
 | `YieldFullInvariant.t.sol` | 9 tests: share price monotonicity, balance conservation, fee correctness |
 | `GovernorInvariant.t.sol` | 5 invariants: voting power consistency, quorum safety |
+| `VotingLockerCooldown.t.sol` | 4 invariants + 10 unit/fuzz: unlock cooldown, vote-and-dump prevention |
 | `CrowdfundFullInvariant.t.sol` | 6 invariants: allocation math, phase transitions, USDC conservation |
 | Various fuzz tests | Boundary conditions, allocation math, merkle operations |
 | `OnlyDelegatecall.t.sol` | Reentrancy protection via delegatecall guards |

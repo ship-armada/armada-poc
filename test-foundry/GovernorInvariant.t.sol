@@ -306,6 +306,9 @@ contract GovernorInvariantTest is Test {
         timelock.grantRole(timelock.PROPOSER_ROLE(), address(governor));
         timelock.grantRole(timelock.EXECUTOR_ROLE(), address(governor));
 
+        // Register governor on VotingLocker for unlock cooldown
+        locker.setGovernor(address(governor));
+
         // Create actors and fund them with ARM tokens
         for (uint256 i = 0; i < 5; i++) {
             address actor = address(uint160(0x8000 + i));

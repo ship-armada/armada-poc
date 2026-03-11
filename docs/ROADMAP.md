@@ -36,7 +36,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### Level 1 — Tests & Triage (depends on Level 0 fixes)
 
-- [ ] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
+- [x] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
 - [ ] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
 - [ ] **4.3-A** Cover crowdfund scenarios: cancel+ARM recovery, elastic expansion, permissionlessCancel → _§4.3_
 - [ ] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
@@ -195,9 +195,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   `setActionDelay` enforces `_actionDelay >= minActionDelay()`. Verify the returned value actually covers the shortest possible governance cycle (proposal → vote → queue → execute) so governance has time to veto before the steward can execute. Write a test confirming.
   _Ref: GitHub #17 | `TreasurySteward.sol:128`_
 
-- [ ] `[BLOCKER]` **#19: Write regression test confirming snapshot quorum doesn't shift during voting**
-  The snapshot quorum fix landed (PR #63 — `snapshotEligibleSupply` stored at creation, line 274). Write a targeted regression test: deposit tokens to treasury mid-vote, confirm quorum for the active proposal does not change.
-  _Ref: GitHub #19 | `ArmadaGovernor.sol:274,386` | `docs/governance-test-scenarios.md` D8-D10_
+- [x] `[DONE]` **#19: Regression test confirming snapshot quorum doesn't shift during voting**
+  14 tests in `test/governance_snapshot_quorum.ts` covering scenarios D8, D9, D10: treasury donations mid-vote, treasury distributions mid-vote, quorumBps parameter changes, excluded address exclusion, cross-proposal snapshot isolation, and proposal type quorum differences. Existing Foundry invariant test INV-G5 (`GovernorInvariant.t.sol`) also covers quorum immutability via fuzz testing with `transferToTreasury` handler.
+  _Ref: GitHub #19 | `ArmadaGovernor.sol:274,386` | `test/governance_snapshot_quorum.ts`_
 
 ### 3.3 Should Fix
 

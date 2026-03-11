@@ -77,6 +77,8 @@ export interface NetworkConfig {
     treasury: string;
     crowdfund: string;
   };
+  /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
+  cctpFinalityMode: "fast" | "standard";
 }
 
 // ============================================================================
@@ -203,6 +205,7 @@ export function getNetworkConfig(): NetworkConfig {
       treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "65000000"),
       crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),
     },
+    cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
   };
 
   return _cachedConfig;

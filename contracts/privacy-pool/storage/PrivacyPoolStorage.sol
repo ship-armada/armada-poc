@@ -162,6 +162,10 @@ abstract contract PrivacyPoolStorage {
     /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
     address public hookRouter;
 
+    /// @notice Default finality threshold for outbound CCTP burns (STANDARD=2000, FAST=1000)
+    /// @dev Used by TransactModule for cross-chain unshields. Shields use per-transaction choice.
+    uint32 public defaultFinalityThreshold;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════

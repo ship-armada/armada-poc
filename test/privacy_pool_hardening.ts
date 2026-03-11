@@ -442,7 +442,7 @@ describe("Privacy Pool Integration Hardening", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("rt-key"));
 
       const clientTx = await privacyPoolClient.connect(alice).crossChainShield(
-        SHIELD_AMOUNT, 0, npk, encBundle, shieldKey, ethers.ZeroHash
+        SHIELD_AMOUNT, 0, 0, npk, encBundle, shieldKey, ethers.ZeroHash
       );
       const clientReceipt = await clientTx.wait();
 

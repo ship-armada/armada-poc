@@ -3,17 +3,17 @@
   "domain": 0,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
-    "privacyPool": "0x174c999080260622B52b3db9fa8789AaFbA67a55",
-    "merkleModule": "0x61970Cf9CaFA5F9D705f8bD8799a8Bc01d6e0Dd3",
-    "verifierModule": "0x74EfeED2909E62Bb155EfdD24172EeBF8E52d9Ee",
-    "shieldModule": "0x73814F846Db97CbCa2c3D2cA651E439975869673",
-    "transactModule": "0x25394a13482E725d570DbFEeb9685f7eeeDd4F11",
-    "hookRouter": "0x2e1935F5283cf0713aAc399Af526691a2B65A3a0"
+    "privacyPool": "0xb0441C2Ef9Fd9C82102cCfed68c8f0F79a3cc20A",
+    "merkleModule": "0x3E16112290fd7740311B1d290DEf61311bDa308D",
+    "verifierModule": "0xD665d5f7a349dB3B32681d226726c506c8d2D16B",
+    "shieldModule": "0x37349a13be2009846aA3027387bae61B1401D5dE",
+    "transactModule": "0xc77ae88Aa87f8C3C5D20744e3a1ffD5dCADE3BAF",
+    "hookRouter": "0xa2c422024650f26815e4194CCBd849a5C6104717"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
     "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
     "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
   },
-  "timestamp": "2026-02-25T18:28:24.993Z"
+  "timestamp": "2026-03-10T19:11:48.359Z"
 }

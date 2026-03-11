@@ -199,6 +199,11 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         // Burn via CCTP
         IERC20(usdc).safeApprove(tokenMessenger, base);
 
+        // Use configured finality threshold (STANDARD by default, FAST if enabled)
+        uint32 finality = defaultFinalityThreshold > 0
+            ? defaultFinalityThreshold
+            : CCTPFinality.STANDARD;
+
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             base,
             destinationDomain,
@@ -206,7 +211,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             usdc,
             destinationCaller,
             maxFee,
-            CCTPFinality.STANDARD,
+            finality,
             hookData
         );
         nonce = 0; // CCTP V2 depositForBurnWithHook does not return nonce

@@ -172,6 +172,24 @@ When creating issues via Claude Code:
    ```
 3. Use `gh issue create` and `gh issue edit` for all issue operations.
 
+## Search Before Assuming
+
+Before concluding that something hasn't been implemented, **search the codebase first**. A common failure mode is assuming a feature or utility doesn't exist and reimplementing it. Use subagents for parallel file searches when needed. If you're about to write a helper, check if one already exists. If you're about to add a dependency, check if it's already in `package.json`.
+
+## Suggest Instruction Improvements
+
+If you encounter friction caused by missing or unclear instructions — for example, you hit a pitfall that should be documented, or a rule that would have prevented a mistake — **flag it explicitly** at the end of your response:
+
+```
+SUGGESTED INSTRUCTION UPDATE: [file] — [what to add/change and why]
+```
+
+Do not edit CLAUDE.md or `.claude/rules/` files autonomously. Propose the change and let the human decide. This creates a feedback loop that makes future sessions progressively better.
+
+## `.claude/` Planning Docs
+
+The `.claude/` directory contains both **rules** (always relevant) and **planning docs** (relevant only while work is in progress). Planning docs for completed work are archived to `.claude/archive/` to avoid burning context window and misleading future sessions. If you need historical context on a completed feature, check the archive.
+
 ## Documentation Upkeep
 
 After changes or refactors, check whether related documentation needs updating. This includes: this CLAUDE.md, READMEs, inline doc comments, files in `docs/`, deployment manifests, and architecture notes. Stale documentation is worse than no documentation — keep it accurate.

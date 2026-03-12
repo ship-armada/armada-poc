@@ -22,7 +22,31 @@ import { HttpApi } from "./modules/http-api";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment } from "./types";
-import { getNetworkConfig } from "../config/networks";
+import { getNetworkConfig, isLocal } from "../config/networks";
+
+// ============ Startup Assertions ============
+
+/**
+ * C-4: Fail-secure private key check.
+ * For non-local environments, verify DEPLOYER_PRIVATE_KEY is set and non-empty
+ * before binding any port or initializing any module. This is defense-in-depth
+ * on top of the check in config/networks.ts.
+ */
+function assertPrivateKeyConfigured(): void {
+  if (!isLocal()) {
+    const key = process.env.DEPLOYER_PRIVATE_KEY;
+    if (!key || key.trim() === "") {
+      console.error("[FATAL] DEPLOYER_PRIVATE_KEY is not set. Refusing to start relayer in non-local mode.");
+      process.exit(1);
+    }
+    // Ensure the key doesn't match well-known Anvil test keys
+    const anvilDefaultKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    if (key.toLowerCase() === anvilDefaultKey.toLowerCase()) {
+      console.error("[FATAL] DEPLOYER_PRIVATE_KEY is the Anvil default key. Refusing to start relayer in non-local mode.");
+      process.exit(1);
+    }
+  }
+}
 
 // ============ Deployment Loading ============
 
@@ -93,6 +117,9 @@ function loadContractAddresses(): ContractAddresses {
 // ============ Main ============
 
 async function main() {
+  // C-4: Fail-secure — refuse to start without a real private key in non-local mode
+  assertPrivateKeyConfigured();
+
   const netConfig = getNetworkConfig();
 
   console.log("=".repeat(60));

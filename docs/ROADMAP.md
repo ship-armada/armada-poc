@@ -26,12 +26,12 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
 - [ ] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [ ] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
-- [ ] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
+- [x] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
 - [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
 - [ ] **3.2-A** #16: Verify steward `allowedTargets` deploy config + write test → _§3.2_
 - [ ] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
 - [ ] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
-- [ ] **5.1-A** C-4: Add private key startup assertion to relayer → _§5.1_
+- [x] **5.1-A** C-4: Add private key startup assertion to relayer → _§5.1_
 - [ ] **7.1-A** Run Aderyn static analysis → _§7.1_
 
 ### Level 1 — Tests & Triage (depends on Level 0 fixes)
@@ -177,8 +177,8 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   Claims created via governance have no expiry and cannot be revoked. Add `revokeClaim(claimId)` callable only by timelock, and an optional `expiresAt` field.
   _Ref: GitHub #23 | `ArmadaTreasuryGov.sol`_
 
-- [ ] `[BLOCKER]` **#29: Fix garbled revert when steward exceeds budget**
-  When `stewardSpend` is called over budget, the revert propagates through the action queue and garbles the error. Fix so the original revert reason from `ArmadaTreasuryGov` surfaces correctly.
+- [x] `[DONE]` **#29: Fix garbled revert when steward exceeds budget**
+  Verified: the assembly revert bubbling in `executeAction()` (lines 209-214) correctly propagates the original error message. Existing tests in `governance_adversarial.ts` and `governance_integration.ts` confirm the revert reason "ArmadaTreasuryGov: exceeds monthly budget" surfaces correctly through the action queue. This was effectively resolved by the error encoding fix in PR #50 (#35).
   _Ref: GitHub #29 | `TreasurySteward.sol`_
 
 - [ ] `[BLOCKER]` **H-8: Proposal threshold uses `totalSupply` not eligible supply**
@@ -276,9 +276,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 5.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **C-4: Enforce env-var private keys with fail-secure startup**
-  `relayer/config.ts:63-75` hardcodes Anvil private keys. For Sepolia, `netConfig.deployerPrivateKey` is used (from env). Add a startup assertion that `DEPLOYER_PRIVATE_KEY` is set and non-empty before the relayer binds any port. Confirm the Sepolia code path never falls through to hardcoded keys.
-  _Ref: Audit C-4 | `relayer/config.ts:63-75`_
+- [x] `[DONE]` **C-4: Enforce env-var private keys with fail-secure startup**
+  Added `assertPrivateKeyConfigured()` at the top of the relayer `main()` function. For non-local environments, verifies DEPLOYER_PRIVATE_KEY is set, non-empty, and not the Anvil default key before any module initialization or port binding. `config/networks.ts` already throws for empty keys on non-local envs (line 121-123); the relayer assertion is defense-in-depth. Confirmed: the Sepolia code path in `relayer/config.ts:88-101` uses `netConfig.deployerPrivateKey` exclusively and cannot fall through to hardcoded keys.
+  _Ref: Audit C-4 | `relayer/armada-relayer.ts`, `relayer/config.ts:63-75`_
 
 ### 5.2 Should Fix
 

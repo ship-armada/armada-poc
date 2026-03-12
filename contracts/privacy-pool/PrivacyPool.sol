@@ -34,9 +34,25 @@ import "../railgun/logic/Snark.sol";
 contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     using SafeERC20 for IERC20;
 
+    /// @notice H-5: Deployer address — only this address can call initialize()
+    /// @dev Stored in bytecode (immutable), not in storage. Declared here rather than
+    ///      in PrivacyPoolStorage because modules also inherit storage and would each
+    ///      need their own constructor to initialize this immutable.
+    address private immutable _deployer;
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Lock the deployer address to prevent front-running initialize().
+     * @dev H-5: An attacker watching the deploy tx could front-run initialize().
+     *      By recording msg.sender at deploy time and requiring it in initialize(),
+     *      only the original deployer can initialize the contract.
+     */
+    constructor() {
+        _deployer = msg.sender;
+    }
 
     /**
      * @notice Initialize the PrivacyPool contract
@@ -62,6 +78,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address _owner
     ) external override {
         require(!initialized, "PrivacyPool: Already initialized");
+        require(msg.sender == _deployer, "PrivacyPool: Only deployer can initialize");
         require(_shieldModule != address(0), "PrivacyPool: zero shieldModule");
         require(_transactModule != address(0), "PrivacyPool: zero transactModule");
         require(_merkleModule != address(0), "PrivacyPool: zero merkleModule");
@@ -159,7 +176,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @return success Always returns true on success (reverts on failure)
      */
     function handleReceiveFinalizedMessage(
-        uint32,
+        uint32 remoteDomain,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
@@ -170,10 +187,13 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         // Verify finality threshold (should be >= 2000 for finalized messages)
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPool: Insufficient finality");
 
-        // Verify sender is a known PrivacyPoolClient (sender is the remote TokenMessenger)
-        // The actual originator info is encoded in the hookData
-        // For now, we trust that TokenMessenger only forwards valid messages
-        (sender); // Silence unused variable warning
+        // H-1/H-2: Validate remoteDomain is a registered client chain
+        require(remotePools[remoteDomain] != bytes32(0), "PrivacyPool: Unknown remote domain");
+
+        // Silence unused variable — sender is the remote TokenMessenger address,
+        // which is already authenticated by CCTP's MessageTransmitter attestation.
+        // The remoteDomain check above ensures only registered client chains can shield.
+        (sender);
 
         // Decode the BurnMessageV2 to get amount, feeExecuted, and hookData
         (

@@ -41,8 +41,8 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] **4.3-A** Cover crowdfund scenarios: allocation precision (6.9, 6.10, 6.13), permissionlessCancel → _§4.3_
 - [x] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
 - [ ] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
-- [ ] Run `npm run test:all` — all Hardhat tests pass
-- [x] Run `npm run test:forge` — all 236 Foundry tests pass
+- [x] Run `npm run test:all` — all 429 Hardhat tests pass
+- [x] Run `npm run test:forge` — all 244 Foundry tests pass
 
 ### Level 2 — Deploy (depends on Level 0–1)
 

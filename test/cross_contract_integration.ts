@@ -304,40 +304,32 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(quorum).to.equal(ARM(600_000));
     });
 
-    it("proposal threshold (0.1% of total supply = 100K ARM) is reachable by crowdfund participant", async function () {
+    it("proposal threshold (0.1% of eligible supply = 3K ARM) is reachable by single crowdfund participant", async function () {
       await runCrowdfundAndClaim();
 
       // With BASE_SALE ($1.2M), hop-0 reserve = 70% = $840K.
       // 80 seeds * $15K = $1.2M demand > $840K reserve → pro-rata.
       // Each seed gets (15K * 840K) / 1.2M = $10,500 = 10,500 ARM.
-      // Threshold = 100M * 0.001 = 100,000 ARM.
-      // Need ceil(100K / 10.5K) = 10 seeds pooled.
+      // Eligible supply = 100M - 97M (treasury) = 3M ARM.
+      // Threshold = 3M * 0.001 = 3,000 ARM.
+      // A single seed (10.5K ARM) exceeds the threshold.
 
       const threshold = await governor.proposalThreshold();
-      expect(threshold).to.equal(ARM(100_000));
+      expect(threshold).to.equal(ARM(3_000));
 
-      // Single seed's ARM balance
+      // Single seed's ARM balance exceeds threshold
       const seedBalance = await armToken.balanceOf(seeds[0].address);
-      expect(seedBalance).to.be.lt(threshold); // single seed can't propose
-
-      // 10 seeds pooling tokens: transfer to one address
-      const pooledSeed = seeds[0];
-      for (let i = 1; i < 10; i++) {
-        const bal = await armToken.balanceOf(seeds[i].address);
-        await armToken.connect(seeds[i]).transfer(pooledSeed.address, bal);
-      }
-
-      const pooledBalance = await armToken.balanceOf(pooledSeed.address);
-      expect(pooledBalance).to.be.gte(threshold); // pooled seeds can propose
+      expect(seedBalance).to.be.gte(threshold); // single seed can propose
 
       // Lock and propose
-      await armToken.connect(pooledSeed).approve(await votingLocker.getAddress(), pooledBalance);
-      await votingLocker.connect(pooledSeed).lock(pooledBalance);
+      const proposer = seeds[0];
+      await armToken.connect(proposer).approve(await votingLocker.getAddress(), seedBalance);
+      await votingLocker.connect(proposer).lock(seedBalance);
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await expect(
-        governor.connect(pooledSeed).propose(
+        governor.connect(proposer).propose(
           ProposalType.ParameterChange,
           [await treasuryGov.getAddress()],
           [0],

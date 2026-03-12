@@ -90,6 +90,9 @@ describe("Governance Snapshot Quorum Regression (#19)", function () {
     );
     await governor.waitForDeployment();
 
+    // Link VotingLocker to the governor (required for castVote)
+    await votingLocker.connect(deployer).setGovernor(await governor.getAddress());
+
     // Configure timelock roles
     const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();
     const EXECUTOR_ROLE = await timelockController.EXECUTOR_ROLE();

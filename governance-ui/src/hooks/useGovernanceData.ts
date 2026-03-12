@@ -228,6 +228,8 @@ export function useGovernanceData(
             exercised: claimData[3] as bigint,
             remaining: remaining as bigint,
             createdAt: claimData[4] as bigint,
+            expiresAt: claimData[5] as bigint,
+            revoked: claimData[6] as boolean,
           })
         } catch {
           // Claim may not exist

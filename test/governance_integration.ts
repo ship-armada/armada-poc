@@ -570,7 +570,7 @@ describe("Governance Integration", function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
-        await usdc.getAddress(), carol.address, claimAmount
+        await usdc.getAddress(), carol.address, claimAmount, 0
       ])];
 
       await passProposal(
@@ -594,7 +594,7 @@ describe("Governance Integration", function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
-        await usdc.getAddress(), carol.address, claimAmount
+        await usdc.getAddress(), carol.address, claimAmount, 0
       ])];
 
       await passProposal(
@@ -617,7 +617,7 @@ describe("Governance Integration", function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
-        await usdc.getAddress(), carol.address, claimAmount
+        await usdc.getAddress(), carol.address, claimAmount, 0
       ])];
 
       await passProposal(
@@ -630,6 +630,249 @@ describe("Governance Integration", function () {
       await expect(
         treasury.connect(dave).exerciseClaim(1, claimAmount)
       ).to.be.revertedWith("ArmadaTreasuryGov: not beneficiary");
+    });
+  });
+
+  // ============================================================
+  // 6b. Treasury Claim Revocability (#23)
+  // ============================================================
+
+  describe("Treasury Claim Revocability", function () {
+    const claimAmount = ethers.parseUnits("1000", 6); // 1000 USDC
+
+    // Helper: create a claim via governance proposal and return the claimId
+    async function createClaimViaGovernance(
+      beneficiary: string,
+      amount: bigint,
+      expiresAt: bigint = 0n
+    ): Promise<number> {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
+        await usdc.getAddress(), beneficiary, amount, expiresAt
+      ])];
+
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.Treasury, targets, values, calldatas,
+        `Create claim for ${beneficiary} amount ${amount} expires ${expiresAt}`
+      );
+
+      return Number(await treasury.claimCount());
+    }
+
+    // Helper: revoke a claim via governance proposal
+    async function revokeClaimViaGovernance(claimId: number): Promise<void> {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = [treasury.interface.encodeFunctionData("revokeClaim", [claimId])];
+
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.Treasury, targets, values, calldatas,
+        `Revoke claim ${claimId}`
+      );
+    }
+
+    // --- Revocation tests ---
+
+    it("should revoke a claim via governance, preventing exercise", async function () {
+      const claimId = await createClaimViaGovernance(carol.address, claimAmount);
+      expect(await treasury.getClaimRemaining(claimId)).to.equal(claimAmount);
+
+      await revokeClaimViaGovernance(claimId);
+
+      // Claim is revoked — remaining shows 0
+      expect(await treasury.getClaimRemaining(claimId)).to.equal(0);
+
+      // Beneficiary cannot exercise
+      await expect(
+        treasury.connect(carol).exerciseClaim(claimId, claimAmount)
+      ).to.be.revertedWith("ArmadaTreasuryGov: claim revoked");
+    });
+
+    it("should allow partial exercise before revocation, block after", async function () {
+      const claimId = await createClaimViaGovernance(carol.address, claimAmount);
+
+      // Exercise half
+      const half = claimAmount / 2n;
+      await treasury.connect(carol).exerciseClaim(claimId, half);
+      expect(await treasury.getClaimRemaining(claimId)).to.equal(half);
+
+      // Revoke the rest
+      await revokeClaimViaGovernance(claimId);
+
+      // Remaining shows 0
+      expect(await treasury.getClaimRemaining(claimId)).to.equal(0);
+
+      // Cannot exercise remaining
+      await expect(
+        treasury.connect(carol).exerciseClaim(claimId, half)
+      ).to.be.revertedWith("ArmadaTreasuryGov: claim revoked");
+    });
+
+    it("should reject revoking a non-existent claim", async function () {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = [treasury.interface.encodeFunctionData("revokeClaim", [999])];
+
+      // This will revert during execution in the timelock
+      await expect(
+        passProposal(
+          alice,
+          [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+          ProposalType.Treasury, targets, values, calldatas,
+          "Revoke non-existent"
+        )
+      ).to.be.reverted;
+    });
+
+    it("should reject revoking an already-revoked claim", async function () {
+      const claimId = await createClaimViaGovernance(carol.address, claimAmount);
+      await revokeClaimViaGovernance(claimId);
+
+      // Second revoke should fail
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = [treasury.interface.encodeFunctionData("revokeClaim", [claimId])];
+
+      await expect(
+        passProposal(
+          alice,
+          [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+          ProposalType.Treasury, targets, values, calldatas,
+          "Revoke again"
+        )
+      ).to.be.reverted;
+    });
+
+    it("should emit ClaimRevoked event with correct unexercised amount", async function () {
+      // Use standalone treasury for direct call to check event
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      const standaloneTreasury = await ArmadaTreasuryGov.deploy(
+        deployer.address, deployer.address, 14 * ONE_DAY
+      );
+      await standaloneTreasury.waitForDeployment();
+      await usdc.mint(await standaloneTreasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
+
+      // Create claim directly (deployer is owner)
+      await standaloneTreasury.createClaim(await usdc.getAddress(), carol.address, claimAmount, 0);
+
+      // Exercise half
+      const half = claimAmount / 2n;
+      await standaloneTreasury.connect(carol).exerciseClaim(1, half);
+
+      // Revoke and check event
+      await expect(standaloneTreasury.revokeClaim(1))
+        .to.emit(standaloneTreasury, "ClaimRevoked")
+        .withArgs(1, carol.address, half); // unexercised = amount - exercised = half
+    });
+
+    it("should reject revokeClaim from non-owner", async function () {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      const standaloneTreasury = await ArmadaTreasuryGov.deploy(
+        deployer.address, deployer.address, 14 * ONE_DAY
+      );
+      await standaloneTreasury.waitForDeployment();
+      await usdc.mint(await standaloneTreasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
+
+      await standaloneTreasury.createClaim(await usdc.getAddress(), carol.address, claimAmount, 0);
+
+      await expect(
+        standaloneTreasury.connect(carol).revokeClaim(1)
+      ).to.be.revertedWith("ArmadaTreasuryGov: not owner");
+    });
+
+    // --- Expiry tests ---
+
+    it("should create a claim with expiry and enforce it", async function () {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      const standaloneTreasury = await ArmadaTreasuryGov.deploy(
+        deployer.address, deployer.address, 14 * ONE_DAY
+      );
+      await standaloneTreasury.waitForDeployment();
+      await usdc.mint(await standaloneTreasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
+
+      // Create claim expiring in 7 days
+      const now = await time.latest();
+      const expiresAt = now + SEVEN_DAYS;
+      await standaloneTreasury.createClaim(
+        await usdc.getAddress(), carol.address, claimAmount, expiresAt
+      );
+
+      // Can exercise before expiry
+      const half = claimAmount / 2n;
+      await standaloneTreasury.connect(carol).exerciseClaim(1, half);
+      expect(await standaloneTreasury.getClaimRemaining(1)).to.equal(half);
+
+      // Fast-forward past expiry
+      await time.increase(SEVEN_DAYS + 1);
+
+      // Cannot exercise after expiry
+      await expect(
+        standaloneTreasury.connect(carol).exerciseClaim(1, half)
+      ).to.be.revertedWith("ArmadaTreasuryGov: claim expired");
+
+      // Remaining shows 0 after expiry
+      expect(await standaloneTreasury.getClaimRemaining(1)).to.equal(0);
+    });
+
+    it("should reject creating a claim with expiry in the past", async function () {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      const standaloneTreasury = await ArmadaTreasuryGov.deploy(
+        deployer.address, deployer.address, 14 * ONE_DAY
+      );
+      await standaloneTreasury.waitForDeployment();
+
+      const now = await time.latest();
+      await expect(
+        standaloneTreasury.createClaim(
+          await usdc.getAddress(), carol.address, claimAmount, now - 100
+        )
+      ).to.be.revertedWith("ArmadaTreasuryGov: expires in past");
+    });
+
+    it("should allow claims with expiresAt=0 to never expire", async function () {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      const standaloneTreasury = await ArmadaTreasuryGov.deploy(
+        deployer.address, deployer.address, 14 * ONE_DAY
+      );
+      await standaloneTreasury.waitForDeployment();
+      await usdc.mint(await standaloneTreasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
+
+      await standaloneTreasury.createClaim(
+        await usdc.getAddress(), carol.address, claimAmount, 0
+      );
+
+      // Fast-forward a very long time
+      await time.increase(365 * ONE_DAY);
+
+      // Still exercisable
+      await standaloneTreasury.connect(carol).exerciseClaim(1, claimAmount);
+      expect(await standaloneTreasury.getClaimRemaining(1)).to.equal(0);
+    });
+
+    it("should allow revoking an expired claim (idempotent protection)", async function () {
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+      const standaloneTreasury = await ArmadaTreasuryGov.deploy(
+        deployer.address, deployer.address, 14 * ONE_DAY
+      );
+      await standaloneTreasury.waitForDeployment();
+
+      const now = await time.latest();
+      await standaloneTreasury.createClaim(
+        await usdc.getAddress(), carol.address, claimAmount, now + SEVEN_DAYS
+      );
+
+      // Fast-forward past expiry
+      await time.increase(SEVEN_DAYS + 1);
+
+      // Can still revoke (marks as revoked even though expired)
+      await standaloneTreasury.revokeClaim(1);
+      const claim = await standaloneTreasury.claims(1);
+      expect(claim.revoked).to.equal(true);
     });
   });
 

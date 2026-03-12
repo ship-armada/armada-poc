@@ -51,12 +51,12 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       const amount = ethers.parseUnits(treasuryAmount, decimals)
       const iface = new ethers.Interface([
         'function distribute(address token, address recipient, uint256 amount)',
-        'function createClaim(address token, address beneficiary, uint256 amount)',
+        'function createClaim(address token, address beneficiary, uint256 amount, uint256 expiresAt)',
       ])
 
       const calldata = treasuryAction === 'distribute'
         ? iface.encodeFunctionData('distribute', [tokenAddr, treasuryRecipient, amount])
-        : iface.encodeFunctionData('createClaim', [tokenAddr, treasuryRecipient, amount])
+        : iface.encodeFunctionData('createClaim', [tokenAddr, treasuryRecipient, amount, 0])
 
       return {
         targets: [deployment.contracts.treasury],

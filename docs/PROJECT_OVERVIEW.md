@@ -76,7 +76,7 @@ An AI-assisted security audit (Trail of Bits methodology) was performed in Febru
 - ~~Fix proposal threshold (uses `totalSupply` not eligible supply — threshold is 2.86x too high)~~ (Fixed)
 - ~~Add unlock cooldown to VotingLocker (vote-and-dump prevention)~~ (Fixed)
 - Implement cross-chain relayer fee deduction
-- Fix cost basis corruption in yield vault (shared adapter identity)
+- ~~Fix cost basis corruption in yield vault (shared adapter identity)~~ (Fixed: per-deposit nonce tracking)
 - Put privacy pool owner behind timelock
 - Fix `safeApprove` without reset in TransactModule
 - ARM token recovery for canceled crowdfunds

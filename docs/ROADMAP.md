@@ -23,7 +23,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] **1.1-A** C-1/C-2: Remove `setTestingMode()` and `VERIFICATION_BYPASS` → _§1.1_
 - [x] **1.1-B** H-1/H-2: Validate `remoteDomain` + `sender` on cross-chain shields → _§1.1_
 - [x] **1.1-C** H-5: Add `_disableInitializers()` to PrivacyPool → _§1.1_
-- [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
+- [x] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
 - [x] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [x] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
 - [x] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
@@ -137,9 +137,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 2.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **H-4: Fix cost basis corruption from shared adapter identity**
-  `ArmadaYieldVault` tracks `userCostBasisPerShare[owner]` keyed by share owner address. When `ArmadaYieldAdapter` holds shares on behalf of multiple users (relay flows), all positions share one cost basis entry. Either key by per-user nonce/hash, or ensure the adapter never holds mixed-user shares simultaneously.
-  _Ref: Audit H-4 | `ArmadaYieldVault.sol:84-174`_
+- [x] `[DONE]` **H-4: Fix cost basis corruption from shared adapter identity**
+  Added per-deposit cost basis tracking via a nonce system. `depositForAdapter()` assigns each adapter deposit a unique nonce and records its cost basis independently. `redeemByNonce()` uses the stored per-nonce cost basis for yield fee calculation, preventing cross-user corruption. The deposit nonce is included in the `adaptParams` hash for redeem operations (`YieldAdaptParams.encodeRedeem`), ensuring the adapter must use the correct cost basis. `lendAndShield` now returns `(shares, depositNonce)` and the `redeemAndShield` function takes `_depositNonce` as an additional parameter. Direct (non-adapter) deposit/redeem paths are unchanged. 21 Foundry tests (14 unit, 3 fuzz, 2 invariant, 2 property) and 5 updated Hardhat integration tests verify the fix.
+  _Ref: Audit H-4 | `ArmadaYieldVault.sol:depositForAdapter()`, `redeemByNonce()` | `ArmadaYieldAdapter.sol` | `YieldAdaptParams.sol` | `test-foundry/YieldCostBasis.t.sol`_
 
 ### 2.2 Security — Should Fix
 

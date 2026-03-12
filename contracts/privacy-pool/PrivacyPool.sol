@@ -113,6 +113,9 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         // Production deployments MUST pass false. Test deployments may pass true.
         testingMode = _testingMode;
 
+        // H-12: Initialize reentrancy guard to _NOT_ENTERED state
+        _reentrancyStatus = 1;
+
         initialized = true;
     }
 
@@ -124,7 +127,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @notice Shield tokens into the privacy pool (local, same chain)
      * @param _shieldRequests Array of shield requests
      */
-    function shield(ShieldRequest[] calldata _shieldRequests) external override {
+    function shield(ShieldRequest[] calldata _shieldRequests) external override nonReentrant {
         _delegatecall(shieldModule, abi.encodeCall(IShieldModule.shield, (_shieldRequests)));
     }
 
@@ -132,7 +135,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @notice Execute private transactions (transfers and/or unshields)
      * @param _transactions Array of transactions to process
      */
-    function transact(Transaction[] calldata _transactions) external override {
+    function transact(Transaction[] calldata _transactions) external override nonReentrant {
         _delegatecall(transactModule, abi.encodeCall(ITransactModule.transact, (_transactions)));
     }
 
@@ -152,7 +155,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address finalRecipient,
         bytes32 destinationCaller,
         uint256 maxFee
-    ) external override returns (uint64) {
+    ) external override nonReentrant returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
@@ -187,7 +190,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
-    ) external override returns (bool) {
+    ) external override nonReentrant returns (bool) {
         // Accept from CCTPHookRouter (real CCTP) or TokenMessenger (mock auto-dispatch)
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
 

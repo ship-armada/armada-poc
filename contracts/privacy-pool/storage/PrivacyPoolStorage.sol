@@ -170,7 +170,12 @@ abstract contract PrivacyPoolStorage {
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
+    /// @notice Mapping of remote CCTP domain -> remote CCTPHookRouter address (as bytes32)
+    /// @dev Used as destinationCaller in CCTP burns to ensure only the remote chain's
+    ///      CCTPHookRouter can call receiveMessage, preventing fund stranding.
+    mapping(uint32 => bytes32) public remoteHookRouters;
+
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 }

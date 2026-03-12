@@ -268,6 +268,12 @@ describe("Privacy Pool Integration", function () {
     await privacyPool.setHookRouter(await hubHookRouter.getAddress());
     await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
 
+    // Set remote hook routers (destinationCaller enforcement)
+    const hubHookRouterBytes32 = ethers.zeroPadValue(await hubHookRouter.getAddress(), 32);
+    const clientHookRouterBytes32 = ethers.zeroPadValue(await clientHookRouter.getAddress(), 32);
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, clientHookRouterBytes32);
+    await privacyPoolClient.setHubHookRouter(hubHookRouterBytes32);
+
     // Set mock MessageTransmitter relayer to hookRouter
     // (so hookRouter can call receiveMessage on mock)
     // setRelayer() requires msg.sender == current relayer
@@ -374,7 +380,7 @@ describe("Privacy Pool Integration", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("shield-key"));
 
       // Execute cross-chain shield
-      // Use bytes32(0) for destinationCaller to allow any relayer
+      // destinationCaller is now enforced at contract level (hubHookRouter)
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         0,               // maxFee = 0 (no CCTP fee for this test)
@@ -382,7 +388,6 @@ describe("Privacy Pool Integration", function () {
         npk,
         encryptedBundle,
         shieldKey,
-        ethers.ZeroHash  // destinationCaller = 0 (any relayer can submit)
       );
       const receipt = await tx.wait();
 
@@ -420,6 +425,7 @@ describe("Privacy Pool Integration", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("shield-key"));
 
       // Execute cross-chain shield with maxFee
+      // destinationCaller is now enforced at contract level (hubHookRouter)
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         MAX_FEE,         // maxFee = 1 USDC (CCTP relayer fee)
@@ -427,7 +433,6 @@ describe("Privacy Pool Integration", function () {
         npk,
         encryptedBundle,
         shieldKey,
-        ethers.ZeroHash  // destinationCaller = 0 (any relayer)
       );
       const receipt = await tx.wait();
 
@@ -584,20 +589,17 @@ describe("Privacy Pool Integration", function () {
         },
       };
 
-      // Set destinationCaller = relayer address (bytes32)
-      const destinationCaller = ethers.ZeroHash; // Allow any relayer
-
       // Record balances before
       const recipientBalanceBefore = await clientUsdc.balanceOf(bobAddress);
       const clientHookRouterAddress = await clientHookRouter.getAddress();
       const hookRouterBalanceBefore = await clientUsdc.balanceOf(clientHookRouterAddress);
 
       // Execute atomic cross-chain unshield with maxFee
+      // destinationCaller is now enforced at contract level (remoteHookRouters)
       const tx = await privacyPool.atomicCrossChainUnshield(
         transaction,
         DOMAINS.client,
         bobAddress,         // finalRecipient on client chain
-        destinationCaller,
         MAX_FEE,
       );
       const receipt = await tx.wait();

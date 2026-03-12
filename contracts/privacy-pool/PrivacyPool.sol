@@ -117,8 +117,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
      * @return nonce CCTP message nonce
      */
@@ -126,14 +124,13 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) external override returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
                 ITransactModule.atomicCrossChainUnshield,
-                (_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee)
+                (_transaction, destinationDomain, finalRecipient, maxFee)
             )
         );
         return abi.decode(result, (uint64));
@@ -245,6 +242,19 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         remotePools[domain] = poolAddress;
         emit RemotePoolSet(domain, poolAddress);
+    }
+
+    /**
+     * @notice Set the CCTPHookRouter address for a remote chain
+     * @dev Used as destinationCaller in CCTP burns to ensure only the remote chain's
+     *      CCTPHookRouter can call receiveMessage, preventing fund stranding.
+     * @param domain CCTP domain ID of the remote chain
+     * @param routerAddress CCTPHookRouter address on the remote chain (as bytes32)
+     */
+    function setRemoteHookRouter(uint32 domain, bytes32 routerAddress) external {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        remoteHookRouters[domain] = routerAddress;
+        emit RemoteHookRouterSet(domain, routerAddress);
     }
 
     /**

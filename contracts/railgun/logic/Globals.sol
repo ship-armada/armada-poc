@@ -4,10 +4,6 @@ pragma abicoder v2;
 
 // Constants
 uint256 constant SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
-// Verification bypass address, can't be address(0) as many burn prevention mechanisms will disallow transfers to 0
-// Use 0x000000000000000000000000000000000000dEaD as an alternative known burn address
-// https://etherscan.io/address/0x000000000000000000000000000000000000dEaD
-address constant VERIFICATION_BYPASS = 0x000000000000000000000000000000000000dEaD;
 
 bytes32 constant ACCEPT_RAILGUN_RESPONSE = keccak256(abi.encodePacked("Accept Railgun Session"));
 

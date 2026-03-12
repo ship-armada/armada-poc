@@ -277,11 +277,9 @@ contract PrivacyPoolBalanceInvariantTest is Test {
             address(messageTransmitter),
             address(usdc),
             0, // localDomain
-            owner
+            owner,
+            true // testingMode: bypass SNARK verification for tests
         );
-
-        // Enable testing mode (bypass SNARK verification)
-        pool.setTestingMode(true);
 
         // Set treasury and fees
         pool.setTreasury(payable(treasury));

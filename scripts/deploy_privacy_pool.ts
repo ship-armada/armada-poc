@@ -189,6 +189,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
     usdcAddress,
     domain,
     deployer.address,
+    false, // testingMode = false for production (immutable after init, C-1/C-2)
     nm.override()
   );
   await initTx.wait();

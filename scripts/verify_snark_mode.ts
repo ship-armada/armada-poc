@@ -43,8 +43,8 @@ async function main() {
     console.log("\n⚠️  WARNING: Testing mode is ENABLED");
     console.log("   SNARK proofs are NOT being verified!");
     console.log("   This should only be used for debugging.");
-    console.log("\n   To disable testing mode:");
-    console.log("   await privacyPool.setTestingMode(false)");
+    console.log("\n   testingMode is set at initialization and cannot be changed.");
+    console.log("   Redeploy with testingMode=false to fix.");
   } else {
     console.log("\n✓ SNARK verification is ENABLED");
     console.log("  All transaction proofs will be cryptographically verified.");

@@ -118,11 +118,11 @@ describe("Privacy Pool Integration Hardening", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      true // testingMode: bypass SNARK verification for tests
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
     treasuryAddress = deployerAddress;
     await privacyPool.setTreasury(treasuryAddress);
     await privacyPool.setShieldFee(50); // 0.50%

@@ -12,14 +12,12 @@ import "../../railgun/logic/Snark.sol";
  *      Based on Railgun's Verifier.sol implementation.
  *
  *      Verification keys are stored per circuit configuration (nullifiers x commitments).
- *      The POC includes a testing mode that bypasses verification for development.
+ *      A testing mode (set once at initialization, immutable after) bypasses verification
+ *      for development/test deployments.
  */
 contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
     /// @notice Emitted when a verification key is set
     event VerifyingKeySet(uint256 nullifiers, uint256 commitments, VerifyingKey verifyingKey);
-
-    /// @notice Emitted when testing mode is changed
-    event TestingModeSet(bool enabled);
 
     /**
      * @notice Set a verification key for a specific circuit configuration
@@ -56,8 +54,7 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
     /**
      * @notice Verify a transaction's SNARK proof
      * @dev Constructs public inputs from transaction data and verifies the proof.
-     *      In testing mode, always returns true.
-     *      Also returns true for gas estimation transactions (tx.origin == VERIFICATION_BYPASS).
+     *      In testing mode (set at initialization), always returns true.
      *
      * @param _transaction The transaction to verify
      * @return True if proof is valid
@@ -98,16 +95,7 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
         }
 
         // Verify the SNARK proof
-        bool validity = _verifyProof(verifyingKey, _transaction.proof, inputs);
-
-        // Always return true in gas estimation transactions
-        // This allows relayer fee calculation without computing a proof
-        // solhint-disable-next-line avoid-tx-origin
-        if (tx.origin == VERIFICATION_BYPASS) {
-            return true;
-        }
-
-        return validity;
+        return _verifyProof(verifyingKey, _transaction.proof, inputs);
     }
 
     /**
@@ -117,19 +105,6 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
      */
     function hashBoundParams(BoundParams calldata _boundParams) public pure override returns (uint256) {
         return uint256(keccak256(abi.encode(_boundParams))) % SNARK_SCALAR_FIELD;
-    }
-
-    /**
-     * @notice Enable or disable testing mode (bypasses SNARK verification)
-     * @dev POC ONLY - DO NOT USE IN PRODUCTION
-     * @param _enabled Whether to enable testing mode
-     */
-    function setTestingMode(bool _enabled) external override onlyDelegatecall {
-        require(msg.sender == owner, "VerifierModule: Only owner");
-
-        testingMode = _enabled;
-
-        emit TestingModeSet(_enabled);
     }
 
     /**

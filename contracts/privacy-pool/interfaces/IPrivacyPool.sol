@@ -17,9 +17,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when a remote pool address is configured
     event RemotePoolSet(uint32 indexed domain, bytes32 poolAddress);
 
-    /// @notice Emitted when testing mode is changed
-    event TestingModeSet(bool enabled);
-
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -35,6 +32,7 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param _usdc USDC token address
      * @param _localDomain This chain's CCTP domain ID
      * @param _owner Contract owner
+     * @param _testingMode If true, bypasses SNARK verification (test deployments only, immutable after init)
      */
     function initialize(
         address _shieldModule,
@@ -45,7 +43,8 @@ interface IPrivacyPool is IMessageHandlerV2 {
         address _messageTransmitter,
         address _usdc,
         uint32 _localDomain,
-        address _owner
+        address _owner,
+        bool _testingMode
     ) external;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -122,13 +121,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param _treasury Address to receive protocol fees
      */
     function setTreasury(address payable _treasury) external;
-
-    /**
-     * @notice Enable or disable testing mode
-     * @dev POC ONLY - bypasses SNARK verification
-     * @param enabled Whether to enable testing mode
-     */
-    function setTestingMode(bool enabled) external;
 
     /**
      * @notice Set privileged shield caller (bypasses shield/unshield fees)

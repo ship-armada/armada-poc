@@ -180,8 +180,5 @@ contract OnlyDelegatecallTest is Test {
         verifierModule.verify(txn);
     }
 
-    function test_verifierModule_setTestingMode_revertsOnDirectCall() public {
-        vm.expectRevert(bytes(EXPECTED_REVERT));
-        verifierModule.setTestingMode(true);
-    }
+    // setTestingMode removed (C-1/C-2) — testingMode is now set at initialization
 }

@@ -5,7 +5,7 @@ pragma abicoder v2;
 // OpenZeppelin v4
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import { VERIFICATION_BYPASS, SnarkProof, Transaction, BoundParams, VerifyingKey, SNARK_SCALAR_FIELD } from "./Globals.sol";
+import { SnarkProof, Transaction, BoundParams, VerifyingKey, SNARK_SCALAR_FIELD } from "./Globals.sol";
 
 import { Snark } from "./Snark.sol";
 
@@ -130,16 +130,7 @@ contract Verifier is OwnableUpgradeable {
     }
 
     // Verify snark proof
-    bool validity = verifyProof(verifyingKey, _transaction.proof, inputs);
-
-    // Always return true in gas estimation transaction
-    // This is so relayer fees can be calculated without needing to compute a proof
-    // solhint-disable-next-line avoid-tx-origin
-    if (tx.origin == VERIFICATION_BYPASS) {
-      return true;
-    } else {
-      return validity;
-    }
+    return verifyProof(verifyingKey, _transaction.proof, inputs);
   }
 
   uint256[48] private __gap; // Reduced by 1 for testingMode

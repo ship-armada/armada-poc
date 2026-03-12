@@ -46,8 +46,8 @@ Client Chain A                Hub Chain                    Client Chain B
 
 ### Known POC Shortcuts (Tracked, Will Be Fixed)
 
-- `setTestingMode()` bypasses ZK proof verification entirely
-- `VERIFICATION_BYPASS` at `tx.origin == 0xdead` in Snark.sol
+- ~~`setTestingMode()` bypasses ZK proof verification entirely~~ (Fixed: removed, testingMode is init-only)
+- ~~`VERIFICATION_BYPASS` at `tx.origin == 0xdead` in Snark.sol~~ (Fixed: constant and bypass checks removed)
 - Hardcoded Anvil private keys in relayer config
 - Shield fee formula mismatch between contract and SDK
 

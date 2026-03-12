@@ -65,6 +65,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _usdc USDC token address
      * @param _localDomain This chain's CCTP domain ID
      * @param _owner Contract owner
+     * @param _testingMode If true, SNARK verification is bypassed (for test deployments only).
+     *        This value is set once and cannot be changed after initialization.
      */
     function initialize(
         address _shieldModule,
@@ -75,7 +77,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address _messageTransmitter,
         address _usdc,
         uint32 _localDomain,
-        address _owner
+        address _owner,
+        bool _testingMode
     ) external override {
         require(!initialized, "PrivacyPool: Already initialized");
         require(msg.sender == _deployer, "PrivacyPool: Only deployer can initialize");
@@ -105,6 +108,10 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
         // Initialize merkle tree via delegatecall
         _delegatecall(merkleModule, abi.encodeCall(IMerkleModule.initializeMerkle, ()));
+
+        // C-1/C-2: testingMode is set once at initialization and cannot be changed afterward.
+        // Production deployments MUST pass false. Test deployments may pass true.
+        testingMode = _testingMode;
 
         initialized = true;
     }
@@ -303,20 +310,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
-     * @notice Enable or disable testing mode
-     * @dev POC ONLY - bypasses SNARK verification
-     * @param _enabled Whether to enable testing mode
-     */
-    function setTestingMode(bool _enabled) external override {
-        require(msg.sender == owner, "PrivacyPool: Only owner");
-        _delegatecall(
-            verifierModule,
-            abi.encodeCall(IVerifierModule.setTestingMode, (_enabled))
-        );
-        emit TestingModeSet(_enabled);
-    }
-
-    /**
      * @notice Set privileged shield caller (bypasses shield/unshield fees)
      * @param caller Address to configure (e.g. yield adapter)
      * @param privileged True to exempt from fees
@@ -361,11 +354,12 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @notice Verify a transaction's SNARK proof
      * @dev Called by TransactModule during delegatecall via staticcall to this router.
      *      Performs the verification directly using stored verification keys and testingMode.
+     *      testingMode is set once at initialization and cannot be changed afterward.
      * @param _transaction The transaction to verify
      * @return True if proof is valid
      */
     function verify(Transaction calldata _transaction) external view returns (bool) {
-        // POC: Bypass verification in testing mode
+        // Bypass verification in testing mode (set at initialization, immutable after)
         if (testingMode) {
             return true;
         }
@@ -400,16 +394,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         }
 
         // Verify the SNARK proof
-        bool validity = Snark.verify(verifyingKey, _transaction.proof, inputs);
-
-        // Always return true in gas estimation transactions
-        // This allows relayer fee calculation without computing a proof
-        // solhint-disable-next-line avoid-tx-origin
-        if (tx.origin == VERIFICATION_BYPASS) {
-            return true;
-        }
-
-        return validity;
+        return Snark.verify(verifyingKey, _transaction.proof, inputs);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

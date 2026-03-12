@@ -20,7 +20,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### Level 0 — Contract Fixes (no dependencies, start here)
 
-- [ ] **1.1-A** C-1/C-2: Remove `setTestingMode()` and `VERIFICATION_BYPASS` → _§1.1_
+- [x] **1.1-A** C-1/C-2: Remove `setTestingMode()` and `VERIFICATION_BYPASS` → _§1.1_
 - [x] **1.1-B** H-1/H-2: Validate `remoteDomain` + `sender` on cross-chain shields → _§1.1_
 - [x] **1.1-C** H-5: Add `_disableInitializers()` to PrivacyPool → _§1.1_
 - [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
@@ -42,7 +42,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
 - [ ] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
 - [x] Run `npm run test:all` — all 429 Hardhat tests pass
-- [x] Run `npm run test:forge` — all 244 Foundry tests pass
+- [x] Run `npm run test:forge` — all 252 Foundry tests pass
 
 ### Level 2 — Deploy (depends on Level 0–1)
 
@@ -86,9 +86,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 1.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **C-1/C-2: Remove or gate `setTestingMode()` and `VERIFICATION_BYPASS`**
-  Owner can disable all SNARK verification via `setTestingMode(true)`. Separately, `tx.origin == 0xdead` bypasses proof verification. Both must be unreachable on Sepolia. Options: compile-time flag, deploy separate contracts, or hard-disable at initialization.
-  _Ref: Audit C-1, C-2 | `PrivacyPool.sol:291-298`, `VerifierModule.sol:67,106`, `Globals.sol:10`_
+- [x] `[DONE]` **C-1/C-2: Remove `setTestingMode()` and `VERIFICATION_BYPASS`**
+  Removed `setTestingMode()` from PrivacyPool, VerifierModule, and their interfaces. `testingMode` is now a parameter of `initialize()` — set once at deployment and immutable afterward. Production deployments pass `false`; test deployments pass `true`. Removed `VERIFICATION_BYPASS` constant from `Globals.sol` and all `tx.origin == 0xdead` bypass checks from `VerifierModule.sol`, `PrivacyPool.sol`, and the legacy `Verifier.sol`. 9 Foundry tests (5 unit, 2 fuzz, 2 property) verify the fix.
+  _Ref: Audit C-1, C-2 | `PrivacyPool.sol:initialize()`, `VerifierModule.sol`, `Globals.sol` | `test-foundry/VerificationBypassRemoval.t.sol`_
 
 - [x] `[DONE]` **H-1/H-2: Validate `remoteDomain` on incoming cross-chain shields**
   Added `require(remotePools[remoteDomain] != bytes32(0))` to `handleReceiveFinalizedMessage()`. Messages from unregistered domains are now rejected. The `sender` parameter (remote TokenMessenger) is already authenticated by CCTP's attestation layer; the domain check ensures only registered client chains can shield. 5 fuzz + 4 unit tests in Foundry.
@@ -364,9 +364,9 @@ The following are tracked but do not block the Sepolia milestone:
   _(depends: 7.1 deploy)_
   _Ref: `docs/SEPOLIA_DEPLOY.md` Step 5_
 
-- [ ] `[BLOCKER]` **Confirm `testingMode=false` and `VERIFICATION_BYPASS` unreachable on deployed contracts**
-  After deploy, call `pool.testingMode()` and confirm `false`. Attempt a call with `tx.origin == 0xdead` and confirm it fails. Add this check to the smoke test.
-  _(depends: 1.1 C-1/C-2 fix, 7.1 deploy)_
+- [ ] `[BLOCKER]` **Confirm `testingMode=false` on deployed contracts**
+  After deploy, call `pool.testingMode()` and confirm `false`. `VERIFICATION_BYPASS` (0xdead) has been removed from the codebase entirely. `setTestingMode()` no longer exists — testingMode is immutable after initialization.
+  _(depends: 7.1 deploy)_
 
 ### 7.2 Should Fix
 

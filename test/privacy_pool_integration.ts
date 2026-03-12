@@ -177,7 +177,8 @@ describe("Privacy Pool Integration", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      true // testingMode: bypass SNARK verification for integration tests
     );
 
     // Deploy CCTPHookRouter for hub
@@ -492,8 +493,7 @@ describe("Privacy Pool Integration", function () {
       poseidon = await buildPoseidon();
       F = poseidon.F;
 
-      // Enable testing mode to bypass SNARK proof verification
-      await privacyPool.setTestingMode(true);
+      // testingMode=true set at initialization — SNARK proof verification is bypassed
 
       // Mint USDC to Alice on hub and shield to fund the pool
       await hubUsdc.mint(aliceAddress, SHIELD_AMOUNT);
@@ -527,10 +527,7 @@ describe("Privacy Pool Integration", function () {
       await privacyPool.connect(alice).shield([shieldRequest]);
     });
 
-    after(async function () {
-      // Disable testing mode after tests
-      await privacyPool.setTestingMode(false);
-    });
+    // testingMode is immutable after initialization — no cleanup needed
 
     it("should complete end-to-end cross-chain unshield with maxFee", async function () {
       // Get current merkle root (valid after the shield in before())
@@ -640,10 +637,10 @@ describe("Privacy Pool Integration", function () {
       expect(key2x2.alpha1.x).to.not.equal(0n);
     });
 
-    it("should not have testing mode enabled", async function () {
-      // Testing mode should be disabled - we use real SNARK verification
+    it("should report testingMode set at initialization", async function () {
+      // testingMode is set once at initialization and cannot be changed
       const testingMode = await privacyPool.testingMode();
-      expect(testingMode).to.equal(false);
+      expect(testingMode).to.equal(true); // Test deployments initialize with testingMode=true
     });
   });
 

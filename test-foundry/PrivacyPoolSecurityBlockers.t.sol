@@ -57,7 +57,8 @@ contract PrivacyPoolSecurityBlockersTest is Test {
             mockMessageTransmitter,
             mockUsdc,
             HUB_DOMAIN,
-            deployer
+            deployer,
+            true // testingMode: bypass SNARK verification for tests
         );
 
         // Register remote pools
@@ -65,7 +66,6 @@ contract PrivacyPoolSecurityBlockersTest is Test {
         pool.setRemotePool(CLIENT_A_DOMAIN, CLIENT_A_POOL);
         pool.setRemotePool(CLIENT_B_DOMAIN, CLIENT_B_POOL);
         pool.setHookRouter(mockHookRouter);
-        pool.setTestingMode(true); // For CCTP tests to pass shield logic
         vm.stopPrank();
     }
 
@@ -91,7 +91,8 @@ contract PrivacyPoolSecurityBlockersTest is Test {
             mockMessageTransmitter,
             mockUsdc,
             HUB_DOMAIN,
-            attacker // attacker tries to set themselves as owner
+            attacker, // attacker tries to set themselves as owner
+            false
         );
     }
 
@@ -110,7 +111,8 @@ contract PrivacyPoolSecurityBlockersTest is Test {
             mockMessageTransmitter,
             mockUsdc,
             HUB_DOMAIN,
-            deployer
+            deployer,
+            false
         );
 
         assertTrue(newPool.initialized());
@@ -130,7 +132,8 @@ contract PrivacyPoolSecurityBlockersTest is Test {
             mockMessageTransmitter,
             mockUsdc,
             HUB_DOMAIN,
-            deployer
+            deployer,
+            false
         );
     }
 
@@ -189,7 +192,8 @@ contract PrivacyPoolSecurityBlockersTest is Test {
             mockMessageTransmitter,
             mockUsdc,
             HUB_DOMAIN,
-            caller
+            caller,
+            false
         );
     }
 

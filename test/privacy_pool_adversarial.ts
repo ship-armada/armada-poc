@@ -114,12 +114,12 @@ describe("Privacy Pool Adversarial", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      true // testingMode: bypass SNARK verification for tests
     );
 
-    // Load verification keys and enable testing mode for transact tests
+    // Load verification keys (testingMode set at initialization)
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
     await privacyPool.setTreasury(deployerAddress);
     await privacyPool.setShieldFee(50); // 0.50%
 
@@ -261,10 +261,13 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPool: Only owner");
     });
 
-    it("non-owner cannot call setTestingMode", async function () {
-      await expect(
-        privacyPool.connect(attacker).setTestingMode(true)
-      ).to.be.revertedWith("PrivacyPool: Only owner");
+    it("testingMode is immutable after initialization (C-1/C-2)", async function () {
+      // setTestingMode() was removed — testingMode is set at initialization and cannot be changed.
+      // Verify the function does not exist on the contract.
+      expect((privacyPool as any).setTestingMode).to.be.undefined;
+      // Verify testingMode is readable and set to the init value
+      const mode = await privacyPool.testingMode();
+      expect(mode).to.equal(true);
     });
 
     it("non-owner cannot call setVerificationKey", async function () {
@@ -297,7 +300,7 @@ describe("Privacy Pool Adversarial", function () {
       await expect(
         privacyPool.initialize(
           ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress,
-          ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, 0, ethers.ZeroAddress
+          ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, 0, ethers.ZeroAddress, false
         )
       ).to.be.revertedWith("PrivacyPool: Already initialized");
     });
@@ -767,7 +770,7 @@ describe("Privacy Pool Adversarial", function () {
         await freshShield.getAddress(), await freshTransact.getAddress(),
         await freshMerkle.getAddress(), await freshVerifier.getAddress(),
         await hubTokenMessenger.getAddress(), await hubMessageTransmitter.getAddress(),
-        await hubUsdc.getAddress(), DOMAINS.hub, deployerAddress
+        await hubUsdc.getAddress(), DOMAINS.hub, deployerAddress, true
       );
 
       const initialRoot = await freshPool.merkleRoot();

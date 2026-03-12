@@ -117,11 +117,11 @@ describe("Privacy Pool Gas Profiling", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      true // testingMode: bypass SNARK verification for tests
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
     await privacyPool.setTreasury(deployerAddress);
     await privacyPool.setShieldFee(50); // 0.50%
 

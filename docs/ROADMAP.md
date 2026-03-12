@@ -37,7 +37,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 ### Level 1 — Tests & Triage (depends on Level 0 fixes)
 
 - [ ] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
-- [ ] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
+- [x] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
 - [ ] **4.3-A** Cover crowdfund scenarios: cancel+ARM recovery, elastic expansion, permissionlessCancel → _§4.3_
 - [ ] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
 - [ ] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
@@ -211,14 +211,14 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.4 Test Coverage
 
-- [ ] `[SHOULD]` **Cover priority uncovered governance scenarios**
-  223 scenarios documented in `docs/governance-test-scenarios.md`. Priority items for Sepolia confidence:
-  - A4 (vote-and-dump) — must be covered once #4 is fixed
-  - D8/D9/D10 (quorum snapshot regression) — covers #19 verification
-  - E-series (state transition timing edge cases)
-  - J9 (steward queues action targeting arbitrary contract) — covers #16 verification
-  - M8 (zombie proposal expiry) — verify against existing QUEUE_GRACE_PERIOD implementation
-  _Ref: `docs/governance-test-scenarios.md`_
+- [x] `[DONE]` **Cover priority uncovered governance scenarios**
+  All priority scenarios covered:
+  - **A4** (vote-and-dump): Covered by unlock cooldown tests (`governance_unlock_cooldown.ts` + `UnlockCooldown.t.sol`)
+  - **D8/D9/D10** (quorum snapshot regression): Covered by `governance_snapshot_quorum.ts` (14 tests) + `GovernanceVerification.t.sol` (8 tests)
+  - **E-series** (state transitions): 16 Foundry tests covering E1-E13 + boundary/fuzz in `GovernorLifecycle.t.sol`
+  - **J9** (steward targeting): Covered by `GovernanceVerification.t.sol:StewardAllowedTargetsTest` (9 tests)
+  - **M8** (zombie proposal): 3 tests (unit + boundary + fuzz) confirming QUEUE_GRACE_PERIOD expiry in `GovernorLifecycle.t.sol`
+  _Ref: `docs/governance-test-scenarios.md` | `test-foundry/GovernorLifecycle.t.sol`_
 
 ### 3.5 Already Fixed
 

@@ -38,7 +38,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 - [ ] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
 - [ ] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
-- [ ] **4.3-A** Cover crowdfund scenarios: cancel+ARM recovery, elastic expansion, permissionlessCancel → _§4.3_
+- [x] **4.3-A** Cover crowdfund scenarios: allocation precision (6.9, 6.10, 6.13), permissionlessCancel → _§4.3_
 - [ ] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
 - [ ] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
 - [ ] Run `npm run test:all` — all Hardhat tests pass
@@ -256,12 +256,15 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 4.3 Test Coverage
 
-- [ ] `[SHOULD]` **Cover priority uncovered crowdfund scenarios**
-  147 of 234 scenarios are uncovered (~37% coverage). Priority items for Sepolia:
+- [x] `[SHOULD]` **Cover priority uncovered crowdfund scenarios** (partial)
+  Covered in `test-foundry/CrowdfundEdgeCases.t.sol` (8 tests):
+  - Allocation precision edge cases: 6.9 (dust commit pro-rata), 6.10 (prime amounts), 6.13 (zero commit)
+  - Fuzz: allocation consistency for arbitrary commits within hop cap
+  - Full `permissionlessCancel` flow (grace period enforcement, anyone-can-cancel, refund)
+  - permissionlessCancel from Invitation phase, blocked from Setup/Finalized
+  Remaining gaps (not yet covered):
   - Canceled phase: ARM recovery after cancel (tied to H-10 fix)
   - Elastic expansion boundary scenarios (5.24-5.29)
-  - Full `permissionlessCancel` flow test
-  - Allocation precision edge cases (6.9-6.13)
   - Rollover logic (5.24-5.29)
   _Ref: `docs/CROWDFUND_TEST_SCENARIOS.md`_
 

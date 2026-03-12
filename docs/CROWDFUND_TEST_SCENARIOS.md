@@ -263,11 +263,11 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 6.9 | Pro-rata with 1 wei committed, large demand | allocUsdc rounds to 0, refund = 1 wei | **None** |
-| 6.10 | Pro-rata with prime number committed amounts (indivisible) | Integer truncation handled correctly | **None** |
+| 6.9 | Pro-rata with 1 wei committed, large demand | allocUsdc rounds to 0, refund = 1 wei | Foundry (CrowdfundEdgeCases) |
+| 6.10 | Pro-rata with prime number committed amounts (indivisible) | Integer truncation handled correctly | Foundry (CrowdfundEdgeCases) |
 | 6.11 | Pro-rata where reserve/demand creates repeating decimal | Truncation toward zero, no overflow | Adversarial (70 seeds, implicitly) |
 | 6.12 | Dust accumulation: difference between hop-level totalAllocatedUsdc and sum(individual allocUsdc) | At most `uniqueCommitters` units of dust per oversubscribed hop | Adversarial |
-| 6.13 | `_computeAllocation` with committed = 0 | Returns (0, 0, 0) — no revert | **None** |
+| 6.13 | `_computeAllocation` with committed = 0 | Returns (0, 0, 0) — no revert | Foundry (CrowdfundEdgeCases) |
 
 ---
 

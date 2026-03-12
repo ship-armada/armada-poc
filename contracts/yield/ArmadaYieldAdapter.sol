@@ -1,3 +1,5 @@
+// ABOUTME: Adapter bridging the privacy pool with ArmadaYieldVault for shielded yield.
+// ABOUTME: Handles atomic lend/redeem with per-deposit cost basis tracking via deposit nonces.
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -14,7 +16,9 @@ import "./YieldAdaptParams.sol";
  */
 interface IArmadaYieldVault {
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+    function depositForAdapter(uint256 assets) external returns (uint256 shares, uint256 nonce);
     function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+    function redeemByNonce(uint256 nonce, uint256 shares, address receiver) external returns (uint256 assets);
     function convertToShares(uint256 assets) external view returns (uint256);
     function convertToAssets(uint256 shares) external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
@@ -30,11 +34,12 @@ interface IArmadaYieldVault {
  *      It handles the conversion between shielded USDC and shielded yield positions.
  *
  * Flow:
- * - Lend: User unshields USDC → Adapter deposits to vault → Shield shares back to user
- * - Redeem: User unshields shares → Adapter redeems from vault → Shield USDC back to user
+ * - Lend: User unshields USDC -> Adapter deposits to vault -> Shield shares back to user
+ * - Redeem: User unshields shares -> Adapter redeems from vault -> Shield USDC back to user
  *
- * For POC purposes, this adapter uses a simplified interface.
- * In production, it would integrate with the full Railgun proof system.
+ * Each lend operation returns a deposit nonce that the user must provide when redeeming.
+ * This ensures each redeem uses the correct cost basis from the original deposit,
+ * preventing cross-user cost basis corruption (H-4 fix).
  */
 contract ArmadaYieldAdapter is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -67,14 +72,16 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     event LendAndShield(
         bytes32 indexed npk,
         uint256 usdcAmount,
-        uint256 sharesMinted
+        uint256 sharesMinted,
+        uint256 depositNonce
     );
 
     /// @notice Emitted when shielded ayUSDC is redeemed and USDC is re-shielded (trustless)
     event RedeemAndShield(
         bytes32 indexed npk,
         uint256 sharesBurned,
-        uint256 usdcRedeemed
+        uint256 usdcRedeemed,
+        uint256 depositNonce
     );
 
     // ============ Modifiers ============
@@ -128,7 +135,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     // ============ Trustless Shielded Operations ============
 
     /**
-     * @notice Atomic lend: unshield USDC → deposit → shield ayUSDC
+     * @notice Atomic lend: unshield USDC -> deposit -> shield ayUSDC
      * @dev Trustless execution via Railgun's adaptContract/adaptParams pattern:
      *
      *      1. User generates unshield proof with:
@@ -137,24 +144,27 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
      *         - unshieldPreimage with USDC going to this adapter
      *
      *      2. Adapter verifies adaptParams match provided shield parameters
-     *         - If mismatch → revert (adapter cannot change destination)
+     *         - If mismatch -> revert (adapter cannot change destination)
      *
      *      3. PrivacyPool.transact() verifies:
      *         - SNARK proof validity
      *         - adaptContract == msg.sender (this adapter)
      *
-     *      Result: Adapter MUST shield ayUSDC to user's committed npk
+     *      Result: Adapter MUST shield ayUSDC to user's committed npk.
+     *      The deposit nonce is emitted in the LendAndShield event for the user
+     *      to store and provide when redeeming.
      *
      * @param _transaction Unshield transaction (proof verified by PrivacyPool)
      * @param _npk User's note public key for re-shielding ayUSDC
      * @param _shieldCiphertext Ciphertext for recipient to decrypt
      * @return shares Amount of ayUSDC shares minted and shielded
+     * @return depositNonce The deposit nonce to use when redeeming these shares
      */
     function lendAndShield(
         Transaction calldata _transaction,
         bytes32 _npk,
         ShieldCiphertext calldata _shieldCiphertext
-    ) external nonReentrant returns (uint256 shares) {
+    ) external nonReentrant returns (uint256 shares, uint256 depositNonce) {
         require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
 
         // 1. Verify this transaction is bound to this adapter
@@ -193,8 +203,8 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         uint256 amount = _transaction.unshieldPreimage.value;
         require(amount > 0, "ArmadaYieldAdapter: zero amount");
 
-        // 6. Deposit USDC to vault, receive shares to this adapter
-        shares = vault.deposit(amount, address(this));
+        // 6. Deposit USDC to vault with per-nonce cost basis tracking
+        (shares, depositNonce) = vault.depositForAdapter(amount);
 
         // 7. Build shield request for ayUSDC
         ShieldRequest[] memory shieldRequests = new ShieldRequest[](1);
@@ -215,24 +225,27 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         shareToken.approve(privacyPool, shares);
         IPrivacyPool(privacyPool).shield(shieldRequests);
 
-        emit LendAndShield(_npk, amount, shares);
+        emit LendAndShield(_npk, amount, shares, depositNonce);
     }
 
     /**
-     * @notice Atomic redeem: unshield ayUSDC → redeem → shield USDC
+     * @notice Atomic redeem: unshield ayUSDC -> redeem -> shield USDC
      * @dev Trustless execution via Railgun's adaptContract/adaptParams pattern.
      *      Same security model as lendAndShield - adapter cannot deviate from
-     *      user's committed re-shield destination.
+     *      user's committed re-shield destination. The depositNonce binds the
+     *      redeem to a specific deposit's cost basis, ensuring correct yield fee.
      *
      * @param _transaction Unshield transaction for ayUSDC
      * @param _npk User's note public key for re-shielding USDC
      * @param _shieldCiphertext Ciphertext for recipient to decrypt
+     * @param _depositNonce The deposit nonce from the original lendAndShield
      * @return assets Amount of USDC redeemed and shielded (after yield fee)
      */
     function redeemAndShield(
         Transaction calldata _transaction,
         bytes32 _npk,
-        ShieldCiphertext calldata _shieldCiphertext
+        ShieldCiphertext calldata _shieldCiphertext,
+        uint256 _depositNonce
     ) external nonReentrant returns (uint256 assets) {
         require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
 
@@ -242,13 +255,15 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
             "ArmadaYieldAdapter: invalid adaptContract"
         );
 
-        // 2. Verify adaptParams binds the npk and ciphertext
+        // 2. Verify adaptParams binds the npk, ciphertext, AND depositNonce
+        //    This ensures the adapter must redeem against the correct deposit
         require(
-            YieldAdaptParams.verify(
+            YieldAdaptParams.verifyRedeem(
                 _transaction.boundParams.adaptParams,
                 _npk,
                 _shieldCiphertext.encryptedBundle,
-                _shieldCiphertext.shieldKey
+                _shieldCiphertext.shieldKey,
+                _depositNonce
             ),
             "ArmadaYieldAdapter: adaptParams mismatch"
         );
@@ -268,9 +283,9 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         uint256 shares = _transaction.unshieldPreimage.value;
         require(shares > 0, "ArmadaYieldAdapter: zero shares");
 
-        // 6. Redeem shares from vault (10% yield fee applied by vault)
+        // 6. Redeem shares from vault using per-nonce cost basis (10% yield fee applied)
         shareToken.approve(address(vault), shares);
-        assets = vault.redeem(shares, address(this), address(this));
+        assets = vault.redeemByNonce(_depositNonce, shares, address(this));
 
         // 7. Build shield request for USDC
         ShieldRequest[] memory shieldRequests = new ShieldRequest[](1);
@@ -291,7 +306,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         usdc.approve(privacyPool, assets);
         IPrivacyPool(privacyPool).shield(shieldRequests);
 
-        emit RedeemAndShield(_npk, shares, assets);
+        emit RedeemAndShield(_npk, shares, assets, _depositNonce);
     }
 
     // ============ View Functions ============

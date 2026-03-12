@@ -1,3 +1,5 @@
+// ABOUTME: ERC-20 yield vault wrapping Aave V4 Spoke for shielded yield positions.
+// ABOUTME: Tracks per-deposit cost basis for adapter operations to ensure correct yield fee calculation.
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -49,7 +51,8 @@ interface IAaveSpoke {
  * - Non-rebasing: Share balances stay constant, share value increases
  * - Principal tracking: Accurately calculates yield at redemption
  * - Yield fee: 10% of yield goes to treasury on redemption
- * - Privileged path: Adapter can deposit/redeem without fees
+ * - Per-deposit cost basis: Adapter deposits track cost basis per nonce to prevent
+ *   cross-user cost basis corruption (H-4 fix)
  */
 contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -88,14 +91,28 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     uint256 public totalPrincipal;
 
     /// @notice Per-user cost basis per share, scaled by 1e18
-    /// @dev Tracks weighted average deposit price. On deposit, the cost basis is updated
-    ///      as a weighted average of existing and new shares. On redeem, principal is
-    ///      computed as shares * costBasis / COST_BASIS_PRECISION, which is independent
-    ///      of balanceOf() and works correctly with the ArmadaYieldAdapter pattern.
+    /// @dev Tracks weighted average deposit price for direct (non-adapter) users.
+    ///      Adapter deposits use per-nonce tracking instead (see adapterDeposits).
     mapping(address => uint256) public userCostBasisPerShare;
 
     /// @notice Precision scalar for cost basis (1e18)
     uint256 internal constant COST_BASIS_PRECISION = 1e18;
+
+    // ============ Per-Deposit Cost Basis (Adapter) ============
+
+    /// @notice Tracks cost basis per deposit for adapter operations
+    /// @dev Prevents cross-user cost basis corruption when the adapter acts
+    ///      on behalf of multiple shielded users (H-4 fix).
+    struct AdapterDeposit {
+        uint256 costBasisPerShare; // Cost basis at deposit time, scaled by 1e18
+        uint256 remainingShares;   // Shares not yet redeemed from this deposit
+    }
+
+    /// @notice Monotonically increasing nonce for adapter deposits
+    uint256 public adapterDepositNonce;
+
+    /// @notice Per-nonce cost basis and share tracking for adapter deposits
+    mapping(uint256 => AdapterDeposit) public adapterDeposits;
 
     // ============ Events ============
 
@@ -112,6 +129,21 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         address indexed owner,
         uint256 assets,
         uint256 shares,
+        uint256 yieldFee
+    );
+
+    /// @notice Emitted when the adapter creates a deposit with per-nonce cost basis tracking
+    event AdapterDepositCreated(
+        uint256 indexed nonce,
+        uint256 shares,
+        uint256 costBasisPerShare
+    );
+
+    /// @notice Emitted when the adapter redeems shares against a specific deposit nonce
+    event AdapterDepositRedeemed(
+        uint256 indexed nonce,
+        uint256 shares,
+        uint256 assets,
         uint256 yieldFee
     );
 
@@ -291,6 +323,117 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         underlying.safeTransfer(receiver, assets);
 
         emit Withdraw(msg.sender, receiver, owner_, assets, shares, yieldFee);
+    }
+
+    // ============ Adapter-Specific Functions ============
+
+    /**
+     * @notice Deposit underlying assets via the adapter with per-nonce cost basis tracking
+     * @dev Only callable by the adapter. Each deposit gets a unique nonce so that
+     *      cost basis is tracked per deposit, not per address. This prevents cross-user
+     *      cost basis corruption when the adapter acts on behalf of multiple shielded users.
+     * @param assets Amount of underlying to deposit
+     * @return shares Amount of shares minted
+     * @return nonce The deposit nonce for this deposit (used in redeemByNonce)
+     */
+    function depositForAdapter(uint256 assets) external nonReentrant returns (uint256 shares, uint256 nonce) {
+        require(msg.sender == adapter, "ArmadaYieldVault: not adapter");
+        require(adapter != address(0), "ArmadaYieldVault: adapter not set");
+        require(assets > 0, "ArmadaYieldVault: zero assets");
+
+        // Calculate shares before state changes
+        shares = _convertToShares(assets);
+        require(shares > 0, "ArmadaYieldVault: zero shares");
+
+        // Assign nonce and track per-deposit cost basis
+        nonce = adapterDepositNonce++;
+        uint256 costBasis = (assets * COST_BASIS_PRECISION) / shares;
+        adapterDeposits[nonce] = AdapterDeposit({
+            costBasisPerShare: costBasis,
+            remainingShares: shares
+        });
+
+        // Track global principal
+        totalPrincipal += assets;
+
+        // Transfer underlying from caller (adapter)
+        underlying.safeTransferFrom(msg.sender, address(this), assets);
+
+        // Deposit to Aave Spoke
+        underlying.approve(address(spoke), assets);
+        spoke.supply(reserveId, assets, address(this));
+
+        // Mint shares to adapter
+        _mint(msg.sender, shares);
+
+        emit Deposit(msg.sender, msg.sender, assets, shares);
+        emit AdapterDepositCreated(nonce, shares, costBasis);
+    }
+
+    /**
+     * @notice Redeem vault shares via the adapter using a specific deposit nonce
+     * @dev Only callable by the adapter. Uses the cost basis recorded at deposit time
+     *      for the given nonce, ensuring each user's yield fee is calculated correctly.
+     *      Supports partial redemption (redeeming fewer shares than the deposit).
+     * @param nonce The deposit nonce from depositForAdapter
+     * @param shares Amount of shares to redeem
+     * @param receiver Address to receive underlying
+     * @return assets Amount of underlying received (after fees)
+     */
+    function redeemByNonce(
+        uint256 nonce,
+        uint256 shares,
+        address receiver
+    ) external nonReentrant returns (uint256 assets) {
+        require(msg.sender == adapter, "ArmadaYieldVault: not adapter");
+        require(shares > 0, "ArmadaYieldVault: zero shares");
+        require(receiver != address(0), "ArmadaYieldVault: zero receiver");
+
+        AdapterDeposit storage dep = adapterDeposits[nonce];
+        require(dep.remainingShares >= shares, "ArmadaYieldVault: exceeds deposit");
+
+        // Decrement remaining shares for this deposit
+        dep.remainingShares -= shares;
+
+        // Calculate assets from shares (before fees)
+        uint256 grossAssets = _convertToAssets(shares);
+
+        // Calculate principal portion using the per-deposit cost basis
+        uint256 costBasis = dep.costBasisPerShare;
+        uint256 principalPortion = (shares * costBasis) / COST_BASIS_PRECISION;
+
+        // Clamp to totalPrincipal to avoid underflow
+        if (principalPortion > totalPrincipal) {
+            principalPortion = totalPrincipal;
+        }
+        totalPrincipal -= principalPortion;
+
+        // Burn shares from adapter
+        _burn(msg.sender, shares);
+
+        // Withdraw from Aave Spoke
+        spoke.withdraw(reserveId, grossAssets, address(this));
+
+        // Calculate yield and fee
+        uint256 yieldFee = 0;
+        if (grossAssets > principalPortion) {
+            uint256 yield_ = grossAssets - principalPortion;
+            yieldFee = (yield_ * YIELD_FEE_BPS) / BPS_DENOMINATOR;
+        }
+
+        assets = grossAssets - yieldFee;
+
+        // Transfer fee to treasury and record it
+        if (yieldFee > 0) {
+            underlying.safeTransfer(treasury, yieldFee);
+            IArmadaTreasury(treasury).recordFee(address(underlying), msg.sender, yieldFee);
+        }
+
+        // Transfer assets to receiver
+        underlying.safeTransfer(receiver, assets);
+
+        emit Withdraw(msg.sender, receiver, msg.sender, assets, shares, yieldFee);
+        emit AdapterDepositRedeemed(nonce, shares, assets, yieldFee);
     }
 
     // ============ View Functions ============

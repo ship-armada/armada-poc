@@ -31,7 +31,7 @@ const DOMAINS = { hub: 100 };
 const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
 /**
- * Encode YieldAdaptParams - must match Solidity YieldAdaptParams.encode
+ * Encode YieldAdaptParams - must match Solidity YieldAdaptParams.encode (lend)
  */
 function encodeYieldAdaptParams(
   npk: string,
@@ -41,6 +41,22 @@ function encodeYieldAdaptParams(
   const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
     ["bytes32", "bytes32[3]", "bytes32"],
     [npk, encryptedBundle, shieldKey]
+  );
+  return ethers.keccak256(encoded);
+}
+
+/**
+ * Encode YieldAdaptParams for redeem - must match Solidity YieldAdaptParams.encodeRedeem
+ */
+function encodeYieldRedeemAdaptParams(
+  npk: string,
+  encryptedBundle: [string, string, string],
+  shieldKey: string,
+  depositNonce: bigint
+): string {
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
+    ["bytes32", "bytes32[3]", "bytes32", "uint256"],
+    [npk, encryptedBundle, shieldKey, depositNonce]
   );
   return ethers.keccak256(encoded);
 }
@@ -358,17 +374,20 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       const poolUsdcBefore = await hubUsdc.balanceOf(privacyPoolAddress);
       const poolAyBefore = await armadaYieldVault.balanceOf(privacyPoolAddress);
 
-      const shares = await armadaYieldAdapter.lendAndShield.staticCall(
+      const result = await armadaYieldAdapter.lendAndShield.staticCall(
         tx,
         npk,
         { encryptedBundle, shieldKey }
       );
+      const shares = result[0];
+      const depositNonce = result[1];
       await armadaYieldAdapter.lendAndShield(tx, npk, { encryptedBundle, shieldKey });
 
       const poolUsdcAfter = await hubUsdc.balanceOf(privacyPoolAddress);
       const poolAyAfter = await armadaYieldVault.balanceOf(privacyPoolAddress);
 
       expect(shares).to.be.gt(0n);
+      expect(depositNonce).to.equal(0n);
       expect(poolUsdcBefore - poolUsdcAfter).to.equal(amount);
       expect(poolAyAfter - poolAyBefore).to.equal(shares);
     });
@@ -386,7 +405,7 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
         ethers.keccak256(ethers.toUtf8Bytes("enc3")),
       ];
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("key"));
-      const adaptParams = encodeYieldAdaptParams(npk, encryptedBundle, shieldKey);
+      const lendAdaptParams = encodeYieldAdaptParams(npk, encryptedBundle, shieldKey);
 
       const lendTx = await makeLendTransaction({
         merkleRoot: await privacyPool.merkleRoot(),
@@ -397,18 +416,25 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           value: lendAmount,
         },
         adaptContract: adapterAddress,
-        adaptParams,
+        adaptParams: lendAdaptParams,
         npk,
         encryptedBundle,
         shieldKey,
       });
 
+      // lendAndShield now returns (shares, depositNonce)
+      // Get deposit nonce from staticCall, then execute the real call
+      const lendResult = await armadaYieldAdapter.lendAndShield.staticCall(lendTx, npk, { encryptedBundle, shieldKey });
+      const depositNonce = lendResult[1];
       await armadaYieldAdapter.lendAndShield(lendTx, npk, { encryptedBundle, shieldKey });
 
-      const shares = await armadaYieldVault.balanceOf(privacyPoolAddress);
+      // Read actual shares from the deposit record (more reliable than staticCall return)
+      const deposit = await armadaYieldVault.adapterDeposits(depositNonce);
+      const shares = deposit.remainingShares;
       expect(shares).to.be.gt(0n);
 
-      const redeemAdaptParams = encodeYieldAdaptParams(npk, encryptedBundle, shieldKey);
+      // Redeem uses encodeRedeem which includes the depositNonce
+      const redeemAdaptParams = encodeYieldRedeemAdaptParams(npk, encryptedBundle, shieldKey, depositNonce);
       const unshieldHash = computeCommitmentHash(
         BigInt(ethers.zeroPadValue(adapterAddress, 32)),
         BigInt(vaultAddress),
@@ -443,15 +469,17 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       const poolUsdcBefore = await hubUsdc.balanceOf(privacyPoolAddress);
       const poolAyBefore = await armadaYieldVault.balanceOf(privacyPoolAddress);
 
+      // redeemAndShield now takes depositNonce as 4th arg
       const assets = await armadaYieldAdapter.redeemAndShield.staticCall(
         redeemTx,
         npk,
-        { encryptedBundle, shieldKey }
+        { encryptedBundle, shieldKey },
+        depositNonce
       );
       await armadaYieldAdapter.redeemAndShield(redeemTx, npk, {
         encryptedBundle,
         shieldKey,
-      });
+      }, depositNonce);
 
       const poolUsdcAfter = await hubUsdc.balanceOf(privacyPoolAddress);
       const poolAyAfter = await armadaYieldVault.balanceOf(privacyPoolAddress);

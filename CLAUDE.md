@@ -76,6 +76,7 @@ When writing new code, follow production security practices even though these le
 - **Crowdfund hop caps limit per-participant commits**: Hop 0 cap is $15K, hop 1 is $4K, hop 2 is $1K. To reach MIN_SALE ($1M) in Foundry tests, you need ~67 seeds at full cap. Use `addSeeds()` with an array of addresses.
 - **Immutable variables in shared storage cause constructor issues**: Adding `immutable` fields to `PrivacyPoolStorage` forces all inheriting modules to have constructors that initialize them. Place immutable fields in the concrete contract (e.g., `PrivacyPool.sol`) instead.
 - **PrivacyPool.initialize() has 10 parameters**: The last parameter is `_testingMode` (bool). Production deployments MUST pass `false`. Forgetting this parameter causes a compile error (not a silent bug). Tests pass `true`.
+- **ArmadaYieldAdapter uses per-deposit nonces**: `lendAndShield()` returns `(shares, depositNonce)` and `redeemAndShield()` takes `_depositNonce` as a parameter. The nonce binds each redeem to a specific deposit's cost basis in the vault. The deposit nonce must be included in the `adaptParams` hash for redeem operations via `YieldAdaptParams.encodeRedeem()`. Direct (non-adapter) vault operations use the existing `deposit()`/`redeem()` path unchanged.
 
 ## Relayer
 

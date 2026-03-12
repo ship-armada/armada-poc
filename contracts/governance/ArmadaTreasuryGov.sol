@@ -20,6 +20,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         uint256 amount;
         uint256 exercised;
         uint256 createdAt;
+        uint256 expiresAt; // 0 = never expires
+        bool revoked;
     }
 
     // ============ State ============
@@ -51,7 +53,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     // ============ Events ============
 
     event DirectDistribution(address indexed token, address indexed recipient, uint256 amount);
-    event ClaimCreated(uint256 indexed claimId, address indexed beneficiary, address token, uint256 amount);
+    event ClaimCreated(uint256 indexed claimId, address indexed beneficiary, address token, uint256 amount, uint256 expiresAt);
+    event ClaimRevoked(uint256 indexed claimId, address indexed beneficiary, uint256 unexercised);
     event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount);
     event StewardUpdated(address indexed oldSteward, address indexed newSteward);
     event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining);
@@ -92,13 +95,16 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     /// @param token Token address
     /// @param beneficiary Address that can exercise the claim
     /// @param amount Total claimable amount
+    /// @param expiresAt Timestamp after which the claim cannot be exercised (0 = never expires)
     function createClaim(
         address token,
         address beneficiary,
-        uint256 amount
+        uint256 amount,
+        uint256 expiresAt
     ) external onlyOwner returns (uint256) {
         require(beneficiary != address(0), "ArmadaTreasuryGov: zero address");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
+        require(expiresAt == 0 || expiresAt > block.timestamp, "ArmadaTreasuryGov: expires in past");
 
         uint256 claimId = ++claimCount;
         claims[claimId] = Claim({
@@ -106,12 +112,27 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
             beneficiary: beneficiary,
             amount: amount,
             exercised: 0,
-            createdAt: block.timestamp
+            createdAt: block.timestamp,
+            expiresAt: expiresAt,
+            revoked: false
         });
         _beneficiaryClaims[beneficiary].push(claimId);
 
-        emit ClaimCreated(claimId, beneficiary, token, amount);
+        emit ClaimCreated(claimId, beneficiary, token, amount, expiresAt);
         return claimId;
+    }
+
+    /// @notice Revoke a claim — prevents further exercise. Only callable by owner (timelock).
+    /// @dev Tokens already exercised are not affected. Only the unexercised portion is reclaimed.
+    function revokeClaim(uint256 claimId) external onlyOwner {
+        Claim storage c = claims[claimId];
+        require(c.beneficiary != address(0), "ArmadaTreasuryGov: claim does not exist");
+        require(!c.revoked, "ArmadaTreasuryGov: already revoked");
+
+        c.revoked = true;
+        uint256 unexercised = c.amount - c.exercised;
+
+        emit ClaimRevoked(claimId, c.beneficiary, unexercised);
     }
 
     /// @notice Set the treasury steward (governance only).
@@ -130,6 +151,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     function exerciseClaim(uint256 claimId, uint256 amount) external nonReentrant whenNotPaused {
         Claim storage c = claims[claimId];
         require(c.beneficiary == msg.sender, "ArmadaTreasuryGov: not beneficiary");
+        require(!c.revoked, "ArmadaTreasuryGov: claim revoked");
+        require(c.expiresAt == 0 || block.timestamp <= c.expiresAt, "ArmadaTreasuryGov: claim expired");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
         require(c.exercised + amount <= c.amount, "ArmadaTreasuryGov: exceeds claim");
 
@@ -183,6 +206,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
 
     function getClaimRemaining(uint256 claimId) external view returns (uint256) {
         Claim storage c = claims[claimId];
+        if (c.revoked) return 0;
+        if (c.expiresAt != 0 && block.timestamp > c.expiresAt) return 0;
         return c.amount - c.exercised;
     }
 

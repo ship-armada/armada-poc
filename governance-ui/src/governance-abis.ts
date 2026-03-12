@@ -55,14 +55,15 @@ export const GOVERNOR_ABI = [
 export const TREASURY_ABI = [
   // Write functions
   'function distribute(address token, address recipient, uint256 amount)',
-  'function createClaim(address token, address beneficiary, uint256 amount) returns (uint256)',
+  'function createClaim(address token, address beneficiary, uint256 amount, uint256 expiresAt) returns (uint256)',
+  'function revokeClaim(uint256 claimId)',
   'function exerciseClaim(uint256 claimId, uint256 amount)',
   'function setSteward(address _steward)',
   'function stewardSpend(address token, address recipient, uint256 amount)',
   // Read functions
   'function getBalance(address token) view returns (uint256)',
   'function claimCount() view returns (uint256)',
-  'function claims(uint256 claimId) view returns (address token, address beneficiary, uint256 amount, uint256 exercised, uint256 createdAt)',
+  'function claims(uint256 claimId) view returns (address token, address beneficiary, uint256 amount, uint256 exercised, uint256 createdAt, uint256 expiresAt, bool revoked)',
   'function getBeneficiaryClaims(address beneficiary) view returns (uint256[])',
   'function getClaimRemaining(uint256 claimId) view returns (uint256)',
   'function getStewardBudget(address token) view returns (uint256 budget, uint256 spent, uint256 remaining)',

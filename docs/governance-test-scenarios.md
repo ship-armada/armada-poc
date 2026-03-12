@@ -120,7 +120,17 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 | G8 | Create claim, then treasury gets drained, then exercise | Revert (safeTransfer fails — insufficient balance) |
 | G9 | Multiple claims for same beneficiary | All work independently |
 | G10 | Exercise claim after treasury ownership changed | Should still work (claim data is in storage) |
-| G11 | Create claim, never exercise | Sits forever (no revocation — bug #23) |
+| G11 | Create claim, never exercise | Can be revoked via governance (`revokeClaim`) — fixed in #23 |
+| G12 | Revoke a claim via governance | Claim revoked, exercise blocked with "claim revoked" |
+| G13 | Partial exercise then revoke | Already-exercised portion kept, remaining blocked |
+| G14 | Revoke non-existent claim | Revert: "claim does not exist" |
+| G15 | Revoke already-revoked claim | Revert: "already revoked" |
+| G16 | Create claim with expiry, exercise before expiry | Succeeds |
+| G17 | Create claim with expiry, exercise after expiry | Revert: "claim expired" |
+| G18 | Create claim with past expiry | Revert: "expires in past" |
+| G19 | Create claim with expiresAt=0, exercise far in future | Succeeds (never expires) |
+| G20 | Revoke expired claim | Succeeds (marks as revoked even though expired) |
+| G21 | Non-owner calls revokeClaim | Revert: "not owner" |
 
 ## H. ArmadaTreasuryGov — Steward Budget
 

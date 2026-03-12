@@ -54,6 +54,8 @@ export interface ClaimData {
   exercised: bigint
   remaining: bigint
   createdAt: bigint
+  expiresAt: bigint
+  revoked: boolean
 }
 
 /** Steward action data from TreasurySteward.getAction() */

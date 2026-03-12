@@ -475,7 +475,7 @@ describe("Governance Emergency Pause", function () {
 
       // Create a claim for alice
       await standaloneTreasury.createClaim(
-        await usdc.getAddress(), alice.address, ethers.parseUnits("10000", USDC_DECIMALS)
+        await usdc.getAddress(), alice.address, ethers.parseUnits("10000", USDC_DECIMALS), 0
       );
     });
 
@@ -510,7 +510,7 @@ describe("Governance Emergency Pause", function () {
 
       // Creating a claim is safe — it doesn't move funds out
       await standaloneTreasury.createClaim(
-        await usdc.getAddress(), bob.address, ethers.parseUnits("5000", USDC_DECIMALS)
+        await usdc.getAddress(), bob.address, ethers.parseUnits("5000", USDC_DECIMALS), 0
       );
       const remaining = await standaloneTreasury.getClaimRemaining(2);
       expect(remaining).to.equal(ethers.parseUnits("5000", USDC_DECIMALS));

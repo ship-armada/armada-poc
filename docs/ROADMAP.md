@@ -64,7 +64,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 ### Should-Fix (non-blocking, work on after blockers are clear)
 
 - [ ] **1.2-A** H-11: Put PrivacyPool owner behind Timelock → _§1.2_
-- [ ] **1.2-B** H-12: Add ReentrancyGuard to pool module entry points → _§1.2_
+- [x] **1.2-B** H-12: Add ReentrancyGuard to pool module entry points → _§1.2_
 - [ ] **1.2-C** M-1: Fix `safeApprove` without reset in TransactModule → _§1.2_
 - [ ] **1.2-D** C-3: Align shield fee formula (contract vs SDK) → _§1.2_
 - [ ] **2.2-A** M-4: Mitigate first depositor inflation attack → _§2.2_
@@ -104,9 +104,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   Pool owner can instantly change fees, set verification keys, and enable testing mode. For testnet the deployer EOA is the owner — acceptable but should be the TimelockController for defense in depth.
   _Ref: Audit H-11_
 
-- [ ] `[SHOULD]` **H-12: Add `ReentrancyGuard` to PrivacyPool module entry points**
-  `shield`, `transact`, and `atomicCrossChainUnshield` delegate to modules but hold no reentrancy lock at the pool level. USDC has no hooks so risk is theoretical, but this is a defense-in-depth gap.
-  _Ref: Audit H-12 | `PrivacyPool.sol`_
+- [x] `[DONE]` **H-12: Add `ReentrancyGuard` to PrivacyPool entry points**
+  Added inline reentrancy guard to `PrivacyPoolStorage` (shared by all modules via delegatecall). Applied `nonReentrant` modifier to all four entry points: `shield()`, `transact()`, `atomicCrossChainUnshield()`, and `handleReceiveFinalizedMessage()`. Guard status initialized in `initialize()`. 8 Foundry tests (4 unit, 2 fuzz) verify reentrancy is blocked across all entry points and that sequential calls work normally.
+  _Ref: Audit H-12 | `PrivacyPoolStorage.sol`, `PrivacyPool.sol` | `test-foundry/ReentrancyGuard.t.sol`_
 
 - [ ] `[SHOULD]` **M-1: Replace `safeApprove` without reset in TransactModule**
   `_executeCCTPBurn` calls `safeApprove(tokenMessenger, base)` without first resetting to zero. OpenZeppelin's `safeApprove` reverts if current allowance is non-zero. Will fail on second cross-chain unshield if prior approval wasn't fully consumed.

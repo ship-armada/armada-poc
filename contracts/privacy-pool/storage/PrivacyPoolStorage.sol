@@ -163,10 +163,30 @@ abstract contract PrivacyPoolStorage {
     address public hookRouter;
 
     // ══════════════════════════════════════════════════════════════════════════
+    // REENTRANCY GUARD (H-12)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @dev Reentrancy guard status. Follows OpenZeppelin's ReentrancyGuard pattern.
+    ///      1 = not entered, 2 = entered. Using 1/2 instead of 0/1 avoids a cold SSTORE
+    ///      on the first call (slot is already non-zero after initialization).
+    uint256 internal _reentrancyStatus;
+
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+
+    /// @dev Prevents reentrant calls to protected functions.
+    modifier nonReentrant() {
+        require(_reentrancyStatus != _ENTERED, "PrivacyPool: Reentrant call");
+        _reentrancyStatus = _ENTERED;
+        _;
+        _reentrancyStatus = _NOT_ENTERED;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 }

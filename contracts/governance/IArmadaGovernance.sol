@@ -46,6 +46,7 @@ struct StewardAction {
 interface IVotingLocker {
     function getPastLockedBalance(address account, uint256 blockNumber) external view returns (uint256);
     function totalLocked() external view returns (uint256);
+    function recordVoteCooldown(address voter, uint256 cooldownEnd) external;
 }
 
 interface IArmadaGovernorTiming {

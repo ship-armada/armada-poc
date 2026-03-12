@@ -24,10 +24,10 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **1.1-B** H-1/H-2: Validate `remoteDomain` + `sender` on cross-chain shields → _§1.1_
 - [ ] **1.1-C** H-5: Add `_disableInitializers()` to PrivacyPool → _§1.1_
 - [ ] **2.1-A** H-4: Fix yield vault cost basis corruption → _§2.1_
-- [ ] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
+- [x] **3.1-A** #4: Add unlock cooldown to VotingLocker → _§3.1_
 - [x] **3.1-B** #23: Add claim revocability to TreasuryGov → _§3.1_
 - [x] **3.1-C** #29: Fix garbled revert in steward over-budget → _§3.1_
-- [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
+- [x] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
 - [ ] **3.2-A** #16: Verify steward `allowedTargets` deploy config + write test → _§3.2_
 - [ ] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
 - [x] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
@@ -169,9 +169,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **#4: Add unlock cooldown to prevent vote-and-dump**
-  A user can lock tokens, cast a vote, immediately unlock and sell, keeping vote weight intact with no skin in the game. Add a minimum lock duration after voting (e.g., until the proposal's voting period ends).
-  _Ref: GitHub #4 | `VotingLocker.sol:73` (TODO in code)_
+- [x] `[DONE]` **#4: Unlock cooldown prevents vote-and-dump**
+  Added `recordVoteCooldown()` mechanism: when a user votes, ArmadaGovernor records the proposal's `voteEnd` timestamp in VotingLocker. Unlock is blocked until `block.timestamp > unlockCooldownEnd[user]`. Voting on multiple proposals extends cooldown to the latest `voteEnd`. 14 Hardhat tests + 17 Foundry tests (3 unit, 3 fuzz, 8 scenario, 2 invariant + handler) verify the fix.
+  _Ref: `VotingLocker.sol:recordVoteCooldown()`, `ArmadaGovernor.sol:castVote()`, `test-foundry/UnlockCooldown.t.sol`, `test/governance_unlock_cooldown.ts`_
 
 - [x] `[DONE]` **#23: Add revocability to TreasuryGov claims**
   Added `revokeClaim(claimId)` callable only by owner (timelock), and `expiresAt` field on claims (0 = never expires). Revoked/expired claims return 0 from `getClaimRemaining()` and revert on `exerciseClaim()`. Includes Hardhat integration tests (10 scenarios) and Foundry fuzz tests (7 property-based tests).
@@ -181,9 +181,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   Verified: the assembly revert bubbling in `executeAction()` (lines 209-214) correctly propagates the original error message. Existing tests in `governance_adversarial.ts` and `governance_integration.ts` confirm the revert reason "ArmadaTreasuryGov: exceeds monthly budget" surfaces correctly through the action queue. This was effectively resolved by the error encoding fix in PR #50 (#35).
   _Ref: GitHub #29 | `TreasurySteward.sol`_
 
-- [ ] `[BLOCKER]` **H-8: Proposal threshold uses `totalSupply` not eligible supply**
-  `_checkProposalThreshold` computes threshold from `totalSupply` but quorum uses `eligibleSupply` (minus excluded addresses). With large exclusions the threshold is 2.86x higher than intended. Use `eligibleSupply` for the threshold too, or document the discrepancy.
-  _Ref: Audit H-8 | `ArmadaGovernor.sol:162`_
+- [x] `[DONE]` **H-8: Proposal threshold now uses eligible supply**
+  Extracted `_getEligibleSupply()` internal function (totalSupply minus treasury and excluded addresses). Both `_checkProposalThreshold()` and `proposalThreshold()` now use eligible supply, consistent with quorum. 10 Foundry tests (3 unit + 4 fuzz + 3 scenario) verify the fix.
+  _Ref: `ArmadaGovernor.sol:_getEligibleSupply()`, `test-foundry/ProposalThresholdEligibleSupply.t.sol`_
 
 ### 3.2 Verification Required
 
@@ -222,6 +222,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 3.5 Already Fixed
 
+- [x] `[DONE]` #4: Unlock cooldown — `recordVoteCooldown()` prevents vote-and-dump (`VotingLocker.sol`, `ArmadaGovernor.sol`)
 - [x] `[DONE]` #19/#25: Snapshot quorum — `snapshotEligibleSupply` stored at creation (`ArmadaGovernor.sol:274,386`)
 - [x] `[DONE]` #22/#28: Queue grace period — `QUEUE_GRACE_PERIOD = 14 days`, proposals expire (`ArmadaGovernor.sol:92,374`)
 - [x] `[DONE]` #24: `transferOwnership` removed from TreasuryGov (PR #50)

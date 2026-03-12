@@ -107,6 +107,7 @@ describe("Governance Adversarial", function () {
       deployer.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
+    await votingLocker.setGovernor(await governor.getAddress());
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
@@ -269,17 +270,14 @@ describe("Governance Adversarial", function () {
     });
 
     it("propose with exactly threshold voting power succeeds", async function () {
-      // Threshold = 0.1% of 100M = 100,000 ARM
-      // Alice has 20M locked which is well above threshold. She can propose.
-      // Bob has 15M locked. Let's test with a smaller holder.
-      // Transfer from alice (who has locked tokens) — she needs to unlock first.
-      // Simpler: alice already has enough, just verify she can propose.
+      // Threshold = 0.1% of eligible supply (35M, since 65M is in treasury) = 35,000 ARM
+      // Alice has 20M locked which is well above threshold.
       const proposalId = await createProposal(alice);
       expect(proposalId).to.equal(1);
 
-      // Verify the threshold value
+      // Verify the threshold uses eligible supply, not totalSupply
       const threshold = await governor.proposalThreshold();
-      expect(threshold).to.equal(ethers.parseUnits("100000", ARM_DECIMALS));
+      expect(threshold).to.equal(ethers.parseUnits("35000", ARM_DECIMALS));
     });
 
     it("propose with no voting power reverts", async function () {

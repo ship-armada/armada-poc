@@ -143,6 +143,7 @@ describe("Governance Emergency Pause", function () {
       guardian.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
+    await votingLocker.connect(guardian).setGovernor(await governor.getAddress());
 
     // 6. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
@@ -664,6 +665,9 @@ describe("Governance Emergency Pause", function () {
       const EXECUTOR_ROLE = await standaloneTimelock.EXECUTOR_ROLE();
       await standaloneTimelock.grantRole(PROPOSER_ROLE, await standaloneGovernor.getAddress());
       await standaloneTimelock.grantRole(EXECUTOR_ROLE, await standaloneGovernor.getAddress());
+
+      // Point voting locker to standalone governor for cooldown recording
+      await votingLocker.connect(guardian).setGovernor(await standaloneGovernor.getAddress());
     });
 
     it("propose still works when paused", async function () {

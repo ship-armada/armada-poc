@@ -73,7 +73,8 @@ An AI-assisted security audit (Trail of Bits methodology) was performed in Febru
 ### High Priority (P1 — Before Production)
 
 - Add `ReentrancyGuard` to privacy pool modules
-- Fix proposal threshold (uses `totalSupply` not eligible supply — threshold is 2.86x too high)
+- ~~Fix proposal threshold (uses `totalSupply` not eligible supply — threshold is 2.86x too high)~~ (Fixed)
+- ~~Add unlock cooldown to VotingLocker (vote-and-dump prevention)~~ (Fixed)
 - Implement cross-chain relayer fee deduction
 - Fix cost basis corruption in yield vault (shared adapter identity)
 - Put privacy pool owner behind timelock

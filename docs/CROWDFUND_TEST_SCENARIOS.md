@@ -349,9 +349,15 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | 9.13 | Double withdrawal | Revert: "already withdrawn" | Adversarial |
 | 9.14 | Non-admin calls `withdrawUnallocatedArm` | Revert: "not admin" | **None** |
 | 9.15 | Withdraw to zero address | Revert: "zero address" | **None** |
-| 9.16 | Withdraw in Canceled phase | Revert: "not finalized" | **None** |
+| 9.16 | Withdraw in Canceled phase | Revert: "not finalized" | Integration (H-10) |
 | 9.17 | Verify `UnallocatedArmWithdrawn` event emitted even if unallocated == 0 | Event emitted with amount = 0 | **None** |
 | 9.18 | After `withdrawUnallocatedArm`, remaining ARM >= armStillOwed (all claimants can still claim) | Contract solvency maintained | **None** |
+| 9.19 | `withdrawArmAfterCancel()` recovers all ARM to treasury after cancel | Full ARM balance transferred | Integration + Foundry fuzz (H-10) |
+| 9.20 | `withdrawArmAfterCancel()` after permissionless cancel | Same behavior as admin cancel | Integration (H-10) |
+| 9.21 | `withdrawArmAfterCancel()` by non-admin | Revert: "not admin" | Integration + Foundry fuzz (H-10) |
+| 9.22 | Double `withdrawArmAfterCancel()` | Revert: "already withdrawn" | Integration + Foundry (H-10) |
+| 9.23 | `withdrawArmAfterCancel()` when finalized (not canceled) | Revert: "not canceled" | Foundry (H-10) |
+| 9.24 | ARM recovery + USDC refund coexistence | Both operations succeed independently | Integration + Foundry (H-10) |
 
 ---
 

@@ -30,7 +30,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [ ] **3.1-D** H-8: Proposal threshold — use eligible supply → _§3.1_
 - [ ] **3.2-A** #16: Verify steward `allowedTargets` deploy config + write test → _§3.2_
 - [ ] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
-- [ ] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
+- [x] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
 - [ ] **5.1-A** C-4: Add private key startup assertion to relayer → _§5.1_
 - [ ] **7.1-A** Run Aderyn static analysis → _§7.1_
 
@@ -240,9 +240,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 4.1 Security — Blockers
 
-- [ ] `[BLOCKER]` **H-10: Add ARM recovery path for canceled crowdfund**
-  If the crowdfund is canceled, participants get USDC refunds via `refund()`, but the pre-funded ARM tokens have no recovery path. `withdrawUnallocatedArm()` only works after `Finalized`. Add an admin withdrawal in the `Canceled` phase.
-  _Ref: Audit H-10 | `ArmadaCrowdfund.sol:372`_
+- [x] `[DONE]` **H-10: Add ARM recovery path for canceled crowdfund**
+  Added `withdrawArmAfterCancel()` callable by admin when `phase == Canceled`. Transfers entire ARM balance to treasury. Reuses `unallocatedArmWithdrawn` flag to prevent double withdrawal. Includes 7 Hardhat integration tests and 6 Foundry fuzz tests.
+  _Ref: Audit H-10 | `ArmadaCrowdfund.sol`_
 
 ### 4.2 Should Fix
 

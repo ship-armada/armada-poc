@@ -33,7 +33,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
      *
      * @param _shieldRequests Array of shield requests to process
      */
-    function shield(ShieldRequest[] calldata _shieldRequests) external override {
+    function shield(ShieldRequest[] calldata _shieldRequests) external override onlyDelegatecall {
         uint256 numRequests = _shieldRequests.length;
         require(numRequests > 0, "ShieldModule: No requests");
 
@@ -81,7 +81,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
      * @param amount Amount of USDC received (from CCTP)
      * @param data Shield data from the CCTP payload
      */
-    function processIncomingShield(uint256 amount, ShieldData calldata data) external override {
+    function processIncomingShield(uint256 amount, ShieldData calldata data) external override onlyDelegatecall {
         // Verify caller is the router (self, since we're called via delegatecall)
         // This is implicitly enforced by the router only calling this on valid CCTP messages
 

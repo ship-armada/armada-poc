@@ -80,9 +80,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
 
     // Deploy governance
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-    await votingLocker.waitForDeployment();
+    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
@@ -92,13 +90,21 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       deployer.address
     );
     await timelockController.waitForDeployment();
+    const timelockAddr = await timelockController.getAddress();
+
+    const VotingLocker = await ethers.getContractFactory("VotingLocker");
+    votingLocker = await VotingLocker.deploy(
+      await armToken.getAddress(), deployer.address, MAX_PAUSE_DURATION, timelockAddr
+    );
+    await votingLocker.waitForDeployment();
 
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
       await votingLocker.getAddress(),
       await armToken.getAddress(),
-      await timelockController.getAddress(),
-      treasuryAddr.address
+      timelockAddr,
+      treasuryAddr.address,
+      deployer.address, MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
 
@@ -107,8 +113,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
 
     // Deploy TreasuryGov (holds ARM for governance distributions)
+    // Owner is set to timelock at deployment and is immutable — governance controls the treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryGov = await ArmadaTreasuryGov.deploy(deployer.address);
+    treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
     await treasuryGov.waitForDeployment();
 
     // Send most ARM to treasury address to make quorum reachable
@@ -183,11 +190,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const seed0VotingPower = await votingLocker.getLockedBalance(claimedSeeds[0].address);
       expect(seed0VotingPower).to.equal(seed0Arm);
 
-      // 10. Transfer TreasuryGov ownership to timelock so governance can execute on it
-      await treasuryGov.transferOwnership(await timelockController.getAddress());
-
-      // Deployer creates a ParameterChange proposal to transfer ownership back
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      // 10. Create a governance proposal (treasury owner is already the timelock from deployment)
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       const proposalTx = await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -278,7 +282,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create proposal to check quorum
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -330,7 +334,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await votingLocker.connect(pooledSeed).lock(pooledBalance);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await expect(
         governor.connect(pooledSeed).propose(
           ProposalType.ParameterChange,
@@ -385,7 +389,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal (snapshot is taken at current block - 1)
       await mine(1);
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -485,7 +489,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal — snapshot is block.number - 1
       // At snapshot: Alice has voting power, Bob does not
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -529,7 +533,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await votingLocker.connect(alice).lock(aliceBal);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -570,7 +574,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await votingLocker.lock(ARM(200_000));
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("transferOwnership", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       await governor.propose(
         ProposalType.ParameterChange,
         [await treasuryGov.getAddress()],
@@ -626,9 +630,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localArmToken.waitForDeployment();
 
       // Step 2: Deploy governance stack
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      localVotingLocker = await VotingLocker.deploy(await localArmToken.getAddress());
-      await localVotingLocker.waitForDeployment();
+      const LOCAL_MAX_PAUSE = 14 * ONE_DAY;
 
       const TimelockController = await ethers.getContractFactory("TimelockController");
       localTimelockController = await TimelockController.deploy(
@@ -638,10 +640,17 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         localDeployer.address
       );
       await localTimelockController.waitForDeployment();
+      const localTlAddr = await localTimelockController.getAddress();
+
+      const VotingLocker = await ethers.getContractFactory("VotingLocker");
+      localVotingLocker = await VotingLocker.deploy(
+        await localArmToken.getAddress(), localDeployer.address, LOCAL_MAX_PAUSE, localTlAddr
+      );
+      await localVotingLocker.waitForDeployment();
 
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
       localTreasury = await ArmadaTreasuryGov.deploy(
-        await localTimelockController.getAddress()
+        localTlAddr, localDeployer.address, LOCAL_MAX_PAUSE
       );
       await localTreasury.waitForDeployment();
 
@@ -649,8 +658,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       localGovernor = await ArmadaGovernor.deploy(
         await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
-        await localTimelockController.getAddress(),
-        await localTreasury.getAddress()
+        localTlAddr,
+        await localTreasury.getAddress(),
+        localDeployer.address, LOCAL_MAX_PAUSE
       );
       await localGovernor.waitForDeployment();
 
@@ -710,7 +720,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create a proposal to get quorum value
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
       await localGovernor.propose(
         ProposalType.ParameterChange,
         [await localTreasury.getAddress()],
@@ -759,7 +769,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create proposal before claims
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
       await localGovernor.propose(
         ProposalType.ParameterChange,
         [await localTreasury.getAddress()],
@@ -889,8 +899,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       await mine(1);
 
-      // Propose: transfer treasury ownership back to deployer (demo action)
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("transferOwnership", [localDeployer.address]);
+      // Propose: set treasury steward (demo governance action)
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
       await localGovernor.propose(
         ProposalType.ParameterChange,
         [await localTreasury.getAddress()],
@@ -938,7 +948,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
         await localTimelockController.getAddress(),
-        await localTreasury.getAddress()
+        await localTreasury.getAddress(),
+        localDeployer.address, 14 * ONE_DAY
       );
       await freshGovernor.waitForDeployment();
 

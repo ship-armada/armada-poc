@@ -277,6 +277,23 @@ async function main() {
     console.log("CCTP Mode: real — skipping TokenMessenger configuration (managed by Circle)");
   }
 
+  // Configure default finality threshold for outbound unshields
+  // (Shields use per-transaction user choice; this only affects unshields via TransactModule)
+  const useFastFinality = config.cctpFinalityMode === "fast";
+
+  if (useFastFinality) {
+    console.log("Configuring CCTP fast finality defaults for outbound unshields...");
+
+    // Set default finality threshold to FAST (1000) on Hub (for outbound unshields)
+    await (await privacyPool.setDefaultFinalityThreshold(1000)).wait();
+    console.log("  Hub PrivacyPool: defaultFinalityThreshold = FAST (1000)");
+
+    console.log("");
+  } else {
+    console.log("CCTP Finality Mode: standard (unshields use finalized finality)");
+    console.log("");
+  }
+
   // Configure ArmadaYieldAdapter if yield is deployed
   const yieldFilename = getYieldDeploymentFile();
   const yieldDeployment = loadDeployment(yieldFilename);

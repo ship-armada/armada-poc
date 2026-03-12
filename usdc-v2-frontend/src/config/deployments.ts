@@ -33,6 +33,7 @@ export interface HubDeployment {
     verifierModule?: string
     shieldModule?: string
     transactModule?: string
+    hookRouter?: string
   }
   cctp?: {
     usdc?: string
@@ -88,6 +89,7 @@ export interface ClientDeployment {
   domain: number
   contracts: {
     privacyPoolClient: string
+    hookRouter?: string
   }
   cctp?: {
     usdc?: string
@@ -343,4 +345,17 @@ export function getYieldDeployment(): YieldDeployment | null {
  */
 export function getAaveDeployment(): AaveDeployment | null {
   return aaveDeployment
+}
+
+/**
+ * Get hookRouter address for a chain, read from deployment files.
+ * Returns the address or empty string if not available.
+ */
+export function getHookRouterFromDeployment(destination: 'hub' | 'client'): string {
+  if (destination === 'hub') {
+    return hubDeployment?.contracts?.hookRouter || ''
+  }
+  // Default to client-a (primary client chain)
+  const clientDeploy = clientDeployments.get('client-a')
+  return clientDeploy?.contracts?.hookRouter || ''
 }

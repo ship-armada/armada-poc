@@ -5,11 +5,12 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./IArmadaGovernance.sol";
+import "./EmergencyPausable.sol";
 
 /// @title ArmadaGovernor — Custom governance with typed proposals and token locking
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
 ///         voting via locked tokens, and timelock execution.
-contract ArmadaGovernor is ReentrancyGuard {
+contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     // ============ Types ============
 
@@ -25,6 +26,14 @@ contract ArmadaGovernor is ReentrancyGuard {
 
         // Snapshot block for voting power
         uint256 snapshotBlock;
+
+        // Eligible ARM supply at proposal creation (totalSupply minus non-voteable balances).
+        // Stored at creation time so quorum cannot shift during voting.
+        uint256 snapshotEligibleSupply;
+
+        // Quorum basis points snapshotted at proposal creation.
+        // Stored per-proposal so governance param changes don't retroactively affect in-flight proposals.
+        uint256 snapshotQuorumBps;
 
         // Vote tallies
         uint256 forVotes;
@@ -69,6 +78,19 @@ contract ArmadaGovernor is ReentrancyGuard {
     // Proposal threshold: 0.1% = 10 bps
     uint256 public constant PROPOSAL_THRESHOLD_BPS = 10;
 
+    // Bounds for governance-updatable proposal parameters
+    uint256 public constant MIN_VOTING_DELAY = 1 days;
+    uint256 public constant MAX_VOTING_DELAY = 14 days;
+    uint256 public constant MIN_VOTING_PERIOD = 1 days;
+    uint256 public constant MAX_VOTING_PERIOD = 30 days;
+    uint256 public constant MIN_EXECUTION_DELAY = 1 days;
+    uint256 public constant MAX_EXECUTION_DELAY = 14 days;
+    uint256 public constant MIN_QUORUM_BPS = 500;   // 5%
+    uint256 public constant MAX_QUORUM_BPS = 5000;  // 50%
+
+    // Succeeded proposals must be queued within this window or they expire
+    uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -83,6 +105,7 @@ contract ArmadaGovernor is ReentrancyGuard {
     event ProposalQueued(uint256 indexed proposalId, bytes32 timelockId);
     event ProposalExecuted(uint256 indexed proposalId);
     event ProposalCanceled(uint256 indexed proposalId);
+    event ProposalTypeParamsUpdated(ProposalType indexed proposalType, ProposalParams params);
 
     // ============ Constructor ============
 
@@ -90,8 +113,10 @@ contract ArmadaGovernor is ReentrancyGuard {
         address _votingLocker,
         address _armToken,
         address payable _timelock,
-        address _treasuryAddress
-    ) {
+        address _treasuryAddress,
+        address _guardian,
+        uint256 _maxPauseDuration
+    ) EmergencyPausable(_guardian, _maxPauseDuration, _timelock) {
         require(_votingLocker != address(0), "ArmadaGovernor: zero votingLocker");
         require(_armToken != address(0), "ArmadaGovernor: zero armToken");
         require(_timelock != address(0), "ArmadaGovernor: zero timelock");
@@ -145,6 +170,37 @@ contract ArmadaGovernor is ReentrancyGuard {
     /// @notice View excluded addresses for transparency
     function getExcludedFromQuorum() external view returns (address[] memory) {
         return _excludedFromQuorum;
+    }
+
+    // ============ Governance-Updatable Parameters ============
+
+    /// @notice Update proposal type parameters (timing and quorum).
+    /// @dev Only callable by the timelock (requires a governance vote). All fields are bounded
+    ///      to prevent adversarial parameter changes that could freeze or trivialize governance.
+    function setProposalTypeParams(
+        ProposalType proposalType,
+        ProposalParams calldata params
+    ) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(
+            params.votingDelay >= MIN_VOTING_DELAY && params.votingDelay <= MAX_VOTING_DELAY,
+            "ArmadaGovernor: votingDelay out of bounds"
+        );
+        require(
+            params.votingPeriod >= MIN_VOTING_PERIOD && params.votingPeriod <= MAX_VOTING_PERIOD,
+            "ArmadaGovernor: votingPeriod out of bounds"
+        );
+        require(
+            params.executionDelay >= MIN_EXECUTION_DELAY && params.executionDelay <= MAX_EXECUTION_DELAY,
+            "ArmadaGovernor: executionDelay out of bounds"
+        );
+        require(
+            params.quorumBps >= MIN_QUORUM_BPS && params.quorumBps <= MAX_QUORUM_BPS,
+            "ArmadaGovernor: quorumBps out of bounds"
+        );
+
+        proposalTypeParams[proposalType] = params;
+        emit ProposalTypeParamsUpdated(proposalType, params);
     }
 
     // ============ Proposal Lifecycle ============
@@ -207,6 +263,15 @@ contract ArmadaGovernor is ReentrancyGuard {
         p.voteEnd = p.voteStart + params.votingPeriod;
         p.executionDelay = params.executionDelay;
         p.description = description;
+
+        // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation
+        p.snapshotQuorumBps = params.quorumBps;
+        uint256 totalSupply = armToken.totalSupply();
+        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
+        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+        }
+        p.snapshotEligibleSupply = totalSupply - excludedBalance;
     }
 
     /// @notice Cast a vote on a proposal
@@ -259,7 +324,7 @@ contract ArmadaGovernor is ReentrancyGuard {
     }
 
     /// @notice Execute a queued proposal after timelock delay
-    function execute(uint256 proposalId) external payable nonReentrant {
+    function execute(uint256 proposalId) external payable nonReentrant whenNotPaused {
         require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
 
         Proposal storage p = _proposals[proposalId];
@@ -304,22 +369,21 @@ contract ArmadaGovernor is ReentrancyGuard {
         }
 
         if (p.queued) return ProposalState.Queued;
+
+        // Succeeded proposals expire if not queued within the grace period
+        if (block.timestamp > p.voteEnd + QUEUE_GRACE_PERIOD) {
+            return ProposalState.Defeated;
+        }
+
         return ProposalState.Succeeded;
     }
 
-    /// @notice Calculate quorum for a proposal: X% of ARM supply outside non-voteable addresses.
-    /// Non-voteable addresses include the treasury and any addresses registered via setExcludedAddresses
-    /// (e.g. crowdfund contract holding unclaimed ARM).
+    /// @notice Calculate quorum for a proposal: X% of eligible ARM supply snapshotted at creation.
+    /// Both eligible supply and quorumBps are frozen at proposal creation so quorum cannot
+    /// shift during voting — even if governance updates params mid-flight.
     function quorum(uint256 proposalId) public view returns (uint256) {
         Proposal storage p = _proposals[proposalId];
-        uint256 totalSupply = armToken.totalSupply();
-        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
-        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
-            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
-        }
-        uint256 eligibleSupply = totalSupply - excludedBalance;
-        uint256 quorumBps = proposalTypeParams[p.proposalType].quorumBps;
-        return (eligibleSupply * quorumBps) / 10000;
+        return (p.snapshotEligibleSupply * p.snapshotQuorumBps) / 10000;
     }
 
     /// @notice Get proposal details
@@ -331,12 +395,14 @@ contract ArmadaGovernor is ReentrancyGuard {
         uint256 forVotes,
         uint256 againstVotes,
         uint256 abstainVotes,
-        uint256 snapshotBlock
+        uint256 snapshotBlock,
+        uint256 snapshotEligibleSupply
     ) {
         Proposal storage p = _proposals[proposalId];
         return (
             p.proposer, p.proposalType, p.voteStart, p.voteEnd,
-            p.forVotes, p.againstVotes, p.abstainVotes, p.snapshotBlock
+            p.forVotes, p.againstVotes, p.abstainVotes, p.snapshotBlock,
+            p.snapshotEligibleSupply
         );
     }
 
@@ -359,8 +425,8 @@ contract ArmadaGovernor is ReentrancyGuard {
 
     function _quorumReached(uint256 proposalId) internal view returns (bool) {
         Proposal storage p = _proposals[proposalId];
-        // Abstain counts toward quorum but not majority
-        return (p.forVotes + p.abstainVotes) >= quorum(proposalId);
+        // Quorum measures total participation — all vote types count
+        return (p.forVotes + p.againstVotes + p.abstainVotes) >= quorum(proposalId);
     }
 
     function _voteSucceeded(uint256 proposalId) internal view returns (bool) {

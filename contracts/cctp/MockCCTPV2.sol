@@ -355,8 +355,8 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
 
         // Encode the full MessageV2 envelope (header + body)
         // In real CCTP, finalityThresholdExecuted is set by the attestation service.
-        // In mock, we set it to STANDARD (2000) to simulate finalized messages.
-        uint32 FINALITY_STANDARD = 2000;
+        // In mock, we honor the requested finality level to allow testing both
+        // standard (2000) and fast (1000) finality paths.
         bytes memory fullMessage = MessageV2.encode(
             localDomain,
             params.destinationDomain,
@@ -365,7 +365,7 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
             params.destinationTokenMessenger,
             params.destinationCaller,
             params.minFinalityThreshold,
-            FINALITY_STANDARD,
+            params.minFinalityThreshold,  // finalityThresholdExecuted = requested threshold
             messageBody
         );
 

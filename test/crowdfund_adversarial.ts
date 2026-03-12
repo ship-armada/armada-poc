@@ -64,6 +64,129 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
+  // 0a. Emergency Pause — Adversarial
+  // ============================================================
+
+  describe("Emergency Pause Adversarial", function () {
+    it("non-admin cannot pause", async function () {
+      await expect(
+        crowdfund.connect(allSigners[1]).pause()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+
+    it("non-admin cannot unpause", async function () {
+      await crowdfund.pause();
+      await expect(
+        crowdfund.connect(allSigners[1]).unpause()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+
+    it("double pause reverts", async function () {
+      await crowdfund.pause();
+      await expect(
+        crowdfund.pause()
+      ).to.be.revertedWith("Pausable: paused");
+    });
+
+    it("double unpause reverts", async function () {
+      await expect(
+        crowdfund.unpause()
+      ).to.be.revertedWith("Pausable: not paused");
+    });
+  });
+
+  // ============================================================
+  // 0b. Permissionless Cancel — Boundary & Edge Cases
+  // ============================================================
+
+  describe("Permissionless Cancel Boundaries", function () {
+    const THIRTY_DAYS = 30 * ONE_DAY;
+
+    it("reverts at exact boundary (commitmentEnd + FINALIZE_GRACE_PERIOD)", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      const commitmentEnd = await crowdfund.commitmentEnd();
+
+      // time.increaseTo mines a block at the given timestamp, so the next tx
+      // runs at timestamp + 1. To get block.timestamp == commitmentEnd + 30 days
+      // when permissionlessCancel() executes, we target one second earlier.
+      await time.increaseTo(commitmentEnd + BigInt(THIRTY_DAYS) - 1n);
+
+      await expect(
+        crowdfund.connect(allSigners[2]).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: grace period not elapsed");
+    });
+
+    it("succeeds at boundary + 1 second", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      const commitmentEnd = await crowdfund.commitmentEnd();
+
+      // Mine block at commitmentEnd + 30 days, so next tx runs at + 30 days + 1
+      await time.increaseTo(commitmentEnd + BigInt(THIRTY_DAYS));
+
+      await expect(crowdfund.connect(allSigners[2]).permissionlessCancel())
+        .to.emit(crowdfund, "SaleCanceled");
+
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+    });
+
+    it("admin can still finalize() normally during the grace period", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+
+      // Past commitmentEnd but within grace period
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+    });
+
+    it("reverts in Setup phase", async function () {
+      // Never started invitations, commitmentEnd is 0
+      await expect(
+        crowdfund.connect(allSigners[1]).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
+    });
+
+    it("succeeds from Phase.Commitment (after someone has committed)", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+
+      await fundAndApprove(allSigners[1], USDC(1_000));
+      await crowdfund.connect(allSigners[1]).commit(USDC(1_000));
+      expect(await crowdfund.phase()).to.equal(Phase.Commitment);
+
+      await time.increase(ONE_WEEK + THIRTY_DAYS + 1);
+      await expect(crowdfund.connect(allSigners[2]).permissionlessCancel())
+        .to.emit(crowdfund, "SaleCanceled");
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+    });
+
+    it("reverts if already canceled by admin via finalize()", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels (below MIN_SALE)
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+
+      await time.increase(THIRTY_DAYS + 1);
+      await expect(
+        crowdfund.connect(allSigners[2]).permissionlessCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
+    });
+  });
+
+  // ============================================================
   // 1. Precision & Accounting Invariants
   // ============================================================
 
@@ -239,17 +362,17 @@ describe("Crowdfund Adversarial", function () {
       expect(committed).to.equal(USDC(15_000));
     });
 
-    it("commit 1 wei over hop cap reverts", async function () {
+    it("commit over hop cap reverts", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
 
-      await fundAndApprove(allSigners[1], USDC(15_001));
+      await fundAndApprove(allSigners[1], USDC(15_010));
       await crowdfund.connect(allSigners[1]).commit(USDC(15_000));
 
-      // 1 more wei should revert
+      // $10 more (meets MIN_COMMIT but exceeds hop cap)
       await expect(
-        crowdfund.connect(allSigners[1]).commit(1n)
+        crowdfund.connect(allSigners[1]).commit(USDC(10))
       ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
     });
 
@@ -392,17 +515,27 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Canceled);
     });
 
-    it("commit 1 wei USDC (smallest possible amount)", async function () {
+    it("commit below MIN_COMMIT ($10 USDC) reverts", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
 
-      await usdc.mint(allSigners[1].address, 1n);
-      await usdc.connect(allSigners[1]).approve(await crowdfund.getAddress(), 1n);
-      await crowdfund.connect(allSigners[1]).commit(1n);
+      await fundAndApprove(allSigners[1], USDC(10));
 
+      // 1 wei reverts
+      await expect(
+        crowdfund.connect(allSigners[1]).commit(1n)
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+
+      // $9.999999 reverts
+      await expect(
+        crowdfund.connect(allSigners[1]).commit(USDC(10) - 1n)
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+
+      // Exactly $10 succeeds
+      await crowdfund.connect(allSigners[1]).commit(USDC(10));
       const [committed] = await crowdfund.getCommitment(allSigners[1].address);
-      expect(committed).to.equal(1n);
+      expect(committed).to.equal(USDC(10));
     });
 
     it("invite self reverts (self not whitelisted initially is ok, but if already whitelisted)", async function () {
@@ -414,6 +547,50 @@ describe("Crowdfund Adversarial", function () {
       await expect(
         crowdfund.connect(seed).invite(seed.address)
       ).to.be.revertedWith("ArmadaCrowdfund: already whitelisted");
+    });
+
+    it("invite reverts at exact invitationEnd (strict < boundary)", async function () {
+      const seed = allSigners[1];
+      const invitee = allSigners[2];
+      await crowdfund.addSeeds([seed.address]);
+      await crowdfund.startInvitations();
+
+      const invitationEnd = await crowdfund.invitationEnd();
+      // Warp to exactly invitationEnd — invite should fail (strict <)
+      await time.increaseTo(invitationEnd);
+      await expect(
+        crowdfund.connect(seed).invite(invitee.address)
+      ).to.be.revertedWith("ArmadaCrowdfund: not invitation window");
+    });
+
+    it("invite succeeds 1 second before invitationEnd", async function () {
+      const seed = allSigners[1];
+      const invitee = allSigners[2];
+      await crowdfund.addSeeds([seed.address]);
+      await crowdfund.startInvitations();
+
+      const invitationEnd = await crowdfund.invitationEnd();
+      // Warp to 2 seconds before invitationEnd — next tx executes at invitationEnd - 1
+      await time.increaseTo(invitationEnd - 2n);
+      await crowdfund.connect(seed).invite(invitee.address);
+
+      const p = await crowdfund.participants(invitee.address);
+      expect(p.isWhitelisted).to.be.true;
+    });
+
+    it("commit succeeds at exact invitationEnd (== commitmentStart)", async function () {
+      const seed = allSigners[1];
+      await crowdfund.addSeeds([seed.address]);
+      await crowdfund.startInvitations();
+
+      const commitmentStart = await crowdfund.commitmentStart();
+      await time.increaseTo(commitmentStart);
+
+      await fundAndApprove(seed, USDC(100));
+      await crowdfund.connect(seed).commit(USDC(100));
+
+      const [committed] = await crowdfund.getCommitment(seed.address);
+      expect(committed).to.equal(USDC(100));
     });
   });
 
@@ -748,6 +925,55 @@ describe("Crowdfund Adversarial", function () {
       await expect(
         crowdfund.connect(seeds[0]).refund()
       ).to.be.revertedWith("ArmadaCrowdfund: already refunded");
+    });
+
+    it("withdrawProceeds() is protected by nonReentrant", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      // Claim some so proceeds accrue
+      await crowdfund.connect(seeds[0]).claim();
+
+      // First withdrawal works
+      await crowdfund.withdrawProceeds();
+
+      // Second withdrawal reverts (no proceeds left)
+      await expect(
+        crowdfund.withdrawProceeds()
+      ).to.be.revertedWith("ArmadaCrowdfund: no proceeds");
+    });
+
+    it("withdrawUnallocatedArm() is protected by nonReentrant", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+      await time.increase(TWO_WEEKS + 1);
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      // First withdrawal works
+      await crowdfund.withdrawUnallocatedArm();
+
+      // Second withdrawal reverts
+      await expect(
+        crowdfund.withdrawUnallocatedArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: already withdrawn");
     });
 
     it("commit() is protected by nonReentrant", async function () {

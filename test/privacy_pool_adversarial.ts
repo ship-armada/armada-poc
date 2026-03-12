@@ -511,20 +511,20 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
-    it("Hub rejects fast finality (handleReceiveUnfinalizedMessage)", async function () {
+    it("Hub rejects handleReceiveUnfinalizedMessage from non-authorized caller", async function () {
       await expect(
         privacyPool.handleReceiveUnfinalizedMessage(
           DOMAINS.client, ethers.ZeroHash, 1000, "0x"
         )
-      ).to.be.revertedWith("PrivacyPool: Fast finality not supported");
+      ).to.be.revertedWith("PrivacyPool: Unauthorized caller");
     });
 
-    it("Client rejects fast finality (handleReceiveUnfinalizedMessage)", async function () {
+    it("Client rejects handleReceiveUnfinalizedMessage from non-authorized caller", async function () {
       await expect(
         privacyPoolClient.handleReceiveUnfinalizedMessage(
           DOMAINS.hub, ethers.ZeroHash, 1000, "0x"
         )
-      ).to.be.revertedWith("PrivacyPoolClient: Fast finality not supported");
+      ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
     });
 
     it("Client rejects message from non-Hub domain", async function () {
@@ -881,7 +881,7 @@ describe("Privacy Pool Adversarial", function () {
     it("crossChainShield with zero amount reverts", async function () {
       await expect(
         privacyPoolClient.connect(alice).crossChainShield(
-          0, 0, validNpk(),
+          0, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash
         )
@@ -892,7 +892,7 @@ describe("Privacy Pool Adversarial", function () {
       const amount = ethers.parseUnits("10", 6);
       await expect(
         privacyPoolClient.connect(alice).crossChainShield(
-          amount, amount, validNpk(),
+          amount, amount, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash
         )
@@ -918,11 +918,129 @@ describe("Privacy Pool Adversarial", function () {
 
       await expect(
         freshClient.connect(alice).crossChainShield(
-          amount, 0, validNpk(),
+          amount, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPoolClient: Hub not configured");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FAST FINALITY ACCESS CONTROL
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Fast Finality Access Control", function () {
+    it("non-owner cannot call setDefaultFinalityThreshold on PrivacyPool", async function () {
+      await expect(
+        privacyPool.connect(attacker).setDefaultFinalityThreshold(1000)
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
+
+    it("non-owner cannot call setDefaultFinalityThreshold on PrivacyPoolClient", async function () {
+      await expect(
+        privacyPoolClient.connect(attacker).setDefaultFinalityThreshold(1000)
+      ).to.be.revertedWith("PrivacyPoolClient: Only owner");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPool (0)", async function () {
+      await expect(
+        privacyPool.setDefaultFinalityThreshold(0)
+      ).to.be.revertedWith("PrivacyPool: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPool (500)", async function () {
+      await expect(
+        privacyPool.setDefaultFinalityThreshold(500)
+      ).to.be.revertedWith("PrivacyPool: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPool (1500)", async function () {
+      await expect(
+        privacyPool.setDefaultFinalityThreshold(1500)
+      ).to.be.revertedWith("PrivacyPool: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPool (3000)", async function () {
+      await expect(
+        privacyPool.setDefaultFinalityThreshold(3000)
+      ).to.be.revertedWith("PrivacyPool: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPoolClient (0)", async function () {
+      await expect(
+        privacyPoolClient.setDefaultFinalityThreshold(0)
+      ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPoolClient (999)", async function () {
+      await expect(
+        privacyPoolClient.setDefaultFinalityThreshold(999)
+      ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPoolClient (1001)", async function () {
+      await expect(
+        privacyPoolClient.setDefaultFinalityThreshold(1001)
+      ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
+    });
+
+    it("cannot set invalid finality threshold on PrivacyPoolClient (type(uint32).max)", async function () {
+      await expect(
+        privacyPoolClient.setDefaultFinalityThreshold(4294967295)
+      ).to.be.revertedWith("PrivacyPoolClient: Invalid threshold");
+    });
+
+    it("unauthorized caller cannot call handleReceiveUnfinalizedMessage on PrivacyPool", async function () {
+      await expect(
+        privacyPool.connect(attacker).handleReceiveUnfinalizedMessage(
+          DOMAINS.client,
+          ethers.ZeroHash,
+          1000,
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWith("PrivacyPool: Unauthorized caller");
+    });
+
+    it("unauthorized caller cannot call handleReceiveUnfinalizedMessage on PrivacyPoolClient", async function () {
+      await expect(
+        privacyPoolClient.connect(attacker).handleReceiveUnfinalizedMessage(
+          DOMAINS.hub,
+          ethers.ZeroHash,
+          1000,
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWith("PrivacyPoolClient: Unauthorized caller");
+    });
+
+    it("finality below FAST (1000) rejected on PrivacyPool", async function () {
+      const tokenMessengerAddr = await privacyPool.tokenMessenger();
+      const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
+      await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
+
+      await expect(
+        privacyPool.connect(tokenMessengerSigner).handleReceiveUnfinalizedMessage(
+          DOMAINS.client,
+          ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32),
+          999, // Below FAST
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWith("PrivacyPool: Finality below minimum");
+    });
+
+    it("finality below FAST (1000) rejected on PrivacyPoolClient", async function () {
+      const tokenMessengerAddr = await privacyPoolClient.tokenMessenger();
+      const tokenMessengerSigner = await ethers.getImpersonatedSigner(tokenMessengerAddr);
+      await ethers.provider.send("hardhat_setBalance", [tokenMessengerAddr, "0xDE0B6B3A7640000"]);
+
+      await expect(
+        privacyPoolClient.connect(tokenMessengerSigner).handleReceiveUnfinalizedMessage(
+          DOMAINS.hub,
+          ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32),
+          999,
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWith("PrivacyPoolClient: Finality below minimum");
     });
   });
 });

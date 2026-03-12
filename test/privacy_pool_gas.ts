@@ -372,7 +372,7 @@ describe("Privacy Pool Gas Profiling", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("cctp-key"));
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        amount, 0, npk, encBundle, shieldKey
+        amount, 0, 0, npk, encBundle, shieldKey
       );
       const receipt = await tx.wait();
       recordGas("crossChainShield (client-side)", Number(receipt!.gasUsed));

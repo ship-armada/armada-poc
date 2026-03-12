@@ -77,6 +77,8 @@ export interface NetworkConfig {
     treasury: string;
     crowdfund: string;
   };
+  /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
+  cctpFinalityMode: "fast" | "standard";
 }
 
 // ============================================================================
@@ -193,7 +195,9 @@ export function getNetworkConfig(): NetworkConfig {
     },
     aaveYieldBps: numEnv("AAVE_YIELD_BPS", 5000000),
     timelockDelay: numEnv("TIMELOCK_DELAY", 172800),
-    stewardDelay: numEnv("STEWARD_DELAY", 86400),
+    // Steward action delay must be >= 120% of governance cycle (2d + 5d + 2d = 9d = 777600s)
+    // Default: 933120s = 10.8 days (exactly 120% of 9-day cycle)
+    stewardDelay: numEnv("STEWARD_DELAY", 933120),
     relayerPort: numEnv("RELAYER_PORT", 3001),
     ethUsdcPrice: numEnv("ETH_USDC_PRICE", 2000),
     treasuryAddress: process.env.TREASURY_ADDRESS ?? "",
@@ -201,6 +205,7 @@ export function getNetworkConfig(): NetworkConfig {
       treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "65000000"),
       crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),
     },
+    cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
   };
 
   return _cachedConfig;

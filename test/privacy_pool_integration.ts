@@ -384,6 +384,7 @@ describe("Privacy Pool Integration", function () {
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         0,               // maxFee = 0 (no CCTP fee for this test)
+        0,               // minFinalityThreshold = 0 (use contract default)
         npk,
         encryptedBundle,
         shieldKey,
@@ -428,6 +429,7 @@ describe("Privacy Pool Integration", function () {
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         MAX_FEE,         // maxFee = 1 USDC (CCTP relayer fee)
+        0,               // minFinalityThreshold = 0 (use contract default)
         npk,
         encryptedBundle,
         shieldKey,

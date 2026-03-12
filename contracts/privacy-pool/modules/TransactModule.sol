@@ -36,7 +36,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      *
      * @param _transactions Array of transactions to process
      */
-    function transact(Transaction[] calldata _transactions) external override {
+    function transact(Transaction[] calldata _transactions) external override onlyDelegatecall {
         require(_transactions.length > 0, "TransactModule: No transactions");
 
         // Calculate total commitments (excluding unshield outputs)
@@ -108,7 +108,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         uint32 destinationDomain,
         address finalRecipient,
         uint256 maxFee
-    ) external override returns (uint64 nonce) {
+    ) external override onlyDelegatecall returns (uint64 nonce) {
         // Validate inputs
         _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient);
 
@@ -189,24 +189,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             IERC20(usdc).safeTransfer(treasury, fee);
         }
 
-        // Encode CCTP payload
-        bytes memory hookData = CCTPPayloadLib.encodeUnshield(
-            UnshieldData({ recipient: finalRecipient })
-        );
-
-        // Burn via CCTP
-        IERC20(usdc).safeApprove(tokenMessenger, base);
-
-        ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
-            base,
-            destinationDomain,
-            remotePools[destinationDomain],
-            usdc,
-            remoteHookRouters[destinationDomain],
-            maxFee,
-            CCTPFinality.STANDARD,
-            hookData
-        );
+        // Burn via CCTP — cache storage reads to avoid stack-too-deep
+        _doCCTPBurn(base, destinationDomain, finalRecipient, maxFee);
         nonce = 0; // CCTP V2 depositForBurnWithHook does not return nonce
 
         // Emit events
@@ -215,6 +199,37 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
 
         // Update last event block
         lastEventBlock = block.number;
+    }
+
+    /**
+     * @notice Isolated CCTP burn to avoid stack-too-deep in _executeCCTPBurn
+     */
+    function _doCCTPBurn(
+        uint120 base,
+        uint32 destinationDomain,
+        address finalRecipient,
+        uint256 maxFee
+    ) internal {
+        IERC20(usdc).safeApprove(tokenMessenger, base);
+
+        bytes memory hookData = CCTPPayloadLib.encodeUnshield(
+            UnshieldData({ recipient: finalRecipient })
+        );
+
+        uint32 finality = defaultFinalityThreshold > 0
+            ? defaultFinalityThreshold
+            : CCTPFinality.STANDARD;
+
+        ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
+            base,
+            destinationDomain,
+            remotePools[destinationDomain],
+            usdc,
+            remoteHookRouters[destinationDomain],
+            maxFee,
+            finality,
+            hookData
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════════════

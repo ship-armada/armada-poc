@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "armada": {
+      "command": "npx",
+      "args": ["ts-node", "--project", "tsconfig.json", "mcp-server/src/server.ts"],
+      "env": {
+        "DEPLOY_ENV": "local"
+      }
+    }
+  }
+}

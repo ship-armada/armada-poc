@@ -16,7 +16,7 @@ import {
   type ChainConfig,
 } from '@/config/deployments'
 import { isRelayerEnabled, getRelayerFee } from '@/services/relayer'
-import { getRelayerAddress, getHookRouterAddress } from '@/config/networkConfig'
+import { getRelayerAddress, getHookRouterAddress, isCCTPFastMode } from '@/config/networkConfig'
 
 // ============ Contract ABIs ============
 
@@ -35,7 +35,7 @@ const PRIVACY_POOL_ABI = [
 
 // PrivacyPoolClient ABI - used for cross-chain shield from client chains
 const PRIVACY_POOL_CLIENT_ABI = [
-  'function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey) external returns (uint64)',
+  'function crossChainShield(uint256 amount, uint256 maxFee, uint32 minFinalityThreshold, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey) external returns (uint64)',
   'event CrossChainShieldInitiated(uint256 amount, bytes32 indexed npk, uint64 nonce)',
 ]
 
@@ -293,10 +293,16 @@ export async function executeCrossChainShield(
     maxFee = await getRelayerFee('crossChainShield')
   }
 
-  // destinationCaller is now enforced at contract level (hubHookRouter)
+  // User's finality choice: FAST (1000) for ~8-20s or STANDARD (2000) for ~15-19 min
+  // Default to FAST when fast mode is enabled, 0 otherwise (contract falls back to STANDARD)
+  // destinationCaller is enforced at contract level (hubHookRouter)
+  const minFinalityThreshold = isCCTPFastMode() ? 1000 : 0
+
+
   const tx = await client.crossChainShield(
     params.amount,
     maxFee,
+    minFinalityThreshold,
     params.npk,
     params.encryptedBundle,
     params.shieldKey,

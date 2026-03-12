@@ -78,16 +78,13 @@ async function main() {
   const armTokenAddress = await armToken.getAddress();
   console.log(`   ArmadaToken: ${armTokenAddress}`);
 
-  // 2. Deploy VotingLocker
-  console.log("2. Deploying VotingLocker...");
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(armTokenAddress, nm.override());
-  await votingLocker.deploymentTransaction()!.wait();
-  const votingLockerAddress = await votingLocker.getAddress();
-  console.log(`   VotingLocker: ${votingLockerAddress}`);
+  // Emergency pause config: deployer as initial guardian, 14 day max pause
+  // TODO: Transfer guardian to a dedicated multisig after deployment
+  const guardianAddress = deployer.address;
+  const maxPauseDuration = 14 * 24 * 60 * 60; // 14 days
 
-  // 3. Deploy TimelockController
-  console.log("3. Deploying TimelockController...");
+  // 2. Deploy TimelockController (needed before VotingLocker for pauseTimelock)
+  console.log("2. Deploying TimelockController...");
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(
     timelockDelay, [], [], deployer.address, nm.override()
@@ -96,10 +93,22 @@ async function main() {
   const timelockAddress = await timelock.getAddress();
   console.log(`   TimelockController: ${timelockAddress}`);
 
+  // 3. Deploy VotingLocker
+  console.log("3. Deploying VotingLocker...");
+  const VotingLocker = await ethers.getContractFactory("VotingLocker");
+  const votingLocker = await VotingLocker.deploy(
+    armTokenAddress, guardianAddress, maxPauseDuration, timelockAddress, nm.override()
+  );
+  await votingLocker.deploymentTransaction()!.wait();
+  const votingLockerAddress = await votingLocker.getAddress();
+  console.log(`   VotingLocker: ${votingLockerAddress}`);
+
   // 4. Deploy ArmadaTreasuryGov
   console.log("4. Deploying ArmadaTreasuryGov...");
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-  const treasury = await ArmadaTreasuryGov.deploy(timelockAddress, nm.override());
+  const treasury = await ArmadaTreasuryGov.deploy(
+    timelockAddress, guardianAddress, maxPauseDuration, nm.override()
+  );
   await treasury.deploymentTransaction()!.wait();
   const treasuryAddress = await treasury.getAddress();
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
@@ -108,7 +117,8 @@ async function main() {
   console.log("5. Deploying ArmadaGovernor...");
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governor = await ArmadaGovernor.deploy(
-    votingLockerAddress, armTokenAddress, timelockAddress, treasuryAddress, nm.override()
+    votingLockerAddress, armTokenAddress, timelockAddress, treasuryAddress,
+    guardianAddress, maxPauseDuration, nm.override()
   );
   await governor.deploymentTransaction()!.wait();
   const governorAddress = await governor.getAddress();
@@ -117,7 +127,10 @@ async function main() {
   // 6. Deploy TreasurySteward
   console.log("6. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-  const steward = await TreasurySteward.deploy(timelockAddress, treasuryAddress, stewardDelay, nm.override());
+  const steward = await TreasurySteward.deploy(
+    timelockAddress, treasuryAddress, governorAddress, stewardDelay,
+    guardianAddress, maxPauseDuration, nm.override()
+  );
   await steward.deploymentTransaction()!.wait();
   const stewardAddress = await steward.getAddress();
   console.log(`   TreasurySteward: ${stewardAddress}`);

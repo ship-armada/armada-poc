@@ -42,6 +42,9 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      */
     event HubPoolSet(uint32 hubDomain, bytes32 hubPool);
 
+    /// @notice Emitted when default finality threshold is changed
+    event DefaultFinalityThresholdSet(uint32 threshold);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -76,6 +79,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      *
      * @param amount Amount of USDC to shield
      * @param maxFee Maximum CCTP relayer fee (deducted at protocol level, 0 = no fee)
+     * @param minFinalityThreshold Finality level: FAST (1000), STANDARD (2000), or 0 for default
      * @param npk Note public key
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption
@@ -84,6 +88,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
     function crossChainShield(
         uint256 amount,
         uint256 maxFee,
+        uint32 minFinalityThreshold,
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey
@@ -111,6 +116,12 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      * @param _hubHookRouter Hub CCTPHookRouter address (as bytes32 for CCTP compatibility)
      */
     function setHubHookRouter(bytes32 _hubHookRouter) external;
+
+    /**
+     * @notice Set the default finality threshold for outbound CCTP burns
+     * @param _threshold Finality threshold (FAST=1000 or STANDARD=2000)
+     */
+    function setDefaultFinalityThreshold(uint32 _threshold) external;
 
     // ══════════════════════════════════════════════════════════════════════════
     // VIEW FUNCTIONS

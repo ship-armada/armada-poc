@@ -4,13 +4,14 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 import "./IArmadaCrowdfund.sol";
 
 /// @title ArmadaCrowdfund — Word-of-mouth whitelist crowdfund with hop-based allocation
 /// @notice Implements the full crowdfund lifecycle: seed management, invitation chains,
 ///         USDC commitment escrow, deterministic allocation with pro-rata scaling and rollover,
 ///         elastic expansion, and refund mechanism.
-contract ArmadaCrowdfund is ReentrancyGuard {
+contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ============ Constants ============
@@ -27,6 +28,8 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     uint256 public constant INVITATION_DURATION = 14 days;
     uint256 public constant COMMITMENT_DURATION = 7 days;
+    uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
+    uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
 
     // ============ Immutable ============
 
@@ -65,6 +68,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     uint256 public totalAllocatedUsdc;   // USDC (6 dec) — hop-level upper bound
     uint256[3] public finalReserves;     // hop reserves after rollover (stored at finalization)
     uint256[3] public finalDemands;      // hop demands (stored at finalization)
+    uint256 public treasuryLeftoverUsdc; // USDC (6 dec) — unallocated reserve that goes to treasury
 
     // Lazy evaluation accumulators (tracked during claims)
     uint256 public totalProceedsAccrued; // exact sum of allocUsdc from claims
@@ -156,9 +160,9 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     // ============ Invitation Phase ============
 
     /// @notice Invite an address to participate at (your hop + 1)
-    function invite(address invitee) external {
+    function invite(address invitee) external whenNotPaused {
         require(
-            block.timestamp >= invitationStart && block.timestamp <= invitationEnd,
+            block.timestamp >= invitationStart && block.timestamp < invitationEnd,
             "ArmadaCrowdfund: not invitation window"
         );
 
@@ -190,15 +194,20 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     // ============ Commitment Phase ============
 
     /// @notice Commit USDC to the crowdfund
-    function commit(uint256 amount) external nonReentrant {
+    function commit(uint256 amount) external nonReentrant whenNotPaused {
         require(
             block.timestamp >= commitmentStart && block.timestamp <= commitmentEnd,
             "ArmadaCrowdfund: not commitment window"
         );
 
+        // Lazy phase transition: first commit advances phase from Invitation
+        if (phase == Phase.Invitation) {
+            phase = Phase.Commitment;
+        }
+
         Participant storage p = participants[msg.sender];
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
-        require(amount > 0, "ArmadaCrowdfund: zero amount");
+        require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
 
         uint8 hop = p.hop;
         require(
@@ -224,10 +233,21 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     // ============ Finalization ============
 
-    // TODO: finalize() is onlyAdmin with no permissionless fallback. If admin is
-    // unavailable after commitmentEnd, participant funds are permanently locked.
-    // Add a permissionlessCancel() that anyone can call after a grace period
-    // (e.g. commitmentEnd + 30 days) to set phase = Canceled and unlock refunds.
+    /// @notice Anyone can cancel the sale if admin hasn't finalized within the grace period
+    /// @dev Prevents permanent fund lockup if admin key is lost or admin is unresponsive
+    function permissionlessCancel() external {
+        require(
+            phase == Phase.Invitation || phase == Phase.Commitment,
+            "ArmadaCrowdfund: not in active phase"
+        );
+        require(
+            block.timestamp > commitmentEnd + FINALIZE_GRACE_PERIOD,
+            "ArmadaCrowdfund: grace period not elapsed"
+        );
+        phase = Phase.Canceled;
+        emit SaleCanceled(totalCommitted);
+    }
+
     /// @notice Finalize the crowdfund: compute allocations or cancel
     function finalize() external onlyAdmin nonReentrant {
         require(block.timestamp > commitmentEnd, "ArmadaCrowdfund: commitment not ended");
@@ -311,6 +331,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
         totalAllocatedUsdc = totalAllocUsdc_;
         totalAllocated = totalAllocArm_;
+        treasuryLeftoverUsdc = treasuryLeftover;
         phase = Phase.Finalized;
 
         emit SaleFinalized(saleSize, totalAllocUsdc_, totalAllocArm_, treasuryLeftover);
@@ -363,7 +384,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
 
     /// @notice Admin withdraws USDC sale proceeds to treasury
     /// @dev Proceeds accrue as participants claim. Can be called multiple times.
-    function withdrawProceeds() external onlyAdmin {
+    function withdrawProceeds() external onlyAdmin nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
 
         uint256 available = totalProceedsAccrued - proceedsWithdrawnAmount;
@@ -378,7 +399,7 @@ contract ArmadaCrowdfund is ReentrancyGuard {
     /// @notice Admin withdraws unallocated ARM tokens to treasury
     /// @dev Uses hop-level totalAllocated (upper bound) minus claimed ARM to compute unallocated.
     ///      Safe: unallocated = initialFunding - totalAllocated_upper >= 0.
-    function withdrawUnallocatedArm() external onlyAdmin {
+    function withdrawUnallocatedArm() external onlyAdmin nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!unallocatedArmWithdrawn, "ArmadaCrowdfund: already withdrawn");
 
@@ -392,6 +413,18 @@ contract ArmadaCrowdfund is ReentrancyGuard {
         }
 
         emit UnallocatedArmWithdrawn(treasury, unallocated);
+    }
+
+    // ============ Emergency Pause ============
+
+    /// @notice Admin pauses invite() and commit() in case of emergency
+    function pause() external onlyAdmin {
+        _pause();
+    }
+
+    /// @notice Admin unpauses to resume normal operations
+    function unpause() external onlyAdmin {
+        _unpause();
     }
 
     // ============ View Functions ============

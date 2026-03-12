@@ -56,7 +56,9 @@ describe("Governance Integration", function () {
   const ALICE_AMOUNT = ethers.parseUnits("20000000", ARM_DECIMALS); // 20M
   const BOB_AMOUNT = ethers.parseUnits("15000000", ARM_DECIMALS); // 15M
   const USDC_DECIMALS = 6;
-  const STEWARD_ACTION_DELAY = ONE_DAY; // 1 day veto window for tests
+  // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
+  // 9 days * 1.2 = 10.8 days = 933120 seconds
+  const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
 
   // Helper: mine a block so checkpoint reads work
   async function mineBlock() {
@@ -112,12 +114,7 @@ describe("Governance Integration", function () {
     armToken = await ArmadaToken.deploy(deployer.address);
     await armToken.waitForDeployment();
 
-    // 2. Deploy VotingLocker
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(await armToken.getAddress());
-    await votingLocker.waitForDeployment();
-
-    // 3. Deploy TimelockController (minDelay = 2 days, deployer as temp admin)
+    // 2. Deploy TimelockController (minDelay = 2 days, deployer as temp admin)
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       TWO_DAYS,
@@ -126,10 +123,28 @@ describe("Governance Integration", function () {
       deployer.address // admin
     );
     await timelockController.waitForDeployment();
+    const timelockAddr = await timelockController.getAddress();
+
+    // Emergency pause config: deployer as guardian, 14 day max pause duration
+    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
+
+    // 3. Deploy VotingLocker
+    const VotingLocker = await ethers.getContractFactory("VotingLocker");
+    votingLocker = await VotingLocker.deploy(
+      await armToken.getAddress(),
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION,
+      timelockAddr             // pauseTimelock
+    );
+    await votingLocker.waitForDeployment();
 
     // 4. Deploy ArmadaTreasuryGov (owned by timelock)
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(await timelockController.getAddress());
+    treasury = await ArmadaTreasuryGov.deploy(
+      timelockAddr,
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION
+    );
     await treasury.waitForDeployment();
 
     // 5. Deploy ArmadaGovernor
@@ -137,17 +152,22 @@ describe("Governance Integration", function () {
     governor = await ArmadaGovernor.deploy(
       await votingLocker.getAddress(),
       await armToken.getAddress(),
-      await timelockController.getAddress(),
-      await treasury.getAddress()
+      timelockAddr,
+      await treasury.getAddress(),
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION
     );
     await governor.waitForDeployment();
 
     // 6. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
-      await timelockController.getAddress(),
+      timelockAddr,
       await treasury.getAddress(),
-      STEWARD_ACTION_DELAY
+      await governor.getAddress(),
+      STEWARD_ACTION_DELAY,
+      deployer.address,        // guardian
+      MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
 
@@ -675,15 +695,10 @@ describe("Governance Integration", function () {
       );
       await time.increase(STEWARD_ACTION_DELAY + 1);
 
-      // Execution reverts because treasury rejects the over-budget spend.
-      // The nested revert (steward wrapping treasury error) can't be decoded by
-      // Hardhat chai matchers, so we verify the revert manually.
-      try {
-        await stewardContract.connect(dave).executeAction(await stewardContract.actionCount());
-        expect.fail("Expected executeAction to revert");
-      } catch (err: any) {
-        expect(err.message).to.include("execution failed");
-      }
+      // Execution reverts — the original treasury revert reason is bubbled up.
+      await expect(
+        stewardContract.connect(dave).executeAction(await stewardContract.actionCount())
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
     });
 
     it("should reject steward spending after term expires", async function () {
@@ -763,6 +778,139 @@ describe("Governance Integration", function () {
 
       // Now execute succeeds
       await stewardContract.connect(dave).executeAction(1);
+      expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
+    });
+
+    it("should reject new steward executing previous steward's actions", async function () {
+      // Elect Dave as first steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Elect Carol as new steward (replaces Dave)
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        stewardContract.interface.encodeFunctionData("electSteward", [carol.address]),
+      ];
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.StewardElection, targets, values, calldatas,
+        "Elect Carol as steward"
+      );
+      expect(await stewardContract.currentSteward()).to.equal(carol.address);
+
+      // Wait for action delay to elapse
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Carol (new steward) tries to execute Dave's action — should fail
+      await expect(
+        stewardContract.connect(carol).executeAction(actionId)
+      ).to.be.revertedWith("TreasurySteward: not proposed by current steward");
+    });
+
+    it("should allow steward to cancel own proposed action", async function () {
+      // Elect Dave as steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Dave cancels the action
+      await expect(
+        stewardContract.connect(dave).cancelAction(actionId)
+      ).to.emit(stewardContract, "ActionCanceled").withArgs(actionId);
+
+      // Wait for action delay
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Action should be blocked from execution (vetoed flag set)
+      await expect(
+        stewardContract.connect(dave).executeAction(actionId)
+      ).to.be.revertedWith("TreasurySteward: vetoed");
+    });
+
+    it("should reject new steward canceling previous steward's action", async function () {
+      // Elect Dave as steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Elect Carol as new steward
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        stewardContract.interface.encodeFunctionData("electSteward", [carol.address]),
+      ];
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.StewardElection, targets, values, calldatas,
+        "Elect Carol as steward"
+      );
+
+      // Carol tries to cancel Dave's action — should fail
+      await expect(
+        stewardContract.connect(carol).cancelAction(actionId)
+      ).to.be.revertedWith("TreasurySteward: not your action");
+    });
+
+    it("should allow steward to execute own actions after re-election", async function () {
+      // Elect Dave as steward
+      await electDaveSteward();
+
+      // Dave proposes an action
+      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
+        await usdc.getAddress(), carol.address, spendAmount
+      ]);
+      await stewardContract.connect(dave).proposeAction(
+        await treasury.getAddress(), spendData, 0
+      );
+      const actionId = await stewardContract.actionCount();
+
+      // Re-elect Dave (same person, new term)
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
+      ];
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.StewardElection, targets, values, calldatas,
+        "Re-elect Dave"
+      );
+
+      // Wait for action delay
+      await time.increase(STEWARD_ACTION_DELAY + 1);
+
+      // Dave can still execute his own action after re-election
+      await stewardContract.connect(dave).executeAction(actionId);
       expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
     });
   });

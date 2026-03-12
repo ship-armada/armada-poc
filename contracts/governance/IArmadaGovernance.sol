@@ -38,6 +38,7 @@ struct StewardAction {
     uint256 timestamp;
     bool executed;
     bool vetoed;
+    address proposedBy;
 }
 
 // ========== Interfaces ==========
@@ -45,4 +46,10 @@ struct StewardAction {
 interface IVotingLocker {
     function getPastLockedBalance(address account, uint256 blockNumber) external view returns (uint256);
     function totalLocked() external view returns (uint256);
+}
+
+interface IArmadaGovernorTiming {
+    function proposalTypeParams(ProposalType proposalType) external view returns (
+        uint256 votingDelay, uint256 votingPeriod, uint256 executionDelay, uint256 quorumBps
+    );
 }

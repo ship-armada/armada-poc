@@ -18,6 +18,23 @@ import "../../railgun/logic/Globals.sol";
  */
 abstract contract PrivacyPoolStorage {
     // ══════════════════════════════════════════════════════════════════════════
+    // DELEGATECALL GUARD
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @notice The address of the contract itself, set at deploy time (immutable, stored in bytecode)
+    /// @dev Used by onlyDelegatecall to distinguish direct calls from delegatecalls.
+    ///      When called via delegatecall, address(this) is the caller (PrivacyPool router),
+    ///      not the module — so address(this) != _self and the check passes.
+    ///      When called directly on the module, address(this) == _self and it reverts.
+    address private immutable _self = address(this);
+
+    /// @notice Ensures the function is only callable via delegatecall (not directly)
+    modifier onlyDelegatecall() {
+        require(address(this) != _self, "PrivacyPoolStorage: Direct call not allowed");
+        _;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // MODULE ADDRESSES
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -144,6 +161,10 @@ abstract contract PrivacyPoolStorage {
 
     /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
     address public hookRouter;
+
+    /// @notice Default finality threshold for outbound CCTP burns (STANDARD=2000, FAST=1000)
+    /// @dev Used by TransactModule for cross-chain unshields. Shields use per-transaction choice.
+    uint32 public defaultFinalityThreshold;
 
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE

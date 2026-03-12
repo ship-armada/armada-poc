@@ -9,6 +9,7 @@
 
 import { NetworkName } from '@railgun-community/shared-models'
 import { ethers } from 'ethers'
+import { getHookRouterFromDeployment } from './deployments'
 
 export type NetworkMode = 'local' | 'sepolia'
 
@@ -155,10 +156,38 @@ export function getRailgunNetworkNameString(): string {
 // ── CCTP Hook Router ──
 
 export function getHookRouterAddress(destination: 'hub' | 'client' = 'hub'): string {
-  if (destination === 'hub') {
-    return (import.meta.env.VITE_HUB_HOOK_ROUTER as string) || ethers.ZeroAddress
-  }
-  return (import.meta.env.VITE_CLIENT_HOOK_ROUTER as string) || ethers.ZeroAddress
+  return getHookRouterFromDeployment(destination) || ethers.ZeroAddress
+}
+
+// ── CCTP Finality Mode ──
+
+/**
+ * Whether CCTP fast finality mode is enabled.
+ * When true, cross-chain operations use confirmed-level finality (~8-20s)
+ * instead of finalized-level (~15-19 min), at a cost of 1-1.3 bps fee.
+ */
+export function isCCTPFastMode(): boolean {
+  const mode = import.meta.env.VITE_CCTP_FINALITY_MODE as string | undefined
+  if (mode === 'standard') return false
+  // Default to fast in both local and sepolia modes
+  return true
+}
+
+/**
+ * Attestation polling timeout based on finality mode.
+ * Fast mode: 3 minutes (attestation arrives in ~8-20 seconds).
+ * Standard mode: 30 minutes (attestation arrives in ~15-19 minutes).
+ */
+export function getAttestationTimeoutMs(): number {
+  return isCCTPFastMode() ? 180_000 : 1_800_000
+}
+
+/**
+ * Relay detection timeout based on finality mode.
+ * Fast mode: 3 minutes. Standard mode: 30 minutes.
+ */
+export function getRelayTimeoutMs(): number {
+  return isCCTPFastMode() ? 180_000 : 1_800_000
 }
 
 // ── Relayer Config ──

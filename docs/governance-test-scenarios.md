@@ -77,21 +77,23 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 
 ## E. ArmadaGovernor — State Transitions & Timing
 
+All 13 E-series scenarios covered by `test-foundry/GovernorLifecycle.t.sol`.
+
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| E1 | Check state at each lifecycle stage: Pending → Active → Succeeded → Queued → Executed | Each transition happens at correct timestamp |
-| E2 | Proposal passes, sits in Succeeded state for months, then queue | Currently succeeds (no expiry — bug #22) |
-| E3 | Cancel while Pending | State → Canceled |
-| E4 | Cancel while Active | Revert: "not pending" |
-| E5 | Cancel while Succeeded/Queued/Executed | Revert: "not pending" |
-| E6 | Non-proposer tries to cancel | Revert: "not proposer" |
-| E7 | Queue a Defeated proposal | Revert: "not succeeded" |
-| E8 | Queue an already-Queued proposal | Timelock reverts (already scheduled) |
-| E9 | Execute before timelock delay | Timelock reverts |
-| E10 | Execute already-Executed proposal | Revert: "not queued" |
-| E11 | Execute proposal whose underlying call reverts | Revert: "TimelockController: underlying transaction reverted" |
-| E12 | Two proposals queued simultaneously with different execution delays | Each should execute after its own delay |
-| E13 | Proposal with non-zero ETH value in `values[]` | Caller must send matching `msg.value` to `execute()` |
+| E1 | [x] Check state at each lifecycle stage: Pending → Active → Succeeded → Queued → Executed | Each transition happens at correct timestamp |
+| E2 | [x] Proposal passes, sits in Succeeded state for 13 days, then queue | **FIXED**: Succeeded proposals expire after QUEUE_GRACE_PERIOD (14 days). Queuing within grace period works. |
+| E3 | [x] Cancel while Pending | State → Canceled |
+| E4 | [x] Cancel while Active | Revert: "not pending" |
+| E5 | [x] Cancel while Succeeded/Queued/Executed | Revert: "not pending" |
+| E6 | [x] Non-proposer tries to cancel | Revert: "not proposer" |
+| E7 | [x] Queue a Defeated proposal | Revert: "not succeeded" |
+| E8 | [x] Queue an already-Queued proposal | Revert: "not succeeded" (state is Queued, not Succeeded) |
+| E9 | [x] Execute before timelock delay | TimelockController reverts |
+| E10 | [x] Execute already-Executed proposal | Revert: "not queued" |
+| E11 | [x] Execute proposal whose underlying call reverts | TimelockController reverts |
+| E12 | [x] Two proposals queued simultaneously | Both execute independently after shared delay |
+| E13 | [x] Proposal with non-zero ETH value in `values[]` | Executes when timelock has sufficient ETH balance |
 
 ## F. ArmadaTreasuryGov — Distributions
 
@@ -216,7 +218,7 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 | M5 | **Proposal spam**: lock minimum threshold, create many junk proposals | All succeed; wastes voter attention but costs gas |
 | M6 | **Steward arbitrary call**: propose action targeting `treasury.transferOwnership(steward)` | Executes if not vetoed in time (#16) |
 | M7 | **Griefing via claim**: create claim for attacker, attacker drains treasury via exercise at worst time | Claim is governance-approved, but timing of exercise is uncontrolled |
-| M8 | **Zombie proposal**: pass a proposal, wait 6 months, queue and execute | Works — no expiry (#22) |
+| M8 | [x] **Zombie proposal**: pass a proposal, wait past QUEUE_GRACE_PERIOD | **FIXED**: Proposal transitions to Defeated after 14-day grace period. Exact boundary and fuzz tested in `GovernorLifecycle.t.sol`. |
 | M9 | **Cancel as censorship**: proposer creates proposal to gain support, then cancels before voting starts | Proposer-only cancel during Pending enables this |
 | M10 | **Quorum grief via treasury donation**: donate ARM to treasury to shrink eligible supply and raise effective quorum for all proposals | Works — anyone can transfer ARM to treasury |
 

@@ -39,7 +39,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] **3.2-C** #19: Write regression test — snapshot quorum doesn't shift mid-vote → _§3.2_
 - [ ] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
 - [ ] **4.3-A** Cover crowdfund scenarios: cancel+ARM recovery, elastic expansion, permissionlessCancel → _§4.3_
-- [ ] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
+- [x] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
 - [ ] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
 - [ ] Run `npm run test:all` — all Hardhat tests pass
 - [ ] Run `npm run test:forge` — all Foundry tests pass
@@ -118,9 +118,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 
 ### 1.3 Test Coverage
 
-- [ ] `[SHOULD]` **Add Foundry invariant: PrivacyPool USDC balance = sum of unspent commitments**
-  No on-chain assertion links pool USDC balance to Merkle state. Add invariant test: `pool.balance == totalShielded - totalUnshielded - totalFees`.
-  _Ref: `reports/cross-contract-invariants.md` Gap #1_
+- [x] `[DONE]` **Add Foundry invariant: PrivacyPool USDC balance = sum of unspent commitments**
+  6 invariants in `test-foundry/PrivacyPoolBalanceInvariant.t.sol`: INV-B1 (pool balance equation), INV-B2 (total USDC conservation across pool + treasury + recipients), INV-B3 (treasury fee accumulation), INV-B4 (pool solvency), INV-B5a/b (fee math consistency for shield and unshield). Handler exercises both `shieldRandom` and `unshieldRandom` with 50/50 call distribution.
+  _Ref: `reports/cross-contract-invariants.md` Gap #1 | `test-foundry/PrivacyPoolBalanceInvariant.t.sol`_
 
 - [ ] `[SHOULD]` **Add integration test with real SNARK proof (testingMode=false)**
   All current integration tests use `testingMode=true`. At minimum one test should generate a real Groth16 proof, submit it against a valid verification key, and confirm it passes.

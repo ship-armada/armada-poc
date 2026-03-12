@@ -125,6 +125,7 @@ These run offline (no Anvil needed) and use Foundry's fuzzing engine.
 | Suite | What It Tests |
 |-------|--------------|
 | `PrivacyPoolFullInvariant.t.sol` | 5 invariants: nullifier uniqueness, commitment integrity, merkle safety |
+| `PrivacyPoolBalanceInvariant.t.sol` | 6 invariants: USDC balance conservation across shield + unshield flows |
 | `YieldFullInvariant.t.sol` | 9 tests: share price monotonicity, balance conservation, fee correctness |
 | `GovernorInvariant.t.sol` | 5 invariants: voting power consistency, quorum safety |
 | `CrowdfundFullInvariant.t.sol` | 6 invariants: allocation math, phase transitions, USDC conservation |

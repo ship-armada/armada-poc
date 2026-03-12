@@ -32,7 +32,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] **3.2-B** #17: Verify `minActionDelay()` covers veto cycle + write test → _§3.2_
 - [x] **4.1-A** H-10: Add ARM recovery for canceled crowdfund → _§4.1_
 - [x] **5.1-A** C-4: Add private key startup assertion to relayer → _§5.1_
-- [ ] **7.1-A** Run Aderyn static analysis → _§7.1_
+- [x] **7.1-A** Run Aderyn static analysis → _§7.1_
 
 ### Level 1 — Tests & Triage (depends on Level 0 fixes)
 
@@ -40,7 +40,7 @@ Ordered checklist for sequential execution. Work items at the same level can be 
 - [x] **3.4-A** Cover governance scenarios: A4, D8-D10, E-series, J9, M8 → _§3.4_
 - [x] **4.3-A** Cover crowdfund scenarios: allocation precision (6.9, 6.10, 6.13), permissionlessCancel → _§4.3_
 - [x] **1.3-A** Add Foundry invariant: pool USDC balance = unspent commitments → _§1.3_
-- [ ] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
+- [x] **7.1-B** Triage Aderyn findings — fix any new critical/high → _§7.1_
 - [x] Run `npm run test:all` — all 429 Hardhat tests pass
 - [x] Run `npm run test:forge` — all 252 Foundry tests pass
 
@@ -350,9 +350,9 @@ The following are tracked but do not block the Sepolia milestone:
 
 ### 7.1 Blockers
 
-- [ ] `[BLOCKER]` **Run Aderyn static analysis and triage findings**
-  Aderyn was skipped during the audit (Rust not installed). Install with `rustup default stable && cargo install aderyn`, run, and triage. Any new critical/high findings must be resolved before deploy.
-  _Ref: `reports/static-analysis-summary.md`_
+- [x] `[DONE]` **Run Aderyn static analysis and triage findings**
+  Ran Aderyn v0.1.9. Results: 9 High, 15 Low. All "High" findings are false positives, Railgun internal code (not modifiable), or already tracked in the existing audit. No new critical/high findings requiring immediate action. L-2 (deprecated `safeApprove`) reinforces existing M-1 ROADMAP item.
+  _Ref: `reports/aderyn-report.md`, `reports/aderyn-triage.md`_
 
 - [ ] `[BLOCKER]` **Deploy to Sepolia from clean state**
   Re-run `npm run setup:sepolia` after all contract fixes. Verify all four phases complete and deployment JSONs contain all expected addresses. Pay attention to Phase 3 (governance/crowdfund) and Phase 4 (cross-chain linking) since those contracts changed in recent PRs.

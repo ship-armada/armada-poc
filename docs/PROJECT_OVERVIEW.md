@@ -109,6 +109,7 @@ These are the primary integration tests. They require local Anvil chains running
 | `governance_adversarial.ts` | Malicious voting, threshold manipulation |
 | `governance_emergency_pause.ts` | Emergency pause with auto-expiry |
 | `governance_param_updates.ts` | Governance-updatable parameters |
+| `governance_snapshot_quorum.ts` | Snapshot quorum immutability regression (#19, D8-D10) |
 | `crowdfund_integration.ts` | Full crowdfund lifecycle (setup → invite → commit → finalize → claim) |
 | `crowdfund_adversarial.ts` | Allocation edge cases, rollover paths |
 | `yield_integration.ts` | Vault mechanics (deposit/withdraw/redeem, share pricing) |

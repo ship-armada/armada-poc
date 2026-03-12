@@ -70,9 +70,9 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 | D5 | Meet quorum with 1 For + many Abstain, 0 Against | Succeeded (1 > 0) |
 | D6 | Equal For and Against votes (tie) | Defeated (`forVotes > againstVotes` is strict, tie loses) |
 | D7 | Single whale meets quorum alone | Succeeded if they vote For |
-| D8 | Treasury ARM balance changes between proposal creation and vote end | Quorum shifts (bug #19) — document actual behavior |
-| D9 | Governance distributes ARM from treasury while proposal is active | Quorum increases (eligible supply grows) — could flip result |
-| D10 | Large ARM donation to treasury during voting | Quorum decreases (eligible supply shrinks) — could flip result |
+| D8 | Treasury ARM balance changes between proposal creation and vote end | ✅ COVERED — quorum uses snapshotEligibleSupply, does not shift (`governance_snapshot_quorum.ts`) |
+| D9 | Governance distributes ARM from treasury while proposal is active | ✅ COVERED — quorum unchanged after treasury distribution mid-vote (`governance_snapshot_quorum.ts`) |
+| D10 | Large ARM donation to treasury during voting | ✅ COVERED — quorum unchanged after large donation to treasury (`governance_snapshot_quorum.ts`) |
 | D11 | Quorum for ParameterChange (20% of eligible) vs StewardElection (30%) | Both calculate correctly for their type |
 
 ## E. ArmadaGovernor — State Transitions & Timing

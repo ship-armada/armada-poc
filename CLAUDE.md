@@ -67,7 +67,8 @@ When writing new code, follow production security practices even though these le
 ## Common Pitfalls
 
 - `npm install` without `--legacy-peer-deps` will fail due to Railgun SDK peer dependency conflicts.
-- Hardhat tests require Anvil chains running — if tests fail with connection/RPC errors, check `npm run chains`.
+- **Governance/crowdfund/yield tests must run on the Hardhat in-process network** (no `--network localhost` flag). Only the privacy pool integration tests (`npm run test`) require Anvil chains. Running governance tests with `--network localhost` causes cross-test state leakage (nonce conflicts, accumulated timestamps) and spurious failures.
+- Privacy pool integration tests require Anvil chains running — if tests fail with connection/RPC errors, check `npm run chains`.
 - Changing anything in `contracts/railgun/logic/` can silently break ZK circuit compatibility. Contracts compile fine, but proofs fail at runtime.
 - Deployment scripts must run in order (see Deployment Order below). Deploying a component before its dependencies will produce silent misconfigurations.
 - The Railgun SDK's LevelDB database (`data/railgun-db/`) can get into a stale state. If shield/transact operations fail unexpectedly after redeploying contracts, delete `data/railgun-db/` and restart.

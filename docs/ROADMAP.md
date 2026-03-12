@@ -196,8 +196,9 @@ Ordered checklist for sequential execution. Work items at the same level can be 
   _Ref: `test-foundry/GovernanceVerification.t.sol:MinActionDelayVetoCycleTest`_
 
 - [x] `[DONE]` **#19: Regression test confirming snapshot quorum doesn't shift during voting**
-  8 Foundry tests (6 unit, 1 fuzz, 1 concurrent-proposal) verify quorum is immutable after proposal creation: treasury deposits/withdrawals mid-vote, governance param updates, excluded address changes, and arbitrary fuzzed transfers all leave quorum unchanged. Concurrent proposals snapshot independently.
-  _Ref: `test-foundry/GovernanceVerification.t.sol:SnapshotQuorumRegressionTest`_
+  **Foundry (8 tests):** 6 unit, 1 fuzz, 1 concurrent-proposal verify quorum is immutable after proposal creation: treasury deposits/withdrawals mid-vote, governance param updates, excluded address changes, and arbitrary fuzzed transfers all leave quorum unchanged. Concurrent proposals snapshot independently.
+  **Hardhat (14 tests):** Covers scenarios D8, D9, D10: treasury donations mid-vote, treasury distributions mid-vote, quorumBps parameter changes, excluded address exclusion, cross-proposal snapshot isolation, and proposal type quorum differences. Existing Foundry invariant test INV-G5 (`GovernorInvariant.t.sol`) also covers quorum immutability via fuzz testing.
+  _Ref: `test-foundry/GovernanceVerification.t.sol:SnapshotQuorumRegressionTest` | `test/governance_snapshot_quorum.ts`_
 
 ### 3.3 Should Fix
 

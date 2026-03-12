@@ -72,6 +72,9 @@ When writing new code, follow production security practices even though these le
 - Changing anything in `contracts/railgun/logic/` can silently break ZK circuit compatibility. Contracts compile fine, but proofs fail at runtime.
 - Deployment scripts must run in order (see Deployment Order below). Deploying a component before its dependencies will produce silent misconfigurations.
 - The Railgun SDK's LevelDB database (`data/railgun-db/`) can get into a stale state. If shield/transact operations fail unexpectedly after redeploying contracts, delete `data/railgun-db/` and restart.
+- **VotingLocker requires `setGovernor()`**: After deploying ArmadaGovernor, you must call `locker.setGovernor(governor)` before `castVote` will work. Without this, votes revert with "VotingLocker: not governor" because the unlock cooldown feature needs the governor address to record vote timestamps.
+- **Crowdfund hop caps limit per-participant commits**: Hop 0 cap is $15K, hop 1 is $4K, hop 2 is $1K. To reach MIN_SALE ($1M) in Foundry tests, you need ~67 seeds at full cap. Use `addSeeds()` with an array of addresses.
+- **Immutable variables in shared storage cause constructor issues**: Adding `immutable` fields to `PrivacyPoolStorage` forces all inheriting modules to have constructors that initialize them. Place immutable fields in the concrete contract (e.g., `PrivacyPool.sol`) instead.
 
 ## Relayer
 

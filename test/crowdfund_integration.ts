@@ -809,6 +809,113 @@ describe("Crowdfund Integration", function () {
 
       expect(treasuryAfter - treasuryBefore).to.equal(expectedUnalloc);
     });
+
+    // --- ARM Recovery After Cancellation (H-10 / #23 crowdfund) ---
+
+    it("should allow admin to recover all ARM after cancellation", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels (below min)
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+
+      const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
+      expect(armInContract).to.be.gt(0); // ARM is stuck
+
+      const treasuryBefore = await armToken.balanceOf(treasury.address);
+      await crowdfund.withdrawArmAfterCancel();
+      const treasuryAfter = await armToken.balanceOf(treasury.address);
+
+      // All ARM transferred to treasury
+      expect(treasuryAfter - treasuryBefore).to.equal(armInContract);
+      // Contract now has 0 ARM
+      expect(await armToken.balanceOf(await crowdfund.getAddress())).to.equal(0);
+    });
+
+    it("should allow ARM recovery after permissionless cancel", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      // Fast-forward past commitment + grace period
+      await time.increase(ONE_WEEK + 30 * ONE_DAY + 1);
+      await crowdfund.connect(outsider).permissionlessCancel();
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+
+      const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
+      const treasuryBefore = await armToken.balanceOf(treasury.address);
+      await crowdfund.withdrawArmAfterCancel();
+      const treasuryAfter = await armToken.balanceOf(treasury.address);
+
+      expect(treasuryAfter - treasuryBefore).to.equal(armInContract);
+    });
+
+    it("should reject ARM recovery when not canceled", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      // Still in Commitment phase
+      await expect(
+        crowdfund.withdrawArmAfterCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not canceled");
+    });
+
+    it("should reject ARM recovery from non-admin", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+
+      await expect(
+        crowdfund.connect(outsider).withdrawArmAfterCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+
+    it("should reject double ARM recovery after cancel", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels
+
+      await crowdfund.withdrawArmAfterCancel();
+      await expect(
+        crowdfund.withdrawArmAfterCancel()
+      ).to.be.revertedWith("ArmadaCrowdfund: already withdrawn");
+    });
+
+    it("should allow both USDC refund and ARM recovery after cancel", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels
+
+      // Participant refunds USDC
+      const usdcBefore = await usdc.balanceOf(seed1.address);
+      await crowdfund.connect(seed1).refund();
+      expect(await usdc.balanceOf(seed1.address) - usdcBefore).to.equal(USDC(10_000));
+
+      // Admin recovers ARM
+      const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
+      const treasuryBefore = await armToken.balanceOf(treasury.address);
+      await crowdfund.withdrawArmAfterCancel();
+      expect(await armToken.balanceOf(treasury.address) - treasuryBefore).to.equal(armInContract);
+    });
+
+    it("should reject withdrawUnallocatedArm when canceled (wrong function)", async function () {
+      await setupThroughCommitment([seed1]);
+      await crowdfund.connect(seed1).commit(USDC(10_000));
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize(); // cancels
+
+      await expect(
+        crowdfund.withdrawUnallocatedArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: not finalized");
+    });
   });
 
   // ============================================================

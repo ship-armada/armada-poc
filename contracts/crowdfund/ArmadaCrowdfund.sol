@@ -415,6 +415,22 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit UnallocatedArmWithdrawn(treasury, unallocated);
     }
 
+    /// @notice Recover all ARM tokens to treasury after cancellation
+    /// @dev When canceled, no allocations exist so the entire ARM balance is recoverable.
+    function withdrawArmAfterCancel() external onlyAdmin nonReentrant {
+        require(phase == Phase.Canceled, "ArmadaCrowdfund: not canceled");
+        require(!unallocatedArmWithdrawn, "ArmadaCrowdfund: already withdrawn");
+
+        unallocatedArmWithdrawn = true;
+        uint256 armBalance = armToken.balanceOf(address(this));
+
+        if (armBalance > 0) {
+            armToken.safeTransfer(treasury, armBalance);
+        }
+
+        emit UnallocatedArmWithdrawn(treasury, armBalance);
+    }
+
     // ============ Emergency Pause ============
 
     /// @notice Admin pauses invite() and commit() in case of emergency

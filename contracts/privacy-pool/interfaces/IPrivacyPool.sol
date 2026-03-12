@@ -17,6 +17,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when a remote pool address is configured
     event RemotePoolSet(uint32 indexed domain, bytes32 poolAddress);
 
+    /// @notice Emitted when a remote hook router address is configured
+    event RemoteHookRouterSet(uint32 indexed domain, bytes32 routerAddress);
+
     /// @notice Emitted when testing mode is changed
     event TestingModeSet(bool enabled);
 
@@ -69,8 +72,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
      * @return nonce CCTP message nonce
      */
@@ -78,7 +79,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) external returns (uint64 nonce);
 
@@ -92,6 +92,13 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param poolAddress Address of the remote contract (as bytes32)
      */
     function setRemotePool(uint32 domain, bytes32 poolAddress) external;
+
+    /**
+     * @notice Set the CCTPHookRouter address for a remote chain
+     * @param domain CCTP domain ID of the remote chain
+     * @param routerAddress CCTPHookRouter address on the remote chain (as bytes32)
+     */
+    function setRemoteHookRouter(uint32 domain, bytes32 routerAddress) external;
 
     /**
      * @notice Set a verification key for a circuit configuration

@@ -57,7 +57,7 @@ const PRIVACY_POOL_CLIENT_ABI = [
   "function localDomain() view returns (uint32)",
   "function hubDomain() view returns (uint32)",
   "function hubPool() view returns (bytes32)",
-  "function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)",
+  "function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey) external returns (uint64)",
 ];
 
 // ============================================================================
@@ -464,7 +464,6 @@ async function testCrossChainShield(config: ReturnType<typeof getNetworkConfig>,
     npk,
     encryptedBundle,
     shieldKey,
-    ethers.ZeroHash, // any relayer can relay
     fees2
   );
   info(`Tx: ${shieldTx.hash}`);

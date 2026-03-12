@@ -154,6 +154,10 @@ describe("Privacy Pool Adversarial", function () {
     await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
     await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.client, ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32));
     await clientTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32));
+
+    // Set remote hook router (use client address as placeholder since these tests use mock CCTP)
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(privacyPoolAddress, 32));
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -477,7 +481,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await privacyPool.atomicCrossChainUnshield(
-        tx, DOMAINS.client, bobAddress, ethers.ZeroHash, 0
+        tx, DOMAINS.client, bobAddress, 0
       );
 
       // Verify nullifier is spent
@@ -632,7 +636,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Use local unshield");
     });
 
@@ -656,7 +660,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Unknown destination");
     });
 
@@ -680,7 +684,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, 0)
       ).to.be.revertedWith("TransactModule: Invalid recipient");
     });
 
@@ -696,7 +700,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Must include unshield");
     });
 
@@ -722,7 +726,7 @@ describe("Privacy Pool Adversarial", function () {
       // maxFee = 100 USDC >> base amount of ~10 USDC
       await expect(
         privacyPool.atomicCrossChainUnshield(
-          tx, DOMAINS.client, bobAddress, ethers.ZeroHash, ethers.parseUnits("100", 6)
+          tx, DOMAINS.client, bobAddress, ethers.parseUnits("100", 6)
         )
       ).to.be.revertedWith("TransactModule: maxFee exceeds base");
     });
@@ -879,7 +883,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(alice).crossChainShield(
           0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
+          ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPoolClient: Amount must be > 0");
     });
@@ -890,7 +894,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(alice).crossChainShield(
           amount, amount, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
+          ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPoolClient: Fee exceeds amount");
     });
@@ -916,7 +920,7 @@ describe("Privacy Pool Adversarial", function () {
         freshClient.connect(alice).crossChainShield(
           amount, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
+          ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPoolClient: Hub not configured");
     });

@@ -35,8 +35,8 @@ const PRIVACY_POOL_ABI = [
 
 // PrivacyPoolClient ABI - used for cross-chain shield from client chains
 const PRIVACY_POOL_CLIENT_ABI = [
-  'function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)',
-  'event CrossChainShieldInitiated(address indexed sender, uint256 amount, bytes32 indexed npk, uint64 nonce)',
+  'function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] calldata encryptedBundle, bytes32 shieldKey) external returns (uint64)',
+  'event CrossChainShieldInitiated(uint256 amount, bytes32 indexed npk, uint64 nonce)',
 ]
 
 // Default relayer address (from network config)
@@ -287,27 +287,19 @@ export async function executeCrossChainShield(
     signer,
   )
 
-  // Set destinationCaller to the hookRouter address (restricts who can call receiveMessage)
-  // The hookRouter atomically calls receiveMessage + handleReceiveFinalizedMessage
-  const hookRouterAddr = getHookRouterAddress('hub')
-  const destinationCaller =
-    hookRouterAddr !== ethers.ZeroAddress
-      ? ethers.zeroPadValue(hookRouterAddr, 32)
-      : ethers.ZeroHash // bytes32(0) = allow any caller
-
   // Fetch CCTP maxFee for cross-chain shield relay
   let maxFee = 0n
   if (isRelayerEnabled()) {
     maxFee = await getRelayerFee('crossChainShield')
   }
 
+  // destinationCaller is now enforced at contract level (hubHookRouter)
   const tx = await client.crossChainShield(
     params.amount,
     maxFee,
     params.npk,
     params.encryptedBundle,
     params.shieldKey,
-    destinationCaller,
   )
 
   console.log('[shield-contract] Cross-chain shield submitted:', tx.hash)

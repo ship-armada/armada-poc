@@ -100,15 +100,13 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
+     * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
      * @return nonce CCTP message nonce for tracking
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) external override returns (uint64 nonce) {
         // Validate inputs
@@ -118,7 +116,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         _processAtomicUnshieldTransaction(_transaction);
 
         // Execute the CCTP burn and return nonce
-        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee);
+        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, maxFee);
     }
 
     /**
@@ -136,6 +134,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             "TransactModule: Must include unshield"
         );
         require(remotePools[destinationDomain] != bytes32(0), "TransactModule: Unknown destination");
+        require(remoteHookRouters[destinationDomain] != bytes32(0), "TransactModule: Remote hook router not configured");
 
         // Validate the transaction proof
         (bool valid, string memory reason) = _validateTransaction(_transaction);
@@ -176,7 +175,6 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) internal returns (uint64 nonce) {
         // Calculate unshield amount (after fees)
@@ -204,7 +202,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             destinationDomain,
             remotePools[destinationDomain],
             usdc,
-            destinationCaller,
+            remoteHookRouters[destinationDomain],
             maxFee,
             CCTPFinality.STANDARD,
             hookData

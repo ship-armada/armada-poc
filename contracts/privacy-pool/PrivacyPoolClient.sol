@@ -53,6 +53,9 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
     address public override hookRouter;
 
+    /// @notice Hub chain's CCTPHookRouter address (as bytes32 for CCTP destinationCaller)
+    bytes32 public override hubHookRouter;
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -109,8 +112,6 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      * @param npk Note public key (recipient's key for claiming the note)
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption by recipient
-     * @param destinationCaller Address allowed to call receiveMessage on Hub (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @return nonce CCTP message nonce
      */
     function crossChainShield(
@@ -118,12 +119,12 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         uint256 maxFee,
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
-        bytes32 shieldKey,
-        bytes32 destinationCaller
+        bytes32 shieldKey
     ) external override returns (uint64) {
         require(amount > 0, "PrivacyPoolClient: Amount must be > 0");
         require(maxFee < amount, "PrivacyPoolClient: Fee exceeds amount");
         require(hubPool != bytes32(0), "PrivacyPoolClient: Hub not configured");
+        require(hubHookRouter != bytes32(0), "PrivacyPoolClient: Hub hook router not configured");
 
         // Transfer USDC from user to this contract
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), amount);
@@ -146,19 +147,19 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
 
         // Burn USDC and send message to Hub
         // The Hub is the mint recipient and message handler
-        // destinationCaller restricts who can call receiveMessage on the destination chain
+        // hubHookRouter restricts receiveMessage on Hub to our trusted CCTPHookRouter
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             amount,
             hubDomain,
             hubPool,                   // mintRecipient - Hub receives the USDC
             usdc,
-            destinationCaller,         // destinationCaller - relayer address or 0 for any
+            hubHookRouter,             // destinationCaller - Hub's CCTPHookRouter (enforced)
             maxFee,                    // maxFee - CCTP relayer fee (deducted from mint amount)
             CCTPFinality.STANDARD,     // minFinalityThreshold - use standard finality
             hookData                   // hookData - contains shield parameters
         );
 
-        emit CrossChainShieldInitiated(msg.sender, amount, npk, 0);
+        emit CrossChainShieldInitiated(amount, npk, 0);
 
         return 0;
     }
@@ -272,5 +273,16 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPoolClient: Only owner");
         hookRouter = _hookRouter;
+    }
+
+    /**
+     * @notice Set the Hub chain's CCTPHookRouter address
+     * @dev Used as destinationCaller in CCTP burns to ensure only the Hub's
+     *      CCTPHookRouter can call receiveMessage, preventing fund stranding.
+     * @param _hubHookRouter Hub CCTPHookRouter address (as bytes32 for CCTP compatibility)
+     */
+    function setHubHookRouter(bytes32 _hubHookRouter) external override {
+        require(msg.sender == owner, "PrivacyPoolClient: Only owner");
+        hubHookRouter = _hubHookRouter;
     }
 }

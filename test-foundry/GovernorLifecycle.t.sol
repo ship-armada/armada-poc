@@ -49,6 +49,9 @@ contract GovernorLifecycleTest is Test {
         timelock.grantRole(timelock.PROPOSER_ROLE(), address(governor));
         timelock.grantRole(timelock.EXECUTOR_ROLE(), address(governor));
 
+        // Set governor on locker (required for recordVoteCooldown)
+        locker.setGovernor(address(governor));
+
         // Fund and lock tokens for proposer and voter
         armToken.transfer(proposer, LOCK_AMOUNT);
         armToken.transfer(voter, LOCK_AMOUNT);

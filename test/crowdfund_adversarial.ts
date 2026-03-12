@@ -821,46 +821,73 @@ describe("Crowdfund Adversarial", function () {
   // ============================================================
 
   describe("Rollover Edge Cases", function () {
-    it("hop-0 leftover goes to treasury when hop-1 has < 30 committers", async function () {
-      // Use fewer seeds so demand < reserve for hop-0
-      // 50 seeds * $15K = $750K total < $840K hop-0 reserve
-      // But 50 * $15K = $750K < MIN_SALE ($1M) → would cancel
-      // So use 50 seeds at $15K ($750K) + enough at lower amounts...
-      // Actually, let's use seeds committing below cap:
-      // 70 seeds * $10K = $700K. Still < MIN_SALE.
-      // Need at least $1M. Use 70 seeds at $10K + we need more.
-      // Simplest: 100 seeds at $10K = $1M.
-      // saleSize = BASE_SALE = $1.2M, hop-0 reserve = $840K.
-      // hop-0 demand = $1M > $840K → over-subscribed, no leftover.
-      //
-      // For under-subscribed hop-0: need demand < reserve.
-      // reserve = 70% of $1.2M = $840K. Need total committed >= $1M (MIN_SALE).
-      // If all committed is hop-0 and < $840K, total < $1M → cancel.
-      // So hop-0 can never be under-subscribed AND reach MIN_SALE with seeds-only!
-      // Unless hop-1/2 contribute to totalCommitted.
-      //
-      // Use: 50 seeds at $15K ($750K) + 63 hop-1 at $4K ($252K) = $1.002M
-      // hop-0 demand = $750K < $840K → under-subscribed, leftover = $90K
-      // hop-1 has 63 committers >= 30 threshold → rollover TO hop-1
-      // This tests rollover flowing forward, not to treasury.
-      //
-      // For treasury rollover: hop-1 committers < 30 threshold
-      // 50 seeds at $15K ($750K) + 25 hop-1 at $10K... wait hop-1 cap is $4K.
-      // 50 seeds at $15K ($750K) + 63 hop-1 at $4K ($252K) for total $1.002M
-      // But we want < 30 hop-1 committers.
-      // 50 seeds at $15K ($750K) + 29 hop-1 at $4K ($116K) = $866K < MIN_SALE. Cancel!
-      //
-      // Conclusion: with the current constants, it's impossible to have hop-0 under-subscribed
-      // AND < 30 hop-1 committers AND reach MIN_SALE. This is by design — the thresholds
-      // ensure a healthy distribution before rollover flows.
-      //
-      // Instead: test that over-subscribed hop-0 produces correct pro-rata with no rollover.
+    it("hop-0 leftover rolls to hop-1 when hop-1 has >= 30 committers", async function () {
+      // 55 seeds commit $15K each = $825K. Hop-0 reserve = $840K → under-subscribed.
+      // 55 seeds × 3 invites = 165 possible hop-1 invitees.
+      // 44 hop-1 participants commit $4K each = $176K.
+      // Total = $825K + $176K = $1,001K >= MIN_SALE ($1M).
+      // Hop-1 has 44 committers >= HOP1_ROLLOVER_MIN (30) → rollover triggers.
+      // Hop-0 leftover = $840K - $825K = $15K rolls to hop-1.
+      // Hop-1 final reserve = $300K + $15K = $315K, demand = $176K → under-subscribed.
+      // Hop-1 participants get full allocation (no pro-rata).
+
+      const seeds = allSigners.slice(1, 56); // 55 seeds (indices 1-55)
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+
+      // Each of the first 44 seeds invites one hop-1 participant (signers 56-99)
+      const hop1Invitees: SignerWithAddress[] = [];
+      for (let i = 0; i < 44; i++) {
+        const invitee = allSigners[56 + i];
+        await crowdfund.connect(seeds[i]).invite(invitee.address);
+        hop1Invitees.push(invitee);
+      }
+
+      await time.increase(TWO_WEEKS + 1);
+
+      // All 55 seeds commit $15K
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      // 44 hop-1 participants commit $4K
+      for (const h of hop1Invitees) {
+        await fundAndApprove(h, USDC(4_000));
+        await crowdfund.connect(h).commit(USDC(4_000));
+      }
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      // Verify rollover happened: hop-1 finalReserve = $300K + $15K = $315K
+      const hop1Reserve = await crowdfund.finalReserves(1);
+      expect(hop1Reserve).to.equal(USDC(315_000));
+
+      // Hop-0 finalReserve stays at $840K
+      const hop0Reserve = await crowdfund.finalReserves(0);
+      expect(hop0Reserve).to.equal(USDC(840_000));
+
+      // Hop-1 is under-subscribed ($176K < $315K) → full allocation, no refund
+      const [alloc, refund] = await crowdfund.getAllocation(hop1Invitees[0].address);
+      const allocArm = Number(alloc) / 1e18;
+      expect(allocArm).to.be.closeTo(4_000, 1);
+      expect(refund).to.equal(0n);
+
+      // Hop-1 leftover ($315K - $176K = $139K) → treasury (hop-2 has 0 committers < 50)
+      // Hop-2 leftover ($60K - $0 = $60K) → treasury
+      const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
+      expect(treasuryLeftover).to.equal(USDC(139_000) + USDC(60_000));
+    });
+
+    it("over-subscribed hop-0 produces pro-rata with no rollover", async function () {
+      // 70 seeds × $15K = $1.05M. Hop-0 reserve = $840K → over-subscribed, no leftover.
+      // Hop-1/hop-2 have zero demand → full reserves go to treasury.
+
       const seeds = allSigners.slice(1, 71); // 70 seeds
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
 
-      // 70 * $15K = $1.05M. hop-0 reserve = $840K. Over-subscribed.
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000));
@@ -868,11 +895,60 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
 
-      // Pro-rata: each gets $840K/70 = $12K allocation, $3K refund
+      // Pro-rata: each gets $840K / 70 = $12K allocation, $3K refund
       const [alloc, refund] = await crowdfund.getAllocation(seeds[0].address);
       const allocArm = Number(alloc) / 1e18;
       expect(allocArm).to.be.closeTo(12_000, 1);
       expect(refund).to.be.closeTo(USDC(3_000), USDC(1));
+
+      // No rollover from hop-0 (over-subscribed).
+      // Hop-1 ($300K) and hop-2 ($60K) reserves unused → treasury.
+      const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
+      expect(treasuryLeftover).to.equal(USDC(300_000) + USDC(60_000));
+    });
+
+    it("rollover preserves sum-of-parts invariant: alloc + treasury = saleSize", async function () {
+      // Same rollover scenario as test 1, verifies the global accounting invariant.
+      // totalAllocatedUsdc + treasuryLeftoverUsdc must equal saleSize ($1.2M).
+
+      const seeds = allSigners.slice(1, 56); // 55 seeds
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startInvitations();
+
+      const hop1Invitees: SignerWithAddress[] = [];
+      for (let i = 0; i < 44; i++) {
+        const invitee = allSigners[56 + i];
+        await crowdfund.connect(seeds[i]).invite(invitee.address);
+        hop1Invitees.push(invitee);
+      }
+
+      await time.increase(TWO_WEEKS + 1);
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000));
+      }
+      for (const h of hop1Invitees) {
+        await fundAndApprove(h, USDC(4_000));
+        await crowdfund.connect(h).commit(USDC(4_000));
+      }
+
+      await time.increase(ONE_WEEK + 1);
+      await crowdfund.finalize();
+
+      const totalAlloc = await crowdfund.totalAllocatedUsdc();
+      const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
+
+      // Hop-0: demand $825K <= reserve $840K → alloc = $825K
+      // Hop-1: demand $176K <= reserve $315K (after rollover) → alloc = $176K
+      // Hop-2: demand $0 <= reserve $60K → alloc = $0
+      expect(totalAlloc).to.equal(USDC(825_000) + USDC(176_000));
+
+      // Treasury: hop-1 leftover ($139K) + hop-2 leftover ($60K)
+      expect(treasuryLeftover).to.equal(USDC(139_000) + USDC(60_000));
+
+      // Invariant: alloc + treasury = saleSize
+      expect(totalAlloc + treasuryLeftover).to.equal(USDC(1_200_000));
     });
   });
 

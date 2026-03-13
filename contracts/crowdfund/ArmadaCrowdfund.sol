@@ -400,7 +400,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @dev Uses hop-level totalAllocated (upper bound) minus claimed ARM to compute unallocated.
     ///      Safe: unallocated = initialFunding - totalAllocated_upper >= 0.
     function withdrawUnallocatedArm() external onlyAdmin nonReentrant {
-        require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
+        require(
+            phase == Phase.Finalized || phase == Phase.Canceled,
+            "ArmadaCrowdfund: not finalized or canceled"
+        );
         require(!unallocatedArmWithdrawn, "ArmadaCrowdfund: already withdrawn");
 
         unallocatedArmWithdrawn = true;

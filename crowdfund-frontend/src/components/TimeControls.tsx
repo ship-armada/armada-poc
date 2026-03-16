@@ -1,10 +1,10 @@
 // ABOUTME: Anvil time manipulation controls for local testing.
-// ABOUTME: Allows fast-forwarding through invitation and commitment windows.
+// ABOUTME: Allows fast-forwarding through the sale window.
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Clock, FastForward, SkipForward } from 'lucide-react'
+import { Clock, SkipForward } from 'lucide-react'
 import { Phase } from '@/types/crowdfund'
 import type { CrowdfundState } from '@/atoms/crowdfund'
 import type { useCrowdfund } from '@/hooks/useCrowdfund'
@@ -32,16 +32,11 @@ export function TimeControls({ state, crowdfund }: TimeControlsProps) {
   }
 
   const phase = state.phase
-  const invEnd = Number(state.invitationEnd)
-  const commitEnd = Number(state.commitmentEnd)
-
+  const saleEnd = Number(state.saleEnd)
   const blockTs = state.blockTimestamp
 
-  // Seconds from now until the invitation window ends (commitment starts)
-  const skipToCommitmentSecs = invEnd > blockTs ? invEnd - blockTs + 1 : 0
-
-  // Seconds from now until the commitment window ends
-  const skipPastCommitmentSecs = commitEnd > blockTs ? commitEnd - blockTs + 1 : 0
+  // Seconds from now until the sale window ends
+  const skipPastSaleSecs = saleEnd > blockTs ? saleEnd - blockTs + 1 : 0
 
   return (
     <Card>
@@ -54,31 +49,17 @@ export function TimeControls({ state, crowdfund }: TimeControlsProps) {
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-2">
-          {/* Skip to Commitment Window */}
-          {phase === Phase.Invitation && invEnd > 0 && (
+          {/* Skip Past Sale */}
+          {phase === Phase.Active && saleEnd > 0 && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleAdvance(skipToCommitmentSecs)}
-              disabled={isAdvancing}
-              className="gap-1.5"
-            >
-              <FastForward className="h-3.5 w-3.5" />
-              Skip to Commitment
-            </Button>
-          )}
-
-          {/* Skip Past Commitment */}
-          {phase === Phase.Invitation && commitEnd > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleAdvance(skipPastCommitmentSecs)}
+              onClick={() => handleAdvance(skipPastSaleSecs)}
               disabled={isAdvancing}
               className="gap-1.5"
             >
               <SkipForward className="h-3.5 w-3.5" />
-              Skip Past Commitment
+              Skip Past Sale
             </Button>
           )}
 

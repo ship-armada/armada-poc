@@ -3,10 +3,9 @@
 
 export const Phase = {
   Setup: 0,
-  Invitation: 1,
-  Commitment: 2,
-  Finalized: 3,
-  Canceled: 4,
+  Active: 1,
+  Finalized: 2,
+  Canceled: 3,
 } as const
 
 export type Phase = (typeof Phase)[keyof typeof Phase]
@@ -67,10 +66,9 @@ export const CROWDFUND_CONSTANTS = {
   MAX_SALE: 1_800_000n * 1_000_000n,
   MIN_SALE: 1_000_000n * 1_000_000n,
   ARM_PRICE: 1_000_000n,
-  INVITATION_DURATION: 14 * 86400,
-  COMMITMENT_DURATION: 7 * 86400,
+  SALE_DURATION: 21 * 86400,
   HOP_CAPS: [15_000n * 1_000_000n, 4_000n * 1_000_000n, 1_000n * 1_000_000n] as const,
-  HOP_RESERVE_BPS: [7000, 2500, 500] as const,
+  HOP_CEILING_BPS: [7000, 4500, 1000] as const,
   HOP_MAX_INVITES: [3, 2, 0] as const,
   HOP1_ROLLOVER_MIN: 30,
   HOP2_ROLLOVER_MIN: 50,

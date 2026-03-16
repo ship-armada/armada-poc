@@ -51,8 +51,7 @@ export function formatCountdown(seconds: number): string {
 export function phaseName(phase: Phase): string {
   switch (phase) {
     case Phase.Setup: return 'Setup'
-    case Phase.Invitation: return 'Invitation'
-    case Phase.Commitment: return 'Commitment'
+    case Phase.Active: return 'Active'
     case Phase.Finalized: return 'Finalized'
     case Phase.Canceled: return 'Canceled'
     default: return 'Unknown'
@@ -63,8 +62,7 @@ export function phaseName(phase: Phase): string {
 export function phaseColor(phase: Phase): string {
   switch (phase) {
     case Phase.Setup: return 'bg-muted text-muted-foreground'
-    case Phase.Invitation: return 'bg-info/20 text-info'
-    case Phase.Commitment: return 'bg-warning/20 text-warning'
+    case Phase.Active: return 'bg-info/20 text-info'
     case Phase.Finalized: return 'bg-success/20 text-success'
     case Phase.Canceled: return 'bg-destructive/20 text-destructive'
     default: return 'bg-muted text-muted-foreground'

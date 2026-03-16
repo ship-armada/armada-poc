@@ -1,5 +1,5 @@
 // ABOUTME: Admin control panel for managing crowdfund lifecycle.
-// ABOUTME: Phase-conditional actions: add seeds, start invitations, finalize, withdraw.
+// ABOUTME: Phase-conditional actions: add seeds, start sale, finalize, withdraw.
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -96,9 +96,9 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
     setSeedInput('')
   }
 
-  const handleStartInvitations = async () => {
+  const handleStartSale = async () => {
     setIsSubmitting(true)
-    await crowdfund.startInvitations()
+    await crowdfund.startSale()
     setIsSubmitting(false)
   }
 
@@ -173,12 +173,12 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
             <Separator />
 
             <Button
-              onClick={handleStartInvitations}
+              onClick={handleStartSale}
               disabled={isSubmitting || !state.hopStats || state.hopStats[0].whitelistCount === 0}
               className="w-full gap-2"
             >
               <Play className="h-4 w-4" />
-              Start Invitations
+              Start Sale
             </Button>
             {state.hopStats && state.hopStats[0].whitelistCount === 0 && (
               <p className="text-xs text-muted-foreground">Add at least one seed first</p>
@@ -186,8 +186,8 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
           </>
         )}
 
-        {/* After commitment window: Finalize */}
-        {(phase === Phase.Invitation || phase === Phase.Commitment) && (
+        {/* After sale window: Finalize */}
+        {phase === Phase.Active && (
           <div className="space-y-2">
             <Button
               onClick={handleFinalize}
@@ -199,7 +199,7 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
               Finalize Sale
             </Button>
             <p className="text-xs text-muted-foreground">
-              Only works after the commitment window has ended.
+              Only works after the sale window has ended.
             </p>
           </div>
         )}

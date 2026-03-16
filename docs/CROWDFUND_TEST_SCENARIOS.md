@@ -38,27 +38,27 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | 2.6 | Add duplicate seed (same address twice) | Revert: "already whitelisted" | Integration |
 | 2.7 | `addSeeds()` with empty array | Succeeds (no-op, no revert) | **None** |
 | 2.8 | `addSeeds()` with mixed valid/duplicate entries | Reverts mid-array on the duplicate (all-or-nothing within tx) | **None** |
-| 2.9 | Add seeds after `startInvitations()` | Revert: "wrong phase" | Integration |
+| 2.9 | Add seeds after `startSale()` | Revert: "wrong phase" | Integration |
 | 2.10 | Add seed in Finalized phase | Revert: "wrong phase" | **None** |
 | 2.11 | Add seed in Canceled phase | Revert: "wrong phase" | **None** |
 | 2.12 | Verify `SeedAdded` event emitted per seed | Event with correct indexed address | **None** |
 
-### Starting Invitations
+### Starting Sale
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 2.13 | Start invitations with >= 1 seed | Phase → Invitation, timing windows set correctly | Integration |
-| 2.14 | Start invitations with zero seeds | Revert: "no seeds" | Integration |
-| 2.15 | Non-admin calls `startInvitations()` | Revert: "not admin" | **None** |
-| 2.16 | Call `startInvitations()` twice | First succeeds, second reverts: "wrong phase" | **None** |
-| 2.17 | Verify timing: `invitationEnd = invitationStart + 14 days` | Exact match | **None** |
-| 2.18 | Verify timing: `commitmentStart = invitationEnd` (no gap, no overlap) | Exact match | **None** |
-| 2.19 | Verify timing: `commitmentEnd = commitmentStart + 7 days` | Exact match | **None** |
-| 2.20 | Verify `InvitationStarted` event emitted with correct timestamps | Correct invitationEnd, commitmentStart, commitmentEnd | **None** |
+| 2.13 | Start sale with >= 1 seed | Phase → Active, timing window set correctly | Integration |
+| 2.14 | Start sale with zero seeds | Revert: "no seeds" | Integration |
+| 2.15 | Non-admin calls `startSale()` | Revert: "not admin" | **None** |
+| 2.16 | Call `startSale()` twice | First succeeds, second reverts: "wrong phase" | **None** |
+| 2.17 | Verify timing: `saleEnd = saleStart + 21 days` | Exact match | **None** |
+| 2.18 | Verify `SaleStarted` event emitted with correct timestamps | Correct saleStart, saleEnd | **None** |
 
 ---
 
-## 3. Invitation Phase
+## 3. Sale Window
+
+During the 21-day sale window (Phase.Active), invitations and commitments happen concurrently. Both `invite()` and `commit()` are open from `saleStart` through `saleEnd`.
 
 ### Basic Invitation Mechanics
 
@@ -67,10 +67,10 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | 3.1 | Seed invites valid address → hop 1 | Invitee whitelisted at hop 1, invitedBy = seed | Integration |
 | 3.2 | Hop-1 invites valid address → hop 2 | Invitee whitelisted at hop 2, invitedBy = hop-1 addr | Integration |
 | 3.3 | Hop-2 attempts to invite | Revert: "max hop reached" (hop 2 is NUM_HOPS-1) | Integration |
-| 3.4 | Invite at exact `invitationStart` timestamp | Succeeds (>= check) | **None** |
-| 3.5 | Invite at exact `invitationEnd` timestamp | Succeeds (<= check) | **None** |
-| 3.6 | Invite at `invitationEnd + 1` | Revert: "not invitation window" | Integration |
-| 3.7 | Invite before `invitationStart` (if possible to manipulate) | Revert: "not invitation window" | **None** |
+| 3.4 | Invite at exact `saleStart` timestamp | Succeeds (>= check) | **None** |
+| 3.5 | Invite at exact `saleEnd` timestamp | Succeeds (<= check) | **None** |
+| 3.6 | Invite at `saleEnd + 1` | Revert: "not in sale window" | Integration |
+| 3.7 | Invite before `saleStart` (Setup phase) | Revert: "not in sale window" (saleStart = 0, timestamp > 0) | **None** |
 
 ### Invite Limits
 
@@ -93,79 +93,79 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | 3.17 | Invite `address(0)` | Revert: "zero address" | **None** |
 | 3.18 | Invite the admin/deployer address (non-whitelisted) | Succeeds (admin is not whitelisted by default) | **None** |
 | 3.19 | Invite a contract address | Succeeds (no EOA check) | **None** |
-| 3.20 | Invite during Setup phase (before `startInvitations()`) | Revert: "not invitation window" (invitationStart = 0, timestamp > 0) | **None** |
-| 3.21 | Invite during Commitment window | Revert: "not invitation window" | Adversarial |
-| 3.22 | Invite during Finalized phase | Revert: "not invitation window" | **None** |
-
-### Invitation Graph Integrity
-
-| # | Scenario | Expected Outcome | Coverage |
-|---|----------|-----------------|----------|
-| 3.23 | Verify hop assignment: seed = 0, invitee of seed = 1, invitee of hop-1 = 2 | Correct hop values | Integration |
-| 3.24 | Verify `invitedBy` is `address(0)` for seeds | Correct | Integration |
-| 3.25 | Verify `invitedBy` points to actual inviter for hop-1 and hop-2 | Correct | **None** |
-| 3.26 | Verify `whitelistCount` increments per hop on each invite | Correct per hop | Integration |
-| 3.27 | Verify `Invited` event emitted with correct inviter, invitee, hop | Correct event fields | **None** |
-| 3.28 | Multiple seeds inviting distinct addresses — no cross-contamination | Each invitee's hop and invitedBy correct | **None** |
-
----
-
-## 4. Commitment Phase
+| 3.20 | Invite during Finalized phase | Revert: "not in sale window" | **None** |
 
 ### Basic Commitment
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.1 | Whitelisted seed commits valid USDC amount | p.committed updates, totalCommitted updates, USDC transferred | Integration |
-| 4.2 | Multiple commits from same address accumulate | p.committed = sum of commits | Integration |
-| 4.3 | Multiple commits reaching exactly cap | Last commit brings total to cap exactly | Adversarial |
-| 4.4 | Commit at exact `commitmentStart` timestamp | Succeeds (>= check) | **None** |
-| 4.5 | Commit at exact `commitmentEnd` timestamp | Succeeds (<= check) | **None** |
-| 4.6 | Commit at `commitmentEnd + 1` | Revert: "not commitment window" | **None** |
-| 4.7 | Commit at `commitmentStart - 1` (during invitation window) | Revert: "not commitment window" | Integration |
+| 3.21 | Whitelisted seed commits valid USDC amount | p.committed updates, totalCommitted updates, USDC transferred | Integration |
+| 3.22 | Multiple commits from same address accumulate | p.committed = sum of commits | Integration |
+| 3.23 | Multiple commits reaching exactly cap | Last commit brings total to cap exactly | Adversarial |
+| 3.24 | Commit at exact `saleStart` timestamp | Succeeds (>= check) | **None** |
+| 3.25 | Commit at exact `saleEnd` timestamp | Succeeds (<= check) | **None** |
+| 3.26 | Commit at `saleEnd + 1` | Revert: "not in sale window" | **None** |
+| 3.27 | Commit during Setup phase (before `startSale()`) | Revert: "not in sale window" (saleStart = 0, timestamp > 0) | **None** |
+
+### Concurrent Invite and Commit
+
+| # | Scenario | Expected Outcome | Coverage |
+|---|----------|-----------------|----------|
+| 3.28 | Seed invites and commits in same window | Both succeed; no ordering constraint | Integration |
+| 3.29 | Participant receives invite mid-window then immediately commits | Both succeed without waiting | **None** |
 
 ### Cap Enforcement
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.8 | Hop-0: commit exactly $15,000 | Succeeds | Adversarial |
-| 4.9 | Hop-0: commit $15,001 | Revert: "exceeds hop cap" | Integration |
-| 4.10 | Hop-0: commit $10K then $5,001 (cumulative over cap) | Revert: "exceeds hop cap" | **None** |
-| 4.11 | Hop-1: commit exactly $4,000 | Succeeds | **None** |
-| 4.12 | Hop-1: commit $4,001 | Revert: "exceeds hop cap" | Integration |
-| 4.13 | Hop-2: commit exactly $1,000 | Succeeds | **None** |
-| 4.14 | Hop-2: commit $1,001 | Revert: "exceeds hop cap" | Integration |
-| 4.15 | Commit 1 wei over cap (after prior commits) | Revert: "exceeds hop cap" | Adversarial |
+| 3.30 | Hop-0: commit exactly $15,000 | Succeeds | Adversarial |
+| 3.31 | Hop-0: commit $15,001 | Revert: "exceeds hop cap" | Integration |
+| 3.32 | Hop-0: commit $10K then $5,001 (cumulative over cap) | Revert: "exceeds hop cap" | **None** |
+| 3.33 | Hop-1: commit exactly $4,000 | Succeeds | **None** |
+| 3.34 | Hop-1: commit $4,001 | Revert: "exceeds hop cap" | Integration |
+| 3.35 | Hop-2: commit exactly $1,000 | Succeeds | **None** |
+| 3.36 | Hop-2: commit $1,001 | Revert: "exceeds hop cap" | Integration |
+| 3.37 | Commit 1 wei over cap (after prior commits) | Revert: "exceeds hop cap" | Adversarial |
 
 ### Invalid Commits
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.16 | Non-whitelisted address commits | Revert: "not whitelisted" | Integration |
-| 4.17 | Zero amount commit | Revert: "zero amount" | Integration |
-| 4.18 | Commit with insufficient USDC balance (approved but not held) | Revert from SafeERC20 transferFrom | **None** |
-| 4.19 | Commit with no USDC approval | Revert from SafeERC20 transferFrom | **None** |
-| 4.20 | Commit with partial approval (approve < amount) | Revert from SafeERC20 transferFrom | **None** |
-| 4.21 | Commit during Setup phase | Revert: "not commitment window" | **None** |
-| 4.22 | Commit during Finalized phase | Revert: "not commitment window" | **None** |
-| 4.23 | Commit during Canceled phase | Revert: "not commitment window" | **None** |
+| 3.38 | Non-whitelisted address commits | Revert: "not whitelisted" | Integration |
+| 3.39 | Zero amount commit | Revert: "zero amount" | Integration |
+| 3.40 | Commit with insufficient USDC balance (approved but not held) | Revert from SafeERC20 transferFrom | **None** |
+| 3.41 | Commit with no USDC approval | Revert from SafeERC20 transferFrom | **None** |
+| 3.42 | Commit with partial approval (approve < amount) | Revert from SafeERC20 transferFrom | **None** |
+| 3.43 | Commit during Finalized phase | Revert: "not in sale window" | **None** |
+| 3.44 | Commit during Canceled phase | Revert: "not in sale window" | **None** |
 
 ### Aggregate Tracking
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.24 | `hopStats[h].totalCommitted` accumulates correctly per hop | Sum matches expected | Integration |
-| 4.25 | `uniqueCommitters` increments on first commit, not subsequent | First commit: +1, second commit same addr: no change | Integration |
-| 4.26 | `totalCommitted` equals sum across all hops | Global sum correct | Integration |
-| 4.27 | Contract USDC balance equals `totalCommitted` before finalization | Exact match | Foundry INV-C3 |
-| 4.28 | Verify `Committed` event with correct participant, amount, total, hop | Correct event fields | **None** |
+| 3.45 | `hopStats[h].totalCommitted` accumulates correctly per hop | Sum matches expected | Integration |
+| 3.46 | `uniqueCommitters` increments on first commit, not subsequent | First commit: +1, second commit same addr: no change | Integration |
+| 3.47 | `totalCommitted` equals sum across all hops | Global sum correct | Integration |
+| 3.48 | Contract USDC balance equals `totalCommitted` before finalization | Exact match | Foundry INV-C3 |
+| 3.49 | Verify `Committed` event with correct participant, amount, total, hop | Correct event fields | **None** |
+
+### Invitation Graph Integrity
+
+| # | Scenario | Expected Outcome | Coverage |
+|---|----------|-----------------|----------|
+| 3.50 | Verify hop assignment: seed = 0, invitee of seed = 1, invitee of hop-1 = 2 | Correct hop values | Integration |
+| 3.51 | Verify `invitedBy` is `address(0)` for seeds | Correct | Integration |
+| 3.52 | Verify `invitedBy` points to actual inviter for hop-1 and hop-2 | Correct | **None** |
+| 3.53 | Verify `whitelistCount` increments per hop on each invite | Correct per hop | Integration |
+| 3.54 | Verify `Invited` event emitted with correct inviter, invitee, hop | Correct event fields | **None** |
+| 3.55 | Multiple seeds inviting distinct addresses — no cross-contamination | Each invitee's hop and invitedBy correct | **None** |
 
 ### Minimum Commit Amount
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.29 | Commit 1 wei USDC (smallest possible) | Succeeds (only zero is rejected) | Adversarial |
-| 4.30 | Commit 1 wei, then finalize and check allocation rounding | Allocation math doesn't overflow/underflow on tiny amounts | **None** |
+| 3.56 | Commit 1 wei USDC (smallest possible) | Succeeds (only zero is rejected) | Adversarial |
+| 3.57 | Commit 1 wei, then finalize and check allocation rounding | Allocation math doesn't overflow/underflow on tiny amounts | **None** |
 
 ---
 
@@ -175,14 +175,14 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 5.1 | Finalize after commitmentEnd by admin | Succeeds | Integration |
-| 5.2 | Finalize at exactly `commitmentEnd` (not past) | Revert: "commitment not ended" (> check, not >=) | **None** |
-| 5.3 | Finalize at `commitmentEnd + 1` | Succeeds | **None** |
-| 5.4 | Finalize before commitmentEnd | Revert: "commitment not ended" | Integration |
+| 5.1 | Finalize after saleEnd by admin | Succeeds | Integration |
+| 5.2 | Finalize at exactly `saleEnd` (not past) | Revert: "sale not ended" (> check, not >=) | **None** |
+| 5.3 | Finalize at `saleEnd + 1` | Succeeds | **None** |
+| 5.4 | Finalize before saleEnd | Revert: "sale not ended" | Integration |
 | 5.5 | Non-admin calls `finalize()` | Revert: "not admin" | Adversarial |
 | 5.6 | Double finalization (after successful finalize) | Revert: "already finalized" | Integration |
 | 5.7 | Finalize after cancellation | Revert: "already finalized" (same guard) | **None** |
-| 5.8 | Finalize during Setup phase (commitmentEnd = 0, timestamp > 0) | Succeeds if `block.timestamp > 0` and phase is not Finalized/Canceled... but phase guard only checks Invitation\|Commitment. **Interesting edge: if phase is Setup, the phase check passes (it's neither Finalized nor Canceled), and timestamp > 0 > commitmentEnd(0). Behavior: would attempt finalization from Setup phase.** | **None — potential bug** |
+| 5.8 | Finalize during Setup phase (saleEnd = 0, timestamp > 0) | Phase guard rejects: phase is not Active. **Safe** — phase guard covers it. | **None** |
 
 ### Cancellation Path
 
@@ -235,7 +235,6 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | 5.33 | `totalAllocated` (ARM) is hop-level upper bound | sum of min(demand, reserve) * 1e18 / ARM_PRICE per hop | Integration |
 | 5.34 | `totalAllocatedUsdc` is hop-level upper bound | sum of min(demand, reserve) per hop | Integration |
 | 5.35 | Verify `SaleFinalized` event fields: saleSize, totalAllocUsdc, totalAllocArm, treasuryLeftoverUsdc | All correct | **None** |
-| 5.36 | Phase.Commitment enum value is never written to `phase` storage | Observable quirk — phase goes Invitation → Finalized/Canceled | **None** |
 
 ---
 
@@ -290,7 +289,7 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 |---|----------|-----------------|----------|
 | 7.7 | Claim in Canceled phase | Revert: "not finalized" | Adversarial |
 | 7.8 | Claim in Setup phase | Revert: "not finalized" | **None** |
-| 7.9 | Claim in Invitation/Commitment phase | Revert: "not finalized" | **None** |
+| 7.9 | Claim in Active phase (sale window open) | Revert: "not finalized" | **None** |
 | 7.10 | Double claim | Revert: "already claimed" | Integration |
 | 7.11 | Claim with 0 committed (whitelisted but no commitment) | Revert: "no commitment" | Adversarial |
 | 7.12 | Claim by non-participant (never whitelisted) | Revert: "no commitment" (committed = 0) | Adversarial |
@@ -374,8 +373,7 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
 | 10.10 | `getInviteEdge()` during Setup phase | Revert: "graph hidden during sale" | **None** |
-| 10.11 | `getInviteEdge()` during Invitation phase | Revert: "graph hidden during sale" | Integration |
-| 10.12 | `getInviteEdge()` during Commitment window | Revert: "graph hidden during sale" | **None** |
+| 10.11 | `getInviteEdge()` during Active phase (sale window open) | Revert: "graph hidden during sale" | Integration |
 | 10.13 | `getInviteEdge()` after Finalized | Returns correct inviter and hop | Integration |
 | 10.14 | `getInviteEdge()` after Canceled | Returns correct inviter and hop | **None** |
 | 10.15 | `getInviteEdge()` for seed — invitedBy = address(0) | Correct | Integration |
@@ -436,8 +434,7 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 14.1 | Phase only moves forward: Setup → Invitation → Finalized\|Canceled | Never regresses | Foundry invariant |
-| 14.2 | Phase.Commitment enum value is never written to storage | Observable quirk — contract goes Invitation → Finalized/Canceled | **None** |
+| 14.1 | Phase only moves forward: Setup → Active → Finalized\|Canceled | Never regresses | Foundry invariant |
 | 14.3 | All state-mutating functions have appropriate phase guards | Verified per function | Integration + Adversarial |
 | 14.4 | No function can move phase backward | Verified by inspection | Code review |
 | 14.5 | After Finalized: only claim, withdrawProceeds, withdrawUnallocatedArm, and views work | All other mutations revert | **None** |
@@ -474,13 +471,12 @@ These scenarios arose from code review and may represent actual bugs or known-ac
 
 | # | Finding | Risk | Status |
 |---|---------|------|--------|
-| 17.1 | **`finalize()` callable from Setup phase if `commitmentEnd` is 0:** The guard `block.timestamp > commitmentEnd` passes when `commitmentEnd = 0` (not yet set). The phase guard checks `phase == Invitation \|\| phase == Commitment`, so Setup would fail. **Actually safe** — the phase guard rejects it. | Low | Safe (phase guard covers it) |
-| 17.2 | **`Phase.Commitment` never set:** The enum exists but is never written. `finalize()` checks for it in the phase guard (`phase == Phase.Invitation \|\| phase == Phase.Commitment`), meaning the Commitment check is dead code. | Info | Known quirk |
-| 17.3 | **No constructor validation on USDC/ARM addresses:** Deploying with zero or wrong token addresses would create a broken contract with no recovery mechanism. | Medium | Document in deploy checklist |
-| 17.4 | **`withdrawProceeds` and `withdrawUnallocatedArm` lack `nonReentrant`:** Both use SafeERC20 and don't have callback surfaces, but adding the modifier would be belt-and-suspenders. | Low | Acceptable for POC |
-| 17.5 | **No emergency stop / pause mechanism:** If a bug is discovered post-deployment, there's no way to pause claims. | Medium | Tracked in POC shortcuts |
-| 17.6 | **No admin recovery of accidentally-sent tokens:** If someone sends a random ERC20 to the contract, it's stuck forever. | Low | Acceptable |
-| 17.7 | **Rollover thresholds (30 hop-1, 50 hop-2) may be structurally unreachable** given the sale minimums and per-hop caps. Test which rollover paths are actually exercisable. | Info | Documented in adversarial tests |
+| 17.1 | **`finalize()` callable from Setup phase if `saleEnd` is 0:** The guard `block.timestamp > saleEnd` passes when `saleEnd = 0` (not yet set). The phase guard checks `phase == Active`, so Setup would fail. **Actually safe** — the phase guard rejects it. | Low | Safe (phase guard covers it) |
+| 17.2 | **No constructor validation on USDC/ARM addresses:** Deploying with zero or wrong token addresses would create a broken contract with no recovery mechanism. | Medium | Document in deploy checklist |
+| 17.3 | **`withdrawProceeds` and `withdrawUnallocatedArm` lack `nonReentrant`:** Both use SafeERC20 and don't have callback surfaces, but adding the modifier would be belt-and-suspenders. | Low | Acceptable for POC |
+| 17.4 | **No emergency stop / pause mechanism:** If a bug is discovered post-deployment, there's no way to pause claims. | Medium | Tracked in POC shortcuts |
+| 17.5 | **No admin recovery of accidentally-sent tokens:** If someone sends a random ERC20 to the contract, it's stuck forever. | Low | Acceptable |
+| 17.6 | **Rollover thresholds (30 hop-1, 50 hop-2) may be structurally unreachable** given the sale minimums and per-hop caps. Test which rollover paths are actually exercisable. | Info | Documented in adversarial tests |
 
 ---
 
@@ -489,21 +485,20 @@ These scenarios arose from code review and may represent actual bugs or known-ac
 | Category | Covered | Gaps | Total |
 |----------|---------|------|-------|
 | Constructor & Deployment | 3 | 5 | 8 |
-| Setup Phase | 7 | 13 | 20 |
-| Invitation Phase | 14 | 14 | 28 |
-| Commitment Phase | 12 | 18 | 30 |
-| Finalization | 12 | 24 | 36 |
+| Setup Phase | 7 | 11 | 18 |
+| Sale Window (invites + commits) | 18 | 39 | 57 |
+| Finalization | 12 | 23 | 35 |
 | Allocation Algorithm | 4 | 9 | 13 |
 | Claims | 6 | 11 | 17 |
 | Refunds | 4 | 5 | 9 |
 | Admin Withdrawals | 6 | 13 | 19 |
-| View Functions | 7 | 14 | 21 |
+| View Functions | 7 | 13 | 20 |
 | Access Control | 2 | 2 | 4 |
 | Reentrancy | 3 | 6 | 9 |
 | Token Interactions | 0 | 5 | 5 |
-| State Machine | 2 | 4 | 6 |
+| State Machine | 2 | 3 | 5 |
 | End-to-End | 4 | 2 | 6 |
 | Governance Integration | 1 | 2 | 3 |
-| **Totals** | **~87** | **~147** | **~234** |
+| **Totals** | **~79** | **~149** | **~228** |
 
 Many gaps are event emission checks, timestamp boundary tests, and view function edge cases — lower severity but important for completeness. The high-value gaps are in rollover logic (5.24–5.29), incremental admin withdrawals (9.2–9.3), and the allocation precision edge cases (6.9–6.13).

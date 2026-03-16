@@ -21,33 +21,16 @@ interface SaleStatusProps {
 
 /**
  * Derive the "effective" phase for display.
- * The contract phase() stays Invitation during the commitment window,
- * so we infer Commitment from timestamps.
+ * With the unified sale window, the contract phase is authoritative.
  */
-function getEffectivePhase(state: CrowdfundState, now: number): Phase {
+function getEffectivePhase(state: CrowdfundState): Phase {
   if (state.phase === null) return Phase.Setup
-  if (state.phase === Phase.Invitation) {
-    const commitStart = Number(state.commitmentStart)
-    const commitEnd = Number(state.commitmentEnd)
-    if (commitStart > 0 && now >= commitStart && now <= commitEnd) {
-      return Phase.Commitment
-    }
-    if (commitEnd > 0 && now > commitEnd) {
-      // Past commitment window but not yet finalized
-      return Phase.Commitment
-    }
-  }
   return state.phase
 }
 
 function getTimeRemaining(state: CrowdfundState, effectivePhase: Phase, now: number): string | null {
-  if (effectivePhase === Phase.Invitation) {
-    const end = Number(state.invitationEnd)
-    if (end > 0 && now < end) return formatCountdown(end - now)
-    return 'expired'
-  }
-  if (effectivePhase === Phase.Commitment) {
-    const end = Number(state.commitmentEnd)
+  if (effectivePhase === Phase.Active) {
+    const end = Number(state.saleEnd)
     if (end > 0 && now < end) return formatCountdown(end - now)
     return 'expired — ready to finalize'
   }
@@ -82,7 +65,7 @@ export function SaleStatus({ state }: SaleStatusProps) {
     )
   }
 
-  const effectivePhase = getEffectivePhase(state, now)
+  const effectivePhase = getEffectivePhase(state)
   const timeRemaining = getTimeRemaining(state, effectivePhase, now)
 
   // Progress calculation
@@ -141,7 +124,7 @@ export function SaleStatus({ state }: SaleStatusProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Hop</TableHead>
-                <TableHead className="text-right">Reserve</TableHead>
+                <TableHead className="text-right">Ceiling</TableHead>
                 <TableHead className="text-right">Cap/Person</TableHead>
                 <TableHead className="text-right">Whitelisted</TableHead>
                 <TableHead className="text-right">Committers</TableHead>
@@ -152,7 +135,7 @@ export function SaleStatus({ state }: SaleStatusProps) {
               {state.hopStats.map((hop, i) => (
                 <TableRow key={i}>
                   <TableCell className="font-medium">{hopLabel(i)}</TableCell>
-                  <TableCell className="text-right">{CROWDFUND_CONSTANTS.HOP_RESERVE_BPS[i] / 100}%</TableCell>
+                  <TableCell className="text-right">{CROWDFUND_CONSTANTS.HOP_CEILING_BPS[i] / 100}%</TableCell>
                   <TableCell className="text-right">{formatUsdc(CROWDFUND_CONSTANTS.HOP_CAPS[i])}</TableCell>
                   <TableCell className="text-right">{hop.whitelistCount}</TableCell>
                   <TableCell className="text-right">{hop.uniqueCommitters}</TableCell>

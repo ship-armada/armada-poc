@@ -212,10 +212,10 @@ async function main() {
     log("SEEDS", `  Batch ${Math.floor(i / SEED_BATCH_SIZE) + 1}: added ${batch.length} seeds`);
   }
 
-  // ============ START INVITATIONS ============
-  const startTx = await crowdfund.startInvitations();
+  // ============ START SALE ============
+  const startTx = await crowdfund.startSale();
   await startTx.wait();
-  log("PHASE", "Invitation window opened");
+  log("PHASE", "Sale window opened (invites + commits)");
 
   // ============ INVITATIONS (if hops enabled) ============
   if (includeHops) {
@@ -245,20 +245,6 @@ async function main() {
     }
     log("INVITE", `${h2idx} hop-2 addresses invited`);
   }
-
-  // ============ ADVANCE TO COMMITMENT ============
-  console.log("-".repeat(70));
-
-  // Read exact commitment window from contract and jump to it
-  const commStart = Number(await crowdfund.commitmentStart());
-  const commEnd = Number(await crowdfund.commitmentEnd());
-  const curBlock = await ethers.provider.getBlock("latest");
-  const curTs = curBlock!.timestamp;
-  const jump = commStart - curTs + 1;
-
-  log("TIME", `Advancing to commitment window (${jump}s jump)...`);
-  await network.provider.send("evm_increaseTime", [jump]);
-  await network.provider.send("evm_mine");
 
   // ============ MINT + APPROVE + COMMIT ============
   console.log("-".repeat(70));

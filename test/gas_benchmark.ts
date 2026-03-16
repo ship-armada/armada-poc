@@ -17,8 +17,7 @@ import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 const ONE_DAY = 86400;
-const TWO_WEEKS = 14 * ONE_DAY;
-const ONE_WEEK = 7 * ONE_DAY;
+const THREE_WEEKS = 21 * ONE_DAY;
 
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -71,12 +70,9 @@ describe("Gas Benchmarks", function () {
         // Add seeds — all participants are hop-0 for simplicity
         const seeds = allSigners.slice(1, count + 1);
         await crowdfund.addSeeds(seeds.map(s => s.address));
-        await crowdfund.startInvitations();
+        await crowdfund.startSale();
 
-        // Skip to commitment window
-        await time.increase(TWO_WEEKS + 1);
-
-        // Each seed commits $15K (max hop-0 cap)
+        // Each seed commits $15K (max hop-0 cap) — commits are valid during the active sale
         // Total: count * $15K. For 50 participants = $750K (below MIN_SALE $1M, would cancel)
         // For 50 participants, use larger amounts or accept cancellation
         // We need >= $1M. At $15K/participant, need >= 67 participants.
@@ -102,8 +98,8 @@ describe("Gas Benchmarks", function () {
           await crowdfund.connect(s).commit(commitAmount);
         }
 
-        // Skip to after commitment window
-        await time.increase(ONE_WEEK + 1);
+        // Skip to after sale window
+        await time.increase(THREE_WEEKS + 1);
 
         // Measure finalize gas
         const tx = await crowdfund.finalize();
@@ -230,8 +226,7 @@ describe("Gas Benchmarks", function () {
       const count = 100;
       const seeds = allSigners.slice(1, count + 1);
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await crowdfund.startSale();
 
       for (const s of seeds) {
         await usdc.mint(s.address, USDC(15_000));
@@ -239,7 +234,7 @@ describe("Gas Benchmarks", function () {
         await crowdfund.connect(s).commit(USDC(15_000));
       }
 
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       // Measure gas for first, middle, and last claims
@@ -489,8 +484,7 @@ describe("Gas Benchmarks", function () {
 
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await crowdfund.startSale();
 
       // Fund all seeds
       for (const s of seeds) {

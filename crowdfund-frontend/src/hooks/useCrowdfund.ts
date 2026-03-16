@@ -58,10 +58,8 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         admin,
         totalCommitted,
         saleSize,
-        invitationStart,
-        invitationEnd,
-        commitmentStart,
-        commitmentEnd,
+        saleStart,
+        saleEnd,
         participantCount,
         hop0Stats,
         hop1Stats,
@@ -76,10 +74,8 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         contract.admin(),
         contract.totalCommitted(),
         contract.saleSize(),
-        contract.invitationStart(),
-        contract.invitationEnd(),
-        contract.commitmentStart(),
-        contract.commitmentEnd(),
+        contract.saleStart(),
+        contract.saleEnd(),
         contract.getParticipantCount(),
         contract.getHopStats(0),
         contract.getHopStats(1),
@@ -96,7 +92,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
 
       // Fetch allocation if finalized and participant has committed
       let currentAllocation = null
-      if (parsedPhase === 3 && parsedParticipant.committed > 0n) {
+      if (parsedPhase === 2 && parsedParticipant.committed > 0n) {
         try {
           const allocResult = await contract.getAllocation(currentAddress)
           currentAllocation = {
@@ -114,10 +110,8 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         adminAddress: admin as string,
         totalCommitted: BigInt(totalCommitted),
         saleSize: BigInt(saleSize),
-        invitationStart: BigInt(invitationStart),
-        invitationEnd: BigInt(invitationEnd),
-        commitmentStart: BigInt(commitmentStart),
-        commitmentEnd: BigInt(commitmentEnd),
+        saleStart: BigInt(saleStart),
+        saleEnd: BigInt(saleEnd),
         hopStats: [
           parseHopStats(hop0Stats),
           parseHopStats(hop1Stats),
@@ -281,11 +275,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     [executeTx],
   )
 
-  const startInvitations = useCallback(
+  const startSale = useCallback(
     () =>
-      executeTx('Starting invitations', (signer, dep) => {
+      executeTx('Starting sale', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.startInvitations()
+        return contract.startSale()
       }),
     [executeTx],
   )
@@ -431,7 +425,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     refreshParticipantList,
     // Write operations
     addSeeds,
-    startInvitations,
+    startSale,
     invite,
     approveAndCommit,
     finalize,

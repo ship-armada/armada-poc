@@ -52,8 +52,8 @@ const TREASURY_ABI = [
 const CROWDFUND_ABI = [
   "function totalCommitted() view returns (uint256)",
   "function phase() view returns (uint8)",
-  "function commitmentEnd() view returns (uint256)",
-  "function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 invitationEnd, uint256 commitmentEnd)",
+  "function saleEnd() view returns (uint256)",
+  "function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 saleEnd)",
   "function BASE_SALE() view returns (uint256)",
   "function MAX_SALE() view returns (uint256)",
   "function MIN_SALE() view returns (uint256)",
@@ -253,11 +253,10 @@ async function queryCrowdfund(env: DeployEnv): Promise<ContractQueryResult> {
 
   const cf = deployments.hub.crowdfund.contracts;
 
-  // Phase enum: 0 = Setup, 1 = Invitation, 2 = Commitment, 3 = Finalized, 4 = Canceled
+  // Phase enum: 0 = Setup, 1 = Active, 2 = Finalized, 3 = Canceled
   const CROWDFUND_PHASES = [
     "Setup",
-    "Invitation",
-    "Commitment",
+    "Active",
     "Finalized",
     "Canceled",
   ];
@@ -270,17 +269,15 @@ async function queryCrowdfund(env: DeployEnv): Promise<ContractQueryResult> {
       safeCall("hub", cf.crowdfund, CROWDFUND_ABI, "MIN_SALE"),
     ]);
 
-  // getSaleStats returns (totalCommitted, phase, invitationEnd, commitmentEnd)
+  // getSaleStats returns (totalCommitted, phase, saleEnd)
   let totalCommitted: unknown = null;
   let phase: unknown = null;
-  let commitmentEnd: unknown = null;
-  let invitationEnd: unknown = null;
+  let saleEnd: unknown = null;
 
-  if (Array.isArray(saleStats) && saleStats.length >= 4) {
+  if (Array.isArray(saleStats) && saleStats.length >= 3) {
     totalCommitted = saleStats[0];
     phase = saleStats[1];
-    invitationEnd = saleStats[2];
-    commitmentEnd = saleStats[3];
+    saleEnd = saleStats[2];
   } else {
     totalCommitted = saleStats;
   }
@@ -292,14 +289,10 @@ async function queryCrowdfund(env: DeployEnv): Promise<ContractQueryResult> {
     address: cf.crowdfund,
     totalCommitted: formatUsdc(totalCommitted),
     phase: phaseNum !== null ? CROWDFUND_PHASES[phaseNum] ?? `Unknown(${phaseNum})` : phase,
-    invitationEnd:
-      typeof invitationEnd === "bigint"
-        ? invitationEnd > 0n ? new Date(Number(invitationEnd) * 1000).toISOString() : "not set"
-        : invitationEnd,
-    commitmentEnd:
-      typeof commitmentEnd === "bigint"
-        ? commitmentEnd > 0n ? new Date(Number(commitmentEnd) * 1000).toISOString() : "not set"
-        : commitmentEnd,
+    saleEnd:
+      typeof saleEnd === "bigint"
+        ? saleEnd > 0n ? new Date(Number(saleEnd) * 1000).toISOString() : "not set"
+        : saleEnd,
     saleLimits: {
       base: formatUsdc(baseSale),
       min: formatUsdc(minSale),

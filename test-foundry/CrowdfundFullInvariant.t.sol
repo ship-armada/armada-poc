@@ -133,6 +133,12 @@ contract CrowdfundFullHandler is Test {
         vm.stopPrank();
     }
 
+    /// @dev Skip past sale end to enable finalization
+    function skipPastSale() external {
+        if (ghost_finalized || ghost_canceled) return;
+        vm.warp(crowdfund.saleEnd() + 1);
+    }
+
     /// @dev Finalize the crowdfund
     function finalize() external {
         if (ghost_finalized || ghost_canceled) return;
@@ -204,8 +210,8 @@ contract CrowdfundFullInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // Start invitations
-        crowdfund.startInvitations();
+        // Start sale
+        crowdfund.startSale();
 
         // Do invitations
         uint256 hop1Idx = 0;
@@ -230,8 +236,7 @@ contract CrowdfundFullInvariantTest is Test {
             }
         }
 
-        // Fast-forward past invitation window into commitment window
-        vm.warp(crowdfund.commitmentStart() + 1);
+        // Commits are valid as soon as the sale starts
 
         // Create handler
         handler = new CrowdfundFullHandler(

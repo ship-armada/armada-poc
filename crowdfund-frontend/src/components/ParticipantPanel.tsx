@@ -35,15 +35,11 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
 
   // Use chain block timestamp (not Date.now()) — EVM time diverges from wall clock in local mode
   const now = state.blockTimestamp || Math.floor(Date.now() / 1000)
-  const inCommitmentWindow =
-    Number(state.commitmentStart) > 0 &&
-    now >= Number(state.commitmentStart) &&
-    now <= Number(state.commitmentEnd)
-
-  const inInvitationWindow =
-    phase === Phase.Invitation &&
-    Number(state.invitationEnd) > 0 &&
-    now <= Number(state.invitationEnd)
+  const inSaleWindow =
+    phase === Phase.Active &&
+    Number(state.saleStart) > 0 &&
+    now >= Number(state.saleStart) &&
+    now <= Number(state.saleEnd)
 
   const handleInvite = async () => {
     if (!isAddress(inviteInput)) return
@@ -110,7 +106,7 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
         </div>
 
         {/* Invite Section */}
-        {isWhitelisted && inInvitationWindow && state.currentInvitesRemaining > 0 && (
+        {isWhitelisted && inSaleWindow && state.currentInvitesRemaining > 0 && (
           <>
             <Separator />
             <div className="space-y-2">
@@ -138,7 +134,7 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
         )}
 
         {/* Commit Section */}
-        {isWhitelisted && inCommitmentWindow && remaining > 0n && (
+        {isWhitelisted && inSaleWindow && remaining > 0n && (
           <>
             <Separator />
             <div className="space-y-2">

@@ -58,7 +58,7 @@ const TIMELOCK_MIN_DELAY   = TWO_DAYS;
 // Governance enums
 const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
-const PhaseNames  = ["SETUP", "INVITATION", "COMMITMENT", "FINALIZED", "CANCELED"];
+const PhaseNames  = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
 const StateNames  = ["PENDING", "ACTIVE", "DEFEATED", "SUCCEEDED", "QUEUED", "EXECUTED", "CANCELED"];
 
 // ============ Utility Functions ============
@@ -246,9 +246,9 @@ async function main() {
   await crowdfund.addSeeds(seeds.map(s => s.address));
   log("SEED", `Added ${seeds.length} seeds (hop 0, $${SEED_CAP} cap, 3 invites each)`);
 
-  // 2b: Start invitations
-  await crowdfund.startInvitations();
-  log("START", "Invitation window opened (2-week duration)");
+  // 2b: Start sale (unified 3-week window — invites + commits concurrent)
+  await crowdfund.startSale();
+  log("START", "Sale window opened (3-week unified window)");
 
   // 2c: Invitation chains — first 3 seeds invite hop-1, hop-1 invite hop-2
   let hop1Count = 0;
@@ -274,10 +274,7 @@ async function main() {
   const [, , wc2] = await crowdfund.getHopStats(2);
   log("STATS", `Whitelisted \u2014 Hop 0: ${wc0} | Hop 1: ${wc1} | Hop 2: ${wc2}`);
 
-  await fastForward(TWO_WEEKS, "2 weeks (invitation window)");
-
-  // 2d: Commitment phase
-  log("PHASE", "Commitment window open (1-week duration)");
+  // 2d: Commitment (no time skip needed — unified window)
 
   // Seeds commit at max cap
   for (const s of seeds) {
@@ -313,7 +310,7 @@ async function main() {
     log("STATS", `  Hop ${h}: ${uc} committers, ${fmtUsdc(tc)}`);
   }
 
-  await fastForward(ONE_WEEK, "1 week (commitment window)");
+  await fastForward(21 * ONE_DAY, "3 weeks (sale window)");
 
   // 2e: Finalize
   await crowdfund.finalize();
@@ -367,7 +364,7 @@ async function main() {
   const [h2Alloc, h2Refund] = await crowdfund.getAllocation(hop2Addrs[0].address);
   log("CLAIM", `  ${hop2Claimers} hop-2 claim: ${fmtArm(h2Alloc)} + ${fmtUsdc(h2Refund)} refund each`);
 
-  verify("Phase is FINALIZED", phase === 3);
+  verify("Phase is FINALIZED", phase === 2);
   verify("Total committed > MIN_SALE ($1M)", totalCommitted > ethers.parseUnits("1000000", 6));
 
   // ================================================================

@@ -10,8 +10,7 @@ pragma solidity ^0.8.17;
 
 enum Phase {
     Setup,          // Admin configures seeds
-    Invitation,     // Seeds invite hop-1, hop-1 invites hop-2
-    Commitment,     // Whitelisted addresses commit USDC
+    Active,         // Unified sale window: invites and commitments run concurrently
     Finalized,      // Allocations computed, claims open
     Canceled        // Below minimum raise, full refunds
 }

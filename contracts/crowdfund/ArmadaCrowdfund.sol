@@ -30,8 +30,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint8 public constant NUM_HOPS = 3;
     uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
-    uint256 public constant INVITATION_DURATION = 14 days;
-    uint256 public constant COMMITMENT_DURATION = 7 days;
+    uint256 public constant SALE_DURATION = 21 days;
     uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
 
@@ -50,10 +49,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     Phase public phase;
 
     // Timing
-    uint256 public invitationStart;
-    uint256 public invitationEnd;
-    uint256 public commitmentStart;
-    uint256 public commitmentEnd;
+    uint256 public saleStart;
+    uint256 public saleEnd;
 
     // Hop configuration (set in constructor)
     HopConfig[3] public hopConfigs;
@@ -83,7 +80,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
-    event InvitationStarted(uint256 invitationEnd, uint256 commitmentStart, uint256 commitmentEnd);
+    event SaleStarted(uint256 saleStart, uint256 saleEnd);
     event Invited(address indexed inviter, address indexed invitee, uint8 hop);
     event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop);
     event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc);
@@ -148,26 +145,24 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit SeedAdded(seed);
     }
 
-    /// @notice Start the invitation window
-    function startInvitations() external onlyAdmin inPhase(Phase.Setup) {
+    /// @notice Start the unified sale window (invites and commitments run concurrently)
+    function startSale() external onlyAdmin inPhase(Phase.Setup) {
         require(hopStats[0].whitelistCount > 0, "ArmadaCrowdfund: no seeds");
 
-        invitationStart = block.timestamp;
-        invitationEnd = block.timestamp + INVITATION_DURATION;
-        commitmentStart = invitationEnd;
-        commitmentEnd = commitmentStart + COMMITMENT_DURATION;
-        phase = Phase.Invitation;
+        saleStart = block.timestamp;
+        saleEnd = block.timestamp + SALE_DURATION;
+        phase = Phase.Active;
 
-        emit InvitationStarted(invitationEnd, commitmentStart, commitmentEnd);
+        emit SaleStarted(saleStart, saleEnd);
     }
 
-    // ============ Invitation Phase ============
+    // ============ Active Phase (Invitations + Commitments) ============
 
     /// @notice Invite an address to participate at (your hop + 1)
     function invite(address invitee) external whenNotPaused {
         require(
-            block.timestamp >= invitationStart && block.timestamp < invitationEnd,
-            "ArmadaCrowdfund: not invitation window"
+            block.timestamp >= saleStart && block.timestamp <= saleEnd,
+            "ArmadaCrowdfund: not in sale window"
         );
 
         Participant storage inviter = participants[msg.sender];
@@ -195,19 +190,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit Invited(msg.sender, invitee, inviteeHop);
     }
 
-    // ============ Commitment Phase ============
-
     /// @notice Commit USDC to the crowdfund
     function commit(uint256 amount) external nonReentrant whenNotPaused {
         require(
-            block.timestamp >= commitmentStart && block.timestamp <= commitmentEnd,
-            "ArmadaCrowdfund: not commitment window"
+            block.timestamp >= saleStart && block.timestamp <= saleEnd,
+            "ArmadaCrowdfund: not in sale window"
         );
-
-        // Lazy phase transition: first commit advances phase from Invitation
-        if (phase == Phase.Invitation) {
-            phase = Phase.Commitment;
-        }
 
         Participant storage p = participants[msg.sender];
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
@@ -241,11 +229,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @dev Prevents permanent fund lockup if admin key is lost or admin is unresponsive
     function permissionlessCancel() external {
         require(
-            phase == Phase.Invitation || phase == Phase.Commitment,
+            phase == Phase.Active,
             "ArmadaCrowdfund: not in active phase"
         );
         require(
-            block.timestamp > commitmentEnd + FINALIZE_GRACE_PERIOD,
+            block.timestamp > saleEnd + FINALIZE_GRACE_PERIOD,
             "ArmadaCrowdfund: grace period not elapsed"
         );
         phase = Phase.Canceled;
@@ -254,9 +242,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     /// @notice Finalize the crowdfund: compute allocations or cancel
     function finalize() external onlyAdmin nonReentrant {
-        require(block.timestamp > commitmentEnd, "ArmadaCrowdfund: commitment not ended");
+        require(block.timestamp > saleEnd, "ArmadaCrowdfund: sale not ended");
         require(
-            phase == Phase.Invitation || phase == Phase.Commitment,
+            phase == Phase.Active,
             "ArmadaCrowdfund: already finalized"
         );
 
@@ -453,10 +441,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     function getSaleStats() external view returns (
         uint256 _totalCommitted,
         Phase _phase,
-        uint256 _invitationEnd,
-        uint256 _commitmentEnd
+        uint256 _saleEnd
     ) {
-        return (totalCommitted, phase, invitationEnd, commitmentEnd);
+        return (totalCommitted, phase, saleEnd);
     }
 
     /// @notice Check if an address is whitelisted

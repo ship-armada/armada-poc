@@ -5,7 +5,7 @@ export const CROWDFUND_ABI = [
   // Admin actions (Setup)
   'function addSeed(address seed) external',
   'function addSeeds(address[] calldata seeds) external',
-  'function startInvitations() external',
+  'function startSale() external',
   'function finalize() external',
   'function withdrawProceeds() external',
   'function withdrawUnallocatedArm() external',
@@ -25,10 +25,8 @@ export const CROWDFUND_ABI = [
   'function saleSize() view returns (uint256)',
   'function totalAllocated() view returns (uint256)',
   'function totalAllocatedUsdc() view returns (uint256)',
-  'function invitationStart() view returns (uint256)',
-  'function invitationEnd() view returns (uint256)',
-  'function commitmentStart() view returns (uint256)',
-  'function commitmentEnd() view returns (uint256)',
+  'function saleStart() view returns (uint256)',
+  'function saleEnd() view returns (uint256)',
   'function participants(address) view returns (uint8 hop, bool isWhitelisted, uint256 committed, uint256 allocation, uint256 refund, bool claimed, address invitedBy, uint8 invitesSent)',
   'function participantList(uint256) view returns (address)',
   'function hopStats(uint8) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
@@ -41,7 +39,7 @@ export const CROWDFUND_ABI = [
 
   // View functions
   'function getHopStats(uint8 hop) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
-  'function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 invitationEnd, uint256 commitmentEnd)',
+  'function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 saleEnd)',
   'function isWhitelisted(address addr) view returns (bool)',
   'function getCommitment(address addr) view returns (uint256 committed, uint8 hop)',
   'function getInvitesRemaining(address addr) view returns (uint8)',
@@ -51,7 +49,7 @@ export const CROWDFUND_ABI = [
 
   // Events
   'event SeedAdded(address indexed seed)',
-  'event InvitationStarted(uint256 invitationEnd, uint256 commitmentStart, uint256 commitmentEnd)',
+  'event SaleStarted(uint256 saleStart, uint256 saleEnd)',
   'event Invited(address indexed inviter, address indexed invitee, uint8 hop)',
   'event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop)',
   'event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc)',

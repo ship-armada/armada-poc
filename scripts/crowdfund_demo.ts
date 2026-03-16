@@ -22,10 +22,9 @@
 
 import { ethers, network } from "hardhat";
 
-const PhaseNames = ["SETUP", "INVITATION", "COMMITMENT", "FINALIZED", "CANCELED"];
+const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
 
-const TWO_WEEKS = 14 * 86400;
-const ONE_WEEK = 7 * 86400;
+const THREE_WEEKS = 21 * 86400;
 
 function log(tag: string, msg: string) {
   const padded = `[${tag}]`.padEnd(12);
@@ -107,15 +106,15 @@ async function main() {
     log("SEED", `  Seed-${String.fromCharCode(65 + i)}: ${seeds[i].address.slice(0, 10)}...`);
   }
 
-  // ============ PHASE: INVITATION ============
+  // ============ PHASE: SALE (unified window) ============
   console.log("");
   console.log("-".repeat(70));
-  console.log("  PHASE: INVITATION (2-week window)");
+  console.log("  PHASE: SALE (3-week unified window)");
   console.log("-".repeat(70));
   console.log("");
 
-  await crowdfund.startInvitations();
-  log("START", `Invitation window opened`);
+  await crowdfund.startSale();
+  log("START", `Sale window opened (invites + commits concurrent)`);
 
   // Each seed invites 3 hop-1 addresses
   let hop1Count = 0;
@@ -143,15 +142,7 @@ async function main() {
   const [, , wc2] = await crowdfund.getHopStats(2);
   log("STATS", `Hop 0: ${wc0} whitelisted | Hop 1: ${wc1} | Hop 2: ${wc2}`);
 
-  await fastForward(TWO_WEEKS, "2 weeks (invitation window)");
-
-  // ============ PHASE: COMMITMENT ============
-  console.log("-".repeat(70));
-  console.log("  PHASE: COMMITMENT (1-week window)");
-  console.log("-".repeat(70));
-  console.log("");
-
-  // Fund and commit: seeds at max cap
+  // Fund and commit: seeds at max cap (no time skip needed — unified window)
   for (let i = 0; i < seeds.length; i++) {
     const amount = ethers.parseUnits("15000", 6);
     await usdc.mint(seeds[i].address, amount);
@@ -223,10 +214,8 @@ async function main() {
   await cf2.addSeeds(bigSeeds.map(s => s.address));
   log("SETUP", `Added ${bigSeeds.length} seeds to second crowdfund`);
 
-  await cf2.startInvitations();
-  await network.provider.send("evm_increaseTime", [TWO_WEEKS + 1]);
-  await network.provider.send("evm_mine");
-  log("TIME", "Fast-forwarded past invitation window");
+  await cf2.startSale();
+  log("START", "Sale window opened");
 
   // Each seed commits $15K
   for (const s of bigSeeds) {
@@ -238,7 +227,7 @@ async function main() {
   const total2 = await cf2.totalCommitted();
   log("COMMIT", `${bigSeeds.length} seeds commit $15K each = ${fmtUsdc(total2)}`);
 
-  await network.provider.send("evm_increaseTime", [ONE_WEEK + 1]);
+  await network.provider.send("evm_increaseTime", [THREE_WEEKS + 1]);
   await network.provider.send("evm_mine");
 
   // Finalize

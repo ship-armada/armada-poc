@@ -299,18 +299,18 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       expect(quorum).to.equal(expectedQuorum);
       // Verify the quorum is reachable: 600K ARM, deployer has 200K locked,
-      // seeds claimed ~840K total (80 seeds * 10.5K each)
+      // seeds claimed ~798K total (80 seeds * ~9,975 each)
       expect(quorum).to.equal(ARM(600_000));
     });
 
     it("proposal threshold (0.1% of total supply = 100K ARM) is reachable by crowdfund participant", async function () {
       await runCrowdfundAndClaim();
 
-      // With BASE_SALE ($1.2M), hop-0 reserve = 70% = $840K.
-      // 80 seeds * $15K = $1.2M demand > $840K reserve → pro-rata.
-      // Each seed gets (15K * 840K) / 1.2M = $10,500 = 10,500 ARM.
+      // With BASE_SALE ($1.2M), hop-0 ceiling = 70% of netRaise = 70% of $1.14M = $798K.
+      // 80 seeds * $15K = $1.2M demand > $798K ceiling → pro-rata.
+      // Each seed gets (15K * 798K) / 1.2M = $9,975 = 9,975 ARM.
       // Threshold = 100M * 0.001 = 100,000 ARM.
-      // Need ceil(100K / 10.5K) = 10 seeds pooled.
+      // Need ceil(100K / 9.975K) = 11 seeds pooled.
 
       const threshold = await governor.proposalThreshold();
       expect(threshold).to.equal(ARM(100_000));
@@ -319,9 +319,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const seedBalance = await armToken.balanceOf(seeds[0].address);
       expect(seedBalance).to.be.lt(threshold); // single seed can't propose
 
-      // 10 seeds pooling tokens: transfer to one address
+      // 11 seeds pooling tokens: transfer to one address
       const pooledSeed = seeds[0];
-      for (let i = 1; i < 10; i++) {
+      for (let i = 1; i < 11; i++) {
         const bal = await armToken.balanceOf(seeds[i].address);
         await armToken.connect(seeds[i]).transfer(pooledSeed.address, bal);
       }

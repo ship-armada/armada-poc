@@ -113,19 +113,19 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.totalCommitted()).to.equal(0);
       expect(await crowdfund.getParticipantCount()).to.equal(0);
 
-      // Check hop configs
-      const [reserveBps0, cap0, maxInv0] = await crowdfund.hopConfigs(0);
-      expect(reserveBps0).to.equal(7000);
+      // Check hop configs (overlapping ceilings: 70/45/10, sum=125%)
+      const [ceilingBps0, cap0, maxInv0] = await crowdfund.hopConfigs(0);
+      expect(ceilingBps0).to.equal(7000);
       expect(cap0).to.equal(USDC(15_000));
       expect(maxInv0).to.equal(3);
 
-      const [reserveBps1, cap1, maxInv1] = await crowdfund.hopConfigs(1);
-      expect(reserveBps1).to.equal(2500);
+      const [ceilingBps1, cap1, maxInv1] = await crowdfund.hopConfigs(1);
+      expect(ceilingBps1).to.equal(4500);
       expect(cap1).to.equal(USDC(4_000));
       expect(maxInv1).to.equal(2);
 
-      const [reserveBps2, cap2, maxInv2] = await crowdfund.hopConfigs(2);
-      expect(reserveBps2).to.equal(500);
+      const [ceilingBps2, cap2, maxInv2] = await crowdfund.hopConfigs(2);
+      expect(ceilingBps2).to.equal(1000);
       expect(cap2).to.equal(USDC(1_000));
       expect(maxInv2).to.equal(0);
     });
@@ -485,7 +485,8 @@ describe("Crowdfund Integration", function () {
     });
 
     it("should allocate fully when demand <= reserve", async function () {
-      // Setup: 1 seed commits $10K (below 70% of BASE=$840K reserve)
+      // Setup: 68 seeds at $15K = $1.02M demand.
+      // Hop-0 ceiling = 70% of netRaise = 70% of $1.14M = $798K, so demand > ceiling.
       // Need to reach MIN_SALE first — use many seeds
       const seeds = allSigners.slice(1, 80);
       for (const s of seeds) {
@@ -510,11 +511,9 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE_SALE
 
-      // Each participant should get full allocation (demand < reserve)
-      // Hop 0 reserve = 70% of $1.2M = $840K. Demand = $1,020,000 > $840K → pro-rata
-      // Actually this IS oversubscribed. Let's verify the allocation is scaled.
+      // Hop 0 ceiling = 70% of $1.14M (netRaise) = $798K. Demand = $1,020,000 > $798K → pro-rata
       const [alloc, refund, claimed] = await crowdfund.getAllocation(seeds[0].address);
-      // Pro-rata: alloc = (15000 * 840000) / 1020000 ≈ 12352.94 USDC worth
+      // Pro-rata: alloc = (15000 * 798000) / 1020000 ≈ 11735.29 USDC worth
       expect(alloc).to.be.gt(0);
       expect(refund).to.be.gt(0); // some refund because oversubscribed
     });
@@ -539,14 +538,15 @@ describe("Crowdfund Integration", function () {
       await crowdfund.finalize();
 
       // saleSize = BASE_SALE = $1.2M
-      // Hop 0 reserve = 70% of $1.2M = $840,000
-      // Hop 0 demand = $1,050,000 > $840,000 → pro-rata
-      // scale = 840000 / 1050000 = 0.8
-      // Each $15K commit → $12,000 allocation → 12,000 ARM
+      // hop2Floor = 5% of $1.2M = $60K, netRaise = $1.14M
+      // Hop 0 ceiling = 70% of $1.14M = $798,000
+      // Hop 0 demand = $1,050,000 > $798,000 → pro-rata
+      // scale = 798000 / 1050000 = 0.76
+      // Each $15K commit → $11,400 allocation → 11,400 ARM
       const [alloc, refund] = await crowdfund.getAllocation(seeds[0].address);
       const allocArm = Number(alloc) / 1e18; // ARM allocation in whole tokens
-      expect(allocArm).to.be.closeTo(12_000, 1); // ~12,000 ARM ($12K at $1/ARM)
-      expect(refund).to.be.closeTo(USDC(3_000), USDC(1)); // ~$3K refund
+      expect(allocArm).to.be.closeTo(11_400, 1); // ~11,400 ARM ($11.4K at $1/ARM)
+      expect(refund).to.be.closeTo(USDC(3_600), USDC(1)); // ~$3.6K refund
     });
   });
 
@@ -591,7 +591,7 @@ describe("Crowdfund Integration", function () {
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
 
-      // Only 68 seeds commit — under-subscribes hop-0 (reserve = 70% of $1.2M = $840K)
+      // Only 68 seeds commit — hop-0 ceiling = 70% of $1.14M (netRaise) = $798K
       // 68 * $15K = $1.02M committed (above MIN_SALE), but all in hop-0
       for (const s of seeds.slice(0, 68)) {
         await crowdfund.connect(s).commit(USDC(15_000));
@@ -599,8 +599,8 @@ describe("Crowdfund Integration", function () {
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
 
-      // Hop-0 demand ($1.02M) < reserve ($840K) is false, so hop-0 is over-subscribed.
-      // Hop-1 and hop-2 have 0 demand but non-zero reserves → all goes to treasury leftover.
+      // Hop-0 demand ($1.02M) > ceiling ($798K) → over-subscribed.
+      // Hop-1 and hop-2 have 0 demand → all remaining goes to treasury leftover.
       const leftover = await crowdfund.treasuryLeftoverUsdc();
       expect(leftover).to.be.gt(0);
     });
@@ -948,9 +948,9 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE
 
-      // Hop-0 demand = $1,050,000, reserve = $840,000 → pro-rata
-      // scale = 840000/1050000 = 0.8
-      // Each $15K → $12K allocated → 12,000 ARM
+      // Hop-0 demand = $1,050,000, ceiling = 70% of $1.14M = $798,000 → pro-rata
+      // scale = 798000/1050000 = 0.76
+      // Each $15K → $11,400 allocated → 11,400 ARM
 
       // Claim first seed
       const armBefore = await armToken.balanceOf(seeds[0].address);

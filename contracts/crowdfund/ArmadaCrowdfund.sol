@@ -1,3 +1,6 @@
+// ABOUTME: Word-of-mouth whitelist crowdfund with hop-based allocation.
+// ABOUTME: Implements overlapping ceilings, hop-2 floor, elastic expansion, and pro-rata refunds.
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -25,6 +28,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint32 public constant HOP1_ROLLOVER_MIN = 30;  // min unique hop-1 committers for rollover
     uint32 public constant HOP2_ROLLOVER_MIN = 50;  // min unique hop-2 committers for rollover
     uint8 public constant NUM_HOPS = 3;
+    uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
     uint256 public constant INVITATION_DURATION = 14 days;
     uint256 public constant COMMITMENT_DURATION = 7 days;
@@ -66,7 +70,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public saleSize;
     uint256 public totalAllocated;       // ARM (18 dec) — hop-level upper bound
     uint256 public totalAllocatedUsdc;   // USDC (6 dec) — hop-level upper bound
-    uint256[3] public finalReserves;     // hop reserves after rollover (stored at finalization)
+    uint256[3] public finalCeilings;     // budget-capped hop ceilings (stored at finalization)
     uint256[3] public finalDemands;      // hop demands (stored at finalization)
     uint256 public treasuryLeftoverUsdc; // USDC (6 dec) — unallocated reserve that goes to treasury
 
@@ -112,9 +116,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         treasury = _treasury;
         phase = Phase.Setup;
 
-        hopConfigs[0] = HopConfig({ reserveBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
-        hopConfigs[1] = HopConfig({ reserveBps: 2500, capUsdc: 4_000 * 1e6,  maxInvites: 2 });
-        hopConfigs[2] = HopConfig({ reserveBps: 500,  capUsdc: 1_000 * 1e6,  maxInvites: 0 });
+        hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
+        hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 4_000 * 1e6,  maxInvites: 2 });
+        hopConfigs[2] = HopConfig({ ceilingBps: 1000, capUsdc: 1_000 * 1e6,  maxInvites: 0 });
     }
 
     // ============ Setup Phase ============
@@ -277,64 +281,66 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             "ArmadaCrowdfund: insufficient ARM"
         );
 
-        // Step 2: Per-hop allocation with sequential rollover
-        uint256[3] memory reserves;
+        // Step 2: Per-hop allocation with overlapping ceilings and global budget constraint
+        //
+        // Hop-2 floor is reserved off the top. Hop-0/hop-1 ceilings are applied against
+        // the net raise (saleSize minus floor). Ceilings overlap (sum > 100%) so a global
+        // budget constraint (remaining) ensures total allocation never exceeds saleSize.
+
+        uint256 hop2Floor = (saleSize * HOP2_FLOOR_BPS) / 10000;
+        uint256 netRaise = saleSize - hop2Floor;
+
+        // Base ceilings: hop 0/1 against netRaise, hop 2 against full saleSize
+        uint256[3] memory effectiveCeilings;
+        effectiveCeilings[0] = (netRaise * hopConfigs[0].ceilingBps) / 10000;
+        effectiveCeilings[1] = (netRaise * hopConfigs[1].ceilingBps) / 10000;
+        effectiveCeilings[2] = (saleSize * hopConfigs[2].ceilingBps) / 10000;
+
         uint256[3] memory demands;
-        uint256 treasuryLeftover = 0;
-
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            reserves[h] = (saleSize * hopConfigs[h].reserveBps) / 10000;
-            demands[h] = hopStats[h].totalCommitted;
-        }
-
-        // Process hops sequentially (0 → 1 → 2) with rollover
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            if (demands[h] <= reserves[h]) {
-                // Under-subscribed: full allocation, compute leftover
-                uint256 hopLeftover = reserves[h] - demands[h];
-
-                // Apply rollover rules
-                if (h == 0) {
-                    if (hopStats[1].uniqueCommitters >= HOP1_ROLLOVER_MIN) {
-                        reserves[1] += hopLeftover;
-                    } else {
-                        treasuryLeftover += hopLeftover;
-                    }
-                } else if (h == 1) {
-                    if (hopStats[2].uniqueCommitters >= HOP2_ROLLOVER_MIN) {
-                        reserves[2] += hopLeftover;
-                    } else {
-                        treasuryLeftover += hopLeftover;
-                    }
-                } else {
-                    treasuryLeftover += hopLeftover;
-                }
-            }
-            // Over-subscribed: no leftover (all reserve used), no rollover
-        }
-
-        // Step 3: Store hop-level data for lazy evaluation in claim()
-        // Individual allocations are computed on-the-fly in claim() and getAllocation()
-        // using finalReserves[hop] and finalDemands[hop], making finalize() O(1).
+        uint256 remaining = netRaise;  // hops 0/1 compete for netRaise only
         uint256 totalAllocUsdc_ = 0;
         uint256 totalAllocArm_ = 0;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
-            finalReserves[h] = reserves[h];
+            demands[h] = hopStats[h].totalCommitted;
+
+            // When we reach hop 2, add back the floor reservation to the remaining budget
+            if (h == 2) {
+                remaining += hop2Floor;
+            }
+
+            // Global budget constraint: cap effective ceiling against remaining supply
+            uint256 ceiling = effectiveCeilings[h] < remaining ? effectiveCeilings[h] : remaining;
+
+            uint256 allocated = demands[h] <= ceiling ? demands[h] : ceiling;
+            remaining -= allocated;
+
+            // Store budget-capped ceiling for lazy evaluation in claim() and getAllocation()
+            finalCeilings[h] = ceiling;
             finalDemands[h] = demands[h];
 
-            // Hop-level totals (upper bounds due to per-participant integer division)
-            uint256 hopAlloc = demands[h] <= reserves[h] ? demands[h] : reserves[h];
-            totalAllocUsdc_ += hopAlloc;
-            totalAllocArm_ += (hopAlloc * 1e18) / ARM_PRICE;
+            totalAllocUsdc_ += allocated;
+            totalAllocArm_ += (allocated * 1e18) / ARM_PRICE;
+
+            // Rollover: unused ceiling capacity flows to the next hop
+            uint256 leftover = ceiling - allocated;
+            if (leftover > 0) {
+                if (h == 0 && hopStats[1].uniqueCommitters >= HOP1_ROLLOVER_MIN) {
+                    effectiveCeilings[1] += leftover;
+                } else if (h == 1 && hopStats[2].uniqueCommitters >= HOP2_ROLLOVER_MIN) {
+                    effectiveCeilings[2] += leftover;
+                }
+                // If not rolled over, leftover remains in the budget pool (remaining)
+                // and becomes part of treasuryLeftoverUsdc at the end
+            }
         }
 
         totalAllocatedUsdc = totalAllocUsdc_;
         totalAllocated = totalAllocArm_;
-        treasuryLeftoverUsdc = treasuryLeftover;
+        treasuryLeftoverUsdc = saleSize - totalAllocUsdc_;
         phase = Phase.Finalized;
 
-        emit SaleFinalized(saleSize, totalAllocUsdc_, totalAllocArm_, treasuryLeftover);
+        emit SaleFinalized(saleSize, totalAllocUsdc_, totalAllocArm_, treasuryLeftoverUsdc);
     }
 
     // ============ Claims & Withdrawals ============
@@ -506,8 +512,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Internal ============
 
-    /// @dev Compute allocation for a participant from stored hop-level reserves/demands.
-    ///      Identical math to the original finalize() loop, but evaluated lazily.
+    /// @dev Compute allocation for a participant from stored hop-level ceilings/demands.
+    ///      Uses the budget-capped ceiling stored at finalization for pro-rata scaling.
     function _computeAllocation(uint256 committed, uint8 hop) internal view returns (
         uint256 allocArm,
         uint256 allocUsdc,
@@ -515,15 +521,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     ) {
         if (committed == 0) return (0, 0, 0);
 
-        if (finalDemands[hop] <= finalReserves[hop]) {
+        if (finalDemands[hop] <= finalCeilings[hop]) {
             // Under-subscribed: full allocation
             allocUsdc = committed;
             allocArm = (committed * 1e18) / ARM_PRICE;
         } else {
             // Over-subscribed: pro-rata
-            allocUsdc = (committed * finalReserves[hop]) / finalDemands[hop];
+            allocUsdc = (committed * finalCeilings[hop]) / finalDemands[hop];
             // Compute ARM directly to avoid divide-before-multiply precision loss
-            allocArm = (committed * finalReserves[hop] * 1e18) / (finalDemands[hop] * ARM_PRICE);
+            allocArm = (committed * finalCeilings[hop] * 1e18) / (finalDemands[hop] * ARM_PRICE);
         }
         refundUsdc = committed - allocUsdc;
     }

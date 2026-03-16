@@ -1,3 +1,6 @@
+// ABOUTME: Shared types (enums, structs) for the Armada crowdfund system.
+// ABOUTME: Imported by ArmadaCrowdfund.sol and test contracts.
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -16,7 +19,7 @@ enum Phase {
 // ========== Structs ==========
 
 struct HopConfig {
-    uint16 reserveBps;      // Reserve as basis points of sale size (7000, 2500, 500)
+    uint16 ceilingBps;      // Ceiling as basis points — overlapping, sum > 10000 (7000, 4500, 1000)
     uint256 capUsdc;        // Max individual commitment in USDC (6 decimals)
     uint8 maxInvites;       // How many addresses this hop can invite (3, 2, 0)
 }

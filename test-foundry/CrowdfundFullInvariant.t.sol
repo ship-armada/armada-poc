@@ -8,8 +8,8 @@ import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 
 // ══════════════════════════════════════════════════════════════════════════
-// INV-C2: Reserve BPS across hops sum to 10000
-// (Extends the existing CrowdfundInvariant.t.sol with this missing invariant)
+// INV-C2: Ceiling BPS match expected overlapping values
+// (Extends the existing CrowdfundInvariant.t.sol with this ceiling invariant)
 // ══════════════════════════════════════════════════════════════════════════
 
 /// @title CrowdfundFullHandler — Minimal handler to exercise crowdfund for BPS check
@@ -249,17 +249,17 @@ contract CrowdfundFullInvariantTest is Test {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // INV-C2: Reserve BPS across hops sum to 10000
+    // INV-C2: Ceiling BPS match expected overlapping values (sum = 12500)
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice Hop reserve basis points always sum to exactly 10000 (100%)
-    function invariant_reserveBpsSumTo10000() public view {
-        uint256 sum;
-        for (uint8 h = 0; h < 3; h++) {
-            (uint16 bps, , ) = crowdfund.hopConfigs(h);
-            sum += bps;
-        }
-        assertEq(sum, 10000, "INV-C2: Reserve BPS don't sum to 10000");
+    /// @notice Hop ceiling basis points match spec: 7000/4500/1000 (overlapping, sum > 10000)
+    function invariant_ceilingBpsAreValid() public view {
+        (uint16 bps0, , ) = crowdfund.hopConfigs(0);
+        (uint16 bps1, , ) = crowdfund.hopConfigs(1);
+        (uint16 bps2, , ) = crowdfund.hopConfigs(2);
+        assertEq(bps0, 7000, "INV-C2: Hop 0 ceiling should be 7000");
+        assertEq(bps1, 4500, "INV-C2: Hop 1 ceiling should be 4500");
+        assertEq(bps2, 1000, "INV-C2: Hop 2 ceiling should be 1000");
     }
 
     // ══════════════════════════════════════════════════════════════════════

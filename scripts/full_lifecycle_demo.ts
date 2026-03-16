@@ -325,13 +325,13 @@ async function main() {
 
   // Show allocation math per hop
   for (let h = 0; h < 3; h++) {
-    const reserve = await crowdfund.finalReserves(h);
+    const ceiling = await crowdfund.finalCeilings(h);
     const demand  = await crowdfund.finalDemands(h);
-    const overSub = demand > reserve;
+    const overSub = demand > ceiling;
     const allocLabel = overSub
-      ? `PRO-RATA (${((Number(reserve) / Number(demand)) * 100).toFixed(1)}%)`
+      ? `PRO-RATA (${((Number(ceiling) / Number(demand)) * 100).toFixed(1)}%)`
       : "FULL ALLOC";
-    log("ALLOC", `Hop ${h}: reserve ${fmtUsdc(reserve)} | demand ${fmtUsdc(demand)} \u2192 ${allocLabel}`);
+    log("ALLOC", `Hop ${h}: ceiling ${fmtUsdc(ceiling)} | demand ${fmtUsdc(demand)} \u2192 ${allocLabel}`);
   }
 
   const totalAllocArm  = await crowdfund.totalAllocated();

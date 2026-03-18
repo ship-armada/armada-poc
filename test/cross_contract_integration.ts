@@ -144,7 +144,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // 2. Seeds invite hop-1 addresses
       for (let i = 0; i < 3 && i < hop1Addrs.length; i++) {
-        await crowdfund.connect(seeds[i]).invite(hop1Addrs[i].address);
+        await crowdfund.connect(seeds[i]).invite(hop1Addrs[i].address, 0);
       }
 
       // 3. Fast-forward past invitation window into commitment window
@@ -155,7 +155,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
-        await crowdfund.connect(seed).commit(amount);
+        await crowdfund.connect(seed).commit(amount, 0);
       }
 
       // 5. Fast-forward past commitment window
@@ -256,7 +256,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
-        await crowdfund.connect(seed).commit(amount);
+        await crowdfund.connect(seed).commit(amount, 0);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -361,7 +361,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
-        await crowdfund.connect(seed).commit(amount);
+        await crowdfund.connect(seed).commit(amount, 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -562,7 +562,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
-        await crowdfund.connect(seed).commit(amount);
+        await crowdfund.connect(seed).commit(amount, 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -753,7 +753,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
-        await localCrowdfund.connect(seed).commit(amount);
+        await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -813,7 +813,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
-        await localCrowdfund.connect(seed).commit(amount);
+        await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -847,7 +847,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
-        await localCrowdfund.connect(seed).commit(amount);
+        await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -873,7 +873,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const amount = USDC(15_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
-        await localCrowdfund.connect(seed).commit(amount);
+        await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
       await time.increase(ONE_WEEK + 1);

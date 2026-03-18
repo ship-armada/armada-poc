@@ -79,13 +79,13 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
               </TableHeader>
               <TableBody>
                 {participants.map((row) => (
-                  <TableRow key={row.address}>
+                  <TableRow key={`${row.address}-${row.hop}`}>
                     <TableCell className="font-mono text-xs">
                       {truncateAddress(row.address)}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
-                        {hopLabel(row.participant.hop)}
+                        {hopLabel(row.hop)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">

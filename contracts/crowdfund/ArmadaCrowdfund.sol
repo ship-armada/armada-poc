@@ -34,6 +34,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public constant COMMITMENT_DURATION = 7 days;
     uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
+    uint16 public constant MAX_INVITES_RECEIVED = 10;            // cap on invite stacking per (address, hop) node
 
     // ============ Immutable ============
 
@@ -58,9 +59,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // Hop configuration (set in constructor)
     HopConfig[3] public hopConfigs;
 
-    // Participant data
-    mapping(address => Participant) public participants;
-    address[] public participantList;
+    // Participant data — keyed by (address, hop). Same address may appear at multiple hops.
+    mapping(address => mapping(uint8 => Participant)) public participants;
+    ParticipantNode[] public participantNodes;
 
     // Aggregate stats
     HopStats[3] public hopStats;
@@ -85,6 +86,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     event SeedAdded(address indexed seed);
     event InvitationStarted(uint256 invitationEnd, uint256 commitmentStart, uint256 commitmentEnd);
     event Invited(address indexed inviter, address indexed invitee, uint8 hop);
+    event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount);
     event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop);
     event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc);
     event SaleCanceled(uint256 totalCommitted);
@@ -137,12 +139,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     function _addSeed(address seed) internal {
         require(seed != address(0), "ArmadaCrowdfund: zero address");
-        require(!participants[seed].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
+        require(!participants[seed][0].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
 
-        participants[seed].hop = 0;
-        participants[seed].isWhitelisted = true;
+        participants[seed][0].isWhitelisted = true;
+        participants[seed][0].invitesReceived = 1;
         // invitedBy defaults to address(0) for seeds
-        participantList.push(seed);
+        participantNodes.push(ParticipantNode(seed, 0));
         hopStats[0].whitelistCount++;
 
         emit SeedAdded(seed);
@@ -163,42 +165,62 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Invitation Phase ============
 
-    /// @notice Invite an address to participate at (your hop + 1)
-    function invite(address invitee) external whenNotPaused {
+    /// @notice Invite an address to participate at (inviterHop + 1).
+    ///         Re-inviting an already-whitelisted (invitee, hop) node increments its
+    ///         invitesReceived counter, scaling its cap and outgoing invite budget.
+    /// @param invitee Address to invite
+    /// @param inviterHop Which of the caller's hop-level nodes is doing the inviting
+    function invite(address invitee, uint8 inviterHop) external whenNotPaused {
         require(
             block.timestamp >= invitationStart && block.timestamp < invitationEnd,
             "ArmadaCrowdfund: not invitation window"
         );
 
-        Participant storage inviter = participants[msg.sender];
+        Participant storage inviter = participants[msg.sender][inviterHop];
         require(inviter.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
-
-        uint8 inviterHop = inviter.hop;
         require(inviterHop < NUM_HOPS - 1, "ArmadaCrowdfund: max hop reached");
+        // Scaled invite budget: invitesReceived * maxInvites for this hop
+        uint16 maxBudget = inviter.invitesReceived * uint16(hopConfigs[inviterHop].maxInvites);
         require(
-            inviter.invitesSent < hopConfigs[inviterHop].maxInvites,
+            inviter.invitesSent < maxBudget,
             "ArmadaCrowdfund: invite limit reached"
         );
         require(invitee != address(0), "ArmadaCrowdfund: zero address");
-        require(!participants[invitee].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
 
         uint8 inviteeHop = inviterHop + 1;
+        Participant storage inviteeNode = participants[invitee][inviteeHop];
 
-        participants[invitee].hop = inviteeHop;
-        participants[invitee].isWhitelisted = true;
-        participants[invitee].invitedBy = msg.sender;
-        participantList.push(invitee);
+        if (!inviteeNode.isWhitelisted) {
+            // First invite to this (address, hop) — whitelist the node
+            inviteeNode.isWhitelisted = true;
+            inviteeNode.invitesReceived = 1;
+            inviteeNode.invitedBy = msg.sender;
+            participantNodes.push(ParticipantNode(invitee, inviteeHop));
+            hopStats[inviteeHop].whitelistCount++;
+
+            emit Invited(msg.sender, invitee, inviteeHop);
+        } else {
+            // Subsequent invite — increment counter (scales cap + outgoing budget)
+            // TODO: MAX_INVITES_RECEIVED = 10 is a placeholder — revisit after modeling
+            // expected invite patterns and desired cap concentration limits.
+            require(
+                inviteeNode.invitesReceived < MAX_INVITES_RECEIVED,
+                "ArmadaCrowdfund: max invites received"
+            );
+            inviteeNode.invitesReceived++;
+
+            emit InviteAdded(msg.sender, invitee, inviteeHop, inviteeNode.invitesReceived);
+        }
 
         inviter.invitesSent++;
-        hopStats[inviteeHop].whitelistCount++;
-
-        emit Invited(msg.sender, invitee, inviteeHop);
     }
 
     // ============ Commitment Phase ============
 
-    /// @notice Commit USDC to the crowdfund
-    function commit(uint256 amount) external nonReentrant whenNotPaused {
+    /// @notice Commit USDC to the crowdfund at a specific hop level
+    /// @param amount USDC amount to commit (6 decimals)
+    /// @param hop Which of the caller's (address, hop) nodes to commit to
+    function commit(uint256 amount, uint8 hop) external nonReentrant whenNotPaused {
         require(
             block.timestamp >= commitmentStart && block.timestamp <= commitmentEnd,
             "ArmadaCrowdfund: not commitment window"
@@ -209,13 +231,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             phase = Phase.Commitment;
         }
 
-        Participant storage p = participants[msg.sender];
+        require(hop < NUM_HOPS, "ArmadaCrowdfund: invalid hop");
+        Participant storage p = participants[msg.sender][hop];
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
         require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
 
-        uint8 hop = p.hop;
+        // Invite-scaling cap: invitesReceived * per-slot cap
+        uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
         require(
-            p.committed + amount <= hopConfigs[hop].capUsdc,
+            p.committed + amount <= effectiveCap,
             "ArmadaCrowdfund: exceeds hop cap"
         );
 
@@ -345,47 +369,74 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Claims & Withdrawals ============
 
-    /// @notice Claim ARM allocation and USDC refund after finalization
+    /// @notice Claim ARM allocation and USDC refund after finalization.
+    ///         Aggregates across all hops where the caller has committed.
     /// @dev Allocation is computed lazily from stored hop-level reserves/demands
     function claim() external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
 
-        Participant storage p = participants[msg.sender];
-        require(p.committed > 0, "ArmadaCrowdfund: no commitment");
-        require(!p.claimed, "ArmadaCrowdfund: already claimed");
+        uint256 totalAllocArm = 0;
+        uint256 totalAllocUsdc = 0;
+        uint256 totalRefundUsdc = 0;
+        bool hasCommitment = false;
 
-        (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(p.committed, p.hop);
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            Participant storage p = participants[msg.sender][h];
+            if (p.committed == 0) continue;
 
-        p.claimed = true;
-        p.allocation = allocArm;    // store for record-keeping
-        p.refund = refundUsdc;      // store for record-keeping
-        totalProceedsAccrued += allocUsdc;
-        totalArmClaimed += allocArm;
+            hasCommitment = true;
+            require(!p.claimed, "ArmadaCrowdfund: already claimed");
 
-        if (allocArm > 0) {
-            armToken.safeTransfer(msg.sender, allocArm);
+            (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(p.committed, h);
+
+            p.claimed = true;
+            p.allocation = allocArm;    // store for record-keeping
+            p.refund = refundUsdc;      // store for record-keeping
+
+            totalAllocArm += allocArm;
+            totalAllocUsdc += allocUsdc;
+            totalRefundUsdc += refundUsdc;
         }
-        if (refundUsdc > 0) {
-            usdc.safeTransfer(msg.sender, refundUsdc);
+
+        require(hasCommitment, "ArmadaCrowdfund: no commitment");
+
+        totalProceedsAccrued += totalAllocUsdc;
+        totalArmClaimed += totalAllocArm;
+
+        if (totalAllocArm > 0) {
+            armToken.safeTransfer(msg.sender, totalAllocArm);
+        }
+        if (totalRefundUsdc > 0) {
+            usdc.safeTransfer(msg.sender, totalRefundUsdc);
         }
 
-        emit Claimed(msg.sender, allocArm, refundUsdc);
+        emit Claimed(msg.sender, totalAllocArm, totalRefundUsdc);
     }
 
-    /// @notice Full USDC refund if sale was canceled (below minimum)
+    /// @notice Full USDC refund if sale was canceled (below minimum).
+    ///         Aggregates across all hops where the caller has committed.
     function refund() external nonReentrant {
         require(phase == Phase.Canceled, "ArmadaCrowdfund: not canceled");
 
-        Participant storage p = participants[msg.sender];
-        require(p.committed > 0, "ArmadaCrowdfund: no commitment");
-        require(!p.claimed, "ArmadaCrowdfund: already refunded");
+        uint256 totalAmount = 0;
+        bool hasCommitment = false;
 
-        p.claimed = true;
-        uint256 amount = p.committed;
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            Participant storage p = participants[msg.sender][h];
+            if (p.committed == 0) continue;
 
-        usdc.safeTransfer(msg.sender, amount);
+            hasCommitment = true;
+            require(!p.claimed, "ArmadaCrowdfund: already refunded");
 
-        emit Refunded(msg.sender, amount);
+            p.claimed = true;
+            totalAmount += p.committed;
+        }
+
+        require(hasCommitment, "ArmadaCrowdfund: no commitment");
+
+        usdc.safeTransfer(msg.sender, totalAmount);
+
+        emit Refunded(msg.sender, totalAmount);
     }
 
     /// @notice Admin withdraws USDC sale proceeds to treasury
@@ -459,37 +510,31 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         return (totalCommitted, phase, invitationEnd, commitmentEnd);
     }
 
-    /// @notice Check if an address is whitelisted
-    function isWhitelisted(address addr) external view returns (bool) {
-        return participants[addr].isWhitelisted;
+    /// @notice Check if an address is whitelisted at a specific hop
+    function isWhitelisted(address addr, uint8 hop) external view returns (bool) {
+        return participants[addr][hop].isWhitelisted;
     }
 
-    /// @notice Get commitment details for an address
-    function getCommitment(address addr) external view returns (uint256 committed, uint8 hop) {
-        Participant storage p = participants[addr];
-        return (p.committed, p.hop);
+    /// @notice Get commitment for an address at a specific hop
+    function getCommitment(address addr, uint8 hop) external view returns (uint256 committed) {
+        return participants[addr][hop].committed;
     }
 
-    /// @notice Get remaining invites for an address
-    function getInvitesRemaining(address addr) external view returns (uint8) {
-        Participant storage p = participants[addr];
+    /// @notice Get remaining invites for an address at a specific hop (scaled by invitesReceived)
+    function getInvitesRemaining(address addr, uint8 hop) external view returns (uint16) {
+        Participant storage p = participants[addr][hop];
         if (!p.isWhitelisted) return 0;
-        uint8 maxInv = hopConfigs[p.hop].maxInvites;
-        if (p.invitesSent >= maxInv) return 0;
-        return maxInv - p.invitesSent;
+        uint16 maxBudget = p.invitesReceived * uint16(hopConfigs[hop].maxInvites);
+        if (p.invitesSent >= maxBudget) return 0;
+        return maxBudget - p.invitesSent;
     }
 
-    /// @notice Get invite edge (only after finalization — graph hidden during sale)
-    function getInviteEdge(address invitee) external view returns (address inviter, uint8 hop) {
-        require(
-            phase == Phase.Finalized || phase == Phase.Canceled,
-            "ArmadaCrowdfund: graph hidden during sale"
-        );
-        Participant storage p = participants[invitee];
-        return (p.invitedBy, p.hop);
+    /// @notice Get invite edge for an (address, hop) node — visible at all times
+    function getInviteEdge(address invitee, uint8 hop) external view returns (address inviter) {
+        return participants[invitee][hop].invitedBy;
     }
 
-    /// @notice Get allocation details (only after finalization)
+    /// @notice Get aggregate allocation across all hops (only after finalization)
     /// @dev Computes allocation on the fly from stored hop-level data if not yet claimed
     function getAllocation(address addr) external view returns (
         uint256 allocation,
@@ -497,17 +542,61 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         bool claimed
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        Participant storage p = participants[addr];
+
+        uint256 totalAllocArm = 0;
+        uint256 totalRefundUsdc = 0;
+        bool anyClaimed = false;
+        bool anyCommitted = false;
+
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            Participant storage p = participants[addr][h];
+            if (p.committed == 0) continue;
+            anyCommitted = true;
+
+            if (p.claimed) {
+                anyClaimed = true;
+                totalAllocArm += p.allocation;
+                totalRefundUsdc += p.refund;
+            } else {
+                (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h);
+                totalAllocArm += allocArm;
+                totalRefundUsdc += refundUsdc;
+            }
+        }
+
+        return (totalAllocArm, totalRefundUsdc, anyClaimed);
+    }
+
+    /// @notice Get allocation at a specific hop (only after finalization)
+    function getAllocationAtHop(address addr, uint8 hop) external view returns (
+        uint256 allocation,
+        uint256 _refund,
+        bool claimed
+    ) {
+        require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
+        Participant storage p = participants[addr][hop];
         if (p.claimed) {
             return (p.allocation, p.refund, true);
         }
-        (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, p.hop);
+        (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, hop);
         return (allocArm, refundUsdc, false);
     }
 
-    /// @notice Get total number of participants (whitelisted addresses)
+    /// @notice Get effective cap for an address at a hop (invitesReceived * per-slot cap)
+    function getEffectiveCap(address addr, uint8 hop) external view returns (uint256) {
+        Participant storage p = participants[addr][hop];
+        if (!p.isWhitelisted) return 0;
+        return uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
+    }
+
+    /// @notice Get number of invites received at a specific hop
+    function getInvitesReceived(address addr, uint8 hop) external view returns (uint16) {
+        return participants[addr][hop].invitesReceived;
+    }
+
+    /// @notice Get total number of (address, hop) nodes (not unique addresses)
     function getParticipantCount() external view returns (uint256) {
-        return participantList.length;
+        return participantNodes.length;
     }
 
     // ============ Internal ============

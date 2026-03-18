@@ -35,6 +35,8 @@ contract CrowdfundHandler is Test {
 
     // Track per-participant committed amounts for sum verification
     mapping(address => uint256) public ghost_committed;
+    // Track each committer's hop for API calls that require it
+    mapping(address => uint8) public ghost_hop;
 
     constructor(
         ArmadaCrowdfund _crowdfund,
@@ -65,7 +67,7 @@ contract CrowdfundHandler is Test {
         address seed = seeds[seedIdx];
 
         // Check if this would exceed cap
-        (uint256 currentCommitted, ) = crowdfund.getCommitment(seed);
+        uint256 currentCommitted = crowdfund.getCommitment(seed, 0);
         if (currentCommitted + amount > 15_000 * 1e6) {
             amount = 15_000 * 1e6 - currentCommitted;
         }
@@ -76,11 +78,12 @@ contract CrowdfundHandler is Test {
         vm.startPrank(seed);
         usdc.approve(address(crowdfund), amount);
 
-        try crowdfund.commit(amount) {
+        try crowdfund.commit(amount, 0) {
             ghost_totalUsdcIn += amount;
             ghost_committed[seed] += amount;
             if (ghost_committed[seed] == amount) {
                 allCommitters.push(seed);
+                ghost_hop[seed] = 0;
             }
         } catch {}
         vm.stopPrank();
@@ -93,7 +96,7 @@ contract CrowdfundHandler is Test {
         amount = bound(amount, 1, 4_000 * 1e6); // hop-1 cap
 
         address addr = hop1Addrs[idx];
-        (uint256 currentCommitted, ) = crowdfund.getCommitment(addr);
+        uint256 currentCommitted = crowdfund.getCommitment(addr, 1);
         if (currentCommitted + amount > 4_000 * 1e6) {
             amount = 4_000 * 1e6 - currentCommitted;
         }
@@ -103,11 +106,12 @@ contract CrowdfundHandler is Test {
         vm.startPrank(addr);
         usdc.approve(address(crowdfund), amount);
 
-        try crowdfund.commit(amount) {
+        try crowdfund.commit(amount, 1) {
             ghost_totalUsdcIn += amount;
             ghost_committed[addr] += amount;
             if (ghost_committed[addr] == amount) {
                 allCommitters.push(addr);
+                ghost_hop[addr] = 1;
             }
         } catch {}
         vm.stopPrank();
@@ -120,7 +124,7 @@ contract CrowdfundHandler is Test {
         amount = bound(amount, 1, 1_000 * 1e6); // hop-2 cap
 
         address addr = hop2Addrs[idx];
-        (uint256 currentCommitted, ) = crowdfund.getCommitment(addr);
+        uint256 currentCommitted = crowdfund.getCommitment(addr, 2);
         if (currentCommitted + amount > 1_000 * 1e6) {
             amount = 1_000 * 1e6 - currentCommitted;
         }
@@ -130,11 +134,12 @@ contract CrowdfundHandler is Test {
         vm.startPrank(addr);
         usdc.approve(address(crowdfund), amount);
 
-        try crowdfund.commit(amount) {
+        try crowdfund.commit(amount, 2) {
             ghost_totalUsdcIn += amount;
             ghost_committed[addr] += amount;
             if (ghost_committed[addr] == amount) {
                 allCommitters.push(addr);
+                ghost_hop[addr] = 2;
             }
         } catch {}
         vm.stopPrank();
@@ -286,7 +291,7 @@ contract CrowdfundInvariantTest is Test {
             if (i < 7) { // first 7 seeds invite
                 for (uint256 j = 0; j < 3 && hop1Idx < hop1Addrs.length; j++) {
                     vm.prank(seeds[i]);
-                    crowdfund.invite(hop1Addrs[hop1Idx]);
+                    crowdfund.invite(hop1Addrs[hop1Idx], 0);
                     hop1Idx++;
                 }
             }
@@ -298,7 +303,7 @@ contract CrowdfundInvariantTest is Test {
             if (i < 10) { // first 10 hop-1 invite
                 for (uint256 j = 0; j < 2 && hop2Idx < hop2Addrs.length; j++) {
                     vm.prank(hop1Addrs[i]);
-                    crowdfund.invite(hop2Addrs[hop2Idx]);
+                    crowdfund.invite(hop2Addrs[hop2Idx], 1);
                     hop2Idx++;
                 }
             }
@@ -356,7 +361,8 @@ contract CrowdfundInvariantTest is Test {
             (uint256 allocArm, uint256 refundUsdc, bool claimed) = crowdfund.getAllocation(committer);
             if (!claimed && allocArm == 0) continue; // not yet allocated
 
-            (uint256 committed, ) = crowdfund.getCommitment(committer);
+            uint8 hop = handler.ghost_hop(committer);
+            uint256 committed = crowdfund.getCommitment(committer, hop);
             // allocUsdc = committed - refund, which must be <= committed
             uint256 allocUsdc = committed - refundUsdc;
             assertLe(allocUsdc, committed, "Allocation exceeds commitment");
@@ -380,9 +386,10 @@ contract CrowdfundInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
-            (uint256 committed, uint8 hop) = crowdfund.getCommitment(committer);
-            (, uint256 capUsdc, ) = crowdfund.hopConfigs(hop);
-            assertLe(committed, capUsdc, "Hop cap violated");
+            uint8 hop = handler.ghost_hop(committer);
+            uint256 committed = crowdfund.getCommitment(committer, hop);
+            uint256 effectiveCap = crowdfund.getEffectiveCap(committer, hop);
+            assertLe(committed, effectiveCap, "Hop cap violated");
         }
     }
 
@@ -398,8 +405,9 @@ contract CrowdfundInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
+            uint8 hop = handler.ghost_hop(committer);
             (uint256 allocArm, uint256 refundUsdc, ) = crowdfund.getAllocation(committer);
-            (uint256 committed, ) = crowdfund.getCommitment(committer);
+            uint256 committed = crowdfund.getCommitment(committer, hop);
 
             if (committed == 0) continue;
 

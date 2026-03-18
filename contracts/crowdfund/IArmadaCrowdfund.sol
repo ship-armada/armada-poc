@@ -25,14 +25,20 @@ struct HopConfig {
 }
 
 struct Participant {
-    uint8 hop;              // 0, 1, or 2
     bool isWhitelisted;     // true after being added as seed or invited
+    uint16 invitesReceived; // times invited to this hop — scales cap and outgoing invite budget
     uint256 committed;      // USDC committed (6 decimals)
     uint256 allocation;     // ARM allocated (18 decimals), set at finalization
     uint256 refund;         // USDC refund (6 decimals), set at finalization
     bool claimed;           // true after claim() or refund() called
-    address invitedBy;      // who invited this participant (address(0) for seeds)
-    uint8 invitesSent;      // number of invites this address has sent
+    address invitedBy;      // who FIRST invited this participant (address(0) for seeds)
+    uint16 invitesSent;     // outgoing invites consumed — max = invitesReceived * maxInvites
+}
+
+/// @dev Enumeration entry for iterating all (address, hop) nodes.
+struct ParticipantNode {
+    address addr;
+    uint8 hop;
 }
 
 struct HopStats {

@@ -140,7 +140,7 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
       for (const s of seeds) {
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
 
       // Past commitmentEnd but within grace period
@@ -163,7 +163,7 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1);
 
       await fundAndApprove(allSigners[1], USDC(1_000));
-      await crowdfund.connect(allSigners[1]).commit(USDC(1_000));
+      await crowdfund.connect(allSigners[1]).commit(USDC(1_000), 0);
       expect(await crowdfund.phase()).to.equal(Phase.Commitment);
 
       await time.increase(ONE_WEEK + THIRTY_DAYS + 1);
@@ -200,7 +200,7 @@ describe("Crowdfund Adversarial", function () {
       // All commit at max cap = 70 * $15K = $1.05M > MIN_SALE
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -254,7 +254,7 @@ describe("Crowdfund Adversarial", function () {
       let hop1Count = 0;
       for (let i = 0; i < seeds.length && hop1Count < hop1Addrs.length; i++) {
         // Each seed invites 1 hop-1 address (to keep it manageable)
-        await crowdfund.connect(seeds[i]).invite(hop1Addrs[hop1Count].address);
+        await crowdfund.connect(seeds[i]).invite(hop1Addrs[hop1Count].address, 0);
         hop1Count++;
       }
 
@@ -263,13 +263,13 @@ describe("Crowdfund Adversarial", function () {
       // Seeds commit $15K each
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
 
       // Hop-1 commit $4K each
       for (let i = 0; i < hop1Count; i++) {
         await fundAndApprove(hop1Addrs[i], USDC(4_000));
-        await crowdfund.connect(hop1Addrs[i]).commit(USDC(4_000));
+        await crowdfund.connect(hop1Addrs[i]).commit(USDC(4_000), 1);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -283,7 +283,9 @@ describe("Crowdfund Adversarial", function () {
       const allParticipants = [...seeds, ...hop1Addrs.slice(0, hop1Count)];
       for (const p of allParticipants) {
         const [, refund] = await crowdfund.getAllocation(p.address);
-        const [committed] = await crowdfund.getCommitment(p.address);
+        // Seeds are hop-0, hop1Addrs are hop-1
+        const hop = seeds.includes(p) ? 0 : 1;
+        const committed = await crowdfund.getCommitment(p.address, hop);
         sumAllocUsdc += (committed - refund);
         sumRefund += refund;
       }
@@ -303,7 +305,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -321,7 +323,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -356,9 +358,9 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1);
 
       await fundAndApprove(allSigners[1], USDC(15_000));
-      await crowdfund.connect(allSigners[1]).commit(USDC(15_000));
+      await crowdfund.connect(allSigners[1]).commit(USDC(15_000), 0);
 
-      const [committed] = await crowdfund.getCommitment(allSigners[1].address);
+      const committed = await crowdfund.getCommitment(allSigners[1].address, 0);
       expect(committed).to.equal(USDC(15_000));
     });
 
@@ -368,11 +370,11 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1);
 
       await fundAndApprove(allSigners[1], USDC(15_010));
-      await crowdfund.connect(allSigners[1]).commit(USDC(15_000));
+      await crowdfund.connect(allSigners[1]).commit(USDC(15_000), 0);
 
       // $10 more (meets MIN_COMMIT but exceeds hop cap)
       await expect(
-        crowdfund.connect(allSigners[1]).commit(USDC(10))
+        crowdfund.connect(allSigners[1]).commit(USDC(10), 0)
       ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
     });
 
@@ -390,11 +392,11 @@ describe("Crowdfund Adversarial", function () {
       // 66 seeds at $15K
       for (let i = 0; i < 66; i++) {
         await fundAndApprove(seeds[i], USDC(15_000));
-        await crowdfund.connect(seeds[i]).commit(USDC(15_000));
+        await crowdfund.connect(seeds[i]).commit(USDC(15_000), 0);
       }
       // 1 seed at $10K to hit exactly $1M
       await fundAndApprove(seeds[66], USDC(10_000));
-      await crowdfund.connect(seeds[66]).commit(USDC(10_000));
+      await crowdfund.connect(seeds[66]).commit(USDC(10_000), 0);
 
       const total = await crowdfund.totalCommitted();
       expect(total).to.equal(USDC(1_000_000));
@@ -414,12 +416,12 @@ describe("Crowdfund Adversarial", function () {
 
       for (let i = 0; i < 66; i++) {
         await fundAndApprove(seeds[i], USDC(15_000));
-        await crowdfund.connect(seeds[i]).commit(USDC(15_000));
+        await crowdfund.connect(seeds[i]).commit(USDC(15_000), 0);
       }
       // 1 wei less than $10K needed to reach $1M
       const shortAmount = USDC(10_000) - 1n;
       await fundAndApprove(seeds[66], shortAmount);
-      await crowdfund.connect(seeds[66]).commit(shortAmount);
+      await crowdfund.connect(seeds[66]).commit(shortAmount, 0);
 
       const total = await crowdfund.totalCommitted();
       expect(total).to.be.lt(USDC(1_000_000));
@@ -440,7 +442,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
 
       const total = await crowdfund.totalCommitted();
@@ -462,12 +464,12 @@ describe("Crowdfund Adversarial", function () {
 
       for (let i = 0; i < 119; i++) {
         await fundAndApprove(seeds[i], USDC(15_000));
-        await crowdfund.connect(seeds[i]).commit(USDC(15_000));
+        await crowdfund.connect(seeds[i]).commit(USDC(15_000), 0);
       }
       // Last seed commits 1 wei less than $15K
       const shortAmount = USDC(15_000) - 1n;
       await fundAndApprove(seeds[119], shortAmount);
-      await crowdfund.connect(seeds[119]).commit(shortAmount);
+      await crowdfund.connect(seeds[119]).commit(shortAmount, 0);
 
       const total = await crowdfund.totalCommitted();
       expect(total).to.be.lt(USDC(1_800_000));
@@ -488,7 +490,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -524,29 +526,29 @@ describe("Crowdfund Adversarial", function () {
 
       // 1 wei reverts
       await expect(
-        crowdfund.connect(allSigners[1]).commit(1n)
+        crowdfund.connect(allSigners[1]).commit(1n, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
 
       // $9.999999 reverts
       await expect(
-        crowdfund.connect(allSigners[1]).commit(USDC(10) - 1n)
+        crowdfund.connect(allSigners[1]).commit(USDC(10) - 1n, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
 
       // Exactly $10 succeeds
-      await crowdfund.connect(allSigners[1]).commit(USDC(10));
-      const [committed] = await crowdfund.getCommitment(allSigners[1].address);
+      await crowdfund.connect(allSigners[1]).commit(USDC(10), 0);
+      const committed = await crowdfund.getCommitment(allSigners[1].address, 0);
       expect(committed).to.equal(USDC(10));
     });
 
-    it("invite self reverts (self not whitelisted initially is ok, but if already whitelisted)", async function () {
+    it("seed self-invite creates a hop-1 node (permitted in multi-node model)", async function () {
       const seed = allSigners[1];
       await crowdfund.addSeeds([seed.address]);
       await crowdfund.startInvitations();
 
-      // Seed tries to invite self — already whitelisted
-      await expect(
-        crowdfund.connect(seed).invite(seed.address)
-      ).to.be.revertedWith("ArmadaCrowdfund: already whitelisted");
+      // Seed invites self — creates (seed, 1) node
+      await crowdfund.connect(seed).invite(seed.address, 0);
+      expect(await crowdfund.isWhitelisted(seed.address, 1)).to.be.true;
+      expect(await crowdfund.getInvitesReceived(seed.address, 1)).to.equal(1);
     });
 
     it("invite reverts at exact invitationEnd (strict < boundary)", async function () {
@@ -559,7 +561,7 @@ describe("Crowdfund Adversarial", function () {
       // Warp to exactly invitationEnd — invite should fail (strict <)
       await time.increaseTo(invitationEnd);
       await expect(
-        crowdfund.connect(seed).invite(invitee.address)
+        crowdfund.connect(seed).invite(invitee.address, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: not invitation window");
     });
 
@@ -572,9 +574,9 @@ describe("Crowdfund Adversarial", function () {
       const invitationEnd = await crowdfund.invitationEnd();
       // Warp to 2 seconds before invitationEnd — next tx executes at invitationEnd - 1
       await time.increaseTo(invitationEnd - 2n);
-      await crowdfund.connect(seed).invite(invitee.address);
+      await crowdfund.connect(seed).invite(invitee.address, 0);
 
-      const p = await crowdfund.participants(invitee.address);
+      const p = await crowdfund.participants(invitee.address, 1);
       expect(p.isWhitelisted).to.be.true;
     });
 
@@ -587,9 +589,9 @@ describe("Crowdfund Adversarial", function () {
       await time.increaseTo(commitmentStart);
 
       await fundAndApprove(seed, USDC(100));
-      await crowdfund.connect(seed).commit(USDC(100));
+      await crowdfund.connect(seed).commit(USDC(100), 0);
 
-      const [committed] = await crowdfund.getCommitment(seed.address);
+      const committed = await crowdfund.getCommitment(seed.address, 0);
       expect(committed).to.equal(USDC(100));
     });
   });
@@ -606,7 +608,7 @@ describe("Crowdfund Adversarial", function () {
       // We're in invitation phase — commitment window hasn't started
       await fundAndApprove(allSigners[1], USDC(15_000));
       await expect(
-        crowdfund.connect(allSigners[1]).commit(USDC(15_000))
+        crowdfund.connect(allSigners[1]).commit(USDC(15_000), 0)
       ).to.be.revertedWith("ArmadaCrowdfund: not commitment window");
     });
 
@@ -616,7 +618,7 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1); // past invitation window
 
       await expect(
-        crowdfund.connect(allSigners[1]).invite(allSigners[2].address)
+        crowdfund.connect(allSigners[1]).invite(allSigners[2].address, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: not invitation window");
     });
 
@@ -647,7 +649,7 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1);
 
       await fundAndApprove(seeds[0], USDC(15_000));
-      await crowdfund.connect(seeds[0]).commit(USDC(15_000));
+      await crowdfund.connect(seeds[0]).commit(USDC(15_000), 0);
 
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize(); // should cancel (below MIN_SALE)
@@ -667,7 +669,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -698,7 +700,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -716,7 +718,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -741,7 +743,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -785,7 +787,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -805,7 +807,7 @@ describe("Crowdfund Adversarial", function () {
       // Only first 69 seeds commit, seeds[69] does not
       for (let i = 0; i < 69; i++) {
         await fundAndApprove(seeds[i], USDC(15_000));
-        await crowdfund.connect(seeds[i]).commit(USDC(15_000));
+        await crowdfund.connect(seeds[i]).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -838,7 +840,7 @@ describe("Crowdfund Adversarial", function () {
       const hop1Invitees: SignerWithAddress[] = [];
       for (let i = 0; i < 52; i++) {
         const invitee = allSigners[54 + i];
-        await crowdfund.connect(seeds[i]).invite(invitee.address);
+        await crowdfund.connect(seeds[i]).invite(invitee.address, 0);
         hop1Invitees.push(invitee);
       }
 
@@ -847,12 +849,12 @@ describe("Crowdfund Adversarial", function () {
       // All 53 seeds commit $15K
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       // 52 hop-1 participants commit $4K
       for (const h of hop1Invitees) {
         await fundAndApprove(h, USDC(4_000));
-        await crowdfund.connect(h).commit(USDC(4_000));
+        await crowdfund.connect(h).commit(USDC(4_000), 1);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -888,7 +890,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -916,7 +918,7 @@ describe("Crowdfund Adversarial", function () {
       const hop1Invitees: SignerWithAddress[] = [];
       for (let i = 0; i < 52; i++) {
         const invitee = allSigners[54 + i];
-        await crowdfund.connect(seeds[i]).invite(invitee.address);
+        await crowdfund.connect(seeds[i]).invite(invitee.address, 0);
         hop1Invitees.push(invitee);
       }
 
@@ -924,11 +926,11 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       for (const h of hop1Invitees) {
         await fundAndApprove(h, USDC(4_000));
-        await crowdfund.connect(h).commit(USDC(4_000));
+        await crowdfund.connect(h).commit(USDC(4_000), 1);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -964,7 +966,7 @@ describe("Crowdfund Adversarial", function () {
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -987,7 +989,7 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1);
 
       await fundAndApprove(seeds[0], USDC(15_000));
-      await crowdfund.connect(seeds[0]).commit(USDC(15_000));
+      await crowdfund.connect(seeds[0]).commit(USDC(15_000), 0);
 
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize(); // cancels (below MIN_SALE)
@@ -1010,7 +1012,7 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
       for (const s of seeds) {
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -1036,7 +1038,7 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.startInvitations();
       await time.increase(TWO_WEEKS + 1);
       for (const s of seeds) {
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
       await time.increase(ONE_WEEK + 1);
       await crowdfund.finalize();
@@ -1057,10 +1059,10 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(TWO_WEEKS + 1);
 
       await fundAndApprove(allSigners[1], USDC(15_000));
-      await crowdfund.connect(allSigners[1]).commit(USDC(10_000));
-      await crowdfund.connect(allSigners[1]).commit(USDC(5_000));
+      await crowdfund.connect(allSigners[1]).commit(USDC(10_000), 0);
+      await crowdfund.connect(allSigners[1]).commit(USDC(5_000), 0);
 
-      const [committed] = await crowdfund.getCommitment(allSigners[1].address);
+      const committed = await crowdfund.getCommitment(allSigners[1].address, 0);
       expect(committed).to.equal(USDC(15_000));
     });
   });

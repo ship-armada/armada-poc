@@ -52,7 +52,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const latestBlock = await provider.getBlock('latest')
       const blockTimestamp = latestBlock?.timestamp ?? Math.floor(Date.now() / 1000)
 
-      // Batch all read calls
+      // Batch all read calls (excluding per-hop participant data)
       const [
         phase,
         admin,
@@ -66,8 +66,6 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         hop0Stats,
         hop1Stats,
         hop2Stats,
-        participantData,
-        invitesRemaining,
         usdcBalance,
         armBalance,
         usdcAllowance,
@@ -84,14 +82,31 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         contract.getHopStats(0),
         contract.getHopStats(1),
         contract.getHopStats(2),
-        contract.participants(currentAddress),
-        contract.getInvitesRemaining(currentAddress),
         usdc.balanceOf(currentAddress),
         arm.balanceOf(currentAddress),
         usdc.allowance(currentAddress, deployment.contracts.crowdfund),
       ])
 
       const parsedPhase = Number(phase) as Phase
+
+      // Determine user's active hop by checking all hops for whitelist status.
+      // Use the lowest whitelisted hop as the "active" hop for UI display.
+      const hopChecks = await Promise.all(
+        [0, 1, 2].map((h) => contract.isWhitelisted(currentAddress, h)),
+      )
+      let activeHop = 0
+      for (let h = 0; h < hopChecks.length; h++) {
+        if (hopChecks[h]) {
+          activeHop = h
+          break
+        }
+      }
+
+      // Fetch participant data and invites remaining for the active hop
+      const [participantData, invitesRemaining] = await Promise.all([
+        contract.participants(currentAddress, activeHop),
+        contract.getInvitesRemaining(currentAddress, activeHop),
+      ])
       const parsedParticipant = parseParticipant(participantData)
 
       // Fetch allocation if finalized and participant has committed
@@ -124,6 +139,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           parseHopStats(hop2Stats),
         ],
         participantCount: Number(participantCount),
+        currentHop: activeHop,
         currentParticipant: parsedParticipant,
         currentInvitesRemaining: Number(invitesRemaining),
         currentAllocation,
@@ -156,31 +172,36 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const isFinalized = phase === 3 // Phase.Finalized
       const rows: ParticipantRow[] = []
 
-      // Fetch in batches of 20
+      // Fetch in batches of 20. participantNodes returns (address, hop) tuples.
       const batchSize = 20
       for (let i = 0; i < count; i += batchSize) {
         const batch = Array.from(
           { length: Math.min(batchSize, count - i) },
           (_, j) => i + j,
         )
-        const addresses = await Promise.all(
-          batch.map((idx) => contract.participantList(idx) as Promise<string>),
+        const nodes = await Promise.all(
+          batch.map((idx) => contract.participantNodes(idx)),
         )
+        const addressesAndHops = nodes.map((n: any) => ({
+          addr: n[0] as string,
+          hop: Number(n[1]),
+        }))
+
         const participants = await Promise.all(
-          addresses.map((addr) => contract.participants(addr)),
+          addressesAndHops.map(({ addr, hop }) => contract.participants(addr, hop)),
         )
 
-        // After finalization, fetch computed allocations via getAllocation()
+        // After finalization, fetch computed allocations via getAllocationAtHop()
         // since the struct only stores allocation/refund after claim().
         const allocations = isFinalized
           ? await Promise.all(
-              addresses.map((addr) =>
-                contract.getAllocation(addr).catch(() => null),
+              addressesAndHops.map(({ addr, hop }) =>
+                contract.getAllocationAtHop(addr, hop).catch(() => null),
               ),
             )
           : null
 
-        for (let j = 0; j < addresses.length; j++) {
+        for (let j = 0; j < addressesAndHops.length; j++) {
           const parsed = parseParticipant(participants[j])
 
           // Override allocation/refund/claimed with computed values
@@ -191,7 +212,8 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           }
 
           rows.push({
-            address: addresses[j],
+            address: addressesAndHops[j].addr,
+            hop: addressesAndHops[j].hop,
             participant: parsed,
           })
         }
@@ -291,16 +313,16 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
   )
 
   const invite = useCallback(
-    (invitee: string) =>
+    (invitee: string, inviterHop: number) =>
       executeTx('Sending invite', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.invite(invitee)
+        return contract.invite(invitee, inviterHop)
       }),
     [executeTx],
   )
 
   const approveAndCommit = useCallback(
-    (amount: bigint) =>
+    (amount: bigint, hop: number) =>
       executeTx(`Committing ${formatUsdc(amount)}`, async (signer, dep) => {
         const usdc = getUsdcContract(dep, signer)
         const contract = getCrowdfundContract(dep, signer)
@@ -316,7 +338,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           await approveTx.wait()
         }
 
-        return contract.commit(amount)
+        return contract.commit(amount, hop)
       }),
     [executeTx],
   )

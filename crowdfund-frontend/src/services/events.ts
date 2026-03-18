@@ -19,6 +19,7 @@ const EVENT_NAMES = [
   'SeedAdded',
   'InvitationStarted',
   'Invited',
+  'InviteAdded',
   'Committed',
   'SaleFinalized',
   'SaleCanceled',

@@ -7,10 +7,9 @@ export interface CrowdfundState {
   // Contract phase and timing
   phase: Phase | null
   adminAddress: string | null
-  invitationStart: bigint
-  invitationEnd: bigint
-  commitmentStart: bigint
-  commitmentEnd: bigint
+  windowStart: bigint
+  windowEnd: bigint
+  launchTeamInviteEnd: bigint
   // Aggregate stats
   totalCommitted: bigint
   saleSize: bigint
@@ -36,10 +35,9 @@ export interface CrowdfundState {
 const DEFAULT_STATE: CrowdfundState = {
   phase: null,
   adminAddress: null,
-  invitationStart: 0n,
-  invitationEnd: 0n,
-  commitmentStart: 0n,
-  commitmentEnd: 0n,
+  windowStart: 0n,
+  windowEnd: 0n,
+  launchTeamInviteEnd: 0n,
   totalCommitted: 0n,
   saleSize: 0n,
   hopStats: null,

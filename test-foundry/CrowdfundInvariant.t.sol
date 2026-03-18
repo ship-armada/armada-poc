@@ -282,8 +282,8 @@ contract CrowdfundInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // Start invitations
-        crowdfund.startInvitations();
+        // Start window
+        crowdfund.startWindow();
 
         // Do invitations: each seed invites up to 3 hop-1 addresses
         uint256 hop1Idx = 0;
@@ -310,8 +310,8 @@ contract CrowdfundInvariantTest is Test {
             }
         }
 
-        // Fast-forward past invitation window into commitment window
-        vm.warp(crowdfund.commitmentStart() + 1);
+        // Fast-forward into the active window (invites + commits concurrent)
+        vm.warp(crowdfund.windowStart() + 1);
 
         // Create handler
         handler = new CrowdfundHandler(
@@ -373,7 +373,7 @@ contract CrowdfundInvariantTest is Test {
     /// @notice Phase only moves forward, never backward
     function invariant_phaseMonotonicity() public view {
         Phase currentPhase = crowdfund.phase();
-        // We started in Invitation (after setUp), moved to Commitment window via warp
+        // We started in Active (after setUp), warped into the active window
         // Phase should never go backward
         if (handler.ghost_finalized()) {
             assertEq(uint256(currentPhase), uint256(Phase.Finalized), "Phase should be Finalized");

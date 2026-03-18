@@ -19,7 +19,7 @@ import { task } from "hardhat/config";
 import * as fs from "fs";
 import * as path from "path";
 
-const PhaseNames = ["SETUP", "INVITATION", "COMMITMENT", "FINALIZED", "CANCELED"];
+const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
 
 function loadCrowdfundDeployment(networkName: string) {
   const filePath = path.join(__dirname, "..", "deployments", `crowdfund-${networkName}.json`);
@@ -52,23 +52,25 @@ task("cf-add-seeds", "Add seed addresses (hop 0)")
     console.log(`Added ${seeds.length} seed(s): ${seeds.join(", ")}`);
   });
 
-task("cf-start", "Start the invitation window")
+task("cf-start", "Start the active window (invites + commits)")
   .setAction(async (_, hre) => {
     const { ethers } = hre;
     const chainId = Number((await ethers.provider.getNetwork()).chainId);
     const deployment = loadCrowdfundDeployment(getNetworkName(chainId));
 
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
-    await crowdfund.startInvitations();
+    await crowdfund.startWindow();
 
-    const invEnd = await crowdfund.invitationEnd();
-    const commEnd = await crowdfund.commitmentEnd();
-    console.log("Invitation window started");
-    console.log(`  Invitation ends: ${new Date(Number(invEnd) * 1000).toISOString()}`);
-    console.log(`  Commitment ends: ${new Date(Number(commEnd) * 1000).toISOString()}`);
+    const winStart = await crowdfund.windowStart();
+    const winEnd = await crowdfund.windowEnd();
+    const ltEnd = await crowdfund.launchTeamInviteEnd();
+    console.log("Active window started (invites + commits concurrent)");
+    console.log(`  Window start: ${new Date(Number(winStart) * 1000).toISOString()}`);
+    console.log(`  Launch team invite cutoff: ${new Date(Number(ltEnd) * 1000).toISOString()}`);
+    console.log(`  Window ends: ${new Date(Number(winEnd) * 1000).toISOString()}`);
   });
 
-// ============ Invitation ============
+// ============ Active Window ============
 
 task("cf-invite", "Invite an address to participate")
   .addParam("invitee", "Address to invite")
@@ -87,7 +89,7 @@ task("cf-invite", "Invite an address to participate")
     console.log(`Invited ${args.invitee}. Invites remaining: ${remaining}`);
   });
 
-// ============ Commitment ============
+// ============ Commitment (during active window) ============
 
 task("cf-commit", "Commit USDC to the crowdfund")
   .addParam("amount", "Amount of USDC (in whole dollars)")
@@ -123,7 +125,7 @@ task("cf-finalize", "Finalize the crowdfund (compute allocations or cancel)")
 
     const phase = Number(await crowdfund.phase());
     console.log(`Crowdfund finalized: ${PhaseNames[phase]}`);
-    if (phase === 3) {
+    if (phase === 2) {
       // Finalized
       const saleSize = await crowdfund.saleSize();
       const totalAlloc = await crowdfund.totalAllocated();
@@ -144,7 +146,7 @@ task("cf-claim", "Claim ARM allocation and USDC refund")
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
     const phase = Number(await crowdfund.phase());
 
-    if (phase === 4) {
+    if (phase === 3) {
       // Canceled — use refund()
       await crowdfund.refund();
       console.log("Full USDC refund claimed (sale was canceled)");
@@ -165,13 +167,13 @@ task("cf-stats", "Show crowdfund statistics")
 
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
 
-    const [totalComm, phase, invEnd, commEnd] = await crowdfund.getSaleStats();
+    const [totalComm, phase, winStart, winEnd] = await crowdfund.getSaleStats();
     console.log("Crowdfund Status:");
     console.log(`  Phase: ${PhaseNames[Number(phase)]}`);
     console.log(`  Total committed: $${ethers.formatUnits(totalComm, 6)}`);
-    if (Number(invEnd) > 0) {
-      console.log(`  Invitation ends: ${new Date(Number(invEnd) * 1000).toISOString()}`);
-      console.log(`  Commitment ends: ${new Date(Number(commEnd) * 1000).toISOString()}`);
+    if (Number(winStart) > 0) {
+      console.log(`  Window start: ${new Date(Number(winStart) * 1000).toISOString()}`);
+      console.log(`  Window ends: ${new Date(Number(winEnd) * 1000).toISOString()}`);
     }
     console.log(`  Participants: ${await crowdfund.getParticipantCount()}`);
 
@@ -181,7 +183,7 @@ task("cf-stats", "Show crowdfund statistics")
       console.log(`  Hop ${h}: ${wc} whitelisted, ${uc} committed, $${ethers.formatUnits(tc, 6)} total`);
     }
 
-    if (Number(phase) === 3) {
+    if (Number(phase) === 2) {
       console.log(`\n  Sale size: $${ethers.formatUnits(await crowdfund.saleSize(), 6)}`);
       console.log(`  Total ARM allocated: ${ethers.formatUnits(await crowdfund.totalAllocated(), 18)}`);
     }
@@ -207,7 +209,7 @@ task("cf-allocation", "Check allocation for an address")
     console.log(`  Committed: $${ethers.formatUnits(committed, 6)}`);
 
     const phase = Number(await crowdfund.phase());
-    if (phase === 3) {
+    if (phase === 2) {
       const [alloc, refund, claimed] = await crowdfund.getAllocation(args.address);
       console.log(`  Allocation: ${ethers.formatUnits(alloc, 18)} ARM`);
       console.log(`  Refund: $${ethers.formatUnits(refund, 6)}`);

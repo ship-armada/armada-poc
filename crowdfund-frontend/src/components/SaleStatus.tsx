@@ -1,5 +1,5 @@
 // ABOUTME: Sale status dashboard showing phase, timing, progress, and per-hop stats.
-// ABOUTME: Reads from crowdfund state atom and derives effective phase from timestamps.
+// ABOUTME: Reads from crowdfund state atom and displays the current phase.
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,34 +20,17 @@ interface SaleStatusProps {
 }
 
 /**
- * Derive the "effective" phase for display.
- * The contract phase() stays Invitation during the commitment window,
- * so we infer Commitment from timestamps.
+ * Return the contract phase for display.
+ * The contract phase maps directly to display state.
  */
-function getEffectivePhase(state: CrowdfundState, now: number): Phase {
+function getEffectivePhase(state: CrowdfundState, _now: number): Phase {
   if (state.phase === null) return Phase.Setup
-  if (state.phase === Phase.Invitation) {
-    const commitStart = Number(state.commitmentStart)
-    const commitEnd = Number(state.commitmentEnd)
-    if (commitStart > 0 && now >= commitStart && now <= commitEnd) {
-      return Phase.Commitment
-    }
-    if (commitEnd > 0 && now > commitEnd) {
-      // Past commitment window but not yet finalized
-      return Phase.Commitment
-    }
-  }
   return state.phase
 }
 
 function getTimeRemaining(state: CrowdfundState, effectivePhase: Phase, now: number): string | null {
-  if (effectivePhase === Phase.Invitation) {
-    const end = Number(state.invitationEnd)
-    if (end > 0 && now < end) return formatCountdown(end - now)
-    return 'expired'
-  }
-  if (effectivePhase === Phase.Commitment) {
-    const end = Number(state.commitmentEnd)
+  if (effectivePhase === Phase.Active) {
+    const end = Number(state.windowEnd)
     if (end > 0 && now < end) return formatCountdown(end - now)
     return 'expired — ready to finalize'
   }
@@ -152,7 +135,7 @@ export function SaleStatus({ state }: SaleStatusProps) {
               {state.hopStats.map((hop, i) => (
                 <TableRow key={i}>
                   <TableCell className="font-medium">{hopLabel(i)}</TableCell>
-                  <TableCell className="text-right">{CROWDFUND_CONSTANTS.HOP_RESERVE_BPS[i] / 100}%</TableCell>
+                  <TableCell className="text-right">{CROWDFUND_CONSTANTS.HOP_CEILING_BPS[i] / 100}%</TableCell>
                   <TableCell className="text-right">{formatUsdc(CROWDFUND_CONSTANTS.HOP_CAPS[i])}</TableCell>
                   <TableCell className="text-right">{hop.whitelistCount}</TableCell>
                   <TableCell className="text-right">{hop.uniqueCommitters}</TableCell>

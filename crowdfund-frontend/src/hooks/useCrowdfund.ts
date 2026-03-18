@@ -58,10 +58,9 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         admin,
         totalCommitted,
         saleSize,
-        invitationStart,
-        invitationEnd,
-        commitmentStart,
-        commitmentEnd,
+        windowStart,
+        windowEnd,
+        launchTeamInviteEnd,
         participantCount,
         hop0Stats,
         hop1Stats,
@@ -74,10 +73,9 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         contract.admin(),
         contract.totalCommitted(),
         contract.saleSize(),
-        contract.invitationStart(),
-        contract.invitationEnd(),
-        contract.commitmentStart(),
-        contract.commitmentEnd(),
+        contract.windowStart(),
+        contract.windowEnd(),
+        contract.launchTeamInviteEnd(),
         contract.getParticipantCount(),
         contract.getHopStats(0),
         contract.getHopStats(1),
@@ -111,7 +109,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
 
       // Fetch allocation if finalized and participant has committed
       let currentAllocation = null
-      if (parsedPhase === 3 && parsedParticipant.committed > 0n) {
+      if (parsedPhase === 2 && parsedParticipant.committed > 0n) {
         try {
           const allocResult = await contract.getAllocation(currentAddress)
           currentAllocation = {
@@ -129,10 +127,9 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         adminAddress: admin as string,
         totalCommitted: BigInt(totalCommitted),
         saleSize: BigInt(saleSize),
-        invitationStart: BigInt(invitationStart),
-        invitationEnd: BigInt(invitationEnd),
-        commitmentStart: BigInt(commitmentStart),
-        commitmentEnd: BigInt(commitmentEnd),
+        windowStart: BigInt(windowStart),
+        windowEnd: BigInt(windowEnd),
+        launchTeamInviteEnd: BigInt(launchTeamInviteEnd),
         hopStats: [
           parseHopStats(hop0Stats),
           parseHopStats(hop1Stats),
@@ -169,7 +166,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const contract = getCrowdfundContract(deployment, provider)
       const count = Number(await contract.getParticipantCount())
       const phase = Number(await contract.phase())
-      const isFinalized = phase === 3 // Phase.Finalized
+      const isFinalized = phase === 2 // Phase.Finalized
       const rows: ParticipantRow[] = []
 
       // Fetch in batches of 20. participantNodes returns (address, hop) tuples.
@@ -303,11 +300,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     [executeTx],
   )
 
-  const startInvitations = useCallback(
+  const startWindow = useCallback(
     () =>
-      executeTx('Starting invitations', (signer, dep) => {
+      executeTx('Starting window', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.startInvitations()
+        return contract.startWindow()
       }),
     [executeTx],
   )
@@ -453,7 +450,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     refreshParticipantList,
     // Write operations
     addSeeds,
-    startInvitations,
+    startWindow,
     invite,
     approveAndCommit,
     finalize,

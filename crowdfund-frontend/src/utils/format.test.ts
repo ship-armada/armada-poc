@@ -98,8 +98,7 @@ describe('formatCountdown', () => {
 describe('phaseName', () => {
   it('returns correct names', () => {
     expect(phaseName(Phase.Setup)).toBe('Setup')
-    expect(phaseName(Phase.Invitation)).toBe('Invitation')
-    expect(phaseName(Phase.Commitment)).toBe('Commitment')
+    expect(phaseName(Phase.Active)).toBe('Active')
     expect(phaseName(Phase.Finalized)).toBe('Finalized')
     expect(phaseName(Phase.Canceled)).toBe('Canceled')
   })

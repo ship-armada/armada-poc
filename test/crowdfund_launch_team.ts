@@ -7,12 +7,12 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 // Phase enum (must match IArmadaCrowdfund.sol)
-const Phase = { Setup: 0, Invitation: 1, Commitment: 2, Finalized: 3, Canceled: 4 };
+const Phase = { Setup: 0, Active: 1, Finalized: 2, Canceled: 3 };
 
 // Time constants
 const ONE_DAY = 86400;
 const ONE_WEEK = 7 * ONE_DAY;
-const TWO_WEEKS = 14 * ONE_DAY;
+const THREE_WEEKS = 21 * ONE_DAY;
 
 // USDC amounts (6 decimals)
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
@@ -112,9 +112,9 @@ describe("Launch Team & Seed Cap", function () {
 
     beforeEach(async function () {
       [, , , invitee1, invitee2, seed1] = allSigners;
-      // Add a seed and start invitations
+      // Add a seed and start the active window
       await crowdfund.addSeed(seed1.address);
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
     });
 
     it("launch team can invite to hop-1", async function () {
@@ -145,7 +145,7 @@ describe("Launch Team & Seed Cap", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: zero address");
     });
 
-    it("reverts before invitations start (Setup phase)", async function () {
+    it("reverts before window starts (Setup phase)", async function () {
       // Deploy a fresh crowdfund still in Setup
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const freshCrowdfund = await ArmadaCrowdfund.deploy(
@@ -201,7 +201,7 @@ describe("Launch Team & Seed Cap", function () {
   describe("Budget Exhaustion", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
     });
 
     it("allows exactly 60 hop-1 invites", async function () {
@@ -264,7 +264,7 @@ describe("Launch Team & Seed Cap", function () {
   describe("7-Day Invite Window Timing", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
     });
 
     it("launch team invite on day 6 succeeds", async function () {
@@ -281,7 +281,7 @@ describe("Launch Team & Seed Cap", function () {
     });
 
     it("launch team invite at exactly 7 days reverts (boundary)", async function () {
-      // At exactly invitationStart + 7 days, the condition is NOT strictly less than
+      // At exactly windowStart + 7 days, the condition is NOT strictly less than
       await time.increase(7 * ONE_DAY);
       await expect(
         crowdfund.launchTeamInvite(allSigners[4].address, 1)
@@ -289,7 +289,7 @@ describe("Launch Team & Seed Cap", function () {
     });
 
     it("regular seed invites still work after week 1", async function () {
-      // Seeds can invite throughout the full invitation window
+      // Seeds can invite throughout the full active window
       await time.increase(10 * ONE_DAY);
       const seed = allSigners[3];
       await crowdfund.connect(seed).invite(allSigners[4].address, 0);
@@ -300,7 +300,7 @@ describe("Launch Team & Seed Cap", function () {
   describe("Launch Team Cannot Commit", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
     });
 
     it("launch team address cannot commit USDC", async function () {
@@ -322,10 +322,7 @@ describe("Launch Team & Seed Cap", function () {
 
       // Add launchTeam as a seed (admin can do this)
       await cf.addSeed(ltSigner.address);
-      await cf.startInvitations();
-
-      // Fast-forward to commitment window
-      await time.increase(TWO_WEEKS + 1);
+      await cf.startWindow();
 
       // Fund the launch team address
       await fundAndApprove(ltSigner, USDC(15000));
@@ -343,7 +340,7 @@ describe("Launch Team & Seed Cap", function () {
     beforeEach(async function () {
       invitee = allSigners[4];
       await crowdfund.addSeed(allSigners[3].address);
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
     });
 
     it("re-invite to same (address, hop) increments invitesReceived", async function () {

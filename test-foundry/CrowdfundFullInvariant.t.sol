@@ -209,8 +209,8 @@ contract CrowdfundFullInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // Start invitations
-        crowdfund.startInvitations();
+        // Start window
+        crowdfund.startWindow();
 
         // Do invitations
         uint256 hop1Idx = 0;
@@ -235,8 +235,8 @@ contract CrowdfundFullInvariantTest is Test {
             }
         }
 
-        // Fast-forward past invitation window into commitment window
-        vm.warp(crowdfund.commitmentStart() + 1);
+        // Fast-forward into the active window (invites + commits concurrent)
+        vm.warp(crowdfund.windowStart() + 1);
 
         // Create handler
         handler = new CrowdfundFullHandler(

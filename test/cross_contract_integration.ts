@@ -22,8 +22,7 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
 const FIVE_DAYS = 5 * ONE_DAY;
-const TWO_WEEKS = 14 * ONE_DAY;
-const ONE_WEEK = 7 * ONE_DAY;
+const THREE_WEEKS = 21 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
@@ -141,17 +140,14 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // 1. Add seeds and start invitations
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
 
       // 2. Seeds invite hop-1 addresses
       for (let i = 0; i < 3 && i < hop1Addrs.length; i++) {
         await crowdfund.connect(seeds[i]).invite(hop1Addrs[i].address, 0);
       }
 
-      // 3. Fast-forward past invitation window into commitment window
-      await time.increase(TWO_WEEKS + 1);
-
-      // 4. All seeds commit $15K each = $1.2M (meets MIN_SALE)
+      // 3. All seeds commit $15K each = $1.2M (meets MIN_SALE)
       for (const seed of seeds) {
         const amount = USDC(15_000);
         await usdc.mint(seed.address, amount);
@@ -159,14 +155,14 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await crowdfund.connect(seed).commit(amount, 0);
       }
 
-      // 5. Fast-forward past commitment window
-      await time.increase(ONE_WEEK + 1);
+      // 4. Fast-forward past active window
+      await time.increase(THREE_WEEKS + 1);
 
-      // 6. Finalize
+      // 5. Finalize
       await crowdfund.finalize();
-      expect(await crowdfund.phase()).to.equal(3); // Finalized
+      expect(await crowdfund.phase()).to.equal(2); // Finalized
 
-      // 7. Seeds claim their ARM
+      // 6. Seeds claim their ARM
       const claimedSeeds = seeds.slice(0, 5); // claim first 5 for governance testing
       for (const seed of claimedSeeds) {
         await crowdfund.connect(seed).claim();
@@ -178,13 +174,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // === GOVERNANCE PHASE ===
 
-      // 8. Deployer needs voting power to propose AND reach quorum.
+      // 7. Deployer needs voting power to propose AND reach quorum.
       // Deployer kept DEPLOYER_KEEP ARM. Lock most of it.
       const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
 
-      // 9. Seeds lock their claimed ARM in VotingLocker
+      // 8. Seeds lock their claimed ARM in VotingLocker
       for (const seed of claimedSeeds) {
         const balance = await armToken.balanceOf(seed.address);
         await armToken.connect(seed).approve(await votingLocker.getAddress(), balance);
@@ -196,7 +192,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const seed0VotingPower = await votingLocker.getLockedBalance(claimedSeeds[0].address);
       expect(seed0VotingPower).to.equal(seed0Arm);
 
-      // 10. Create a governance proposal (treasury owner is already the timelock from deployment)
+      // 9. Create a governance proposal (treasury owner is already the timelock from deployment)
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
       const proposalTx = await governor.propose(
         ProposalType.ParameterChange,
@@ -208,11 +204,11 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const receipt = await proposalTx.wait();
       const proposalId = 1;
 
-      // 11. Wait for voting delay (2 days)
+      // 10. Wait for voting delay (2 days)
       await time.increase(TWO_DAYS + 1);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Active);
 
-      // 12. Seeds vote FOR the proposal
+      // 11. Seeds vote FOR the proposal
       for (const seed of claimedSeeds) {
         await governor.connect(seed).castVote(proposalId, Vote.For);
       }
@@ -220,26 +216,26 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Deployer also votes
       await governor.castVote(proposalId, Vote.For);
 
-      // 13. Verify vote tallies
+      // 12. Verify vote tallies
       const [, , , , forVotes, againstVotes, abstainVotes] = await governor.getProposal(proposalId);
       expect(forVotes).to.be.gt(0);
       expect(againstVotes).to.equal(0);
 
-      // 14. Wait for voting period to end (5 days)
+      // 13. Wait for voting period to end (5 days)
       await time.increase(FIVE_DAYS + 1);
 
       // Check quorum is reached
       const state = await governor.state(proposalId);
       expect(state).to.equal(ProposalState.Succeeded);
 
-      // 15. Queue to timelock
+      // 14. Queue to timelock
       await governor.queue(proposalId);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 
-      // 16. Wait for execution delay (2 days timelock)
+      // 15. Wait for execution delay (2 days timelock)
       await time.increase(TWO_DAYS + 1);
 
-      // 17. Execute
+      // 16. Execute
       await governor.execute(proposalId);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Executed);
     });
@@ -250,8 +246,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
   describe("Token Supply Consistency", function () {
     async function runCrowdfundAndClaim() {
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await crowdfund.startWindow();
 
       for (const seed of seeds) {
         const amount = USDC(15_000);
@@ -260,7 +255,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await crowdfund.connect(seed).commit(amount, 0);
       }
 
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       // Claim all
@@ -355,8 +350,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     async function setupCrowdfundAndGovernance() {
       // Run crowdfund
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await crowdfund.startWindow();
 
       for (const seed of seeds) {
         const amount = USDC(15_000);
@@ -364,7 +358,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(amount, 0);
       }
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       // Claim first 10 seeds
@@ -556,8 +550,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("unclaimed crowdfund participant cannot vote (no ARM, no lock, no voting power)", async function () {
       // Run crowdfund but DON'T claim
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await crowdfund.startWindow();
 
       for (const seed of seeds) {
         const amount = USDC(15_000);
@@ -565,7 +558,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(amount, 0);
       }
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       // DON'T claim — seeds have 0 ARM balance
@@ -748,8 +741,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("quorum denominator shifts as participants claim ARM from crowdfund", async function () {
       // Run crowdfund lifecycle
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
-      await localCrowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await localCrowdfund.startWindow();
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -758,7 +750,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
 
       // Before any claims: crowdfund still holds all ARM
@@ -808,8 +800,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("withdrawProceeds sends USDC to treasury contract", async function () {
       // Run crowdfund
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
-      await localCrowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await localCrowdfund.startWindow();
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -818,7 +809,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
 
       // All seeds claim
@@ -842,8 +833,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("withdrawUnallocatedArm sends ARM to treasury contract", async function () {
       // Run crowdfund
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
-      await localCrowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await localCrowdfund.startWindow();
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -852,7 +842,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
 
       const treasuryAddress = await localTreasury.getAddress();
@@ -868,8 +858,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("full lifecycle: crowdfund → claim → lock → propose → vote → execute", async function () {
       // Run crowdfund
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
-      await localCrowdfund.startInvitations();
-      await time.increase(TWO_WEEKS + 1);
+      await localCrowdfund.startWindow();
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -878,7 +867,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localCrowdfund.connect(seed).commit(amount, 0);
       }
 
-      await time.increase(ONE_WEEK + 1);
+      await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
 
       // 5 seeds claim

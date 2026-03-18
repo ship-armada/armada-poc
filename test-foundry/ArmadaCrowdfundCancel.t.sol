@@ -36,20 +36,20 @@ contract ArmadaCrowdfundCancelTest is Test {
         // Fund ARM for MAX_SALE
         armToken.transfer(address(crowdfund), 1_800_000 * 1e18);
 
-        // Start invitations to set commitmentEnd
+        // Start window to set windowEnd
         address[] memory seeds = new address[](1);
         seeds[0] = address(0xA);
         crowdfund.addSeeds(seeds);
-        crowdfund.startInvitations();
+        crowdfund.startWindow();
     }
 
     /// @notice permissionlessCancel always reverts when elapsed <= FINALIZE_GRACE_PERIOD
     function testFuzz_revertsBeforeGracePeriod(uint256 elapsed) public {
-        uint256 commitmentEnd = crowdfund.commitmentEnd();
+        uint256 windowEnd = crowdfund.windowEnd();
         // Bound elapsed to [0, FINALIZE_GRACE_PERIOD] (inclusive — should revert at boundary)
         elapsed = bound(elapsed, 0, THIRTY_DAYS);
 
-        vm.warp(commitmentEnd + elapsed);
+        vm.warp(windowEnd + elapsed);
 
         vm.prank(caller);
         vm.expectRevert("ArmadaCrowdfund: grace period not elapsed");
@@ -58,11 +58,11 @@ contract ArmadaCrowdfundCancelTest is Test {
 
     /// @notice permissionlessCancel always succeeds when elapsed > FINALIZE_GRACE_PERIOD
     function testFuzz_succeedsAfterGracePeriod(uint256 elapsed) public {
-        uint256 commitmentEnd = crowdfund.commitmentEnd();
+        uint256 windowEnd = crowdfund.windowEnd();
         // Bound elapsed to (FINALIZE_GRACE_PERIOD, FINALIZE_GRACE_PERIOD + 365 days]
         elapsed = bound(elapsed, THIRTY_DAYS + 1, THIRTY_DAYS + 365 days);
 
-        vm.warp(commitmentEnd + elapsed);
+        vm.warp(windowEnd + elapsed);
 
         vm.prank(caller);
         crowdfund.permissionlessCancel();

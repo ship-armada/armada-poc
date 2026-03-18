@@ -2,7 +2,7 @@
  * Crowdfund Demo — Narrated end-to-end walkthrough (standalone)
  *
  * Deploys the crowdfund system and runs through:
- *   Flow 1: Full crowdfund lifecycle (seeds → invite → commit → finalize → claim)
+ *   Flow 1: Full crowdfund lifecycle (seeds → window → invite + commit → finalize → claim)
  *   Flow 2: Governance bridge (claimed ARM → lock in VotingLocker → voting power)
  *
  * Uses time.increase() to fast-forward through delays.
@@ -22,10 +22,9 @@
 
 import { ethers, network } from "hardhat";
 
-const PhaseNames = ["SETUP", "INVITATION", "COMMITMENT", "FINALIZED", "CANCELED"];
+const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
 
-const TWO_WEEKS = 14 * 86400;
-const ONE_WEEK = 7 * 86400;
+const THREE_WEEKS = 21 * 86400;
 
 function log(tag: string, msg: string) {
   const padded = `[${tag}]`.padEnd(12);
@@ -108,15 +107,15 @@ async function main() {
     log("SEED", `  Seed-${String.fromCharCode(65 + i)}: ${seeds[i].address.slice(0, 10)}...`);
   }
 
-  // ============ PHASE: INVITATION ============
+  // ============ PHASE: ACTIVE (3-week unified window) ============
   console.log("");
   console.log("-".repeat(70));
-  console.log("  PHASE: INVITATION (2-week window)");
+  console.log("  PHASE: ACTIVE (3-week window — invites + commits concurrent)");
   console.log("-".repeat(70));
   console.log("");
 
-  await crowdfund.startInvitations();
-  log("START", `Invitation window opened`);
+  await crowdfund.startWindow();
+  log("START", `Crowdfund window opened`);
 
   // Each seed invites 3 hop-1 addresses
   let hop1Count = 0;
@@ -144,13 +143,7 @@ async function main() {
   const [, , wc2] = await crowdfund.getHopStats(2);
   log("STATS", `Hop 0: ${wc0} whitelisted | Hop 1: ${wc1} | Hop 2: ${wc2}`);
 
-  await fastForward(TWO_WEEKS, "2 weeks (invitation window)");
-
-  // ============ PHASE: COMMITMENT ============
-  console.log("-".repeat(70));
-  console.log("  PHASE: COMMITMENT (1-week window)");
-  console.log("-".repeat(70));
-  console.log("");
+  // Commits happen concurrently — no time jump needed
 
   // Fund and commit: seeds at max cap
   for (let i = 0; i < seeds.length; i++) {
@@ -225,10 +218,8 @@ async function main() {
   await cf2.addSeeds(bigSeeds.map(s => s.address));
   log("SETUP", `Added ${bigSeeds.length} seeds to second crowdfund`);
 
-  await cf2.startInvitations();
-  await network.provider.send("evm_increaseTime", [TWO_WEEKS + 1]);
-  await network.provider.send("evm_mine");
-  log("TIME", "Fast-forwarded past invitation window");
+  await cf2.startWindow();
+  log("START", "Crowdfund window opened");
 
   // Each seed commits $15K
   for (const s of bigSeeds) {
@@ -240,8 +231,9 @@ async function main() {
   const total2 = await cf2.totalCommitted();
   log("COMMIT", `${bigSeeds.length} seeds commit $15K each = ${fmtUsdc(total2)}`);
 
-  await network.provider.send("evm_increaseTime", [ONE_WEEK + 1]);
+  await network.provider.send("evm_increaseTime", [THREE_WEEKS + 1]);
   await network.provider.send("evm_mine");
+  log("TIME", "Fast-forwarded past 3-week window");
 
   // Finalize
   await cf2.finalize();
@@ -296,7 +288,7 @@ async function main() {
   console.log("=".repeat(70));
   console.log("");
   console.log("  Flows demonstrated:");
-  console.log("  1. Crowdfund: seeds \u2192 invite \u2192 commit \u2192 finalize \u2192 claim");
+  console.log("  1. Crowdfund: seeds \u2192 window \u2192 invite + commit \u2192 finalize \u2192 claim");
   console.log("  2. Governance bridge: claimed ARM \u2192 VotingLocker \u2192 voting power");
   console.log("");
 }

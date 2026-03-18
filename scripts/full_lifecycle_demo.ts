@@ -8,7 +8,7 @@
  * through six phases that mirror the real activation sequence:
  *
  *   Phase 1: Deploy — governance stack + crowdfund with shared ARM + unified treasury
- *   Phase 2: Crowdfund — seeds → invite → commit → finalize → claim
+ *   Phase 2: Crowdfund — seeds → window → invite + commit → finalize → claim
  *   Phase 3: Treasury Reclaim — withdrawProceeds + withdrawUnallocatedArm → treasury
  *   Phase 4: Governance Activation — lock ARM → quorum analysis
  *   Phase 5: Treasury Proposal — governance distributes USDC from treasury
@@ -36,8 +36,7 @@ const TWO_DAYS   = 2 * ONE_DAY;
 const FIVE_DAYS  = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const FOUR_DAYS  = 4 * ONE_DAY;
-const ONE_WEEK   = 7 * ONE_DAY;
-const TWO_WEEKS  = 14 * ONE_DAY;
+const THREE_WEEKS = 21 * ONE_DAY;
 
 // Crowdfund parameters
 const NUM_SEEDS = 80;                // enough to exceed MIN_SALE ($1M)
@@ -59,7 +58,7 @@ const TIMELOCK_MIN_DELAY   = TWO_DAYS;
 // Governance enums
 const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
-const PhaseNames  = ["SETUP", "INVITATION", "COMMITMENT", "FINALIZED", "CANCELED"];
+const PhaseNames  = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
 const StateNames  = ["PENDING", "ACTIVE", "DEFEATED", "SUCCEEDED", "QUEUED", "EXECUTED", "CANCELED"];
 
 // ============ Utility Functions ============
@@ -242,15 +241,15 @@ async function main() {
   //  PHASE 2: CROWDFUND LIFECYCLE
   // ================================================================
 
-  section("PHASE 2: Crowdfund \u2014 Seeds \u2192 Invite \u2192 Commit \u2192 Finalize \u2192 Claim");
+  section("PHASE 2: Crowdfund \u2014 Seeds \u2192 Window \u2192 Invite + Commit \u2192 Finalize \u2192 Claim");
 
   // 2a: Add seeds
   await crowdfund.addSeeds(seeds.map(s => s.address));
   log("SEED", `Added ${seeds.length} seeds (hop 0, $${SEED_CAP} cap, 3 invites each)`);
 
-  // 2b: Start invitations
-  await crowdfund.startInvitations();
-  log("START", "Invitation window opened (2-week duration)");
+  // 2b: Start window (invites + commits concurrent for 3 weeks)
+  await crowdfund.startWindow();
+  log("START", "Crowdfund window opened (3-week duration, invites + commits concurrent)");
 
   // 2c: Invitation chains — first 3 seeds invite hop-1, hop-1 invite hop-2
   let hop1Count = 0;
@@ -276,10 +275,7 @@ async function main() {
   const [, , wc2] = await crowdfund.getHopStats(2);
   log("STATS", `Whitelisted \u2014 Hop 0: ${wc0} | Hop 1: ${wc1} | Hop 2: ${wc2}`);
 
-  await fastForward(TWO_WEEKS, "2 weeks (invitation window)");
-
-  // 2d: Commitment phase
-  log("PHASE", "Commitment window open (1-week duration)");
+  // 2d: Commitments (concurrent with invitations — no time jump needed)
 
   // Seeds commit at max cap
   for (const s of seeds) {
@@ -315,7 +311,7 @@ async function main() {
     log("STATS", `  Hop ${h}: ${uc} committers, ${fmtUsdc(tc)}`);
   }
 
-  await fastForward(ONE_WEEK, "1 week (commitment window)");
+  await fastForward(THREE_WEEKS, "3 weeks (crowdfund window)");
 
   // 2e: Finalize
   await crowdfund.finalize();
@@ -369,7 +365,7 @@ async function main() {
   const [h2Alloc, h2Refund] = await crowdfund.getAllocation(hop2Addrs[0].address);
   log("CLAIM", `  ${hop2Claimers} hop-2 claim: ${fmtArm(h2Alloc)} + ${fmtUsdc(h2Refund)} refund each`);
 
-  verify("Phase is FINALIZED", phase === 3);
+  verify("Phase is FINALIZED", phase === 2);
   verify("Total committed > MIN_SALE ($1M)", totalCommitted > ethers.parseUnits("1000000", 6));
 
   // ================================================================
@@ -655,7 +651,7 @@ async function main() {
 
   console.log("  Lifecycle demonstrated:");
   console.log("  1. Deploy: canonical ARM token + governance stack + crowdfund (unified treasury)");
-  console.log("  2. Crowdfund: seeds \u2192 invite \u2192 commit \u2192 finalize \u2192 claim");
+  console.log("  2. Crowdfund: seeds \u2192 window \u2192 invite + commit \u2192 finalize \u2192 claim");
   console.log("  3. Treasury reclaim: USDC proceeds + unallocated ARM \u2192 treasury");
   console.log("  4. Governance activation: lock ARM, verify quorum reachability");
   console.log("  5. Treasury proposal: distribute USDC via governance vote");

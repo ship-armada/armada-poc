@@ -1,5 +1,5 @@
 // ABOUTME: Anvil time manipulation controls for local testing.
-// ABOUTME: Allows fast-forwarding through invitation and commitment windows.
+// ABOUTME: Allows fast-forwarding through the active window phases.
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,16 +32,16 @@ export function TimeControls({ state, crowdfund }: TimeControlsProps) {
   }
 
   const phase = state.phase
-  const invEnd = Number(state.invitationEnd)
-  const commitEnd = Number(state.commitmentEnd)
+  const windowEnd = Number(state.windowEnd)
+  const launchTeamInviteEnd = Number(state.launchTeamInviteEnd)
 
   const blockTs = state.blockTimestamp
 
-  // Seconds from now until the invitation window ends (commitment starts)
-  const skipToCommitmentSecs = invEnd > blockTs ? invEnd - blockTs + 1 : 0
+  // Seconds from now until the launch team invite period ends (first 7 days)
+  const skipPastInvitePeriodSecs = launchTeamInviteEnd > blockTs ? launchTeamInviteEnd - blockTs + 1 : 0
 
-  // Seconds from now until the commitment window ends
-  const skipPastCommitmentSecs = commitEnd > blockTs ? commitEnd - blockTs + 1 : 0
+  // Seconds from now until the full window ends (21 days)
+  const skipPastWindowSecs = windowEnd > blockTs ? windowEnd - blockTs + 1 : 0
 
   return (
     <Card>
@@ -54,31 +54,31 @@ export function TimeControls({ state, crowdfund }: TimeControlsProps) {
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-2">
-          {/* Skip to Commitment Window */}
-          {phase === Phase.Invitation && invEnd > 0 && (
+          {/* Skip past launch team invite period (first 7 days) */}
+          {phase === Phase.Active && launchTeamInviteEnd > 0 && blockTs < launchTeamInviteEnd && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleAdvance(skipToCommitmentSecs)}
+              onClick={() => handleAdvance(skipPastInvitePeriodSecs)}
               disabled={isAdvancing}
               className="gap-1.5"
             >
               <FastForward className="h-3.5 w-3.5" />
-              Skip to Commitment
+              Skip Past Invite Period
             </Button>
           )}
 
-          {/* Skip Past Commitment */}
-          {phase === Phase.Invitation && commitEnd > 0 && (
+          {/* Skip past full window (21 days) */}
+          {phase === Phase.Active && windowEnd > 0 && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleAdvance(skipPastCommitmentSecs)}
+              onClick={() => handleAdvance(skipPastWindowSecs)}
               disabled={isAdvancing}
               className="gap-1.5"
             >
               <SkipForward className="h-3.5 w-3.5" />
-              Skip Past Commitment
+              Skip Past Window
             </Button>
           )}
 

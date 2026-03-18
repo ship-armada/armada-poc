@@ -37,17 +37,17 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         // Fund ARM tokens
         armToken.transfer(address(crowdfund), ARM_FUNDING);
 
-        // Start invitations to set commitmentEnd
+        // Start window to set windowEnd
         address[] memory seeds = new address[](1);
         seeds[0] = address(0xA);
         crowdfund.addSeeds(seeds);
-        crowdfund.startInvitations();
+        crowdfund.startWindow();
     }
 
     /// @notice Helper: advance past commitment period and cancel via finalize (under-subscribed)
     function _cancelViaTooFewCommitments() internal {
         // Warp past commitment end so finalize() can be called
-        vm.warp(crowdfund.commitmentEnd() + 1);
+        vm.warp(crowdfund.windowEnd() + 1);
         // No commitments made, so totalCommitted == 0 < MIN_SALE → cancel path
         crowdfund.finalize();
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Canceled));
@@ -104,23 +104,19 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         fresh.withdrawUnallocatedArm();
     }
 
-    /// @notice Reverts in Invitation phase
-    function test_withdrawUnallocatedArm_invitationPhase_reverts() public {
-        // setUp already moved crowdfund to Invitation phase
-        assertEq(uint256(crowdfund.phase()), uint256(Phase.Invitation));
+    /// @notice Reverts in Active phase
+    function test_withdrawUnallocatedArm_activePhase_reverts() public {
+        // setUp already moved crowdfund to Active phase
+        assertEq(uint256(crowdfund.phase()), uint256(Phase.Active));
 
         vm.expectRevert("ArmadaCrowdfund: not finalized or canceled");
         crowdfund.withdrawUnallocatedArm();
     }
 
-    /// @notice Reverts in Commitment phase
-    function test_withdrawUnallocatedArm_commitmentPhase_reverts() public {
-        // Warp past invitation period to enter Commitment phase
-        vm.warp(crowdfund.commitmentEnd() - 1);
-        // Phase transitions to Commitment when commitment period starts
-        // Actually, the contract uses commitmentEnd which is set at startInvitations.
-        // The phase stays Invitation until someone commits or finalize is called.
-        // Let's just verify it reverts at current phase.
+    /// @notice Reverts in Active phase (near window end)
+    function test_withdrawUnallocatedArm_activePhaseNearEnd_reverts() public {
+        // Warp to near the end of the active window — still Active phase
+        vm.warp(crowdfund.windowEnd() - 1);
         vm.expectRevert("ArmadaCrowdfund: not finalized or canceled");
         crowdfund.withdrawUnallocatedArm();
     }
@@ -146,10 +142,10 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         address[] memory seeds = new address[](1);
         seeds[0] = address(0xA);
         fuzzCrowdfund.addSeeds(seeds);
-        fuzzCrowdfund.startInvitations();
+        fuzzCrowdfund.startWindow();
 
         // Cancel
-        vm.warp(fuzzCrowdfund.commitmentEnd() + 1);
+        vm.warp(fuzzCrowdfund.windowEnd() + 1);
         fuzzCrowdfund.finalize();
 
         // Recover

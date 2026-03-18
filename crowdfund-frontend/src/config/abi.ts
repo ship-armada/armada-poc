@@ -5,7 +5,7 @@ export const CROWDFUND_ABI = [
   // Admin actions (Setup)
   'function addSeed(address seed) external',
   'function addSeeds(address[] calldata seeds) external',
-  'function startInvitations() external',
+  'function startWindow() external',
   'function finalize() external',
   'function withdrawProceeds() external',
   'function withdrawUnallocatedArm() external',
@@ -30,10 +30,9 @@ export const CROWDFUND_ABI = [
   'function saleSize() view returns (uint256)',
   'function totalAllocated() view returns (uint256)',
   'function totalAllocatedUsdc() view returns (uint256)',
-  'function invitationStart() view returns (uint256)',
-  'function invitationEnd() view returns (uint256)',
-  'function commitmentStart() view returns (uint256)',
-  'function commitmentEnd() view returns (uint256)',
+  'function windowStart() view returns (uint256)',
+  'function windowEnd() view returns (uint256)',
+  'function launchTeamInviteEnd() view returns (uint256)',
   'function participants(address, uint8) view returns (bool isWhitelisted, uint16 invitesReceived, uint256 committed, uint256 allocation, uint256 refund, bool claimed, address invitedBy, uint16 invitesSent)',
   'function participantNodes(uint256) view returns (address addr, uint8 hop)',
   'function hopStats(uint256) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
@@ -48,7 +47,7 @@ export const CROWDFUND_ABI = [
 
   // View functions
   'function getHopStats(uint8 hop) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
-  'function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 invitationEnd, uint256 commitmentEnd)',
+  'function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 windowStart, uint256 windowEnd)',
   'function isWhitelisted(address addr, uint8 hop) view returns (bool)',
   'function getCommitment(address addr, uint8 hop) view returns (uint256 committed)',
   'function getInvitesRemaining(address addr, uint8 hop) view returns (uint16)',
@@ -61,7 +60,7 @@ export const CROWDFUND_ABI = [
 
   // Events
   'event SeedAdded(address indexed seed)',
-  'event InvitationStarted(uint256 invitationEnd, uint256 commitmentStart, uint256 commitmentEnd)',
+  'event WindowStarted(uint256 windowStart, uint256 windowEnd, uint256 launchTeamInviteEnd)',
   'event Invited(address indexed inviter, address indexed invitee, uint8 hop)',
   'event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount)',
   'event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop)',

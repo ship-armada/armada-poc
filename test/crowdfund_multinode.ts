@@ -6,10 +6,10 @@ import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-const Phase = { Setup: 0, Invitation: 1, Commitment: 2, Finalized: 3, Canceled: 4 };
+const Phase = { Setup: 0, Active: 1, Finalized: 2, Canceled: 3 };
 
 const ONE_DAY = 86400;
-const TWO_WEEKS = 14 * ONE_DAY;
+const THREE_WEEKS = 21 * ONE_DAY;
 
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -34,7 +34,7 @@ describe("Crowdfund Multi-Node", function () {
 
   async function setupWithSeeds(seeds: SignerWithAddress[]) {
     await crowdfund.addSeeds(seeds.map(s => s.address));
-    await crowdfund.startInvitations();
+    await crowdfund.startWindow();
   }
 
   beforeEach(async function () {
@@ -141,8 +141,6 @@ describe("Crowdfund Multi-Node", function () {
       await crowdfund.connect(seed1).invite(alice.address, 0);
       await crowdfund.connect(seed2).invite(alice.address, 0);
 
-      await time.increase(TWO_WEEKS + 1);
-
       // Alice can commit up to $8000
       await crowdfund.connect(alice).commit(USDC(8_000), 1);
       expect(await crowdfund.getCommitment(alice.address, 1)).to.equal(USDC(8_000));
@@ -153,8 +151,6 @@ describe("Crowdfund Multi-Node", function () {
 
       // One invite → cap = 1 * $4000 = $4000
       await crowdfund.connect(seed1).invite(alice.address, 0);
-
-      await time.increase(TWO_WEEKS + 1);
 
       await expect(
         crowdfund.connect(alice).commit(USDC(4_001), 1)
@@ -259,8 +255,6 @@ describe("Crowdfund Multi-Node", function () {
       expect(await crowdfund.getEffectiveCap(seed1.address, 1)).to.equal(USDC(12_000)); // 3 * $4k
       expect(await crowdfund.getEffectiveCap(seed1.address, 2)).to.equal(USDC(6_000));  // 6 * $1k
 
-      await time.increase(TWO_WEEKS + 1);
-
       // Commit at all three hops
       await crowdfund.connect(seed1).commit(USDC(15_000), 0);
       await crowdfund.connect(seed1).commit(USDC(12_000), 1);
@@ -285,8 +279,6 @@ describe("Crowdfund Multi-Node", function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
-      await time.increase(TWO_WEEKS + 1);
-
       await crowdfund.connect(seed1).commit(USDC(100), 0);
       await crowdfund.connect(seed1).commit(USDC(100), 1);
 
@@ -300,8 +292,6 @@ describe("Crowdfund Multi-Node", function () {
     it("should enforce caps independently per node", async function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
-
-      await time.increase(TWO_WEEKS + 1);
 
       // Max out hop-0 cap
       await crowdfund.connect(seed1).commit(USDC(15_000), 0);
@@ -340,12 +330,10 @@ describe("Crowdfund Multi-Node", function () {
       // Use many seeds to get above MIN_SALE
       const seeds = signers.slice(1, 80);
       await crowdfund.addSeeds(seeds.map((s: SignerWithAddress) => s.address));
-      await crowdfund.startInvitations();
+      await crowdfund.startWindow();
 
       // seed1 self-invites to hop-1
       await crowdfund.connect(seed1).invite(seed1.address, 0);
-
-      await time.increase(TWO_WEEKS + 1);
 
       // Each seed commits $15k → 79 seeds * $15k = $1.185M
       // seed1 needs extra for hop-1 commit
@@ -358,7 +346,7 @@ describe("Crowdfund Multi-Node", function () {
       // seed1 also commits $4k at hop-1
       await crowdfund.connect(seed1).commit(USDC(4_000), 1);
 
-      await time.increase(ONE_DAY * 7 + 1);
+      await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
     }
 
@@ -395,13 +383,11 @@ describe("Crowdfund Multi-Node", function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
-      await time.increase(TWO_WEEKS + 1);
-
       await crowdfund.connect(seed1).commit(USDC(15_000), 0);
       await crowdfund.connect(seed1).commit(USDC(4_000), 1);
 
       // Not enough total → cancel
-      await time.increase(ONE_DAY * 7 + 1);
+      await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize(); // below MIN_SALE → Canceled
 
       const usdcBefore = await usdc.balanceOf(seed1.address);
@@ -446,7 +432,7 @@ describe("Crowdfund Multi-Node", function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(alice.address, 0);
 
-      // Should be readable during Invitation phase
+      // Should be readable during Active phase
       const inviter = await crowdfund.getInviteEdge(alice.address, 1);
       expect(inviter).to.equal(seed1.address);
     });

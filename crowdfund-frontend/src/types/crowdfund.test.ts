@@ -6,10 +6,9 @@ import { Phase, CROWDFUND_CONSTANTS } from './crowdfund'
 describe('Phase', () => {
   it('has correct numeric values', () => {
     expect(Phase.Setup).toBe(0)
-    expect(Phase.Invitation).toBe(1)
-    expect(Phase.Commitment).toBe(2)
-    expect(Phase.Finalized).toBe(3)
-    expect(Phase.Canceled).toBe(4)
+    expect(Phase.Active).toBe(1)
+    expect(Phase.Finalized).toBe(2)
+    expect(Phase.Canceled).toBe(3)
   })
 })
 
@@ -25,8 +24,8 @@ describe('CROWDFUND_CONSTANTS', () => {
   })
 
   it('has correct durations', () => {
-    expect(CROWDFUND_CONSTANTS.INVITATION_DURATION).toBe(14 * 86400)
-    expect(CROWDFUND_CONSTANTS.COMMITMENT_DURATION).toBe(7 * 86400)
+    expect(CROWDFUND_CONSTANTS.WINDOW_DURATION).toBe(21 * 86400)
+    expect(CROWDFUND_CONSTANTS.LAUNCH_TEAM_INVITE_PERIOD).toBe(7 * 86400)
   })
 
   it('hop caps are correct', () => {
@@ -35,9 +34,10 @@ describe('CROWDFUND_CONSTANTS', () => {
     expect(CROWDFUND_CONSTANTS.HOP_CAPS[2]).toBe(1_000_000_000n)  // $1,000
   })
 
-  it('hop reserves sum to 100%', () => {
-    const sum = CROWDFUND_CONSTANTS.HOP_RESERVE_BPS.reduce((a, b) => a + b, 0)
-    expect(sum).toBe(10_000)
+  it('hop ceilings have correct values (overlapping by design)', () => {
+    expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[0]).toBe(7000) // 70%
+    expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[1]).toBe(4500) // 45%
+    expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[2]).toBe(1000) // 10%
   })
 
   it('hop max invites are correct', () => {

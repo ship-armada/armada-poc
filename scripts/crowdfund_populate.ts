@@ -4,8 +4,8 @@
  * Crowdfund Populate — Fill a deployed crowdfund to a target commitment level
  *
  * Loads the existing deployment from deployments/crowdfund-hub.json and runs
- * through the full lifecycle: add seeds → start invitations → (optional hops)
- * → advance time → mint USDC → commit → advance past commitment.
+ * through the full lifecycle: add seeds → start window → invite + commit
+ * (concurrent) → advance past window.
  *
  * Leaves the contract ready for admin to finalize via the UI or CLI.
  *
@@ -24,8 +24,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { getCrowdfundDeploymentFile } from "../config/networks";
 
-const TWO_WEEKS = 14 * 86400;
-const ONE_WEEK = 7 * 86400;
+const THREE_WEEKS = 21 * 86400;
 
 const SEED_CAP = 15_000;  // $15,000 per seed
 const HOP1_CAP = 4_000;   // $4,000 per hop-1
@@ -95,7 +94,7 @@ async function main() {
 
   // Check phase
   const phase = Number(await crowdfund.phase());
-  const PhaseNames = ["SETUP", "INVITATION", "COMMITMENT", "FINALIZED", "CANCELED"];
+  const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
   if (phase !== 0) {
     throw new Error(
       `Contract is in ${PhaseNames[phase]} phase (expected SETUP).\n` +
@@ -212,10 +211,10 @@ async function main() {
     log("SEEDS", `  Batch ${Math.floor(i / SEED_BATCH_SIZE) + 1}: added ${batch.length} seeds`);
   }
 
-  // ============ START INVITATIONS ============
-  const startTx = await crowdfund.startInvitations();
+  // ============ START WINDOW ============
+  const startTx = await crowdfund.startWindow();
   await startTx.wait();
-  log("PHASE", "Invitation window opened");
+  log("PHASE", "Crowdfund window opened (invites + commits concurrent)");
 
   // ============ INVITATIONS (if hops enabled) ============
   if (includeHops) {
@@ -246,21 +245,8 @@ async function main() {
     log("INVITE", `${h2idx} hop-2 addresses invited`);
   }
 
-  // ============ ADVANCE TO COMMITMENT ============
-  console.log("-".repeat(70));
-
-  // Read exact commitment window from contract and jump to it
-  const commStart = Number(await crowdfund.commitmentStart());
-  const commEnd = Number(await crowdfund.commitmentEnd());
-  const curBlock = await ethers.provider.getBlock("latest");
-  const curTs = curBlock!.timestamp;
-  const jump = commStart - curTs + 1;
-
-  log("TIME", `Advancing to commitment window (${jump}s jump)...`);
-  await network.provider.send("evm_increaseTime", [jump]);
-  await network.provider.send("evm_mine");
-
   // ============ MINT + APPROVE + COMMIT ============
+  // Invites and commits are both open from window start.
   console.log("-".repeat(70));
   log("COMMIT", "Minting USDC and committing...");
 
@@ -314,10 +300,17 @@ async function main() {
     await commitBatch(hop2Signers, HOP2_CAP, 2, "Hop-2");
   }
 
-  // ============ ADVANCE PAST COMMITMENT ============
+  // ============ ADVANCE PAST WINDOW ============
   console.log("-".repeat(70));
-  log("TIME", "Advancing past commitment window (1 week)...");
-  await network.provider.send("evm_increaseTime", [ONE_WEEK + 1]);
+
+  // Read exact window end from contract and jump past it
+  const windowEnd = Number(await crowdfund.windowEnd());
+  const curBlock = await ethers.provider.getBlock("latest");
+  const curTs = curBlock!.timestamp;
+  const jump = windowEnd - curTs + 1;
+
+  log("TIME", `Advancing past crowdfund window (${jump}s jump)...`);
+  await network.provider.send("evm_increaseTime", [jump]);
   await network.provider.send("evm_mine");
 
   // ============ SUMMARY ============

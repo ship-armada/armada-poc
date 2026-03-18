@@ -107,21 +107,19 @@ async function main() {
   const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
   await usdc.waitForDeployment();
 
-  // ARM distribution for demo: treasury gets production allocation, remainder split between voters.
-  // Demo uses fixed voter amounts to demonstrate quorum mechanics.
-  const TREASURY_ARM = "65000000";  // matches config.armDistribution.treasury default
-  const ALICE_ARM = "20000000";     // demo-specific: large voter
-  const BOB_ARM = "15000000";       // demo-specific: smaller voter
-  const treasuryArm = ethers.parseUnits(TREASURY_ARM, 18);
-  const aliceArm = ethers.parseUnits(ALICE_ARM, 18);
-  const bobArm = ethers.parseUnits(BOB_ARM, 18);
+  // ARM distribution for demo: treasury gets 65%, remainder split between voters.
+  // Amounts are derived from total supply so they adapt if supply changes.
+  const totalSupply = await armToken.totalSupply();
+  const treasuryArm = totalSupply * 65n / 100n;  // 65% to treasury
+  const aliceArm = totalSupply * 20n / 100n;     // 20% to Alice (large voter)
+  const bobArm = totalSupply * 15n / 100n;       // 15% to Bob (smaller voter)
 
   await armToken.transfer(await treasury.getAddress(), treasuryArm);
   await armToken.transfer(alice.address, aliceArm);
   await armToken.transfer(bob.address, bobArm);
   await usdc.mint(await treasury.getAddress(), ethers.parseUnits("100000", 6));
 
-  log("SETUP", `Distributing ARM: ${TREASURY_ARM} \u2192 treasury, ${ALICE_ARM} \u2192 Alice, ${BOB_ARM} \u2192 Bob`);
+  log("SETUP", `Distributing ARM: ${fmtArm(treasuryArm)} \u2192 treasury, ${fmtArm(aliceArm)} \u2192 Alice, ${fmtArm(bobArm)} \u2192 Bob`);
   log("SETUP", `Minting 100,000 USDC to treasury`);
   console.log("");
 
@@ -170,7 +168,7 @@ async function main() {
   log("TALLY", `For: ${fmtArm(forVotes1)} | Against: ${fmtArm(againstVotes1)} | Abstain: ${fmtArm(abstainVotes1)}`);
 
   const quorum1 = await governor.quorum(pid1);
-  log("QUORUM", `Required: ${fmtArm(quorum1)} (20% of 35M eligible) \u2713 Met`);
+  log("QUORUM", `Required: ${fmtArm(quorum1)} (20% of eligible supply) \u2713 Met`);
 
   await fastForward(FIVE_DAYS, "5 days");
 

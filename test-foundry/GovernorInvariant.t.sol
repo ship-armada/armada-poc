@@ -9,7 +9,7 @@ import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 
 // ══════════════════════════════════════════════════════════════════════════
-// INV-G1: ARM total supply is constant (100_000_000 * 1e18)
+// INV-G1: ARM total supply is constant (matches INITIAL_SUPPLY)
 // INV-G2: One vote per address per proposal — voting twice reverts
 // INV-G3: Proposal state transitions are monotonic
 // INV-G5: Quorum for a proposal never changes after creation
@@ -269,11 +269,12 @@ contract GovernorInvariantTest is Test {
 
     address[] public actors;
     address public treasuryAddr;
-    uint256 constant TOKENS_PER_ACTOR = 10_000_000 * 1e18; // 10M each (10% of supply)
+    uint256 TOKENS_PER_ACTOR; // set in setUp() as 10% of supply per actor
 
     function setUp() public {
         // Deploy ARM token
         armToken = new ArmadaToken(address(this));
+        TOKENS_PER_ACTOR = armToken.INITIAL_SUPPLY() / 10; // 10% of supply each
 
         // Deploy TimelockController
         address[] memory proposers = new address[](1);
@@ -349,12 +350,12 @@ contract GovernorInvariantTest is Test {
     // INV-G1: ARM total supply is constant
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice ARM token total supply never changes from 100M
+    /// @notice ARM token total supply never changes from INITIAL_SUPPLY
     function invariant_armTotalSupplyConstant() public view {
         assertEq(
             armToken.totalSupply(),
-            100_000_000 * 1e18,
-            "INV-G1: ARM total supply changed from 100M"
+            armToken.INITIAL_SUPPLY(),
+            "INV-G1: ARM total supply changed"
         );
     }
 
@@ -422,7 +423,7 @@ contract GovernorInvariantTest is Test {
         }
     }
 
-    /// @notice ARM token conservation: locker + actors + deployer = 100M
+    /// @notice ARM token conservation: locker + actors + deployer = INITIAL_SUPPLY
     function invariant_armConservation() public view {
         uint256 total = armToken.balanceOf(address(locker));
         for (uint256 i = 0; i < actors.length; i++) {
@@ -431,6 +432,6 @@ contract GovernorInvariantTest is Test {
         total += armToken.balanceOf(address(this)); // deployer's remaining
         total += armToken.balanceOf(address(timelock)); // timelock may hold some
         total += armToken.balanceOf(treasuryAddr); // treasury
-        assertEq(total, 100_000_000 * 1e18, "ARM conservation violated");
+        assertEq(total, armToken.INITIAL_SUPPLY(), "ARM conservation violated");
     }
 }

@@ -171,7 +171,7 @@ async function main() {
     config: {
       timelockMinDelay: timelockDelay,
       stewardActionDelay: stewardDelay,
-      totalSupply: "100000000",
+      totalSupply: "12000000",
       treasuryAllocation: config.armDistribution.treasury,
     },
     timestamp: new Date().toISOString(),

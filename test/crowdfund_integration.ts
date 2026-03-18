@@ -77,7 +77,7 @@ describe("Crowdfund Integration", function () {
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
     await usdc.waitForDeployment();
 
-    // Deploy ArmadaToken (100M ARM to deployer)
+    // Deploy ArmadaToken (12M ARM to deployer)
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
     armToken = await ArmadaToken.deploy(deployer.address);
     await armToken.waitForDeployment();

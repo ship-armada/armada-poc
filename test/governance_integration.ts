@@ -49,12 +49,12 @@ describe("Governance Integration", function () {
   let carol: SignerWithAddress;
   let dave: SignerWithAddress;
 
-  // Constants
+  // Constants — derived from total supply so tests adapt if supply changes
   const ARM_DECIMALS = 18;
-  const TOTAL_SUPPLY = ethers.parseUnits("100000000", ARM_DECIMALS); // 100M
-  const TREASURY_AMOUNT = ethers.parseUnits("65000000", ARM_DECIMALS); // 65M
-  const ALICE_AMOUNT = ethers.parseUnits("20000000", ARM_DECIMALS); // 20M
-  const BOB_AMOUNT = ethers.parseUnits("15000000", ARM_DECIMALS); // 15M
+  const TOTAL_SUPPLY = ethers.parseUnits("12000000", ARM_DECIMALS); // must match ArmadaToken.INITIAL_SUPPLY
+  const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
+  const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
+  const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
   const USDC_DECIMALS = 6;
   // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
   // 9 days * 1.2 = 10.8 days = 933120 seconds
@@ -235,7 +235,7 @@ describe("Governance Integration", function () {
     });
 
     it("should unlock tokens", async function () {
-      const unlockAmount = ethers.parseUnits("5000000", ARM_DECIMALS);
+      const unlockAmount = ALICE_AMOUNT / 4n; // unlock 25% of alice's locked balance
       await votingLocker.connect(alice).unlock(unlockAmount);
 
       expect(await votingLocker.getLockedBalance(alice.address)).to.equal(ALICE_AMOUNT - unlockAmount);
@@ -254,7 +254,7 @@ describe("Governance Integration", function () {
       await mineBlock();
 
       // Alice unlocks some, then relocks — this creates new checkpoints
-      const unlockAmount = ethers.parseUnits("5000000", ARM_DECIMALS);
+      const unlockAmount = ALICE_AMOUNT / 4n;
       await votingLocker.connect(alice).unlock(unlockAmount);
       await mineBlock();
 
@@ -341,9 +341,8 @@ describe("Governance Integration", function () {
     });
 
     it("should be defeated if quorum not reached", async function () {
-      // Only Alice votes (20M). Quorum = 20% of (100M - 65M) = 7M. Alice meets it.
-      // But if we reduce alice's lock to below quorum threshold...
-      // Actually 20M > 7M so quorum is met. Let's test with no votes at all.
+      // Alice (20% of supply) meets quorum (7% of supply).
+      // Test with no votes at all to verify defeated state.
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
@@ -457,9 +456,9 @@ describe("Governance Integration", function () {
     });
 
     it("should use 20% quorum for standard treasury proposals", async function () {
-      // Eligible supply = 100M - 65M (treasury) = 35M
-      // 20% quorum = 7M ARM
-      // Alice has 20M locked > 7M, so her vote alone meets quorum
+      // Eligible supply = totalSupply - treasury (65%) = 35% of supply
+      // 20% quorum = 7% of total supply
+      // Alice has 20% of supply locked, exceeding quorum
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
@@ -472,14 +471,14 @@ describe("Governance Integration", function () {
       await governor.connect(alice).castVote(1, Vote.For);
       await time.increase(FIVE_DAYS + 1);
 
-      // Should succeed with only Alice's 20M vote (quorum = 7M)
+      // Should succeed with only Alice's vote (20% of supply > 7% quorum)
       expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
     });
 
     it("should calculate quorum excluding treasury-held ARM", async function () {
       // Quorum = 20% of (totalSupply - treasury balance)
-      const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT; // 35M
-      const expectedQuorum = (expectedEligible * 2000n) / 10000n; // 7M
+      const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT; // 35% of supply
+      const expectedQuorum = (expectedEligible * 2000n) / 10000n; // 7% of supply
 
       // Create a dummy proposal to check quorum
       const targets = [await treasury.getAddress()];
@@ -525,8 +524,8 @@ describe("Governance Integration", function () {
     });
 
     it("should use 30% quorum for steward elections", async function () {
-      // 30% of 35M eligible = 10.5M
-      // Bob alone (15M) should meet this
+      // 30% of eligible (35% of supply) = 10.5% of total supply
+      // Bob (15% of supply) should meet this
       const targets = [await stewardContract.getAddress()];
       const values = [0n];
       const calldatas = [
@@ -922,7 +921,7 @@ describe("Governance Integration", function () {
   describe("Voter Functions", function () {
     it("should record yes/no/abstain votes correctly", async function () {
       // Give carol some tokens to vote with (alice unlocks some to fund carol)
-      const carolAmount = ethers.parseUnits("1000000", ARM_DECIMALS);
+      const carolAmount = ALICE_AMOUNT / 10n; // 10% of alice's balance
       await votingLocker.connect(alice).unlock(carolAmount);
       await armToken.connect(alice).transfer(carol.address, carolAmount);
       // Alice still has ALICE_AMOUNT - carolAmount locked (no re-lock needed)

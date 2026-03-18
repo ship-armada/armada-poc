@@ -28,6 +28,13 @@ const ONE_WEEK = 7 * ONE_DAY;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 
+// Amount of ARM the deployer keeps for governance testing after treasury + crowdfund allocations.
+// Eligible supply ≈ DEPLOYER_KEEP + seed-claimed ARM. Quorum = 20% of eligible.
+// Deployer locks half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
+// With 1.2M keep: eligible ≈ 1.2M + ~798K claimed = ~2M, quorum = ~400K.
+// Deployer locks 600K > 400K quorum. ✓
+const DEPLOYER_KEEP = ARM(1_200_000);
+
 describe("Cross-Contract Integration (Phase 6)", function () {
   // Contracts
   let armToken: any;
@@ -118,11 +125,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
     await treasuryGov.waitForDeployment();
 
-    // Send most ARM to treasury address to make quorum reachable
-    // Deployer starts with 100M - 1.8M (crowdfund) = 98.2M ARM
-    // Send 97M to treasury so eligible supply = 100M - 97M = 3M
-    // Quorum (20%) = 600K ARM — reachable with deployer lock + seed claims
-    const TREASURY_ARM_ALLOCATION = ARM(97_000_000);
+    // Send most ARM to treasury address to make quorum reachable.
+    // Keep DEPLOYER_KEEP for governance testing.
+    const deployerBal = await armToken.balanceOf(deployer.address);
+    const TREASURY_ARM_ALLOCATION = deployerBal - DEPLOYER_KEEP;
     await armToken.transfer(treasuryAddr.address, TREASURY_ARM_ALLOCATION);
   });
 
@@ -171,10 +177,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // === GOVERNANCE PHASE ===
 
-      // 8. Deployer needs voting power to propose AND reach quorum
-      // Treasury has 97M ARM → eligible supply = 3M → quorum (20%) = 600K
-      // Deployer has 100M - 1.8M(crowdfund) - 97M(treasury) = 1.2M ARM remaining
-      const deployerLock = ARM(600_000); // enough for both threshold and quorum
+      // 8. Deployer needs voting power to propose AND reach quorum.
+      // Deployer kept DEPLOYER_KEEP ARM. Lock most of it.
+      const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
 
@@ -263,20 +268,19 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       }
     }
 
-    it("ARM total supply remains 100M after crowdfund distribution", async function () {
+    it("ARM total supply is constant after crowdfund distribution", async function () {
       await runCrowdfundAndClaim();
 
       const totalSupply = await armToken.totalSupply();
-      expect(totalSupply).to.equal(ARM(100_000_000));
+      const INITIAL_SUPPLY = await armToken.INITIAL_SUPPLY();
+      expect(totalSupply).to.equal(INITIAL_SUPPLY);
     });
 
     it("quorum calculation remains correct after crowdfund distributes tokens", async function () {
       await runCrowdfundAndClaim();
 
-      // Treasury already has 97M from beforeEach.
-      // quorum = (totalSupply - treasuryBalance) * quorumBps / 10000
-      // = (100M - 97M) * 2000 / 10000 = 3M * 0.2 = 600K ARM
-      const deployerLock = ARM(200_000);
+      // Quorum = (totalSupply - treasuryBalance) * quorumBps / 10000
+      const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
       await mine(1);
@@ -298,22 +302,19 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const expectedQuorum = (eligibleSupply * 2000n) / 10000n;
 
       expect(quorum).to.equal(expectedQuorum);
-      // Verify the quorum is reachable: 600K ARM, deployer has 200K locked,
-      // seeds claimed ~798K total (80 seeds * ~9,975 each)
-      expect(quorum).to.equal(ARM(600_000));
     });
 
-    it("proposal threshold (0.1% of total supply = 100K ARM) is reachable by crowdfund participant", async function () {
+    it("proposal threshold (0.1% of total supply) is reachable by crowdfund participants", async function () {
       await runCrowdfundAndClaim();
 
       // With BASE_SALE ($1.2M), hop-0 ceiling = 70% of netRaise = 70% of $1.14M = $798K.
       // 80 seeds * $15K = $1.2M demand > $798K ceiling → pro-rata.
       // Each seed gets (15K * 798K) / 1.2M = $9,975 = 9,975 ARM.
-      // Threshold = 100M * 0.001 = 100,000 ARM.
-      // Need ceil(100K / 9.975K) = 11 seeds pooled.
+      // Threshold = 0.1% of total supply.
 
       const threshold = await governor.proposalThreshold();
-      expect(threshold).to.equal(ARM(100_000));
+      const INITIAL_SUPPLY = await armToken.INITIAL_SUPPLY();
+      expect(threshold).to.equal((INITIAL_SUPPLY * 10n) / 10000n); // 0.1% = 10 bps
 
       // Single seed's ARM balance
       const seedBalance = await armToken.balanceOf(seeds[0].address);
@@ -370,8 +371,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await crowdfund.connect(seeds[i]).claim();
       }
 
-      // Deployer locks enough to propose AND reach quorum (600K with 97M in treasury)
-      const deployerLock = ARM(600_000);
+      // Deployer locks enough to propose AND contribute to quorum
+      const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
     }
@@ -570,8 +571,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(await armToken.balanceOf(seeds[0].address)).to.equal(0);
 
       // Deployer locks to create proposal
-      await armToken.approve(await votingLocker.getAddress(), ARM(200_000));
-      await votingLocker.lock(ARM(200_000));
+      const lockAmt = DEPLOYER_KEEP / 2n;
+      await armToken.approve(await votingLocker.getAddress(), lockAmt);
+      await votingLocker.lock(lockAmt);
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -604,10 +606,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     // 6. Register crowdfund in governor quorum exclusion
     // 7. Verify balances, run crowdfund, verify quorum shifts, governance works
 
-    // Named constants for this test suite's ARM distribution
-    const TREASURY_ALLOCATION = ARM(65_000_000);  // 65M to treasury
-    const CROWDFUND_ALLOCATION = ARM(1_800_000);  // 1.8M to crowdfund
-    const TOTAL_SUPPLY = ARM(100_000_000);         // 100M total
+    // Named constants for this test suite's ARM distribution — derived from supply
+    const TOTAL_SUPPLY = ARM(12_000_000);                    // must match ArmadaToken.INITIAL_SUPPLY
+    const TREASURY_ALLOCATION = TOTAL_SUPPLY * 65n / 100n;   // 65% to treasury
+    const CROWDFUND_ALLOCATION = ARM(1_800_000);              // MAX_SALE (fixed by crowdfund economics)
 
     let localArmToken: any;
     let localUsdc: any;
@@ -694,7 +696,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localGovernor.setExcludedAddresses([await localCrowdfund.getAddress()]);
     });
 
-    it("all ARM balances sum to 100M total supply", async function () {
+    it("all ARM balances sum to total supply", async function () {
       const totalSupply = await localArmToken.totalSupply();
       expect(totalSupply).to.equal(TOTAL_SUPPLY);
 
@@ -702,12 +704,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const crowdfundBal = await localArmToken.balanceOf(await localCrowdfund.getAddress());
       const deployerBal = await localArmToken.balanceOf(localDeployer.address);
 
-      // Treasury + crowdfund + deployer remainder = 100M
+      // Treasury + crowdfund + deployer remainder = total supply
       expect(treasuryBal + crowdfundBal + deployerBal).to.equal(TOTAL_SUPPLY);
       expect(treasuryBal).to.equal(TREASURY_ALLOCATION);
       expect(crowdfundBal).to.equal(CROWDFUND_ALLOCATION);
 
-      // Deployer remainder = 100M - 65M - 1.8M = 33.2M
+      // Deployer remainder = total - treasury - crowdfund
       const expectedRemainder = TOTAL_SUPPLY - TREASURY_ALLOCATION - CROWDFUND_ALLOCATION;
       expect(deployerBal).to.equal(expectedRemainder);
     });
@@ -734,13 +736,11 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const treasuryBal = await localArmToken.balanceOf(await localTreasury.getAddress());
       const crowdfundBal = await localArmToken.balanceOf(await localCrowdfund.getAddress());
 
-      // eligibleSupply = 100M - 65M(treasury) - 1.8M(crowdfund) = 33.2M
+      // eligibleSupply = totalSupply - treasury - crowdfund
       const eligibleSupply = totalSupply - treasuryBal - crowdfundBal;
       const expectedQuorum = (eligibleSupply * 2000n) / 10000n; // 20% of eligible
 
       expect(quorum).to.equal(expectedQuorum);
-      // 33.2M * 20% = 6.64M
-      expect(quorum).to.equal(ARM(6_640_000));
     });
 
     it("quorum denominator shifts as participants claim ARM from crowdfund", async function () {
@@ -885,8 +885,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localCrowdfund.connect(seed).claim();
       }
 
-      // Deployer locks enough to propose
-      const deployerLock = ARM(6_700_000); // > 6.64M quorum
+      // Deployer locks enough to propose and exceed quorum
+      // Quorum = 20% of (supply - treasury - crowdfund) = 20% of deployer remainder
+      const deployerRemainder = TOTAL_SUPPLY - TREASURY_ALLOCATION - CROWDFUND_ALLOCATION;
+      const deployerLock = (deployerRemainder * 25n) / 100n; // lock 25% of remainder
       await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
       await localVotingLocker.lock(deployerLock);
 

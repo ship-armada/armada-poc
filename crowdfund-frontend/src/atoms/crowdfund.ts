@@ -16,7 +16,8 @@ export interface CrowdfundState {
   saleSize: bigint
   hopStats: [HopStats, HopStats, HopStats] | null
   participantCount: number
-  // Current user's data
+  // Current user's data (for the user's active hop)
+  currentHop: number
   currentParticipant: Participant | null
   currentInvitesRemaining: number
   currentAllocation: { allocation: bigint; refund: bigint; claimed: boolean } | null
@@ -43,6 +44,7 @@ const DEFAULT_STATE: CrowdfundState = {
   saleSize: 0n,
   hopStats: null,
   participantCount: 0,
+  currentHop: 0,
   currentParticipant: null,
   currentInvitesRemaining: 0,
   currentAllocation: null,
@@ -66,6 +68,7 @@ export const deploymentAtom = atom<CrowdfundDeployment | null>(null)
 /** Participant list for the table (fetched separately since it's expensive) */
 export interface ParticipantRow {
   address: string
+  hop: number
   participant: Participant
 }
 export const participantListAtom = atom<ParticipantRow[]>([])

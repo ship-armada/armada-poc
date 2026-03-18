@@ -99,7 +99,7 @@ describe("Gas Benchmarks", function () {
         for (const s of seeds) {
           await usdc.mint(s.address, commitAmount);
           await usdc.connect(s).approve(await crowdfund.getAddress(), commitAmount);
-          await crowdfund.connect(s).commit(commitAmount);
+          await crowdfund.connect(s).commit(commitAmount, 0);
         }
 
         // Skip to after commitment window
@@ -236,7 +236,7 @@ describe("Gas Benchmarks", function () {
       for (const s of seeds) {
         await usdc.mint(s.address, USDC(15_000));
         await usdc.connect(s).approve(await crowdfund.getAddress(), USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
 
       await time.increase(ONE_WEEK + 1);
@@ -499,15 +499,15 @@ describe("Gas Benchmarks", function () {
       }
 
       // First commit (cold storage write — more expensive)
-      const tx1 = await crowdfund.connect(seeds[0]).commit(USDC(5_000));
+      const tx1 = await crowdfund.connect(seeds[0]).commit(USDC(5_000), 0);
       const r1 = await tx1.wait();
 
       // Second commit from same address (warm storage — cheaper)
-      const tx2 = await crowdfund.connect(seeds[0]).commit(USDC(5_000));
+      const tx2 = await crowdfund.connect(seeds[0]).commit(USDC(5_000), 0);
       const r2 = await tx2.wait();
 
       // First commit from different address
-      const tx3 = await crowdfund.connect(seeds[1]).commit(USDC(5_000));
+      const tx3 = await crowdfund.connect(seeds[1]).commit(USDC(5_000), 0);
       const r3 = await tx3.wait();
 
       console.log(`    commit() | first commit (cold)    | ${r1!.gasUsed.toLocaleString()} gas`);

@@ -12,8 +12,8 @@ export const Phase = {
 export type Phase = (typeof Phase)[keyof typeof Phase]
 
 export interface Participant {
-  hop: number
   isWhitelisted: boolean
+  invitesReceived: number
   committed: bigint
   allocation: bigint
   refund: bigint

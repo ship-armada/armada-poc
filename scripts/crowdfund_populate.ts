@@ -227,7 +227,7 @@ async function main() {
     let h1idx = 0;
     for (let i = 0; i < uiSeeds.length; i++) {
       for (let j = 0; j < 3 && h1idx < hop1Signers.length; j++) {
-        const tx = await crowdfund.connect(uiSeeds[i]).invite(hop1Signers[h1idx].address);
+        const tx = await crowdfund.connect(uiSeeds[i]).invite(hop1Signers[h1idx].address, 0);
         await tx.wait();
         h1idx++;
       }
@@ -238,7 +238,7 @@ async function main() {
     let h2idx = 0;
     for (let i = 0; i < hop1Signers.length; i++) {
       for (let j = 0; j < 2 && h2idx < hop2Signers.length; j++) {
-        const tx = await crowdfund.connect(hop1Signers[i]).invite(hop2Signers[h2idx].address);
+        const tx = await crowdfund.connect(hop1Signers[i]).invite(hop2Signers[h2idx].address, 1);
         await tx.wait();
         h2idx++;
       }
@@ -270,6 +270,7 @@ async function main() {
   async function commitBatch(
     participants: typeof seedSigners,
     capUsdc: number,
+    hop: number,
     label: string
   ) {
     const amount = ethers.parseUnits(capUsdc.toString(), 6);
@@ -292,7 +293,7 @@ async function main() {
       for (const p of batch) {
         const appTx = await usdc.connect(p).approve(crowdfundAddr, amount);
         await appTx.wait();
-        const cmtTx = await crowdfund.connect(p).commit(amount);
+        const cmtTx = await crowdfund.connect(p).commit(amount, hop);
         await cmtTx.wait();
       }
 
@@ -305,12 +306,12 @@ async function main() {
   }
 
   // Commit UI seed accounts (signers[1-3]) so they can test claiming via UI
-  await commitBatch(uiSeeds, SEED_CAP, "UI Seeds");
+  await commitBatch(uiSeeds, SEED_CAP, 0, "UI Seeds");
 
-  await commitBatch(seedSigners, SEED_CAP, "Seeds");
+  await commitBatch(seedSigners, SEED_CAP, 0, "Seeds");
   if (includeHops) {
-    await commitBatch(hop1Signers, HOP1_CAP, "Hop-1");
-    await commitBatch(hop2Signers, HOP2_CAP, "Hop-2");
+    await commitBatch(hop1Signers, HOP1_CAP, 1, "Hop-1");
+    await commitBatch(hop2Signers, HOP2_CAP, 2, "Hop-2");
   }
 
   // ============ ADVANCE PAST COMMITMENT ============

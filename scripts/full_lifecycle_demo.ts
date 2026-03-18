@@ -24,10 +24,11 @@ import { ethers, network } from "hardhat";
 
 // ============ Named Constants ============
 
-// ARM distribution (must sum to 100M total supply)
-const TREASURY_ARM  = "65000000";   // protocol treasury, governed by proposals
-const CROWDFUND_ARM = "1800000";    // backs MAX_SALE at $1/ARM
-// Deployer remainder: 33.2M (100M - 65M - 1.8M) — production allocation TBD
+// ARM distribution (12M total supply)
+// Treasury includes parked team (15%) + airdrop (5%) allocations
+const TREASURY_ARM  = "10200000";  // 85% — treasury (65%) + team (15%) + airdrop (5%)
+const CROWDFUND_ARM = "1800000";   // 15% — backs MAX_SALE at $1/ARM
+// Deployer remainder: 0
 
 // Timing (seconds)
 const ONE_DAY    = 86400;
@@ -48,7 +49,7 @@ const INVITES_PER_SEED  = 3;
 const INVITES_PER_HOP1  = 2;
 
 // Governance parameters
-const DEPLOYER_LOCK_ARM    = "10000000";  // 10M ARM — team governance stake
+const DEPLOYER_LOCK_ARM    = "0";  // no deployer remainder to lock (all ARM allocated)
 const DISTRIBUTE_AMOUNT    = "10000";     // USDC distributed via treasury proposal
 const STEWARD_SPEND_AMOUNT = "1000";      // USDC spent by steward from operational budget
 // Steward action delay: 120% of governance cycle (2d + 5d + 2d = 9d)
@@ -128,7 +129,7 @@ async function main() {
 
   log("DEPLOY", "Deploying governance stack...");
 
-  // 1a. ARM token — canonical, 100M fixed supply
+  // 1a. ARM token — canonical, 12M fixed supply
   const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
   const armToken = await ArmadaToken.deploy(deployer.address);
   await armToken.waitForDeployment();
@@ -229,10 +230,10 @@ async function main() {
   const deployerBal    = await armToken.balanceOf(deployer.address);
   const sum = treasuryBal + crowdfundBal + deployerBal;
 
-  verify("ARM total supply = 100M", totalSupply === ethers.parseUnits("100000000", 18));
-  verify("Treasury ARM = 65M", treasuryBal === treasuryArm);
+  verify("ARM total supply = 12M", totalSupply === ethers.parseUnits("12000000", 18));
+  verify("Treasury ARM = 10.2M", treasuryBal === treasuryArm);
   verify("Crowdfund ARM = 1.8M", crowdfundBal === crowdfundArm);
-  verify("Deployer remainder = 33.2M", deployerBal === ethers.parseUnits("33200000", 18));
+  verify("Deployer remainder = 0", deployerBal === 0n);
   verify("All balances sum to total supply", sum === totalSupply);
   verify("Treasury owner = timelock", await treasury.owner() === await timelock.getAddress());
 
@@ -407,11 +408,15 @@ async function main() {
 
   section("PHASE 4: Governance Activation \u2014 Lock ARM + Quorum Analysis");
 
-  // Deployer locks team stake
-  const deployerLockAmt = ethers.parseUnits(DEPLOYER_LOCK_ARM, 18);
-  await armToken.connect(deployer).approve(await votingLocker.getAddress(), deployerLockAmt);
-  await votingLocker.connect(deployer).lock(deployerLockAmt);
-  log("LOCK", `Deployer locks ${DEPLOYER_LOCK_ARM} ARM (team governance stake)`);
+  // Deployer locks any remaining ARM for governance participation
+  const deployerLockAmt = await armToken.balanceOf(deployer.address);
+  if (deployerLockAmt > 0n) {
+    await armToken.connect(deployer).approve(await votingLocker.getAddress(), deployerLockAmt);
+    await votingLocker.connect(deployer).lock(deployerLockAmt);
+    log("LOCK", `Deployer locks ${fmtArm(deployerLockAmt)} ARM`);
+  } else {
+    log("LOCK", "Deployer has no remaining ARM to lock (fully allocated to treasury + crowdfund)");
+  }
 
   // All seeds lock their claimed ARM
   let totalSeedLocked = 0n;

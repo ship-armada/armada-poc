@@ -30,10 +30,10 @@ const FOURTEEN_DAYS = 14 * ONE_DAY;
 const MAX_PAUSE_DURATION = FOURTEEN_DAYS;
 
 const ARM_DECIMALS = 18;
-const TOTAL_SUPPLY = ethers.parseUnits("100000000", ARM_DECIMALS); // 100M
-const TREASURY_AMOUNT = ethers.parseUnits("65000000", ARM_DECIMALS); // 65M
-const ALICE_AMOUNT = ethers.parseUnits("20000000", ARM_DECIMALS); // 20M
-const BOB_AMOUNT = ethers.parseUnits("15000000", ARM_DECIMALS); // 15M
+const TOTAL_SUPPLY = ethers.parseUnits("12000000", ARM_DECIMALS); // must match ArmadaToken.INITIAL_SUPPLY
+const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
+const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
+const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
 const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
 
 describe("Governance Parameter Updates", function () {

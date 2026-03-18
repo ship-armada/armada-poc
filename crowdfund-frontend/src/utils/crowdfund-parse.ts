@@ -5,8 +5,8 @@ import type { Participant, HopStats } from '@/types/crowdfund'
 /** Parse contract's Participant struct return value (array of positional fields) */
 export function parseParticipant(result: any): Participant {
   return {
-    hop: Number(result[0]),
-    isWhitelisted: result[1] as boolean,
+    isWhitelisted: result[0] as boolean,
+    invitesReceived: Number(result[1]),
     committed: BigInt(result[2]),
     allocation: BigInt(result[3]),
     refund: BigInt(result[4]),

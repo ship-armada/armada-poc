@@ -28,9 +28,10 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
   const phase = state.phase
 
   const isWhitelisted = participant?.isWhitelisted ?? false
-  const hop = participant?.hop ?? 0
+  const hop = state.currentHop
   const committed = participant?.committed ?? 0n
-  const cap = CROWDFUND_CONSTANTS.HOP_CAPS[hop] ?? CROWDFUND_CONSTANTS.HOP_CAPS[0]
+  const invitesReceived = BigInt(participant?.invitesReceived ?? 1)
+  const cap = invitesReceived * (CROWDFUND_CONSTANTS.HOP_CAPS[hop] ?? CROWDFUND_CONSTANTS.HOP_CAPS[0])
   const remaining = cap - committed
 
   // Use chain block timestamp (not Date.now()) — EVM time diverges from wall clock in local mode
@@ -48,7 +49,7 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
   const handleInvite = async () => {
     if (!isAddress(inviteInput)) return
     setIsSubmitting(true)
-    await crowdfund.invite(inviteInput)
+    await crowdfund.invite(inviteInput, hop)
     setIsSubmitting(false)
     setInviteInput('')
   }
@@ -57,7 +58,7 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
     const amount = parseUsdcInput(commitInput)
     if (amount <= 0n) return
     setIsSubmitting(true)
-    await crowdfund.approveAndCommit(amount)
+    await crowdfund.approveAndCommit(amount, hop)
     setIsSubmitting(false)
     setCommitInput('')
   }

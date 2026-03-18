@@ -72,16 +72,18 @@ task("cf-start", "Start the invitation window")
 
 task("cf-invite", "Invite an address to participate")
   .addParam("invitee", "Address to invite")
+  .addParam("hop", "Hop level of the inviter (0 for seeds, 1 for hop-1)")
   .setAction(async (args, hre) => {
     const { ethers } = hre;
     const [signer] = await ethers.getSigners();
     const chainId = Number((await ethers.provider.getNetwork()).chainId);
     const deployment = loadCrowdfundDeployment(getNetworkName(chainId));
 
+    const inviterHop = parseInt(args.hop, 10);
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
-    await crowdfund.invite(args.invitee);
+    await crowdfund.invite(args.invitee, inviterHop);
 
-    const remaining = await crowdfund.getInvitesRemaining(signer.address);
+    const remaining = await crowdfund.getInvitesRemaining(signer.address, inviterHop);
     console.log(`Invited ${args.invitee}. Invites remaining: ${remaining}`);
   });
 
@@ -89,20 +91,22 @@ task("cf-invite", "Invite an address to participate")
 
 task("cf-commit", "Commit USDC to the crowdfund")
   .addParam("amount", "Amount of USDC (in whole dollars)")
+  .addParam("hop", "Hop level of the committer (0 for seeds, 1 for hop-1, 2 for hop-2)")
   .setAction(async (args, hre) => {
     const { ethers } = hre;
     const [signer] = await ethers.getSigners();
     const chainId = Number((await ethers.provider.getNetwork()).chainId);
     const deployment = loadCrowdfundDeployment(getNetworkName(chainId));
 
+    const hop = parseInt(args.hop, 10);
     const amount = ethers.parseUnits(args.amount, 6);
     const usdcToken = await ethers.getContractAt("MockUSDCV2", deployment.contracts.usdc);
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
 
     await usdcToken.approve(deployment.contracts.crowdfund, amount);
-    await crowdfund.commit(amount);
+    await crowdfund.commit(amount, hop);
 
-    const [committed] = await crowdfund.getCommitment(signer.address);
+    const committed = await crowdfund.getCommitment(signer.address, hop);
     console.log(`Committed $${args.amount} USDC. Total committed: $${ethers.formatUnits(committed, 6)}`);
   });
 
@@ -185,15 +189,17 @@ task("cf-stats", "Show crowdfund statistics")
 
 task("cf-allocation", "Check allocation for an address")
   .addParam("address", "Address to check")
+  .addParam("hop", "Hop level of the address (0 for seeds, 1 for hop-1, 2 for hop-2)")
   .setAction(async (args, hre) => {
     const { ethers } = hre;
     const chainId = Number((await ethers.provider.getNetwork()).chainId);
     const deployment = loadCrowdfundDeployment(getNetworkName(chainId));
 
+    const hop = parseInt(args.hop, 10);
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
 
-    const wl = await crowdfund.isWhitelisted(args.address);
-    const [committed, hop] = await crowdfund.getCommitment(args.address);
+    const wl = await crowdfund.isWhitelisted(args.address, hop);
+    const committed = await crowdfund.getCommitment(args.address, hop);
 
     console.log(`Address: ${args.address}`);
     console.log(`  Whitelisted: ${wl}`);

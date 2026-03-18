@@ -5,11 +5,12 @@ import { parseParticipant, parseHopStats } from './crowdfund-parse'
 
 describe('parseParticipant', () => {
   it('parses a fully populated participant struct', () => {
-    const result = [1n, true, 500_000_000n, 500_000_000n, 0n, false, '0xabc123', 2n]
+    // Struct order: isWhitelisted, invitesReceived, committed, allocation, refund, claimed, invitedBy, invitesSent
+    const result = [true, 2n, 500_000_000n, 500_000_000n, 0n, false, '0xabc123', 2n]
     const p = parseParticipant(result)
 
-    expect(p.hop).toBe(1)
     expect(p.isWhitelisted).toBe(true)
+    expect(p.invitesReceived).toBe(2)
     expect(p.committed).toBe(500_000_000n)
     expect(p.allocation).toBe(500_000_000n)
     expect(p.refund).toBe(0n)
@@ -19,11 +20,11 @@ describe('parseParticipant', () => {
   })
 
   it('parses zero/default values', () => {
-    const result = [0n, false, 0n, 0n, 0n, false, '0x0000000000000000000000000000000000000000', 0n]
+    const result = [false, 0n, 0n, 0n, 0n, false, '0x0000000000000000000000000000000000000000', 0n]
     const p = parseParticipant(result)
 
-    expect(p.hop).toBe(0)
     expect(p.isWhitelisted).toBe(false)
+    expect(p.invitesReceived).toBe(0)
     expect(p.committed).toBe(0n)
     expect(p.allocation).toBe(0n)
     expect(p.refund).toBe(0n)
@@ -31,16 +32,16 @@ describe('parseParticipant', () => {
     expect(p.invitesSent).toBe(0)
   })
 
-  it('converts hop and invitesSent from BigInt to number', () => {
-    const result = [2n, true, 1000n, 0n, 0n, false, '0x1', 5n]
+  it('converts invitesReceived and invitesSent from BigInt to number', () => {
+    const result = [true, 3n, 1000n, 0n, 0n, false, '0x1', 5n]
     const p = parseParticipant(result)
 
-    expect(typeof p.hop).toBe('number')
+    expect(typeof p.invitesReceived).toBe('number')
     expect(typeof p.invitesSent).toBe('number')
   })
 
   it('preserves committed/allocation/refund as bigint', () => {
-    const result = [0n, true, 15_000_000_000n, 12_000_000_000n, 3_000_000_000n, true, '0x1', 0n]
+    const result = [true, 0n, 15_000_000_000n, 12_000_000_000n, 3_000_000_000n, true, '0x1', 0n]
     const p = parseParticipant(result)
 
     expect(typeof p.committed).toBe('bigint')
@@ -52,7 +53,7 @@ describe('parseParticipant', () => {
   })
 
   it('preserves boolean fields as booleans', () => {
-    const result = [0n, true, 0n, 0n, 0n, true, '0x1', 0n]
+    const result = [true, 0n, 0n, 0n, 0n, true, '0x1', 0n]
     const p = parseParticipant(result)
 
     expect(typeof p.isWhitelisted).toBe('boolean')
@@ -63,7 +64,7 @@ describe('parseParticipant', () => {
 
   it('handles large USDC amounts (max cap $15,000)', () => {
     const maxCap = 15_000n * 1_000_000n // $15,000 in 6-decimal USDC
-    const result = [0n, true, maxCap, maxCap, 0n, false, '0x1', 3n]
+    const result = [true, 0n, maxCap, maxCap, 0n, false, '0x1', 3n]
     const p = parseParticipant(result)
 
     expect(p.committed).toBe(maxCap)

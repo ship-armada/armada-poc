@@ -121,7 +121,7 @@ async function main() {
   let hop1Count = 0;
   for (let i = 0; i < seeds.length; i++) {
     for (let j = 0; j < 3 && hop1Count < hop1Addrs.length; j++) {
-      await crowdfund.connect(seeds[i]).invite(hop1Addrs[hop1Count].address);
+      await crowdfund.connect(seeds[i]).invite(hop1Addrs[hop1Count].address, 0);
       hop1Count++;
     }
     log("INVITE", `Seed-${String.fromCharCode(65 + i)} invites 3 \u2192 hop 1`);
@@ -132,7 +132,7 @@ async function main() {
   for (let i = 0; i < Math.min(hop1Count, 9) && hop2Count < hop2Addrs.length; i++) {
     const invitesPerHop1 = Math.min(2, hop2Addrs.length - hop2Count);
     for (let j = 0; j < invitesPerHop1; j++) {
-      await crowdfund.connect(hop1Addrs[i]).invite(hop2Addrs[hop2Count].address);
+      await crowdfund.connect(hop1Addrs[i]).invite(hop2Addrs[hop2Count].address, 1);
       hop2Count++;
     }
   }
@@ -156,7 +156,7 @@ async function main() {
     const amount = ethers.parseUnits("15000", 6);
     await usdc.mint(seeds[i].address, amount);
     await usdc.connect(seeds[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(seeds[i]).commit(amount);
+    await crowdfund.connect(seeds[i]).commit(amount, 0);
     log("COMMIT", `Seed-${String.fromCharCode(65 + i)} commits $15,000 USDC`);
   }
 
@@ -165,7 +165,7 @@ async function main() {
     const amount = ethers.parseUnits("4000", 6); // max hop-1 cap
     await usdc.mint(hop1Addrs[i].address, amount);
     await usdc.connect(hop1Addrs[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(hop1Addrs[i]).commit(amount);
+    await crowdfund.connect(hop1Addrs[i]).commit(amount, 1);
   }
   log("COMMIT", `${hop1Count} hop-1 addresses commit $4,000 each`);
 
@@ -174,7 +174,7 @@ async function main() {
     const amount = ethers.parseUnits("1000", 6);
     await usdc.mint(hop2Addrs[i].address, amount);
     await usdc.connect(hop2Addrs[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(hop2Addrs[i]).commit(amount);
+    await crowdfund.connect(hop2Addrs[i]).commit(amount, 2);
   }
   log("COMMIT", `${hop2Count} hop-2 addresses commit $1,000 each`);
 
@@ -233,7 +233,7 @@ async function main() {
     const amt = ethers.parseUnits("15000", 6);
     await usdc.mint(s.address, amt);
     await usdc.connect(s).approve(await cf2.getAddress(), amt);
-    await cf2.connect(s).commit(amt);
+    await cf2.connect(s).commit(amt, 0);
   }
   const total2 = await cf2.totalCommitted();
   log("COMMIT", `${bigSeeds.length} seeds commit $15K each = ${fmtUsdc(total2)}`);

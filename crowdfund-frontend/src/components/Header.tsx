@@ -34,8 +34,7 @@ export function Header({ accounts, crowdfund }: HeaderProps) {
       mintUsdc(CROWDFUND_CONSTANTS.HOP_CAPS[0])
       return
     }
-    const hop = state.currentParticipant.hop
-    const cap = CROWDFUND_CONSTANTS.HOP_CAPS[hop] ?? CROWDFUND_CONSTANTS.HOP_CAPS[0]
+    const cap = CROWDFUND_CONSTANTS.HOP_CAPS[state.currentHop] ?? CROWDFUND_CONSTANTS.HOP_CAPS[0]
     mintUsdc(cap)
   }
 

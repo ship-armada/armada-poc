@@ -34,20 +34,15 @@ describe('CROWDFUND_CONSTANTS', () => {
     expect(CROWDFUND_CONSTANTS.HOP_CAPS[2]).toBe(1_000_000_000n)  // $1,000
   })
 
-  it('hop ceilings have correct values (overlapping by design)', () => {
+  it('hop ceilings have correct values (hop-2 uses floor+rollover, not BPS)', () => {
     expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[0]).toBe(7000) // 70%
     expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[1]).toBe(4500) // 45%
-    expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[2]).toBe(1000) // 10%
+    expect(CROWDFUND_CONSTANTS.HOP_CEILING_BPS[2]).toBe(0)    // no BPS ceiling
   })
 
   it('hop max invites are correct', () => {
     expect(CROWDFUND_CONSTANTS.HOP_MAX_INVITES[0]).toBe(3)
     expect(CROWDFUND_CONSTANTS.HOP_MAX_INVITES[1]).toBe(2)
     expect(CROWDFUND_CONSTANTS.HOP_MAX_INVITES[2]).toBe(0)
-  })
-
-  it('rollover minimums are correct', () => {
-    expect(CROWDFUND_CONSTANTS.HOP1_ROLLOVER_MIN).toBe(30)
-    expect(CROWDFUND_CONSTANTS.HOP2_ROLLOVER_MIN).toBe(50)
   })
 })

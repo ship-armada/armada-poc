@@ -113,7 +113,7 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.totalCommitted()).to.equal(0);
       expect(await crowdfund.getParticipantCount()).to.equal(0);
 
-      // Check hop configs (overlapping ceilings: 70/45/10, sum=125%)
+      // Check hop configs (overlapping ceilings: 70/45/0 — hop-2 uses floor+rollover, not BPS)
       const [ceilingBps0, cap0, maxInv0] = await crowdfund.hopConfigs(0);
       expect(ceilingBps0).to.equal(7000);
       expect(cap0).to.equal(USDC(15_000));
@@ -125,7 +125,7 @@ describe("Crowdfund Integration", function () {
       expect(maxInv1).to.equal(2);
 
       const [ceilingBps2, cap2, maxInv2] = await crowdfund.hopConfigs(2);
-      expect(ceilingBps2).to.equal(1000);
+      expect(ceilingBps2).to.equal(0);
       expect(cap2).to.equal(USDC(1_000));
       expect(maxInv2).to.equal(0);
     });
@@ -465,7 +465,7 @@ describe("Crowdfund Integration", function () {
     it("should use BASE_SALE when demand < elastic trigger", async function () {
       await setupActive([seed1]);
 
-      // Commit well below elastic trigger ($1.8M)
+      // Commit well below elastic trigger ($1.5M)
       await crowdfund.connect(seed1).commit(USDC(15_000), 0);
       // Need to reach minimum ($1M), so fund many more seeds
       // For this test, let's just check elastic trigger logic with a known total
@@ -914,7 +914,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
-      // 70 × $15K = $1,050,000 > MIN_SALE, < ELASTIC_TRIGGER
+      // 70 × $15K = $1,050,000 > MIN_SALE, < ELASTIC_TRIGGER ($1.5M)
 
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
@@ -937,15 +937,10 @@ describe("Crowdfund Integration", function () {
     });
 
     it("elastic expansion triggered", async function () {
-      // Need totalCommitted >= $1.8M (ELASTIC_TRIGGER)
-      // 120 seeds × $15K = $1.8M. But we may not have 120 signers.
-      // Hardhat default = 20 signers. We need to be creative.
-      // Actually, ethers.getSigners() returns 20 by default. Let's check.
-      // With 20 signers we can get 19 × $15K = $285K. Not enough.
-      // This test needs more signers. Let's skip it and note it's tested in demo.
-
-      // Alternative: change constants for test. But constants are immutable.
-      // We'll test the elastic path with a note that it requires >120 signers.
+      // Need totalCommitted >= $1.5M (ELASTIC_TRIGGER)
+      // 100 seeds × $15K = $1.5M. Need 100+ signers.
+      // With default 20 signers this isn't enough. Tested in adversarial suite
+      // which uses 200 signers (hardhat.config.ts accounts count).
       this.skip(); // Requires more than 20 Hardhat default signers
     });
 

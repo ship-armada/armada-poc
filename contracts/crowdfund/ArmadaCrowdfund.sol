@@ -23,10 +23,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public constant MAX_SALE  = 1_800_000 * 1e6;       // $1.8M USDC
     uint256 public constant MIN_SALE  = 1_000_000 * 1e6;       // $1.0M USDC
     uint256 public constant ARM_PRICE = 1e6;                    // $1.00 per ARM in USDC
-    uint256 public constant ELASTIC_TRIGGER = (BASE_SALE * 15) / 10; // 1.5 × BASE_SALE
-
-    uint32 public constant HOP1_ROLLOVER_MIN = 30;  // min unique hop-1 committers for rollover
-    uint32 public constant HOP2_ROLLOVER_MIN = 50;  // min unique hop-2 committers for rollover
+    uint256 public constant ELASTIC_TRIGGER = 1_500_000 * 1e6;  // $1.5M capped demand triggers expansion
     uint8 public constant NUM_HOPS = 3;
     uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
@@ -130,7 +127,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
         hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
         hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 4_000 * 1e6,  maxInvites: 2 });
-        hopConfigs[2] = HopConfig({ ceilingBps: 1000, capUsdc: 1_000 * 1e6,  maxInvites: 0 });
+        hopConfigs[2] = HopConfig({ ceilingBps: 0,    capUsdc: 1_000 * 1e6,  maxInvites: 0 });
     }
 
     // ============ Setup Phase ============
@@ -350,59 +347,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             "ArmadaCrowdfund: insufficient ARM"
         );
 
-        // Step 2: Per-hop allocation with overlapping ceilings and global budget constraint
+        // Step 2: Per-hop allocation (matches spec pseudocode steps 3–6)
         //
-        // Hop-2 floor is reserved off the top. Hop-0/hop-1 ceilings are applied against
-        // the net raise (saleSize minus floor). Ceilings overlap (sum > 100%) so a global
-        // budget constraint (remaining) ensures total allocation never exceeds saleSize.
+        // Hop-2 floor is reserved off the top. Hop-0/hop-1 ceilings are BPS of the
+        // available pool (saleSize minus floor). Ceilings overlap (sum > 100%) so a
+        // remainingAvailable tracker ensures total allocation never exceeds saleSize.
+        // Hop-2 has no BPS ceiling — its effective ceiling is floor + hop-1 leftover.
+        // Rollover is unconditional: leftover always flows to the next hop.
 
-        uint256 hop2Floor = (saleSize * HOP2_FLOOR_BPS) / 10000;
-        uint256 netRaise = saleSize - hop2Floor;
-
-        // Base ceilings: hop 0/1 against netRaise, hop 2 against full saleSize
-        uint256[3] memory effectiveCeilings;
-        effectiveCeilings[0] = (netRaise * hopConfigs[0].ceilingBps) / 10000;
-        effectiveCeilings[1] = (netRaise * hopConfigs[1].ceilingBps) / 10000;
-        effectiveCeilings[2] = (saleSize * hopConfigs[2].ceilingBps) / 10000;
-
-        uint256[3] memory demands;
-        uint256 remaining = netRaise;  // hops 0/1 compete for netRaise only
-        uint256 totalAllocUsdc_ = 0;
-        uint256 totalAllocArm_ = 0;
-
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            demands[h] = hopStats[h].totalCommitted;
-
-            // When we reach hop 2, add back the floor reservation to the remaining budget
-            if (h == 2) {
-                remaining += hop2Floor;
-            }
-
-            // Global budget constraint: cap effective ceiling against remaining supply
-            uint256 ceiling = effectiveCeilings[h] < remaining ? effectiveCeilings[h] : remaining;
-
-            uint256 allocated = demands[h] <= ceiling ? demands[h] : ceiling;
-            remaining -= allocated;
-
-            // Store budget-capped ceiling for lazy evaluation in claim() and getAllocation()
-            finalCeilings[h] = ceiling;
-            finalDemands[h] = demands[h];
-
-            totalAllocUsdc_ += allocated;
-            totalAllocArm_ += (allocated * 1e18) / ARM_PRICE;
-
-            // Rollover: unused ceiling capacity flows to the next hop
-            uint256 leftover = ceiling - allocated;
-            if (leftover > 0) {
-                if (h == 0 && hopStats[1].uniqueCommitters >= HOP1_ROLLOVER_MIN) {
-                    effectiveCeilings[1] += leftover;
-                } else if (h == 1 && hopStats[2].uniqueCommitters >= HOP2_ROLLOVER_MIN) {
-                    effectiveCeilings[2] += leftover;
-                }
-                // If not rolled over, leftover remains in the budget pool (remaining)
-                // and becomes part of treasuryLeftoverUsdc at the end
-            }
-        }
+        (uint256 totalAllocUsdc_, uint256 totalAllocArm_) = _computeHopAllocations(saleSize);
 
         totalAllocatedUsdc = totalAllocUsdc_;
         totalAllocated = totalAllocArm_;
@@ -659,6 +612,55 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             (phase == Phase.Active && block.timestamp < launchTeamInviteEnd),
             "ArmadaCrowdfund: seeds only during setup or week 1"
         );
+    }
+
+    /// @dev Compute hop-level allocations and store results in finalCeilings/finalDemands.
+    ///      Extracted from finalize() to avoid stack-too-deep.
+    function _computeHopAllocations(uint256 saleSize_) internal returns (
+        uint256 totalAllocUsdc_,
+        uint256 totalAllocArm_
+    ) {
+        uint256 hop2Floor = (saleSize_ * HOP2_FLOOR_BPS) / 10000;
+        uint256 available = saleSize_ - hop2Floor;
+
+        // Hop-0/hop-1 base ceilings (BPS of available pool)
+        uint256 hop0Ceiling = (available * hopConfigs[0].ceilingBps) / 10000;
+        uint256 hop1Ceiling = (available * hopConfigs[1].ceilingBps) / 10000;
+
+        // --- Hop-0: allocate from available pool ---
+        uint256 demand = hopStats[0].totalCommitted;
+        uint256 alloc = demand <= hop0Ceiling ? demand : hop0Ceiling;
+        uint256 leftover = hop0Ceiling - alloc;
+        uint256 remainingAvailable = available - alloc;
+
+        finalCeilings[0] = hop0Ceiling;
+        finalDemands[0] = demand;
+        totalAllocUsdc_ = alloc;
+        totalAllocArm_ = (alloc * 1e18) / ARM_PRICE;
+
+        // --- Hop-1: allocate from remaining available, ceiling boosted by hop-0 leftover ---
+        demand = hopStats[1].totalCommitted;
+        uint256 hop1EffCeiling = hop1Ceiling + leftover;
+        if (hop1EffCeiling > remainingAvailable) {
+            hop1EffCeiling = remainingAvailable;
+        }
+        alloc = demand <= hop1EffCeiling ? demand : hop1EffCeiling;
+        leftover = hop1EffCeiling - alloc;
+
+        finalCeilings[1] = hop1EffCeiling;
+        finalDemands[1] = demand;
+        totalAllocUsdc_ += alloc;
+        totalAllocArm_ += (alloc * 1e18) / ARM_PRICE;
+
+        // --- Hop-2: allocate from floor + hop-1 leftover (no BPS ceiling) ---
+        demand = hopStats[2].totalCommitted;
+        uint256 hop2EffCeiling = hop2Floor + leftover;
+        alloc = demand <= hop2EffCeiling ? demand : hop2EffCeiling;
+
+        finalCeilings[2] = hop2EffCeiling;
+        finalDemands[2] = demand;
+        totalAllocUsdc_ += alloc;
+        totalAllocArm_ += (alloc * 1e18) / ARM_PRICE;
     }
 
     /// @dev Compute allocation for a participant from stored hop-level ceilings/demands.

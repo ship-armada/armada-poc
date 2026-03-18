@@ -28,10 +28,10 @@ const SEVEN_DAYS = 7 * ONE_DAY;
 const FOUR_DAYS = 4 * ONE_DAY;
 
 const ARM_DECIMALS = 18;
-const TOTAL_SUPPLY = ethers.parseUnits("100000000", ARM_DECIMALS); // 100M
-const TREASURY_AMOUNT = ethers.parseUnits("65000000", ARM_DECIMALS); // 65M
-const ALICE_AMOUNT = ethers.parseUnits("20000000", ARM_DECIMALS); // 20M
-const BOB_AMOUNT = ethers.parseUnits("15000000", ARM_DECIMALS); // 15M
+const TOTAL_SUPPLY = ethers.parseUnits("12000000", ARM_DECIMALS); // must match ArmadaToken.INITIAL_SUPPLY
+const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
+const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
+const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
 
 describe("Governance Adversarial", function () {
   let armToken: any;
@@ -212,11 +212,11 @@ describe("Governance Adversarial", function () {
       // Instead: create proposal, alice votes Against (20M), bob votes For (15M)
       // forVotes=15M < againstVotes=20M → Defeated
 
-      // For a TRUE tie: alice locks 15M (same as bob). Unlock 5M first.
-      await votingLocker.connect(alice).unlock(ethers.parseUnits("5000000", ARM_DECIMALS));
+      // For a TRUE tie: alice locks same as bob. Unlock the difference first.
+      await votingLocker.connect(alice).unlock(ALICE_AMOUNT - BOB_AMOUNT);
       await mineBlock();
 
-      // Now alice and bob both have 15M locked
+      // Now alice and bob both have BOB_AMOUNT locked
       const proposalId = await createProposal(alice);
 
       await time.increase(TWO_DAYS + 1);
@@ -242,14 +242,14 @@ describe("Governance Adversarial", function () {
 
       await time.increase(FIVE_DAYS + 1);
 
-      // Total participation (35M abstain) >= quorum (7M) → quorum reached
+      // Total participation (35% of supply abstain) >= quorum (7% of supply) → quorum reached
       // But forVotes (0) > againstVotes (0) is false → Defeated
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
     });
 
     it("against votes count toward quorum (participation model)", async function () {
-      // Eligible supply = 100M - 65M = 35M. Quorum = 20% = 7M.
-      // Bob votes Against with 15M → exceeds quorum on its own.
+      // Eligible supply = 35% of total. Quorum = 20% of eligible = 7% of total.
+      // Bob (15% of supply) votes Against → exceeds quorum on its own.
       // Proposal should be Defeated (quorum met, but forVotes=0).
       const proposalId = await createProposal(alice);
 
@@ -259,8 +259,8 @@ describe("Governance Adversarial", function () {
 
       await time.increase(FIVE_DAYS + 1);
 
-      // Quorum reached via against votes alone (15M >= 7M)
-      // Defeated because forVotes (0) > againstVotes (15M) is false
+      // Quorum reached via against votes alone (15% >= 7%)
+      // Defeated because forVotes (0) > againstVotes is false
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
 
       // Verify the quorum threshold was indeed met
@@ -269,17 +269,16 @@ describe("Governance Adversarial", function () {
     });
 
     it("propose with exactly threshold voting power succeeds", async function () {
-      // Threshold = 0.1% of 100M = 100,000 ARM
-      // Alice has 20M locked which is well above threshold. She can propose.
-      // Bob has 15M locked. Let's test with a smaller holder.
+      // Threshold = 0.1% of total supply
+      // Alice has 20% of supply locked, well above threshold. She can propose.
       // Transfer from alice (who has locked tokens) — she needs to unlock first.
       // Simpler: alice already has enough, just verify she can propose.
       const proposalId = await createProposal(alice);
       expect(proposalId).to.equal(1);
 
-      // Verify the threshold value
+      // Verify the threshold value (0.1% of total supply)
       const threshold = await governor.proposalThreshold();
-      expect(threshold).to.equal(ethers.parseUnits("100000", ARM_DECIMALS));
+      expect(threshold).to.equal((TOTAL_SUPPLY * 10n) / 10000n);
     });
 
     it("propose with no voting power reverts", async function () {
@@ -414,7 +413,7 @@ describe("Governance Adversarial", function () {
 
     it("multiple lock/unlock operations maintain consistent totals", async function () {
       // Alice unlocks some, re-locks, total should stay consistent
-      const unlockAmount = ethers.parseUnits("5000000", ARM_DECIMALS);
+      const unlockAmount = ALICE_AMOUNT / 4n;
 
       await votingLocker.connect(alice).unlock(unlockAmount);
       const afterUnlock = await votingLocker.getLockedBalance(alice.address);
@@ -630,11 +629,13 @@ describe("Governance Adversarial", function () {
       // Verify the eligible supply is correctly snapshotted via getProposal
       const proposal = await governor.getProposal(proposalId);
       const snapshotEligibleSupply = proposal[8]; // new field at index 8
-      // Eligible supply = 100M total - 65M treasury = 35M
-      expect(snapshotEligibleSupply).to.equal(ethers.parseUnits("35000000", ARM_DECIMALS));
+      // Eligible supply = totalSupply - treasury (65%) = 35% of supply
+      const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT;
+      expect(snapshotEligibleSupply).to.equal(expectedEligible);
 
-      // Quorum = 20% of 35M = 7M
-      expect(quorumAtCreation).to.equal(ethers.parseUnits("7000000", ARM_DECIMALS));
+      // Quorum = 20% of eligible supply
+      const expectedQuorum = (expectedEligible * 2000n) / 10000n;
+      expect(quorumAtCreation).to.equal(expectedQuorum);
     });
 
     it("quorum stays fixed after ARM moves between excluded and non-excluded addresses", async function () {
@@ -657,7 +658,7 @@ describe("Governance Adversarial", function () {
       const quorumAfterVoting = await governor.quorum(proposalId);
       expect(quorumAfterVoting).to.equal(quorumAtCreation);
 
-      // Proposal should succeed (35M eligible, 20% quorum = 7M, alice+bob = 35M votes)
+      // Proposal should succeed (alice+bob = 35% of supply > 7% quorum)
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
     });
 
@@ -666,8 +667,8 @@ describe("Governance Adversarial", function () {
       const proposalId1 = await createProposal(alice, ProposalType.ParameterChange, "Proposal 1");
       const quorum1 = await governor.quorum(proposalId1);
 
-      // Unlock 5M of alice's ARM and send to treasury, changing the balance
-      const transferAmount = ethers.parseUnits("5000000", ARM_DECIMALS);
+      // Unlock 5% of supply worth of alice's ARM and send to treasury, changing the balance
+      const transferAmount = TOTAL_SUPPLY * 5n / 100n;
       await votingLocker.connect(alice).unlock(transferAmount);
       await armToken.connect(alice).transfer(await treasuryContract.getAddress(), transferAmount);
       await mineBlock();
@@ -676,13 +677,13 @@ describe("Governance Adversarial", function () {
       const proposalId2 = await createProposal(alice, ProposalType.ParameterChange, "Proposal 2");
       const quorum2 = await governor.quorum(proposalId2);
 
-      // Proposal 1 quorum should reflect original treasury balance (65M excluded)
-      // Eligible = 100M - 65M = 35M, quorum = 20% = 7M
-      expect(quorum1).to.equal(ethers.parseUnits("7000000", ARM_DECIMALS));
+      // Proposal 1 quorum should reflect original treasury balance (65% excluded)
+      const eligible1 = TOTAL_SUPPLY - TREASURY_AMOUNT;
+      expect(quorum1).to.equal((eligible1 * 2000n) / 10000n);
 
-      // Proposal 2 quorum should reflect updated treasury balance (70M excluded)
-      // Eligible = 100M - 70M = 30M, quorum = 20% = 6M
-      expect(quorum2).to.equal(ethers.parseUnits("6000000", ARM_DECIMALS));
+      // Proposal 2 quorum should reflect updated treasury balance (70% excluded)
+      const eligible2 = TOTAL_SUPPLY - TREASURY_AMOUNT - transferAmount;
+      expect(quorum2).to.equal((eligible2 * 2000n) / 10000n);
 
       // They should be different — independent snapshots
       expect(quorum1).to.not.equal(quorum2);
@@ -714,14 +715,13 @@ describe("Governance Adversarial", function () {
     });
 
     it("StewardElection requires 30% quorum", async function () {
-      // Eligible supply = 100M - 65M (treasury) = 35M
-      // 30% quorum = 10.5M
-      // Bob has 15M → his vote alone reaches quorum (15M > 10.5M)
+      // Eligible = 35% of supply. 30% quorum = 10.5% of supply.
+      // Bob (15% of supply) exceeds quorum.
       const proposalId = await createProposal(alice, ProposalType.StewardElection);
 
       await time.increase(TWO_DAYS + 1);
 
-      // Only bob votes For (15M) — exceeds 30% of 35M (10.5M)
+      // Only bob votes For — exceeds 30% quorum of eligible supply
       await governor.connect(bob).castVote(proposalId, Vote.For);
 
       await time.increase(SEVEN_DAYS + 1);
@@ -730,18 +730,16 @@ describe("Governance Adversarial", function () {
     });
 
     it("StewardElection defeated if 30% quorum not reached", async function () {
-      // Eligible supply = 100M - 65M (treasury) = 35M. 30% quorum = 10.5M.
-      // Alice has 20M, bob has 15M. If neither votes, quorum not reached.
-      // But we need at least one voter. Unlock alice's tokens to below quorum.
-      // Alice unlocks down to 10M (below 10.5M quorum).
-      await votingLocker.connect(alice).unlock(ethers.parseUnits("10000000", ARM_DECIMALS));
+      // Eligible = 35% of supply. 30% quorum = 10.5% of supply.
+      // Alice unlocks to half her balance (10% of supply < 10.5% quorum).
+      await votingLocker.connect(alice).unlock(ALICE_AMOUNT / 2n);
       await mineBlock();
 
       const proposalId = await createProposal(alice, ProposalType.StewardElection);
 
       await time.increase(TWO_DAYS + 1);
 
-      // Only alice votes For (10M < 10.5M quorum)
+      // Only alice votes For (10% of supply < 10.5% quorum)
       await governor.connect(alice).castVote(proposalId, Vote.For);
 
       await time.increase(SEVEN_DAYS + 1);

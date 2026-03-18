@@ -30,7 +30,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             address(usdc),
             address(armToken),
             admin,
-            treasury
+            treasury,
+            admin
         );
 
         // Fund ARM tokens
@@ -95,7 +96,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             address(usdc),
             address(armToken),
             admin,
-            treasury
+            treasury,
+            admin
         );
 
         vm.expectRevert("ArmadaCrowdfund: not finalized or canceled");
@@ -136,7 +138,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             address(usdc),
             address(armToken),
             admin,
-            treasury
+            treasury,
+            admin
         );
         armToken.transfer(address(fuzzCrowdfund), funding);
 

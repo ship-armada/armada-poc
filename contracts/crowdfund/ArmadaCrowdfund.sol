@@ -35,6 +35,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
     uint16 public constant MAX_INVITES_RECEIVED = 10;            // cap on invite stacking per (address, hop) node
+    uint8 public constant MAX_SEEDS = 150;                       // max number of seeds (hop-0 participants)
+    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
+    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
 
     // ============ Immutable ============
 
@@ -46,6 +49,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // so governance (timelock) can take over post-sale admin duties.
     // Tracked in Codeberg issue.
     address public immutable treasury;
+    /// @notice Launch team sentinel — issues predeclared invite budgets, not a participant.
+    address public immutable launchTeam;
 
     // ============ State ============
     Phase public phase;
@@ -81,6 +86,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public proceedsWithdrawnAmount;
     bool public unallocatedArmWithdrawn;
 
+    // Launch team invite budget tracking
+    uint8 public launchTeamHop1Used;
+    uint8 public launchTeamHop2Used;
+
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
@@ -109,13 +118,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Constructor ============
 
-    constructor(address _usdc, address _armToken, address _admin, address _treasury) {
+    constructor(address _usdc, address _armToken, address _admin, address _treasury, address _launchTeam) {
         require(_admin != address(0), "ArmadaCrowdfund: zero admin");
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
+        require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
         usdc = IERC20(_usdc);
         armToken = IERC20(_armToken);
         admin = _admin;
         treasury = _treasury;
+        launchTeam = _launchTeam;
         phase = Phase.Setup;
 
         hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
@@ -139,6 +150,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     function _addSeed(address seed) internal {
         require(seed != address(0), "ArmadaCrowdfund: zero address");
+        require(hopStats[0].whitelistCount < MAX_SEEDS, "ArmadaCrowdfund: seed cap reached");
         require(!participants[seed][0].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
 
         participants[seed][0].isWhitelisted = true;
@@ -215,6 +227,53 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         inviter.invitesSent++;
     }
 
+    /// @notice Launch team issues a direct invite at hop-1 or hop-2 (week 1 only).
+    ///         The launch team is a sentinel with predeclared invite budgets — it is not
+    ///         a participant and cannot commit USDC.
+    /// @param invitee Address to invite
+    /// @param hop Target hop level (must be 1 or 2)
+    function launchTeamInvite(address invitee, uint8 hop) external whenNotPaused {
+        require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
+        require(
+            phase == Phase.Invitation || phase == Phase.Commitment,
+            "ArmadaCrowdfund: not active"
+        );
+        require(
+            block.timestamp < invitationStart + 7 days,
+            "ArmadaCrowdfund: launch team invite window closed"
+        );
+        require(hop == 1 || hop == 2, "ArmadaCrowdfund: invalid hop for launch team");
+        require(invitee != address(0), "ArmadaCrowdfund: zero address");
+
+        if (hop == 1) {
+            require(launchTeamHop1Used < LAUNCH_TEAM_HOP1_BUDGET, "ArmadaCrowdfund: hop-1 budget exhausted");
+            launchTeamHop1Used++;
+        } else {
+            require(launchTeamHop2Used < LAUNCH_TEAM_HOP2_BUDGET, "ArmadaCrowdfund: hop-2 budget exhausted");
+            launchTeamHop2Used++;
+        }
+
+        Participant storage inviteeNode = participants[invitee][hop];
+
+        if (!inviteeNode.isWhitelisted) {
+            inviteeNode.isWhitelisted = true;
+            inviteeNode.invitesReceived = 1;
+            inviteeNode.invitedBy = msg.sender;
+            participantNodes.push(ParticipantNode(invitee, hop));
+            hopStats[hop].whitelistCount++;
+
+            emit Invited(msg.sender, invitee, hop);
+        } else {
+            require(
+                inviteeNode.invitesReceived < MAX_INVITES_RECEIVED,
+                "ArmadaCrowdfund: max invites received"
+            );
+            inviteeNode.invitesReceived++;
+
+            emit InviteAdded(msg.sender, invitee, hop, inviteeNode.invitesReceived);
+        }
+    }
+
     // ============ Commitment Phase ============
 
     /// @notice Commit USDC to the crowdfund at a specific hop level
@@ -231,6 +290,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             phase = Phase.Commitment;
         }
 
+        require(msg.sender != launchTeam, "ArmadaCrowdfund: launch team cannot commit");
         require(hop < NUM_HOPS, "ArmadaCrowdfund: invalid hop");
         Participant storage p = participants[msg.sender][hop];
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
@@ -592,6 +652,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @notice Get number of invites received at a specific hop
     function getInvitesReceived(address addr, uint8 hop) external view returns (uint16) {
         return participants[addr][hop].invitesReceived;
+    }
+
+    /// @notice Get remaining launch team invite budget
+    function getLaunchTeamBudgetRemaining() external view returns (uint8 hop1Remaining, uint8 hop2Remaining) {
+        hop1Remaining = LAUNCH_TEAM_HOP1_BUDGET - launchTeamHop1Used;
+        hop2Remaining = LAUNCH_TEAM_HOP2_BUDGET - launchTeamHop2Used;
     }
 
     /// @notice Get total number of (address, hop) nodes (not unique addresses)

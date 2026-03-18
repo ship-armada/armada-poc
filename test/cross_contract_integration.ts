@@ -79,7 +79,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await usdc.getAddress(),
       await armToken.getAddress(),
       deployer.address,
-      treasuryAddr.address
+      treasuryAddr.address,
+      deployer.address
     );
     await crowdfund.waitForDeployment();
 
@@ -685,7 +686,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localUsdc.getAddress(),
         await localArmToken.getAddress(),
         localDeployer.address,
-        await localTreasury.getAddress()
+        await localTreasury.getAddress(),
+        localDeployer.address
       );
       await localCrowdfund.waitForDeployment();
 

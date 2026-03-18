@@ -29,7 +29,8 @@ contract ArmadaCrowdfundCancelTest is Test {
             address(usdc),
             address(armToken),
             admin,
-            address(0xCAFE) // treasury
+            address(0xCAFE), // treasury
+            admin
         );
 
         // Fund ARM for MAX_SALE

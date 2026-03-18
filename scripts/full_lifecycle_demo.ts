@@ -192,7 +192,8 @@ async function main() {
     await usdc.getAddress(),
     await armToken.getAddress(),
     deployer.address,       // admin
-    await treasury.getAddress()  // immutable treasury destination
+    await treasury.getAddress(),  // immutable treasury destination
+    deployer.address        // launchTeam
   );
   await crowdfund.waitForDeployment();
   log("DEPLOY", `ArmadaCrowdfund: ${await crowdfund.getAddress()}`);

@@ -88,7 +88,8 @@ describe("Crowdfund Integration", function () {
       await usdc.getAddress(),
       await armToken.getAddress(),
       deployer.address,
-      treasury.address
+      treasury.address,
+      deployer.address
     );
     await crowdfund.waitForDeployment();
 
@@ -651,7 +652,8 @@ describe("Crowdfund Integration", function () {
         await usdc.getAddress(),
         await armToken.getAddress(),
         deployer.address,
-        treasury.address
+        treasury.address,
+        deployer.address
       );
       await unfundedCrowdfund.waitForDeployment();
 

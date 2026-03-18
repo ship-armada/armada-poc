@@ -260,7 +260,8 @@ contract CrowdfundInvariantTest is Test {
             address(usdc),
             address(armToken),
             admin,
-            address(0xBEEF) // treasury
+            address(0xBEEF), // treasury
+            admin
         );
 
         // Fund ARM to crowdfund

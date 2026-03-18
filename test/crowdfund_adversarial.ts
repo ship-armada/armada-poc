@@ -54,7 +54,8 @@ describe("Crowdfund Adversarial", function () {
       await usdc.getAddress(),
       await armToken.getAddress(),
       deployer.address,
-      treasuryAddr.address
+      treasuryAddr.address,
+      deployer.address
     );
     await crowdfund.waitForDeployment();
 
@@ -762,7 +763,8 @@ describe("Crowdfund Adversarial", function () {
           await usdc.getAddress(),
           await armToken.getAddress(),
           ethers.ZeroAddress,
-          treasuryAddr.address
+          treasuryAddr.address,
+          deployer.address
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero admin");
     });
@@ -774,7 +776,8 @@ describe("Crowdfund Adversarial", function () {
           await usdc.getAddress(),
           await armToken.getAddress(),
           deployer.address,
-          ethers.ZeroAddress
+          ethers.ZeroAddress,
+          deployer.address
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero treasury");
     });

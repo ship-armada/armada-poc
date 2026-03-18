@@ -2,7 +2,7 @@
  * Gas Profiling Under Load — Phase 4
  *
  * Benchmarks:
- * 1. Crowdfund finalize() gas at varying participant counts (50, 100, 150, 199)
+ * 1. Crowdfund finalize() gas at varying participant counts (50, 100, 150)
  * 2. Crowdfund addSeeds() batch gas
  * 3. Crowdfund claim() gas (should be constant)
  * 4. VotingLocker castVote() gas with varying checkpoint counts (binary search depth)
@@ -45,7 +45,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund finalize() gas scaling", function () {
-    const participantCounts = [50, 100, 150, 199]; // max 199 with 200 signers (deployer + N)
+    const participantCounts = [50, 100, 150]; // max 150 seeds (MAX_SEEDS cap)
     const results: { count: number; gas: bigint; perParticipant: bigint }[] = [];
 
     for (const count of participantCounts) {
@@ -62,7 +62,8 @@ describe("Gas Benchmarks", function () {
           await usdc.getAddress(),
           await armToken.getAddress(),
           deployer.address,
-          deployer.address // treasury
+          deployer.address, // treasury
+          deployer.address  // launchTeam
         );
 
         // Fund ARM for MAX_SALE
@@ -171,7 +172,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund addSeeds() batch gas", function () {
-    const batchSizes = [10, 50, 100, 199];
+    const batchSizes = [10, 50, 100, 150];
 
     for (const batchSize of batchSizes) {
       it(`addSeeds() batch of ${batchSize}`, async function () {
@@ -186,7 +187,8 @@ describe("Gas Benchmarks", function () {
           await usdc.getAddress(),
           await armToken.getAddress(),
           deployer.address,
-          deployer.address // treasury
+          deployer.address, // treasury
+          deployer.address  // launchTeam
         );
 
         const seeds = allSigners.slice(1, batchSize + 1);
@@ -222,7 +224,8 @@ describe("Gas Benchmarks", function () {
         await usdc.getAddress(),
         await armToken.getAddress(),
         deployer.address,
-        deployer.address // treasury
+        deployer.address, // treasury
+        deployer.address  // launchTeam
       );
 
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
@@ -484,7 +487,8 @@ describe("Gas Benchmarks", function () {
         await usdc.getAddress(),
         await armToken.getAddress(),
         deployer.address,
-        deployer.address // treasury
+        deployer.address, // treasury
+        deployer.address  // launchTeam
       );
 
       const seeds = allSigners.slice(1, 4);

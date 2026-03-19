@@ -10,6 +10,8 @@ export interface CrowdfundState {
   windowStart: bigint
   windowEnd: bigint
   launchTeamInviteEnd: bigint
+  // ARM pre-load status
+  armLoaded: boolean
   // Aggregate stats
   totalCommitted: bigint
   saleSize: bigint
@@ -38,6 +40,7 @@ const DEFAULT_STATE: CrowdfundState = {
   windowStart: 0n,
   windowEnd: 0n,
   launchTeamInviteEnd: 0n,
+  armLoaded: false,
   totalCommitted: 0n,
   saleSize: 0n,
   hopStats: null,

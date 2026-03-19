@@ -60,6 +60,7 @@ describe("Crowdfund Multi-Node", function () {
     await crowdfund.waitForDeployment();
 
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    await crowdfund.loadArm();
 
     for (const signer of [seed1, seed2, seed3, alice, bob]) {
       await fundAndApprove(signer, USDC(50_000));

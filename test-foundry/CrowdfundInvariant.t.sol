@@ -264,8 +264,9 @@ contract CrowdfundInvariantTest is Test {
             admin
         );
 
-        // Fund ARM to crowdfund
+        // Fund ARM to crowdfund and verify pre-load
         armToken.transfer(address(crowdfund), ARM_FUNDING);
+        crowdfund.loadArm();
 
         // Create actor addresses
         // 80 seeds to ensure we can reach MIN_SALE ($1M) with seeds alone ($15K * 80 = $1.2M)

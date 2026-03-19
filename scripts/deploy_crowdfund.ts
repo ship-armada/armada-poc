@@ -119,6 +119,11 @@ async function main() {
   await (await armToken.transfer(crowdfundAddress, armFundAmount, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.crowdfund} ARM to crowdfund contract`);
 
+  // 4b. Verify ARM pre-load
+  console.log("   Verifying ARM pre-load...");
+  await (await crowdfund.loadArm(nm.override())).wait();
+  console.log("   ARM pre-load verified (loadArm() succeeded)");
+
   // 5. Register crowdfund as excluded from quorum denominator
   console.log("5. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);

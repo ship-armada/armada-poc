@@ -92,10 +92,11 @@ describe("Crowdfund Integration", function () {
     );
     await crowdfund.waitForDeployment();
 
-    // Fund ARM to crowdfund (enough for MAX_SALE)
+    // Fund ARM to crowdfund (enough for MAX_SALE) and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     const maxArm = CROWDFUND_ARM_FUNDING;
     await armToken.transfer(await crowdfund.getAddress(), maxArm);
+    await crowdfund.loadArm();
 
     // Fund all potential participants with USDC
     for (const signer of [seed1, seed2, seed3, hop1a, hop1b, hop1c, hop2a, hop2b]) {
@@ -174,6 +175,112 @@ describe("Crowdfund Integration", function () {
       await expect(
         crowdfund.addSeed(seed2.address)
       ).to.be.revertedWith("ArmadaCrowdfund: seeds only during setup or week 1");
+    });
+  });
+
+  // ============================================================
+  // 1b. ARM Pre-Load Verification
+  // ============================================================
+
+  describe("ARM Pre-Load Verification", function () {
+    // These tests use a fresh crowdfund WITHOUT the auto-loaded ARM
+    // from the outer beforeEach, so we deploy a separate instance.
+    let freshCrowdfund: any;
+    let freshArmToken: any;
+
+    beforeEach(async function () {
+      const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+      freshArmToken = await ArmadaToken.deploy(deployer.address);
+      await freshArmToken.waitForDeployment();
+
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      freshCrowdfund = await ArmadaCrowdfund.deploy(
+        await usdc.getAddress(),
+        await freshArmToken.getAddress(),
+        deployer.address,
+        treasury.address,
+        deployer.address
+      );
+      await freshCrowdfund.waitForDeployment();
+    });
+
+    it("loadArm() reverts when ARM balance is zero", async function () {
+      await expect(
+        freshCrowdfund.loadArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: insufficient ARM for MAX_SALE");
+    });
+
+    it("loadArm() reverts when ARM balance is below MAX_SALE", async function () {
+      // Transfer 1 ARM short of the required 1,800,000
+      await freshArmToken.transfer(await freshCrowdfund.getAddress(), ARM(1_799_999));
+      await expect(
+        freshCrowdfund.loadArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: insufficient ARM for MAX_SALE");
+    });
+
+    it("loadArm() succeeds when balance equals MAX_SALE", async function () {
+      await freshArmToken.transfer(await freshCrowdfund.getAddress(), ARM(1_800_000));
+
+      await expect(freshCrowdfund.loadArm())
+        .to.emit(freshCrowdfund, "ArmLoaded")
+        .withArgs(ARM(1_800_000));
+
+      expect(await freshCrowdfund.armLoaded()).to.be.true;
+    });
+
+    it("loadArm() succeeds when balance exceeds MAX_SALE", async function () {
+      const excess = ARM(2_000_000);
+      await freshArmToken.transfer(await freshCrowdfund.getAddress(), excess);
+
+      await expect(freshCrowdfund.loadArm())
+        .to.emit(freshCrowdfund, "ArmLoaded")
+        .withArgs(excess);
+
+      expect(await freshCrowdfund.armLoaded()).to.be.true;
+    });
+
+    it("loadArm() is idempotent — second call is silent no-op", async function () {
+      await freshArmToken.transfer(await freshCrowdfund.getAddress(), ARM(1_800_000));
+
+      // First call emits event
+      await expect(freshCrowdfund.loadArm())
+        .to.emit(freshCrowdfund, "ArmLoaded");
+
+      // Second call does NOT emit event (idempotent no-op)
+      await expect(freshCrowdfund.loadArm())
+        .not.to.emit(freshCrowdfund, "ArmLoaded");
+    });
+
+    it("loadArm() is permissionless — non-admin can call", async function () {
+      await freshArmToken.transfer(await freshCrowdfund.getAddress(), ARM(1_800_000));
+      await expect(freshCrowdfund.connect(outsider).loadArm())
+        .to.emit(freshCrowdfund, "ArmLoaded");
+      expect(await freshCrowdfund.armLoaded()).to.be.true;
+    });
+
+    it("startWindow() reverts when ARM not loaded", async function () {
+      await freshCrowdfund.addSeed(seed1.address);
+      await expect(
+        freshCrowdfund.startWindow()
+      ).to.be.revertedWith("ArmadaCrowdfund: ARM not loaded");
+    });
+
+    it("full deployment sequence: deploy → transfer → loadArm → startWindow", async function () {
+      // 1. Deploy (done in beforeEach)
+      expect(await freshCrowdfund.phase()).to.equal(Phase.Setup);
+      expect(await freshCrowdfund.armLoaded()).to.be.false;
+
+      // 2. Transfer ARM
+      await freshArmToken.transfer(await freshCrowdfund.getAddress(), ARM(1_800_000));
+
+      // 3. loadArm()
+      await freshCrowdfund.loadArm();
+      expect(await freshCrowdfund.armLoaded()).to.be.true;
+
+      // 4. Add seeds and start window
+      await freshCrowdfund.addSeed(seed1.address);
+      await freshCrowdfund.startWindow();
+      expect(await freshCrowdfund.phase()).to.equal(Phase.Active);
     });
   });
 
@@ -630,7 +737,7 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Canceled);
     });
 
-    it("should require sufficient ARM balance", async function () {
+    it("should require ARM pre-load before window can open", async function () {
       // Deploy a new crowdfund without ARM funding
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const unfundedCrowdfund = await ArmadaCrowdfund.deploy(
@@ -642,22 +749,16 @@ describe("Crowdfund Integration", function () {
       );
       await unfundedCrowdfund.waitForDeployment();
 
-      // Add enough seeds and commitments to reach MIN_SALE
-      const seeds = allSigners.slice(1, 80);
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-        await usdc.connect(s).approve(await unfundedCrowdfund.getAddress(), USDC(15_000));
-      }
-      await unfundedCrowdfund.addSeeds(seeds.map(s => s.address));
-      await unfundedCrowdfund.startWindow();
-      for (const s of seeds.slice(0, 68)) {
-        await unfundedCrowdfund.connect(s).commit(USDC(15_000), 0);
-      }
-      await time.increase(THREE_WEEKS + 1);
-
+      // loadArm() reverts without ARM
       await expect(
-        unfundedCrowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: insufficient ARM");
+        unfundedCrowdfund.loadArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: insufficient ARM for MAX_SALE");
+
+      // startWindow() reverts without loadArm()
+      await unfundedCrowdfund.addSeed(seed1.address);
+      await expect(
+        unfundedCrowdfund.startWindow()
+      ).to.be.revertedWith("ArmadaCrowdfund: ARM not loaded");
     });
   });
 

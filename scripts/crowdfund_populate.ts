@@ -211,6 +211,17 @@ async function main() {
     log("SEEDS", `  Batch ${Math.floor(i / SEED_BATCH_SIZE) + 1}: added ${batch.length} seeds`);
   }
 
+  // ============ VERIFY ARM PRE-LOAD ============
+  const armLoadedAlready = await crowdfund.armLoaded();
+  if (!armLoadedAlready) {
+    log("ARM", "ARM not loaded — calling loadArm()...");
+    const loadTx = await crowdfund.loadArm();
+    await loadTx.wait();
+    log("ARM", "ARM loaded and verified");
+  } else {
+    log("ARM", "ARM already loaded");
+  }
+
   // ============ START WINDOW ============
   const startTx = await crowdfund.startWindow();
   await startTx.wait();

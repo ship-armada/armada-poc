@@ -59,6 +59,15 @@ task("cf-start", "Start the active window (invites + commits)")
     const deployment = loadCrowdfundDeployment(getNetworkName(chainId));
 
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
+
+    // Ensure ARM is loaded before starting window
+    const armLoaded = await crowdfund.armLoaded();
+    if (!armLoaded) {
+      console.log("ARM not loaded — calling loadArm()...");
+      await crowdfund.loadArm();
+      console.log("ARM loaded and verified");
+    }
+
     await crowdfund.startWindow();
 
     const winStart = await crowdfund.windowStart();

@@ -59,9 +59,10 @@ describe("Crowdfund Adversarial", function () {
     );
     await crowdfund.waitForDeployment();
 
-    // Fund ARM for MAX_SALE
+    // Fund ARM for MAX_SALE and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
+    await crowdfund.loadArm();
   });
 
   // ============================================================

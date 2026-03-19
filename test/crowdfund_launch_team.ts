@@ -63,6 +63,11 @@ describe("Launch Team & Seed Cap", function () {
       deployer.address    // launchTeam (same as admin for local testing)
     );
     await crowdfund.waitForDeployment();
+
+    // Fund ARM for MAX_SALE and verify pre-load (required for startWindow)
+    const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
+    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    await crowdfund.loadArm();
   });
 
   // ============ 150-Seed Cap ============
@@ -319,6 +324,11 @@ describe("Launch Team & Seed Cap", function () {
         ltSigner.address  // separate launch team
       );
       await cf.waitForDeployment();
+
+      // Fund ARM and verify pre-load
+      const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
+      await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
+      await cf.loadArm();
 
       // Add launchTeam as a seed (admin can do this)
       await cf.addSeed(ltSigner.address);

@@ -5,6 +5,7 @@ export const CROWDFUND_ABI = [
   // Admin actions (Setup)
   'function addSeed(address seed) external',
   'function addSeeds(address[] calldata seeds) external',
+  'function loadArm() external',
   'function startWindow() external',
   'function finalize() external',
   'function withdrawProceeds() external',
@@ -26,6 +27,7 @@ export const CROWDFUND_ABI = [
   'function armToken() view returns (address)',
   'function treasury() view returns (address)',
   'function paused() view returns (bool)',
+  'function armLoaded() view returns (bool)',
   'function totalCommitted() view returns (uint256)',
   'function saleSize() view returns (uint256)',
   'function totalAllocated() view returns (uint256)',
@@ -70,6 +72,7 @@ export const CROWDFUND_ABI = [
   'event Refunded(address indexed participant, uint256 amount)',
   'event ProceedsWithdrawn(address indexed treasury, uint256 amount)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
+  'event ArmLoaded(uint256 balance)',
 ] as const
 
 export const ERC20_ABI = [

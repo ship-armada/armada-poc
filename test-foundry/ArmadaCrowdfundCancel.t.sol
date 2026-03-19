@@ -33,8 +33,9 @@ contract ArmadaCrowdfundCancelTest is Test {
             admin
         );
 
-        // Fund ARM for MAX_SALE
+        // Fund ARM for MAX_SALE and verify pre-load
         armToken.transfer(address(crowdfund), 1_800_000 * 1e18);
+        crowdfund.loadArm();
 
         // Start window to set windowEnd
         address[] memory seeds = new address[](1);

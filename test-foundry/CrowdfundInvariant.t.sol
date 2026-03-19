@@ -26,12 +26,13 @@ contract CrowdfundHandler is Test {
     uint256 public ghost_totalUsdcIn;       // USDC deposited via commit()
     uint256 public ghost_totalArmClaimed;   // ARM withdrawn via claim()
     uint256 public ghost_totalUsdcRefunded; // USDC returned via claim() refunds
-    uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via refund() (canceled)
+    uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode)
     uint256 public ghost_proceedsWithdrawn; // USDC withdrawn via withdrawProceeds()
     uint256 public ghost_unallocArmWithdrawn; // ARM withdrawn via withdrawUnallocatedArm()
     uint256 public ghost_claimCount;        // number of successful claims
     bool public ghost_finalized;
     bool public ghost_canceled;
+    bool public ghost_refundMode;
 
     // Track per-participant committed amounts for sum verification
     mapping(address => uint256) public ghost_committed;
@@ -145,17 +146,15 @@ contract CrowdfundHandler is Test {
         vm.stopPrank();
     }
 
-    /// @dev Finalize the crowdfund (admin)
+    /// @dev Finalize the crowdfund (permissionless)
     function finalize() external {
         if (ghost_finalized || ghost_canceled) return;
 
-        vm.prank(admin);
         try crowdfund.finalize() {
             Phase p = crowdfund.phase();
             if (p == Phase.Finalized) {
                 ghost_finalized = true;
-            } else if (p == Phase.Canceled) {
-                ghost_canceled = true;
+                ghost_refundMode = crowdfund.refundMode();
             }
         } catch {}
     }
@@ -181,9 +180,9 @@ contract CrowdfundHandler is Test {
         } catch {}
     }
 
-    /// @dev Refund for a random committer (if canceled)
-    function refundCanceled(uint256 idx) external {
-        if (!ghost_canceled) return;
+    /// @dev ClaimRefund for a random committer (if canceled or refundMode)
+    function claimRefund(uint256 idx) external {
+        if (!ghost_canceled && !ghost_refundMode) return;
         if (allCommitters.length == 0) return;
         idx = bound(idx, 0, allCommitters.length - 1);
 
@@ -191,7 +190,7 @@ contract CrowdfundHandler is Test {
         uint256 usdcBefore = usdc.balanceOf(claimer);
 
         vm.prank(claimer);
-        try crowdfund.refund() {
+        try crowdfund.claimRefund() {
             uint256 usdcGained = usdc.balanceOf(claimer) - usdcBefore;
             ghost_totalUsdcCancelRefunded += usdcGained;
         } catch {}
@@ -356,6 +355,7 @@ contract CrowdfundInvariantTest is Test {
     /// @notice No participant allocation ever exceeds their commitment (in USDC value)
     function invariant_noOverAllocation() public view {
         if (!handler.ghost_finalized()) return;
+        if (handler.ghost_refundMode()) return; // no allocations in refundMode
 
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
@@ -403,6 +403,7 @@ contract CrowdfundInvariantTest is Test {
     /// @notice After finalization, sum of (allocUsdc + refund) for all committers equals totalCommitted
     function invariant_allocPlusRefundEqualsCommitted() public view {
         if (!handler.ghost_finalized()) return;
+        if (handler.ghost_refundMode()) return; // no allocations in refundMode
 
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {

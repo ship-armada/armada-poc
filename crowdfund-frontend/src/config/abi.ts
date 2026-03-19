@@ -18,7 +18,7 @@ export const CROWDFUND_ABI = [
   'function invite(address invitee, uint8 inviterHop) external',
   'function commit(uint256 amount, uint8 hop) external',
   'function claim() external',
-  'function refund() external',
+  'function claimRefund() external',
 
   // State variables (public getters)
   'function phase() view returns (uint8)',
@@ -28,6 +28,7 @@ export const CROWDFUND_ABI = [
   'function treasury() view returns (address)',
   'function paused() view returns (bool)',
   'function armLoaded() view returns (bool)',
+  'function refundMode() view returns (bool)',
   'function totalCommitted() view returns (uint256)',
   'function saleSize() view returns (uint256)',
   'function totalAllocated() view returns (uint256)',
@@ -67,6 +68,7 @@ export const CROWDFUND_ABI = [
   'event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount)',
   'event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop)',
   'event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc)',
+  'event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds)',
   'event SaleCanceled(uint256 totalCommitted)',
   'event Claimed(address indexed participant, uint256 armAmount, uint256 usdcRefund)',
   'event Refunded(address indexed participant, uint256 amount)',

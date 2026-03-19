@@ -44,7 +44,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund finalize() gas scaling", function () {
-    const participantCounts = [50, 100, 150]; // max 150 seeds (MAX_SEEDS cap)
+    const participantCounts = [70, 100, 150]; // min 67 for MIN_SALE, max 150 (MAX_SEEDS cap)
     const results: { count: number; gas: bigint; perParticipant: bigint }[] = [];
 
     for (const count of participantCounts) {
@@ -75,23 +75,8 @@ describe("Gas Benchmarks", function () {
         await crowdfund.startWindow();
 
         // Each seed commits $15K (max hop-0 cap)
-        // Total: count * $15K. For 50 participants = $750K (below MIN_SALE $1M, would cancel)
-        // For 50 participants, use larger amounts or accept cancellation
-        // We need >= $1M. At $15K/participant, need >= 67 participants.
-        // For count < 67, commit the max cap and it will cancel (we still measure finalize gas)
-        // Actually, for count < 67, totalCommitted < MIN_SALE so finalize() will cancel early
-        // and we won't measure the allocation loop. Instead, let's make all counts reach MIN_SALE.
-        //
-        // Strategy: for small counts, commit more per participant (up to $15K cap)
-        // 50 × $15K = $750K < $1M — not enough. Need at least 67 at $15K.
-        // For count=50, we can't reach $1M with hop-0 cap of $15K.
-        //
-        // Solution: just test counts that can hit MIN_SALE (67+)
-        // But we want to test at 50 too. So we'll skip the min-sale check by
-        // having enough total. Actually the simplest fix: commit $15K each but
-        // for count < 67 the total won't reach MIN_SALE. The finalize() will cancel immediately.
-        //
-        // Let's just measure counts >= 67 for the allocation path and note count=50 for cancel path.
+        // Total: count * $15K. Need >= $1M (MIN_SALE) for finalize() to succeed.
+        // At $15K/participant, need >= 67 participants. All test counts are >= 70.
 
         const commitAmount = USDC(15_000);
         for (const s of seeds) {
@@ -109,9 +94,7 @@ describe("Gas Benchmarks", function () {
         const gasUsed = receipt!.gasUsed;
 
         const totalCommitted = await crowdfund.totalCommitted();
-        const phase = await crowdfund.phase();
-        const minSale = USDC(1_000_000);
-        const isCanceled = totalCommitted < minSale;
+        const isRefundMode = await crowdfund.refundMode();
 
         const perParticipant = gasUsed / BigInt(count);
         results.push({ count, gas: gasUsed, perParticipant });
@@ -120,7 +103,7 @@ describe("Gas Benchmarks", function () {
           `    finalize() | ${count} participants | ` +
           `${gasUsed.toLocaleString()} gas | ` +
           `${perParticipant.toLocaleString()} gas/participant | ` +
-          `${isCanceled ? "CANCELED (below MIN_SALE)" : "FINALIZED"}`
+          `${isRefundMode ? "REFUND_MODE" : "FINALIZED"}`
         );
       });
     }
@@ -133,10 +116,8 @@ describe("Gas Benchmarks", function () {
       console.log("    Participants │ Gas Used      │ Gas/Participant │ Status");
       console.log("    ─────────────┼───────────────┼────────────────┼────────────────");
       for (const r of results) {
-        const totalCommittedUsdc = BigInt(r.count) * 15_000n;
-        const isCanceled = totalCommittedUsdc < 1_000_000n;
         console.log(
-          `    ${String(r.count).padStart(12)} │ ${r.gas.toLocaleString().padStart(13)} │ ${r.perParticipant.toLocaleString().padStart(14)} │ ${isCanceled ? "Canceled" : "Finalized"}`
+          `    ${String(r.count).padStart(12)} │ ${r.gas.toLocaleString().padStart(13)} │ ${r.perParticipant.toLocaleString().padStart(14)} │ Finalized`
         );
       }
 

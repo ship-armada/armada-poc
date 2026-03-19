@@ -30,8 +30,11 @@ const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 // Amount of ARM the deployer keeps for governance testing after treasury + crowdfund allocations.
 // Eligible supply ≈ DEPLOYER_KEEP + seed-claimed ARM. Quorum = 20% of eligible.
 // Deployer locks half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
-// With 1.2M keep: eligible ≈ 1.2M + ~798K claimed = ~2M, quorum = ~400K.
-// Deployer locks 600K > 400K quorum. ✓
+// With 100 seeds × $15K = $1.5M (hits ELASTIC_TRIGGER), MAX_SALE = $1.8M applies.
+// Hop-0 ceiling = 70% × ($1.8M - $90K) = $1,197K. Demand $1.5M > ceiling → pro-rata.
+// Each seed gets $1,197K / 100 = $11,970 ARM. Total claimed = 1,197,000 ARM.
+// Eligible ≈ 1.2M + ~1.197M = ~2.397M, quorum = 20% ≈ ~479K.
+// Deployer locks 600K > 479K quorum. ✓
 const DEPLOYER_KEEP = ARM(1_200_000);
 
 describe("Cross-Contract Integration (Phase 6)", function () {
@@ -59,8 +62,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     const signers = await ethers.getSigners();
     deployer = signers[0];
     treasuryAddr = signers[1];
-    seeds = signers.slice(2, 82);      // 80 seeds
-    hop1Addrs = signers.slice(82, 92); // 10 hop-1
+    seeds = signers.slice(2, 102);      // 100 seeds
+    hop1Addrs = signers.slice(102, 112); // 10 hop-1
 
     // Deploy tokens
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
@@ -619,7 +622,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     beforeEach(async function () {
       const signers = await ethers.getSigners();
       localDeployer = signers[0];
-      localSeeds = signers.slice(2, 82); // 80 seeds
+      localSeeds = signers.slice(2, 102); // 100 seeds
 
       // Step 1: Deploy canonical ARM token
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");

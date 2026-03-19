@@ -33,6 +33,7 @@ contract CrowdfundFullHandler is Test {
     mapping(address => uint8) public ghost_hop;
     bool public ghost_finalized;
     bool public ghost_canceled;
+    bool public ghost_refundMode;
 
     constructor(
         ArmadaCrowdfund _crowdfund,
@@ -137,17 +138,15 @@ contract CrowdfundFullHandler is Test {
         vm.stopPrank();
     }
 
-    /// @dev Finalize the crowdfund
+    /// @dev Finalize the crowdfund (permissionless)
     function finalize() external {
         if (ghost_finalized || ghost_canceled) return;
 
-        vm.prank(admin);
         try crowdfund.finalize() {
             Phase p = crowdfund.phase();
             if (p == Phase.Finalized) {
                 ghost_finalized = true;
-            } else if (p == Phase.Canceled) {
-                ghost_canceled = true;
+                ghost_refundMode = crowdfund.refundMode();
             }
         } catch {}
     }
@@ -307,6 +306,7 @@ contract CrowdfundFullInvariantTest is Test {
     /// @notice After finalization, each participant's alloc + refund equals committed
     function invariant_allocPlusRefundEqualsCommitted() public view {
         if (!handler.ghost_finalized()) return;
+        if (handler.ghost_refundMode()) return; // no allocations in refundMode
 
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {

@@ -12,6 +12,8 @@ export interface CrowdfundState {
   launchTeamInviteEnd: bigint
   // ARM pre-load status
   armLoaded: boolean
+  // Post-allocation refund mode (totalAllocUsdc < MIN_SALE after finalization)
+  refundMode: boolean
   // Aggregate stats
   totalCommitted: bigint
   saleSize: bigint
@@ -41,6 +43,7 @@ const DEFAULT_STATE: CrowdfundState = {
   windowEnd: 0n,
   launchTeamInviteEnd: 0n,
   armLoaded: false,
+  refundMode: false,
   totalCommitted: 0n,
   saleSize: 0n,
   hopStats: null,

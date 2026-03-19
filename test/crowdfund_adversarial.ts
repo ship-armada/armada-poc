@@ -36,6 +36,18 @@ describe("Crowdfund Adversarial", function () {
     await usdc.connect(signer).approve(await crowdfund.getAddress(), amount);
   }
 
+  // Add hop-1 demand to avoid refundMode when testing with seeds-only at hop-0.
+  // At BASE_SALE, hop-0 ceiling ($798K) < MIN_SALE ($1M). Adding 51 hop-1 at $4K
+  // pushes totalAllocUsdc to $1,002K > $1M. Hop-0 allocation math stays unchanged.
+  async function addHop1ForMinSale(seeds: SignerWithAddress[], hop1Pool: SignerWithAddress[]) {
+    const count = Math.min(51, hop1Pool.length, seeds.length);
+    for (let i = 0; i < count; i++) {
+      await crowdfund.connect(seeds[i]).invite(hop1Pool[i].address, 0);
+      await fundAndApprove(hop1Pool[i], USDC(4_000));
+      await crowdfund.connect(hop1Pool[i]).commit(USDC(4_000), 1);
+    }
+  }
+
   beforeEach(async function () {
     allSigners = await ethers.getSigners();
     deployer = allSigners[0];
@@ -172,17 +184,20 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Canceled);
     });
 
-    it("reverts if already canceled by admin via finalize()", async function () {
+    it("permissionlessCancel still works when below MIN_SALE (no auto-cancel from finalize)", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       await crowdfund.startWindow();
       await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize(); // cancels (below MIN_SALE)
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
-
-      await time.increase(THIRTY_DAYS + 1);
+      // finalize() reverts (below MIN_SALE), phase stays Active
       await expect(
-        crowdfund.connect(allSigners[2]).permissionlessCancel()
-      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
+        crowdfund.finalize()
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      expect(await crowdfund.phase()).to.equal(Phase.Active);
+
+      // permissionlessCancel still works after grace period
+      await time.increase(THIRTY_DAYS + 1);
+      await crowdfund.connect(allSigners[2]).permissionlessCancel();
+      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
     });
   });
 
@@ -201,10 +216,15 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      const hop1Pool = allSigners.slice(140, 191);
+      await addHop1ForMinSale(seeds.slice(0, 51), hop1Pool);
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Verify sum of parts
+      // Verify sum of parts across all participants (seeds + hop-1)
       let sumAllocUsdc = 0n;
       let sumRefund = 0n;
       let sumAllocArm = 0n;
@@ -217,6 +237,14 @@ describe("Crowdfund Adversarial", function () {
         sumAllocUsdc += (USDC(15_000) - refund);
       }
 
+      // Also sum hop-1 allocations
+      for (let i = 0; i < 51; i++) {
+        const [alloc, refund] = await crowdfund.getAllocation(hop1Pool[i].address);
+        sumAllocArm += alloc;
+        sumRefund += refund;
+        sumAllocUsdc += (USDC(4_000) - refund);
+      }
+
       const totalCommitted = await crowdfund.totalCommitted();
       const totalAllocated = await crowdfund.totalAllocated();
       const totalAllocatedUsdc = await crowdfund.totalAllocatedUsdc();
@@ -227,11 +255,12 @@ describe("Crowdfund Adversarial", function () {
       // With lazy eval, totalAllocated/totalAllocatedUsdc are hop-level upper bounds.
       // Individual integer division truncation means sum(individual) <= hop-level total.
       // The difference is at most uniqueCommitters per oversubscribed hop (negligible dust).
+      const totalParticipants = BigInt(seeds.length + 51);
       expect(sumAllocArm).to.be.lte(totalAllocated);
-      expect(sumAllocArm).to.be.gte(totalAllocated - BigInt(seeds.length));
+      expect(sumAllocArm).to.be.gte(totalAllocated - totalParticipants);
 
       expect(sumAllocUsdc).to.be.lte(totalAllocatedUsdc);
-      expect(sumAllocUsdc).to.be.gte(totalAllocatedUsdc - BigInt(seeds.length));
+      expect(sumAllocUsdc).to.be.gte(totalAllocatedUsdc - totalParticipants);
 
       // No participant gets more than their committed amount
       for (const s of seeds) {
@@ -303,6 +332,10 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
@@ -320,12 +353,20 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      const hop1Pool = allSigners.slice(140, 191);
+      await addHop1ForMinSale(seeds.slice(0, 51), hop1Pool);
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // All participants claim
+      // All participants claim (seeds + hop-1)
       for (const s of seeds) {
         await crowdfund.connect(s).claim();
+      }
+      for (let i = 0; i < 51; i++) {
+        await crowdfund.connect(hop1Pool[i]).claim();
       }
 
       // Admin withdraws proceeds and unallocated ARM
@@ -399,7 +440,7 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
     });
 
-    it("totalCommitted 1 below MIN_SALE cancels", async function () {
+    it("totalCommitted 1 below MIN_SALE causes finalize to revert", async function () {
       // 66 seeds at $15K = $990K. 1 seed at $9,999.999999 = $999,999.999999 < $1M
       const seeds = allSigners.slice(1, 68);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -418,9 +459,12 @@ describe("Crowdfund Adversarial", function () {
       expect(total).to.be.lt(USDC(1_000_000));
 
       await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
+      await expect(
+        crowdfund.finalize()
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
 
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+      // Phase stays Active — participants use claimRefund() via deadline fallback
+      expect(await crowdfund.phase()).to.equal(Phase.Active);
     });
 
     it("totalCommitted exactly at ELASTIC_TRIGGER expands to MAX_SALE", async function () {
@@ -493,16 +537,18 @@ describe("Crowdfund Adversarial", function () {
       expect(uc2).to.equal(0);
     });
 
-    it("finalize with all whitelisted but 0 committers cancels", async function () {
+    it("finalize with all whitelisted but 0 committers reverts", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
 
       // Nobody commits — just fast-forward through the active window
       await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
+      await expect(
+        crowdfund.finalize()
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
 
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
+      expect(await crowdfund.phase()).to.equal(Phase.Active);
     });
 
     it("commit below MIN_COMMIT ($10 USDC) reverts", async function () {
@@ -625,7 +671,7 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: seeds only during setup or week 1");
     });
 
-    it("claim when phase is Canceled reverts (should use refund)", async function () {
+    it("claim reverts when below minimum (should use claimRefund)", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
@@ -634,16 +680,21 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.connect(seeds[0]).commit(USDC(15_000), 0);
 
       await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize(); // should cancel (below MIN_SALE)
+      // finalize reverts (below MIN_SALE), phase stays Active
+      await expect(
+        crowdfund.finalize()
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
 
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
-
+      // claim() reverts because phase is Active, not Finalized
       await expect(
         crowdfund.connect(seeds[0]).claim()
       ).to.be.revertedWith("ArmadaCrowdfund: not finalized");
+
+      // claimRefund() works via deadline fallback
+      await crowdfund.connect(seeds[0]).claimRefund();
     });
 
-    it("refund when phase is Finalized reverts", async function () {
+    it("claimRefund when phase is Finalized (not refundMode) reverts", async function () {
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
@@ -653,24 +704,32 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
 
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
       await expect(
-        crowdfund.connect(seeds[0]).refund()
-      ).to.be.revertedWith("ArmadaCrowdfund: not canceled");
+        crowdfund.connect(seeds[0]).claimRefund()
+      ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
     });
 
-    it("non-admin cannot finalize", async function () {
-      const seeds = allSigners.slice(1, 4);
+    it("non-admin can finalize (permissionless)", async function () {
+      const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
+      }
       await time.increase(THREE_WEEKS + 1);
 
-      await expect(
-        crowdfund.connect(allSigners[1]).finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+      // A random non-admin address can finalize
+      await crowdfund.connect(allSigners[71]).finalize();
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
     });
 
     it("non-admin cannot withdrawProceeds", async function () {
@@ -699,12 +758,20 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      const hop1Pool = allSigners.slice(140, 191);
+      await addHop1ForMinSale(seeds.slice(0, 51), hop1Pool);
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       // Claims must happen before proceeds withdrawal (lazy eval)
       for (const s of seeds) {
         await crowdfund.connect(s).claim();
+      }
+      for (let i = 0; i < 51; i++) {
+        await crowdfund.connect(hop1Pool[i]).claim();
       }
 
       await crowdfund.withdrawProceeds();
@@ -768,6 +835,10 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
@@ -787,6 +858,10 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(seeds[i], USDC(15_000));
         await crowdfund.connect(seeds[i]).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
@@ -855,11 +930,11 @@ describe("Crowdfund Adversarial", function () {
       expect(treasuryLeftover).to.equal(USDC(197_000));
     });
 
-    it("rollover works with zero committers at receiving hop", async function () {
-      // 68 seeds × $15K = $1.02M >= MIN_SALE, 0 hop-1 committers.
+    it("rollover works with zero committers at hop-2", async function () {
+      // 68 seeds × $15K = $1.02M. Add 51 hop-1 × $4K = $204K for MIN_SALE.
       // Hop-0 demand $1.02M > ceiling $798K → oversubscribed, no leftover from hop-0.
-      // Hop-1 eff ceiling = min($513K + $0, $342K remaining) = $342K, demand = $0 → leftover $342K
-      // Hop-2 eff ceiling = $60K floor + $342K leftover = $402K, demand = $0
+      // Hop-1 eff ceiling = min($513K + $0, $342K remaining) = $342K, demand = $204K → leftover $138K
+      // Hop-2 eff ceiling = $60K floor + $138K leftover = $198K, demand = $0
       // Rollover flows unconditionally through hops regardless of committer count.
 
       const seeds = allSigners.slice(1, 69); // 68 seeds
@@ -870,17 +945,21 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
-      // saleSize = BASE_SALE = $1.2M (total = $1.02M < $1.5M trigger)
+      // saleSize = BASE_SALE = $1.2M (total = $1.224M < $1.5M trigger)
       // hop2Floor = $60K, available = $1.14M
       // Hop-0 ceiling = $798K, demand = $1.02M → oversubscribed, alloc = $798K, leftover = $0
       // remainingAvailable = $1.14M - $798K = $342K
-      // Hop-1 eff ceiling = min($513K + $0, $342K) = $342K, demand = $0, leftover = $342K
-      // Hop-2 eff ceiling = $60K + $342K = $402K, demand = $0
+      // Hop-1 eff ceiling = min($513K + $0, $342K) = $342K, demand = $204K, leftover = $138K
+      // Hop-2 eff ceiling = $60K + $138K = $198K, demand = $0
 
       const hop0Ceiling = await crowdfund.finalCeilings(0);
       expect(hop0Ceiling).to.equal(USDC(798_000));
@@ -889,20 +968,20 @@ describe("Crowdfund Adversarial", function () {
       expect(hop1Ceiling).to.equal(USDC(342_000));
 
       const hop2Ceiling = await crowdfund.finalCeilings(2);
-      expect(hop2Ceiling).to.equal(USDC(402_000));
+      expect(hop2Ceiling).to.equal(USDC(198_000));
 
-      // Treasury leftover = $1.2M - $798K = $402K
+      // Treasury leftover = $1.2M - ($798K + $204K) = $198K
       const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
-      expect(treasuryLeftover).to.equal(USDC(402_000));
+      expect(treasuryLeftover).to.equal(USDC(198_000));
 
       // Key assertion: rollover flowed through hop-1 to hop-2 despite 0 committers
-      // at both hops — unconditional rollover ensures unused capacity always cascades.
+      // at hop-2 — unconditional rollover ensures unused capacity always cascades.
       expect(hop2Ceiling).to.be.gt(USDC(60_000)); // hop-2 got more than just its floor
     });
 
     it("over-subscribed hop-0 produces pro-rata with no rollover", async function () {
       // 70 seeds × $15K = $1.05M. Hop-0 ceiling = 70% of $1.14M = $798K → over-subscribed.
-      // No leftover from hop-0. Hop-1/hop-2 have zero demand.
+      // No leftover from hop-0. Add 51 hop-1 × $4K = $204K for MIN_SALE.
 
       const seeds = allSigners.slice(1, 71); // 70 seeds
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -912,6 +991,10 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
@@ -924,10 +1007,11 @@ describe("Crowdfund Adversarial", function () {
 
       // Hop-0 leftover = $0, so hop-1 gets base ceiling only
       // Hop-1 eff ceiling = min($513K + $0, $342K remaining) = $342K
-      // Hop-2 eff ceiling = $60K floor + $342K leftover = $402K
-      // No demand at hop-1/2, so treasury leftover = $1.2M - $798K = $402K
+      // Hop-1 demand = $204K < $342K → under-subscribed, leftover = $138K
+      // Hop-2 eff ceiling = $60K floor + $138K leftover = $198K
+      // Treasury leftover = $1.2M - ($798K + $204K) = $198K
       const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
-      expect(treasuryLeftover).to.equal(USDC(402_000));
+      expect(treasuryLeftover).to.equal(USDC(198_000));
     });
 
     it("rollover preserves sum-of-parts invariant: alloc + treasury = saleSize", async function () {
@@ -987,6 +1071,10 @@ describe("Crowdfund Adversarial", function () {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
@@ -1001,7 +1089,7 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
 
-    it("refund() is protected by nonReentrant", async function () {
+    it("claimRefund() is protected by nonReentrant", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
@@ -1010,14 +1098,14 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.connect(seeds[0]).commit(USDC(15_000), 0);
 
       await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize(); // cancels (below MIN_SALE)
+      // finalize reverts (below MIN_SALE) — use deadline fallback
 
-      // Refund works
-      await crowdfund.connect(seeds[0]).refund();
+      // claimRefund works
+      await crowdfund.connect(seeds[0]).claimRefund();
 
-      // Double refund fails
+      // Double claimRefund fails
       await expect(
-        crowdfund.connect(seeds[0]).refund()
+        crowdfund.connect(seeds[0]).claimRefund()
       ).to.be.revertedWith("ArmadaCrowdfund: already refunded");
     });
 
@@ -1031,6 +1119,10 @@ describe("Crowdfund Adversarial", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(USDC(15_000), 0);
       }
+
+      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 

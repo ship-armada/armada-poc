@@ -83,17 +83,17 @@ describe("Crowdfund Adversarial", function () {
   // ============================================================
 
   describe("Emergency Pause Adversarial", function () {
-    it("non-admin cannot pause", async function () {
+    it("unauthorized address cannot pause pre-finalization", async function () {
       await expect(
         crowdfund.connect(allSigners[1]).pause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin or security council");
     });
 
-    it("non-admin cannot unpause", async function () {
+    it("unauthorized address cannot unpause pre-finalization", async function () {
       await crowdfund.pause();
       await expect(
         crowdfund.connect(allSigners[1]).unpause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin or security council");
     });
 
     it("double pause reverts", async function () {
@@ -107,98 +107,6 @@ describe("Crowdfund Adversarial", function () {
       await expect(
         crowdfund.unpause()
       ).to.be.revertedWith("Pausable: not paused");
-    });
-  });
-
-  // ============================================================
-  // 0b. Permissionless Cancel — Boundary & Edge Cases
-  // ============================================================
-
-  describe("Permissionless Cancel Boundaries", function () {
-    const THIRTY_DAYS = 30 * ONE_DAY;
-
-    it("reverts at exact boundary (windowEnd + FINALIZE_GRACE_PERIOD)", async function () {
-      await crowdfund.addSeeds([allSigners[1].address]);
-      await crowdfund.startWindow();
-      const windowEnd = await crowdfund.windowEnd();
-
-      // time.increaseTo mines a block at the given timestamp, so the next tx
-      // runs at timestamp + 1. To get block.timestamp == windowEnd + 30 days
-      // when permissionlessCancel() executes, we target one second earlier.
-      await time.increaseTo(windowEnd + BigInt(THIRTY_DAYS) - 1n);
-
-      await expect(
-        crowdfund.connect(allSigners[2]).permissionlessCancel()
-      ).to.be.revertedWith("ArmadaCrowdfund: grace period not elapsed");
-    });
-
-    it("succeeds at boundary + 1 second", async function () {
-      await crowdfund.addSeeds([allSigners[1].address]);
-      await crowdfund.startWindow();
-      const windowEnd = await crowdfund.windowEnd();
-
-      // Mine block at windowEnd + 30 days, so next tx runs at + 30 days + 1
-      await time.increaseTo(windowEnd + BigInt(THIRTY_DAYS));
-
-      await expect(crowdfund.connect(allSigners[2]).permissionlessCancel())
-        .to.emit(crowdfund, "SaleCanceled");
-
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
-    });
-
-    it("admin can still finalize() normally during the grace period", async function () {
-      const seeds = allSigners.slice(1, 71);
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-      }
-      await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startWindow();
-      for (const s of seeds) {
-        await crowdfund.connect(s).commit(USDC(15_000), 0);
-      }
-
-      // Past windowEnd but within grace period
-      await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
-
-      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
-    });
-
-    it("reverts in Setup phase", async function () {
-      // Never started window, windowEnd is 0
-      await expect(
-        crowdfund.connect(allSigners[1]).permissionlessCancel()
-      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
-    });
-
-    it("succeeds from Phase.Active (after someone has committed)", async function () {
-      await crowdfund.addSeeds([allSigners[1].address]);
-      await crowdfund.startWindow();
-
-      await fundAndApprove(allSigners[1], USDC(1_000));
-      await crowdfund.connect(allSigners[1]).commit(USDC(1_000), 0);
-      expect(await crowdfund.phase()).to.equal(Phase.Active);
-
-      await time.increase(THREE_WEEKS + THIRTY_DAYS + 1);
-      await expect(crowdfund.connect(allSigners[2]).permissionlessCancel())
-        .to.emit(crowdfund, "SaleCanceled");
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
-    });
-
-    it("permissionlessCancel still works when below MIN_SALE (no auto-cancel from finalize)", async function () {
-      await crowdfund.addSeeds([allSigners[1].address]);
-      await crowdfund.startWindow();
-      await time.increase(THREE_WEEKS + 1);
-      // finalize() reverts (below MIN_SALE), phase stays Active
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
-      expect(await crowdfund.phase()).to.equal(Phase.Active);
-
-      // permissionlessCancel still works after grace period
-      await time.increase(THIRTY_DAYS + 1);
-      await crowdfund.connect(allSigners[2]).permissionlessCancel();
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
     });
   });
 

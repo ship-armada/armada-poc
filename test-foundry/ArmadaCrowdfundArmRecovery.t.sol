@@ -18,7 +18,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
     address public treasury;
 
     uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
-    uint256 constant THIRTY_DAYS = 30 days;
 
     function setUp() public {
         admin = address(this);
@@ -46,13 +45,12 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         crowdfund.startWindow();
     }
 
-    /// @notice Helper: advance past commitment period and cancel via permissionlessCancel
-    function _cancelViaTooFewCommitments() internal {
-        // Warp past window end + grace period so permissionlessCancel() can be called.
+    /// @notice Helper: cancel via security council
+    function _cancelViaSecurityCouncil() internal {
+        // Security council (admin in test setup) cancels the crowdfund.
         // finalize() reverts when totalCommitted < MIN_SALE; the cancel path
-        // is handled by permissionlessCancel() or claimRefund() directly.
-        vm.warp(crowdfund.windowEnd() + THIRTY_DAYS + 1);
-        crowdfund.permissionlessCancel();
+        // is handled by security council cancel() or claimRefund() directly.
+        crowdfund.cancel();
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Canceled));
     }
 
@@ -60,7 +58,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
 
     /// @notice withdrawUnallocatedArm() succeeds in Canceled phase and returns full ARM balance
     function test_withdrawUnallocatedArm_canceled_returnsFullBalance() public {
-        _cancelViaTooFewCommitments();
+        _cancelViaSecurityCouncil();
 
         uint256 treasuryBefore = armToken.balanceOf(treasury);
         crowdfund.withdrawUnallocatedArm();
@@ -72,7 +70,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
 
     /// @notice Double-call reverts when nothing left to sweep
     function test_withdrawUnallocatedArm_canceled_doubleCallReverts() public {
-        _cancelViaTooFewCommitments();
+        _cancelViaSecurityCouncil();
 
         crowdfund.withdrawUnallocatedArm();
 
@@ -82,7 +80,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
 
     /// @notice Anyone can call withdrawUnallocatedArm (permissionless)
     function test_withdrawUnallocatedArm_canceled_permissionless() public {
-        _cancelViaTooFewCommitments();
+        _cancelViaSecurityCouncil();
 
         vm.prank(address(0xBEEF));
         crowdfund.withdrawUnallocatedArm();
@@ -148,9 +146,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         fuzzCrowdfund.addSeeds(seeds);
         fuzzCrowdfund.startWindow();
 
-        // Cancel via permissionlessCancel (finalize reverts when below MIN_SALE)
-        vm.warp(fuzzCrowdfund.windowEnd() + THIRTY_DAYS + 1);
-        fuzzCrowdfund.permissionlessCancel();
+        // Cancel via security council (admin == securityCouncil in test setup)
+        fuzzCrowdfund.cancel();
 
         // Recover
         uint256 treasuryBefore = armToken.balanceOf(treasury);

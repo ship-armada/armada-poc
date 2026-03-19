@@ -86,6 +86,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint8 public launchTeamHop1Used;
     uint8 public launchTeamHop2Used;
 
+    // ARM pre-load verification
+    bool public armLoaded;
+
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
@@ -99,6 +102,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     event Refunded(address indexed participant, uint256 amount);
     event ProceedsWithdrawn(address indexed treasury, uint256 amount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
+    event ArmLoaded(uint256 balance);
 
     // ============ Modifiers ============
 
@@ -160,9 +164,24 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit SeedAdded(seed);
     }
 
+    /// @notice Verify the contract holds sufficient ARM for the maximum possible sale.
+    ///         Permissionless. Idempotent: no-op if already loaded.
+    ///         Must be called before startWindow().
+    function loadArm() external {
+        if (armLoaded) return;
+
+        uint256 requiredArm = (MAX_SALE * 1e18) / ARM_PRICE;
+        uint256 balance = armToken.balanceOf(address(this));
+        require(balance >= requiredArm, "ArmadaCrowdfund: insufficient ARM for MAX_SALE");
+
+        armLoaded = true;
+        emit ArmLoaded(balance);
+    }
+
     /// @notice Start the 3-week active window (invites + commits concurrent)
     function startWindow() external onlyAdmin inPhase(Phase.Setup) {
         require(hopStats[0].whitelistCount > 0, "ArmadaCrowdfund: no seeds");
+        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
 
         windowStart = block.timestamp;
         windowEnd = block.timestamp + WINDOW_DURATION;
@@ -273,6 +292,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @param hop Which of the caller's (address, hop) nodes to commit to
     function commit(uint256 amount, uint8 hop) external nonReentrant whenNotPaused {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp <= windowEnd,
             "ArmadaCrowdfund: not active window"

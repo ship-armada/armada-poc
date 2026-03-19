@@ -67,6 +67,7 @@ describe("Gas Benchmarks", function () {
 
         // Fund ARM for MAX_SALE
         await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+        await crowdfund.loadArm();
 
         // Add seeds — all participants are hop-0 for simplicity
         const seeds = allSigners.slice(1, count + 1);
@@ -225,6 +226,7 @@ describe("Gas Benchmarks", function () {
       );
 
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+      await crowdfund.loadArm();
 
       const count = 100;
       const seeds = allSigners.slice(1, count + 1);
@@ -485,6 +487,9 @@ describe("Gas Benchmarks", function () {
         deployer.address, // treasury
         deployer.address  // launchTeam
       );
+
+      await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+      await crowdfund.loadArm();
 
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));

@@ -202,8 +202,9 @@ async function main() {
   const crowdfundArm  = ethers.parseUnits(CROWDFUND_ARM, 18);
   await armToken.transfer(await treasury.getAddress(), treasuryArm);
   await armToken.transfer(await crowdfund.getAddress(), crowdfundArm);
+  await crowdfund.loadArm();
   log("FUND", `${TREASURY_ARM} ARM \u2192 treasury`);
-  log("FUND", `${CROWDFUND_ARM} ARM \u2192 crowdfund`);
+  log("FUND", `${CROWDFUND_ARM} ARM \u2192 crowdfund (pre-load verified)`);
 
   const deployerArm = await armToken.balanceOf(deployer.address);
   log("FUND", `${(Number(deployerArm) / 1e18).toLocaleString()} ARM remains with deployer`);

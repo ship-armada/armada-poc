@@ -34,8 +34,9 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             admin
         );
 
-        // Fund ARM tokens
+        // Fund ARM tokens and verify pre-load
         armToken.transfer(address(crowdfund), ARM_FUNDING);
+        crowdfund.loadArm();
 
         // Start window to set windowEnd
         address[] memory seeds = new address[](1);
@@ -123,11 +124,10 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
 
     // ============ Fuzz: ARM recovery amount is always full balance when canceled ============
 
-    /// @notice Fuzz: any ARM funding amount is fully recoverable after cancellation
+    /// @notice Fuzz: any ARM funding amount (>= MAX_SALE) is fully recoverable after cancellation
     function testFuzz_withdrawUnallocatedArm_canceled_fullRecovery(uint256 funding) public {
-        // Bound to reasonable range (1 token to 10M tokens, well within 100M supply
-        // minus the 1.8M already sent to the main crowdfund in setUp)
-        funding = bound(funding, 1e18, 10_000_000 * 1e18);
+        // Bound to range from MAX_SALE to 10M tokens (loadArm requires >= MAX_SALE)
+        funding = bound(funding, 1_800_000 * 1e18, 10_000_000 * 1e18);
 
         // Deploy fresh crowdfund with fuzzed funding
         ArmadaCrowdfund fuzzCrowdfund = new ArmadaCrowdfund(
@@ -138,6 +138,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             admin
         );
         armToken.transfer(address(fuzzCrowdfund), funding);
+        fuzzCrowdfund.loadArm();
 
         address[] memory seeds = new address[](1);
         seeds[0] = address(0xA);

@@ -96,6 +96,12 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
     setSeedInput('')
   }
 
+  const handleLoadArm = async () => {
+    setIsSubmitting(true)
+    await crowdfund.loadArm()
+    setIsSubmitting(false)
+  }
+
   const handleStartWindow = async () => {
     setIsSubmitting(true)
     await crowdfund.startWindow()
@@ -172,15 +178,40 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
 
             <Separator />
 
+            {/* ARM Pre-Load Status */}
+            <div className="space-y-2">
+              <div className="rounded-md px-3 py-2 text-sm flex items-center justify-between"
+                style={{ backgroundColor: state.armLoaded ? 'var(--color-green-50)' : 'var(--color-amber-50)' }}
+              >
+                <span className={state.armLoaded ? 'text-green-700' : 'text-amber-700'}>
+                  {state.armLoaded ? 'ARM loaded (1.8M verified)' : 'ARM not loaded'}
+                </span>
+                {!state.armLoaded && (
+                  <Button
+                    onClick={handleLoadArm}
+                    disabled={isSubmitting}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                  >
+                    Verify ARM
+                  </Button>
+                )}
+              </div>
+            </div>
+
             <Button
               onClick={handleStartWindow}
-              disabled={isSubmitting || !state.hopStats || state.hopStats[0].whitelistCount === 0}
+              disabled={isSubmitting || !state.armLoaded || !state.hopStats || state.hopStats[0].whitelistCount === 0}
               className="w-full gap-2"
             >
               <Play className="h-4 w-4" />
               Start Window
             </Button>
-            {state.hopStats && state.hopStats[0].whitelistCount === 0 && (
+            {!state.armLoaded && (
+              <p className="text-xs text-muted-foreground">ARM must be loaded before starting the window</p>
+            )}
+            {state.armLoaded && state.hopStats && state.hopStats[0].whitelistCount === 0 && (
               <p className="text-xs text-muted-foreground">Add at least one seed first</p>
             )}
           </>

@@ -87,6 +87,7 @@ async function main() {
   const CROWDFUND_ARM = "1800000"; // matches config.armDistribution.crowdfund default
   const armFund = ethers.parseUnits(CROWDFUND_ARM, 18);
   await armToken.transfer(await crowdfund.getAddress(), armFund);
+  await crowdfund.loadArm();
 
   log("SETUP", `ARM Token: ${await armToken.getAddress()}`);
   log("SETUP", `USDC Token: ${await usdc.getAddress()}`);
@@ -210,8 +211,9 @@ async function main() {
   );
   await cf2.waitForDeployment();
 
-  // Fund ARM
+  // Fund ARM and verify pre-load
   await armToken.transfer(await cf2.getAddress(), ethers.parseUnits(CROWDFUND_ARM, 18));
+  await cf2.loadArm();
 
   // Add 80 seeds and have them all commit $15K each = $1.2M
   const bigSeeds = signers.slice(32, 112); // 80 signers

@@ -56,6 +56,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const [
         phase,
         admin,
+        armLoaded,
         totalCommitted,
         saleSize,
         windowStart,
@@ -71,6 +72,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       ] = await Promise.all([
         contract.phase(),
         contract.admin(),
+        contract.armLoaded(),
         contract.totalCommitted(),
         contract.saleSize(),
         contract.windowStart(),
@@ -125,6 +127,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       setState({
         phase: parsedPhase,
         adminAddress: admin as string,
+        armLoaded: armLoaded as boolean,
         totalCommitted: BigInt(totalCommitted),
         saleSize: BigInt(saleSize),
         windowStart: BigInt(windowStart),
@@ -300,6 +303,15 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     [executeTx],
   )
 
+  const loadArm = useCallback(
+    () =>
+      executeTx('Verifying ARM pre-load', (signer, dep) => {
+        const contract = getCrowdfundContract(dep, signer)
+        return contract.loadArm()
+      }),
+    [executeTx],
+  )
+
   const startWindow = useCallback(
     () =>
       executeTx('Starting window', (signer, dep) => {
@@ -450,6 +462,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     refreshParticipantList,
     // Write operations
     addSeeds,
+    loadArm,
     startWindow,
     invite,
     approveAndCommit,

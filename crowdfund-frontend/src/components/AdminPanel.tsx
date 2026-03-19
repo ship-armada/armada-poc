@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { ShieldCheck, Play, Flag, Banknote, Coins, Zap } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, Play, Flag, Coins, Zap } from 'lucide-react'
 import { Phase } from '@/types/crowdfund'
 import type { CrowdfundState } from '@/atoms/crowdfund'
 import type { useCrowdfund } from '@/hooks/useCrowdfund'
@@ -114,9 +114,9 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
     setIsSubmitting(false)
   }
 
-  const handleWithdrawProceeds = async () => {
+  const handleCancelSale = async () => {
     setIsSubmitting(true)
-    await crowdfund.withdrawProceeds()
+    await crowdfund.cancelSale()
     setIsSubmitting(false)
   }
 
@@ -214,6 +214,19 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
             {state.armLoaded && state.hopStats && state.hopStats[0].whitelistCount === 0 && (
               <p className="text-xs text-muted-foreground">Add at least one seed first</p>
             )}
+
+            <Separator />
+
+            <Button
+              onClick={handleCancelSale}
+              disabled={isSubmitting}
+              size="sm"
+              variant="destructive"
+              className="w-full gap-2"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Cancel Sale (Security Council)
+            </Button>
           </>
         )}
 
@@ -232,6 +245,19 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
             <p className="text-xs text-muted-foreground">
               Only works after the 3-week window has ended.
             </p>
+
+            <Separator />
+
+            <Button
+              onClick={handleCancelSale}
+              disabled={isSubmitting}
+              size="sm"
+              variant="destructive"
+              className="w-full gap-2"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Cancel Sale (Security Council)
+            </Button>
           </div>
         )}
 
@@ -263,25 +289,19 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
 
             <div className="flex gap-2">
               <Button
-                onClick={handleWithdrawProceeds}
-                disabled={isSubmitting}
-                size="sm"
-                className="flex-1 gap-1.5"
-              >
-                <Banknote className="h-3.5 w-3.5" />
-                Withdraw Proceeds
-              </Button>
-              <Button
                 onClick={handleWithdrawArm}
                 disabled={isSubmitting}
                 size="sm"
-                variant="outline"
                 className="flex-1 gap-1.5"
               >
                 <Coins className="h-3.5 w-3.5" />
-                Withdraw ARM
+                Sweep Unallocated ARM
               </Button>
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              Proceeds are pushed to treasury at finalization.
+            </p>
           </>
         )}
 

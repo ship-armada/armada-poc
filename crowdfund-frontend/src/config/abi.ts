@@ -8,7 +8,7 @@ export const CROWDFUND_ABI = [
   'function loadArm() external',
   'function startWindow() external',
   'function finalize() external',
-  'function withdrawProceeds() external',
+  'function cancel() external',
   'function withdrawUnallocatedArm() external',
   'function pause() external',
   'function unpause() external',
@@ -42,10 +42,9 @@ export const CROWDFUND_ABI = [
   'function hopConfigs(uint256) view returns (uint16 ceilingBps, uint256 capUsdc, uint8 maxInvites)',
   'function finalCeilings(uint256) view returns (uint256)',
   'function finalDemands(uint256) view returns (uint256)',
-  'function totalProceedsAccrued() view returns (uint256)',
   'function totalArmClaimed() view returns (uint256)',
-  'function proceedsWithdrawnAmount() view returns (uint256)',
-  'function unallocatedArmWithdrawn() view returns (bool)',
+  'function claimDeadline() view returns (uint256)',
+  'function securityCouncil() view returns (address)',
   'function treasuryLeftoverUsdc() view returns (uint256)',
 
   // View functions
@@ -72,7 +71,6 @@ export const CROWDFUND_ABI = [
   'event SaleCanceled(uint256 totalCommitted)',
   'event Claimed(address indexed participant, uint256 armAmount, uint256 usdcRefund)',
   'event Refunded(address indexed participant, uint256 amount)',
-  'event ProceedsWithdrawn(address indexed treasury, uint256 amount)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
   'event ArmLoaded(uint256 balance)',
 ] as const

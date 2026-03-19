@@ -188,7 +188,8 @@ contract CrowdfundFullInvariantTest is Test {
             address(armToken),
             admin,
             address(0xBEEF), // treasury
-            admin
+            admin,
+            admin             // securityCouncil
         );
 
         // Fund ARM to crowdfund and verify pre-load

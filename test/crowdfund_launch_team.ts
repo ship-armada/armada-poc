@@ -60,7 +60,8 @@ describe("Launch Team & Seed Cap", function () {
       await armToken.getAddress(),
       deployer.address,   // admin
       treasury.address,   // treasury
-      deployer.address    // launchTeam (same as admin for local testing)
+      deployer.address,   // launchTeam (same as admin for local testing)
+      deployer.address    // securityCouncil
     );
     await crowdfund.waitForDeployment();
 
@@ -158,7 +159,8 @@ describe("Launch Team & Seed Cap", function () {
         await armToken.getAddress(),
         deployer.address,
         treasury.address,
-        deployer.address
+        deployer.address,
+        deployer.address        // securityCouncil
       );
       await expect(
         freshCrowdfund.launchTeamInvite(invitee1.address, 1)
@@ -321,7 +323,8 @@ describe("Launch Team & Seed Cap", function () {
         await armToken.getAddress(),
         deployer.address,
         treasury.address,
-        ltSigner.address  // separate launch team
+        ltSigner.address,  // separate launch team
+        deployer.address   // securityCouncil
       );
       await cf.waitForDeployment();
 
@@ -417,7 +420,8 @@ describe("Launch Team & Seed Cap", function () {
           await armToken.getAddress(),
           deployer.address,
           treasury.address,
-          ethers.ZeroAddress
+          ethers.ZeroAddress,
+          deployer.address
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero launchTeam");
     });

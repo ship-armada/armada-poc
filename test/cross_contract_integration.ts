@@ -82,7 +82,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await armToken.getAddress(),
       deployer.address,
       treasuryAddr.address,
-      deployer.address
+      deployer.address,
+      deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
 
@@ -426,12 +427,11 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(await governor.hasVoted(proposalId, alice.address)).to.be.true;
     });
 
-    it("governance proposal calling crowdfund.withdrawProceeds via timelock requires admin role", async function () {
+    it("governance proposal can call permissionless withdrawUnallocatedArm via timelock", async function () {
       await setupCrowdfundAndGovernance();
 
-      // The crowdfund admin is the deployer, NOT the timelock.
-      // A governance proposal that tries to call withdrawProceeds via timelock should fail
-      // because timelock is not the crowdfund admin.
+      // withdrawUnallocatedArm is permissionless, so governance can call it
+      // even though timelock is not the crowdfund admin.
 
       // Seeds lock to create voting power
       for (let i = 0; i < 10; i++) {
@@ -441,17 +441,17 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       }
       await mine(1);
 
-      // Create proposal to withdraw crowdfund proceeds via timelock
-      const withdrawCalldata = crowdfund.interface.encodeFunctionData(
-        "withdrawProceeds"
+      // Create proposal to sweep unallocated ARM via timelock
+      const sweepCalldata = crowdfund.interface.encodeFunctionData(
+        "withdrawUnallocatedArm"
       );
 
       await governor.propose(
         ProposalType.Treasury,
         [await crowdfund.getAddress()],
         [0],
-        [withdrawCalldata],
-        "Attempt to withdraw crowdfund proceeds via governance"
+        [sweepCalldata],
+        "Sweep unallocated ARM to treasury via governance"
       );
       const proposalId = 1;
 
@@ -467,10 +467,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.queue(proposalId);
       await time.increase(TWO_DAYS + 1);
 
-      // Execute should revert because timelock is not the crowdfund admin
-      await expect(
-        governor.execute(proposalId)
-      ).to.be.reverted; // TimelockController will revert because the underlying call fails
+      // Execute succeeds — withdrawUnallocatedArm is permissionless
+      await governor.execute(proposalId);
     });
 
     it("voting power reflects lock state at proposal snapshot, not current state", async function () {
@@ -684,7 +682,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localArmToken.getAddress(),
         localDeployer.address,
         await localTreasury.getAddress(),
-        localDeployer.address
+        localDeployer.address,
+        localDeployer.address   // securityCouncil
       );
       await localCrowdfund.waitForDeployment();
 
@@ -802,7 +801,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(quorumAfter).to.be.gt(quorumBefore);
     });
 
-    it("withdrawProceeds sends USDC to treasury contract", async function () {
+    it("finalize pushes USDC proceeds to treasury contract", async function () {
       // Run crowdfund
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
       await localCrowdfund.startWindow();
@@ -823,16 +822,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       }
 
       const treasuryAddress = await localTreasury.getAddress();
-      const usdcBefore = await localUsdc.balanceOf(treasuryAddress);
 
-      await localCrowdfund.withdrawProceeds();
-
-      const usdcAfter = await localUsdc.balanceOf(treasuryAddress);
-      expect(usdcAfter).to.be.gt(usdcBefore);
-
-      // Proceeds should equal totalProceedsAccrued
-      const proceeds = await localCrowdfund.totalProceedsAccrued();
-      expect(usdcAfter - usdcBefore).to.equal(proceeds);
+      // Proceeds are pushed to treasury at finalization (minus small rounding buffer)
+      const treasuryUsdc = await localUsdc.balanceOf(treasuryAddress);
+      const totalAllocUsdc = await localCrowdfund.totalAllocatedUsdc();
+      // Treasury receives proceeds minus rounding buffer (at most ~participantCount units)
+      expect(treasuryUsdc).to.be.gte(totalAllocUsdc - 500n);
+      expect(treasuryUsdc).to.be.lte(totalAllocUsdc);
     });
 
     it("withdrawUnallocatedArm sends ARM to treasury contract", async function () {

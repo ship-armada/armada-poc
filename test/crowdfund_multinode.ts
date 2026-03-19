@@ -55,7 +55,8 @@ describe("Crowdfund Multi-Node", function () {
       await armToken.getAddress(),
       deployer.address,
       treasury.address,
-      deployer.address
+      deployer.address,
+      deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
 

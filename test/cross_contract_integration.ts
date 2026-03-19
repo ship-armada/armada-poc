@@ -85,6 +85,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     // Fund ARM to crowdfund (1.8M for MAX_SALE)
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
+    await crowdfund.loadArm();
 
     // Deploy governance
     const MAX_PAUSE_DURATION = 14 * ONE_DAY;
@@ -686,6 +687,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Step 5: Fund crowdfund from deployer remainder
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);
+      await localCrowdfund.loadArm();
 
       // Step 6: Register crowdfund in quorum exclusion
       await localGovernor.setExcludedAddresses([await localCrowdfund.getAddress()]);

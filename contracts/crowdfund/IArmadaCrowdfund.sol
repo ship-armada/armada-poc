@@ -18,7 +18,7 @@ enum Phase {
 // ========== Structs ==========
 
 struct HopConfig {
-    uint16 ceilingBps;      // Ceiling as basis points — overlapping, sum > 10000 (7000, 4500, 1000)
+    uint16 ceilingBps;      // Ceiling as basis points — overlapping (7000, 4500, 0). Hop-2 uses floor+rollover instead.
     uint256 capUsdc;        // Max individual commitment in USDC (6 decimals)
     uint8 maxInvites;       // How many addresses this hop can invite (3, 2, 0)
 }

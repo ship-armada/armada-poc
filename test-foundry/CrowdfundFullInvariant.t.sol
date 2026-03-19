@@ -257,14 +257,14 @@ contract CrowdfundFullInvariantTest is Test {
     // INV-C2: Ceiling BPS match expected overlapping values (sum = 12500)
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice Hop ceiling basis points match spec: 7000/4500/1000 (overlapping, sum > 10000)
+    /// @notice Hop ceiling basis points match spec: 7000/4500/0 (hop-2 uses floor+rollover, not BPS)
     function invariant_ceilingBpsAreValid() public view {
         (uint16 bps0, , ) = crowdfund.hopConfigs(0);
         (uint16 bps1, , ) = crowdfund.hopConfigs(1);
         (uint16 bps2, , ) = crowdfund.hopConfigs(2);
         assertEq(bps0, 7000, "INV-C2: Hop 0 ceiling should be 7000");
         assertEq(bps1, 4500, "INV-C2: Hop 1 ceiling should be 4500");
-        assertEq(bps2, 1000, "INV-C2: Hop 2 ceiling should be 1000");
+        assertEq(bps2, 0, "INV-C2: Hop 2 ceiling should be 0 (uses floor+rollover)");
     }
 
     // ══════════════════════════════════════════════════════════════════════

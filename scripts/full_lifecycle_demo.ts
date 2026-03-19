@@ -192,7 +192,8 @@ async function main() {
     await armToken.getAddress(),
     deployer.address,       // admin
     await treasury.getAddress(),  // immutable treasury destination
-    deployer.address        // launchTeam
+    deployer.address,       // launchTeam
+    deployer.address        // securityCouncil (demo: deployer acts as council)
   );
   await crowdfund.waitForDeployment();
   log("DEPLOY", `ArmadaCrowdfund: ${await crowdfund.getAddress()}`);
@@ -373,21 +374,16 @@ async function main() {
   //  PHASE 3: TREASURY RECLAIM
   // ================================================================
 
-  section("PHASE 3: Treasury Reclaim \u2014 Proceeds + Unallocated ARM");
+  section("PHASE 3: Treasury Reclaim \u2014 Unallocated ARM");
 
   const treasuryUsdcBefore = await usdc.balanceOf(await treasury.getAddress());
   const treasuryArmBefore  = await armToken.balanceOf(await treasury.getAddress());
-  log("BEFORE", `Treasury USDC: ${fmtUsdc(treasuryUsdcBefore)}`);
+  log("BEFORE", `Treasury USDC: ${fmtUsdc(treasuryUsdcBefore)} (proceeds pushed at finalization)`);
   log("BEFORE", `Treasury ARM:  ${fmtArm(treasuryArmBefore)}`);
 
-  // Withdraw USDC proceeds (accrued from claims above)
-  await crowdfund.withdrawProceeds();
-  const proceedsAccrued = await crowdfund.totalProceedsAccrued();
-  log("WITHDRAW", `USDC proceeds withdrawn: ${fmtUsdc(proceedsAccrued)} \u2192 treasury`);
-
-  // Withdraw unallocated ARM
+  // Sweep unallocated ARM (permissionless)
   await crowdfund.withdrawUnallocatedArm();
-  log("WITHDRAW", "Unallocated ARM withdrawn \u2192 treasury");
+  log("WITHDRAW", "Unallocated ARM swept \u2192 treasury");
 
   const treasuryUsdcAfter = await usdc.balanceOf(await treasury.getAddress());
   const treasuryArmAfter  = await armToken.balanceOf(await treasury.getAddress());

@@ -79,7 +79,8 @@ async function main() {
     await armToken.getAddress(),
     deployer.address,
     treasuryAddr.address,
-    deployer.address
+    deployer.address,
+    deployer.address        // securityCouncil (demo)
   );
   await crowdfund.waitForDeployment();
 
@@ -207,7 +208,8 @@ async function main() {
     await armToken.getAddress(),
     deployer.address,
     treasuryAddr.address,
-    deployer.address
+    deployer.address,
+    deployer.address        // securityCouncil (demo)
   );
   await cf2.waitForDeployment();
 

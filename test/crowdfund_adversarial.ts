@@ -67,7 +67,8 @@ describe("Crowdfund Adversarial", function () {
       await armToken.getAddress(),
       deployer.address,
       treasuryAddr.address,
-      deployer.address
+      deployer.address,
+      deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
 
@@ -318,9 +319,9 @@ describe("Crowdfund Adversarial", function () {
 
       expect(sumAllocUsdc + sumRefund).to.equal(totalCommitted);
 
-      // Contract USDC balance should cover all refunds + proceeds
+      // Contract USDC balance covers all refunds (plus rounding buffer from proceeds push)
       const contractUsdc = await usdc.balanceOf(await crowdfund.getAddress());
-      expect(contractUsdc).to.equal(totalCommitted);
+      expect(contractUsdc).to.be.gte(sumRefund);
     });
 
     it("contract ARM balance covers all allocations after finalization", async function () {
@@ -369,8 +370,8 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(hop1Pool[i]).claim();
       }
 
-      // Admin withdraws proceeds and unallocated ARM
-      await crowdfund.withdrawProceeds();
+      // Proceeds already pushed to treasury at finalization.
+      // Sweep unallocated ARM (permissionless).
       await crowdfund.withdrawUnallocatedArm();
 
       // Contract should have ~0 of both tokens (rounding dust at most)
@@ -732,7 +733,7 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
     });
 
-    it("non-admin cannot withdrawProceeds", async function () {
+    it("non-admin can sweep unallocated ARM (permissionless)", async function () {
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
@@ -744,12 +745,11 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      await expect(
-        crowdfund.connect(allSigners[1]).withdrawProceeds()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+      // withdrawUnallocatedArm is permissionless — non-admin can call
+      await crowdfund.connect(allSigners[1]).withdrawUnallocatedArm();
     });
 
-    it("double withdrawProceeds reverts after all proceeds withdrawn", async function () {
+    it("withdrawUnallocatedArm second call reverts when nothing to sweep", async function () {
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
@@ -766,38 +766,13 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Claims must happen before proceeds withdrawal (lazy eval)
-      for (const s of seeds) {
-        await crowdfund.connect(s).claim();
-      }
-      for (let i = 0; i < 51; i++) {
-        await crowdfund.connect(hop1Pool[i]).claim();
-      }
-
-      await crowdfund.withdrawProceeds();
-
-      await expect(
-        crowdfund.withdrawProceeds()
-      ).to.be.revertedWith("ArmadaCrowdfund: no proceeds");
-    });
-
-    it("double withdrawUnallocatedArm reverts", async function () {
-      const seeds = allSigners.slice(1, 71);
-      await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startWindow();
-
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000), 0);
-      }
-      await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
-
+      // First sweep: unsold ARM goes to treasury
       await crowdfund.withdrawUnallocatedArm();
 
+      // Second sweep: nothing left (unclaimed ARM still owed)
       await expect(
         crowdfund.withdrawUnallocatedArm()
-      ).to.be.revertedWith("ArmadaCrowdfund: already withdrawn");
+      ).to.be.revertedWith("ArmadaCrowdfund: nothing to sweep");
     });
 
     it("constructor rejects zero admin address", async function () {
@@ -808,6 +783,7 @@ describe("Crowdfund Adversarial", function () {
           await armToken.getAddress(),
           ethers.ZeroAddress,
           treasuryAddr.address,
+          deployer.address,
           deployer.address
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero admin");
@@ -821,9 +797,24 @@ describe("Crowdfund Adversarial", function () {
           await armToken.getAddress(),
           deployer.address,
           ethers.ZeroAddress,
+          deployer.address,
           deployer.address
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero treasury");
+    });
+
+    it("constructor rejects zero securityCouncil address", async function () {
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      await expect(
+        ArmadaCrowdfund.deploy(
+          await usdc.getAddress(),
+          await armToken.getAddress(),
+          deployer.address,
+          treasuryAddr.address,
+          deployer.address,
+          ethers.ZeroAddress
+        )
+      ).to.be.revertedWith("ArmadaCrowdfund: zero securityCouncil");
     });
 
     it("non-participant cannot claim", async function () {
@@ -1126,16 +1117,10 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Claim some so proceeds accrue
-      await crowdfund.connect(seeds[0]).claim();
-
-      // First withdrawal works
-      await crowdfund.withdrawProceeds();
-
-      // Second withdrawal reverts (no proceeds left)
-      await expect(
-        crowdfund.withdrawProceeds()
-      ).to.be.revertedWith("ArmadaCrowdfund: no proceeds");
+      // Proceeds already pushed at finalization — no withdrawProceeds() needed
+      // Verify treasury received proceeds
+      const treasuryUsdc = await usdc.balanceOf(treasuryAddr.address);
+      expect(treasuryUsdc).to.be.gt(0);
     });
 
     it("withdrawUnallocatedArm() is protected by nonReentrant", async function () {
@@ -1157,7 +1142,7 @@ describe("Crowdfund Adversarial", function () {
       // Second withdrawal reverts
       await expect(
         crowdfund.withdrawUnallocatedArm()
-      ).to.be.revertedWith("ArmadaCrowdfund: already withdrawn");
+      ).to.be.revertedWith("ArmadaCrowdfund: nothing to sweep");
     });
 
     it("commit() is protected by nonReentrant", async function () {

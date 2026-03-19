@@ -31,7 +31,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             address(armToken),
             admin,
             treasury,
-            admin
+            admin,
+            admin   // securityCouncil
         );
 
         // Fund ARM tokens and verify pre-load
@@ -67,26 +68,25 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
 
         assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "treasury should receive all ARM");
         assertEq(armToken.balanceOf(address(crowdfund)), 0, "crowdfund should have zero ARM");
-        assertTrue(crowdfund.unallocatedArmWithdrawn(), "flag should be set");
     }
 
-    /// @notice Double-call reverts even in Canceled phase
+    /// @notice Double-call reverts when nothing left to sweep
     function test_withdrawUnallocatedArm_canceled_doubleCallReverts() public {
         _cancelViaTooFewCommitments();
 
         crowdfund.withdrawUnallocatedArm();
 
-        vm.expectRevert("ArmadaCrowdfund: already withdrawn");
+        vm.expectRevert("ArmadaCrowdfund: nothing to sweep");
         crowdfund.withdrawUnallocatedArm();
     }
 
-    /// @notice Non-admin cannot call withdrawUnallocatedArm in Canceled phase
-    function test_withdrawUnallocatedArm_canceled_nonAdminReverts() public {
+    /// @notice Anyone can call withdrawUnallocatedArm (permissionless)
+    function test_withdrawUnallocatedArm_canceled_permissionless() public {
         _cancelViaTooFewCommitments();
 
         vm.prank(address(0xBEEF));
-        vm.expectRevert("ArmadaCrowdfund: not admin");
         crowdfund.withdrawUnallocatedArm();
+        assertEq(armToken.balanceOf(address(crowdfund)), 0, "all ARM swept");
     }
 
     // ============ Phase guards: still reverts in pre-finalization phases ============
@@ -99,7 +99,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             address(armToken),
             admin,
             treasury,
-            admin
+            admin,
+            admin   // securityCouncil
         );
 
         vm.expectRevert("ArmadaCrowdfund: not finalized or canceled");
@@ -136,7 +137,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             address(armToken),
             admin,
             treasury,
-            admin
+            admin,
+            admin   // securityCouncil
         );
         armToken.transfer(address(fuzzCrowdfund), funding);
         fuzzCrowdfund.loadArm();

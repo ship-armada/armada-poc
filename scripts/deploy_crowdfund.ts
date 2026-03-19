@@ -99,7 +99,7 @@ async function main() {
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, deployer.address, treasuryAddress, deployer.address, nm.override()
+    usdcAddress, armTokenAddress, deployer.address, treasuryAddress, deployer.address, deployer.address, nm.override()
   );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();

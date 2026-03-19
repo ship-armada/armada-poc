@@ -27,7 +27,7 @@ contract CrowdfundHandler is Test {
     uint256 public ghost_totalArmClaimed;   // ARM withdrawn via claim()
     uint256 public ghost_totalUsdcRefunded; // USDC returned via claim() refunds
     uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode)
-    uint256 public ghost_proceedsWithdrawn; // USDC withdrawn via withdrawProceeds()
+    uint256 public ghost_proceedsPushed;    // USDC pushed to treasury at finalization
     uint256 public ghost_unallocArmWithdrawn; // ARM withdrawn via withdrawUnallocatedArm()
     uint256 public ghost_claimCount;        // number of successful claims
     bool public ghost_finalized;
@@ -146,15 +146,22 @@ contract CrowdfundHandler is Test {
         vm.stopPrank();
     }
 
-    /// @dev Finalize the crowdfund (permissionless)
+    /// @dev Finalize the crowdfund (permissionless).
+    ///      Proceeds are pushed to treasury atomically at finalization.
     function finalize() external {
         if (ghost_finalized || ghost_canceled) return;
+
+        address treasury = address(0xBEEF);
+        uint256 usdcBefore = usdc.balanceOf(treasury);
 
         try crowdfund.finalize() {
             Phase p = crowdfund.phase();
             if (p == Phase.Finalized) {
                 ghost_finalized = true;
                 ghost_refundMode = crowdfund.refundMode();
+                // Track proceeds pushed at finalization
+                uint256 usdcGained = usdc.balanceOf(treasury) - usdcBefore;
+                ghost_proceedsPushed += usdcGained;
             }
         } catch {}
     }
@@ -196,26 +203,12 @@ contract CrowdfundHandler is Test {
         } catch {}
     }
 
-    /// @dev Withdraw proceeds (admin)
-    function withdrawProceeds() external {
-        if (!ghost_finalized) return;
-        address treasury = address(0xBEEF);
-        uint256 usdcBefore = usdc.balanceOf(treasury);
-
-        vm.prank(admin);
-        try crowdfund.withdrawProceeds() {
-            uint256 gained = usdc.balanceOf(treasury) - usdcBefore;
-            ghost_proceedsWithdrawn += gained;
-        } catch {}
-    }
-
-    /// @dev Withdraw unallocated ARM (admin)
+    /// @dev Sweep unallocated ARM (permissionless)
     function withdrawUnallocatedArm() external {
-        if (!ghost_finalized) return;
+        if (!ghost_finalized && !ghost_canceled) return;
         address treasury = address(0xBEEF);
         uint256 armBefore = armToken.balanceOf(treasury);
 
-        vm.prank(admin);
         try crowdfund.withdrawUnallocatedArm() {
             uint256 gained = armToken.balanceOf(treasury) - armBefore;
             ghost_unallocArmWithdrawn += gained;
@@ -260,7 +253,8 @@ contract CrowdfundInvariantTest is Test {
             address(armToken),
             admin,
             address(0xBEEF), // treasury
-            admin
+            admin,
+            admin             // securityCouncil
         );
 
         // Fund ARM to crowdfund and verify pre-load
@@ -333,12 +327,12 @@ contract CrowdfundInvariantTest is Test {
 
     // ============ Invariants ============
 
-    /// @notice USDC conservation: contract balance = totalCommitted - claimed refunds - proceeds - cancel refunds
+    /// @notice USDC conservation: contract balance = totalCommitted - claimed refunds - proceeds pushed - cancel refunds
     function invariant_usdcConservation() public view {
         uint256 contractUsdc = usdc.balanceOf(address(crowdfund));
         uint256 expectedUsdc = handler.ghost_totalUsdcIn()
             - handler.ghost_totalUsdcRefunded()
-            - handler.ghost_proceedsWithdrawn()
+            - handler.ghost_proceedsPushed()
             - handler.ghost_totalUsdcCancelRefunded();
         assertEq(contractUsdc, expectedUsdc, "USDC conservation violated");
     }

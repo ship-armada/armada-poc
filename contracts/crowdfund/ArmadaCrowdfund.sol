@@ -30,6 +30,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public constant WINDOW_DURATION = 21 days;
     uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 7 days;
     uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
+    uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
     uint16 public constant MAX_INVITES_RECEIVED = 10;            // cap on invite stacking per (address, hop) node
     uint8 public constant MAX_SEEDS = 150;                       // max number of seeds (hop-0 participants)
@@ -48,6 +49,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     address public immutable treasury;
     /// @notice Launch team sentinel — issues predeclared invite budgets, not a participant.
     address public immutable launchTeam;
+    /// @notice Security council multisig — can cancel the sale at any pre-finalization phase.
+    address public immutable securityCouncil;
 
     // ============ State ============
     Phase public phase;
@@ -77,10 +80,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public treasuryLeftoverUsdc; // USDC (6 dec) — unallocated reserve that goes to treasury
 
     // Lazy evaluation accumulators (tracked during claims)
-    uint256 public totalProceedsAccrued; // exact sum of allocUsdc from claims
     uint256 public totalArmClaimed;      // exact sum of allocArm from claims
-    uint256 public proceedsWithdrawnAmount;
-    bool public unallocatedArmWithdrawn;
+
+    // Claim deadline — set at finalization, after which unclaimed ARM is sweepable
+    uint256 public claimDeadline;
 
     // Launch team invite budget tracking
     uint8 public launchTeamHop1Used;
@@ -104,7 +107,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     event SaleCanceled(uint256 totalCommitted);
     event Claimed(address indexed participant, uint256 armAmount, uint256 usdcRefund);
     event Refunded(address indexed participant, uint256 amount);
-    event ProceedsWithdrawn(address indexed treasury, uint256 amount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded(uint256 balance);
     event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds);
@@ -123,15 +125,24 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Constructor ============
 
-    constructor(address _usdc, address _armToken, address _admin, address _treasury, address _launchTeam) {
+    constructor(
+        address _usdc,
+        address _armToken,
+        address _admin,
+        address _treasury,
+        address _launchTeam,
+        address _securityCouncil
+    ) {
         require(_admin != address(0), "ArmadaCrowdfund: zero admin");
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
+        require(_securityCouncil != address(0), "ArmadaCrowdfund: zero securityCouncil");
         usdc = IERC20(_usdc);
         armToken = IERC20(_armToken);
         admin = _admin;
         treasury = _treasury;
         launchTeam = _launchTeam;
+        securityCouncil = _securityCouncil;
         phase = Phase.Setup;
 
         hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
@@ -334,8 +345,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Finalization ============
 
-    /// @notice Anyone can cancel the sale if admin hasn't finalized within the grace period
-    /// @dev Prevents permanent fund lockup if admin key is lost or admin is unresponsive
+    /// @notice Security council emergency cancel. Immediate and irreversible.
+    ///         Available at any pre-finalization phase (Setup, Active, or post-window).
+    function cancel() external {
+        require(msg.sender == securityCouncil, "ArmadaCrowdfund: not security council");
+        require(phase != Phase.Finalized, "ArmadaCrowdfund: already finalized");
+        require(phase != Phase.Canceled, "ArmadaCrowdfund: already canceled");
+        phase = Phase.Canceled;
+        emit SaleCanceled(totalCommitted);
+    }
+
+    /// @notice Anyone can cancel the sale if nobody has finalized within the grace period
+    /// @dev Prevents permanent fund lockup if admin key is lost or nobody calls finalize()
     function permissionlessCancel() external {
         require(phase == Phase.Active, "ArmadaCrowdfund: not in active phase");
         require(
@@ -386,7 +407,20 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         totalAllocatedUsdc = totalAllocUsdc_;
         totalAllocated = totalAllocArm_;
         treasuryLeftoverUsdc = saleSize - totalAllocUsdc_;
+        claimDeadline = block.timestamp + CLAIM_DEADLINE_DURATION;
         phase = Phase.Finalized;
+
+        // Push net proceeds to treasury atomically. Contract retains refund USDC.
+        // Pro-rata division rounds each participant's allocUsdc down, making the
+        // sum of individual refunds slightly larger than (totalCommitted - totalAllocUsdc).
+        // Retain a small rounding buffer (1 unit per participant node) so the contract
+        // never runs short on refund payouts. Residual dust (< $0.01) remains
+        // in the contract as the cost of rounding safety.
+        uint256 roundingBuffer = participantNodes.length;
+        uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
+            ? totalAllocUsdc_ - roundingBuffer
+            : 0;
+        usdc.safeTransfer(treasury, proceedsPush);
 
         emit SaleFinalized(saleSize, totalAllocUsdc_, totalAllocArm_, treasuryLeftoverUsdc);
     }
@@ -395,13 +429,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     /// @notice Claim ARM allocation and USDC refund after finalization.
     ///         Aggregates across all hops where the caller has committed.
+    ///         Proceeds (allocated USDC) are pushed to treasury at finalization, so
+    ///         participants only receive ARM + their pro-rata USDC refund.
     /// @dev Allocation is computed lazily from stored hop-level reserves/demands
     function claim() external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
+        require(block.timestamp <= claimDeadline, "ArmadaCrowdfund: claim deadline passed");
 
         uint256 totalAllocArm = 0;
-        uint256 totalAllocUsdc = 0;
         uint256 totalRefundUsdc = 0;
         bool hasCommitment = false;
 
@@ -412,20 +448,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             hasCommitment = true;
             require(!p.claimed, "ArmadaCrowdfund: already claimed");
 
-            (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(p.committed, h);
+            (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h);
 
             p.claimed = true;
             p.allocation = allocArm;    // store for record-keeping
             p.refund = refundUsdc;      // store for record-keeping
 
             totalAllocArm += allocArm;
-            totalAllocUsdc += allocUsdc;
             totalRefundUsdc += refundUsdc;
         }
 
         require(hasCommitment, "ArmadaCrowdfund: no commitment");
 
-        totalProceedsAccrued += totalAllocUsdc;
         totalArmClaimed += totalAllocArm;
 
         if (totalAllocArm > 0) {
@@ -473,40 +507,32 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit Refunded(msg.sender, totalAmount);
     }
 
-    /// @notice Admin withdraws USDC sale proceeds to treasury
-    /// @dev Proceeds accrue as participants claim. Can be called multiple times.
-    function withdrawProceeds() external onlyAdmin nonReentrant {
-        require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-
-        uint256 available = totalProceedsAccrued - proceedsWithdrawnAmount;
-        require(available > 0, "ArmadaCrowdfund: no proceeds");
-
-        proceedsWithdrawnAmount += available;
-        usdc.safeTransfer(treasury, available);
-
-        emit ProceedsWithdrawn(treasury, available);
-    }
-
-    /// @notice Admin withdraws unallocated ARM tokens to treasury
-    /// @dev Uses hop-level totalAllocated (upper bound) minus claimed ARM to compute unallocated.
-    ///      Safe: unallocated = initialFunding - totalAllocated_upper >= 0.
-    function withdrawUnallocatedArm() external onlyAdmin nonReentrant {
+    /// @notice Sweep unallocated or unclaimed ARM to treasury. Permissionless. Callable
+    ///         multiple times — no idempotency flag. Three sweep windows:
+    ///         1. Post-finalization: sweeps unsold ARM immediately (MAX_SALE - totalAllocated)
+    ///         2. Post-claim-deadline: sweeps all remaining ARM (unclaimed participant ARM)
+    ///         3. Post-cancel/refundMode: sweeps all ARM (nothing owed)
+    function withdrawUnallocatedArm() external nonReentrant {
         require(
             phase == Phase.Finalized || phase == Phase.Canceled,
             "ArmadaCrowdfund: not finalized or canceled"
         );
-        require(!unallocatedArmWithdrawn, "ArmadaCrowdfund: already withdrawn");
 
-        unallocatedArmWithdrawn = true;
         uint256 armBalance = armToken.balanceOf(address(this));
-        uint256 armStillOwed = totalAllocated - totalArmClaimed;
-        uint256 unallocated = armBalance - armStillOwed;
-
-        if (unallocated > 0) {
-            armToken.safeTransfer(treasury, unallocated);
+        uint256 armStillOwed;
+        if (phase == Phase.Canceled || refundMode) {
+            armStillOwed = 0;
+        } else if (block.timestamp > claimDeadline) {
+            armStillOwed = 0;
+        } else {
+            armStillOwed = totalAllocated - totalArmClaimed;
         }
+        uint256 sweepable = armBalance - armStillOwed;
+        require(sweepable > 0, "ArmadaCrowdfund: nothing to sweep");
 
-        emit UnallocatedArmWithdrawn(treasury, unallocated);
+        armToken.safeTransfer(treasury, sweepable);
+
+        emit UnallocatedArmWithdrawn(treasury, sweepable);
     }
 
     // ============ Emergency Pause ============

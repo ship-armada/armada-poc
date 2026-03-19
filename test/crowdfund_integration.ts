@@ -100,7 +100,8 @@ describe("Crowdfund Integration", function () {
       await armToken.getAddress(),
       deployer.address,
       treasury.address,
-      deployer.address
+      deployer.address,
+      deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
 
@@ -211,7 +212,8 @@ describe("Crowdfund Integration", function () {
         await freshArmToken.getAddress(),
         deployer.address,
         treasury.address,
-        deployer.address
+        deployer.address,
+        deployer.address        // securityCouncil
       );
       await freshCrowdfund.waitForDeployment();
     });
@@ -769,7 +771,8 @@ describe("Crowdfund Integration", function () {
         await armToken.getAddress(),
         deployer.address,
         treasury.address,
-        deployer.address
+        deployer.address,
+        deployer.address        // securityCouncil
       );
       await unfundedCrowdfund.waitForDeployment();
 
@@ -863,7 +866,39 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
     });
 
-    it("should allow admin to withdraw USDC proceeds", async function () {
+    it("should push USDC proceeds to treasury at finalization", async function () {
+      const seeds = allSigners.slice(1, 80);
+      const committers = seeds.slice(0, 68);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startWindow();
+      for (const s of committers) {
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
+      }
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
+      await time.increase(THREE_WEEKS + 1);
+
+      const treasuryBefore = await usdc.balanceOf(treasury.address);
+      await crowdfund.finalize();
+      const treasuryAfter = await usdc.balanceOf(treasury.address);
+
+      // Proceeds pushed atomically at finalization (minus small rounding buffer)
+      const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
+      const pushed = treasuryAfter - treasuryBefore;
+      expect(totalAllocUsdc).to.be.gt(0);
+      expect(pushed).to.be.lte(totalAllocUsdc);
+      expect(pushed).to.be.gte(totalAllocUsdc - 500n);
+
+      // Contract retains refund USDC (plus rounding buffer)
+      const contractUsdc = await usdc.balanceOf(await crowdfund.getAddress());
+      const totalCommitted = await crowdfund.totalCommitted();
+      expect(contractUsdc).to.be.gte(totalCommitted - totalAllocUsdc);
+      expect(contractUsdc).to.be.lte(totalCommitted - totalAllocUsdc + 500n);
+    });
+
+    it("should allow anyone to sweep unallocated ARM", async function () {
       const seeds = allSigners.slice(1, 80);
       const committers = seeds.slice(0, 68);
       for (const s of seeds) {
@@ -878,42 +913,15 @@ describe("Crowdfund Integration", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Proceeds accrue as participants claim (lazy evaluation)
-      for (const s of committers) {
-        await crowdfund.connect(s).claim();
-      }
-
-      const totalProceeds = await crowdfund.totalProceedsAccrued();
-      expect(totalProceeds).to.be.gt(0);
-      const treasuryBefore = await usdc.balanceOf(treasury.address);
-      await crowdfund.withdrawProceeds();
-      const treasuryAfter = await usdc.balanceOf(treasury.address);
-
-      expect(treasuryAfter - treasuryBefore).to.equal(totalProceeds);
-    });
-
-    it("should allow admin to withdraw unallocated ARM", async function () {
-      const seeds = allSigners.slice(1, 80);
-      const committers = seeds.slice(0, 68);
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-      }
-      await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startWindow();
-      for (const s of committers) {
-        await crowdfund.connect(s).commit(USDC(15_000), 0);
-      }
-      await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
-
       // totalAllocated is hop-level upper bound, totalArmClaimed tracks claims
       const totalAlloc = await crowdfund.totalAllocated();
       const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
       // Before claims: armStillOwed = totalAlloc - 0 = totalAlloc
       const expectedUnalloc = armInContract - totalAlloc;
 
+      // Permissionless — called by a random non-admin signer
       const treasuryBefore = await armToken.balanceOf(treasury.address);
-      await crowdfund.withdrawUnallocatedArm();
+      await crowdfund.connect(seed1).withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
       expect(treasuryAfter - treasuryBefore).to.equal(expectedUnalloc);

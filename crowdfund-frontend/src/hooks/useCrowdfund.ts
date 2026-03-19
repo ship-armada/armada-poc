@@ -383,11 +383,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     [executeTx],
   )
 
-  const withdrawProceeds = useCallback(
+  const cancelSale = useCallback(
     () =>
-      executeTx('Withdrawing proceeds', (signer, dep) => {
+      executeTx('Security council cancel', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.withdrawProceeds()
+        return contract.cancel()
       }),
     [executeTx],
   )
@@ -472,7 +472,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     finalize,
     claim,
     refund,
-    withdrawProceeds,
+    cancelSale,
     withdrawUnallocatedArm,
     // Faucet
     mintUsdc,

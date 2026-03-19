@@ -34,7 +34,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             address(armToken),
             admin,
             treasury,
-            admin
+            admin,
+            admin   // securityCouncil
         );
 
         armToken.transfer(address(crowdfund), ARM_FUNDING);
@@ -132,14 +133,17 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "All ARM should be swept");
     }
 
-    /// @notice withdrawProceeds reverts in refundMode (no proceeds accrued)
-    function test_withdrawProceeds_revertsInRefundMode() public {
+    /// @notice In refundMode, withdrawUnallocatedArm sweeps all ARM (nothing owed)
+    function test_withdrawUnallocatedArm_sweepsAllInRefundMode() public {
         _allSeedsCommitFull();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
-        vm.expectRevert("ArmadaCrowdfund: no proceeds");
-        crowdfund.withdrawProceeds();
+        assertTrue(crowdfund.refundMode(), "should be in refund mode");
+        uint256 treasuryBefore = armToken.balanceOf(treasury);
+        crowdfund.withdrawUnallocatedArm();
+        uint256 treasuryAfter = armToken.balanceOf(treasury);
+        assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "All ARM should be swept");
     }
 
     /// @notice getAllocation reverts in refundMode
@@ -170,7 +174,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     function test_refundMode_cannotHappenAfterExpansion() public {
         // Deploy a fresh crowdfund with 100 seeds to reach ELASTIC_TRIGGER
         ArmadaCrowdfund cf2 = new ArmadaCrowdfund(
-            address(usdc), address(armToken), admin, treasury, admin
+            address(usdc), address(armToken), admin, treasury, admin, admin
         );
         armToken.transfer(address(cf2), ARM_FUNDING);
         cf2.loadArm();

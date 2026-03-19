@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { UserPlus, DollarSign, Gift, Undo2 } from 'lucide-react'
-import { Phase, CROWDFUND_CONSTANTS } from '@/types/crowdfund'
+import { Phase } from '@/types/crowdfund'
 import { formatUsdc, formatArm, hopLabel, parseUsdcInput } from '@/utils/format'
 import type { CrowdfundState } from '@/atoms/crowdfund'
 import type { useCrowdfund } from '@/hooks/useCrowdfund'
@@ -30,9 +30,20 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
   const isWhitelisted = participant?.isWhitelisted ?? false
   const hop = state.currentHop
   const committed = participant?.committed ?? 0n
-  const invitesReceived = BigInt(participant?.invitesReceived ?? 1)
-  const cap = invitesReceived * (CROWDFUND_CONSTANTS.HOP_CAPS[hop] ?? CROWDFUND_CONSTANTS.HOP_CAPS[0])
+
+  // Use effectiveCap from contract (handles invite stacking correctly)
+  const hopData = state.userHops.find((h) => h.hop === hop)
+  const cap = hopData?.effectiveCap ?? 0n
   const remaining = cap - committed
+
+  // Aggregate committed across all hops (for refund display)
+  const totalUserCommitted = state.userHops.reduce(
+    (sum, h) => sum + h.participant.committed,
+    0n,
+  )
+
+  // Check if any hop has been claimed (claim() is aggregate across all hops)
+  const anyClaimed = state.userHops.some((h) => h.participant.claimed)
 
   // Use chain block timestamp (not Date.now()) — EVM time diverges from wall clock in local mode
   const now = state.blockTimestamp || Math.floor(Date.now() / 1000)
@@ -73,7 +84,7 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
 
   const handleRefund = async () => {
     setIsSubmitting(true)
-    await crowdfund.claimRefund()
+    await crowdfund.refund()
     setIsSubmitting(false)
   }
 
@@ -83,6 +94,31 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
         <CardTitle className="text-base">Participant</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Hop Selector — only shown when whitelisted at multiple hops */}
+        {state.userHops.length > 1 && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Active Hop</Label>
+            <div className="flex gap-1">
+              {state.userHops.map((h) => (
+                <Button
+                  key={h.hop}
+                  variant={h.hop === hop ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => crowdfund.setSelectedHop(h.hop)}
+                  className="text-xs"
+                >
+                  {hopLabel(h.hop)}
+                  {h.participant.committed > 0n && (
+                    <span className="ml-1 opacity-70">
+                      ({formatUsdc(h.participant.committed)})
+                    </span>
+                  )}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* My Status */}
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="text-muted-foreground">Status</div>
@@ -103,6 +139,12 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
               <div>{formatUsdc(remaining)}</div>
               <div className="text-muted-foreground">Invites Left</div>
               <div>{state.currentInvitesRemaining}</div>
+              {state.userHops.length > 1 && (
+                <>
+                  <div className="text-muted-foreground">Total (all hops)</div>
+                  <div className="font-medium">{formatUsdc(totalUserCommitted)}</div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -178,8 +220,8 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
           </>
         )}
 
-        {/* Claim Section (Finalized) */}
-        {phase === Phase.Finalized && committed > 0n && (
+        {/* Claim Section (Finalized, normal — not refundMode) */}
+        {phase === Phase.Finalized && !state.refundMode && totalUserCommitted > 0n && (
           <>
             <Separator />
             <div className="space-y-2">
@@ -187,6 +229,18 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
                 <Gift className="h-3.5 w-3.5" />
                 Claim Allocation
               </Label>
+              {/* Per-hop breakdown (only if multiple hops have allocations) */}
+              {state.userHopAllocations.length > 1 && (
+                <div className="text-xs space-y-1 bg-muted/30 rounded-md p-2">
+                  {state.userHopAllocations.map((a) => (
+                    <div key={a.hop} className="flex justify-between">
+                      <span className="text-muted-foreground">{hopLabel(a.hop)}:</span>
+                      <span>{formatArm(a.allocation)} ARM / {formatUsdc(a.refund)} refund</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Aggregate totals */}
               {state.currentAllocation && (
                 <div className="grid grid-cols-2 gap-1 text-sm bg-muted/50 rounded-md p-2">
                   <span className="text-muted-foreground">ARM tokens:</span>
@@ -197,17 +251,48 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
               )}
               <Button
                 onClick={handleClaim}
-                disabled={isSubmitting || state.currentAllocation?.claimed === true}
+                disabled={isSubmitting || anyClaimed}
                 className="w-full"
               >
-                {state.currentAllocation?.claimed ? 'Already Claimed' : 'Claim'}
+                {anyClaimed ? 'Already Claimed' : 'Claim'}
+              </Button>
+              {/* Claim deadline */}
+              {state.claimDeadline > 0n && !anyClaimed && (
+                <p className="text-xs text-muted-foreground">
+                  Claim by: {new Date(Number(state.claimDeadline) * 1000).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Refund Section (Finalized + refundMode) */}
+        {phase === Phase.Finalized && state.refundMode && totalUserCommitted > 0n && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Undo2 className="h-3.5 w-3.5" />
+                Refund (Sale Below Minimum)
+              </Label>
+              <p className="text-sm">
+                Sale did not reach minimum. Full refund available:{' '}
+                <span className="font-medium">{formatUsdc(totalUserCommitted)}</span>
+              </p>
+              <Button
+                onClick={handleRefund}
+                disabled={isSubmitting || anyClaimed}
+                className="w-full"
+                variant="destructive"
+              >
+                {anyClaimed ? 'Already Refunded' : 'Claim Refund'}
               </Button>
             </div>
           </>
         )}
 
         {/* Refund Section (Canceled) */}
-        {phase === Phase.Canceled && committed > 0n && (
+        {phase === Phase.Canceled && totalUserCommitted > 0n && (
           <>
             <Separator />
             <div className="space-y-2">
@@ -215,14 +300,14 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
                 <Undo2 className="h-3.5 w-3.5" />
                 Refund
               </Label>
-              <p className="text-sm">Full refund: <span className="font-medium">{formatUsdc(committed)}</span></p>
+              <p className="text-sm">Full refund: <span className="font-medium">{formatUsdc(totalUserCommitted)}</span></p>
               <Button
                 onClick={handleRefund}
-                disabled={isSubmitting || participant?.claimed === true}
+                disabled={isSubmitting || anyClaimed}
                 className="w-full"
                 variant="destructive"
               >
-                {participant?.claimed ? 'Already Refunded' : 'Claim Refund'}
+                {anyClaimed ? 'Already Refunded' : 'Claim Refund'}
               </Button>
             </div>
           </>

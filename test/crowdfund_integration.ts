@@ -1105,89 +1105,7 @@ describe("Crowdfund Integration", function () {
   });
 
   // ============================================================
-  // 9. Permissionless Cancel (Grace Period Fallback)
-  // ============================================================
-
-  describe("Permissionless Cancel", function () {
-    const THIRTY_DAYS = 30 * ONE_DAY;
-
-    it("reverts if called before grace period elapses", async function () {
-      await setupWithSeeds([seed1]);
-      await time.increase(THREE_WEEKS + 1); // past windowEnd
-
-      await expect(
-        crowdfund.connect(outsider).permissionlessCancel()
-      ).to.be.revertedWith("ArmadaCrowdfund: grace period not elapsed");
-    });
-
-    it("reverts if sale is already finalized", async function () {
-      // Finalize normally with enough USDC
-      const seeds = allSigners.slice(1, 71);
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-      }
-      await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startWindow();
-      for (const s of seeds) {
-        await crowdfund.connect(s).commit(USDC(15_000), 0);
-      }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
-      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
-
-      // Grace period passes — but sale is already finalized
-      await time.increase(THIRTY_DAYS + 1);
-      await expect(
-        crowdfund.connect(outsider).permissionlessCancel()
-      ).to.be.revertedWith("ArmadaCrowdfund: not in active phase");
-    });
-
-    it("succeeds after grace period, sets Phase.Canceled, emits SaleCanceled", async function () {
-      await setupWithSeeds([seed1]);
-      await time.increase(THREE_WEEKS + THIRTY_DAYS + 1);
-
-      await expect(crowdfund.connect(outsider).permissionlessCancel())
-        .to.emit(crowdfund, "SaleCanceled")
-        .withArgs(0); // no commitments
-
-      expect(await crowdfund.phase()).to.equal(Phase.Canceled);
-    });
-
-    it("claimRefund() works for all participants after permissionless cancel", async function () {
-      await setupWithSeeds([seed1, seed2]);
-      await fundAndApprove(seed1, USDC(15_000));
-      await fundAndApprove(seed2, USDC(10_000));
-      await crowdfund.connect(seed1).commit(USDC(15_000), 0);
-      await crowdfund.connect(seed2).commit(USDC(10_000), 0);
-
-      // Wait past window end + grace period
-      await time.increase(THREE_WEEKS + THIRTY_DAYS + 1);
-      await crowdfund.connect(outsider).permissionlessCancel();
-
-      // Both participants can claimRefund
-      const before1 = await usdc.balanceOf(seed1.address);
-      await crowdfund.connect(seed1).claimRefund();
-      expect(await usdc.balanceOf(seed1.address) - before1).to.equal(USDC(15_000));
-
-      const before2 = await usdc.balanceOf(seed2.address);
-      await crowdfund.connect(seed2).claimRefund();
-      expect(await usdc.balanceOf(seed2.address) - before2).to.equal(USDC(10_000));
-    });
-
-    it("finalize() reverts after permissionless cancel", async function () {
-      await setupWithSeeds([seed1]);
-      await time.increase(THREE_WEEKS + THIRTY_DAYS + 1);
-      await crowdfund.connect(outsider).permissionlessCancel();
-
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: already finalized");
-    });
-  });
-
-  // ============================================================
-  // 10. Emergency Pause
+  // 9. Emergency Pause
   // ============================================================
 
   describe("Emergency Pause", function () {
@@ -1217,7 +1135,7 @@ describe("Crowdfund Integration", function () {
       expect(committed).to.equal(USDC(1_000));
     });
 
-    it("claim() works while paused", async function () {
+    it("claim() reverts while paused", async function () {
       const seeds = allSigners.slice(1, 71);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
@@ -1231,45 +1149,136 @@ describe("Crowdfund Integration", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
+      // Security council pauses post-finalization (deployer == securityCouncil)
       await crowdfund.pause();
+      await expect(
+        crowdfund.connect(seeds[0]).claim()
+      ).to.be.revertedWith("Pausable: paused");
+
+      // Unpause — claim succeeds
+      await crowdfund.unpause();
       await crowdfund.connect(seeds[0]).claim();
       const armBalance = await armToken.balanceOf(seeds[0].address);
       expect(armBalance).to.be.gt(0);
     });
 
-    it("claimRefund() works while paused", async function () {
+    it("claimRefund() reverts while paused, works after unpause", async function () {
       await setupWithSeeds([seed1]);
       await fundAndApprove(seed1, USDC(1_000));
       await crowdfund.connect(seed1).commit(USDC(1_000), 0);
       await time.increase(THREE_WEEKS + 1);
       // finalize() reverts (below MIN_SALE) — use deadline fallback path
 
+      // Security council pauses (deployer == admin == securityCouncil pre-finalization)
       await crowdfund.pause();
+      await expect(
+        crowdfund.connect(seed1).claimRefund()
+      ).to.be.revertedWith("Pausable: paused");
+
+      await crowdfund.unpause();
       const before = await usdc.balanceOf(seed1.address);
       await crowdfund.connect(seed1).claimRefund();
       expect(await usdc.balanceOf(seed1.address) - before).to.equal(USDC(1_000));
     });
 
-    it("finalize() reverts while paused when below minimum", async function () {
+    it("withdrawUnallocatedArm() succeeds even while paused", async function () {
       await setupWithSeeds([seed1]);
-      await time.increase(THREE_WEEKS + 1);
+      // Security council cancels
+      await crowdfund.cancel();
 
       await crowdfund.pause();
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      // Sweep still works — ARM recovery to treasury is never blockable
+      await crowdfund.withdrawUnallocatedArm();
+      const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
+      expect(armInContract).to.equal(0);
     });
 
-    it("only admin can pause and unpause", async function () {
+    it("admin can pause pre-finalization", async function () {
+      await setupWithSeeds([seed1]);
+      await crowdfund.pause(); // deployer is admin
+      expect(await crowdfund.paused()).to.be.true;
+    });
+
+    it("security council can pause pre-finalization", async function () {
+      await setupWithSeeds([seed1]);
+      // deployer == securityCouncil in test setup
+      await crowdfund.pause();
+      expect(await crowdfund.paused()).to.be.true;
+    });
+
+    it("outsider cannot pause pre-finalization", async function () {
       await expect(
         crowdfund.connect(outsider).pause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin or security council");
+    });
 
-      await crowdfund.pause();
+    it("admin cannot pause post-finalization", async function () {
+      // Need a crowdfund where admin != securityCouncil to test this
+      const freshCrowdfund = await (await ethers.getContractFactory("ArmadaCrowdfund")).deploy(
+        await usdc.getAddress(),
+        await armToken.getAddress(),
+        deployer.address,        // admin
+        treasury.address,        // treasury
+        deployer.address,        // launchTeam
+        outsider.address         // securityCouncil (different from admin)
+      );
+      const freshAddr = await freshCrowdfund.getAddress();
+      await armToken.transfer(freshAddr, ARM(1_800_000));
+      await freshCrowdfund.loadArm();
 
+      // Setup and finalize — must approve USDC to freshCrowdfund (not the main one)
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await usdc.mint(s.address, USDC(15_000));
+        await usdc.connect(s).approve(freshAddr, USDC(15_000));
+      }
+      await freshCrowdfund.addSeeds(seeds.map(s => s.address));
+      await freshCrowdfund.startWindow();
+      for (const s of seeds) {
+        await freshCrowdfund.connect(s).commit(USDC(15_000), 0);
+      }
+      // Add hop-1 to ensure totalAllocUsdc > MIN_SALE
+      for (let i = 0; i < 51; i++) {
+        const invitee = allSigners[140 + i];
+        await freshCrowdfund.connect(seeds[i]).invite(invitee.address, 0);
+        await usdc.mint(invitee.address, USDC(4_000));
+        await usdc.connect(invitee).approve(freshAddr, USDC(4_000));
+        await freshCrowdfund.connect(invitee).commit(USDC(4_000), 1);
+      }
+      await time.increase(THREE_WEEKS + 1);
+      await freshCrowdfund.finalize();
+
+      // Admin (deployer) cannot pause post-finalization
       await expect(
-        crowdfund.connect(outsider).unpause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+        freshCrowdfund.pause()
+      ).to.be.revertedWith("ArmadaCrowdfund: only security council");
+
+      // Security council (outsider) can pause post-finalization
+      await freshCrowdfund.connect(outsider).pause();
+      expect(await freshCrowdfund.paused()).to.be.true;
+    });
+
+    it("admin cannot pause post-cancel", async function () {
+      const freshCrowdfund = await (await ethers.getContractFactory("ArmadaCrowdfund")).deploy(
+        await usdc.getAddress(),
+        await armToken.getAddress(),
+        deployer.address,        // admin
+        treasury.address,        // treasury
+        deployer.address,        // launchTeam
+        outsider.address         // securityCouncil (different from admin)
+      );
+
+      // Security council cancels
+      await freshCrowdfund.connect(outsider).cancel();
+
+      // Admin cannot pause
+      await expect(
+        freshCrowdfund.pause()
+      ).to.be.revertedWith("ArmadaCrowdfund: only security council");
+
+      // Security council can pause
+      await freshCrowdfund.connect(outsider).pause();
+      expect(await freshCrowdfund.paused()).to.be.true;
     });
   });
 

@@ -29,7 +29,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     uint256 public constant WINDOW_DURATION = 21 days;
     uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 7 days;
-    uint256 public constant FINALIZE_GRACE_PERIOD = 30 days;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
     uint16 public constant MAX_INVITES_RECEIVED = 10;            // cap on invite stacking per (address, hop) node
@@ -359,22 +358,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit SaleCanceled(totalCommitted);
     }
 
-    /// @notice Anyone can cancel the sale if nobody has finalized within the grace period
-    /// @dev Prevents permanent fund lockup if admin key is lost or nobody calls finalize()
-    function permissionlessCancel() external {
-        require(phase == Phase.Active, "ArmadaCrowdfund: not in active phase");
-        require(
-            block.timestamp > windowEnd + FINALIZE_GRACE_PERIOD,
-            "ArmadaCrowdfund: grace period not elapsed"
-        );
-        phase = Phase.Canceled;
-        emit SaleCanceled(totalCommitted);
-    }
-
     /// @notice Finalize the crowdfund: compute allocations.
     ///         Permissionless — anyone may call once the window has ended and
     ///         totalCommitted meets the minimum raise.
-    function finalize() external nonReentrant {
+    function finalize() external nonReentrant whenNotPaused {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");
         require(totalCommitted >= MIN_SALE, "ArmadaCrowdfund: below minimum raise");
@@ -438,7 +425,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     ///         Proceeds (allocated USDC) are pushed to treasury at finalization, so
     ///         participants only receive ARM + their pro-rata USDC refund.
     /// @dev Allocation is computed lazily from stored hop-level reserves/demands
-    function claim() external nonReentrant {
+    function claim() external nonReentrant whenNotPaused {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         require(block.timestamp <= claimDeadline, "ArmadaCrowdfund: claim deadline passed");
@@ -482,9 +469,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     ///         Aggregates across all hops where the caller has committed.
     ///         Three eligibility paths (any one suffices):
     ///         1. refundMode — finalized but net proceeds below MIN_SALE
-    ///         2. Phase.Canceled — admin or permissionless cancel
+    ///         2. Phase.Canceled — security council cancel
     ///         3. Deadline fallback — window expired, not finalized, below MIN_SALE
-    function claimRefund() external nonReentrant {
+    function claimRefund() external nonReentrant whenNotPaused {
         require(
             refundMode ||
             phase == Phase.Canceled ||
@@ -543,13 +530,31 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Emergency Pause ============
 
-    /// @notice Admin pauses invite() and commit() in case of emergency
-    function pause() external onlyAdmin {
+    /// @notice Pause invite(), commit(), claim(), and claimRefund() in case of emergency.
+    ///         Pre-finalization: admin or security council. Post-finalization/cancel: security council only.
+    function pause() external {
+        if (phase == Phase.Finalized || phase == Phase.Canceled) {
+            require(msg.sender == securityCouncil, "ArmadaCrowdfund: only security council");
+        } else {
+            require(
+                msg.sender == admin || msg.sender == securityCouncil,
+                "ArmadaCrowdfund: not admin or security council"
+            );
+        }
         _pause();
     }
 
-    /// @notice Admin unpauses to resume normal operations
-    function unpause() external onlyAdmin {
+    /// @notice Unpause to resume normal operations.
+    ///         Pre-finalization: admin or security council. Post-finalization/cancel: security council only.
+    function unpause() external {
+        if (phase == Phase.Finalized || phase == Phase.Canceled) {
+            require(msg.sender == securityCouncil, "ArmadaCrowdfund: only security council");
+        } else {
+            require(
+                msg.sender == admin || msg.sender == securityCouncil,
+                "ArmadaCrowdfund: not admin or security council"
+            );
+        }
         _unpause();
     }
 

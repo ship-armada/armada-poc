@@ -12,7 +12,6 @@ export const CROWDFUND_ABI = [
   'function withdrawUnallocatedArm() external',
   'function pause() external',
   'function unpause() external',
-  'function permissionlessCancel() external',
 
   // Participant actions
   'function invite(address invitee, uint8 inviterHop) external',

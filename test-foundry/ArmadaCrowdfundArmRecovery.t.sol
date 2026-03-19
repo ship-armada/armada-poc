@@ -45,12 +45,13 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         crowdfund.startWindow();
     }
 
-    /// @notice Helper: advance past commitment period and cancel via finalize (under-subscribed)
+    /// @notice Helper: advance past commitment period and cancel via permissionlessCancel
     function _cancelViaTooFewCommitments() internal {
-        // Warp past commitment end so finalize() can be called
-        vm.warp(crowdfund.windowEnd() + 1);
-        // No commitments made, so totalCommitted == 0 < MIN_SALE → cancel path
-        crowdfund.finalize();
+        // Warp past window end + grace period so permissionlessCancel() can be called.
+        // finalize() reverts when totalCommitted < MIN_SALE; the cancel path
+        // is handled by permissionlessCancel() or claimRefund() directly.
+        vm.warp(crowdfund.windowEnd() + THIRTY_DAYS + 1);
+        crowdfund.permissionlessCancel();
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Canceled));
     }
 
@@ -145,9 +146,9 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         fuzzCrowdfund.addSeeds(seeds);
         fuzzCrowdfund.startWindow();
 
-        // Cancel
-        vm.warp(fuzzCrowdfund.windowEnd() + 1);
-        fuzzCrowdfund.finalize();
+        // Cancel via permissionlessCancel (finalize reverts when below MIN_SALE)
+        vm.warp(fuzzCrowdfund.windowEnd() + THIRTY_DAYS + 1);
+        fuzzCrowdfund.permissionlessCancel();
 
         // Recover
         uint256 treasuryBefore = armToken.balanceOf(treasury);

@@ -69,6 +69,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         usdcBalance,
         armBalance,
         usdcAllowance,
+        isRefundMode,
       ] = await Promise.all([
         contract.phase(),
         contract.admin(),
@@ -85,6 +86,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         usdc.balanceOf(currentAddress),
         arm.balanceOf(currentAddress),
         usdc.allowance(currentAddress, deployment.contracts.crowdfund),
+        contract.refundMode(),
       ])
 
       const parsedPhase = Number(phase) as Phase
@@ -109,9 +111,9 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       ])
       const parsedParticipant = parseParticipant(participantData)
 
-      // Fetch allocation if finalized and participant has committed
+      // Fetch allocation if finalized (and not in refund mode) and participant has committed
       let currentAllocation = null
-      if (parsedPhase === 2 && parsedParticipant.committed > 0n) {
+      if (parsedPhase === 2 && !isRefundMode && parsedParticipant.committed > 0n) {
         try {
           const allocResult = await contract.getAllocation(currentAddress)
           currentAllocation = {
@@ -146,6 +148,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         usdcBalance: BigInt(usdcBalance),
         armBalance: BigInt(armBalance),
         usdcAllowance: BigInt(usdcAllowance),
+        refundMode: isRefundMode as boolean,
         blockTimestamp,
         isLoading: false,
         lastUpdated: Date.now(),
@@ -375,7 +378,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     () =>
       executeTx('Claiming refund', (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        return contract.refund()
+        return contract.claimRefund()
       }),
     [executeTx],
   )

@@ -73,7 +73,7 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
 
   const handleRefund = async () => {
     setIsSubmitting(true)
-    await crowdfund.refund()
+    await crowdfund.claimRefund()
     setIsSubmitting(false)
   }
 

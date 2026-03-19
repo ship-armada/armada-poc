@@ -89,6 +89,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // ARM pre-load verification
     bool public armLoaded;
 
+    // Post-allocation minimum raise check: true when finalize() ran but
+    // net proceeds fell below MIN_SALE. All USDC is refundable via claimRefund().
+    bool public refundMode;
+
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
@@ -103,6 +107,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     event ProceedsWithdrawn(address indexed treasury, uint256 amount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded(uint256 balance);
+    event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds);
 
     // ============ Modifiers ============
 
@@ -341,17 +346,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit SaleCanceled(totalCommitted);
     }
 
-    /// @notice Finalize the crowdfund: compute allocations or cancel
-    function finalize() external onlyAdmin nonReentrant {
+    /// @notice Finalize the crowdfund: compute allocations.
+    ///         Permissionless — anyone may call once the window has ended and
+    ///         totalCommitted meets the minimum raise.
+    function finalize() external nonReentrant {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");
-
-        // Check minimum raise
-        if (totalCommitted < MIN_SALE) {
-            phase = Phase.Canceled;
-            emit SaleCanceled(totalCommitted);
-            return;
-        }
+        require(totalCommitted >= MIN_SALE, "ArmadaCrowdfund: below minimum raise");
 
         // Step 1: Elastic expansion
         if (totalCommitted >= ELASTIC_TRIGGER) {
@@ -359,13 +360,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         } else {
             saleSize = BASE_SALE;
         }
-
-        // Ensure contract holds enough ARM
-        uint256 requiredArm = (saleSize * 1e18) / ARM_PRICE;
-        require(
-            armToken.balanceOf(address(this)) >= requiredArm,
-            "ArmadaCrowdfund: insufficient ARM"
-        );
 
         // Step 2: Per-hop allocation (matches spec pseudocode steps 3–6)
         //
@@ -376,6 +370,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         // Rollover is unconditional: leftover always flows to the next hop.
 
         (uint256 totalAllocUsdc_, uint256 totalAllocArm_) = _computeHopAllocations(saleSize);
+
+        // Post-allocation minimum raise check: if net proceeds (allocated USDC) fall
+        // below MIN_SALE, enter refundMode. Participants get full USDC refunds via
+        // claimRefund(); no ARM is distributed. This can occur at BASE_SALE when hop-0
+        // is oversubscribed and later hops don't close the gap to $1M. Cannot occur
+        // after expansion (hop-0 ceiling alone exceeds MIN_SALE).
+        if (totalAllocUsdc_ < MIN_SALE) {
+            refundMode = true;
+            phase = Phase.Finalized;
+            emit SaleFinalizedRefundMode(totalCommitted, totalAllocUsdc_);
+            return;
+        }
 
         totalAllocatedUsdc = totalAllocUsdc_;
         totalAllocated = totalAllocArm_;
@@ -392,6 +398,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @dev Allocation is computed lazily from stored hop-level reserves/demands
     function claim() external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
+        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
 
         uint256 totalAllocArm = 0;
         uint256 totalAllocUsdc = 0;
@@ -431,10 +438,19 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         emit Claimed(msg.sender, totalAllocArm, totalRefundUsdc);
     }
 
-    /// @notice Full USDC refund if sale was canceled (below minimum).
+    /// @notice Full USDC refund when the sale did not succeed.
     ///         Aggregates across all hops where the caller has committed.
-    function refund() external nonReentrant {
-        require(phase == Phase.Canceled, "ArmadaCrowdfund: not canceled");
+    ///         Three eligibility paths (any one suffices):
+    ///         1. refundMode — finalized but net proceeds below MIN_SALE
+    ///         2. Phase.Canceled — admin or permissionless cancel
+    ///         3. Deadline fallback — window expired, not finalized, below MIN_SALE
+    function claimRefund() external nonReentrant {
+        require(
+            refundMode ||
+            phase == Phase.Canceled ||
+            (block.timestamp > windowEnd && phase != Phase.Finalized && totalCommitted < MIN_SALE),
+            "ArmadaCrowdfund: refund not available"
+        );
 
         uint256 totalAmount = 0;
         bool hasCommitment = false;
@@ -560,6 +576,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         bool claimed
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
+        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
 
         uint256 totalAllocArm = 0;
         uint256 totalRefundUsdc = 0;
@@ -592,6 +609,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         bool claimed
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
+        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         Participant storage p = participants[addr][hop];
         if (p.claimed) {
             return (p.allocation, p.refund, true);

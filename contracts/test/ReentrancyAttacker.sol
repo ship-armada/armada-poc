@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ICrowdfundClaim {
     function claim() external;
-    function refund() external;
+    function claimRefund() external;
 }
 
 interface IVotingLockerAttack {
@@ -44,7 +44,7 @@ contract CrowdfundClaimAttacker {
     }
 }
 
-/// @notice Attacker that tries to re-enter ArmadaCrowdfund.refund()
+/// @notice Attacker that tries to re-enter ArmadaCrowdfund.claimRefund()
 contract CrowdfundRefundAttacker {
     ICrowdfundClaim public target;
     uint256 public attackCount;
@@ -54,13 +54,13 @@ contract CrowdfundRefundAttacker {
     }
 
     function attack() external {
-        target.refund();
+        target.claimRefund();
     }
 
     receive() external payable {
         if (attackCount < 1) {
             attackCount++;
-            target.refund();
+            target.claimRefund();
         }
     }
 }

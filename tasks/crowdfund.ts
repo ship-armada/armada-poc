@@ -155,10 +155,11 @@ task("cf-claim", "Claim ARM allocation and USDC refund")
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
     const phase = Number(await crowdfund.phase());
 
-    if (phase === 3) {
-      // Canceled — use refund()
-      await crowdfund.refund();
-      console.log("Full USDC refund claimed (sale was canceled)");
+    const inRefundMode = await crowdfund.refundMode();
+    if (phase === 3 || inRefundMode) {
+      // Canceled or refundMode — use claimRefund()
+      await crowdfund.claimRefund();
+      console.log("Full USDC refund claimed (sale was canceled or in refund mode)");
     } else {
       await crowdfund.claim();
       const [alloc, refund] = await crowdfund.getAllocation(signer.address);

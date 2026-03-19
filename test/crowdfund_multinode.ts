@@ -325,7 +325,8 @@ describe("Crowdfund Multi-Node", function () {
   // ============================================================
 
   describe("Aggregate Claim", function () {
-    // Helper: create a funded crowdfund with enough demand to finalize
+    // Helper: create a funded crowdfund with enough demand to finalize.
+    // Adds hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE at BASE_SALE).
     async function setupAndFinalize() {
       const signers = await ethers.getSigners();
       // Use many seeds to get above MIN_SALE
@@ -335,6 +336,12 @@ describe("Crowdfund Multi-Node", function () {
 
       // seed1 self-invites to hop-1
       await crowdfund.connect(seed1).invite(seed1.address, 0);
+
+      // Additional hop-1 participants to push totalAllocUsdc above MIN_SALE
+      const hop1Pool = signers.slice(140, 190);
+      for (let i = 0; i < 50; i++) {
+        await crowdfund.connect(seeds[i + 1]).invite(hop1Pool[i].address, 0);
+      }
 
       // Each seed commits $15k → 79 seeds * $15k = $1.185M
       // seed1 needs extra for hop-1 commit
@@ -346,6 +353,13 @@ describe("Crowdfund Multi-Node", function () {
 
       // seed1 also commits $4k at hop-1
       await crowdfund.connect(seed1).commit(USDC(4_000), 1);
+
+      // hop-1 participants commit $4K each → 50 × $4K = $200K
+      // totalAllocUsdc = $798K (hop-0) + $204K (hop-1) = $1,002K > MIN_SALE
+      for (const h of hop1Pool) {
+        await fundAndApprove(h, USDC(4_000));
+        await crowdfund.connect(h).commit(USDC(4_000), 1);
+      }
 
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
@@ -387,12 +401,11 @@ describe("Crowdfund Multi-Node", function () {
       await crowdfund.connect(seed1).commit(USDC(15_000), 0);
       await crowdfund.connect(seed1).commit(USDC(4_000), 1);
 
-      // Not enough total → cancel
+      // Not enough total → finalize reverts, use claimRefund deadline fallback
       await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize(); // below MIN_SALE → Canceled
 
       const usdcBefore = await usdc.balanceOf(seed1.address);
-      await crowdfund.connect(seed1).refund();
+      await crowdfund.connect(seed1).claimRefund();
       const usdcAfter = await usdc.balanceOf(seed1.address);
 
       // Full $19k refund (both hops)

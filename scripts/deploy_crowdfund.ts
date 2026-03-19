@@ -130,6 +130,11 @@ async function main() {
   await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
   console.log(`   Crowdfund excluded from quorum denominator`);
 
+  // 6. Register crowdfund address for governance quiet period
+  console.log("6. Registering crowdfund in governor for quiet period...");
+  await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
+  console.log(`   Crowdfund registered for 7-day governance quiet period`);
+
   // Save deployment
   const deployment: CrowdfundDeployment = {
     chainId,

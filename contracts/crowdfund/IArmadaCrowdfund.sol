@@ -45,3 +45,10 @@ struct HopStats {
     uint32 uniqueCommitters;    // count of unique addresses that committed > 0
     uint32 whitelistCount;      // count of whitelisted addresses at this hop
 }
+
+// ========== Interfaces ==========
+
+/// @notice Read-only interface for cross-contract queries (e.g. governor quiet period).
+interface IArmadaCrowdfundReadable {
+    function finalizedAt() external view returns (uint256);
+}

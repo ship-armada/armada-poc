@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./IArmadaGovernance.sol";
 import "./EmergencyPausable.sol";
+import "../crowdfund/IArmadaCrowdfund.sol";
 
 /// @title ArmadaGovernor — Custom governance with typed proposals and token locking
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
@@ -91,6 +92,13 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     // Succeeded proposals must be queued within this window or they expire
     uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
 
+    // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
+    // One-time bootstrapping measure; governable (can be shortened or removed).
+    address public crowdfundAddress;
+    bool public crowdfundAddressLocked;
+    uint256 public quietPeriodDuration;
+    uint256 public constant MAX_QUIET_PERIOD = 30 days;
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -106,6 +114,8 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event ProposalExecuted(uint256 indexed proposalId);
     event ProposalCanceled(uint256 indexed proposalId);
     event ProposalTypeParamsUpdated(ProposalType indexed proposalType, ProposalParams params);
+    event CrowdfundAddressSet(address indexed crowdfund);
+    event QuietPeriodUpdated(uint256 newDuration);
 
     // ============ Constructor ============
 
@@ -142,6 +152,9 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             quorumBps: 2000
         });
 
+        // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
+        quietPeriodDuration = 7 days;
+
         // Extended: 2d delay, 7d voting, 4d execution, 30% quorum
         proposalTypeParams[ProposalType.StewardElection] = ProposalParams({
             votingDelay: 2 days,
@@ -170,6 +183,19 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     /// @notice View excluded addresses for transparency
     function getExcludedFromQuorum() external view returns (address[] memory) {
         return _excludedFromQuorum;
+    }
+
+    /// @notice One-time setter: register the crowdfund contract for quiet period checks.
+    /// Deployer-only; locks permanently after the first call.
+    function setCrowdfundAddress(address _crowdfund) external {
+        require(msg.sender == deployer, "ArmadaGovernor: not deployer");
+        require(!crowdfundAddressLocked, "ArmadaGovernor: already locked");
+        require(_crowdfund != address(0), "ArmadaGovernor: zero address");
+
+        crowdfundAddressLocked = true;
+        crowdfundAddress = _crowdfund;
+
+        emit CrowdfundAddressSet(_crowdfund);
     }
 
     // ============ Governance-Updatable Parameters ============
@@ -203,6 +229,17 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         emit ProposalTypeParamsUpdated(proposalType, params);
     }
 
+    /// @notice Update the governance quiet period duration.
+    /// @dev Only callable by the timelock (requires a governance vote).
+    ///      Setting to 0 removes the quiet period entirely.
+    function setQuietPeriodDuration(uint256 _duration) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(_duration <= MAX_QUIET_PERIOD, "ArmadaGovernor: exceeds max");
+
+        quietPeriodDuration = _duration;
+        emit QuietPeriodUpdated(_duration);
+    }
+
     // ============ Proposal Lifecycle ============
 
     /// @notice Create a new proposal
@@ -223,6 +260,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             targets.length == values.length && targets.length == calldatas.length,
             "ArmadaGovernor: length mismatch"
         );
+        _checkQuietPeriod();
         _checkProposalThreshold(msg.sender);
 
         uint256 proposalId = ++proposalCount;
@@ -437,5 +475,20 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     /// @dev Unique salt per proposal for timelock deduplication
     function _proposalSalt(uint256 proposalId) internal pure returns (bytes32) {
         return bytes32(proposalId);
+    }
+
+    /// @dev Block proposals during the quiet period after crowdfund finalization.
+    ///      Reads finalizedAt from the crowdfund contract. Skips gracefully if no
+    ///      crowdfund is registered, quiet period is zero, or crowdfund isn't finalized.
+    function _checkQuietPeriod() internal view {
+        if (crowdfundAddress == address(0) || quietPeriodDuration == 0) return;
+
+        uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
+        if (_finalizedAt == 0) return;
+
+        require(
+            block.timestamp >= _finalizedAt + quietPeriodDuration,
+            "ArmadaGovernor: quiet period active"
+        );
     }
 }

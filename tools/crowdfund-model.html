@@ -261,7 +261,7 @@
         </tr>
         <tr>
           <td><span class="hop-label hop2">Hop 2 (Invited)</span></td>
-          <td class="num"><input type="number" id="ceil2" min="0" max="100" step="1" value="10">%</td>
+          <td class="num" style="color:var(--text-dim); font-size:0.78rem;">floor + rollover</td>
           <td class="num">$<input type="number" id="cap2" min="100" max="20000" step="100" value="1000"></td>
           <td class="num">—</td>
         </tr>
@@ -274,15 +274,18 @@
         <input type="number" id="hop2Floor" min="0" max="50" step="1" value="5" style="width:60px">
         <span style="font-size:0.8rem; color:var(--text-dim)">guaranteed before hop 0/1 ceilings apply</span>
       </div>
-      <div class="param-row">
-        <label>Rollover → Hop 1 min</label>
-        <input type="number" id="rollMin1" min="0" max="200" step="5" value="30" style="width:60px">
-        <span style="font-size:0.8rem; color:var(--text-dim)">unique committers</span>
-      </div>
-      <div class="param-row">
-        <label>Rollover → Hop 2 min</label>
-        <input type="number" id="rollMin2" min="0" max="500" step="5" value="50" style="width:60px">
-        <span style="font-size:0.8rem; color:var(--text-dim)">unique committers</span>
+      <div style="margin-top: 8px;">
+        <h3 style="margin-bottom: 6px;">Launch Team Invites</h3>
+        <div class="param-row">
+          <label>LT Hop-1 Invites</label>
+          <input type="number" id="ltHop1" min="0" max="60" step="1" value="60" style="width:60px">
+          <span style="font-size:0.8rem; color:var(--text-dim)">of 60 budget</span>
+        </div>
+        <div class="param-row">
+          <label>LT Hop-2 Invites</label>
+          <input type="number" id="ltHop2" min="0" max="60" step="1" value="60" style="width:60px">
+          <span style="font-size:0.8rem; color:var(--text-dim)">of 60 budget</span>
+        </div>
       </div>
     </div>
   </div>
@@ -389,7 +392,7 @@ const SCENARIOS = [
     seeds: 130, invRate: [70,60], part: [60,50,40], avg: [70,60,50] },
   { name: "Viral Hop 2",
     desc: "Fewer seeds but amazing downstream enthusiasm",
-    summary: "Tests the scenario where word-of-mouth actually works: not all 130 seeds show up, but the ones who do are excellent inviters. Hop 1 participants are enthusiastic (80% pass along invites) and hop 2 participants are more engaged than the seeds who started the chain. This can happen if seeds are crypto-native insiders who are lukewarm, but their invitees bring in excited newcomers from outside the bubble. The key question is whether the 10% hop 2 ceiling is large enough to reward this enthusiasm, or if hop 2 participants commit $1,000 but only get a fraction allocated (large refund), making the experience feel like a bait-and-switch. With overlapping ceilings, hop 2 can absorb unused capacity from earlier hops via rollover.",
+    summary: "Tests the scenario where word-of-mouth actually works: not all 130 seeds show up, but the ones who do are excellent inviters. Hop 1 participants are enthusiastic (80% pass along invites) and hop 2 participants are more engaged than the seeds who started the chain. This can happen if seeds are crypto-native insiders who are lukewarm, but their invitees bring in excited newcomers from outside the bubble. The key question is whether hop 2's effective ceiling (floor reservation + unconditional rollover from hop 1) is large enough to reward this enthusiasm, or if hop 2 participants commit $1,000 but only get a fraction allocated (large refund), making the experience feel like a bait-and-switch.",
     seeds: 80, invRate: [60,80], part: [50,60,80], avg: [70,80,80] },
   { name: "Elastic Hunt",
     desc: "Can 130 seeds reach the elastic trigger?",
@@ -401,7 +404,7 @@ const SCENARIOS = [
     seeds: 30, invRate: [80,50], part: [100,40,20], avg: [100,80,60] },
   { name: "Full House",
     desc: "Above-estimate turnout, everything oversubscribed — tests ceiling overlap",
-    summary: "The best-case stress test: more seeds than expected (150), nearly everyone invites, high participation across all hops, and strong average commits. Every hop demands more than its ceiling, meaning pro-rata scaling kicks in across the board. With ceilings summing to 125%, this is where the global budget constraint matters — total allocation is capped at sale size, so later hops absorb whatever remains after earlier hops fill up to their ceiling. Watch for: whether the refund experience is acceptable, whether elastic expansion triggers, and how the overlapping ceilings resolve when supply is tight.",
+    summary: "The best-case stress test: more seeds than expected (150), nearly everyone invites, high participation across all hops, and strong average commits. Every hop demands more than its ceiling, meaning pro-rata scaling kicks in across the board. Hop 0/1 ceilings sum to 115% of the available pool (after hop 2 floor), so the global budget constraint matters — total allocation is capped at sale size, and hop 2's ceiling depends on what rolls over from hop 1. Watch for: whether the refund experience is acceptable, whether elastic expansion triggers, and how the budget constraint resolves when supply is tight.",
     seeds: 150, invRate: [90,80], part: [90,80,60], avg: [90,90,80] },
   { name: "Custom",
     desc: "Your own parameters — adjust sliders above",
@@ -426,11 +429,11 @@ function getParams() {
 
   return {
     baseSale, maxSale, minSale, elasticTrigger,
-    ceilings: [+$('ceil0').value, +$('ceil1').value, +$('ceil2').value],
+    ceilings: [+$('ceil0').value, +$('ceil1').value, 0],
     hop2Floor: +$('hop2Floor').value,
     caps: [+$('cap0').value, +$('cap1').value, +$('cap2').value],
     invites: [+$('inv0').value, +$('inv1').value, 0],
-    rollMin: [0, +$('rollMin1').value, +$('rollMin2').value],
+    ltBudget: [+$('ltHop1').value, +$('ltHop2').value],
   };
 }
 
@@ -460,11 +463,11 @@ function simulate(params, scenario) {
   ];
   const whitelisted = [
     s.seeds,
-    inviters[0] * p.invites[0],
+    inviters[0] * p.invites[0] + p.ltBudget[0],  // seed invites + launch team hop-1 invites
     0 // computed below
   ];
   inviters[1] = Math.floor(whitelisted[1] * s.invRate[1]);
-  whitelisted[2] = inviters[1] * p.invites[1];
+  whitelisted[2] = inviters[1] * p.invites[1] + p.ltBudget[1];  // hop-1 invites + launch team hop-2 invites
 
   const maxPop = whitelisted;
   const committers = [
@@ -484,7 +487,7 @@ function simulate(params, scenario) {
   // Check minimum
   if (totalCommitted < p.minSale) {
     return {
-      canceled: true, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
+      canceled: true, refundMode: false, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
       committers, demands,
       saleSize: 0, baseCeilings: [0,0,0], allocations: [0,0,0],
       refunds: [0,0,0], proRata: [0,0,0], rollover: [false, false],
@@ -504,11 +507,13 @@ function simulate(params, scenario) {
   const hop2FloorAmount = saleSize * p.hop2Floor / 100;
   const netRaise = saleSize - hop2FloorAmount;
 
-  // Base ceilings: hop 0/1 against net raise (after floor), hop 2 against full raise
+  // Base ceilings: hop 0/1 against net raise (after floor).
+  // Hop 2 has no BPS ceiling — its base is the floor reservation; effective ceiling
+  // grows via rollover from hop-1 leftover.
   const baseCeilings = [
     netRaise * p.ceilings[0] / 100,
     netRaise * p.ceilings[1] / 100,
-    saleSize * p.ceilings[2] / 100
+    hop2FloorAmount
   ];
 
   // Demand-driven allocation with overlapping ceilings.
@@ -556,22 +561,14 @@ function simulate(params, scenario) {
     remaining -= allocations[h];
     const leftover = ceiling - allocations[h];
 
-    // Rollover: unused ceiling capacity flows forward to the next hop
+    // Rollover: unused ceiling capacity cascades unconditionally to the next hop
     if (leftover > 0) {
       if (h === 0) {
-        if (committers[1] >= p.rollMin[1]) {
-          effectiveCeilings[1] += leftover;
-          rollover[0] = true;
-        } else {
-          treasuryLeftover += leftover;
-        }
+        effectiveCeilings[1] += leftover;
+        rollover[0] = true;
       } else if (h === 1) {
-        if (committers[2] >= p.rollMin[2]) {
-          effectiveCeilings[2] += leftover;
-          rollover[1] = true;
-        } else {
-          treasuryLeftover += leftover;
-        }
+        effectiveCeilings[2] += leftover;
+        rollover[1] = true;
       } else {
         treasuryLeftover += leftover;
       }
@@ -591,8 +588,13 @@ function simulate(params, scenario) {
     p.caps[2] * s.avg[2] * proRata[2]
   ];
 
+  // Post-allocation minimum raise check: if net allocated USDC falls below MIN_SALE,
+  // enter refundMode — all participants get full USDC refunds, no ARM distributed.
+  const totalAllocCheck = allocations[0] + allocations[1] + allocations[2];
+  const refundMode = totalAllocCheck < p.minSale;
+
   return {
-    canceled: false, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
+    canceled: false, refundMode, totalCommitted, maxPop, inviters: [inviters[0], inviters[1], 0],
     committers, demands,
     saleSize, baseCeilings, hop2FloorAmount, netRaise,
     effectiveCeilings, allocations, refunds, proRata, rollover,
@@ -616,6 +618,9 @@ function renderMetrics(r, params) {
   // Sale outcome
   if (r.canceled) {
     html += `<div class="metric"><div class="label">Outcome</div><div class="val"><span class="badge badge-fail">CANCELED</span></div></div>`;
+  } else if (r.refundMode) {
+    html += `<div class="metric"><div class="label">Sale Size</div><div class="val">$${fmt(r.saleSize)}</div></div>`;
+    html += `<div class="metric"><div class="label">Post-Alloc Check</div><div class="val"><span class="badge badge-fail">REFUND MODE</span></div></div>`;
   } else {
     html += `<div class="metric"><div class="label">Sale Size</div><div class="val">$${fmt(r.saleSize)}</div></div>`;
   }
@@ -626,20 +631,30 @@ function renderMetrics(r, params) {
   // Committers
   html += `<div class="metric"><div class="label">Committers</div><div class="val">${fmt(totalPop)}</div></div>`;
 
-  // Total allocated
-  html += `<div class="metric"><div class="label">ARM Allocated</div><div class="val">${fmt(totalAlloc)}</div></div>`;
+  if (r.refundMode) {
+    // In refundMode, no ARM is distributed — all USDC refunded
+    html += `<div class="metric"><div class="label">ARM Allocated</div><div class="val" style="color:var(--red)">0 (refund)</div></div>`;
+    html += `<div class="metric"><div class="label">Full Refund</div><div class="val" style="color:var(--yellow)">$${fmt(r.totalCommitted)}</div></div>`;
+  } else {
+    // Total allocated
+    html += `<div class="metric"><div class="label">ARM Allocated</div><div class="val">${fmt(totalAlloc)}</div></div>`;
 
-  // Total refunded
-  html += `<div class="metric"><div class="label">Refunded</div><div class="val" style="color:${totalRefund > 0 ? 'var(--yellow)' : 'var(--text)'}">$${fmt(totalRefund)}</div></div>`;
+    // Total refunded
+    html += `<div class="metric"><div class="label">Refunded</div><div class="val" style="color:${totalRefund > 0 ? 'var(--yellow)' : 'var(--text)'}">$${fmt(totalRefund)}</div></div>`;
 
-  // Treasury leftover
-  html += `<div class="metric"><div class="label">Treasury Leftover</div><div class="val">$${fmt(r.treasuryLeftover)}</div></div>`;
+    // Treasury leftover
+    html += `<div class="metric"><div class="label">Treasury Leftover</div><div class="val">$${fmt(r.treasuryLeftover)}</div></div>`;
 
-  // Governance: max individual ARM
-  const maxArm = Math.max(...r.maxIndividualArm);
-  const govThreshold = 100000;
-  const govReachable = maxArm >= govThreshold;
-  html += `<div class="metric"><div class="label">Max Indiv. ARM</div><div class="val" style="color:var(--${govReachable ? 'green' : 'yellow'})">${fmt(Math.round(maxArm))}</div></div>`;
+    // Governance: max individual ARM
+    const maxArm = Math.max(...r.maxIndividualArm);
+    const govThreshold = 100000;
+    const govReachable = maxArm >= govThreshold;
+    html += `<div class="metric"><div class="label">Max Indiv. ARM</div><div class="val" style="color:var(--${govReachable ? 'green' : 'yellow'})">${fmt(Math.round(maxArm))}</div></div>`;
+
+    // ARM conservation invariant: allocated + unsold = saleSize
+    const armUnsold = r.saleSize - totalAlloc;
+    html += `<div class="metric"><div class="label">ARM Conservation</div><div class="val" style="font-size:0.75rem; color:var(--green)">${fmt(Math.round(totalAlloc))} + ${fmt(Math.round(armUnsold))} = ${fmt(r.saleSize)}</div></div>`;
+  }
 
   html += '</div>';
   return html;
@@ -647,6 +662,7 @@ function renderMetrics(r, params) {
 
 function renderDistributionBar(r) {
   if (r.canceled) return '<div style="text-align:center; padding:12px; color:var(--red);">Sale canceled — below minimum raise</div>';
+  if (r.refundMode) return '<div style="text-align:center; padding:12px; color:var(--red);">Refund mode — post-allocation net proceeds below $1M minimum. All USDC refunded, no ARM distributed.</div>';
 
   const totalAlloc = r.allocations[0] + r.allocations[1] + r.allocations[2];
   const totalRefund = r.refunds[0] + r.refunds[1] + r.refunds[2];
@@ -679,7 +695,7 @@ function renderDistributionBar(r) {
 }
 
 function renderHopTable(r, params) {
-  if (r.canceled) return '';
+  if (r.canceled || r.refundMode) return '';
 
   let html = '<table><thead><tr>';
   html += '<th>Hop</th><th class="num">Whitelisted</th><th class="num">Inviters</th><th class="num">Committers</th>';
@@ -746,6 +762,12 @@ function renderHopTable(r, params) {
 
 function renderDiagnostics(r, params) {
   if (r.canceled) return '';
+  if (r.refundMode) {
+    const totalAlloc = r.allocations[0] + r.allocations[1] + r.allocations[2];
+    return '<div style="margin-top:12px;"><h3>Diagnostics</h3>' +
+      `<div style="margin-bottom:4px;"><span class="badge badge-fail">REFUND</span> <span style="font-size:0.82rem;">Post-allocation net proceeds ($${fmt(Math.round(totalAlloc))}) fell below minimum ($${fmt(params.minSale)}). All participants receive full USDC refund. No ARM distributed.</span></div>` +
+      '</div>';
+  }
   const issues = [];
 
   // Check if raise is barely above minimum
@@ -787,14 +809,6 @@ function renderDiagnostics(r, params) {
   if (r.budgetCapped.some(b => b)) {
     const capped = r.budgetCapped.map((b, i) => b ? `Hop ${i}` : null).filter(Boolean).join(', ');
     issues.push({ level: 'info', msg: `Global budget constraint active: ${capped} ceiling(s) limited by remaining supply` });
-  }
-
-  // Rollover not activating
-  for (let h = 0; h < 2; h++) {
-    const nextHop = h + 1;
-    if (r.demands[h] < r.effectiveCeilings[h] && !r.rollover[h]) {
-      issues.push({ level: 'info', msg: `Hop ${h} under-subscribed but rollover blocked: Hop ${nextHop} has ${r.committers[nextHop]} committers (need ${params.rollMin[nextHop]})` });
-    }
   }
 
   if (issues.length === 0) {
@@ -855,6 +869,10 @@ function renderComparison() {
 
     if (r.canceled) {
       html += `<div class="flex-between" style="margin-bottom:6px;"><span class="badge badge-fail">CANCELED</span><span style="font-size:0.8rem;">$${fmt(r.totalCommitted)} / $${fmt(params.minSale)}</span></div>`;
+    } else if (r.refundMode) {
+      const totalAllocUsdc = r.allocations[0] + r.allocations[1] + r.allocations[2];
+      html += `<div class="flex-between" style="margin-bottom:6px;"><span class="badge badge-fail">REFUND MODE</span><span style="font-size:0.8rem;">alloc $${fmt(Math.round(totalAllocUsdc))} &lt; min $${fmt(params.minSale)}</span></div>`;
+      html += `<div style="font-size:0.78rem; color:var(--text-dim);">All $${fmt(r.totalCommitted)} USDC refunded. No ARM distributed.</div>`;
     } else {
       // Mini metrics
       html += '<table style="font-size:0.78rem;">';
@@ -956,37 +974,35 @@ function updateLabels() {
   $('avg1Val').textContent = $('avg1').value + '%';
   $('avg2Val').textContent = $('avg2').value + '%';
 
-  // Population breakdown (accounts for invite rates)
+  // Population breakdown (accounts for invite rates + launch team budget)
   const seeds = +$('seeds').value;
   const inv0 = +$('inv0').value;
   const inv1 = +$('inv1').value;
   const ir0 = +$('inv_rate0').value / 100;
   const ir1 = +$('inv_rate1').value / 100;
+  const lt1 = +$('ltHop1').value;
+  const lt2 = +$('ltHop2').value;
   const inviters0 = Math.floor(seeds * ir0);
-  const hop1pop = inviters0 * inv0;
+  const hop1pop = inviters0 * inv0 + lt1;
   const inviters1 = Math.floor(hop1pop * ir1);
-  const hop2pop = inviters1 * inv1;
+  const hop2pop = inviters1 * inv1 + lt2;
+  const hop1Detail = lt1 > 0 ? `${inviters0} inviters \u00d7 ${inv0} + ${lt1} LT` : `${inviters0} inviters \u00d7 ${inv0}`;
+  const hop2Detail = lt2 > 0 ? `${inviters1} inviters \u00d7 ${inv1} + ${lt2} LT` : `${inviters1} inviters \u00d7 ${inv1}`;
   $('popBreakdown').innerHTML =
     `Whitelisted: <span class="hop0">${seeds}</span> + ` +
-    `<span class="hop1">${hop1pop}</span> (${inviters0} inviters \u00d7 ${inv0}) + ` +
-    `<span class="hop2">${hop2pop}</span> (${inviters1} inviters \u00d7 ${inv1}) = ${seeds + hop1pop + hop2pop}`;
+    `<span class="hop1">${hop1pop}</span> (${hop1Detail}) + ` +
+    `<span class="hop2">${hop2pop}</span> (${hop2Detail}) = ${seeds + hop1pop + hop2pop}`;
 
-  // Ceiling info (overlapping ceilings are by design)
-  const sum = +$('ceil0').value + +$('ceil1').value + +$('ceil2').value;
+  // Ceiling info — hop 0 + hop 1 only; hop 2 has no BPS ceiling (uses floor + rollover)
+  const sum = +$('ceil0').value + +$('ceil1').value;
   const floor = +$('hop2Floor').value;
   const info = $('ceilingInfo');
-  let infoText = `Ceilings sum to ${sum}%`;
+  let infoText = `Hop 0/1 ceilings sum to ${sum}% of available pool`;
   if (sum > 100) {
     infoText += ` — overlapping by design (earlier hops have priority)`;
-  } else if (sum < 100) {
-    infoText += ` — ${100 - sum}% of sale size is unreachable by any hop`;
-  } else {
-    infoText += ` (no overlap)`;
   }
-  if (floor > 0) {
-    infoText += `. Hop 2 floor: ${floor}% reserved; hop 0/1 ceilings apply to remaining ${100 - floor}%`;
-  }
-  info.style.color = (sum < 100) ? 'var(--yellow)' : 'var(--text-dim)';
+  infoText += `. Hop 2: ${floor}% floor reserved + any rollover from hop 1`;
+  info.style.color = 'var(--text-dim)';
   info.textContent = infoText;
 }
 

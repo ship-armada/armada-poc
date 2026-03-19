@@ -41,6 +41,12 @@ export interface UserHopData {
   invitesRemaining: number
 }
 
+/** Launch team invite budget remaining (out of 60 per hop) */
+export interface LaunchTeamBudget {
+  hop1Remaining: number
+  hop2Remaining: number
+}
+
 /** Per-hop allocation (post-finalization, non-refundMode only) */
 export interface UserHopAllocation {
   hop: number

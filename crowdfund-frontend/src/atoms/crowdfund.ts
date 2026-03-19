@@ -1,12 +1,14 @@
 // ABOUTME: Jotai atoms for crowdfund contract state (phase, stats, participants).
 // ABOUTME: Updated by the useCrowdfund hook; consumed by UI components.
 import { atom } from 'jotai'
-import type { Phase, HopStats, Participant, CrowdfundEvent, CrowdfundDeployment, UserHopData, UserHopAllocation } from '@/types/crowdfund'
+import type { Phase, HopStats, Participant, CrowdfundEvent, CrowdfundDeployment, UserHopData, UserHopAllocation, LaunchTeamBudget } from '@/types/crowdfund'
 
 export interface CrowdfundState {
   // Contract phase and timing
   phase: Phase | null
   adminAddress: string | null
+  launchTeamAddress: string | null
+  launchTeamBudget: LaunchTeamBudget | null
   windowStart: bigint
   windowEnd: bigint
   launchTeamInviteEnd: bigint
@@ -44,6 +46,8 @@ export interface CrowdfundState {
 const DEFAULT_STATE: CrowdfundState = {
   phase: null,
   adminAddress: null,
+  launchTeamAddress: null,
+  launchTeamBudget: null,
   windowStart: 0n,
   windowEnd: 0n,
   launchTeamInviteEnd: 0n,

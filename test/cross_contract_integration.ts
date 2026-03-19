@@ -22,6 +22,7 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
 const FIVE_DAYS = 5 * ONE_DAY;
+const SEVEN_DAYS = 7 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -124,6 +125,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
 
+    // Register crowdfund for governance quiet period
+    await governor.setCrowdfundAddress(await crowdfund.getAddress());
+
     // Deploy TreasuryGov (holds ARM for governance distributions)
     // Owner is set to timelock at deployment and is immutable — governance controls the treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
@@ -178,6 +182,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(seed0Arm).to.be.gt(0);
 
       // === GOVERNANCE PHASE ===
+
+      // 6b. Skip past 7-day governance quiet period
+      await time.increase(SEVEN_DAYS + 1);
 
       // 7. Deployer needs voting power to propose AND reach quorum.
       // Deployer kept DEPLOYER_KEEP ARM. Lock most of it.
@@ -267,6 +274,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       for (const seed of seeds) {
         await crowdfund.connect(seed).claim();
       }
+
+      // Skip past 7-day governance quiet period
+      await time.increase(SEVEN_DAYS + 1);
     }
 
     it("ARM total supply is constant after crowdfund distribution", async function () {
@@ -370,6 +380,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       for (let i = 0; i < 10; i++) {
         await crowdfund.connect(seeds[i]).claim();
       }
+
+      // Skip past 7-day governance quiet period
+      await time.increase(SEVEN_DAYS + 1);
 
       // Deployer locks enough to propose AND contribute to quorum
       const deployerLock = DEPLOYER_KEEP / 2n;
@@ -563,6 +576,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
+      // Skip past 7-day governance quiet period
+      await time.increase(SEVEN_DAYS + 1);
+
       // DON'T claim — seeds have 0 ARM balance
       expect(await armToken.balanceOf(seeds[0].address)).to.equal(0);
 
@@ -691,8 +707,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);
       await localCrowdfund.loadArm();
 
-      // Step 6: Register crowdfund in quorum exclusion
+      // Step 6: Register crowdfund in quorum exclusion and quiet period
       await localGovernor.setExcludedAddresses([await localCrowdfund.getAddress()]);
+      await localGovernor.setCrowdfundAddress(await localCrowdfund.getAddress());
     });
 
     it("all ARM balances sum to total supply", async function () {
@@ -756,6 +773,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
+
+      // Skip quiet period so governance proposals can proceed
+      await time.increase(SEVEN_DAYS + 1);
 
       // Before any claims: crowdfund still holds all ARM
       const crowdfundArmBefore = await localArmToken.balanceOf(await localCrowdfund.getAddress());
@@ -876,6 +896,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       for (const seed of claimedSeeds) {
         await localCrowdfund.connect(seed).claim();
       }
+
+      // Skip past 7-day governance quiet period
+      await time.increase(SEVEN_DAYS + 1);
 
       // Deployer locks enough to propose and exceed quorum
       // Quorum = 20% of (supply - treasury - crowdfund) = 20% of deployer remainder

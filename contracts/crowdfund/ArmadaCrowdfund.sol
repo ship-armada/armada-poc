@@ -96,6 +96,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // net proceeds fell below MIN_SALE. All USDC is refundable via claimRefund().
     bool public refundMode;
 
+    // Timestamp when finalize() was called — used by ArmadaGovernor for the
+    // 7-day governance quiet period. Set on both normal and refundMode paths.
+    uint256 public finalizedAt;
+
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
@@ -400,6 +404,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         if (totalAllocUsdc_ < MIN_SALE) {
             refundMode = true;
             phase = Phase.Finalized;
+            finalizedAt = block.timestamp;
             emit SaleFinalizedRefundMode(totalCommitted, totalAllocUsdc_);
             return;
         }
@@ -409,6 +414,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         treasuryLeftoverUsdc = saleSize - totalAllocUsdc_;
         claimDeadline = block.timestamp + CLAIM_DEADLINE_DURATION;
         phase = Phase.Finalized;
+        finalizedAt = block.timestamp;
 
         // Push net proceeds to treasury atomically. Contract retains refund USDC.
         // Pro-rata division rounds each participant's allocUsdc down, making the

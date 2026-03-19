@@ -35,6 +35,7 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
   }, [state.participantCount]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isFinalized = state.phase === Phase.Finalized || state.phase === Phase.Canceled
+  const isRefundMode = state.refundMode || state.phase === Phase.Canceled
 
   return (
     <Card>
@@ -68,11 +69,17 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
                   <TableHead>Hop</TableHead>
                   <TableHead className="text-right">Committed</TableHead>
                   <TableHead className="text-right">Invites Sent</TableHead>
-                  {isFinalized && (
+                  {isFinalized && !isRefundMode && (
                     <>
                       <TableHead className="text-right">Allocation</TableHead>
                       <TableHead className="text-right">Refund</TableHead>
                       <TableHead>Claimed</TableHead>
+                    </>
+                  )}
+                  {isFinalized && isRefundMode && (
+                    <>
+                      <TableHead className="text-right">Refund</TableHead>
+                      <TableHead>Refunded</TableHead>
                     </>
                   )}
                 </TableRow>
@@ -96,7 +103,7 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
                     <TableCell className="text-right">
                       {row.participant.invitesSent}
                     </TableCell>
-                    {isFinalized && (
+                    {isFinalized && !isRefundMode && (
                       <>
                         <TableCell className="text-right">
                           {row.participant.allocation > 0n
@@ -106,6 +113,22 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
                         <TableCell className="text-right">
                           {row.participant.refund > 0n
                             ? formatUsdc(row.participant.refund)
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {row.participant.claimed ? (
+                            <Badge variant="outline" className="border-success text-success text-xs">Yes</Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">No</span>
+                          )}
+                        </TableCell>
+                      </>
+                    )}
+                    {isFinalized && isRefundMode && (
+                      <>
+                        <TableCell className="text-right">
+                          {row.participant.committed > 0n
+                            ? formatUsdc(row.participant.committed)
                             : '-'}
                         </TableCell>
                         <TableCell>

@@ -33,6 +33,22 @@ export interface AllocationInfo {
   claimed: boolean
 }
 
+/** Per-hop data for the connected user */
+export interface UserHopData {
+  hop: number
+  participant: Participant
+  effectiveCap: bigint
+  invitesRemaining: number
+}
+
+/** Per-hop allocation (post-finalization, non-refundMode only) */
+export interface UserHopAllocation {
+  hop: number
+  allocation: bigint
+  refund: bigint
+  claimed: boolean
+}
+
 export interface CrowdfundDeployment {
   chainId: number
   deployer: string

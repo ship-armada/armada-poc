@@ -17,7 +17,7 @@ import { loadDeployment } from '@/config/deployments'
 import { POLL_INTERVAL_MS, isLocalMode } from '@/config/network'
 import { getCrowdfundContract, getUsdcContract, getArmContract } from '@/services/contract'
 import { fetchPastEvents, subscribeToEvents } from '@/services/events'
-import type { CrowdfundDeployment, HopStats, Participant, Phase } from '@/types/crowdfund'
+import type { CrowdfundDeployment, Phase, UserHopData, UserHopAllocation } from '@/types/crowdfund'
 import { formatUsdc } from '@/utils/format'
 import { parseParticipant, parseHopStats } from '@/utils/crowdfund-parse'
 
@@ -29,6 +29,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
   const setParticipantList = useSetAtom(participantListAtom)
   const setParticipantListLoading = useSetAtom(participantListLoadingAtom)
   const unsubRef = useRef<(() => void) | null>(null)
+  const selectedHopRef = useRef(0)
 
   // Load deployment on mount
   useEffect(() => {
@@ -70,6 +71,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         armBalance,
         usdcAllowance,
         isRefundMode,
+        claimDeadline,
       ] = await Promise.all([
         contract.phase(),
         contract.admin(),
@@ -87,42 +89,81 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         arm.balanceOf(currentAddress),
         usdc.allowance(currentAddress, deployment.contracts.crowdfund),
         contract.refundMode(),
+        contract.claimDeadline(),
       ])
 
       const parsedPhase = Number(phase) as Phase
 
-      // Determine user's active hop by checking all hops for whitelist status.
-      // Use the lowest whitelisted hop as the "active" hop for UI display.
+      // Determine which hops the user is whitelisted in (may be multiple)
       const hopChecks = await Promise.all(
         [0, 1, 2].map((h) => contract.isWhitelisted(currentAddress, h)),
       )
-      let activeHop = 0
-      for (let h = 0; h < hopChecks.length; h++) {
-        if (hopChecks[h]) {
-          activeHop = h
-          break
-        }
-      }
+      const whitelistedHops = [0, 1, 2].filter((_, i) => hopChecks[i])
 
-      // Fetch participant data and invites remaining for the active hop
-      const [participantData, invitesRemaining] = await Promise.all([
-        contract.participants(currentAddress, activeHop),
-        contract.getInvitesRemaining(currentAddress, activeHop),
-      ])
-      const parsedParticipant = parseParticipant(participantData)
-
-      // Fetch allocation if finalized (and not in refund mode) and participant has committed
-      let currentAllocation = null
-      if (parsedPhase === 2 && !isRefundMode && parsedParticipant.committed > 0n) {
-        try {
-          const allocResult = await contract.getAllocation(currentAddress)
-          currentAllocation = {
-            allocation: BigInt(allocResult[0]),
-            refund: BigInt(allocResult[1]),
-            claimed: allocResult[2] as boolean,
+      // Fetch participant data, effective cap, and invites remaining for ALL whitelisted hops
+      const userHops: UserHopData[] = await Promise.all(
+        whitelistedHops.map(async (hop) => {
+          const [participantData, effectiveCap, invitesRemaining] = await Promise.all([
+            contract.participants(currentAddress, hop),
+            contract.getEffectiveCap(currentAddress, hop),
+            contract.getInvitesRemaining(currentAddress, hop),
+          ])
+          return {
+            hop,
+            participant: parseParticipant(participantData),
+            effectiveCap: BigInt(effectiveCap),
+            invitesRemaining: Number(invitesRemaining),
           }
-        } catch {
-          // getAllocation may fail if not finalized
+        }),
+      )
+
+      // Use previous selectedHop if still whitelisted, else fall back to lowest whitelisted hop
+      const prevSelectedHop = selectedHopRef.current
+      const selectedHop = whitelistedHops.includes(prevSelectedHop)
+        ? prevSelectedHop
+        : (whitelistedHops[0] ?? 0)
+      selectedHopRef.current = selectedHop
+      const selectedHopData = userHops.find((h) => h.hop === selectedHop)
+      const currentParticipant = selectedHopData?.participant ?? null
+      const currentInvitesRemaining = selectedHopData?.invitesRemaining ?? 0
+
+      // Fetch aggregate allocation if finalized and not in refund mode
+      let currentAllocation = null
+      let userHopAllocations: UserHopAllocation[] = []
+      if (parsedPhase === 2 && !isRefundMode) {
+        // Aggregate allocation for the claim button
+        const hasCommitted = userHops.some((h) => h.participant.committed > 0n)
+        if (hasCommitted) {
+          try {
+            const allocResult = await contract.getAllocation(currentAddress)
+            currentAllocation = {
+              allocation: BigInt(allocResult[0]),
+              refund: BigInt(allocResult[1]),
+              claimed: allocResult[2] as boolean,
+            }
+          } catch {
+            // getAllocation may fail if not finalized
+          }
+
+          // Per-hop allocation breakdown
+          const hopsWithCommitments = userHops.filter((h) => h.participant.committed > 0n)
+          userHopAllocations = (
+            await Promise.all(
+              hopsWithCommitments.map(async (h) => {
+                try {
+                  const res = await contract.getAllocationAtHop(currentAddress, h.hop)
+                  return {
+                    hop: h.hop,
+                    allocation: BigInt(res[0]),
+                    refund: BigInt(res[1]),
+                    claimed: res[2] as boolean,
+                  }
+                } catch {
+                  return null
+                }
+              }),
+            )
+          ).filter((a): a is UserHopAllocation => a !== null)
         }
       }
 
@@ -141,9 +182,13 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           parseHopStats(hop2Stats),
         ],
         participantCount: Number(participantCount),
-        currentHop: activeHop,
-        currentParticipant: parsedParticipant,
-        currentInvitesRemaining: Number(invitesRemaining),
+        userHops,
+        selectedHop,
+        userHopAllocations,
+        claimDeadline: BigInt(claimDeadline),
+        currentHop: selectedHop,
+        currentParticipant,
+        currentInvitesRemaining,
         currentAllocation,
         usdcBalance: BigInt(usdcBalance),
         armBalance: BigInt(armBalance),
@@ -173,6 +218,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const count = Number(await contract.getParticipantCount())
       const phase = Number(await contract.phase())
       const isFinalized = phase === 2 // Phase.Finalized
+      const isRefundMode = isFinalized ? (await contract.refundMode()) as boolean : false
       const rows: ParticipantRow[] = []
 
       // Fetch in batches of 20. participantNodes returns (address, hop) tuples.
@@ -194,9 +240,9 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           addressesAndHops.map(({ addr, hop }) => contract.participants(addr, hop)),
         )
 
-        // After finalization, fetch computed allocations via getAllocationAtHop()
-        // since the struct only stores allocation/refund after claim().
-        const allocations = isFinalized
+        // After finalization, fetch computed allocations via getAllocationAtHop().
+        // In refundMode, allocations are meaningless — committed amount IS the refund.
+        const allocations = isFinalized && !isRefundMode
           ? await Promise.all(
               addressesAndHops.map(({ addr, hop }) =>
                 contract.getAllocationAtHop(addr, hop).catch(() => null),
@@ -212,6 +258,10 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
             parsed.allocation = BigInt(allocations[j][0])
             parsed.refund = BigInt(allocations[j][1])
             parsed.claimed = allocations[j][2] as boolean
+          } else if (isRefundMode) {
+            // In refundMode, full committed amount is refundable
+            parsed.allocation = 0n
+            parsed.refund = parsed.committed
           }
 
           rows.push({
@@ -260,6 +310,26 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       unsubRef.current = null
     }
   }, [deployment, provider, setEvents])
+
+  // =========== Hop Selection ===========
+
+  const setSelectedHop = useCallback(
+    (hop: number) => {
+      selectedHopRef.current = hop
+      setState((prev) => {
+        const hopData = prev.userHops.find((h) => h.hop === hop)
+        if (!hopData) return prev
+        return {
+          ...prev,
+          selectedHop: hop,
+          currentHop: hop,
+          currentParticipant: hopData.participant,
+          currentInvitesRemaining: hopData.invitesRemaining,
+        }
+      })
+    },
+    [setState],
+  )
 
   // =========== Write Operations ===========
 
@@ -463,6 +533,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     deployment,
     refreshState,
     refreshParticipantList,
+    setSelectedHop,
     // Write operations
     addSeeds,
     loadArm,

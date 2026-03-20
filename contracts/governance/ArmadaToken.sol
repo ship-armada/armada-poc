@@ -1,14 +1,161 @@
 // SPDX-License-Identifier: MIT
+// ABOUTME: ARM governance token with ERC20Votes for on-chain delegation and voting checkpoints.
+// ABOUTME: Transfer-restricted until wind-down; treasury address blocked from delegation.
 pragma solidity ^0.8.17;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 
-/// @title ArmadaToken — ARM governance token
-/// @notice Plain ERC20 with fixed supply. Voting power is tracked by VotingLocker, not by the token itself.
-contract ArmadaToken is ERC20 {
+/// @title ArmadaToken — ARM governance token with delegation and transfer restrictions
+/// @notice ERC20Votes provides Compound-style delegation and voting power checkpoints.
+///         Tokens have zero voting power until delegated. Transfer-restricted until wind-down
+///         enables free transfers via setTransferable(true).
+contract ArmadaToken is ERC20Votes {
     uint256 public constant INITIAL_SUPPLY = 12_000_000 * 1e18; // 12M ARM
 
-    constructor(address initialHolder) ERC20("Armada", "ARM") {
+    // ============ Immutable References ============
+
+    address public immutable timelock;
+    address public immutable tokenDeployer;
+
+    // ============ Transfer Restriction State ============
+
+    /// @notice When false, only whitelisted senders/receivers can transfer. Starts false.
+    bool public transferable;
+
+    /// @notice Addresses exempt from transfer restrictions (add-only, no removal).
+    mapping(address => bool) public transferWhitelist;
+    bool public whitelistInitialized;
+
+    /// @notice The wind-down contract is the only address that can call setTransferable.
+    address public windDownContract;
+    bool public windDownContractSet;
+
+    // ============ Delegation Restriction State ============
+
+    /// @notice Addresses blocked from delegating (e.g. treasury). Their ARM never enters
+    ///         the voting power denominator.
+    mapping(address => bool) public noDelegation;
+    bool public noDelegationSet;
+
+    // ============ Events ============
+
+    event WhitelistAdded(address indexed account);
+    event WhitelistInitialized(address[] accounts);
+    event TransferableSet(bool transferable);
+    event WindDownContractSet(address indexed windDownContract);
+    event NoDelegationSet(address indexed account);
+
+    // ============ Constructor ============
+
+    /// @param initialHolder Address that receives the entire initial supply
+    /// @param _timelock TimelockController address (for governance-gated addToWhitelist)
+    constructor(
+        address initialHolder,
+        address _timelock
+    ) ERC20("Armada", "ARM") ERC20Permit("Armada") {
+        require(initialHolder != address(0), "ArmadaToken: zero initialHolder");
+        require(_timelock != address(0), "ArmadaToken: zero timelock");
+        timelock = _timelock;
+        tokenDeployer = msg.sender;
         _mint(initialHolder, INITIAL_SUPPLY);
+    }
+
+    // ============ One-Time Setup (deployer-only, pre-renounce) ============
+
+    /// @notice Set initial whitelist addresses. Callable once by deployer.
+    ///         Matches the setExcludedAddresses pattern in ArmadaGovernor.
+    function initWhitelist(address[] calldata accounts) external {
+        require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
+        require(!whitelistInitialized, "ArmadaToken: whitelist already initialized");
+        whitelistInitialized = true;
+        for (uint256 i = 0; i < accounts.length; i++) {
+            require(accounts[i] != address(0), "ArmadaToken: zero address");
+            transferWhitelist[accounts[i]] = true;
+        }
+        emit WhitelistInitialized(accounts);
+    }
+
+    /// @notice Set the wind-down contract address. Callable once by deployer.
+    function setWindDownContract(address _windDownContract) external {
+        require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
+        require(!windDownContractSet, "ArmadaToken: wind-down already set");
+        require(_windDownContract != address(0), "ArmadaToken: zero address");
+        windDownContractSet = true;
+        windDownContract = _windDownContract;
+        emit WindDownContractSet(_windDownContract);
+    }
+
+    /// @notice Set the address blocked from delegation (treasury). Callable once by deployer.
+    function setNoDelegation(address account) external {
+        require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
+        require(!noDelegationSet, "ArmadaToken: noDelegation already set");
+        require(account != address(0), "ArmadaToken: zero address");
+        noDelegationSet = true;
+        noDelegation[account] = true;
+        emit NoDelegationSet(account);
+    }
+
+    // ============ Governance Functions ============
+
+    /// @notice Add an address to the transfer whitelist. Timelock-only, add-only (no removal).
+    function addToWhitelist(address account) external {
+        require(msg.sender == timelock, "ArmadaToken: not timelock");
+        require(account != address(0), "ArmadaToken: zero address");
+        transferWhitelist[account] = true;
+        emit WhitelistAdded(account);
+    }
+
+    /// @notice Enable unrestricted transfers. Only callable by the wind-down contract.
+    function setTransferable(bool _transferable) external {
+        require(msg.sender == windDownContract, "ArmadaToken: not wind-down contract");
+        transferable = _transferable;
+        emit TransferableSet(_transferable);
+    }
+
+    // ============ Transfer Restriction ============
+
+    /// @dev Restrict transfers when transferable is false: only whitelisted senders/receivers
+    ///      or mints (from == address(0)) are allowed.
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override {
+        super._beforeTokenTransfer(from, to, amount);
+        if (!transferable) {
+            require(
+                from == address(0) ||
+                transferWhitelist[from] ||
+                transferWhitelist[to],
+                "ArmadaToken: transfers restricted"
+            );
+        }
+    }
+
+    // ============ Delegation Restriction ============
+
+    /// @dev Block delegation for addresses in the noDelegation set (e.g. treasury).
+    ///      Overrides the internal _delegate which is called by both delegate() and delegateBySig().
+    function _delegate(address delegator, address delegatee) internal override {
+        require(!noDelegation[delegator], "ArmadaToken: delegation blocked");
+        super._delegate(delegator, delegatee);
+    }
+
+    // ============ Required ERC20Votes Overrides ============
+
+    function _afterTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override {
+        super._afterTokenTransfer(from, to, amount);
+    }
+
+    function _mint(address to, uint256 amount) internal override {
+        super._mint(to, amount);
+    }
+
+    function _burn(address account, uint256 amount) internal override {
+        super._burn(account, amount);
     }
 }

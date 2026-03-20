@@ -26,7 +26,6 @@ describe("Governance Quiet Period (T6.1)", function () {
   let armToken: any;
   let usdc: any;
   let crowdfund: any;
-  let votingLocker: any;
   let timelockController: any;
   let governor: any;
   let treasury: any;
@@ -47,14 +46,28 @@ describe("Governance Quiet Period (T6.1)", function () {
     nonDeployer = signers[2];
     seeds = signers.slice(3, 103); // 100 seeds
 
-    // Deploy tokens
-    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
-    await armToken.waitForDeployment();
-
+    // Deploy USDC mock
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
     await usdc.waitForDeployment();
+
+    // Deploy governance infrastructure (timelock first — ArmadaToken needs its address)
+    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
+
+    const TimelockController = await ethers.getContractFactory("TimelockController");
+    timelockController = await TimelockController.deploy(
+      ONE_DAY,
+      [deployer.address],
+      [deployer.address],
+      deployer.address
+    );
+    await timelockController.waitForDeployment();
+    const timelockAddr = await timelockController.getAddress();
+
+    // Deploy ArmadaToken (ERC20Votes) — requires timelock for governance-gated whitelist
+    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+    armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
+    await armToken.waitForDeployment();
 
     // Deploy crowdfund
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
@@ -68,32 +81,15 @@ describe("Governance Quiet Period (T6.1)", function () {
     );
     await crowdfund.waitForDeployment();
 
+    // Initialize token whitelist (after crowdfund is deployed, before transfers)
+    await armToken.initWhitelist([deployer.address, await crowdfund.getAddress(), treasuryAddr.address]);
+
     // Fund ARM to crowdfund (1.8M for MAX_SALE)
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
 
-    // Deploy governance
-    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
-
-    const TimelockController = await ethers.getContractFactory("TimelockController");
-    timelockController = await TimelockController.deploy(
-      ONE_DAY,
-      [deployer.address],
-      [deployer.address],
-      deployer.address
-    );
-    await timelockController.waitForDeployment();
-    const timelockAddr = await timelockController.getAddress();
-
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(
-      await armToken.getAddress(), deployer.address, MAX_PAUSE_DURATION, timelockAddr
-    );
-    await votingLocker.waitForDeployment();
-
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
-      await votingLocker.getAddress(),
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
@@ -112,10 +108,9 @@ describe("Governance Quiet Period (T6.1)", function () {
     await treasury.waitForDeployment();
   }
 
-  // Helper: lock ARM for proposer threshold
+  // Helper: delegate ARM for proposer threshold
   async function lockArmForProposal(amount: bigint = ARM(200_000)) {
-    await armToken.approve(await votingLocker.getAddress(), amount);
-    await votingLocker.lock(amount);
+    await armToken.delegate(deployer.address);
     await mine(1);
   }
 

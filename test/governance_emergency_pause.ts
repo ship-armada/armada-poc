@@ -20,11 +20,13 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
-const FIVE_DAYS = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
-const FOUR_DAYS = 4 * ONE_DAY;
 const FOURTEEN_DAYS = 14 * ONE_DAY;
 const MAX_PAUSE_DURATION = FOURTEEN_DAYS;
+const STANDARD_VOTING_PERIOD = SEVEN_DAYS;
+const EXTENDED_VOTING_PERIOD = FOURTEEN_DAYS;
+const STANDARD_EXECUTION_DELAY = TWO_DAYS;
+const EXTENDED_EXECUTION_DELAY = SEVEN_DAYS;
 
 const ARM_DECIMALS = 18;
 const TOTAL_SUPPLY = ethers.parseUnits("12000000", ARM_DECIMALS); // must match ArmadaToken.INITIAL_SUPPLY
@@ -32,7 +34,7 @@ const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
 const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
 const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
 const USDC_DECIMALS = 6;
-const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
+const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
 
 describe("Governance Emergency Pause", function () {
   let armToken: any;
@@ -75,11 +77,11 @@ describe("Governance Emergency Pause", function () {
       await governor.connect(v.signer).castVote(proposalId, v.support);
     }
 
-    const votingPeriod = proposalType === ProposalType.StewardElection ? SEVEN_DAYS : FIVE_DAYS;
+    const votingPeriod = proposalType === ProposalType.StewardElection ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
     await time.increase(votingPeriod + 1);
     await governor.queue(proposalId);
 
-    const executionDelay = proposalType === ProposalType.StewardElection ? FOUR_DAYS : TWO_DAYS;
+    const executionDelay = proposalType === ProposalType.StewardElection ? EXTENDED_EXECUTION_DELAY : STANDARD_EXECUTION_DELAY;
     await time.increase(executionDelay + 1);
 
     return proposalId;
@@ -105,12 +107,7 @@ describe("Governance Emergency Pause", function () {
   beforeEach(async function () {
     [deployer, guardian, alice, bob, carol, dave] = await ethers.getSigners();
 
-    // 1. Deploy ARM token
-    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
-    await armToken.waitForDeployment();
-
-    // 2. Deploy TimelockController
+    // 1. Deploy TimelockController (needed by ArmadaToken)
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       TWO_DAYS, [], [], deployer.address
@@ -118,7 +115,12 @@ describe("Governance Emergency Pause", function () {
     await timelockController.waitForDeployment();
     const timelockAddr = await timelockController.getAddress();
 
-    // 3. Deploy VotingLocker
+    // 2. Deploy ARM token (needs timelockAddr for governance-gated whitelist)
+    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+    armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
+    await armToken.waitForDeployment();
+
+    // 3. Deploy VotingLocker (used for pause tests in this file)
     const VotingLocker = await ethers.getContractFactory("VotingLocker");
     votingLocker = await VotingLocker.deploy(
       await armToken.getAddress(),
@@ -133,10 +135,9 @@ describe("Governance Emergency Pause", function () {
     );
     await treasury.waitForDeployment();
 
-    // 5. Deploy ArmadaGovernor
+    // 5. Deploy ArmadaGovernor (uses ArmadaToken ERC20Votes for voting power)
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
-      await votingLocker.getAddress(),
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
@@ -169,20 +170,21 @@ describe("Governance Emergency Pause", function () {
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
     await usdc.waitForDeployment();
 
-    // 9. Distribute ARM tokens
+    // 9. Configure ARM token
+    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initWhitelist([deployer.address, await treasury.getAddress(), alice.address, bob.address]);
+
+    // 10. Distribute ARM tokens
     await armToken.transfer(await treasury.getAddress(), TREASURY_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
 
-    // 10. Mint USDC to treasury
+    // 11. Mint USDC to treasury
     await usdc.mint(await treasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
 
-    // 11. Alice and Bob lock tokens
-    await armToken.connect(alice).approve(await votingLocker.getAddress(), ALICE_AMOUNT);
-    await votingLocker.connect(alice).lock(ALICE_AMOUNT);
-
-    await armToken.connect(bob).approve(await votingLocker.getAddress(), BOB_AMOUNT);
-    await votingLocker.connect(bob).lock(BOB_AMOUNT);
+    // 12. Alice and Bob delegate to themselves (ERC20Votes requires delegation to activate voting power)
+    await armToken.connect(alice).delegate(alice.address);
+    await armToken.connect(bob).delegate(bob.address);
 
     await mineBlock();
   });
@@ -401,7 +403,7 @@ describe("Governance Emergency Pause", function () {
 
       // Deploy a fresh ARM token for this standalone test (main supply is fully allocated)
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const standaloneArm = await ArmadaToken.deploy(deployer.address);
+      const standaloneArm = await ArmadaToken.deploy(deployer.address, deployer.address);
       await standaloneArm.waitForDeployment();
 
       const VotingLockerFactory = await ethers.getContractFactory("VotingLocker");
@@ -410,6 +412,9 @@ describe("Governance Emergency Pause", function () {
         guardian.address, MAX_PAUSE_DURATION, deployer.address
       );
       await standaloneLocker.waitForDeployment();
+
+      // Whitelist deployer, carol, and locker for transfer restrictions on the standalone token
+      await standaloneArm.initWhitelist([deployer.address, carol.address, await standaloneLocker.getAddress()]);
 
       const carolAmount = ethers.parseUnits("1000", ARM_DECIMALS);
       await standaloneArm.transfer(carol.address, carolAmount);
@@ -651,7 +656,6 @@ describe("Governance Emergency Pause", function () {
       // a timelock we control. Let's use the standaloneTimelock but keep deployer as admin.
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       standaloneGovernor = await ArmadaGovernor.deploy(
-        await votingLocker.getAddress(),
         await armToken.getAddress(),
         tlAddr,
         await treasury.getAddress(),
@@ -711,7 +715,7 @@ describe("Governance Emergency Pause", function () {
       await time.increase(TWO_DAYS + 1);
       await standaloneGovernor.connect(alice).castVote(1, Vote.For);
       await standaloneGovernor.connect(bob).castVote(1, Vote.For);
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
       await standaloneGovernor.queue(1);
       await time.increase(TWO_DAYS + 1);
 

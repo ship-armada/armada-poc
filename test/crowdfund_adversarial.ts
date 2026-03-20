@@ -58,7 +58,7 @@ describe("Crowdfund Adversarial", function () {
     await usdc.waitForDeployment();
 
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
+    armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
 
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");

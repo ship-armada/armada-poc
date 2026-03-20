@@ -244,7 +244,10 @@ contract CrowdfundInvariantTest is Test {
         admin = address(this);
 
         // Deploy tokens
-        armToken = new ArmadaToken(admin);
+        armToken = new ArmadaToken(admin, admin);
+        address[] memory wl = new address[](1);
+        wl[0] = admin;
+        armToken.initWhitelist(wl);
         usdc = new MockUSDCV2("Mock USDC", "USDC");
 
         // Deploy crowdfund

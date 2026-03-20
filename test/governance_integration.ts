@@ -27,15 +27,19 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 // Time constants
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
-const FIVE_DAYS = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
-const FOUR_DAYS = 4 * ONE_DAY;
+const FOURTEEN_DAYS = 14 * ONE_DAY;
 const THIRTY_DAYS = 30 * ONE_DAY;
+
+// Spec-aligned timing: standard voting = 7d, extended voting = 14d, extended execution = 7d
+const STANDARD_VOTING_PERIOD = SEVEN_DAYS;
+const EXTENDED_VOTING_PERIOD = FOURTEEN_DAYS;
+const STANDARD_EXECUTION_DELAY = TWO_DAYS;
+const EXTENDED_EXECUTION_DELAY = SEVEN_DAYS;
 
 describe("Governance Integration", function () {
   // Contracts
   let armToken: any;
-  let votingLocker: any;
   let timelockController: any;
   let governor: any;
   let treasury: any;
@@ -56,9 +60,9 @@ describe("Governance Integration", function () {
   const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
   const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
   const USDC_DECIMALS = 6;
-  // Minimum action delay = 120% of governance cycle (2d + 5d + 2d = 9d)
-  // 9 days * 1.2 = 10.8 days = 933120 seconds
-  const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
+  // Minimum action delay = 120% of governance cycle (2d + 7d + 2d = 11d)
+  // 11 days * 1.2 = 13.2 days = 1140480 seconds
+  const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
 
   // Helper: mine a block so checkpoint reads work
   async function mineBlock() {
@@ -90,14 +94,14 @@ describe("Governance Integration", function () {
     }
 
     // Fast-forward past voting period
-    const votingPeriod = proposalType === ProposalType.StewardElection ? SEVEN_DAYS : FIVE_DAYS;
+    const votingPeriod = proposalType === ProposalType.StewardElection ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
     await time.increase(votingPeriod + 1);
 
     // Queue
     await governor.queue(proposalId);
 
     // Fast-forward past execution delay
-    const executionDelay = proposalType === ProposalType.StewardElection ? FOUR_DAYS : TWO_DAYS;
+    const executionDelay = proposalType === ProposalType.StewardElection ? EXTENDED_EXECUTION_DELAY : STANDARD_EXECUTION_DELAY;
     await time.increase(executionDelay + 1);
 
     // Execute
@@ -109,12 +113,7 @@ describe("Governance Integration", function () {
   beforeEach(async function () {
     [deployer, alice, bob, carol, dave] = await ethers.getSigners();
 
-    // 1. Deploy ARM token (all supply to deployer)
-    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
-    await armToken.waitForDeployment();
-
-    // 2. Deploy TimelockController (minDelay = 2 days, deployer as temp admin)
+    // 1. Deploy TimelockController (minDelay = 2 days, deployer as temp admin)
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       TWO_DAYS,
@@ -125,20 +124,15 @@ describe("Governance Integration", function () {
     await timelockController.waitForDeployment();
     const timelockAddr = await timelockController.getAddress();
 
+    // 2. Deploy ARM token (all supply to deployer, timelock for whitelist governance)
+    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+    armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
+    await armToken.waitForDeployment();
+
     // Emergency pause config: deployer as guardian, 14 day max pause duration
     const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 
-    // 3. Deploy VotingLocker
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(
-      await armToken.getAddress(),
-      deployer.address,        // guardian
-      MAX_PAUSE_DURATION,
-      timelockAddr             // pauseTimelock
-    );
-    await votingLocker.waitForDeployment();
-
-    // 4. Deploy ArmadaTreasuryGov (owned by timelock)
+    // 3. Deploy ArmadaTreasuryGov (owned by timelock)
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
     treasury = await ArmadaTreasuryGov.deploy(
       timelockAddr,
@@ -147,10 +141,9 @@ describe("Governance Integration", function () {
     );
     await treasury.waitForDeployment();
 
-    // 5. Deploy ArmadaGovernor
+    // 4. Deploy ArmadaGovernor
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
-      await votingLocker.getAddress(),
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
@@ -159,7 +152,7 @@ describe("Governance Integration", function () {
     );
     await governor.waitForDeployment();
 
-    // 6. Deploy TreasurySteward
+    // 5. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,
@@ -170,6 +163,15 @@ describe("Governance Integration", function () {
       MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
+
+    // 6. Configure token: whitelist addresses so transfers work, set treasury as noDelegation
+    await armToken.initWhitelist([
+      deployer.address,
+      await treasury.getAddress(),
+      alice.address,
+      bob.address,
+    ]);
+    await armToken.setNoDelegation(await treasury.getAddress());
 
     // 7. Configure timelock roles
     const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();
@@ -195,12 +197,9 @@ describe("Governance Integration", function () {
     // 11. Mint USDC to treasury for payout tests
     await usdc.mint(await treasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
 
-    // 12. Alice and Bob lock tokens for voting
-    await armToken.connect(alice).approve(await votingLocker.getAddress(), ALICE_AMOUNT);
-    await votingLocker.connect(alice).lock(ALICE_AMOUNT);
-
-    await armToken.connect(bob).approve(await votingLocker.getAddress(), BOB_AMOUNT);
-    await votingLocker.connect(bob).lock(BOB_AMOUNT);
+    // 12. Alice and Bob self-delegate to activate voting power
+    await armToken.connect(alice).delegate(alice.address);
+    await armToken.connect(bob).delegate(bob.address);
 
     // Mine a block so checkpoints are queryable
     await mineBlock();
@@ -217,65 +216,15 @@ describe("Governance Integration", function () {
 
     it("should have correct distribution", async function () {
       expect(await armToken.balanceOf(await treasury.getAddress())).to.equal(TREASURY_AMOUNT);
-      // Alice and Bob tokens are in the VotingLocker
-      expect(await votingLocker.getLockedBalance(alice.address)).to.equal(ALICE_AMOUNT);
-      expect(await votingLocker.getLockedBalance(bob.address)).to.equal(BOB_AMOUNT);
-    });
-  });
-
-  // ============================================================
-  // 2. VotingLocker
-  // ============================================================
-
-  describe("VotingLocker", function () {
-    it("should track locked balances", async function () {
-      expect(await votingLocker.getLockedBalance(alice.address)).to.equal(ALICE_AMOUNT);
-      expect(await votingLocker.getLockedBalance(bob.address)).to.equal(BOB_AMOUNT);
-      expect(await votingLocker.totalLocked()).to.equal(ALICE_AMOUNT + BOB_AMOUNT);
+      // Alice and Bob hold tokens directly
+      expect(await armToken.balanceOf(alice.address)).to.equal(ALICE_AMOUNT);
+      expect(await armToken.balanceOf(bob.address)).to.equal(BOB_AMOUNT);
     });
 
-    it("should unlock tokens", async function () {
-      const unlockAmount = ALICE_AMOUNT / 4n; // unlock 25% of alice's locked balance
-      await votingLocker.connect(alice).unlock(unlockAmount);
-
-      expect(await votingLocker.getLockedBalance(alice.address)).to.equal(ALICE_AMOUNT - unlockAmount);
-      expect(await armToken.balanceOf(alice.address)).to.equal(unlockAmount);
-    });
-
-    it("should reject unlock with insufficient balance", async function () {
-      const tooMuch = ALICE_AMOUNT + 1n;
-      await expect(
-        votingLocker.connect(alice).unlock(tooMuch)
-      ).to.be.revertedWith("VotingLocker: insufficient locked");
-    });
-
-    it("should checkpoint locked balances for historical queries", async function () {
-      const blockBefore = await ethers.provider.getBlockNumber();
-      await mineBlock();
-
-      // Alice unlocks some, then relocks — this creates new checkpoints
-      const unlockAmount = ALICE_AMOUNT / 4n;
-      await votingLocker.connect(alice).unlock(unlockAmount);
-      await mineBlock();
-
-      // Re-lock
-      await armToken.connect(alice).approve(await votingLocker.getAddress(), unlockAmount);
-      await votingLocker.connect(alice).lock(unlockAmount);
-      await mineBlock();
-
-      // Historical query at blockBefore should return original balance
-      expect(await votingLocker.getPastLockedBalance(alice.address, blockBefore))
-        .to.equal(ALICE_AMOUNT);
-
-      // Current should be back to original
-      expect(await votingLocker.getLockedBalance(alice.address))
-        .to.equal(ALICE_AMOUNT);
-    });
-
-    it("should reject lock of zero amount", async function () {
-      await expect(
-        votingLocker.connect(alice).lock(0)
-      ).to.be.revertedWith("VotingLocker: zero amount");
+    it("should have voting power via delegation", async function () {
+      // Alice and Bob self-delegated in beforeEach
+      expect(await armToken.getVotes(alice.address)).to.equal(ALICE_AMOUNT);
+      expect(await armToken.getVotes(bob.address)).to.equal(BOB_AMOUNT);
     });
   });
 
@@ -336,7 +285,7 @@ describe("Governance Integration", function () {
       await governor.connect(bob).castVote(1, Vote.For);
 
       // Fast-forward past voting period
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
       expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
     });
 
@@ -353,7 +302,7 @@ describe("Governance Integration", function () {
 
       await time.increase(TWO_DAYS + 1);
       // Nobody votes
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
 
       expect(await governor.state(1)).to.equal(ProposalState.Defeated);
     });
@@ -374,7 +323,7 @@ describe("Governance Integration", function () {
       await governor.connect(alice).castVote(1, Vote.Against);
       await governor.connect(bob).castVote(1, Vote.For);
 
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
       expect(await governor.state(1)).to.equal(ProposalState.Defeated);
     });
 
@@ -393,7 +342,7 @@ describe("Governance Integration", function () {
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
       await governor.connect(bob).castVote(1, Vote.For);
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
 
       expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
 
@@ -402,7 +351,7 @@ describe("Governance Integration", function () {
       expect(await governor.state(1)).to.equal(ProposalState.Queued);
 
       // Fast-forward past execution delay
-      await time.increase(TWO_DAYS + 1);
+      await time.increase(STANDARD_EXECUTION_DELAY + 1);
 
       // Execute
       const carolBalanceBefore = await armToken.balanceOf(carol.address);
@@ -427,8 +376,8 @@ describe("Governance Integration", function () {
 
       // voteStart should be ~2 days from now
       expect(Number(voteStart) - blockTimestamp).to.be.closeTo(TWO_DAYS, 5);
-      // voteEnd should be ~7 days from now (2d delay + 5d period)
-      expect(Number(voteEnd) - blockTimestamp).to.be.closeTo(TWO_DAYS + FIVE_DAYS, 5);
+      // voteEnd should be ~9 days from now (2d delay + 7d period)
+      expect(Number(voteEnd) - blockTimestamp).to.be.closeTo(TWO_DAYS + STANDARD_VOTING_PERIOD, 5);
     });
   });
 
@@ -469,7 +418,7 @@ describe("Governance Integration", function () {
 
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
 
       // Should succeed with only Alice's vote (20% of supply > 7% quorum)
       expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
@@ -540,7 +489,7 @@ describe("Governance Integration", function () {
       expect(await governor.quorum(1)).to.equal(expectedQuorum);
     });
 
-    it("should use extended timing (7d voting, 4d execution)", async function () {
+    it("should use extended timing (14d voting, 7d execution)", async function () {
       const targets = [await stewardContract.getAddress()];
       const values = [0n];
       const calldatas = [
@@ -555,7 +504,7 @@ describe("Governance Integration", function () {
       const blockTimestamp = (await ethers.provider.getBlock("latest"))!.timestamp;
 
       expect(Number(voteStart) - blockTimestamp).to.be.closeTo(TWO_DAYS, 5);
-      expect(Number(voteEnd) - Number(voteStart)).to.be.closeTo(SEVEN_DAYS, 5);
+      expect(Number(voteEnd) - Number(voteStart)).to.be.closeTo(EXTENDED_VOTING_PERIOD, 5);
     });
   });
 
@@ -920,14 +869,10 @@ describe("Governance Integration", function () {
 
   describe("Voter Functions", function () {
     it("should record yes/no/abstain votes correctly", async function () {
-      // Give carol some tokens to vote with (alice unlocks some to fund carol)
+      // Give carol some tokens and delegation to vote with
       const carolAmount = ALICE_AMOUNT / 10n; // 10% of alice's balance
-      await votingLocker.connect(alice).unlock(carolAmount);
       await armToken.connect(alice).transfer(carol.address, carolAmount);
-      // Alice still has ALICE_AMOUNT - carolAmount locked (no re-lock needed)
-      // Lock carol's tokens
-      await armToken.connect(carol).approve(await votingLocker.getAddress(), carolAmount);
-      await votingLocker.connect(carol).lock(carolAmount);
+      await armToken.connect(carol).delegate(carol.address);
       await mineBlock();
 
       const targets = [await treasury.getAddress()];
@@ -945,13 +890,13 @@ describe("Governance Integration", function () {
       await governor.connect(carol).castVote(1, Vote.Abstain);
 
       const [,,,,forVotes, againstVotes, abstainVotes] = await governor.getProposal(1);
-      // Alice has ALICE_AMOUNT - carolAmount locked at snapshot
+      // Alice transferred carolAmount away, so her voting power is reduced
       expect(forVotes).to.equal(ALICE_AMOUNT - carolAmount);
       expect(againstVotes).to.equal(BOB_AMOUNT);
       expect(abstainVotes).to.equal(carolAmount);
     });
 
-    it("should reject vote without locked tokens", async function () {
+    it("should reject vote without delegated tokens", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
@@ -962,7 +907,7 @@ describe("Governance Integration", function () {
 
       await time.increase(TWO_DAYS + 1);
 
-      // Carol has no locked tokens
+      // Carol has no delegated tokens
       await expect(
         governor.connect(carol).castVote(1, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
@@ -985,21 +930,21 @@ describe("Governance Integration", function () {
       ).to.be.revertedWith("ArmadaGovernor: already voted");
     });
 
-    it("should allow unlock after voting (snapshot-based)", async function () {
+    it("should allow re-delegation after voting (snapshot-based)", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Unlock test"
+        ProposalType.ParameterChange, targets, values, calldatas, "Re-delegation test"
       );
 
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
 
-      // Alice unlocks all tokens while voting is still active
-      await votingLocker.connect(alice).unlock(ALICE_AMOUNT);
-      expect(await armToken.balanceOf(alice.address)).to.equal(ALICE_AMOUNT);
+      // Alice re-delegates to bob while voting is still active
+      await armToken.connect(alice).delegate(bob.address);
+      expect(await armToken.getVotes(alice.address)).to.equal(0);
 
       // Vote was already recorded with snapshot, so it still counts
       const [,,,,forVotes] = await governor.getProposal(1);
@@ -1045,7 +990,7 @@ describe("Governance Integration", function () {
   // ============================================================
 
   describe("Full Flow", function () {
-    it("should complete: lock → propose → vote → queue → execute treasury payout", async function () {
+    it("should complete: delegate → propose → vote → queue → execute treasury payout", async function () {
       const payAmount = ethers.parseUnits("2500", USDC_DECIMALS);
 
       const targets = [await treasury.getAddress()];
@@ -1069,7 +1014,7 @@ describe("Governance Integration", function () {
       await governor.connect(bob).castVote(1, Vote.For);
 
       // Wait for voting period
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
       expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
 
       // Queue

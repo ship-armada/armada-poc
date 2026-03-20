@@ -310,10 +310,46 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.windowEnd()).to.be.gt(0);
     });
 
+    it("startWindow() reverts when called by non-admin", async function () {
+      await crowdfund.addSeed(seed1.address);
+      await expect(
+        crowdfund.connect(outsider).startWindow()
+      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+    });
+
+    it("startWindow() reverts when called outside Setup phase", async function () {
+      await setupWithSeeds([seed1]);
+      // Already in Active phase — calling again should fail
+      await expect(
+        crowdfund.startWindow()
+      ).to.be.revertedWith("ArmadaCrowdfund: wrong phase");
+    });
+
+    it("startWindow() emits WindowStarted with correct timestamps", async function () {
+      await crowdfund.addSeed(seed1.address);
+      const tx = await crowdfund.startWindow();
+      const receipt = await tx.wait();
+      const event = receipt.logs.find((l: any) => l.fragment?.name === "WindowStarted");
+      expect(event).to.not.be.undefined;
+    });
+
     it("should reject starting with no seeds", async function () {
       await expect(
         crowdfund.startWindow()
       ).to.be.revertedWith("ArmadaCrowdfund: no seeds");
+    });
+
+    it("addSeed() emits SeedAdded event", async function () {
+      await expect(crowdfund.addSeed(seed1.address))
+        .to.emit(crowdfund, "SeedAdded")
+        .withArgs(seed1.address);
+    });
+
+    it("invite() reverts when invitee is zero address", async function () {
+      await setupWithSeeds([seed1]);
+      await expect(
+        crowdfund.connect(seed1).invite(ethers.ZeroAddress, 0)
+      ).to.be.revertedWith("ArmadaCrowdfund: zero address");
     });
 
     it("should allow seed to invite at hop 1", async function () {
@@ -415,6 +451,16 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.getInvitesRemaining(seed1.address, 0)).to.equal(2);
       expect(await crowdfund.getInvitesRemaining(hop1a.address, 1)).to.equal(2);
     });
+
+    it("invite() increments invitesSent on inviter node", async function () {
+      await setupWithSeeds([seed1]);
+      const before = await crowdfund.participants(seed1.address, 0);
+      expect(before.invitesSent).to.equal(0);
+
+      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      const after = await crowdfund.participants(seed1.address, 0);
+      expect(after.invitesSent).to.equal(1);
+    });
   });
 
   // ============================================================
@@ -422,6 +468,13 @@ describe("Crowdfund Integration", function () {
   // ============================================================
 
   describe("Active Window — Commitments", function () {
+    it("commit() emits Committed event", async function () {
+      await setupActive([seed1]);
+      await expect(crowdfund.connect(seed1).commit(USDC(5_000), 0))
+        .to.emit(crowdfund, "Committed")
+        .withArgs(seed1.address, USDC(5_000), USDC(5_000), 0);
+    });
+
     it("should allow whitelisted address to commit USDC", async function () {
       await setupActive([seed1]);
 
@@ -1109,6 +1162,39 @@ describe("Crowdfund Integration", function () {
   // ============================================================
 
   describe("Emergency Pause", function () {
+    it("pause() blocks finalize()", async function () {
+      const seeds = allSigners.slice(1, 71);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      await crowdfund.startWindow();
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(USDC(15_000), 0);
+      }
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
+      await time.increase(THREE_WEEKS + 1);
+
+      await crowdfund.pause();
+      await expect(
+        crowdfund.finalize()
+      ).to.be.revertedWith("Pausable: paused");
+
+      // Unpause — finalize succeeds
+      await crowdfund.unpause();
+      await crowdfund.finalize();
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+    });
+
+    it("pause() blocks launchTeamInvite()", async function () {
+      await setupWithSeeds([seed1]);
+      await crowdfund.pause();
+
+      await expect(
+        crowdfund.launchTeamInvite(hop1a.address, 1)
+      ).to.be.revertedWith("Pausable: paused");
+    });
+
     it("pause() blocks invite() and commit()", async function () {
       await setupWithSeeds([seed1]);
       await crowdfund.pause();

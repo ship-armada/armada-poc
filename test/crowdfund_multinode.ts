@@ -235,6 +235,87 @@ describe("Crowdfund Multi-Node", function () {
   });
 
   // ============================================================
+  // Per-Hop Invite-Received Caps
+  // ============================================================
+
+  describe("Per-Hop Invite-Received Caps", function () {
+    it("hop-1 maxInvitesReceived is 10", async function () {
+      // Need 10 seeds to send 10 invites to the same hop-1 address
+      const signers = await ethers.getSigners();
+      const seeds = signers.slice(10, 20);
+      await setupWithSeeds(seeds);
+
+      // All 10 seeds invite alice to hop-1
+      for (let i = 0; i < 10; i++) {
+        await crowdfund.connect(seeds[i]).invite(alice.address, 0);
+      }
+      expect(await crowdfund.getInvitesReceived(alice.address, 1)).to.equal(10);
+
+      // Need an 11th seed to attempt the overflow
+      const extraSeed = signers[20];
+      await crowdfund.addSeeds([extraSeed.address]);
+      await expect(
+        crowdfund.connect(extraSeed).invite(alice.address, 0)
+      ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
+    });
+
+    it("hop-2 maxInvitesReceived is 20", async function () {
+      // Need 20 hop-1 addresses to send 20 invites to the same hop-2 address
+      const signers = await ethers.getSigners();
+      const seeds = signers.slice(10, 17); // 7 seeds, each with 3 outgoing invites = 21 hop-1 addresses
+      await setupWithSeeds(seeds);
+
+      // Create 21 hop-1 addresses
+      const hop1Addrs: any[] = [];
+      for (let i = 0; i < seeds.length; i++) {
+        for (let j = 0; j < 3; j++) {
+          const idx = 20 + i * 3 + j;
+          if (idx < signers.length) {
+            await crowdfund.connect(seeds[i]).invite(signers[idx].address, 0);
+            hop1Addrs.push(signers[idx]);
+          }
+        }
+      }
+
+      // First 20 hop-1 addresses invite alice to hop-2
+      for (let i = 0; i < 20; i++) {
+        await crowdfund.connect(hop1Addrs[i]).invite(alice.address, 1);
+      }
+      expect(await crowdfund.getInvitesReceived(alice.address, 2)).to.equal(20);
+
+      // 21st should revert
+      await expect(
+        crowdfund.connect(hop1Addrs[20]).invite(alice.address, 1)
+      ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
+    });
+
+    it("different hops enforce different caps", async function () {
+      // Hop-1 cap is 10, hop-2 cap is 20 — verify they're independent
+      const signers = await ethers.getSigners();
+      const seeds = signers.slice(10, 21); // 11 seeds
+      await setupWithSeeds(seeds);
+
+      // 10 invites to alice at hop-1 succeed, 11th fails
+      for (let i = 0; i < 10; i++) {
+        await crowdfund.connect(seeds[i]).invite(alice.address, 0);
+      }
+      await expect(
+        crowdfund.connect(seeds[10]).invite(alice.address, 0)
+      ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
+
+      // Meanwhile alice can still receive invites at hop-2 (different node)
+      // Use two of the seeds' hop-1 invitees to invite alice at hop-2
+      const bob = signers[25];
+      const carol = signers[26];
+      await crowdfund.connect(seeds[0]).invite(bob.address, 0);
+      await crowdfund.connect(seeds[1]).invite(carol.address, 0);
+      await crowdfund.connect(bob).invite(alice.address, 1);
+      await crowdfund.connect(carol).invite(alice.address, 1);
+      expect(await crowdfund.getInvitesReceived(alice.address, 2)).to.equal(2);
+    });
+  });
+
+  // ============================================================
   // Full Recursive Self-Fill ($33k)
   // ============================================================
 

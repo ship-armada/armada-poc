@@ -42,7 +42,7 @@ export const CROWDFUND_ABI = [
   'function participants(address, uint8) view returns (bool isWhitelisted, uint16 invitesReceived, uint256 committed, uint256 allocation, uint256 refund, bool claimed, address invitedBy, uint16 invitesSent)',
   'function participantNodes(uint256) view returns (address addr, uint8 hop)',
   'function hopStats(uint256) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
-  'function hopConfigs(uint256) view returns (uint16 ceilingBps, uint256 capUsdc, uint8 maxInvites)',
+  'function hopConfigs(uint256) view returns (uint16 ceilingBps, uint256 capUsdc, uint8 maxInvites, uint16 maxInvitesReceived)',
   'function finalCeilings(uint256) view returns (uint256)',
   'function finalDemands(uint256) view returns (uint256)',
   'function totalArmClaimed() view returns (uint256)',

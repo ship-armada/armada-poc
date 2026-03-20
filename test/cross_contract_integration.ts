@@ -68,7 +68,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     // Deploy tokens
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
+    armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
@@ -113,7 +113,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
-      await votingLocker.getAddress(),
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
@@ -640,7 +639,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Step 1: Deploy canonical ARM token
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      localArmToken = await ArmadaToken.deploy(localDeployer.address);
+      localArmToken = await ArmadaToken.deploy(localDeployer.address, localDeployer.address);
       await localArmToken.waitForDeployment();
 
       // Step 2: Deploy governance stack
@@ -670,7 +669,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       localGovernor = await ArmadaGovernor.deploy(
-        await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
         localTlAddr,
         await localTreasury.getAddress(),
@@ -962,7 +960,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Deploy a fresh governor to test (the existing one already has it locked)
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       const freshGovernor = await ArmadaGovernor.deploy(
-        await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
         await localTimelockController.getAddress(),
         await localTreasury.getAddress(),

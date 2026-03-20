@@ -54,7 +54,7 @@ describe("Gas Benchmarks", function () {
         const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
         const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-        const armToken = await ArmadaToken.deploy(deployer.address);
+        const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
         const crowdfund = await ArmadaCrowdfund.deploy(
@@ -159,7 +159,7 @@ describe("Gas Benchmarks", function () {
         const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
         const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-        const armToken = await ArmadaToken.deploy(deployer.address);
+        const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
         const crowdfund = await ArmadaCrowdfund.deploy(
@@ -197,7 +197,7 @@ describe("Gas Benchmarks", function () {
       const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const crowdfund = await ArmadaCrowdfund.deploy(
@@ -263,7 +263,7 @@ describe("Gas Benchmarks", function () {
     it("getPastLockedBalance() gas with 10, 100, 500, 1000 checkpoints (binary search)", async function () {
       // Deploy governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
@@ -326,7 +326,7 @@ describe("Gas Benchmarks", function () {
     it("castVote() gas with deep checkpoint history", async function () {
       // Full governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
@@ -341,7 +341,6 @@ describe("Gas Benchmarks", function () {
       // Deploy governor
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       const governor = await ArmadaGovernor.deploy(
-        await locker.getAddress(),
         await armToken.getAddress(),
         await timelock.getAddress(),
         deployer.address, // treasury
@@ -461,7 +460,7 @@ describe("Gas Benchmarks", function () {
       const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const crowdfund = await ArmadaCrowdfund.deploy(

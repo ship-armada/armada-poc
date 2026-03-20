@@ -273,7 +273,7 @@ contract GovernorInvariantTest is Test {
 
     function setUp() public {
         // Deploy ARM token
-        armToken = new ArmadaToken(address(this));
+        armToken = new ArmadaToken(address(this), address(this));
         TOKENS_PER_ACTOR = armToken.INITIAL_SUPPLY() / 10; // 10% of supply each
 
         // Deploy TimelockController
@@ -291,11 +291,16 @@ contract GovernorInvariantTest is Test {
         // Deploy VotingLocker
         locker = new VotingLocker(address(armToken), address(this), 14 days, address(timelock));
 
+        // Whitelist deployer and locker so token transfers work
+        address[] memory wl = new address[](2);
+        wl[0] = address(this);
+        wl[1] = address(locker);
+        armToken.initWhitelist(wl);
+
         treasuryAddr = address(0xBABE);
 
         // Deploy Governor
         governor = new ArmadaGovernor(
-            address(locker),
             address(armToken),
             payable(address(timelock)),
             treasuryAddr,

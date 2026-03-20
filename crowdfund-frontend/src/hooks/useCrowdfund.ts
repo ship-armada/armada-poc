@@ -57,6 +57,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const [
         phase,
         admin,
+        launchTeamAddr,
         armLoaded,
         totalCommitted,
         saleSize,
@@ -72,9 +73,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         usdcAllowance,
         isRefundMode,
         claimDeadline,
+        launchTeamBudgetRaw,
       ] = await Promise.all([
         contract.phase(),
         contract.admin(),
+        contract.launchTeam(),
         contract.armLoaded(),
         contract.totalCommitted(),
         contract.saleSize(),
@@ -90,6 +93,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         usdc.allowance(currentAddress, deployment.contracts.crowdfund),
         contract.refundMode(),
         contract.claimDeadline(),
+        contract.getLaunchTeamBudgetRemaining(),
       ])
 
       const parsedPhase = Number(phase) as Phase
@@ -170,6 +174,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       setState({
         phase: parsedPhase,
         adminAddress: admin as string,
+        launchTeamAddress: launchTeamAddr as string,
+        launchTeamBudget: {
+          hop1Remaining: Number(launchTeamBudgetRaw[0]),
+          hop2Remaining: Number(launchTeamBudgetRaw[1]),
+        },
         armLoaded: armLoaded as boolean,
         totalCommitted: BigInt(totalCommitted),
         saleSize: BigInt(saleSize),
@@ -403,6 +412,15 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     [executeTx],
   )
 
+  const launchTeamInvite = useCallback(
+    (invitee: string, hop: number) =>
+      executeTx('Launch team invite', (signer, dep) => {
+        const contract = getCrowdfundContract(dep, signer)
+        return contract.launchTeamInvite(invitee, hop)
+      }),
+    [executeTx],
+  )
+
   const approveAndCommit = useCallback(
     (amount: bigint, hop: number) =>
       executeTx(`Committing ${formatUsdc(amount)}`, async (signer, dep) => {
@@ -539,6 +557,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     loadArm,
     startWindow,
     invite,
+    launchTeamInvite,
     approveAndCommit,
     finalize,
     claim,

@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { ShieldCheck, ShieldAlert, Play, Flag, Coins, Zap } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, Play, Flag, Coins, Zap, Users } from 'lucide-react'
 import { Phase } from '@/types/crowdfund'
 import type { CrowdfundState } from '@/atoms/crowdfund'
 import type { useCrowdfund } from '@/hooks/useCrowdfund'
@@ -21,12 +21,22 @@ import { formatUsdc, formatArm } from '@/utils/format'
 interface AdminPanelProps {
   state: CrowdfundState
   crowdfund: ReturnType<typeof useCrowdfund>
+  currentAddress: string | null
 }
 
-export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
+export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps) {
   const [seedInput, setSeedInput] = useState('')
   const [treasuryInput, setTreasuryInput] = useState('')
+  const [ltInviteAddr, setLtInviteAddr] = useState('')
+  const [ltInviteHop, setLtInviteHop] = useState<1 | 2>(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const isAdmin = currentAddress && state.adminAddress
+    ? currentAddress.toLowerCase() === state.adminAddress.toLowerCase()
+    : false
+  const isLaunchTeam = currentAddress && state.launchTeamAddress
+    ? currentAddress.toLowerCase() === state.launchTeamAddress.toLowerCase()
+    : false
 
   // Pre-fill treasury address from deployment manifest (falls back to admin address)
   useEffect(() => {
@@ -126,6 +136,14 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
     setIsSubmitting(false)
   }
 
+  const handleLaunchTeamInvite = async () => {
+    if (!isAddress(ltInviteAddr)) return
+    setIsSubmitting(true)
+    await crowdfund.launchTeamInvite(ltInviteAddr, ltInviteHop)
+    setIsSubmitting(false)
+    setLtInviteAddr('')
+  }
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -135,8 +153,8 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Setup Phase: Add Seeds */}
-        {phase === Phase.Setup && (
+        {/* Setup Phase: Add Seeds (admin only) */}
+        {phase === Phase.Setup && isAdmin && (
           <>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -230,8 +248,98 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
           </>
         )}
 
-        {/* After window ends: Finalize */}
-        {phase === Phase.Active && (
+        {/* Active Phase: Launch Team Invites */}
+        {phase === Phase.Active && isLaunchTeam && (() => {
+          const budget = state.launchTeamBudget
+          const inviteWindowOpen = state.blockTimestamp > 0 && state.blockTimestamp < Number(state.launchTeamInviteEnd)
+          const selectedBudget = ltInviteHop === 1 ? budget?.hop1Remaining : budget?.hop2Remaining
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Users className="h-4 w-4" />
+                Launch Team Invites
+              </div>
+
+              {/* Budget display */}
+              {budget && (
+                <div className="rounded-md bg-muted/50 px-3 py-2 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Hop-1 budget:</span>
+                    <span className="font-medium">{budget.hop1Remaining}/60 remaining</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Hop-2 budget:</span>
+                    <span className="font-medium">{budget.hop2Remaining}/60 remaining</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Deadline indicator */}
+              {inviteWindowOpen ? (
+                <p className="text-xs text-muted-foreground">
+                  Invite window closes at block time {new Date(Number(state.launchTeamInviteEnd) * 1000).toLocaleString()}
+                </p>
+              ) : (
+                <div className="rounded-md px-3 py-2 text-sm text-amber-700"
+                  style={{ backgroundColor: 'var(--color-amber-50)' }}
+                >
+                  Launch team invite window has closed
+                </div>
+              )}
+
+              {/* Invite form (only when window is open) */}
+              {inviteWindowOpen && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Invitee Address</Label>
+                    <Input
+                      placeholder="0x..."
+                      value={ltInviteAddr}
+                      onChange={(e) => setLtInviteAddr(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Hop</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={ltInviteHop === 1 ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setLtInviteHop(1)}
+                        className="flex-1"
+                      >
+                        Hop 1 ({budget?.hop1Remaining ?? '?'} left)
+                      </Button>
+                      <Button
+                        variant={ltInviteHop === 2 ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setLtInviteHop(2)}
+                        className="flex-1"
+                      >
+                        Hop 2 ({budget?.hop2Remaining ?? '?'} left)
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleLaunchTeamInvite}
+                    disabled={isSubmitting || !isAddress(ltInviteAddr) || (selectedBudget ?? 0) === 0}
+                    size="sm"
+                    className="w-full"
+                  >
+                    Send Invite
+                  </Button>
+                </>
+              )}
+
+              <Separator />
+            </div>
+          )
+        })()}
+
+        {/* After window ends: Finalize (admin or anyone) */}
+        {phase === Phase.Active && isAdmin && (
           <div className="space-y-2">
             <Button
               onClick={handleFinalize}
@@ -261,8 +369,8 @@ export function AdminPanel({ state, crowdfund }: AdminPanelProps) {
           </div>
         )}
 
-        {/* Finalized: Withdrawals */}
-        {phase === Phase.Finalized && (
+        {/* Finalized: Withdrawals (admin only) */}
+        {phase === Phase.Finalized && isAdmin && (
           <>
             <div className="space-y-2">
               <Label>Treasury Address</Label>

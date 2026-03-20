@@ -19,9 +19,13 @@ export const CROWDFUND_ABI = [
   'function claim() external',
   'function claimRefund() external',
 
+  // Launch team actions
+  'function launchTeamInvite(address invitee, uint8 hop) external',
+
   // State variables (public getters)
   'function phase() view returns (uint8)',
   'function admin() view returns (address)',
+  'function launchTeam() view returns (address)',
   'function usdc() view returns (address)',
   'function armToken() view returns (address)',
   'function treasury() view returns (address)',
@@ -58,6 +62,7 @@ export const CROWDFUND_ABI = [
   'function getAllocationAtHop(address addr, uint8 hop) view returns (uint256 allocation, uint256 refund, bool claimed)',
   'function getEffectiveCap(address addr, uint8 hop) view returns (uint256)',
   'function getParticipantCount() view returns (uint256)',
+  'function getLaunchTeamBudgetRemaining() view returns (uint8 hop1Remaining, uint8 hop2Remaining)',
 
   // Events
   'event SeedAdded(address indexed seed)',

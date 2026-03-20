@@ -34,14 +34,20 @@ export function App() {
     )
   }
 
+  const currentAddress = accounts.currentAddress
+  const isLaunchTeam = currentAddress && state.launchTeamAddress
+    ? currentAddress.toLowerCase() === state.launchTeamAddress.toLowerCase()
+    : false
+  const showAdminPanel = accounts.isAdmin || isLaunchTeam
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header accounts={accounts} crowdfund={crowdfund} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
         <SaleStatus state={state} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {accounts.isAdmin && (
-            <AdminPanel state={state} crowdfund={crowdfund} />
+          {showAdminPanel && (
+            <AdminPanel state={state} crowdfund={crowdfund} currentAddress={currentAddress} />
           )}
           <ParticipantPanel state={state} crowdfund={crowdfund} />
         </div>

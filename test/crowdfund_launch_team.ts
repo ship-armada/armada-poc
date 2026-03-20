@@ -139,6 +139,12 @@ describe("Launch Team & Seed Cap", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: invalid hop for launch team");
     });
 
+    it("reverts if hop > 2", async function () {
+      await expect(
+        crowdfund.launchTeamInvite(invitee1.address, 3)
+      ).to.be.reverted;
+    });
+
     it("reverts if caller is not launch team", async function () {
       await expect(
         crowdfund.connect(outsider).launchTeamInvite(invitee1.address, 1)

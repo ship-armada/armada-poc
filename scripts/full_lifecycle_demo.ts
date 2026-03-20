@@ -9,7 +9,7 @@
  *
  *   Phase 1: Deploy — governance stack + crowdfund with shared ARM + unified treasury
  *   Phase 2: Crowdfund — seeds → window → invite + commit → finalize → claim
- *   Phase 3: Treasury Reclaim — withdrawProceeds + withdrawUnallocatedArm → treasury
+ *   Phase 3: Treasury Reclaim — withdrawUnallocatedArm → treasury (proceeds pushed at finalization)
  *   Phase 4: Governance Activation — lock ARM → quorum analysis
  *   Phase 5: Treasury Proposal — governance distributes USDC from treasury
  *   Phase 6: Steward Election — community-required quorum + operational spend

@@ -188,9 +188,9 @@ async function main() {
   const extraSeeds = signers.slice(32, 120);
   log("NOTE", `Adding ${extraSeeds.length} extra seeds to reach minimum raise...`);
 
-  // We need to deploy a new crowdfund with all these seeds pre-loaded
-  // Actually, we can't add seeds after invitation starts.
-  // Instead, let's just show the demo even if it cancels, and explain.
+  // We need to deploy a new crowdfund with all these seeds pre-loaded.
+  // Seeds can be added during week 1 of the Active window, but this demo
+  // is already past that point. Instead, show the demo even if it cancels.
   console.log("");
   log("NOTE", `Total committed: ${fmtUsdc(totalComm)} (below $1M minimum)`);
   log("NOTE", `In production, 70+ seeds would reach minimum. Demo shows mechanics.`);

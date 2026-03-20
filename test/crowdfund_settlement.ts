@@ -202,6 +202,21 @@ describe("Crowdfund Settlement Rework", function () {
     it("securityCouncil immutable is set correctly", async function () {
       expect(await crowdfund.securityCouncil()).to.equal(securityCouncil.address);
     });
+
+    it("claimRefund reverts for whitelisted address with zero commitment", async function () {
+      await crowdfund.addSeeds([allSigners[5].address, allSigners[6].address]);
+      await crowdfund.startWindow();
+      // allSigners[5] commits, allSigners[6] does not
+      await fundAndApprove(allSigners[5], USDC(10_000));
+      await crowdfund.connect(allSigners[5]).commit(USDC(10_000), 0);
+
+      await crowdfund.connect(securityCouncil).cancel();
+
+      // Whitelisted-but-uncommitted address should revert
+      await expect(
+        crowdfund.connect(allSigners[6]).claimRefund()
+      ).to.be.revertedWith("ArmadaCrowdfund: no commitment");
+    });
   });
 
   // ============================================================
@@ -446,6 +461,18 @@ describe("Crowdfund Settlement Rework", function () {
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
       expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
+    });
+
+    it("emits UnallocatedArmWithdrawn event", async function () {
+      const seeds = await setupAndFinalize(68, USDC(15_000));
+
+      const totalAlloc = await crowdfund.totalAllocated();
+      const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
+      const expectedSweep = armInContract - totalAlloc;
+
+      await expect(crowdfund.withdrawUnallocatedArm())
+        .to.emit(crowdfund, "UnallocatedArmWithdrawn")
+        .withArgs(treasury.address, expectedSweep);
     });
 
     it("permissionless: any address can call", async function () {

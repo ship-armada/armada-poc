@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+// ABOUTME: Governance-controlled treasury with claims, steward budget, and aggregate outflow rate limits.
+// ABOUTME: Outflow limits enforce a rolling-window cap per token to defend against governance capture.
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -8,7 +10,8 @@ import "./EmergencyPausable.sol";
 
 /// @title ArmadaTreasuryGov — Governance-controlled treasury with claims mechanism
 /// @notice Owned by TimelockController (immutable). Supports direct distributions,
-///         claims (deferred exercise), and steward operational budget.
+///         claims (deferred exercise), steward operational budget, and aggregate
+///         outflow rate limits per token over a rolling window.
 contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     using SafeERC20 for IERC20;
 
@@ -20,6 +23,23 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         uint256 amount;
         uint256 exercised;
         uint256 createdAt;
+    }
+
+    /// @notice Per-token outflow rate limit configuration.
+    /// The effective limit is: max(percentageOfBalance, limitAbsolute),
+    /// then max(result, floorAbsolute). The floor is immutable once set.
+    struct OutflowConfig {
+        uint256 windowDuration;   // rolling window in seconds (e.g. 30 days)
+        uint256 limitBps;         // percentage of current treasury balance (1000 = 10%)
+        uint256 limitAbsolute;    // absolute cap in token units
+        uint256 floorAbsolute;    // immutable minimum — governance can never reduce below this
+        bool initialized;         // whether config has been set for this token
+    }
+
+    /// @notice Record of a single outflow event, used for rolling window accounting.
+    struct OutflowRecord {
+        uint256 amount;
+        uint256 timestamp;
     }
 
     // ============ State ============
@@ -48,6 +68,15 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     mapping(address => uint256) public lastBudgetReset; // timestamp when current period started
     mapping(address => uint256) public budgetBasis; // treasury balance snapshotted at period start
 
+    // Aggregate outflow rate limits (per token)
+    //
+    // Both governance distributions and steward spending count against the same
+    // rolling-window limit. This is the primary defense against governance capture:
+    // even a compromised governance can only drain the treasury at a limited rate,
+    // giving stakeholders time to respond.
+    mapping(address => OutflowConfig) internal _outflowConfigs;
+    mapping(address => OutflowRecord[]) internal _outflowHistory;
+
     // ============ Events ============
 
     event DirectDistribution(address indexed token, address indexed recipient, uint256 amount);
@@ -55,6 +84,10 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount);
     event StewardUpdated(address indexed oldSteward, address indexed newSteward);
     event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining);
+    event OutflowConfigInitialized(address indexed token, uint256 windowDuration, uint256 limitBps, uint256 limitAbsolute, uint256 floorAbsolute);
+    event OutflowWindowUpdated(address indexed token, uint256 newWindow);
+    event OutflowLimitBpsUpdated(address indexed token, uint256 newBps);
+    event OutflowLimitAbsoluteUpdated(address indexed token, uint256 newAbsolute);
 
     // ============ Modifiers ============
 
@@ -84,6 +117,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     /// @notice Direct distribution: send tokens to recipient immediately
     function distribute(address token, address recipient, uint256 amount) external onlyOwner whenNotPaused {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
+        _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
         emit DirectDistribution(token, recipient, amount);
     }
@@ -134,6 +168,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         require(c.exercised + amount <= c.amount, "ArmadaTreasuryGov: exceeds claim");
 
         c.exercised += amount;
+        _checkAndRecordOutflow(c.token, amount);
         IERC20(c.token).safeTransfer(c.beneficiary, amount);
 
         emit ClaimExercised(claimId, c.beneficiary, amount);
@@ -165,10 +200,113 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         );
 
         budgetSpentThisPeriod[token] += amount;
+        _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
 
         uint256 remaining = monthlyBudget - budgetSpentThisPeriod[token];
         emit StewardSpent(token, recipient, amount, remaining);
+    }
+
+    // ============ Outflow Rate Limit Management (owner = timelock) ============
+
+    /// @notice Initialize outflow config for a token. Callable once per token by owner.
+    /// @param token Token address
+    /// @param windowDuration Rolling window in seconds (minimum 1 day)
+    /// @param limitBps Percentage of treasury balance (e.g. 1000 = 10%)
+    /// @param limitAbsolute Absolute cap in token units
+    /// @param floorAbsolute Immutable minimum — governance can never reduce absolute below this
+    function initOutflowConfig(
+        address token,
+        uint256 windowDuration,
+        uint256 limitBps,
+        uint256 limitAbsolute,
+        uint256 floorAbsolute
+    ) external onlyOwner {
+        require(!_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow already initialized");
+        require(windowDuration >= 1 days, "ArmadaTreasuryGov: window too short");
+        require(limitBps <= 10000, "ArmadaTreasuryGov: bps out of range");
+        require(limitAbsolute >= floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
+
+        _outflowConfigs[token] = OutflowConfig({
+            windowDuration: windowDuration,
+            limitBps: limitBps,
+            limitAbsolute: limitAbsolute,
+            floorAbsolute: floorAbsolute,
+            initialized: true
+        });
+
+        emit OutflowConfigInitialized(token, windowDuration, limitBps, limitAbsolute, floorAbsolute);
+    }
+
+    /// @notice Update the rolling window duration for a token's outflow limit.
+    function setOutflowWindow(address token, uint256 newWindow) external onlyOwner {
+        require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
+        require(newWindow >= 1 days, "ArmadaTreasuryGov: window too short");
+        _outflowConfigs[token].windowDuration = newWindow;
+        emit OutflowWindowUpdated(token, newWindow);
+    }
+
+    /// @notice Update the percentage-based outflow limit for a token.
+    function setOutflowLimitBps(address token, uint256 newBps) external onlyOwner {
+        require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
+        require(newBps <= 10000, "ArmadaTreasuryGov: bps out of range");
+        _outflowConfigs[token].limitBps = newBps;
+        emit OutflowLimitBpsUpdated(token, newBps);
+    }
+
+    /// @notice Update the absolute outflow limit for a token. Cannot be set below floor.
+    function setOutflowLimitAbsolute(address token, uint256 newAbsolute) external onlyOwner {
+        require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
+        require(newAbsolute >= _outflowConfigs[token].floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
+        _outflowConfigs[token].limitAbsolute = newAbsolute;
+        emit OutflowLimitAbsoluteUpdated(token, newAbsolute);
+    }
+
+    // ============ Internal: Outflow Enforcement ============
+
+    /// @dev Check that a proposed outflow does not exceed the rolling-window limit,
+    ///      and record the outflow if it passes. Skips if no config is initialized.
+    function _checkAndRecordOutflow(address token, uint256 amount) internal {
+        OutflowConfig storage config = _outflowConfigs[token];
+        if (!config.initialized) return; // no limit configured — allow
+
+        // Calculate effective limit: max(pct of current balance, absolute), then max(result, floor)
+        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+        uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
+        uint256 effectiveLimit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
+        if (effectiveLimit < config.floorAbsolute) {
+            effectiveLimit = config.floorAbsolute;
+        }
+
+        // Sum recent outflows within the rolling window
+        uint256 recentOutflow = _sumRecentOutflows(token, config.windowDuration);
+
+        require(
+            recentOutflow + amount <= effectiveLimit,
+            "ArmadaTreasuryGov: outflow limit exceeded"
+        );
+
+        // Record this outflow
+        _outflowHistory[token].push(OutflowRecord({
+            amount: amount,
+            timestamp: block.timestamp
+        }));
+    }
+
+    /// @dev Sum outflow amounts within the rolling window, iterating backwards from most recent.
+    function _sumRecentOutflows(address token, uint256 windowDuration) internal view returns (uint256 total) {
+        OutflowRecord[] storage records = _outflowHistory[token];
+        uint256 len = records.length;
+        if (len == 0) return 0;
+
+        uint256 cutoff = block.timestamp > windowDuration ? block.timestamp - windowDuration : 0;
+
+        // Iterate backwards — most recent records are at the end
+        for (uint256 i = len; i > 0; i--) {
+            OutflowRecord storage r = records[i - 1];
+            if (r.timestamp < cutoff) break; // older entries are further back, stop early
+            total += r.amount;
+        }
     }
 
     // ============ View Functions ============
@@ -204,4 +342,34 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         remaining = budget > spent ? budget - spent : 0;
     }
 
+    /// @notice Get the outflow configuration for a token.
+    function getOutflowConfig(address token) external view returns (
+        uint256 windowDuration,
+        uint256 limitBps,
+        uint256 limitAbsolute,
+        uint256 floorAbsolute
+    ) {
+        OutflowConfig storage config = _outflowConfigs[token];
+        return (config.windowDuration, config.limitBps, config.limitAbsolute, config.floorAbsolute);
+    }
+
+    /// @notice Get the current outflow status for a token: effective limit, recent outflow, and available.
+    function getOutflowStatus(address token) external view returns (
+        uint256 effectiveLimit,
+        uint256 recentOutflow,
+        uint256 available
+    ) {
+        OutflowConfig storage config = _outflowConfigs[token];
+        if (!config.initialized) return (0, 0, 0);
+
+        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+        uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
+        effectiveLimit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
+        if (effectiveLimit < config.floorAbsolute) {
+            effectiveLimit = config.floorAbsolute;
+        }
+
+        recentOutflow = _sumRecentOutflows(token, config.windowDuration);
+        available = effectiveLimit > recentOutflow ? effectiveLimit - recentOutflow : 0;
+    }
 }

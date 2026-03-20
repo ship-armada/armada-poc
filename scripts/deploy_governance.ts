@@ -2,12 +2,17 @@
  * Deploy Armada Governance Contracts
  *
  * Deploys:
- * - ArmadaToken (ARM)
- * - VotingLocker
  * - TimelockController (OZ)
- * - ArmadaTreasuryGov
+ * - ArmadaToken (ARM) with ERC20Votes
+ * - ArmadaTreasuryGov (with outflow rate limits)
  * - ArmadaGovernor
  * - TreasurySteward
+ * - RevenueCounter (UUPS proxy)
+ *
+ * Post-deploy configuration:
+ * - ARM token: setNoDelegation, initWhitelist, setWindDownContract (deferred)
+ * - Treasury: initOutflowConfig for USDC and ARM
+ * - Timelock: grant roles to governor, renounce admin
  *
  * Usage (local):
  *   npx hardhat run scripts/deploy_governance.ts --network hub
@@ -30,12 +35,13 @@ interface GovernanceDeployment {
   chainId: number;
   deployer: string;
   contracts: {
-    armToken: string;
-    votingLocker: string;
     timelockController: string;
+    armToken: string;
     treasury: string;
     governor: string;
     steward: string;
+    revenueCounter: string;
+    revenueCounterImpl: string;
   };
   config: {
     timelockMinDelay: number;
@@ -62,6 +68,11 @@ async function main() {
   const timelockDelay = config.timelockDelay;
   const stewardDelay = config.stewardDelay;
 
+  // Emergency pause config: deployer as initial guardian, 14 day max pause
+  // TODO: Transfer guardian to a dedicated multisig after deployment
+  const guardianAddress = deployer.address;
+  const maxPauseDuration = 14 * 24 * 60 * 60; // 14 days
+
   console.log("=== Deploying Armada Governance Contracts ===");
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
@@ -70,21 +81,8 @@ async function main() {
   console.log(`Steward delay: ${stewardDelay}s`);
   console.log("");
 
-  // 1. Deploy ArmadaToken
-  console.log("1. Deploying ArmadaToken...");
-  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-  const armToken = await ArmadaToken.deploy(deployer.address, nm.override());
-  await armToken.deploymentTransaction()!.wait();
-  const armTokenAddress = await armToken.getAddress();
-  console.log(`   ArmadaToken: ${armTokenAddress}`);
-
-  // Emergency pause config: deployer as initial guardian, 14 day max pause
-  // TODO: Transfer guardian to a dedicated multisig after deployment
-  const guardianAddress = deployer.address;
-  const maxPauseDuration = 14 * 24 * 60 * 60; // 14 days
-
-  // 2. Deploy TimelockController (needed before VotingLocker for pauseTimelock)
-  console.log("2. Deploying TimelockController...");
+  // 1. Deploy TimelockController (needed before ArmadaToken for timelock address)
+  console.log("1. Deploying TimelockController...");
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(
     timelockDelay, [], [], deployer.address, nm.override()
@@ -93,18 +91,16 @@ async function main() {
   const timelockAddress = await timelock.getAddress();
   console.log(`   TimelockController: ${timelockAddress}`);
 
-  // 3. Deploy VotingLocker
-  console.log("3. Deploying VotingLocker...");
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(
-    armTokenAddress, guardianAddress, maxPauseDuration, timelockAddress, nm.override()
-  );
-  await votingLocker.deploymentTransaction()!.wait();
-  const votingLockerAddress = await votingLocker.getAddress();
-  console.log(`   VotingLocker: ${votingLockerAddress}`);
+  // 2. Deploy ArmadaToken (needs timelock address for addToWhitelist gating)
+  console.log("2. Deploying ArmadaToken...");
+  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+  const armToken = await ArmadaToken.deploy(deployer.address, timelockAddress, nm.override());
+  await armToken.deploymentTransaction()!.wait();
+  const armTokenAddress = await armToken.getAddress();
+  console.log(`   ArmadaToken: ${armTokenAddress}`);
 
-  // 4. Deploy ArmadaTreasuryGov
-  console.log("4. Deploying ArmadaTreasuryGov...");
+  // 3. Deploy ArmadaTreasuryGov
+  console.log("3. Deploying ArmadaTreasuryGov...");
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
   const treasury = await ArmadaTreasuryGov.deploy(
     timelockAddress, guardianAddress, maxPauseDuration, nm.override()
@@ -113,19 +109,19 @@ async function main() {
   const treasuryAddress = await treasury.getAddress();
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
-  // 5. Deploy ArmadaGovernor
-  console.log("5. Deploying ArmadaGovernor...");
+  // 4. Deploy ArmadaGovernor (no votingLocker — uses ERC20Votes directly)
+  console.log("4. Deploying ArmadaGovernor...");
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governor = await ArmadaGovernor.deploy(
-    votingLockerAddress, armTokenAddress, timelockAddress, treasuryAddress,
+    armTokenAddress, timelockAddress, treasuryAddress,
     guardianAddress, maxPauseDuration, nm.override()
   );
   await governor.deploymentTransaction()!.wait();
   const governorAddress = await governor.getAddress();
   console.log(`   ArmadaGovernor: ${governorAddress}`);
 
-  // 6. Deploy TreasurySteward
-  console.log("6. Deploying TreasurySteward...");
+  // 5. Deploy TreasurySteward
+  console.log("5. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const steward = await TreasurySteward.deploy(
     timelockAddress, treasuryAddress, governorAddress, stewardDelay,
@@ -134,6 +130,25 @@ async function main() {
   await steward.deploymentTransaction()!.wait();
   const stewardAddress = await steward.getAddress();
   console.log(`   TreasurySteward: ${stewardAddress}`);
+
+  // 6. Deploy RevenueCounter (UUPS proxy)
+  console.log("6. Deploying RevenueCounter (UUPS proxy)...");
+  const RevenueCounter = await ethers.getContractFactory("RevenueCounter");
+  const revenueCounterImpl = await RevenueCounter.deploy(nm.override());
+  await revenueCounterImpl.deploymentTransaction()!.wait();
+  const revenueCounterImplAddress = await revenueCounterImpl.getAddress();
+  console.log(`   RevenueCounter (impl): ${revenueCounterImplAddress}`);
+
+  const initData = RevenueCounter.interface.encodeFunctionData("initialize", [timelockAddress]);
+  const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
+  const revenueCounterProxy = await ERC1967Proxy.deploy(
+    revenueCounterImplAddress, initData, nm.override()
+  );
+  await revenueCounterProxy.deploymentTransaction()!.wait();
+  const revenueCounterAddress = await revenueCounterProxy.getAddress();
+  console.log(`   RevenueCounter (proxy): ${revenueCounterAddress}`);
+
+  // ============ Post-deploy configuration ============
 
   // 7. Configure timelock roles
   console.log("7. Configuring timelock roles...");
@@ -146,9 +161,17 @@ async function main() {
   await (await timelock.grantRole(EXECUTOR_ROLE, governorAddress, nm.override())).wait();
   console.log("   Granted EXECUTOR_ROLE to governor");
 
-  // 8. Renounce admin
-  await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
-  console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
+  // 8. Configure ARM token (one-time setters)
+  console.log("8. Configuring ARM token...");
+  await (await armToken.setNoDelegation(treasuryAddress, nm.override())).wait();
+  console.log(`   setNoDelegation: ${treasuryAddress} (treasury)`);
+
+  // Whitelist: treasury, deployer (for initial distribution), crowdfund (if applicable)
+  const whitelistAddresses = [deployer.address, treasuryAddress];
+  await (await armToken.initWhitelist(whitelistAddresses, nm.override())).wait();
+  console.log(`   initWhitelist: ${whitelistAddresses.length} addresses`);
+  // NOTE: setWindDownContract is deferred — the wind-down contract doesn't exist yet.
+  // It will be set by the deployer once the wind-down contract is deployed.
 
   // 9. Distribute ARM tokens
   const treasuryAllocation = ethers.parseUnits(config.armDistribution.treasury, 18);
@@ -156,17 +179,32 @@ async function main() {
   await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
 
+  // 10. Initialize treasury outflow limits
+  // TODO: These defaults should be moved to config/networks.ts when finalized
+  console.log("10. Initializing treasury outflow limits...");
+  // Outflow limits are configured per-token via governance after deployment.
+  // The deployer (as initial owner/timelock admin) cannot call initOutflowConfig directly
+  // because the treasury's owner is the timelock. Outflow config will be set via the
+  // first governance proposal after ARM delegation and governance activation.
+  console.log("   Outflow limits will be configured via governance proposal post-launch");
+
+  // 11. Renounce timelock admin (last step — deployer relinquishes admin role)
+  console.log("11. Renouncing timelock admin...");
+  await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
+  console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
+
   // Save deployment
   const deployment: GovernanceDeployment = {
     chainId,
     deployer: deployer.address,
     contracts: {
-      armToken: armTokenAddress,
-      votingLocker: votingLockerAddress,
       timelockController: timelockAddress,
+      armToken: armTokenAddress,
       treasury: treasuryAddress,
       governor: governorAddress,
       steward: stewardAddress,
+      revenueCounter: revenueCounterAddress,
+      revenueCounterImpl: revenueCounterImplAddress,
     },
     config: {
       timelockMinDelay: timelockDelay,
@@ -181,6 +219,12 @@ async function main() {
   saveDeployment(outputFile, deployment);
   console.log(`\nDeployment saved to: deployments/${outputFile}`);
   console.log("\n=== Governance deployment complete ===");
+  console.log("\nPost-launch TODO:");
+  console.log("  1. Set ARM whitelist for crowdfund address (via addToWhitelist governance proposal)");
+  console.log("  2. Configure treasury outflow limits for USDC and ARM (via governance proposal)");
+  console.log("  3. Set wind-down contract on ARM token (deployer calls setWindDownContract)");
+  console.log("  4. Set fee collector on RevenueCounter (via governance proposal)");
+  console.log("  5. Transfer guardian to dedicated multisig (via governance proposal)");
 }
 
 function saveDeployment(filename: string, data: any): void {

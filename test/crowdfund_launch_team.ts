@@ -396,8 +396,8 @@ describe("Launch Team & Seed Cap", function () {
       expect(await crowdfund.getInvitesRemaining(invitee.address, 1)).to.equal(4); // 2 × 2
     });
 
-    it("re-invite capped at MAX_INVITES_RECEIVED", async function () {
-      // Invite 10 times (uses 10 budget slots)
+    it("re-invite capped at per-hop maxInvitesReceived (hop-1 = 10)", async function () {
+      // Hop-1 cap is 10 — invite 10 times (uses 10 budget slots)
       for (let i = 0; i < 10; i++) {
         await crowdfund.launchTeamInvite(invitee.address, 1);
       }
@@ -406,6 +406,19 @@ describe("Launch Team & Seed Cap", function () {
       // 11th re-invite should revert
       await expect(
         crowdfund.launchTeamInvite(invitee.address, 1)
+      ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
+    });
+
+    it("re-invite capped at per-hop maxInvitesReceived (hop-2 = 20)", async function () {
+      // Hop-2 cap is 20 — invite 20 times (uses 20 budget slots)
+      for (let i = 0; i < 20; i++) {
+        await crowdfund.launchTeamInvite(invitee.address, 2);
+      }
+      expect(await crowdfund.getInvitesReceived(invitee.address, 2)).to.equal(20);
+
+      // 21st re-invite should revert
+      await expect(
+        crowdfund.launchTeamInvite(invitee.address, 2)
       ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
     });
 

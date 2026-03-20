@@ -31,7 +31,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 7 days;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
-    uint16 public constant MAX_INVITES_RECEIVED = 10;            // cap on invite stacking per (address, hop) node
+    // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
     uint8 public constant MAX_SEEDS = 150;                       // max number of seeds (hop-0 participants)
     uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
     uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
@@ -148,9 +148,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         securityCouncil = _securityCouncil;
         phase = Phase.Setup;
 
-        hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3 });
-        hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 4_000 * 1e6,  maxInvites: 2 });
-        hopConfigs[2] = HopConfig({ ceilingBps: 0,    capUsdc: 1_000 * 1e6,  maxInvites: 0 });
+        hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3, maxInvitesReceived: 1 });
+        hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 4_000 * 1e6,  maxInvites: 2, maxInvitesReceived: 10 });
+        hopConfigs[2] = HopConfig({ ceilingBps: 0,    capUsdc: 1_000 * 1e6,  maxInvites: 0, maxInvitesReceived: 20 });
     }
 
     // ============ Setup Phase ============
@@ -246,10 +246,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             emit Invited(msg.sender, invitee, inviteeHop);
         } else {
             // Subsequent invite — increment counter (scales cap + outgoing budget)
-            // TODO: MAX_INVITES_RECEIVED = 10 is a placeholder — revisit after modeling
-            // expected invite patterns and desired cap concentration limits.
             require(
-                inviteeNode.invitesReceived < MAX_INVITES_RECEIVED,
+                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
                 "ArmadaCrowdfund: max invites received"
             );
             inviteeNode.invitesReceived++;
@@ -295,7 +293,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             emit Invited(msg.sender, invitee, hop);
         } else {
             require(
-                inviteeNode.invitesReceived < MAX_INVITES_RECEIVED,
+                inviteeNode.invitesReceived < hopConfigs[hop].maxInvitesReceived,
                 "ArmadaCrowdfund: max invites received"
             );
             inviteeNode.invitesReceived++;

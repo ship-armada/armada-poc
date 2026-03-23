@@ -159,7 +159,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         // VetoRatification: immediate voting, 7d period, no execution delay, 20% quorum.
         // These params bypass setProposalTypeParams() bounds (MIN_VOTING_DELAY=1d,
         // MIN_EXECUTION_DELAY=1d), making VetoRatification timing effectively immutable
-        // via governance. Only the veto mechanism (Phase 4) can create these proposals.
+        // via governance. Only the veto mechanism can create these proposals.
         proposalTypeParams[ProposalType.VetoRatification] = ProposalParams({
             votingDelay: 0,
             votingPeriod: 7 days,

@@ -166,7 +166,7 @@ contract GovernorHandler is Test {
 
         vm.prank(actor);
         try governor.propose(
-            ProposalType.ParameterChange,
+            ProposalType.Standard,
             targets,
             values,
             calldatas,

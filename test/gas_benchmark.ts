@@ -395,7 +395,7 @@ describe("Gas Benchmarks", function () {
       // Create a proposal
       await mine(1);
       const proposeTx = await governor.propose(
-        0, // ParameterChange
+        0, // Standard
         [deployer.address],
         [0],
         [ethers.hexlify(ethers.toUtf8Bytes(""))],

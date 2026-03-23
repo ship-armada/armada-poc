@@ -14,7 +14,7 @@ import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ProposalState = {
   Pending: 0, Active: 1, Defeated: 2, Succeeded: 3,
   Queued: 4, Executed: 5, Canceled: 6,
@@ -57,7 +57,7 @@ describe("Governance Adversarial", function () {
   // Helper: create a simple proposal
   async function createProposal(
     proposer: SignerWithAddress,
-    proposalType: number = ProposalType.ParameterChange,
+    proposalType: number = ProposalType.Standard,
     description: string = "Test proposal"
   ): Promise<number> {
     // Dummy target: call a view function (harmless)
@@ -622,7 +622,7 @@ describe("Governance Adversarial", function () {
 
     it("concurrent proposals have independent quorum snapshots", async function () {
       // Create proposal 1
-      const proposalId1 = await createProposal(alice, ProposalType.ParameterChange, "Proposal 1");
+      const proposalId1 = await createProposal(alice, ProposalType.Standard, "Proposal 1");
       const quorum1 = await governor.quorum(proposalId1);
 
       // Transfer 5% of supply worth of alice's ARM to treasury, changing the balance
@@ -631,7 +631,7 @@ describe("Governance Adversarial", function () {
       await mineBlock();
 
       // Create proposal 2 with different treasury balance
-      const proposalId2 = await createProposal(alice, ProposalType.ParameterChange, "Proposal 2");
+      const proposalId2 = await createProposal(alice, ProposalType.Standard, "Proposal 2");
       const quorum2 = await governor.quorum(proposalId2);
 
       // Proposal 1 quorum should reflect original treasury balance (65% excluded)
@@ -648,13 +648,13 @@ describe("Governance Adversarial", function () {
   });
 
   // ============================================================
-  // 6. StewardElection Extended Timing
+  // 6. Extended Proposal Timing
   // ============================================================
 
-  describe("Steward Election Timing", function () {
-    it("StewardElection uses 14d voting and 7d execution delay", async function () {
-      // Create a StewardElection proposal
-      const proposalId = await createProposal(alice, ProposalType.StewardElection, "Elect steward");
+  describe("Extended Proposal Timing", function () {
+    it("Extended proposal uses 14d voting and 7d execution delay", async function () {
+      // Create an Extended proposal
+      const proposalId = await createProposal(alice, ProposalType.Extended, "Elect steward");
 
       await time.increase(TWO_DAYS + 1);
 
@@ -671,10 +671,10 @@ describe("Governance Adversarial", function () {
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
     });
 
-    it("StewardElection requires 30% quorum", async function () {
+    it("Extended proposal requires 30% quorum", async function () {
       // Eligible = 35% of supply. 30% quorum = 10.5% of supply.
       // Bob (15% of supply) exceeds quorum.
-      const proposalId = await createProposal(alice, ProposalType.StewardElection);
+      const proposalId = await createProposal(alice, ProposalType.Extended);
 
       await time.increase(TWO_DAYS + 1);
 
@@ -686,13 +686,13 @@ describe("Governance Adversarial", function () {
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
     });
 
-    it("StewardElection defeated if 30% quorum not reached", async function () {
+    it("Extended proposal defeated if 30% quorum not reached", async function () {
       // Eligible = 35% of supply. 30% quorum = 10.5% of supply.
       // Transfer half of alice's tokens to reduce her voting power (10% of supply < 10.5% quorum).
       await armToken.connect(alice).transfer(carol.address, ALICE_AMOUNT / 2n);
       await mineBlock();
 
-      const proposalId = await createProposal(alice, ProposalType.StewardElection);
+      const proposalId = await createProposal(alice, ProposalType.Extended);
 
       await time.increase(TWO_DAYS + 1);
 

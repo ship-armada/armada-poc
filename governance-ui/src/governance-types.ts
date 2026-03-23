@@ -14,9 +14,9 @@ export enum ProposalState {
 
 /** Matches IArmadaGovernance.ProposalType enum */
 export enum ProposalType {
-  ParameterChange = 0,
-  Treasury = 1,
-  StewardElection = 2,
+  Standard = 0,
+  Extended = 1,
+  VetoRatification = 2,
 }
 
 /** Vote support values: 0=Against, 1=For, 2=Abstain */
@@ -69,9 +69,9 @@ export interface StewardActionData {
 
 /** Labels for proposal types */
 export const PROPOSAL_TYPE_LABELS: Record<ProposalType, string> = {
-  [ProposalType.ParameterChange]: 'Parameter Change',
-  [ProposalType.Treasury]: 'Treasury',
-  [ProposalType.StewardElection]: 'Steward Election',
+  [ProposalType.Standard]: 'Standard',
+  [ProposalType.Extended]: 'Extended',
+  [ProposalType.VetoRatification]: 'Veto Ratification',
 }
 
 /** Labels for proposal states */

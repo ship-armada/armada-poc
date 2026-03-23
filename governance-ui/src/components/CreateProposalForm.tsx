@@ -1,5 +1,5 @@
 // ABOUTME: Form for creating governance proposals with calldata template builders.
-// ABOUTME: Supports Treasury (distribute/claim), StewardElection, and ParameterChange types.
+// ABOUTME: Supports Standard (distribute/claim), Extended (steward election), and manual calldata types.
 
 import { useState } from 'react'
 import { ethers } from 'ethers'
@@ -17,7 +17,7 @@ type TreasuryAction = 'distribute' | 'createClaim'
 
 export function CreateProposalForm({ contracts, wallet, onCreated }: CreateProposalFormProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [proposalType, setProposalType] = useState<ProposalType>(ProposalType.Treasury)
+  const [proposalType, setProposalType] = useState<ProposalType>(ProposalType.Standard)
   const [description, setDescription] = useState('')
   const [txStatus, setTxStatus] = useState<string | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
@@ -28,10 +28,10 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
   const [treasuryRecipient, setTreasuryRecipient] = useState('')
   const [treasuryAmount, setTreasuryAmount] = useState('')
 
-  // StewardElection template fields
+  // Extended (steward election) template fields
   const [stewardAddress, setStewardAddress] = useState('')
 
-  // ParameterChange manual fields
+  // Manual calldata fields (for VetoRatification or advanced use)
   const [manualTarget, setManualTarget] = useState('')
   const [manualCalldata, setManualCalldata] = useState('')
   const [manualValue, setManualValue] = useState('0')
@@ -41,7 +41,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
   const buildActions = (): { targets: string[]; values: bigint[]; calldatas: string[] } | null => {
     if (!deployment) return null
 
-    if (proposalType === ProposalType.Treasury) {
+    if (proposalType === ProposalType.Standard) {
       const tokenAddr = treasuryToken === 'arm'
         ? deployment.contracts.armToken
         : contracts.usdcAddress ?? ''
@@ -65,7 +65,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       }
     }
 
-    if (proposalType === ProposalType.StewardElection) {
+    if (proposalType === ProposalType.Extended) {
       if (!stewardAddress) return null
 
       const stewardIface = new ethers.Interface([
@@ -89,7 +89,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       }
     }
 
-    // ParameterChange — manual
+    // Fallback manual calldata path
     if (!manualTarget || !manualCalldata) return null
     return {
       targets: [manualTarget],
@@ -173,7 +173,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
         <div className="mt-1 flex gap-2">
-          {[ProposalType.Treasury, ProposalType.StewardElection, ProposalType.ParameterChange].map((t) => (
+          {[ProposalType.Standard, ProposalType.Extended].map((t) => (
             <button
               key={t}
               onClick={() => setProposalType(t)}
@@ -201,8 +201,8 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         />
       </div>
 
-      {/* Treasury Template */}
-      {proposalType === ProposalType.Treasury && (
+      {/* Standard Template */}
+      {proposalType === ProposalType.Standard && (
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
             <button
@@ -245,8 +245,8 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         </div>
       )}
 
-      {/* StewardElection Template */}
-      {proposalType === ProposalType.StewardElection && (
+      {/* Extended Template */}
+      {proposalType === ProposalType.Extended && (
         <div className="mt-3">
           <input
             type="text"
@@ -261,8 +261,8 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         </div>
       )}
 
-      {/* ParameterChange Manual */}
-      {proposalType === ProposalType.ParameterChange && (
+      {/* VetoRatification Manual Calldata — not shown in selector, kept for completeness */}
+      {proposalType === ProposalType.VetoRatification && (
         <div className="mt-3 space-y-2">
           <input
             type="text"

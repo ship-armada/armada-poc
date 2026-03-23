@@ -29,7 +29,7 @@ contract StewardSecurityTest is Test {
     address public stewardPerson = address(0xDA7E);
     address public attacker = address(0xBAD);
 
-    // Governor ParameterChange timing: 2d + 5d + 2d = 9 days
+    // Governor Standard proposal timing: 2d + 5d + 2d = 9 days
     // Min delay = 9 days * 120% = 10.8 days = 933120 seconds
     uint256 constant EXPECTED_MIN_DELAY = (2 days + 7 days + 2 days) * 12000 / 10000;
     // Use exactly the min delay for test setup
@@ -129,7 +129,7 @@ contract StewardSecurityTest is Test {
 
     function test_minActionDelay_derivedFromGovernor() public view {
         uint256 minDelay = steward.minActionDelay();
-        // ParameterChange: 2d voting delay + 5d voting period + 2d execution delay = 9d
+        // Standard: 2d voting delay + 5d voting period + 2d execution delay = 9d
         // 9 days * 120% = 10.8 days
         assertEq(minDelay, EXPECTED_MIN_DELAY);
     }

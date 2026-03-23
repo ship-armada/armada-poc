@@ -6,9 +6,9 @@ pragma solidity ^0.8.17;
 // ========== Enums ==========
 
 enum ProposalType {
-    ParameterChange,   // Fee tiers, volume thresholds, yield fee rate, etc.
-    Treasury,          // Allocations, grants, partnerships
-    StewardElection    // Elect/replace treasury steward
+    Standard,          // 0 — 7d voting, 48h execution, 20% quorum
+    Extended,          // 1 — 14d voting, 7d execution, 30% quorum
+    VetoRatification   // 2 — 7d voting, no delay, 20% quorum (auto-created only)
 }
 
 enum ProposalState {

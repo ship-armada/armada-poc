@@ -144,7 +144,7 @@ async function queryGovernance(env: DeployEnv): Promise<ContractQueryResult> {
   const gov = deployments.hub.governance.contracts;
   const usdcAddr = deployments.hub.cctp?.contracts.usdc;
 
-  // ProposalType enum: 0 = Treasury, 1 = Constitutional
+  // ProposalType enum: 0 = Standard, 1 = Extended, 2 = VetoRatification
   const [
     proposalThreshold,
     treasuryParams,

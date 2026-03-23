@@ -5,7 +5,7 @@ import "forge-std/Test.sol";
 import {SymTest} from "halmos-cheatcodes/SymTest.sol";
 
 /// @title HalmosCheckpointTest — Symbolic verification of binary search checkpoint lookup
-/// @dev Proves the binary search in VotingLocker._checkpointsLookup returns the correct
+/// @dev Proves the binary search in ERC20Votes-style _checkpointsLookup returns the correct
 ///      value for ALL possible checkpoint arrays (up to bounded length) and block numbers.
 contract HalmosCheckpointTest is Test, SymTest {
 
@@ -14,7 +14,7 @@ contract HalmosCheckpointTest is Test, SymTest {
         uint224 lockedAmount;
     }
 
-    /// @dev Mirror of VotingLocker._checkpointsLookup
+    /// @dev Mirror of ERC20Votes-style _checkpointsLookup binary search
     function _checkpointsLookup(
         Checkpoint[] memory ckpts,
         uint256 blockNumber

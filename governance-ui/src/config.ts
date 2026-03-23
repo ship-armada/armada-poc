@@ -47,7 +47,6 @@ export interface GovernanceDeployment {
   deployer: string
   contracts: {
     armToken: string
-    votingLocker: string
     timelockController: string
     treasury: string
     governor: string

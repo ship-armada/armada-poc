@@ -6,7 +6,6 @@
  * - Governance (timelock) can unpause and rotate guardian
  * - Paused functions revert, unpaused functions work
  * - Non-guardian/non-timelock cannot pause/unpause
- * - Lock remains available during pause (VotingLocker)
  * - Propose remains available during pause (ArmadaGovernor)
  */
 
@@ -38,7 +37,6 @@ const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STAN
 
 describe("Governance Emergency Pause", function () {
   let armToken: any;
-  let votingLocker: any;
   let timelockController: any;
   let governor: any;
   let treasury: any;
@@ -120,22 +118,14 @@ describe("Governance Emergency Pause", function () {
     armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
     await armToken.waitForDeployment();
 
-    // 3. Deploy VotingLocker (used for pause tests in this file)
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(
-      await armToken.getAddress(),
-      guardian.address, MAX_PAUSE_DURATION, timelockAddr
-    );
-    await votingLocker.waitForDeployment();
-
-    // 4. Deploy ArmadaTreasuryGov
+    // 3. Deploy ArmadaTreasuryGov (also extends EmergencyPausable)
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
     treasury = await ArmadaTreasuryGov.deploy(
       timelockAddr, guardian.address, MAX_PAUSE_DURATION
     );
     await treasury.waitForDeployment();
 
-    // 5. Deploy ArmadaGovernor (uses ArmadaToken ERC20Votes for voting power)
+    // 4. Deploy ArmadaGovernor (uses ArmadaToken ERC20Votes for voting power)
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
       await armToken.getAddress(),
@@ -145,7 +135,7 @@ describe("Governance Emergency Pause", function () {
     );
     await governor.waitForDeployment();
 
-    // 6. Deploy TreasurySteward
+    // 5. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,
@@ -156,7 +146,7 @@ describe("Governance Emergency Pause", function () {
     );
     await stewardContract.waitForDeployment();
 
-    // 7. Configure timelock roles
+    // 6. Configure timelock roles
     const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();
     const EXECUTOR_ROLE = await timelockController.EXECUTOR_ROLE();
     const ADMIN_ROLE = await timelockController.TIMELOCK_ADMIN_ROLE();
@@ -165,24 +155,24 @@ describe("Governance Emergency Pause", function () {
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
-    // 8. Deploy mock USDC
+    // 7. Deploy mock USDC
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
     await usdc.waitForDeployment();
 
-    // 9. Configure ARM token
+    // 8. Configure ARM token
     await armToken.setNoDelegation(await treasury.getAddress());
     await armToken.initWhitelist([deployer.address, await treasury.getAddress(), alice.address, bob.address]);
 
-    // 10. Distribute ARM tokens
+    // 9. Distribute ARM tokens
     await armToken.transfer(await treasury.getAddress(), TREASURY_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
 
-    // 11. Mint USDC to treasury
+    // 10. Mint USDC to treasury
     await usdc.mint(await treasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
 
-    // 12. Alice and Bob delegate to themselves (ERC20Votes requires delegation to activate voting power)
+    // 11. Alice and Bob delegate to themselves (ERC20Votes requires delegation to activate voting power)
     await armToken.connect(alice).delegate(alice.address);
     await armToken.connect(bob).delegate(bob.address);
 
@@ -195,58 +185,58 @@ describe("Governance Emergency Pause", function () {
 
   describe("EmergencyPausable Base Behavior", function () {
     it("guardian can pause a contract", async function () {
-      expect(await votingLocker.paused()).to.be.false;
-      await votingLocker.connect(guardian).emergencyPause();
-      expect(await votingLocker.paused()).to.be.true;
+      expect(await stewardContract.paused()).to.be.false;
+      await stewardContract.connect(guardian).emergencyPause();
+      expect(await stewardContract.paused()).to.be.true;
     });
 
     it("non-guardian cannot pause", async function () {
       await expect(
-        votingLocker.connect(alice).emergencyPause()
+        stewardContract.connect(alice).emergencyPause()
       ).to.be.revertedWith("EmergencyPausable: not guardian");
     });
 
     it("cannot pause when already paused", async function () {
-      await votingLocker.connect(guardian).emergencyPause();
+      await stewardContract.connect(guardian).emergencyPause();
       await expect(
-        votingLocker.connect(guardian).emergencyPause()
+        stewardContract.connect(guardian).emergencyPause()
       ).to.be.revertedWith("EmergencyPausable: already paused");
     });
 
     it("pause auto-expires after maxPauseDuration", async function () {
-      await votingLocker.connect(guardian).emergencyPause();
-      expect(await votingLocker.paused()).to.be.true;
+      await stewardContract.connect(guardian).emergencyPause();
+      expect(await stewardContract.paused()).to.be.true;
 
       // Advance past max pause duration
       await time.increase(MAX_PAUSE_DURATION + 1);
 
       // Should auto-expire
-      expect(await votingLocker.paused()).to.be.false;
+      expect(await stewardContract.paused()).to.be.false;
     });
 
     it("pauseExpiry is set correctly", async function () {
-      const tx = await votingLocker.connect(guardian).emergencyPause();
+      const tx = await stewardContract.connect(guardian).emergencyPause();
       const receipt = await tx.wait();
       const block = await ethers.provider.getBlock(receipt.blockNumber);
 
-      const expiry = await votingLocker.pauseExpiry();
+      const expiry = await stewardContract.pauseExpiry();
       expect(expiry).to.equal(BigInt(block!.timestamp) + BigInt(MAX_PAUSE_DURATION));
     });
 
     it("emits EmergencyPaused event", async function () {
-      await expect(votingLocker.connect(guardian).emergencyPause())
-        .to.emit(votingLocker, "EmergencyPaused")
+      await expect(stewardContract.connect(guardian).emergencyPause())
+        .to.emit(stewardContract, "EmergencyPaused")
         .withArgs(guardian.address, (value: bigint) => value > 0n);
     });
 
     it("guardian can re-pause after auto-expiry", async function () {
-      await votingLocker.connect(guardian).emergencyPause();
+      await stewardContract.connect(guardian).emergencyPause();
       await time.increase(MAX_PAUSE_DURATION + 1);
-      expect(await votingLocker.paused()).to.be.false;
+      expect(await stewardContract.paused()).to.be.false;
 
       // Should be able to pause again
-      await votingLocker.connect(guardian).emergencyPause();
-      expect(await votingLocker.paused()).to.be.true;
+      await stewardContract.connect(guardian).emergencyPause();
+      expect(await stewardContract.paused()).to.be.true;
     });
   });
 
@@ -378,88 +368,15 @@ describe("Governance Emergency Pause", function () {
     });
 
     it("rejects zero timelock", async function () {
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
+      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
       await expect(
-        VotingLocker.deploy(await armToken.getAddress(), guardian.address, MAX_PAUSE_DURATION, ethers.ZeroAddress)
+        ArmadaTreasuryGov.deploy(ethers.ZeroAddress, guardian.address, MAX_PAUSE_DURATION)
       ).to.be.revertedWith("EmergencyPausable: zero timelock");
     });
   });
 
   // ============================================================
-  // 5. VotingLocker Pause Behavior
-  // ============================================================
-
-  describe("VotingLocker Pause", function () {
-    // Use a standalone VotingLocker where deployer is the pauseTimelock for direct control
-    let standaloneLocker: any;
-
-    beforeEach(async function () {
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      standaloneLocker = await VotingLocker.deploy(
-        await armToken.getAddress(),
-        guardian.address, MAX_PAUSE_DURATION, deployer.address
-      );
-      await standaloneLocker.waitForDeployment();
-
-      // Deploy a fresh ARM token for this standalone test (main supply is fully allocated)
-      const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const standaloneArm = await ArmadaToken.deploy(deployer.address, deployer.address);
-      await standaloneArm.waitForDeployment();
-
-      const VotingLockerFactory = await ethers.getContractFactory("VotingLocker");
-      standaloneLocker = await VotingLockerFactory.deploy(
-        await standaloneArm.getAddress(),
-        guardian.address, MAX_PAUSE_DURATION, deployer.address
-      );
-      await standaloneLocker.waitForDeployment();
-
-      // Whitelist deployer, carol, and locker for transfer restrictions on the standalone token
-      await standaloneArm.initWhitelist([deployer.address, carol.address, await standaloneLocker.getAddress()]);
-
-      const carolAmount = ethers.parseUnits("1000", ARM_DECIMALS);
-      await standaloneArm.transfer(carol.address, carolAmount);
-      await standaloneArm.connect(carol).approve(await standaloneLocker.getAddress(), carolAmount);
-      await standaloneLocker.connect(carol).lock(ethers.parseUnits("500", ARM_DECIMALS));
-    });
-
-    it("unlock reverts when paused", async function () {
-      await standaloneLocker.connect(guardian).emergencyPause();
-
-      await expect(
-        standaloneLocker.connect(carol).unlock(ethers.parseUnits("100", ARM_DECIMALS))
-      ).to.be.revertedWith("Pausable: paused");
-    });
-
-    it("lock remains available when paused", async function () {
-      await standaloneLocker.connect(guardian).emergencyPause();
-
-      // Lock should still work
-      await standaloneLocker.connect(carol).lock(ethers.parseUnits("100", ARM_DECIMALS));
-      const balance = await standaloneLocker.getLockedBalance(carol.address);
-      expect(balance).to.equal(ethers.parseUnits("600", ARM_DECIMALS));
-    });
-
-    it("unlock works again after unpause", async function () {
-      await standaloneLocker.connect(guardian).emergencyPause();
-      await standaloneLocker.connect(deployer).emergencyUnpause();
-
-      await standaloneLocker.connect(carol).unlock(ethers.parseUnits("100", ARM_DECIMALS));
-      const balance = await standaloneLocker.getLockedBalance(carol.address);
-      expect(balance).to.equal(ethers.parseUnits("400", ARM_DECIMALS));
-    });
-
-    it("unlock works again after auto-expiry", async function () {
-      await standaloneLocker.connect(guardian).emergencyPause();
-      await time.increase(MAX_PAUSE_DURATION + 1);
-
-      await standaloneLocker.connect(carol).unlock(ethers.parseUnits("100", ARM_DECIMALS));
-      const balance = await standaloneLocker.getLockedBalance(carol.address);
-      expect(balance).to.equal(ethers.parseUnits("400", ARM_DECIMALS));
-    });
-  });
-
-  // ============================================================
-  // 6. ArmadaTreasuryGov Pause Behavior
+  // 5. ArmadaTreasuryGov Pause Behavior
   // ============================================================
 
   describe("ArmadaTreasuryGov Pause", function () {
@@ -541,7 +458,7 @@ describe("Governance Emergency Pause", function () {
   });
 
   // ============================================================
-  // 7. TreasurySteward Pause Behavior
+  // 6. TreasurySteward Pause Behavior
   // ============================================================
 
   describe("TreasurySteward Pause", function () {
@@ -629,7 +546,7 @@ describe("Governance Emergency Pause", function () {
   });
 
   // ============================================================
-  // 8. ArmadaGovernor Pause Behavior
+  // 7. ArmadaGovernor Pause Behavior
   // ============================================================
 
   describe("ArmadaGovernor Pause", function () {
@@ -729,7 +646,7 @@ describe("Governance Emergency Pause", function () {
   });
 
   // ============================================================
-  // 9. Adversarial: Guardian Cannot Permanently Freeze
+  // 8. Adversarial: Guardian Cannot Permanently Freeze
   // ============================================================
 
   describe("Guardian Cannot Permanently Freeze", function () {
@@ -787,19 +704,19 @@ describe("Governance Emergency Pause", function () {
   });
 
   // ============================================================
-  // 10. maxPauseDuration and guardian are correctly set
+  // 9. maxPauseDuration and guardian are correctly set
   // ============================================================
 
   describe("Immutable Configuration", function () {
     it("maxPauseDuration is set correctly on all contracts", async function () {
-      expect(await votingLocker.maxPauseDuration()).to.equal(MAX_PAUSE_DURATION);
+      expect(await stewardContract.maxPauseDuration()).to.equal(MAX_PAUSE_DURATION);
       expect(await treasury.maxPauseDuration()).to.equal(MAX_PAUSE_DURATION);
       expect(await governor.maxPauseDuration()).to.equal(MAX_PAUSE_DURATION);
       expect(await stewardContract.maxPauseDuration()).to.equal(MAX_PAUSE_DURATION);
     });
 
     it("guardian is set correctly on all contracts", async function () {
-      expect(await votingLocker.guardian()).to.equal(guardian.address);
+      expect(await stewardContract.guardian()).to.equal(guardian.address);
       expect(await treasury.guardian()).to.equal(guardian.address);
       expect(await governor.guardian()).to.equal(guardian.address);
       expect(await stewardContract.guardian()).to.equal(guardian.address);
@@ -807,7 +724,7 @@ describe("Governance Emergency Pause", function () {
 
     it("pauseTimelock is set correctly on all contracts", async function () {
       const timelockAddr = await timelockController.getAddress();
-      expect(await votingLocker.pauseTimelock()).to.equal(timelockAddr);
+      expect(await stewardContract.pauseTimelock()).to.equal(timelockAddr);
       expect(await treasury.pauseTimelock()).to.equal(timelockAddr);
       expect(await governor.pauseTimelock()).to.equal(timelockAddr);
       expect(await stewardContract.pauseTimelock()).to.equal(timelockAddr);

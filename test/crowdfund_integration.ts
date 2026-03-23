@@ -1377,8 +1377,8 @@ describe("Crowdfund Integration", function () {
   // ============================================================
 
   describe("Governance Integration", function () {
-    it("claimed ARM can be locked in VotingLocker for voting power", async function () {
-      // Full flow: crowdfund → claim → lock in VotingLocker
+    it("claimed ARM can be delegated for voting power via ERC20Votes", async function () {
+      // Full flow: crowdfund → claim → delegate for governance participation
       const seeds = allSigners.slice(1, 71);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
@@ -1397,19 +1397,11 @@ describe("Crowdfund Integration", function () {
       const armBalance = await armToken.balanceOf(seeds[0].address);
       expect(armBalance).to.be.gt(0);
 
-      // Deploy VotingLocker and lock ARM
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      const votingLocker = await VotingLocker.deploy(
-        await armToken.getAddress(), seeds[0].address, 14 * 86400, seeds[0].address
-      );
-      await votingLocker.waitForDeployment();
-      await armToken.addToWhitelist(await votingLocker.getAddress());
+      // Self-delegate to activate voting power (ERC20Votes)
+      await armToken.connect(seeds[0]).delegate(seeds[0].address);
 
-      await armToken.connect(seeds[0]).approve(await votingLocker.getAddress(), armBalance);
-      await votingLocker.connect(seeds[0]).lock(armBalance);
-
-      const lockedBalance = await votingLocker.getLockedBalance(seeds[0].address);
-      expect(lockedBalance).to.equal(armBalance);
+      const votingPower = await armToken.getVotes(seeds[0].address);
+      expect(votingPower).to.equal(armBalance);
     });
   });
 });

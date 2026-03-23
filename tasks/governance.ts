@@ -5,7 +5,7 @@
  * Loads deployment addresses from deployments/governance-{network}.json.
  *
  * Usage:
- *   npx hardhat lock-tokens --amount 10000 --network hub
+ *   npx hardhat delegate --to <address> --network hub
  *   npx hardhat propose --type treasury --description "Pay Alice 500 USDC" --network hub
  *   npx hardhat vote --proposal 1 --support for --network hub
  *   npx hardhat proposal-state --proposal 1 --network hub
@@ -38,43 +38,22 @@ function getNetworkName(chainId: number): string {
 
 // ============ Token Operations ============
 
-task("lock-tokens", "Lock ARM tokens for voting")
-  .addParam("amount", "Amount of ARM to lock (in whole tokens)")
+task("delegate", "Delegate ARM voting power to an address")
+  .addParam("to", "Delegatee address (use own address for self-delegation)")
   .setAction(async (args, hre) => {
     const { ethers } = hre;
     const [signer] = await ethers.getSigners();
     const chainId = Number((await ethers.provider.getNetwork()).chainId);
     const deployment = loadDeployment(getNetworkName(chainId));
 
-    const amount = ethers.parseUnits(args.amount, 18);
     const armToken = await ethers.getContractAt("ArmadaToken", deployment.contracts.armToken);
-    const votingLocker = await ethers.getContractAt("VotingLocker", deployment.contracts.votingLocker);
+    await armToken.delegate(args.to);
 
-    await armToken.approve(deployment.contracts.votingLocker, amount);
-    await votingLocker.lock(amount);
-
-    const locked = await votingLocker.getLockedBalance(signer.address);
-    console.log(`Locked ${args.amount} ARM. Total locked: ${ethers.formatUnits(locked, 18)} ARM`);
+    const votes = await armToken.getVotes(args.to);
+    console.log(`Delegated voting power to ${args.to}. Delegatee voting power: ${ethers.formatUnits(votes, 18)} ARM`);
   });
 
-task("unlock-tokens", "Unlock ARM tokens")
-  .addParam("amount", "Amount of ARM to unlock (in whole tokens)")
-  .setAction(async (args, hre) => {
-    const { ethers } = hre;
-    const [signer] = await ethers.getSigners();
-    const chainId = Number((await ethers.provider.getNetwork()).chainId);
-    const deployment = loadDeployment(getNetworkName(chainId));
-
-    const amount = ethers.parseUnits(args.amount, 18);
-    const votingLocker = await ethers.getContractAt("VotingLocker", deployment.contracts.votingLocker);
-
-    await votingLocker.unlock(amount);
-
-    const locked = await votingLocker.getLockedBalance(signer.address);
-    console.log(`Unlocked ${args.amount} ARM. Remaining locked: ${ethers.formatUnits(locked, 18)} ARM`);
-  });
-
-task("arm-balance", "Check ARM balance and locked amount")
+task("arm-balance", "Check ARM balance and voting power")
   .addOptionalParam("account", "Account address (defaults to signer)")
   .setAction(async (args, hre) => {
     const { ethers } = hre;
@@ -84,14 +63,15 @@ task("arm-balance", "Check ARM balance and locked amount")
 
     const account = args.account || signer.address;
     const armToken = await ethers.getContractAt("ArmadaToken", deployment.contracts.armToken);
-    const votingLocker = await ethers.getContractAt("VotingLocker", deployment.contracts.votingLocker);
 
     const balance = await armToken.balanceOf(account);
-    const locked = await votingLocker.getLockedBalance(account);
+    const votes = await armToken.getVotes(account);
+    const delegate = await armToken.delegates(account);
 
     console.log(`Account: ${account}`);
-    console.log(`  Free ARM: ${ethers.formatUnits(balance, 18)}`);
-    console.log(`  Locked ARM: ${ethers.formatUnits(locked, 18)}`);
+    console.log(`  ARM balance: ${ethers.formatUnits(balance, 18)}`);
+    console.log(`  Voting power: ${ethers.formatUnits(votes, 18)}`);
+    console.log(`  Delegated to: ${delegate}`);
   });
 
 // ============ Proposals ============

@@ -13,7 +13,7 @@ import {
 } from '../config'
 import {
   ARM_TOKEN_ABI,
-  VOTING_LOCKER_ABI,
+  ERC20_VOTES_ABI,
   GOVERNOR_ABI,
   TREASURY_ABI,
   STEWARD_ABI,
@@ -25,7 +25,6 @@ export interface GovernanceContracts {
   provider: ethers.JsonRpcProvider | null
   /** Contract instances (read-only, use signer for writes) */
   armToken: ethers.Contract | null
-  votingLocker: ethers.Contract | null
   governor: ethers.Contract | null
   treasury: ethers.Contract | null
   steward: ethers.Contract | null
@@ -46,7 +45,6 @@ export function useGovernanceContracts(): GovernanceContracts {
   const [state, setState] = useState<GovernanceContracts>({
     provider: null,
     armToken: null,
-    votingLocker: null,
     governor: null,
     treasury: null,
     steward: null,
@@ -76,8 +74,7 @@ export function useGovernanceContracts(): GovernanceContracts {
 
         setState({
           provider,
-          armToken: new ethers.Contract(contracts.armToken, ARM_TOKEN_ABI, provider),
-          votingLocker: new ethers.Contract(contracts.votingLocker, VOTING_LOCKER_ABI, provider),
+          armToken: new ethers.Contract(contracts.armToken, [...ARM_TOKEN_ABI, ...ERC20_VOTES_ABI], provider),
           governor: new ethers.Contract(contracts.governor, GOVERNOR_ABI, provider),
           treasury: new ethers.Contract(contracts.treasury, TREASURY_ABI, provider),
           steward: new ethers.Contract(contracts.steward, STEWARD_ABI, provider),

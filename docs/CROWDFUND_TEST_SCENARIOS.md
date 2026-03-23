@@ -462,9 +462,9 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 16.1 | Claim ARM → lock in VotingLocker → voting power granted | Full chain works | Integration |
-| 16.2 | Unclaimed participant cannot lock (has 0 ARM) | Lock of 0 reverts or is meaningless | Cross-contract integration |
-| 16.3 | ARM from crowdfund can be transferred to third party before locking | Standard ERC20 behavior | **None** |
+| 16.1 | Claim ARM → self-delegate → voting power granted | Full chain works | Integration |
+| 16.2 | Unclaimed participant cannot delegate (has 0 ARM) | Delegation succeeds but voting power is 0 | Cross-contract integration |
+| 16.3 | ARM from crowdfund can be transferred to third party before delegating | Standard ERC20 behavior | **None** |
 
 ---
 

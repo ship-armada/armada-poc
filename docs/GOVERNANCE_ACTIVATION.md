@@ -35,9 +35,8 @@ Contracts must deploy in this order. Each step depends on artifacts from previou
 
 ```
 1. Governance stack
-   └─ ArmadaToken (canonical, 100M supply)
-   └─ VotingLocker
    └─ TimelockController
+   └─ ArmadaToken (canonical, 100M supply, ERC20Votes)
    └─ ArmadaTreasuryGov
    └─ ArmadaGovernor
    └─ Transfer treasury ARM allocation from deployer
@@ -76,19 +75,19 @@ After deployment, governance activates through the crowdfund lifecycle:
 
 ── governance becomes usable ──
 
-6. LOCK         ARM holders lock in VotingLocker
-7. PROPOSE      Locked holders above threshold (0.1% of supply) create proposals
-8. VOTE         Locked holders vote during voting period
+6. DELEGATE     ARM holders self-delegate (or delegate to a representative)
+7. PROPOSE      Delegated holders above threshold (0.1% of supply) create proposals
+8. VOTE         Delegated holders vote during voting period
 9. QUEUE        Passing proposals are queued in timelock
 10. EXECUTE     After timelock delay, proposals execute
 ```
 
 ### Quorum Math
 
-As participants claim ARM from the crowdfund and lock it in the VotingLocker, the quorum denominator shifts:
+As participants claim ARM from the crowdfund and delegate it, the quorum denominator shifts:
 
 - **Before any claims:** Eligible supply is small (only ARM held by deployer and any pre-distributed tokens). The crowdfund balance is excluded.
-- **After claims:** Claimed ARM enters circulation. When locked, it becomes eligible voting supply.
+- **After claims:** Claimed ARM enters circulation. When delegated, it becomes active voting power.
 - **Quorum thresholds:** Each proposal type has its own quorum BPS (e.g., 20% for standard proposals). The quorum is calculated against eligible supply at the proposal's snapshot block.
 
 Example with POC defaults:
@@ -97,7 +96,7 @@ Example with POC defaults:
 - Crowdfund: 1.8M (excluded via `setExcludedAddresses`)
 - Deployer remainder: 33.2M
 - Eligible supply: 33.2M (deployer) + whatever ARM has been claimed and is in circulation
-- If deployer locks 33.2M ARM, quorum for a 20% proposal = 6.64M ARM
+- If deployer delegates 33.2M ARM, quorum for a 20% proposal = 6.64M ARM
 
 ## Key Constraints
 

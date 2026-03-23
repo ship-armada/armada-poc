@@ -1,5 +1,5 @@
-// ABOUTME: Token management panel for ARM token locking and voting power.
-// ABOUTME: Handles approve, lock, unlock operations and displays balances.
+// ABOUTME: Token management panel for ARM token delegation and voting power.
+// ABOUTME: Handles delegate operations and displays balances.
 
 import { useState } from 'react'
 import { ethers } from 'ethers'
@@ -14,13 +14,10 @@ interface TokenPanelProps {
 }
 
 export function TokenPanel({ contracts, wallet, govData }: TokenPanelProps) {
-  const [approveAmount, setApproveAmount] = useState('')
-  const [lockAmount, setLockAmount] = useState('')
-  const [unlockAmount, setUnlockAmount] = useState('')
+  const [delegateAddress, setDelegateAddress] = useState('')
   const [txStatus, setTxStatus] = useState<string | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
 
-  const fmt = (val: bigint) => ethers.formatUnits(val, 18)
   const fmtShort = (val: bigint) => {
     const num = Number(ethers.formatUnits(val, 18))
     return num.toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -50,61 +47,49 @@ export function TokenPanel({ contracts, wallet, govData }: TokenPanelProps) {
     }
   }
 
-  const handleApprove = () => {
-    if (!approveAmount || !contracts.deployment) return
-    const amount = ethers.parseUnits(approveAmount, 18)
-    sendTx('Approving', async (signer) => {
+  const handleSelfDelegate = () => {
+    if (!contracts.deployment || !wallet.account) return
+    sendTx('Self-delegating', async (signer) => {
       const token = new ethers.Contract(
         contracts.deployment!.contracts.armToken,
-        ['function approve(address spender, uint256 amount) returns (bool)'],
+        ['function delegate(address delegatee)'],
         signer,
       )
-      return token.approve(contracts.deployment!.contracts.votingLocker, amount)
+      return token.delegate(wallet.account!)
     })
-    setApproveAmount('')
   }
 
-  const handleLock = () => {
-    if (!lockAmount || !contracts.deployment) return
-    const amount = ethers.parseUnits(lockAmount, 18)
-    sendTx('Locking', async (signer) => {
-      const locker = new ethers.Contract(
-        contracts.deployment!.contracts.votingLocker,
-        ['function lock(uint256 amount)'],
+  const handleDelegate = () => {
+    if (!delegateAddress || !contracts.deployment) return
+    sendTx('Delegating', async (signer) => {
+      const token = new ethers.Contract(
+        contracts.deployment!.contracts.armToken,
+        ['function delegate(address delegatee)'],
         signer,
       )
-      return locker.lock(amount)
+      return token.delegate(delegateAddress)
     })
-    setLockAmount('')
+    setDelegateAddress('')
   }
 
-  const handleUnlock = () => {
-    if (!unlockAmount || !contracts.deployment) return
-    const amount = ethers.parseUnits(unlockAmount, 18)
-    sendTx('Unlocking', async (signer) => {
-      const locker = new ethers.Contract(
-        contracts.deployment!.contracts.votingLocker,
-        ['function unlock(uint256 amount)'],
-        signer,
-      )
-      return locker.unlock(amount)
-    })
-    setUnlockAmount('')
-  }
+  const truncAddr = (addr: string) =>
+    addr && addr !== ethers.ZeroAddress
+      ? `${addr.slice(0, 8)}...${addr.slice(-6)}`
+      : 'None'
 
   return (
     <div className="space-y-6">
       {/* Balances Overview */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard label="ARM Balance" value={fmtShort(govData.armBalance)} />
-        <StatCard label="Locked (Voting Power)" value={fmtShort(govData.lockedBalance)} />
-        <StatCard label="VotingLocker Allowance" value={fmtShort(govData.armAllowance)} />
+        <StatCard label="Voting Power" value={fmtShort(govData.votingPower)} />
+        <StatCard label="Delegated To" value={truncAddr(govData.delegatee)} />
         <StatCard label="Proposal Threshold" value={fmtShort(govData.proposalThreshold)} />
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <StatCard label="Total ARM Supply" value={fmtShort(govData.totalSupply)} />
-        <StatCard label="Total Locked" value={fmtShort(govData.totalLocked)} />
+        <StatCard label="Eligible Supply" value={fmtShort(govData.eligibleSupply)} />
         <StatCard
           label="Block / Timestamp"
           value={`#${govData.blockNumber} / ${new Date(Number(govData.blockTimestamp) * 1000).toLocaleString()}`}
@@ -112,87 +97,38 @@ export function TokenPanel({ contracts, wallet, govData }: TokenPanelProps) {
       </div>
 
       {/* Actions */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* Approve */}
-        <ActionCard title="1. Approve VotingLocker">
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Self-Delegate */}
+        <ActionCard title="1. Self-Delegate (Activate Voting Power)">
+          <p className="mb-3 text-xs text-neutral-500">
+            Self-delegate to activate your ARM tokens as voting power.
+          </p>
+          <button
+            onClick={handleSelfDelegate}
+            disabled={!wallet.account}
+            className="w-full rounded bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50"
+          >
+            Self-Delegate
+          </button>
+        </ActionCard>
+
+        {/* Delegate to Another */}
+        <ActionCard title="2. Delegate to Address">
           <div className="flex gap-2">
             <input
               type="text"
-              value={approveAmount}
-              onChange={(e) => setApproveAmount(e.target.value)}
-              placeholder="ARM amount"
+              value={delegateAddress}
+              onChange={(e) => setDelegateAddress(e.target.value)}
+              placeholder="0x... delegatee address"
               className="flex-1 rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
             />
-            <button
-              onClick={() => setApproveAmount(fmt(govData.armBalance))}
-              className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-600"
-            >
-              Max
-            </button>
           </div>
           <button
-            onClick={handleApprove}
-            disabled={!approveAmount || !wallet.account}
+            onClick={handleDelegate}
+            disabled={!delegateAddress || !wallet.account}
             className="mt-2 w-full rounded bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
           >
-            Approve
-          </button>
-        </ActionCard>
-
-        {/* Lock */}
-        <ActionCard title="2. Lock ARM">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={lockAmount}
-              onChange={(e) => setLockAmount(e.target.value)}
-              placeholder="ARM amount"
-              className="flex-1 rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
-            />
-            <button
-              onClick={() => {
-                const max = govData.armAllowance < govData.armBalance
-                  ? govData.armAllowance
-                  : govData.armBalance
-                setLockAmount(fmt(max))
-              }}
-              className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-600"
-            >
-              Max
-            </button>
-          </div>
-          <button
-            onClick={handleLock}
-            disabled={!lockAmount || !wallet.account}
-            className="mt-2 w-full rounded bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50"
-          >
-            Lock
-          </button>
-        </ActionCard>
-
-        {/* Unlock */}
-        <ActionCard title="3. Unlock ARM">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={unlockAmount}
-              onChange={(e) => setUnlockAmount(e.target.value)}
-              placeholder="ARM amount"
-              className="flex-1 rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
-            />
-            <button
-              onClick={() => setUnlockAmount(fmt(govData.lockedBalance))}
-              className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-600"
-            >
-              Max
-            </button>
-          </div>
-          <button
-            onClick={handleUnlock}
-            disabled={!unlockAmount || !wallet.account}
-            className="mt-2 w-full rounded bg-orange-700 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
-          >
-            Unlock
+            Delegate
           </button>
         </ActionCard>
       </div>

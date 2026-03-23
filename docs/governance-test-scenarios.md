@@ -1,44 +1,44 @@
 # Governance Test Scenarios & Edge Cases
 
-Comprehensive test plan for the Armada governance system covering VotingLocker,
+Comprehensive test plan for the Armada governance system covering ArmadaToken (ERC20Votes),
 ArmadaGovernor, ArmadaTreasuryGov, and TreasurySteward contracts.
 
 Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Codeberg.
 
 ---
 
-## A. VotingLocker — Lock/Unlock/Checkpoints
+## A. ArmadaToken — ERC20Votes Delegation/Checkpoints
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| A1 | Lock tokens, query voting power in next block | Power equals locked amount |
-| A2 | Lock tokens in **same block** as proposal creation | Snapshot is `block.number-1`, so these tokens have **zero** power for that proposal |
-| A3 | Lock additional tokens **after** a proposal's snapshot block | No extra voting power for that proposal |
-| A4 | Vote, then immediately unlock all tokens | Vote still counts at snapshot weight (vote-and-dump, documented in #4) |
-| A5 | Unlock all tokens during active voting, then re-lock before voting ends | Vote already cast still uses snapshot weight; new lock doesn't affect it |
-| A6 | Lock, unlock, re-lock in **same block** | Single checkpoint reflecting final state |
-| A7 | Multiple locks across many blocks | Each creates a new checkpoint; binary search should find correct historical value |
-| A8 | Lock 0 tokens | Revert: "zero amount" |
-| A9 | Unlock 0 tokens | Revert: "zero amount" |
-| A10 | Unlock more than locked | Revert: "insufficient locked" |
-| A11 | Lock 1 wei of ARM | Should succeed; voting power = 1 wei |
-| A12 | Query `getPastLockedBalance` for a future block | Revert: "block not yet mined" |
-| A13 | Query `getPastLockedBalance` before any locks (no checkpoints) | Returns 0 |
-| A14 | 10+ users lock/unlock randomly | `totalLocked` always equals sum of individual balances (INV-G4 from foundry tests) |
-| A15 | Transfer ARM between accounts after snapshot | Neither account's voting power changes for existing proposals |
+| A1 | Self-delegate, query voting power in next block | Power equals token balance |
+| A2 | Self-delegate in **same block** as proposal creation | Snapshot is `block.number-1`, so delegation has **zero** power for that proposal |
+| A3 | Receive additional tokens **after** a proposal's snapshot block | No extra voting power for that proposal |
+| A4 | Vote, then transfer all tokens away | Vote still counts at snapshot weight (vote-and-dump) |
+| A5 | Transfer tokens during active voting, then receive tokens back before voting ends | Vote already cast still uses snapshot weight |
+| A6 | Delegate, undelegate, re-delegate in **same block** | Single checkpoint reflecting final state |
+| A7 | Multiple delegation changes across many blocks | Each creates a new checkpoint; binary search should find correct historical value |
+| A8 | Self-delegate with zero balance | Should succeed; voting power = 0 |
+| A9 | Query `getPastVotes` for a future block | Revert: "block not yet mined" |
+| A10 | Query `getPastVotes` before any delegation (no checkpoints) | Returns 0 |
+| A11 | Self-delegate with 1 wei of ARM | Should succeed; voting power = 1 wei |
+| A12 | 10+ users delegate/transfer randomly | Sum of all voting power equals total delegated supply |
+| A13 | Transfer ARM between accounts after snapshot | Neither account's voting power changes for existing proposals |
+| A14 | Delegate to another address, then delegatee votes | Delegatee votes with delegator's balance |
+| A15 | Change delegation mid-voting period | Vote already cast uses snapshot weight; new delegation doesn't affect it |
 
 ## B. ArmadaGovernor — Proposal Creation
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| B1 | Propose with exactly threshold amount locked (0.1% of supply = 100K ARM) | Should succeed |
+| B1 | Propose with exactly threshold amount delegated (0.1% of supply = 100K ARM) | Should succeed |
 | B2 | Propose with 1 wei below threshold | Revert: "below proposal threshold" |
-| B3 | Propose with tokens locked in same block (snapshot is block-1) | Revert: "below proposal threshold" (power is 0 at snapshot) |
+| B3 | Propose with tokens delegated in same block (snapshot is block-1) | Revert: "below proposal threshold" (power is 0 at snapshot) |
 | B4 | Propose with empty targets array | Revert: "empty proposal" |
 | B5 | Propose with mismatched array lengths (targets vs values vs calldatas) | Revert: "length mismatch" |
 | B6 | Create two proposals in same block | Both succeed with sequential IDs |
-| B7 | Lock tokens, wait 1 block, unlock tokens, propose in same block as unlock | Should succeed (snapshot at block-1 still has tokens locked) |
-| B8 | Account with no locked tokens tries to propose | Revert: "below proposal threshold" |
+| B7 | Delegate tokens, wait 1 block, transfer tokens away, propose in same block as transfer | Should succeed (snapshot at block-1 still has voting power) |
+| B8 | Account with no delegated tokens tries to propose | Revert: "below proposal threshold" |
 | B9 | Propose with a very long description | Should succeed (gas permitting); no length limit in contract |
 
 ## C. ArmadaGovernor — Voting

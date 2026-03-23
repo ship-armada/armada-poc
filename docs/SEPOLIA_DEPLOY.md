@@ -33,7 +33,7 @@ This runs 4 phases in order:
 |-------|----------------|----------|
 | 1 | CCTP config, PrivacyPool + CCTPHookRouter (hub), PrivacyPoolClient + CCTPHookRouter (clients) | All 3 chains |
 | 2 | MockAaveSpoke, ArmadaYieldVault, ArmadaYieldAdapter | Hub only |
-| 3 | ArmadaToken, VotingLocker, Governor, Timelock, Crowdfund | Hub only |
+| 3 | ArmadaToken, Governor, Timelock, Treasury, Crowdfund | Hub only |
 | 4 | Cross-chain linking (remote pools, hookRouter config) | Hub + clients |
 
 ### Partial deployment options

@@ -5,6 +5,7 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
 import "./EmergencyPausable.sol";
@@ -104,6 +105,35 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     uint256 public quietPeriodDuration;
     uint256 public constant MAX_QUIET_PERIOD = 30 days;
 
+    // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
+    // The wind-down contract is registered via one-time setter; only it can flip the flag.
+    bool public windDownActive;
+    address public windDownContract;
+    bool public windDownContractSet;
+
+    // Extended proposal classification: function selectors that force Extended type regardless
+    // of what the proposer declared. Governance can add/remove selectors via extended proposal.
+    mapping(bytes4 => bool) public extendedSelectors;
+
+    // Treasury >5% threshold for automatic extended classification of distribute() calls.
+    // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
+    bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
+    uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
+
+    // Proposal bond: 1,000 ARM posted at proposal creation (only when ARM is transferable).
+    // Bond is always returned but with variable lock periods based on outcome.
+    uint256 public constant PROPOSAL_BOND = 1_000 * 1e18;
+    uint256 public constant BOND_LOCK_QUORUM_FAIL = 15 days;
+    uint256 public constant BOND_LOCK_VOTE_FAIL = 45 days;
+
+    struct BondInfo {
+        address depositor;
+        uint256 amount;
+        uint256 unlockTime; // 0 = immediately claimable or not yet determined
+        bool claimed;
+    }
+    mapping(uint256 => BondInfo) public proposalBonds;
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -122,6 +152,12 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event ProposalTypeParamsUpdated(ProposalType indexed proposalType, ProposalParams params);
     event CrowdfundAddressSet(address indexed crowdfund);
     event QuietPeriodUpdated(uint256 newDuration);
+    event WindDownContractSet(address indexed windDownContract);
+    event WindDownActivated();
+    event ExtendedSelectorAdded(bytes4 indexed selector);
+    event ExtendedSelectorRemoved(bytes4 indexed selector);
+    event BondPosted(uint256 indexed proposalId, address indexed depositor, uint256 amount);
+    event BondClaimed(uint256 indexed proposalId, address indexed depositor, uint256 amount);
 
     // ============ Constructor ============
 
@@ -169,6 +205,42 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
         // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
         quietPeriodDuration = 7 days;
+
+        // Register function selectors that force Extended classification.
+        // Any proposal containing a call to one of these selectors is automatically Extended
+        // regardless of what the proposer declared.
+        _registerExtendedSelectors();
+    }
+
+    /// @dev Register initial extended selectors. Separated from constructor for readability.
+    function _registerExtendedSelectors() internal {
+        // Governance parameter changes
+        extendedSelectors[this.setProposalTypeParams.selector] = true;
+        extendedSelectors[this.setWindDownContract.selector] = true;
+        extendedSelectors[this.addExtendedSelector.selector] = true;
+        extendedSelectors[this.removeExtendedSelector.selector] = true;
+
+        // Fee parameters (on privacy pool)
+        extendedSelectors[bytes4(keccak256("setShieldFee(uint120)"))] = true;
+
+        // Security Council management
+        extendedSelectors[this.setSecurityCouncil.selector] = true;
+
+        // Steward election/removal (on TreasurySteward)
+        extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
+
+        // ARM token transfer whitelist
+        extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
+
+        // Treasury outflow limit parameters
+        extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setOutflowLimitAbsolute(address,uint256)"))] = true;
+
+        // UUPS upgrade selectors
+        extendedSelectors[bytes4(keccak256("upgradeTo(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("upgradeToAndCall(address,bytes)"))] = true;
     }
 
     // ============ Quorum Exclusion ============
@@ -251,6 +323,73 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         emit QuietPeriodUpdated(_duration);
     }
 
+    // ============ Extended Selector Management ============
+
+    /// @notice Register a function selector that forces Extended proposal classification.
+    /// @dev Only callable by the timelock (requires an extended governance vote, since
+    ///      this selector is itself registered as extended).
+    function addExtendedSelector(bytes4 selector) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(!extendedSelectors[selector], "ArmadaGovernor: selector already extended");
+
+        extendedSelectors[selector] = true;
+        emit ExtendedSelectorAdded(selector);
+    }
+
+    /// @notice Remove a function selector from the extended classification registry.
+    /// @dev Only callable by the timelock (requires an extended governance vote).
+    function removeExtendedSelector(bytes4 selector) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(extendedSelectors[selector], "ArmadaGovernor: selector not extended");
+
+        extendedSelectors[selector] = false;
+        emit ExtendedSelectorRemoved(selector);
+    }
+
+    // ============ Security Council ============
+
+    /// @notice Address of the Security Council multisig. address(0) means ejected/unset.
+    address public securityCouncil;
+
+    event SecurityCouncilUpdated(address indexed oldSC, address indexed newSC);
+
+    /// @notice Set or replace the Security Council address. Governance-only (timelock).
+    /// Setting to address(0) disables all SC powers (ejection state).
+    function setSecurityCouncil(address newSC) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        emit SecurityCouncilUpdated(securityCouncil, newSC);
+        securityCouncil = newSC;
+    }
+
+    // ============ Wind-Down ============
+
+    /// @notice One-time setter: register the wind-down contract address.
+    /// Callable by timelock (governance) since the wind-down contract may be deployed
+    /// after the governor and needs a governance-approved registration.
+    function setWindDownContract(address _windDownContract) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(!windDownContractSet, "ArmadaGovernor: wind-down contract already set");
+        require(_windDownContract != address(0), "ArmadaGovernor: zero address");
+
+        windDownContractSet = true;
+        windDownContract = _windDownContract;
+
+        emit WindDownContractSet(_windDownContract);
+    }
+
+    /// @notice Called by the wind-down contract to permanently disable governance.
+    /// Once active, no new proposals can be created. Existing proposals in flight
+    /// (Active, Succeeded, Queued) can still complete their lifecycle.
+    function setWindDownActive() external {
+        require(msg.sender == windDownContract, "ArmadaGovernor: not wind-down contract");
+        require(windDownContract != address(0), "ArmadaGovernor: wind-down contract not set");
+        require(!windDownActive, "ArmadaGovernor: wind-down already active");
+
+        windDownActive = true;
+
+        emit WindDownActivated();
+    }
+
     // ============ Proposal Lifecycle ============
 
     /// @notice Create a new proposal
@@ -266,6 +405,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         bytes[] memory calldatas,
         string memory description
     ) external returns (uint256) {
+        require(!windDownActive, "ArmadaGovernor: governance ended");
         require(targets.length > 0, "ArmadaGovernor: empty proposal");
         require(
             targets.length == values.length && targets.length == calldatas.length,
@@ -278,16 +418,38 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         _checkQuietPeriod();
         _checkProposalThreshold(msg.sender);
 
+        // Mechanical classification: if any calldata triggers extended, override to Extended.
+        // Proposers can opt into Extended voluntarily, but cannot downgrade to Standard
+        // when calldata contains extended-classified function calls.
+        ProposalType effectiveType = _classifyProposal(proposalType, targets, calldatas);
+
         uint256 proposalId = ++proposalCount;
-        _initProposal(proposalId, proposalType, description);
+        _initProposal(proposalId, effectiveType, description);
 
         Proposal storage p = _proposals[proposalId];
         p.targets = targets;
         p.values = values;
         p.calldatas = calldatas;
 
+        // Bond: required only when ARM is transferable (post-transfer-unlock).
+        // Pre-transfer-unlock, bonds are economically meaningless and technically impossible
+        // for non-whitelisted holders, so governance operates on threshold only.
+        if (armToken.transferable()) {
+            require(
+                armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND),
+                "ArmadaGovernor: bond transfer failed"
+            );
+            proposalBonds[proposalId] = BondInfo({
+                depositor: msg.sender,
+                amount: PROPOSAL_BOND,
+                unlockTime: 0,
+                claimed: false
+            });
+            emit BondPosted(proposalId, msg.sender, PROPOSAL_BOND);
+        }
+
         emit ProposalCreated(
-            proposalId, msg.sender, proposalType,
+            proposalId, msg.sender, effectiveType,
             p.voteStart, p.voteEnd, description
         );
         return proposalId;
@@ -440,6 +602,48 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         emit ProposalCanceled(proposalId);
     }
 
+    /// @notice Claim a proposal bond after the lock period has elapsed.
+    /// Bond is always returned — lock periods vary by defeat reason.
+    function claimBond(uint256 proposalId) external nonReentrant {
+        BondInfo storage bond = proposalBonds[proposalId];
+        require(bond.amount > 0, "ArmadaGovernor: no bond");
+        require(!bond.claimed, "ArmadaGovernor: bond already claimed");
+
+        ProposalState currentState = state(proposalId);
+        Proposal storage p = _proposals[proposalId];
+
+        uint256 unlockTime;
+
+        if (currentState == ProposalState.Executed) {
+            // Passed and executed: immediately claimable
+            unlockTime = 0;
+        } else if (currentState == ProposalState.Canceled) {
+            // Proposer self-cancelled during Pending: immediately claimable
+            unlockTime = 0;
+        } else if (currentState == ProposalState.Defeated) {
+            // Determine defeat reason: quorum not met vs majority against
+            bool quorumMet = _quorumReached(proposalId);
+            if (!quorumMet) {
+                unlockTime = p.voteEnd + BOND_LOCK_QUORUM_FAIL;
+            } else {
+                // Quorum met but majority against (or expired grace period)
+                unlockTime = p.voteEnd + BOND_LOCK_VOTE_FAIL;
+            }
+        } else {
+            revert("ArmadaGovernor: proposal not in terminal state");
+        }
+
+        require(block.timestamp >= unlockTime, "ArmadaGovernor: bond still locked");
+
+        bond.claimed = true;
+        require(
+            armToken.transfer(bond.depositor, bond.amount),
+            "ArmadaGovernor: bond return failed"
+        );
+
+        emit BondClaimed(proposalId, bond.depositor, bond.amount);
+    }
+
     // ============ View Functions ============
 
     /// @notice Get current state of a proposal
@@ -529,6 +733,54 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     /// @dev Unique salt per proposal for timelock deduplication
     function _proposalSalt(uint256 proposalId) internal pure returns (bytes32) {
         return bytes32(proposalId);
+    }
+
+    /// @dev Classify a proposal based on its calldata. If any action targets a function
+    ///      in the extended selector registry, force Extended. If a distribute() call would
+    ///      move >5% of the treasury's balance of that token, force Extended.
+    ///      The proposer's declared type is respected only if it's already Extended.
+    function _classifyProposal(
+        ProposalType declaredType,
+        address[] memory, /* targets — reserved for future target-specific checks */
+        bytes[] memory calldatas
+    ) internal view returns (ProposalType) {
+        // If already Extended, no need to check further
+        if (declaredType == ProposalType.Extended) return ProposalType.Extended;
+
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            if (calldatas[i].length < 4) continue;
+
+            bytes4 selector;
+            // solhint-disable-next-line no-inline-assembly
+            assembly {
+                // calldatas[i] is a bytes memory; its data starts at offset 0x20
+                let dataPtr := mload(add(add(calldatas, 0x20), mul(i, 0x20)))
+                selector := mload(add(dataPtr, 0x20))
+            }
+
+            // Check registered extended selectors
+            if (extendedSelectors[selector]) return ProposalType.Extended;
+
+            // Special case: distribute() calls exceeding 5% of treasury balance
+            if (selector == DISTRIBUTE_SELECTOR && calldatas[i].length >= 100) {
+                // Decode: distribute(address token, address recipient, uint256 amount)
+                // token is at bytes 4..35, amount is at bytes 68..99
+                address token;
+                uint256 amount;
+                // solhint-disable-next-line no-inline-assembly
+                assembly {
+                    let dataPtr := mload(add(add(calldatas, 0x20), mul(i, 0x20)))
+                    token := mload(add(dataPtr, 0x24))  // skip 4-byte selector + 32 bytes but token is at offset 4
+                    amount := mload(add(dataPtr, 0x64)) // offset 4 + 32 + 32 = 68
+                }
+                uint256 treasuryBalance = IERC20(token).balanceOf(treasuryAddress);
+                if (treasuryBalance > 0 && amount > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
+                    return ProposalType.Extended;
+                }
+            }
+        }
+
+        return declaredType;
     }
 
     /// @dev Block proposals during the quiet period after crowdfund finalization.

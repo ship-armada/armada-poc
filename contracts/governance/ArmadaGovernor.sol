@@ -301,14 +301,18 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         p.description = description;
 
         // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation.
-        // Use getPastTotalSupply for snapshotted total, and current balanceOf for excluded
-        // addresses (treasury + crowdfund etc). Treasury balance is stable; this is consistent
-        // with the existing pattern and avoids needing historical balance lookups.
+        // Excluded addresses (treasury, crowdfund, etc.) are subtracted from total supply
+        // so that undelegated/non-voting tokens don't inflate the quorum denominator.
         p.snapshotQuorumBps = params.quorumBps;
         uint256 totalSupply = armToken.getPastTotalSupply(p.snapshotBlock);
         uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
         for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
             excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+        }
+        // Cap excludedBalance to prevent underflow if tokens moved into excluded
+        // addresses between the snapshot block and now.
+        if (excludedBalance > totalSupply) {
+            excludedBalance = totalSupply;
         }
         p.snapshotEligibleSupply = totalSupply - excludedBalance;
     }

@@ -109,7 +109,7 @@ async function main() {
   const treasuryAddress = await treasury.getAddress();
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
-  // 4. Deploy ArmadaGovernor (no votingLocker — uses ERC20Votes directly)
+  // 4. Deploy ArmadaGovernor
   console.log("4. Deploying ArmadaGovernor...");
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governor = await ArmadaGovernor.deploy(

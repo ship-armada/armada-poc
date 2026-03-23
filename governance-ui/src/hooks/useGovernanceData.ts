@@ -10,11 +10,10 @@ import { ProposalState, ProposalType } from '../governance-types'
 const POLL_INTERVAL_MS = 10_000
 
 export interface GovernanceData {
-  // Token / locker
+  // Token / delegation
   armBalance: bigint
-  armAllowance: bigint
-  lockedBalance: bigint
-  totalLocked: bigint
+  votingPower: bigint
+  delegatee: string
   totalSupply: bigint
   proposalThreshold: bigint
   eligibleSupply: bigint
@@ -52,9 +51,8 @@ export interface GovernanceData {
 
 const EMPTY_DATA: GovernanceData = {
   armBalance: 0n,
-  armAllowance: 0n,
-  lockedBalance: 0n,
-  totalLocked: 0n,
+  votingPower: 0n,
+  delegatee: '',
   totalSupply: 0n,
   proposalThreshold: 0n,
   eligibleSupply: 0n,
@@ -88,8 +86,8 @@ export function useGovernanceData(
   const isFetchingRef = useRef(false)
 
   const fetchData = useCallback(async () => {
-    const { provider, armToken, votingLocker, governor, treasury, steward, usdc, deployment } = contracts
-    if (!provider || !armToken || !votingLocker || !governor || !treasury || !steward || !deployment) {
+    const { provider, armToken, governor, treasury, steward, usdc, deployment } = contracts
+    if (!provider || !armToken || !governor || !treasury || !steward || !deployment) {
       return
     }
     if (isFetchingRef.current) return
@@ -100,10 +98,9 @@ export function useGovernanceData(
       const blockTimestamp = BigInt(block?.timestamp ?? 0)
       const blockNumber = BigInt(block?.number ?? 0)
 
-      // Fetch basic token/locker data
-      const [totalSupply, totalLocked, proposalThreshold, proposalCountRaw] = await Promise.all([
+      // Fetch basic token data
+      const [totalSupply, proposalThreshold, proposalCountRaw] = await Promise.all([
         armToken.totalSupply(),
-        votingLocker.totalLocked(),
         governor.proposalThreshold(),
         governor.proposalCount(),
       ])
@@ -131,13 +128,13 @@ export function useGovernanceData(
 
       // User-specific data
       let armBalance = 0n
-      let armAllowance = 0n
-      let lockedBalance = 0n
+      let votingPower = 0n
+      let delegatee = ''
       if (userAccount) {
-        ;[armBalance, armAllowance, lockedBalance] = await Promise.all([
+        ;[armBalance, votingPower, delegatee] = await Promise.all([
           armToken.balanceOf(userAccount),
-          armToken.allowance(userAccount, deployment.contracts.votingLocker),
-          votingLocker.getLockedBalance(userAccount),
+          armToken.getVotes(userAccount),
+          armToken.delegates(userAccount),
         ])
       }
 
@@ -277,9 +274,8 @@ export function useGovernanceData(
       setData((prev) => ({
         ...prev,
         armBalance,
-        armAllowance,
-        lockedBalance,
-        totalLocked,
+        votingPower,
+        delegatee,
         totalSupply,
         proposalThreshold,
         eligibleSupply,

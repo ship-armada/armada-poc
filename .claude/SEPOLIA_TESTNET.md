@@ -94,12 +94,12 @@ npm run setup:sepolia:phase2
 **Chains:** Ethereum Sepolia (hub only)
 
 **Contracts deployed:**
-- ArmadaToken (ARM), VotingLocker, ArmadaGovernor, TimelockController
+- ArmadaToken (ARM, ERC20Votes), ArmadaGovernor, TimelockController
 - TreasurySteward, ArmadaTreasuryGov
 - ArmadaCrowdfund (uses real USDC, not a fresh MockUSDCV2)
 
 **What this validates:**
-- Token distribution and locking mechanics
+- Token distribution and delegation mechanics
 - Proposal lifecycle: create → vote → queue → execute
 - Timelock-protected treasury operations (shortened to 60s for testnet)
 - Steward actions with 30s delay (vs 1 day on mainnet)

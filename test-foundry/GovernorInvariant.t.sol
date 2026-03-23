@@ -4,23 +4,22 @@ pragma solidity ^0.8.17;
 import "forge-std/Test.sol";
 import "../contracts/governance/ArmadaGovernor.sol";
 import "../contracts/governance/ArmadaToken.sol";
-import "../contracts/governance/VotingLocker.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 
 // ══════════════════════════════════════════════════════════════════════════
 // INV-G1: ARM total supply is constant (matches INITIAL_SUPPLY)
-// INV-G2: One vote per address per proposal — voting twice reverts
+// INV-G2: Every recorded vote is reflected in hasVoted mapping
 // INV-G3: Proposal state transitions are monotonic
 // INV-G5: Quorum for a proposal never changes after creation
+// INV-G6: Quorum never falls below QUORUM_FLOOR (100,000 ARM)
 // ══════════════════════════════════════════════════════════════════════════
 
 /// @title GovernorHandler — Stateful fuzz handler for governance invariant testing
-/// @dev Drives the full governance lifecycle: lock, propose, vote, advance time.
+/// @dev Drives the full governance lifecycle: delegate, propose, vote, advance time.
 contract GovernorHandler is Test {
     ArmadaGovernor public governor;
     ArmadaToken public armToken;
-    VotingLocker public locker;
 
     address[] public actors;
 
@@ -48,13 +47,11 @@ contract GovernorHandler is Test {
     constructor(
         ArmadaGovernor _governor,
         ArmadaToken _armToken,
-        VotingLocker _locker,
         address[] memory _actors,
         address _treasuryAddr
     ) {
         governor = _governor;
         armToken = _armToken;
-        locker = _locker;
         actors = _actors;
         treasuryAddr = _treasuryAddr;
     }
@@ -114,19 +111,15 @@ contract GovernorHandler is Test {
     // HANDLER ACTIONS
     // ═══════════════════════════════════════════════════════════════════
 
-    /// @dev Lock tokens for voting power
-    function lockTokens(uint256 actorIdx, uint256 amount) external {
+    /// @dev Delegate voting power to a chosen actor
+    function delegateVotes(uint256 actorIdx, uint256 delegateeIdx) external {
         actorIdx = bound(actorIdx, 0, actors.length - 1);
+        delegateeIdx = bound(delegateeIdx, 0, actors.length - 1);
         address actor = actors[actorIdx];
+        address delegatee = actors[delegateeIdx];
 
-        uint256 available = armToken.balanceOf(actor);
-        if (available == 0) return;
-        amount = bound(amount, 1, available);
-
-        vm.startPrank(actor);
-        armToken.approve(address(locker), amount);
-        try locker.lock(amount) {} catch {}
-        vm.stopPrank();
+        vm.prank(actor);
+        try armToken.delegate(delegatee) {} catch {}
 
         // Advance block to create checkpoint
         vm.roll(block.number + 1);
@@ -137,18 +130,19 @@ contract GovernorHandler is Test {
         }
     }
 
-    /// @dev Unlock tokens
-    function unlockTokens(uint256 actorIdx, uint256 amount) external {
-        actorIdx = bound(actorIdx, 0, actors.length - 1);
-        address actor = actors[actorIdx];
+    /// @dev Transfer tokens between two actors
+    function transferTokens(uint256 fromIdx, uint256 toIdx, uint256 amount) external {
+        fromIdx = bound(fromIdx, 0, actors.length - 1);
+        toIdx = bound(toIdx, 0, actors.length - 1);
+        address from = actors[fromIdx];
+        address to = actors[toIdx];
 
-        try locker.getLockedBalance(actor) returns (uint256 locked) {
-            if (locked == 0) return;
-            amount = bound(amount, 1, locked);
+        uint256 available = armToken.balanceOf(from);
+        if (available == 0) return;
+        amount = bound(amount, 1, available);
 
-            vm.prank(actor);
-            try locker.unlock(amount) {} catch {}
-        } catch {}
+        vm.prank(from);
+        try armToken.transfer(to, amount) {} catch {}
 
         vm.roll(block.number + 1);
     }
@@ -158,7 +152,7 @@ contract GovernorHandler is Test {
         actorIdx = bound(actorIdx, 0, actors.length - 1);
         address actor = actors[actorIdx];
 
-        // Need at least 1 block history for getPastLockedBalance
+        // Need at least 1 block history for getPastVotes
         if (block.number < 2) {
             vm.roll(2);
         }
@@ -189,7 +183,9 @@ contract GovernorHandler is Test {
         }
     }
 
-    /// @dev Cast a vote on a proposal
+    /// @dev Cast or change a vote on a proposal.
+    /// Voters can switch between FOR, AGAINST, and ABSTAIN. Only records a new VoteRecord
+    /// for first-time voters; re-votes update the existing record.
     function castVote(uint256 actorIdx, uint256 proposalIdx, uint8 support) external {
         actorIdx = bound(actorIdx, 0, actors.length - 1);
         if (ghost_proposalCount == 0) return;
@@ -197,13 +193,16 @@ contract GovernorHandler is Test {
         support = uint8(bound(support, 0, 2));
 
         address actor = actors[actorIdx];
+        bool alreadyVoted = governor.hasVoted(proposalIdx, actor);
 
         vm.prank(actor);
         try governor.castVote(proposalIdx, support) {
-            _voteRecords.push(VoteRecord({
-                proposalId: proposalIdx,
-                voter: actor
-            }));
+            if (!alreadyVoted) {
+                _voteRecords.push(VoteRecord({
+                    proposalId: proposalIdx,
+                    voter: actor
+                }));
+            }
             ghost_voteCount++;
         } catch {}
 
@@ -245,7 +244,7 @@ contract GovernorHandler is Test {
         amount = bound(amount, 1, available);
 
         vm.prank(actor);
-        armToken.transfer(treasuryAddr, amount);
+        try armToken.transfer(treasuryAddr, amount) {} catch {}
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -257,13 +256,18 @@ contract GovernorHandler is Test {
         VoteRecord storage r = _voteRecords[idx];
         return (r.proposalId, r.voter);
     }
+
+    /// @notice Number of unique (proposalId, voter) records (distinct from ghost_voteCount
+    /// which increments on every castVote call including vote changes).
+    function ghost_uniqueVoteRecords() external view returns (uint256) {
+        return _voteRecords.length;
+    }
 }
 
 /// @title GovernorInvariantTest — Foundry invariant test suite for ArmadaGovernor
 contract GovernorInvariantTest is Test {
     ArmadaGovernor public governor;
     ArmadaToken public armToken;
-    VotingLocker public locker;
     TimelockController public timelock;
     GovernorHandler public handler;
 
@@ -272,11 +276,7 @@ contract GovernorInvariantTest is Test {
     uint256 TOKENS_PER_ACTOR; // set in setUp() as 10% of supply per actor
 
     function setUp() public {
-        // Deploy ARM token
-        armToken = new ArmadaToken(address(this), address(this));
-        TOKENS_PER_ACTOR = armToken.INITIAL_SUPPLY() / 10; // 10% of supply each
-
-        // Deploy TimelockController
+        // Deploy TimelockController (needed before ArmadaToken)
         address[] memory proposers = new address[](1);
         proposers[0] = address(0); // will be set after governor deploy
         address[] memory executors = new address[](1);
@@ -288,14 +288,9 @@ contract GovernorInvariantTest is Test {
             address(this) // admin
         );
 
-        // Deploy VotingLocker
-        locker = new VotingLocker(address(armToken), address(this), 14 days, address(timelock));
-
-        // Whitelist deployer and locker so token transfers work
-        address[] memory wl = new address[](2);
-        wl[0] = address(this);
-        wl[1] = address(locker);
-        armToken.initWhitelist(wl);
+        // Deploy ARM token
+        armToken = new ArmadaToken(address(this), address(timelock));
+        TOKENS_PER_ACTOR = armToken.INITIAL_SUPPLY() / 10; // 10% of supply each
 
         treasuryAddr = address(0xBABE);
 
@@ -312,6 +307,11 @@ contract GovernorInvariantTest is Test {
         timelock.grantRole(timelock.PROPOSER_ROLE(), address(governor));
         timelock.grantRole(timelock.EXECUTOR_ROLE(), address(governor));
 
+        // Whitelist test contract and all actors for transfers
+        address[] memory wl = new address[](1);
+        wl[0] = address(this);
+        armToken.initWhitelist(wl);
+
         // Create actors and fund them with ARM tokens
         for (uint256 i = 0; i < 5; i++) {
             address actor = address(uint160(0x8000 + i));
@@ -319,30 +319,24 @@ contract GovernorInvariantTest is Test {
             armToken.transfer(actor, TOKENS_PER_ACTOR);
         }
 
-        // Pre-lock tokens for actors so they can create proposals
-        // (need voting power from past block)
+        // Self-delegate for each actor so they have voting power
         for (uint256 i = 0; i < actors.length; i++) {
-            address actor = actors[i];
-            uint256 lockAmount = TOKENS_PER_ACTOR / 2; // lock half
-
-            vm.startPrank(actor);
-            armToken.approve(address(locker), lockAmount);
-            locker.lock(lockAmount);
-            vm.stopPrank();
+            vm.prank(actors[i]);
+            armToken.delegate(actors[i]);
         }
 
-        // Advance a few blocks so getPastLockedBalance works
+        // Advance a few blocks so getPastVotes works
         vm.roll(block.number + 5);
         vm.warp(block.timestamp + 1 hours);
 
         // Create handler
-        handler = new GovernorHandler(governor, armToken, locker, actors, treasuryAddr);
+        handler = new GovernorHandler(governor, armToken, actors, treasuryAddr);
 
         targetContract(address(handler));
 
         bytes4[] memory selectors = new bytes4[](7);
-        selectors[0] = GovernorHandler.lockTokens.selector;
-        selectors[1] = GovernorHandler.unlockTokens.selector;
+        selectors[0] = GovernorHandler.delegateVotes.selector;
+        selectors[1] = GovernorHandler.transferTokens.selector;
         selectors[2] = GovernorHandler.createProposal.selector;
         selectors[3] = GovernorHandler.castVote.selector;
         selectors[4] = GovernorHandler.advanceTime.selector;
@@ -370,7 +364,8 @@ contract GovernorInvariantTest is Test {
 
     /// @notice Every recorded vote is reflected in the governor's hasVoted mapping
     function invariant_oneVotePerAddress() public view {
-        for (uint256 i = 0; i < handler.ghost_voteCount(); i++) {
+        uint256 uniqueRecords = handler.ghost_uniqueVoteRecords();
+        for (uint256 i = 0; i < uniqueRecords; i++) {
             (uint256 proposalId, address voter) = handler.ghost_voteAt(i);
             assertTrue(
                 governor.hasVoted(proposalId, voter),
@@ -393,23 +388,6 @@ contract GovernorInvariantTest is Test {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // INV-G4: VotingLocker totalLocked == sum(lockedBalance[user])
-    // ══════════════════════════════════════════════════════════════════════
-
-    /// @notice totalLocked matches sum of all individual locked balances
-    function invariant_totalLockedConsistency() public view {
-        uint256 sumLocked = 0;
-        for (uint256 i = 0; i < actors.length; i++) {
-            sumLocked += locker.getLockedBalance(actors[i]);
-        }
-        assertEq(
-            locker.totalLocked(),
-            sumLocked,
-            "INV-G4: totalLocked != sum of individual balances"
-        );
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
     // INV-G5: Quorum for a proposal never changes after creation
     // ══════════════════════════════════════════════════════════════════════
 
@@ -428,9 +406,28 @@ contract GovernorInvariantTest is Test {
         }
     }
 
-    /// @notice ARM token conservation: locker + actors + deployer = INITIAL_SUPPLY
+    // ══════════════════════════════════════════════════════════════════════
+    // INV-G6: Quorum never falls below QUORUM_FLOOR
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// @notice Quorum for every created proposal is at least QUORUM_FLOOR (100k ARM)
+    function invariant_quorumFloor() public view {
+        uint256 count = handler.ghost_proposalCount();
+        uint256 floor = governor.QUORUM_FLOOR();
+        for (uint256 i = 1; i <= count; i++) {
+            uint256 creationQuorum = handler.ghost_quorumAtCreation(i);
+            if (creationQuorum == 0) continue; // proposal creation may have failed
+            assertGe(
+                creationQuorum,
+                floor,
+                "INV-G6: Quorum below QUORUM_FLOOR"
+            );
+        }
+    }
+
+    /// @notice ARM token conservation: actors + deployer + treasury = INITIAL_SUPPLY
     function invariant_armConservation() public view {
-        uint256 total = armToken.balanceOf(address(locker));
+        uint256 total = 0;
         for (uint256 i = 0; i < actors.length; i++) {
             total += armToken.balanceOf(actors[i]);
         }

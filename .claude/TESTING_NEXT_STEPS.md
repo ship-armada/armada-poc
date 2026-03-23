@@ -37,7 +37,7 @@ Catches: centralization risks, missing zero-address checks, unsafe casting, gas 
 
 - **ArmadaCrowdfund.sol**: `finalize()` iterates `participantList` unboundedly (L282-304) — Slither should flag this as a potential DoS vector
 - **ArmadaGovernor.sol**: `_checkProposalThreshold()` reads `block.number - 1` (L162) — confirm Slither doesn't flag the unchecked subtraction (safe since constructor mines a block)
-- **VotingLocker.sol**: `unlock()` transfers after state update (L76) — confirm CEI pattern is correct and ReentrancyGuard is sufficient
+- **ArmadaToken.sol**: ERC20Votes delegation — confirm checkpoint updates are atomic with transfers
 
 ---
 
@@ -56,8 +56,8 @@ MaliciousReceiver.claim() → ArmadaCrowdfund.claim() → ARM.transfer() → Mal
 
 Note: SafeERC20 + ReentrancyGuard should prevent this, but the test proves it.
 
-**VotingLocker unlock reentrancy:**
-Same pattern — malicious token callback during `unlock()` tries to re-enter `lock()` or `unlock()`.
+**ERC20Votes delegation:**
+Delegation uses OpenZeppelin's ERC20Votes which handles checkpointing internally — reentrancy is not a concern here.
 
 ### 2b. Precision & Accounting Invariants
 
@@ -165,7 +165,7 @@ If gas exceeds 15M (Ethereum mainnet block gas limit), the contract needs batche
 
 ### Governance Gas
 
-- `castVote()` with 1000+ checkpoints in VotingLocker (binary search depth)
+- `castVote()` with 1000+ checkpoints in ERC20Votes (binary search depth via `getPastVotes`)
 - `queue()` and `execute()` with large calldata arrays (10+ targets)
 
 ### How to Profile
@@ -198,10 +198,10 @@ pip install halmos
 // PROVE: allocUsdc <= reserve (allocation never exceeds reserve, given demand >= reserve)
 ```
 
-**VotingLocker checkpoint search:**
+**ERC20Votes checkpoint search:**
 ```solidity
 // For ALL possible checkpoint arrays and block numbers:
-// getPastLockedBalance returns the correct value
+// getPastVotes returns the correct value
 // (the value at the largest checkpoint.fromBlock <= blockNumber)
 ```
 
@@ -215,9 +215,9 @@ Halmos performs symbolic execution — it proves properties hold for ALL inputs,
 
 Test the full lifecycle across contracts:
 
-1. Deploy ARM token, USDC, Crowdfund, VotingLocker, TimelockController, Governor
+1. Deploy ARM token, USDC, Crowdfund, TimelockController, Governor
 2. Run crowdfund: seeds → invite → commit → finalize → claim ARM
-3. Participant locks claimed ARM in VotingLocker
+3. Participant self-delegates claimed ARM (ERC20Votes)
 4. Participant creates governance proposal (verify they meet threshold)
 5. Multiple crowdfund participants vote
 6. Queue → timelock delay → execute
@@ -233,7 +233,7 @@ Test the full lifecycle across contracts:
 
 ### Adversarial Cross-Contract
 
-- Participant claims ARM from crowdfund, locks in VotingLocker, then unlocks and transfers to another address. Second address tries to vote — should fail (no voting power at snapshot block)
+- Participant claims ARM from crowdfund, self-delegates, then transfers to another address. Second address tries to vote — should fail (no voting power at snapshot block)
 - Governance proposal that calls `crowdfund.withdrawProceeds()` via timelock — verify only works if timelock has admin role
 
 ---

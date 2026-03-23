@@ -23,8 +23,8 @@ export function EventLog({ contracts }: EventLogProps) {
   const [error, setError] = useState<string | null>(null)
 
   const fetchEvents = useCallback(async () => {
-    const { governor, treasury, steward, votingLocker } = contracts
-    if (!governor || !treasury || !steward || !votingLocker) return
+    const { governor, treasury, steward, armToken } = contracts
+    if (!governor || !treasury || !steward || !armToken) return
 
     setIsLoading(true)
     setError(null)
@@ -72,7 +72,7 @@ export function EventLog({ contracts }: EventLogProps) {
         parseEvents(governor, 'Governor'),
         parseEvents(treasury, 'Treasury'),
         parseEvents(steward, 'Steward'),
-        parseEvents(votingLocker, 'VotingLocker'),
+        parseEvents(armToken, 'ArmToken'),
       ])
 
       // Sort by block number descending

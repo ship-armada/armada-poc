@@ -1,16 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 interface ICrowdfundClaim {
     function claim() external;
     function claimRefund() external;
-}
-
-interface IVotingLockerAttack {
-    function lock(uint256 amount) external;
-    function unlock(uint256 amount) external;
 }
 
 /// @title ReentrancyAttacker — Test contract that attempts reentrancy on claim/refund
@@ -65,30 +58,3 @@ contract CrowdfundRefundAttacker {
     }
 }
 
-/// @notice Attacker that tries to re-enter VotingLocker.unlock() during unlock
-contract VotingLockerAttacker {
-    IVotingLockerAttack public target;
-    IERC20 public armToken;
-    uint256 public attackCount;
-
-    constructor(address _target, address _armToken) {
-        target = IVotingLockerAttack(_target);
-        armToken = IERC20(_armToken);
-    }
-
-    function lockTokens(uint256 amount) external {
-        armToken.approve(address(target), amount);
-        target.lock(amount);
-    }
-
-    function attackUnlock(uint256 amount) external {
-        target.unlock(amount);
-    }
-
-    receive() external payable {
-        if (attackCount < 1) {
-            attackCount++;
-            target.unlock(1);
-        }
-    }
-}

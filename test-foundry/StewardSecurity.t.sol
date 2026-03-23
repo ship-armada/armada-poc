@@ -8,7 +8,6 @@ import "forge-std/Test.sol";
 import "../contracts/governance/TreasurySteward.sol";
 import "../contracts/governance/ArmadaGovernor.sol";
 import "../contracts/governance/ArmadaToken.sol";
-import "../contracts/governance/VotingLocker.sol";
 import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
@@ -23,7 +22,6 @@ contract StewardSecurityTest is Test {
 
     ArmadaGovernor public governor;
     ArmadaToken public armToken;
-    VotingLocker public locker;
     TimelockController public timelock;
     ArmadaTreasuryGov public treasury;
     TreasurySteward public steward;
@@ -38,12 +36,6 @@ contract StewardSecurityTest is Test {
     uint256 constant TEST_ACTION_DELAY = EXPECTED_MIN_DELAY;
 
     function setUp() public {
-        // Deploy ARM token
-        armToken = new ArmadaToken(address(this), address(this));
-        address[] memory wl = new address[](1);
-        wl[0] = address(this);
-        armToken.initWhitelist(wl);
-
         // Deploy TimelockController (this test contract acts as admin)
         address[] memory proposers = new address[](0);
         address[] memory executors = new address[](0);
@@ -54,8 +46,11 @@ contract StewardSecurityTest is Test {
             address(this)
         );
 
-        // Deploy VotingLocker
-        locker = new VotingLocker(address(armToken), address(this), 14 days, address(timelock));
+        // Deploy ARM token
+        armToken = new ArmadaToken(address(this), address(timelock));
+        address[] memory wl = new address[](1);
+        wl[0] = address(this);
+        armToken.initWhitelist(wl);
 
         // Deploy treasury
         treasury = new ArmadaTreasuryGov(address(timelock), address(this), 14 days);

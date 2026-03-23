@@ -5,7 +5,7 @@
  * 1. Crowdfund finalize() gas at varying participant counts (50, 100, 150)
  * 2. Crowdfund addSeeds() batch gas
  * 3. Crowdfund claim() gas (should be constant)
- * 4. VotingLocker castVote() gas with varying checkpoint counts (binary search depth)
+ * 4. ERC20Votes getPastVotes() gas with varying checkpoint counts (binary search depth)
  *
  * Results are printed to console as a table for easy analysis.
  * Gas per participant is computed to extrapolate to 500, 1000, 2000 participants.
@@ -262,63 +262,58 @@ describe("Gas Benchmarks", function () {
   });
 
   // ============================================================
-  // 4. VotingLocker / Governor castVote() with many checkpoints
+  // 4. ERC20Votes getPastVotes() / castVote() with many checkpoints
   // ============================================================
 
-  describe("VotingLocker checkpoint scaling", function () {
-    it("getPastLockedBalance() gas with 10, 100, 500, 1000 checkpoints (binary search)", async function () {
-      // Deploy governance stack
+  describe("ERC20Votes checkpoint scaling", function () {
+    it("getPastVotes() gas with 10, 100, 500, 1000 checkpoints (binary search)", async function () {
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
       await armToken.initWhitelist([deployer.address]);
 
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
-      await armToken.addToWhitelist(await locker.getAddress());
-
       const alice = allSigners[1];
+      const bob = allSigners[2];
 
-      // Give alice tokens and approve
-      const lockAmount = ARM(1_000_000); // 1M ARM
-      await armToken.transfer(alice.address, lockAmount);
-      await armToken.connect(alice).approve(await locker.getAddress(), ethers.MaxUint256);
+      // Give alice tokens
+      await armToken.transfer(alice.address, ARM(1_000_000));
 
-      // Create initial lock
-      await locker.connect(alice).lock(ARM(1));
+      // Self-delegate to activate voting power
+      await armToken.connect(alice).delegate(alice.address);
 
-      // Create many checkpoints by doing small lock/unlock across multiple blocks
-      // Each mine() + lock/unlock creates a new checkpoint
+      // Create many checkpoints by toggling delegation between alice and bob
+      // Each delegation change on a new block creates a checkpoint
       const checkpointTargets = [10, 100, 500, 1000];
       const results: { checkpoints: number; gas: bigint }[] = [];
 
-      let currentCheckpoints = 1;
+      let currentCheckpoints = 1; // initial delegate() created 1
 
       for (const target of checkpointTargets) {
         const toCreate = target - currentCheckpoints;
 
         for (let i = 0; i < toCreate; i++) {
-          // Mine a block so the next lock creates a new checkpoint (different block)
           await mine(1);
-          await locker.connect(alice).lock(ARM(1));
+          // Alternate between self-delegation and delegating to bob
+          const delegatee = (currentCheckpoints + i) % 2 === 0 ? alice.address : bob.address;
+          await armToken.connect(alice).delegate(delegatee);
         }
         currentCheckpoints = target;
 
-        // Record the block number for query
-        const queryBlock = (await ethers.provider.getBlockNumber()) - 1;
+        // Ensure final delegation is to alice so she has voting power
+        await mine(1);
+        await armToken.connect(alice).delegate(alice.address);
+        currentCheckpoints++;
 
-        // Measure gas for getPastLockedBalance (view function)
-        // We use estimateGas to get the gas cost
-        const gas = await locker.getPastLockedBalance.estimateGas(alice.address, queryBlock);
+        const queryBlock = (await ethers.provider.getBlockNumber()) - 1;
+        const gas = await armToken.getPastVotes.estimateGas(alice.address, queryBlock);
 
         results.push({ checkpoints: target, gas });
 
         console.log(
-          `    getPastLockedBalance() | ${target} checkpoints | ${gas.toLocaleString()} gas`
+          `    getPastVotes() | ${target} checkpoints | ${gas.toLocaleString()} gas`
         );
       }
 
-      // Verify O(log n) scaling: gas should grow much slower than linearly
-      // 10x more checkpoints should add roughly 3-4x gas (log2(10) ≈ 3.3), not 10x
+      // Verify O(log n) scaling
       if (results.length >= 2) {
         const first = results[0];
         const last = results[results.length - 1];
@@ -332,17 +327,12 @@ describe("Gas Benchmarks", function () {
     });
 
     it("castVote() gas with deep checkpoint history", async function () {
-      // Full governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
       await armToken.initWhitelist([deployer.address]);
 
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
-      await armToken.addToWhitelist(await locker.getAddress());
-
-      const proposers = [deployer]; // deployer proposes
       const voters = allSigners.slice(1, 6); // 5 voters with varying checkpoint depths
+      const delegateTarget = allSigners[6]; // alternate delegation target
 
       // Setup TimelockController
       const TimelockController = await ethers.getContractFactory("TimelockController");
@@ -364,51 +354,46 @@ describe("Gas Benchmarks", function () {
       await timelock.grantRole(PROPOSER_ROLE, await governor.getAddress());
       await timelock.grantRole(EXECUTOR_ROLE, await governor.getAddress());
 
-      // Fund and lock tokens for deployer (proposer needs threshold)
-      const deployerLock = ARM(200_000); // 0.2% > 0.1% threshold
-      await armToken.approve(await locker.getAddress(), ethers.MaxUint256);
-      await locker.lock(deployerLock);
-      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
+      // Deployer self-delegates (proposer needs threshold)
+      await armToken.delegate(deployer.address);
 
-      // Fund voters with varying amounts — lock half, keep half for checkpoint creation
+      // Fund voters and self-delegate
       for (let i = 0; i < voters.length; i++) {
         const amount = ARM(1_000_000);
         await armToken.transfer(voters[i].address, amount);
-        await armToken.connect(voters[i]).approve(await locker.getAddress(), ethers.MaxUint256);
-        await locker.connect(voters[i]).lock(ARM(500_000)); // lock half, keep 500K for checkpoints
-        await armToken.connect(voters[i]).delegate(voters[i].address); // activate ERC20Votes voting power
+        await armToken.connect(voters[i]).delegate(voters[i].address);
       }
 
-      // Create checkpoints via alternating lock/unlock to avoid running out of tokens
+      // Create varying checkpoint depths via delegation toggling
       // voter[0] — many checkpoints (500)
       for (let i = 0; i < 250; i++) {
         await mine(1);
-        await locker.connect(voters[0]).lock(ARM(1));
+        await armToken.connect(voters[0]).delegate(delegateTarget.address);
         await mine(1);
-        await locker.connect(voters[0]).unlock(ARM(1));
+        await armToken.connect(voters[0]).delegate(voters[0].address);
       }
 
       // voter[1] — moderate (100)
       for (let i = 0; i < 50; i++) {
         await mine(1);
-        await locker.connect(voters[1]).lock(ARM(1));
+        await armToken.connect(voters[1]).delegate(delegateTarget.address);
         await mine(1);
-        await locker.connect(voters[1]).unlock(ARM(1));
+        await armToken.connect(voters[1]).delegate(voters[1].address);
       }
 
       // voter[2] — few checkpoints (10)
       for (let i = 0; i < 5; i++) {
         await mine(1);
-        await locker.connect(voters[2]).lock(ARM(1));
+        await armToken.connect(voters[2]).delegate(delegateTarget.address);
         await mine(1);
-        await locker.connect(voters[2]).unlock(ARM(1));
+        await armToken.connect(voters[2]).delegate(voters[2].address);
       }
 
-      // voter[3] — single checkpoint (just the initial lock)
+      // voter[3] — single checkpoint (just the initial delegate)
       // voter[4] — single checkpoint
 
       // Create a proposal
-      await mine(1); // ensure snapshot block is after all checkpoints
+      await mine(1);
       const proposeTx = await governor.propose(
         0, // ParameterChange
         [deployer.address],
@@ -437,7 +422,7 @@ describe("Gas Benchmarks", function () {
       }
 
       console.log("\n    ═══════════════════════════════════════════════════════════════");
-      console.log("    castVote() GAS vs CHECKPOINT DEPTH");
+      console.log("    castVote() GAS vs CHECKPOINT DEPTH (ERC20Votes delegation)");
       console.log("    ═══════════════════════════════════════════════════════════════");
       console.log("    Voter     │ Checkpoints │ Gas Used");
       console.log("    ──────────┼─────────────┼─────────────");

@@ -11,17 +11,14 @@ export const ARM_TOKEN_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
 ]
 
-export const VOTING_LOCKER_ABI = [
-  'function lock(uint256 amount)',
-  'function unlock(uint256 amount)',
-  'function getLockedBalance(address account) view returns (uint256)',
-  'function getPastLockedBalance(address account, uint256 blockNumber) view returns (uint256)',
-  'function totalLocked() view returns (uint256)',
-  'function getPastTotalLocked(uint256 blockNumber) view returns (uint256)',
-  'function numCheckpoints(address account) view returns (uint256)',
-  'function armToken() view returns (address)',
-  'event TokensLocked(address indexed user, uint256 amount, uint256 newLockedBalance)',
-  'event TokensUnlocked(address indexed user, uint256 amount, uint256 newLockedBalance)',
+export const ERC20_VOTES_ABI = [
+  'function delegate(address delegatee)',
+  'function delegates(address account) view returns (address)',
+  'function getVotes(address account) view returns (uint256)',
+  'function getPastVotes(address account, uint256 blockNumber) view returns (uint256)',
+  'function getPastTotalSupply(uint256 blockNumber) view returns (uint256)',
+  'event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate)',
+  'event DelegateVotesChanged(address indexed delegate, uint256 previousBalance, uint256 newBalance)',
 ]
 
 export const GOVERNOR_ABI = [
@@ -42,7 +39,6 @@ export const GOVERNOR_ABI = [
   'function voteChoice(uint256 proposalId, address voter) view returns (uint8)',
   'function treasuryAddress() view returns (address)',
   'function getExcludedFromQuorum() view returns (address[])',
-  'function votingLocker() view returns (address)',
   'function armToken() view returns (address)',
   // Events
   'event ProposalCreated(uint256 indexed proposalId, address indexed proposer, uint8 proposalType, uint256 voteStart, uint256 voteEnd, string description)',

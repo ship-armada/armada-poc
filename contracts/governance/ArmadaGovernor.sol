@@ -93,6 +93,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     // Succeeded proposals must be queued within this window or they expire
     uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
 
+    // Absolute quorum floor: prevents governance passing on trivial turnout regardless
+    // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
+    uint256 public constant QUORUM_FLOOR = 100_000 * 1e18;
+
     // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
     // One-time bootstrapping measure; governable (can be shortened or removed).
     address public crowdfundAddress;
@@ -111,6 +115,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         string description
     );
     event VoteCast(address indexed voter, uint256 indexed proposalId, uint8 support, uint256 weight);
+    event VoteChanged(address indexed voter, uint256 indexed proposalId, uint8 oldSupport, uint8 newSupport, uint256 weight);
     event ProposalQueued(uint256 indexed proposalId, bytes32 timelockId);
     event ProposalExecuted(uint256 indexed proposalId);
     event ProposalCanceled(uint256 indexed proposalId);
@@ -317,7 +322,11 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         p.snapshotEligibleSupply = totalSupply - excludedBalance;
     }
 
-    /// @notice Cast a vote on a proposal
+    /// @notice Cast or change a vote on a proposal.
+    /// @dev Voters can switch between FOR, AGAINST, and ABSTAIN during voting.
+    ///      Votes cannot be withdrawn entirely — once cast, the voter's weight counts toward
+    ///      quorum permanently. Total participation (forVotes + againstVotes + abstainVotes) is
+    ///      monotonically non-decreasing because switching only moves weight between buckets.
     /// @param proposalId Proposal to vote on
     /// @param support 0=Against, 1=For, 2=Abstain
     function castVote(uint256 proposalId, uint8 support) external {
@@ -325,24 +334,49 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         require(p.id != 0, "ArmadaGovernor: unknown proposal");
         require(block.timestamp >= p.voteStart, "ArmadaGovernor: voting not started");
         require(block.timestamp <= p.voteEnd, "ArmadaGovernor: voting ended");
-        require(!hasVoted[proposalId][msg.sender], "ArmadaGovernor: already voted");
         require(support <= 2, "ArmadaGovernor: invalid vote type");
 
         uint256 weight = armToken.getPastVotes(msg.sender, p.snapshotBlock);
         require(weight > 0, "ArmadaGovernor: no voting power");
 
-        hasVoted[proposalId][msg.sender] = true;
-        voteChoice[proposalId][msg.sender] = support;
+        if (hasVoted[proposalId][msg.sender]) {
+            // Vote change: subtract from old bucket, add to new bucket
+            uint8 oldSupport = voteChoice[proposalId][msg.sender];
+            require(oldSupport != support, "ArmadaGovernor: same vote");
 
-        if (support == 0) {
-            p.againstVotes += weight;
-        } else if (support == 1) {
-            p.forVotes += weight;
+            if (oldSupport == 0) {
+                p.againstVotes -= weight;
+            } else if (oldSupport == 1) {
+                p.forVotes -= weight;
+            } else {
+                p.abstainVotes -= weight;
+            }
+
+            if (support == 0) {
+                p.againstVotes += weight;
+            } else if (support == 1) {
+                p.forVotes += weight;
+            } else {
+                p.abstainVotes += weight;
+            }
+
+            voteChoice[proposalId][msg.sender] = support;
+            emit VoteChanged(msg.sender, proposalId, oldSupport, support, weight);
         } else {
-            p.abstainVotes += weight;
-        }
+            // First vote
+            hasVoted[proposalId][msg.sender] = true;
+            voteChoice[proposalId][msg.sender] = support;
 
-        emit VoteCast(msg.sender, proposalId, support, weight);
+            if (support == 0) {
+                p.againstVotes += weight;
+            } else if (support == 1) {
+                p.forVotes += weight;
+            } else {
+                p.abstainVotes += weight;
+            }
+
+            emit VoteCast(msg.sender, proposalId, support, weight);
+        }
     }
 
     /// @notice Queue a succeeded proposal to the timelock
@@ -421,12 +455,15 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         return ProposalState.Succeeded;
     }
 
-    /// @notice Calculate quorum for a proposal: X% of eligible ARM supply snapshotted at creation.
+    /// @notice Calculate quorum for a proposal: max(X% of eligible supply, absolute floor).
     /// Both eligible supply and quorumBps are frozen at proposal creation so quorum cannot
     /// shift during voting — even if governance updates params mid-flight.
+    /// The absolute floor (QUORUM_FLOOR) prevents governance from passing on near-zero turnout
+    /// when circulating delegated supply is small (e.g. early in the protocol lifecycle).
     function quorum(uint256 proposalId) public view returns (uint256) {
         Proposal storage p = _proposals[proposalId];
-        return (p.snapshotEligibleSupply * p.snapshotQuorumBps) / 10000;
+        uint256 percentageQuorum = (p.snapshotEligibleSupply * p.snapshotQuorumBps) / 10000;
+        return percentageQuorum > QUORUM_FLOOR ? percentageQuorum : QUORUM_FLOOR;
     }
 
     /// @notice Get proposal details

@@ -28,10 +28,6 @@ const GOVERNANCE_ABI = [
   "function proposalTypeParams(uint8) view returns (uint256 votingDelay, uint256 votingPeriod, uint256 executionDelay, uint256 quorumBps)",
 ];
 
-const VOTING_LOCKER_ABI = [
-  "function totalLocked() view returns (uint256)",
-];
-
 const TIMELOCK_ABI = [
   "function getMinDelay() view returns (uint256)",
 ];
@@ -153,7 +149,6 @@ async function queryGovernance(env: DeployEnv): Promise<ContractQueryResult> {
     proposalThreshold,
     treasuryParams,
     constitutionalParams,
-    totalLocked,
     timelockDelay,
     armSupply,
     treasuryUsdc,
@@ -162,7 +157,6 @@ async function queryGovernance(env: DeployEnv): Promise<ContractQueryResult> {
     safeCall("hub", gov.governor, GOVERNANCE_ABI, "proposalThreshold"),
     safeCall("hub", gov.governor, GOVERNANCE_ABI, "proposalTypeParams", [0]),
     safeCall("hub", gov.governor, GOVERNANCE_ABI, "proposalTypeParams", [1]),
-    safeCall("hub", gov.votingLocker, VOTING_LOCKER_ABI, "totalLocked"),
     safeCall("hub", gov.timelockController, TIMELOCK_ABI, "getMinDelay"),
     safeCall("hub", gov.armToken, ERC20_ABI, "totalSupply"),
     usdcAddr
@@ -201,7 +195,6 @@ async function queryGovernance(env: DeployEnv): Promise<ContractQueryResult> {
   return {
     addresses: gov,
     armTotalSupply: formatArm(armSupply),
-    totalLocked: formatArm(totalLocked),
     proposalThreshold: formatArm(proposalThreshold),
     proposalTypes: {
       treasury: formatParams(treasuryParams),

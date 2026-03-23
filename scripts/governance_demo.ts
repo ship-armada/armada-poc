@@ -82,11 +82,8 @@ async function main() {
   await governor.waitForDeployment();
 
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-  // Steward action delay: 120% of governance cycle (2d + 5d + 2d = 9d)
-  const stewardActionDelay = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
   const stewardContract = await TreasurySteward.deploy(
-    tlAddr, await treasury.getAddress(), await governor.getAddress(), stewardActionDelay,
-    deployer.address, MAX_PAUSE
+    tlAddr, deployer.address, MAX_PAUSE
   );
   await stewardContract.waitForDeployment();
 
@@ -187,15 +184,13 @@ async function main() {
   console.log("-".repeat(70));
   console.log("");
 
-  // Elect Dave
+  // Elect Dave — the TreasurySteward contract tracks identity; the timelock calls electSteward
   const electTargets = [
     await stewardContract.getAddress(),
-    await treasury.getAddress(),
   ];
-  const electValues = [0n, 0n];
+  const electValues = [0n];
   const electCalldatas = [
     stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-    treasury.interface.encodeFunctionData("setSteward", [dave.address]),
   ];
 
   await governor.connect(alice).propose(
@@ -218,21 +213,12 @@ async function main() {
   log("EXECUTE", `Dave is now treasury steward (6-month term)`);
   log("STATE", `Steward active: ${await stewardContract.isStewardActive()}`);
 
-  // Steward spends within budget
-  const spendAmount = ethers.parseUnits("200", 6);
-  await treasury.connect(dave).stewardSpend(
-    await usdc.getAddress(), eve.address, spendAmount
-  );
-  log("STEWARD", `Dave spends ${fmtUsdc(spendAmount)} from operational budget \u2192 succeeds`);
-  log("RESULT", `Eve USDC balance: ${fmtUsdc(await usdc.balanceOf(eve.address))}`);
-
-  // Steward proposes action via TreasurySteward (for veto demo)
-  // Set treasury steward to stewardContract for this action
-  // (Note: in production, treasury steward would be stewardContract from the start)
-  console.log("");
-  log("STEWARD", `Dave proposes action: transfer 5000 USDC to Eve via stewardContract`);
-  log("NOTE", `(In this demo, Dave uses direct treasury.stewardSpend for simple ops`);
-  log("NOTE", ` and stewardContract for vetoed-action demos)`);
+  // In the production flow, a steward submits spend requests via governance proposals
+  // (ArmadaGovernor.proposeStewardAction creates pass-by-default proposals).
+  // For demo brevity, we show the final governance-approved spend directly from the timelock.
+  // The timelock (owner) calls stewardSpend after steward budget token is authorized.
+  log("NOTE", `Steward spending flows through governance — demo skips full proposal cycle`);
+  log("NOTE", ` In production: Dave submits proposal \u2192 quorum approval \u2192 timelock executes stewardSpend`);
 
   // Create a veto-able action: governance proposes to veto a hypothetical action
   // For the demo, we show the veto governance proposal flow

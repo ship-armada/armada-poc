@@ -45,28 +45,23 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     // ============ State ============
 
     address public immutable owner; // TimelockController address (set once at deployment, cannot be changed)
-    address public steward; // Treasury steward (limited powers)
-
     // Claims system
     uint256 public claimCount;
     mapping(uint256 => Claim) public claims;
     mapping(address => uint256[]) private _beneficiaryClaims;
 
-    // Steward budget tracking (per token)
-    //
-    // The steward can spend up to 1% of the treasury balance per 30-day period.
-    // The budget basis (treasury balance used for the 1% calculation) is snapshotted
-    // once at the start of each period and held constant for the full 30 days.
-    // This prevents mid-period balance changes from shifting the budget.
-    //
-    // The 30-day period starts on the steward's first spend after the previous period
-    // expires (not on a fixed calendar schedule). Changing the steward does not reset
-    // the budget window or the amount already spent.
-    uint256 public constant STEWARD_BUDGET_BPS = 100; // 1%
-    uint256 public constant BUDGET_PERIOD = 30 days;
-    mapping(address => uint256) public budgetSpentThisPeriod; // cumulative spend in current period
-    mapping(address => uint256) public lastBudgetReset; // timestamp when current period started
-    mapping(address => uint256) public budgetBasis; // treasury balance snapshotted at period start
+    // Per-token steward budget table (governance-managed via Extended proposals).
+    // Each authorized token has an absolute spending limit per rolling window.
+    // Unused budget does not carry over between windows.
+    struct StewardBudget {
+        uint256 limit;         // max spend per window in token units
+        uint256 window;        // window duration in seconds
+        bool authorized;       // whether steward can spend this token
+    }
+
+    mapping(address => StewardBudget) public stewardBudgets;
+    mapping(address => uint256) public stewardBudgetSpent;
+    mapping(address => uint256) public stewardBudgetWindowStart;
 
     // Aggregate outflow rate limits (per token)
     //
@@ -82,8 +77,10 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     event DirectDistribution(address indexed token, address indexed recipient, uint256 amount);
     event ClaimCreated(uint256 indexed claimId, address indexed beneficiary, address token, uint256 amount);
     event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount);
-    event StewardUpdated(address indexed oldSteward, address indexed newSteward);
     event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining);
+    event StewardBudgetTokenAdded(address indexed token, uint256 limit, uint256 window);
+    event StewardBudgetTokenUpdated(address indexed token, uint256 limit, uint256 window);
+    event StewardBudgetTokenRemoved(address indexed token);
     event OutflowConfigInitialized(address indexed token, uint256 windowDuration, uint256 limitBps, uint256 limitAbsolute, uint256 floorAbsolute);
     event OutflowWindowUpdated(address indexed token, uint256 newWindow);
     event OutflowLimitBpsUpdated(address indexed token, uint256 newBps);
@@ -93,11 +90,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
 
     modifier onlyOwner() {
         require(msg.sender == owner, "ArmadaTreasuryGov: not owner");
-        _;
-    }
-
-    modifier onlySteward() {
-        require(msg.sender == steward, "ArmadaTreasuryGov: not steward");
         _;
     }
 
@@ -148,14 +140,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         return claimId;
     }
 
-    /// @notice Set the treasury steward (governance only).
-    /// @dev Does not reset the budget window or spending. The new steward inherits the
-    /// current period's remaining budget and timing.
-    function setSteward(address _steward) external onlyOwner {
-        emit StewardUpdated(steward, _steward);
-        steward = _steward;
-    }
-
     // ============ Claim Functions ============
 
     /// @notice Exercise a claim — beneficiary receives tokens at their discretion
@@ -174,37 +158,83 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         emit ClaimExercised(claimId, c.beneficiary, amount);
     }
 
-    // ============ Steward Functions ============
+    // ============ Steward Spending (executed by timelock via governor) ============
 
-    /// @notice Steward: spend from operational budget
-    /// @dev The budget is 1% of the treasury balance snapshotted at the start of each 30-day period.
-    /// The period starts on the first spend after the previous period expires. Mid-period balance
-    /// changes (deposits, governance distributions) do not affect the current period's budget.
-    function stewardSpend(address token, address recipient, uint256 amount) external onlySteward whenNotPaused {
+    /// @notice Execute a steward spend from the per-token budget.
+    /// @dev Called by the timelock after a steward proposal passes through governance.
+    /// Budget enforcement uses an absolute per-token limit over a rolling window,
+    /// configured via addStewardBudgetToken/updateStewardBudgetToken.
+    function stewardSpend(address token, address recipient, uint256 amount) external onlyOwner whenNotPaused {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
 
-        // Start a new budget period if the previous one has expired.
-        // Snapshot the treasury balance as the basis for this period's 1% cap.
-        if (block.timestamp >= lastBudgetReset[token] + BUDGET_PERIOD) {
-            budgetSpentThisPeriod[token] = 0;
-            lastBudgetReset[token] = block.timestamp;
-            budgetBasis[token] = IERC20(token).balanceOf(address(this));
+        StewardBudget storage budget = stewardBudgets[token];
+        require(budget.authorized, "ArmadaTreasuryGov: token not authorized for steward");
+
+        // Reset window if expired
+        if (block.timestamp >= stewardBudgetWindowStart[token] + budget.window) {
+            stewardBudgetSpent[token] = 0;
+            stewardBudgetWindowStart[token] = block.timestamp;
         }
 
-        // Budget for this period: 1% of the snapshotted balance
-        uint256 monthlyBudget = (budgetBasis[token] * STEWARD_BUDGET_BPS) / 10000;
         require(
-            budgetSpentThisPeriod[token] + amount <= monthlyBudget,
-            "ArmadaTreasuryGov: exceeds monthly budget"
+            stewardBudgetSpent[token] + amount <= budget.limit,
+            "ArmadaTreasuryGov: exceeds steward budget"
         );
 
-        budgetSpentThisPeriod[token] += amount;
+        stewardBudgetSpent[token] += amount;
         _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
 
-        uint256 remaining = monthlyBudget - budgetSpentThisPeriod[token];
+        uint256 remaining = budget.limit - stewardBudgetSpent[token];
         emit StewardSpent(token, recipient, amount, remaining);
+    }
+
+    // ============ Steward Budget Management (owner = timelock) ============
+
+    /// @notice Add a new token to the steward budget table.
+    /// @param token Token address to authorize for steward spending
+    /// @param limit Maximum spend per window in token units
+    /// @param window Window duration in seconds (minimum 1 day)
+    function addStewardBudgetToken(address token, uint256 limit, uint256 window) external onlyOwner {
+        require(!stewardBudgets[token].authorized, "ArmadaTreasuryGov: token already authorized");
+        require(limit > 0, "ArmadaTreasuryGov: zero limit");
+        require(window >= 1 days, "ArmadaTreasuryGov: window too short");
+
+        stewardBudgets[token] = StewardBudget({
+            limit: limit,
+            window: window,
+            authorized: true
+        });
+
+        emit StewardBudgetTokenAdded(token, limit, window);
+    }
+
+    /// @notice Update an existing steward budget token's parameters.
+    /// @param token Token address (must already be authorized)
+    /// @param limit New maximum spend per window in token units
+    /// @param window New window duration in seconds (minimum 1 day)
+    function updateStewardBudgetToken(address token, uint256 limit, uint256 window) external onlyOwner {
+        require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
+        require(limit > 0, "ArmadaTreasuryGov: zero limit");
+        require(window >= 1 days, "ArmadaTreasuryGov: window too short");
+
+        stewardBudgets[token].limit = limit;
+        stewardBudgets[token].window = window;
+
+        emit StewardBudgetTokenUpdated(token, limit, window);
+    }
+
+    /// @notice Remove a token from the steward budget table, disabling steward spending.
+    /// @param token Token address to deauthorize
+    function removeStewardBudgetToken(address token) external onlyOwner {
+        require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
+
+        delete stewardBudgets[token];
+        stewardBudgetSpent[token] = 0;
+        stewardBudgetWindowStart[token] = 0;
+
+        emit StewardBudgetTokenRemoved(token);
     }
 
     // ============ Outflow Rate Limit Management (owner = timelock) ============
@@ -325,19 +355,16 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     }
 
     /// @notice View the steward's current budget status for a token
-    /// @dev If the period has expired, returns what the budget *would* be if a new period
-    /// started now (based on current balance). During an active period, returns the
-    /// snapshotted budget basis.
     function getStewardBudget(address token) external view returns (uint256 budget, uint256 spent, uint256 remaining) {
-        if (block.timestamp >= lastBudgetReset[token] + BUDGET_PERIOD) {
-            // Period expired — show what the next period's budget would be
-            uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
-            budget = (treasuryBalance * STEWARD_BUDGET_BPS) / 10000;
+        StewardBudget storage b = stewardBudgets[token];
+        if (!b.authorized) return (0, 0, 0);
+
+        budget = b.limit;
+        if (block.timestamp >= stewardBudgetWindowStart[token] + b.window) {
+            // Window expired — full budget available
             spent = 0;
         } else {
-            // Active period — use snapshotted basis
-            budget = (budgetBasis[token] * STEWARD_BUDGET_BPS) / 10000;
-            spent = budgetSpentThisPeriod[token];
+            spent = stewardBudgetSpent[token];
         }
         remaining = budget > spent ? budget - spent : 0;
     }

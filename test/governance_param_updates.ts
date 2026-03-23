@@ -36,7 +36,8 @@ const TOTAL_SUPPLY = ethers.parseUnits("12000000", ARM_DECIMALS); // must match 
 const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
 const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
 const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
-const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
+// ProposalType enum values
+const ProposalType_Steward = 3;
 
 describe("Governance Parameter Updates", function () {
   let armToken: any;
@@ -150,9 +151,6 @@ describe("Governance Parameter Updates", function () {
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,
-      await treasury.getAddress(),
-      await governor.getAddress(),
-      STEWARD_ACTION_DELAY,
       deployer.address, MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
@@ -496,45 +494,90 @@ describe("Governance Parameter Updates", function () {
   });
 
   // ============================================================
-  // 5. Steward Min Action Delay Coupling
+  // 5. Budget Management Extended Selectors
   // ============================================================
 
-  describe("Steward Min Action Delay Coupling", function () {
-    it("steward minActionDelay reflects updated governor timing", async function () {
-      const minDelayBefore = await stewardContract.minActionDelay();
+  describe("Budget Management Extended Selectors", function () {
+    it("addStewardBudgetToken is auto-classified as Extended", async function () {
+      const calldata = treasury.interface.encodeFunctionData(
+        "addStewardBudgetToken",
+        [carol.address, 10000, 30 * ONE_DAY]
+      );
 
-      // Shorten the Standard proposal cycle: 1d + 3d + 1d = 5d → 120% = 6d
+      // Propose as Standard — should be auto-upgraded to Extended
+      await governor.connect(alice).propose(
+        ProposalType.Standard,
+        [await treasury.getAddress()],
+        [0n],
+        [calldata],
+        "Add steward budget token"
+      );
+      const proposalId = await governor.proposalCount();
+      const [, proposalType] = await governor.getProposal(proposalId);
+      expect(proposalType).to.equal(ProposalType.Extended);
+    });
+
+    it("updateStewardBudgetToken is auto-classified as Extended", async function () {
+      const calldata = treasury.interface.encodeFunctionData(
+        "updateStewardBudgetToken",
+        [carol.address, 20000, 30 * ONE_DAY]
+      );
+
+      await governor.connect(alice).propose(
+        ProposalType.Standard,
+        [await treasury.getAddress()],
+        [0n],
+        [calldata],
+        "Update steward budget token"
+      );
+      const proposalId = await governor.proposalCount();
+      const [, proposalType] = await governor.getProposal(proposalId);
+      expect(proposalType).to.equal(ProposalType.Extended);
+    });
+
+    it("removeStewardBudgetToken is auto-classified as Extended", async function () {
+      const calldata = treasury.interface.encodeFunctionData(
+        "removeStewardBudgetToken",
+        [carol.address]
+      );
+
+      await governor.connect(alice).propose(
+        ProposalType.Standard,
+        [await treasury.getAddress()],
+        [0n],
+        [calldata],
+        "Remove steward budget token"
+      );
+      const proposalId = await governor.proposalCount();
+      const [, proposalType] = await governor.getProposal(proposalId);
+      expect(proposalType).to.equal(ProposalType.Extended);
+    });
+
+    it("setProposalTypeParams rejects Steward type", async function () {
       const newParams = {
         votingDelay: 1 * ONE_DAY,
-        votingPeriod: 3 * ONE_DAY,
-        executionDelay: 1 * ONE_DAY,
+        votingPeriod: 7 * ONE_DAY,
+        executionDelay: 2 * ONE_DAY,
         quorumBps: 2000,
       };
       const calldata = governor.interface.encodeFunctionData(
         "setProposalTypeParams",
-        [ProposalType.Standard, newParams]
+        [ProposalType_Steward, newParams]
       );
 
-      // setProposalTypeParams is an extended selector, so auto-classification
-      // upgrades this to Extended regardless of declared type
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Extended,
-        [await governor.getAddress()],
-        [0n],
-        [calldata],
-        "Shorten Standard proposal cycle"
-      );
-
-      const minDelayAfter = await stewardContract.minActionDelay();
-
-      // Before: (2d + 7d + 2d) * 1.2 = 13.2d
-      // After:  (1d + 3d + 1d) * 1.2 = 6d
-      expect(minDelayAfter).to.be.lt(minDelayBefore);
-
-      const expectedMinDelay = BigInt(Math.ceil((ONE_DAY + 3 * ONE_DAY + ONE_DAY) * 12000 / 10000));
-      expect(minDelayAfter).to.equal(expectedMinDelay);
+      // Pass the proposal containing setProposalTypeParams(Steward, ...)
+      // It should execute and revert with "immutable proposal type"
+      await expect(
+        passProposal(
+          alice,
+          [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+          ProposalType.Extended,
+          [await governor.getAddress()],
+          [0n],
+          [calldata],
+          "Try to change Steward params"
+        )
+      ).to.be.revertedWith("TimelockController: underlying transaction reverted");
     });
   });
 });

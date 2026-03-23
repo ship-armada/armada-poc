@@ -15,7 +15,7 @@ import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 // Proposal types (must match IArmadaGovernance.sol enum order)
-const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2, Steward: 3 };
 // Proposal states
 const ProposalState = {
   Pending: 0, Active: 1, Defeated: 2, Succeeded: 3,
@@ -60,9 +60,6 @@ describe("Governance Integration", function () {
   const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
   const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
   const USDC_DECIMALS = 6;
-  // Minimum action delay = 120% of governance cycle (2d + 7d + 2d = 11d)
-  // 11 days * 1.2 = 13.2 days = 1140480 seconds
-  const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
 
   // Helper: mine a block so checkpoint reads work
   async function mineBlock() {
@@ -152,17 +149,17 @@ describe("Governance Integration", function () {
     );
     await governor.waitForDeployment();
 
-    // 5. Deploy TreasurySteward
+    // 5. Deploy TreasurySteward (identity management only)
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,
-      await treasury.getAddress(),
-      await governor.getAddress(),
-      STEWARD_ACTION_DELAY,
       deployer.address,        // guardian
       MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
+
+    // 5b. Register steward contract on governor
+    await governor.setStewardContract(await stewardContract.getAddress());
 
     // 6. Configure token: whitelist addresses so transfers work, set treasury as noDelegation
     await armToken.initWhitelist([
@@ -502,14 +499,10 @@ describe("Governance Integration", function () {
     it("should elect steward via proposal with extended timing", async function () {
       const targets = [
         await stewardContract.getAddress(),
-        await treasury.getAddress(),
       ];
-      const values = [0n, 0n];
-      // setSteward sets the TreasurySteward contract (not the person) as treasury steward,
-      // so that executeAction() → treasury.stewardSpend() works (msg.sender = contract).
+      const values = [0n];
       const calldatas = [
         stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-        treasury.interface.encodeFunctionData("setSteward", [await stewardContract.getAddress()]),
       ];
 
       await passProposal(
@@ -521,7 +514,6 @@ describe("Governance Integration", function () {
 
       expect(await stewardContract.currentSteward()).to.equal(dave.address);
       expect(await stewardContract.isStewardActive()).to.be.true;
-      expect(await treasury.steward()).to.equal(await stewardContract.getAddress());
     });
 
     it("should use 30% quorum for Extended proposals", async function () {
@@ -634,22 +626,17 @@ describe("Governance Integration", function () {
   });
 
   // ============================================================
-  // 7. Treasury Steward
+  // 7. Treasury Steward (governor-based flow)
   // ============================================================
 
   describe("Treasury Steward", function () {
-    // Helper: elect Dave as steward before each steward test.
-    // Sets the TreasurySteward contract as the treasury's steward so that
-    // executeAction() → treasury.stewardSpend() works (msg.sender = contract).
+    // Helper: elect Dave as steward and set up budget.
+    // Dave needs delegated ARM to post proposal bond (when ARM is transferable).
     async function electDaveSteward() {
-      const targets = [
-        await stewardContract.getAddress(),
-        await treasury.getAddress(),
-      ];
-      const values = [0n, 0n];
+      const targets = [await stewardContract.getAddress()];
+      const values = [0n];
       const calldatas = [
         stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-        treasury.interface.encodeFunctionData("setSteward", [await stewardContract.getAddress()]),
       ];
 
       await passProposal(
@@ -660,45 +647,72 @@ describe("Governance Integration", function () {
       );
     }
 
-    it("should allow steward to spend within 1% monthly budget", async function () {
+    // Helper: set up steward budget for USDC on treasury (via governance)
+    async function setupStewardBudget(budgetLimit: bigint, budgetWindow: number) {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = [
+        treasury.interface.encodeFunctionData("addStewardBudgetToken", [
+          await usdc.getAddress(), budgetLimit, budgetWindow
+        ]),
+      ];
+
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.Extended, targets, values, calldatas,
+        "Add USDC steward budget"
+      );
+    }
+
+    // Helper: submit steward proposal via governor and pass it (no votes = pass-by-default)
+    async function passStewardProposal(
+      stewardSigner: any,
+      targets: string[],
+      values: bigint[],
+      calldatas: string[],
+      description: string
+    ): Promise<number> {
+      await governor.connect(stewardSigner).proposeStewardAction(
+        targets, values, calldatas, description
+      );
+      const proposalId = Number(await governor.proposalCount());
+
+      // Steward proposals have 0 voting delay, 7d voting period
+      // Pass-by-default: no votes needed — just wait past voting period
+      await time.increase(SEVEN_DAYS + 1);
+
+      // Queue
+      await governor.queue(proposalId);
+
+      // Fast-forward past execution delay (2d for Steward type)
+      await time.increase(TWO_DAYS + 1);
+
+      // Execute
+      await governor.execute(proposalId);
+
+      return proposalId;
+    }
+
+    it("should allow steward to spend within budget via governor proposal", async function () {
       await electDaveSteward();
 
-      const treasuryUsdcBalance = await usdc.balanceOf(await treasury.getAddress());
-      const budget = treasuryUsdcBalance / 100n; // 1%
-      const spendAmount = budget / 2n; // Spend half the budget
+      const budgetLimit = ethers.parseUnits("1000", USDC_DECIMALS);
+      await setupStewardBudget(budgetLimit, THIRTY_DAYS);
 
-      // Steward spends via action queue (proposeAction → delay → executeAction)
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, spendAmount
-      ]);
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
+      const spendAmount = ethers.parseUnits("500", USDC_DECIMALS);
+
+      await passStewardProposal(
+        dave,
+        [await treasury.getAddress()],
+        [0n],
+        [treasury.interface.encodeFunctionData("stewardSpend", [
+          await usdc.getAddress(), carol.address, spendAmount
+        ])],
+        "Steward spend: 500 USDC to Carol"
       );
-      await time.increase(STEWARD_ACTION_DELAY + 1);
-      await stewardContract.connect(dave).executeAction(await stewardContract.actionCount());
 
       expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
-    });
-
-    it("should reject steward spending above budget", async function () {
-      await electDaveSteward();
-
-      const treasuryUsdcBalance = await usdc.balanceOf(await treasury.getAddress());
-      const overBudget = (treasuryUsdcBalance / 100n) + 1n; // Just over 1%
-
-      // Steward proposes over-budget spend via action queue
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, overBudget
-      ]);
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
-      );
-      await time.increase(STEWARD_ACTION_DELAY + 1);
-
-      // Execution reverts — the original treasury revert reason is bubbled up.
-      await expect(
-        stewardContract.connect(dave).executeAction(await stewardContract.actionCount())
-      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
     });
 
     it("should reject steward spending after term expires", async function () {
@@ -709,209 +723,99 @@ describe("Governance Integration", function () {
 
       expect(await stewardContract.isStewardActive()).to.be.false;
 
-      // Treasury stewardSpend still works (it checks msg.sender == steward, not term)
-      // But stewardContract.proposeAction checks term
+      // Steward tries to propose via governor — should fail
       const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
         await usdc.getAddress(), carol.address, ethers.parseUnits("10", USDC_DECIMALS)
       ]);
 
       await expect(
-        stewardContract.connect(dave).proposeAction(
-          await treasury.getAddress(), spendData, 0
+        governor.connect(dave).proposeStewardAction(
+          [await treasury.getAddress()], [0n], [spendData],
+          "Late steward spend"
         )
-      ).to.be.revertedWith("TreasurySteward: term expired");
+      ).to.be.revertedWith("ArmadaGovernor: steward not active");
     });
 
-    it("should allow governance to veto a steward action", async function () {
+    it("should reject non-steward from calling proposeStewardAction", async function () {
       await electDaveSteward();
 
-      // Steward proposes an action
       const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, ethers.parseUnits("500", USDC_DECIMALS)
+        await usdc.getAddress(), carol.address, ethers.parseUnits("10", USDC_DECIMALS)
       ]);
 
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
-      );
-      const actionId = 1;
-
-      // Governance vetoes the action
-      const vetoTargets = [await stewardContract.getAddress()];
-      const vetoValues = [0n];
-      const vetoCalldatas = [
-        stewardContract.interface.encodeFunctionData("vetoAction", [actionId])
-      ];
-
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard, vetoTargets, vetoValues, vetoCalldatas,
-        "Veto steward action #1"
-      );
-
-      // Steward tries to execute the vetoed action
-      await time.increase(STEWARD_ACTION_DELAY + 1);
+      // Alice is not the steward
       await expect(
-        stewardContract.connect(dave).executeAction(actionId)
-      ).to.be.revertedWith("TreasurySteward: vetoed");
+        governor.connect(alice).proposeStewardAction(
+          [await treasury.getAddress()], [0n], [spendData],
+          "Unauthorized steward spend"
+        )
+      ).to.be.revertedWith("ArmadaGovernor: not current steward");
     });
 
-    it("should execute steward action after delay if not vetoed", async function () {
+    it("should pass steward proposal by default with no votes", async function () {
       await electDaveSteward();
+
+      const budgetLimit = ethers.parseUnits("1000", USDC_DECIMALS);
+      await setupStewardBudget(budgetLimit, THIRTY_DAYS);
 
       const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, spendAmount
-      ]);
 
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
+      // Submit steward proposal
+      await governor.connect(dave).proposeStewardAction(
+        [await treasury.getAddress()], [0n],
+        [treasury.interface.encodeFunctionData("stewardSpend", [
+          await usdc.getAddress(), carol.address, spendAmount
+        ])],
+        "Pass by default test"
       );
+      const proposalId = Number(await governor.proposalCount());
 
-      // Can't execute before delay
-      await expect(
-        stewardContract.connect(dave).executeAction(1)
-      ).to.be.revertedWith("TreasurySteward: delay not elapsed");
+      // Wait past voting period with NO votes
+      await time.increase(SEVEN_DAYS + 1);
 
-      // Wait for delay
-      await time.increase(STEWARD_ACTION_DELAY + 1);
-
-      // Now execute succeeds
-      await stewardContract.connect(dave).executeAction(1);
-      expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
+      // Should be Succeeded (pass-by-default)
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
     });
 
-    it("should reject new steward executing previous steward's actions", async function () {
-      // Elect Dave as first steward
+    it("should defeat steward proposal when quorum met and majority against", async function () {
       await electDaveSteward();
 
-      // Dave proposes an action
-      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, spendAmount
-      ]);
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
+      // Submit steward proposal
+      await governor.connect(dave).proposeStewardAction(
+        [await treasury.getAddress()], [0n],
+        [treasury.interface.encodeFunctionData("stewardSpend", [
+          await usdc.getAddress(), carol.address, ethers.parseUnits("10", USDC_DECIMALS)
+        ])],
+        "Community rejects this"
       );
-      const actionId = await stewardContract.actionCount();
+      const proposalId = Number(await governor.proposalCount());
 
-      // Elect Carol as new steward (replaces Dave)
-      const targets = [await stewardContract.getAddress()];
-      const values = [0n];
-      const calldatas = [
-        stewardContract.interface.encodeFunctionData("electSteward", [carol.address]),
-      ];
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Extended, targets, values, calldatas,
-        "Elect Carol as steward"
-      );
-      expect(await stewardContract.currentSteward()).to.equal(carol.address);
+      // Steward proposals have 0 voting delay, so voting is open immediately
+      // Both Alice and Bob vote AGAINST (enough for quorum)
+      await governor.connect(alice).castVote(proposalId, Vote.Against);
+      await governor.connect(bob).castVote(proposalId, Vote.Against);
 
-      // Wait for action delay to elapse
-      await time.increase(STEWARD_ACTION_DELAY + 1);
+      // Wait past voting period
+      await time.increase(SEVEN_DAYS + 1);
 
-      // Carol (new steward) tries to execute Dave's action — should fail
-      await expect(
-        stewardContract.connect(carol).executeAction(actionId)
-      ).to.be.revertedWith("TreasurySteward: not proposed by current steward");
+      // Should be Defeated (quorum met + majority against)
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
     });
 
-    it("should allow steward to cancel own proposed action", async function () {
-      // Elect Dave as steward
+    it("should block self-payment in steward proposals", async function () {
       await electDaveSteward();
 
-      // Dave proposes an action
-      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
+      // Steward tries to pay themselves
       const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, spendAmount
+        await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
       ]);
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
-      );
-      const actionId = await stewardContract.actionCount();
 
-      // Dave cancels the action
       await expect(
-        stewardContract.connect(dave).cancelAction(actionId)
-      ).to.emit(stewardContract, "ActionCanceled").withArgs(actionId);
-
-      // Wait for action delay
-      await time.increase(STEWARD_ACTION_DELAY + 1);
-
-      // Action should be blocked from execution (vetoed flag set)
-      await expect(
-        stewardContract.connect(dave).executeAction(actionId)
-      ).to.be.revertedWith("TreasurySteward: vetoed");
-    });
-
-    it("should reject new steward canceling previous steward's action", async function () {
-      // Elect Dave as steward
-      await electDaveSteward();
-
-      // Dave proposes an action
-      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, spendAmount
-      ]);
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
-      );
-      const actionId = await stewardContract.actionCount();
-
-      // Elect Carol as new steward
-      const targets = [await stewardContract.getAddress()];
-      const values = [0n];
-      const calldatas = [
-        stewardContract.interface.encodeFunctionData("electSteward", [carol.address]),
-      ];
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Extended, targets, values, calldatas,
-        "Elect Carol as steward"
-      );
-
-      // Carol tries to cancel Dave's action — should fail
-      await expect(
-        stewardContract.connect(carol).cancelAction(actionId)
-      ).to.be.revertedWith("TreasurySteward: not your action");
-    });
-
-    it("should allow steward to execute own actions after re-election", async function () {
-      // Elect Dave as steward
-      await electDaveSteward();
-
-      // Dave proposes an action
-      const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, spendAmount
-      ]);
-      await stewardContract.connect(dave).proposeAction(
-        await treasury.getAddress(), spendData, 0
-      );
-      const actionId = await stewardContract.actionCount();
-
-      // Re-elect Dave (same person, new term)
-      const targets = [await stewardContract.getAddress()];
-      const values = [0n];
-      const calldatas = [
-        stewardContract.interface.encodeFunctionData("electSteward", [dave.address]),
-      ];
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Extended, targets, values, calldatas,
-        "Re-elect Dave"
-      );
-
-      // Wait for action delay
-      await time.increase(STEWARD_ACTION_DELAY + 1);
-
-      // Dave can still execute his own action after re-election
-      await stewardContract.connect(dave).executeAction(actionId);
-      expect(await usdc.balanceOf(carol.address)).to.equal(spendAmount);
+        governor.connect(dave).proposeStewardAction(
+          [await treasury.getAddress()], [0n], [spendData],
+          "Pay myself"
+        )
+      ).to.be.revertedWith("ArmadaGovernor: self-payment not allowed");
     });
   });
 
@@ -1193,7 +1097,7 @@ describe("Governance Integration", function () {
           ProposalType.VetoRatification,
           { votingDelay: 0, votingPeriod: SEVEN_DAYS, executionDelay: 0, quorumBps: 2000 }
         )
-      ).to.be.revertedWith("ArmadaGovernor: VetoRatification immutable");
+      ).to.be.revertedWith("ArmadaGovernor: immutable proposal type");
 
       await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
     });

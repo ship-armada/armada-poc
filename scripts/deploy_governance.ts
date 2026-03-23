@@ -45,7 +45,6 @@ interface GovernanceDeployment {
   };
   config: {
     timelockMinDelay: number;
-    stewardActionDelay: number;
     totalSupply: string;
     treasuryAllocation: string;
   };
@@ -66,7 +65,6 @@ async function main() {
   }
 
   const timelockDelay = config.timelockDelay;
-  const stewardDelay = config.stewardDelay;
 
   // Emergency pause config: deployer as initial guardian, 14 day max pause
   // TODO: Transfer guardian to a dedicated multisig after deployment
@@ -78,7 +76,6 @@ async function main() {
   console.log(`Chain ID: ${chainId}`);
   console.log(`Environment: ${config.env}`);
   console.log(`Timelock delay: ${timelockDelay}s`);
-  console.log(`Steward delay: ${stewardDelay}s`);
   console.log("");
 
   // 1. Deploy TimelockController (needed before ArmadaToken for timelock address)
@@ -120,16 +117,20 @@ async function main() {
   const governorAddress = await governor.getAddress();
   console.log(`   ArmadaGovernor: ${governorAddress}`);
 
-  // 5. Deploy TreasurySteward
+  // 5. Deploy TreasurySteward (identity management only — proposals flow through governor)
   console.log("5. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const steward = await TreasurySteward.deploy(
-    timelockAddress, treasuryAddress, governorAddress, stewardDelay,
+    timelockAddress,
     guardianAddress, maxPauseDuration, nm.override()
   );
   await steward.deploymentTransaction()!.wait();
   const stewardAddress = await steward.getAddress();
   console.log(`   TreasurySteward: ${stewardAddress}`);
+
+  // 5b. Register steward contract on governor (one-time setter)
+  await (await governor.setStewardContract(stewardAddress, nm.override())).wait();
+  console.log(`   Governor: setStewardContract(${stewardAddress})`);
 
   // 6. Deploy RevenueCounter (UUPS proxy)
   console.log("6. Deploying RevenueCounter (UUPS proxy)...");
@@ -211,7 +212,6 @@ async function main() {
     },
     config: {
       timelockMinDelay: timelockDelay,
-      stewardActionDelay: stewardDelay,
       totalSupply: "12000000",
       treasuryAllocation: config.armDistribution.treasury,
     },

@@ -33,7 +33,6 @@ const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
 const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
 const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
 const USDC_DECIMALS = 6;
-const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
 
 describe("Governance Emergency Pause", function () {
   let armToken: any;
@@ -139,9 +138,6 @@ describe("Governance Emergency Pause", function () {
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,
-      await treasury.getAddress(),
-      await governor.getAddress(),
-      STEWARD_ACTION_DELAY,
       guardian.address, MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
@@ -392,8 +388,10 @@ describe("Governance Emergency Pause", function () {
       // Fund with USDC
       await usdc.mint(await standaloneTreasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
 
-      // Set carol as steward
-      await standaloneTreasury.setSteward(carol.address);
+      // Authorize USDC for steward spending (deployer acts as owner/timelock)
+      await standaloneTreasury.addStewardBudgetToken(
+        await usdc.getAddress(), ethers.parseUnits("10000", USDC_DECIMALS), 30 * ONE_DAY
+      );
 
       // Create a claim for alice
       await standaloneTreasury.createClaim(
@@ -420,8 +418,9 @@ describe("Governance Emergency Pause", function () {
     it("stewardSpend reverts when paused", async function () {
       await standaloneTreasury.connect(guardian).emergencyPause();
 
+      // stewardSpend is onlyOwner — deployer acts as owner/timelock in this standalone setup
       await expect(
-        standaloneTreasury.connect(carol).stewardSpend(
+        standaloneTreasury.stewardSpend(
           await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
         )
       ).to.be.revertedWith("Pausable: paused");
@@ -450,8 +449,8 @@ describe("Governance Emergency Pause", function () {
       // exerciseClaim should work
       await standaloneTreasury.connect(alice).exerciseClaim(1, ethers.parseUnits("100", USDC_DECIMALS));
 
-      // stewardSpend should work
-      await standaloneTreasury.connect(carol).stewardSpend(
+      // stewardSpend should work (deployer is owner/timelock in standalone setup)
+      await standaloneTreasury.stewardSpend(
         await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
       );
     });
@@ -462,86 +461,57 @@ describe("Governance Emergency Pause", function () {
   // ============================================================
 
   describe("TreasurySteward Pause", function () {
+    // TreasurySteward is now identity-only: it tracks steward election and term,
+    // inheriting EmergencyPausable. These tests verify the pause mechanism on the steward contract.
     let standaloneSteward: any;
-    let standaloneTreasury: any;
 
     beforeEach(async function () {
-      // Deploy standalone treasury + steward with deployer as timelock
-      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-      standaloneTreasury = await ArmadaTreasuryGov.deploy(
-        deployer.address, guardian.address, MAX_PAUSE_DURATION
-      );
-      await standaloneTreasury.waitForDeployment();
-
+      // Deploy standalone steward with deployer as timelock for direct control
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
       standaloneSteward = await TreasurySteward.deploy(
         deployer.address,
-        await standaloneTreasury.getAddress(),
-        await governor.getAddress(),
-        STEWARD_ACTION_DELAY,
         guardian.address, MAX_PAUSE_DURATION
       );
       await standaloneSteward.waitForDeployment();
-
-      // Elect carol as steward
-      await standaloneSteward.electSteward(carol.address);
-
-      // Fund treasury and set steward contract as treasury's steward
-      await usdc.mint(await standaloneTreasury.getAddress(), ethers.parseUnits("1000000", USDC_DECIMALS));
-      await standaloneTreasury.setSteward(await standaloneSteward.getAddress());
     });
 
-    it("executeAction reverts when paused", async function () {
-      // Propose a valid action
-      const spendData = standaloneTreasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
-      ]);
-      await standaloneSteward.connect(carol).proposeAction(
-        await standaloneTreasury.getAddress(), spendData, 0
-      );
-
-      // Wait for delay
-      await time.increase(STEWARD_ACTION_DELAY + 1);
-
-      // Pause the steward
+    it("guardian can pause the steward contract", async function () {
+      expect(await standaloneSteward.paused()).to.be.false;
       await standaloneSteward.connect(guardian).emergencyPause();
+      expect(await standaloneSteward.paused()).to.be.true;
+    });
 
-      // Execute should fail
+    it("non-guardian cannot pause the steward contract", async function () {
       await expect(
-        standaloneSteward.connect(carol).executeAction(1)
-      ).to.be.revertedWith("Pausable: paused");
+        standaloneSteward.connect(alice).emergencyPause()
+      ).to.be.revertedWith("EmergencyPausable: not guardian");
     });
 
-    it("proposeAction still works when paused (proposing is harmless)", async function () {
+    it("pause auto-expires after maxPauseDuration on steward", async function () {
       await standaloneSteward.connect(guardian).emergencyPause();
+      expect(await standaloneSteward.paused()).to.be.true;
 
-      const spendData = standaloneTreasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
-      ]);
-      await standaloneSteward.connect(carol).proposeAction(
-        await standaloneTreasury.getAddress(), spendData, 0
-      );
+      await time.increase(MAX_PAUSE_DURATION + 1);
 
-      expect(await standaloneSteward.actionCount()).to.equal(1);
+      expect(await standaloneSteward.paused()).to.be.false;
     });
 
-    it("executeAction works after unpause", async function () {
-      const spendData = standaloneTreasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
-      ]);
-      await standaloneSteward.connect(carol).proposeAction(
-        await standaloneTreasury.getAddress(), spendData, 0
-      );
-      await time.increase(STEWARD_ACTION_DELAY + 1);
+    it("timelock can unpause the steward contract early", async function () {
+      await standaloneSteward.connect(guardian).emergencyPause();
+      expect(await standaloneSteward.paused()).to.be.true;
 
-      // Pause then unpause
+      // deployer acts as timelock in this standalone setup
+      await standaloneSteward.connect(deployer).emergencyUnpause();
+      expect(await standaloneSteward.paused()).to.be.false;
+    });
+
+    it("steward election works after unpause", async function () {
       await standaloneSteward.connect(guardian).emergencyPause();
       await standaloneSteward.connect(deployer).emergencyUnpause();
 
-      // Should execute successfully
-      await standaloneSteward.connect(carol).executeAction(1);
-      const [,,, executed] = await standaloneSteward.getAction(1);
-      expect(executed).to.be.true;
+      // electSteward is onlyTimelock and not pause-gated — should succeed
+      await standaloneSteward.connect(deployer).electSteward(carol.address);
+      expect(await standaloneSteward.currentSteward()).to.equal(carol.address);
     });
   });
 

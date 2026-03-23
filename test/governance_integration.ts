@@ -440,6 +440,58 @@ describe("Governance Integration", function () {
       const actualQuorum = await governor.quorum(1);
       expect(actualQuorum).to.equal(expectedQuorum);
     });
+
+    it("should enforce quorum floor when percentage-based quorum is below 100k ARM", async function () {
+      // Exclude Alice and Bob from quorum denominator, leaving eligible supply = 0.
+      // Percentage quorum = 20% of 0 = 0, which is below the 100k floor.
+      // The floor should apply.
+      await governor.setExcludedAddresses([alice.address, bob.address]);
+
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+      await governor.connect(alice).propose(
+        ProposalType.ParameterChange, targets, values, calldatas, "Quorum floor test"
+      );
+
+      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
+      const actualQuorum = await governor.quorum(1);
+      expect(actualQuorum).to.equal(QUORUM_FLOOR);
+    });
+
+    it("should use percentage-based quorum when it exceeds the floor", async function () {
+      // With default setup: eligible = 4.2M ARM, 20% = 840k ARM > 100k floor.
+      // Percentage should win.
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+      await governor.connect(alice).propose(
+        ProposalType.ParameterChange, targets, values, calldatas, "Percentage quorum test"
+      );
+
+      const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT;
+      const expectedQuorum = (expectedEligible * 2000n) / 10000n;
+      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
+
+      const actualQuorum = await governor.quorum(1);
+      expect(actualQuorum).to.equal(expectedQuorum);
+      expect(actualQuorum).to.be.greaterThan(QUORUM_FLOOR);
+    });
+
+    it("should enforce quorum floor for extended proposals (30% quorum type)", async function () {
+      // Exclude Alice and Bob → eligible = 0 → 30% of 0 = 0 < floor.
+      await governor.setExcludedAddresses([alice.address, bob.address]);
+
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+      await governor.connect(alice).propose(
+        ProposalType.StewardElection, targets, values, calldatas, "Extended quorum floor test"
+      );
+
+      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
+      expect(await governor.quorum(1)).to.equal(QUORUM_FLOOR);
+    });
   });
 
   // ============================================================
@@ -913,21 +965,117 @@ describe("Governance Integration", function () {
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
     });
 
-    it("should reject double voting", async function () {
+    it("should allow vote switching from For to Against", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Double vote test"
+        ProposalType.ParameterChange, targets, values, calldatas, "Vote switch test"
+      );
+
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(1, Vote.For);
+
+      let [,,,,forVotes, againstVotes] = await governor.getProposal(1);
+      expect(forVotes).to.equal(ALICE_AMOUNT);
+      expect(againstVotes).to.equal(0n);
+
+      // Switch to Against
+      await expect(governor.connect(alice).castVote(1, Vote.Against))
+        .to.emit(governor, "VoteChanged")
+        .withArgs(alice.address, 1, Vote.For, Vote.Against, ALICE_AMOUNT);
+
+      [,,,,forVotes, againstVotes] = await governor.getProposal(1);
+      expect(forVotes).to.equal(0n);
+      expect(againstVotes).to.equal(ALICE_AMOUNT);
+      expect(await governor.hasVoted(1, alice.address)).to.be.true;
+      expect(await governor.voteChoice(1, alice.address)).to.equal(Vote.Against);
+    });
+
+    it("should allow vote switching from Against to Abstain", async function () {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+
+      await governor.connect(alice).propose(
+        ProposalType.ParameterChange, targets, values, calldatas, "Switch test 2"
+      );
+
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(1, Vote.Against);
+      await governor.connect(alice).castVote(1, Vote.Abstain);
+
+      const [,,,,forVotes, againstVotes, abstainVotes] = await governor.getProposal(1);
+      expect(forVotes).to.equal(0n);
+      expect(againstVotes).to.equal(0n);
+      expect(abstainVotes).to.equal(ALICE_AMOUNT);
+    });
+
+    it("should reject casting the same vote twice", async function () {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+
+      await governor.connect(alice).propose(
+        ProposalType.ParameterChange, targets, values, calldatas, "Same vote test"
       );
 
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
 
       await expect(
-        governor.connect(alice).castVote(1, Vote.Against)
-      ).to.be.revertedWith("ArmadaGovernor: already voted");
+        governor.connect(alice).castVote(1, Vote.For)
+      ).to.be.revertedWith("ArmadaGovernor: same vote");
+    });
+
+    it("should preserve quorum total when vote is switched", async function () {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+
+      await governor.connect(alice).propose(
+        ProposalType.ParameterChange, targets, values, calldatas, "Quorum conservation test"
+      );
+
+      await time.increase(TWO_DAYS + 1);
+
+      // Alice and Bob both vote For
+      await governor.connect(alice).castVote(1, Vote.For);
+      await governor.connect(bob).castVote(1, Vote.For);
+
+      let [,,,,forVotes, againstVotes, abstainVotes] = await governor.getProposal(1);
+      const totalBefore = forVotes + againstVotes + abstainVotes;
+
+      // Alice switches to Against
+      await governor.connect(alice).castVote(1, Vote.Against);
+
+      [,,,,forVotes, againstVotes, abstainVotes] = await governor.getProposal(1);
+      const totalAfter = forVotes + againstVotes + abstainVotes;
+      expect(totalAfter).to.equal(totalBefore);
+    });
+
+    it("should allow multiple vote changes", async function () {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+
+      await governor.connect(alice).propose(
+        ProposalType.ParameterChange, targets, values, calldatas, "Multi-switch test"
+      );
+
+      await time.increase(TWO_DAYS + 1);
+
+      // For → Against → Abstain → For
+      await governor.connect(alice).castVote(1, Vote.For);
+      await governor.connect(alice).castVote(1, Vote.Against);
+      await governor.connect(alice).castVote(1, Vote.Abstain);
+      await governor.connect(alice).castVote(1, Vote.For);
+
+      const [,,,,forVotes, againstVotes, abstainVotes] = await governor.getProposal(1);
+      expect(forVotes).to.equal(ALICE_AMOUNT);
+      expect(againstVotes).to.equal(0n);
+      expect(abstainVotes).to.equal(0n);
     });
 
     it("should allow re-delegation after voting (snapshot-based)", async function () {

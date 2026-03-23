@@ -533,10 +533,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(1, Vote.For);
 
-      // Alice tries to vote again — should revert
+      // Alice tries to cast the same vote again — should revert
       await expect(
         governor.connect(alice).castVote(1, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: already voted");
+      ).to.be.revertedWith("ArmadaGovernor: same vote");
     });
 
     it("unclaimed crowdfund participant cannot vote (no ARM, no delegation, no voting power)", async function () {

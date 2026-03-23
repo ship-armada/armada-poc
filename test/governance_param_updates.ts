@@ -4,7 +4,7 @@
  * Tests the ability to update proposal type parameters via governance:
  * - Timelock-only access control
  * - Bounded parameter validation (min/max for all fields)
- * - Full governance lifecycle to change params via Standard proposal
+ * - Full governance lifecycle to change params (auto-classified as Extended)
  * - Quorum snapshotting: in-flight proposals unaffected by param changes
  * - TreasurySteward.minActionDelay() reflects updated governor timing
  */
@@ -444,10 +444,12 @@ describe("Governance Parameter Updates", function () {
         [ProposalType.Standard, newParams]
       );
 
+      // setProposalTypeParams is an extended selector, so auto-classification
+      // upgrades this to Extended regardless of declared type
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard,
+        ProposalType.Extended,
         [await governor.getAddress()],
         [0n],
         [calldata],
@@ -473,10 +475,12 @@ describe("Governance Parameter Updates", function () {
         [ProposalType.Extended, newParams]
       );
 
+      // setProposalTypeParams is an extended selector, so auto-classification
+      // upgrades this to Extended regardless of declared type
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard,
+        ProposalType.Extended,
         [await governor.getAddress()],
         [0n],
         [calldata],
@@ -511,10 +515,12 @@ describe("Governance Parameter Updates", function () {
         [ProposalType.Standard, newParams]
       );
 
+      // setProposalTypeParams is an extended selector, so auto-classification
+      // upgrades this to Extended regardless of declared type
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard,
+        ProposalType.Extended,
         [await governor.getAddress()],
         [0n],
         [calldata],

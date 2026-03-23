@@ -160,6 +160,9 @@ async function main() {
   console.log("   Granted PROPOSER_ROLE to governor");
   await (await timelock.grantRole(EXECUTOR_ROLE, governorAddress, nm.override())).wait();
   console.log("   Granted EXECUTOR_ROLE to governor");
+  const CANCELLER_ROLE = await timelock.CANCELLER_ROLE();
+  await (await timelock.grantRole(CANCELLER_ROLE, governorAddress, nm.override())).wait();
+  console.log("   Granted CANCELLER_ROLE to governor (for SC veto)");
 
   // 8. Configure ARM token (one-time setters)
   console.log("8. Configuring ARM token...");

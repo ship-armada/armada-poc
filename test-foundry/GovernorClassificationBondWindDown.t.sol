@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Foundry tests for Phase 2 governor features: extended classification, bond, wind-down.
-// ABOUTME: Covers Tasks 2.5 (mechanical classification), 2.6 (proposal bond), 2.7 (wind-down integration).
+// ABOUTME: Foundry tests for governor extended classification, proposal bond, and wind-down features.
+// ABOUTME: Covers mechanical selector-based classification, ARM bond lifecycle, and wind-down governance shutdown.
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
@@ -20,8 +20,8 @@ contract MockUSDC is ERC20 {
     }
 }
 
-/// @title GovernorPhase2Test — Tests for extended classification, bond mechanism, and wind-down
-contract GovernorPhase2Test is Test {
+/// @title GovernorClassificationBondWindDownTest — Tests for extended classification, bond mechanism, and wind-down
+contract GovernorClassificationBondWindDownTest is Test {
     // Mirror events from governor for expectEmit
     event WindDownActivated();
 
@@ -134,7 +134,7 @@ contract GovernorPhase2Test is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // TASK 2.7: WIND-DOWN INTEGRATION
+    // WIND-DOWN INTEGRATION
     // ═══════════════════════════════════════════════════════════════
 
     function test_windDown_proposeRevertsWhenActive() public {
@@ -229,7 +229,7 @@ contract GovernorPhase2Test is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // TASK 2.5: MECHANICAL EXTENDED PROPOSAL CLASSIFICATION
+    // MECHANICAL EXTENDED PROPOSAL CLASSIFICATION
     // ═══════════════════════════════════════════════════════════════
 
     function test_classify_registeredSelectorForcesExtended() public {
@@ -370,7 +370,7 @@ contract GovernorPhase2Test is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // TASK 2.5: SECURITY COUNCIL STATE
+    // SECURITY COUNCIL STATE
     // ═══════════════════════════════════════════════════════════════
 
     function test_securityCouncil_setByTimelock() public {
@@ -395,7 +395,7 @@ contract GovernorPhase2Test is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // TASK 2.6: PROPOSAL BOND
+    // PROPOSAL BOND
     // ═══════════════════════════════════════════════════════════════
 
     function test_bond_notRequiredWhenNonTransferable() public {

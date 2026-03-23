@@ -54,7 +54,8 @@ describe("Gas Benchmarks", function () {
         const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
         const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-        const armToken = await ArmadaToken.deploy(deployer.address);
+        const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
         const crowdfund = await ArmadaCrowdfund.deploy(
@@ -65,6 +66,8 @@ describe("Gas Benchmarks", function () {
           deployer.address, // launchTeam
           deployer.address  // securityCouncil
         );
+
+        await armToken.addToWhitelist(await crowdfund.getAddress());
 
         // Fund ARM for MAX_SALE
         await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
@@ -159,7 +162,8 @@ describe("Gas Benchmarks", function () {
         const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
         const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-        const armToken = await ArmadaToken.deploy(deployer.address);
+        const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
         const crowdfund = await ArmadaCrowdfund.deploy(
@@ -197,7 +201,8 @@ describe("Gas Benchmarks", function () {
       const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const crowdfund = await ArmadaCrowdfund.deploy(
@@ -209,6 +214,7 @@ describe("Gas Benchmarks", function () {
         deployer.address  // securityCouncil
       );
 
+      await armToken.addToWhitelist(await crowdfund.getAddress());
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
       await crowdfund.loadArm();
 
@@ -263,10 +269,12 @@ describe("Gas Benchmarks", function () {
     it("getPastLockedBalance() gas with 10, 100, 500, 1000 checkpoints (binary search)", async function () {
       // Deploy governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
+      await armToken.addToWhitelist(await locker.getAddress());
 
       const alice = allSigners[1];
 
@@ -326,10 +334,12 @@ describe("Gas Benchmarks", function () {
     it("castVote() gas with deep checkpoint history", async function () {
       // Full governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
+      await armToken.addToWhitelist(await locker.getAddress());
 
       const proposers = [deployer]; // deployer proposes
       const voters = allSigners.slice(1, 6); // 5 voters with varying checkpoint depths
@@ -341,7 +351,6 @@ describe("Gas Benchmarks", function () {
       // Deploy governor
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       const governor = await ArmadaGovernor.deploy(
-        await locker.getAddress(),
         await armToken.getAddress(),
         await timelock.getAddress(),
         deployer.address, // treasury
@@ -359,6 +368,7 @@ describe("Gas Benchmarks", function () {
       const deployerLock = ARM(200_000); // 0.2% > 0.1% threshold
       await armToken.approve(await locker.getAddress(), ethers.MaxUint256);
       await locker.lock(deployerLock);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
 
       // Fund voters with varying amounts — lock half, keep half for checkpoint creation
       for (let i = 0; i < voters.length; i++) {
@@ -366,6 +376,7 @@ describe("Gas Benchmarks", function () {
         await armToken.transfer(voters[i].address, amount);
         await armToken.connect(voters[i]).approve(await locker.getAddress(), ethers.MaxUint256);
         await locker.connect(voters[i]).lock(ARM(500_000)); // lock half, keep 500K for checkpoints
+        await armToken.connect(voters[i]).delegate(voters[i].address); // activate ERC20Votes voting power
       }
 
       // Create checkpoints via alternating lock/unlock to avoid running out of tokens
@@ -461,7 +472,8 @@ describe("Gas Benchmarks", function () {
       const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      const armToken = await ArmadaToken.deploy(deployer.address);
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const crowdfund = await ArmadaCrowdfund.deploy(
@@ -473,6 +485,7 @@ describe("Gas Benchmarks", function () {
         deployer.address  // securityCouncil
       );
 
+      await armToken.addToWhitelist(await crowdfund.getAddress());
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
       await crowdfund.loadArm();
 

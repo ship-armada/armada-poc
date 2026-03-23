@@ -10,7 +10,7 @@
  *   Phase 1: Deploy — governance stack + crowdfund with shared ARM + unified treasury
  *   Phase 2: Crowdfund — seeds → window → invite + commit → finalize → claim
  *   Phase 3: Treasury Reclaim — withdrawUnallocatedArm → treasury (proceeds pushed at finalization)
- *   Phase 4: Governance Activation — lock ARM → quorum analysis
+ *   Phase 4: Governance Activation — delegate ARM → quorum analysis
  *   Phase 5: Treasury Proposal — governance distributes USDC from treasury
  *   Phase 6: Steward Election — community-required quorum + operational spend
  *
@@ -48,7 +48,7 @@ const INVITES_PER_SEED  = 3;
 const INVITES_PER_HOP1  = 2;
 
 // Governance parameters
-const DEPLOYER_LOCK_ARM    = "0";  // no deployer remainder to lock (all ARM allocated)
+const DEPLOYER_KEEP_ARM    = "0";  // no deployer remainder to delegate (all ARM allocated)
 const DISTRIBUTE_AMOUNT    = "10000";     // USDC distributed via treasury proposal
 const STEWARD_SPEND_AMOUNT = "1000";      // USDC spent by steward from operational budget
 // Steward action delay: 120% of governance cycle (2d + 5d + 2d = 9d)
@@ -128,39 +128,30 @@ async function main() {
 
   log("DEPLOY", "Deploying governance stack...");
 
-  // 1a. ARM token — canonical, 12M fixed supply
-  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-  const armToken = await ArmadaToken.deploy(deployer.address);
-  await armToken.waitForDeployment();
-  log("DEPLOY", `ArmadaToken: ${await armToken.getAddress()}`);
-
   const MAX_PAUSE = 14 * ONE_DAY;
 
-  // 1b. TimelockController (deployed first — needed as pauseTimelock)
+  // 1a. TimelockController (deployed first — needed by ArmadaToken)
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(TIMELOCK_MIN_DELAY, [], [], deployer.address);
   await timelock.waitForDeployment();
   const tlAddr = await timelock.getAddress();
   log("DEPLOY", `TimelockController: ${tlAddr}`);
 
-  // 1c. VotingLocker
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(
-    await armToken.getAddress(), deployer.address, MAX_PAUSE, tlAddr
-  );
-  await votingLocker.waitForDeployment();
-  log("DEPLOY", `VotingLocker: ${await votingLocker.getAddress()}`);
+  // 1b. ARM token — canonical, 12M fixed supply, ERC20Votes delegation
+  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+  const armToken = await ArmadaToken.deploy(deployer.address, tlAddr);
+  await armToken.waitForDeployment();
+  log("DEPLOY", `ArmadaToken: ${await armToken.getAddress()}`);
 
-  // 1d. Treasury (owned by timelock from the start)
+  // 1c. Treasury (owned by timelock from the start)
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
   const treasury = await ArmadaTreasuryGov.deploy(tlAddr, deployer.address, MAX_PAUSE);
   await treasury.waitForDeployment();
   log("DEPLOY", `ArmadaTreasuryGov: ${await treasury.getAddress()}`);
 
-  // 1e. Governor
+  // 1d. Governor (uses ArmadaToken ERC20Votes for voting power)
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governor = await ArmadaGovernor.deploy(
-    await votingLocker.getAddress(),
     await armToken.getAddress(),
     tlAddr,
     await treasury.getAddress(),
@@ -169,7 +160,7 @@ async function main() {
   await governor.waitForDeployment();
   log("DEPLOY", `ArmadaGovernor: ${await governor.getAddress()}`);
 
-  // 1f. TreasurySteward
+  // 1e. TreasurySteward
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const stewardContract = await TreasurySteward.deploy(
     tlAddr, await treasury.getAddress(), await governor.getAddress(), STEWARD_ACTION_DELAY,
@@ -178,13 +169,13 @@ async function main() {
   await stewardContract.waitForDeployment();
   log("DEPLOY", `TreasurySteward: ${await stewardContract.getAddress()}`);
 
-  // 1g. Mock USDC
+  // 1f. Mock USDC
   const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
   const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
   await usdc.waitForDeployment();
   log("DEPLOY", `MockUSDCV2: ${await usdc.getAddress()}`);
 
-  // 1h. Crowdfund (shared ARM token + unified treasury)
+  // 1g. Crowdfund (shared ARM token + unified treasury)
   log("DEPLOY", "Deploying crowdfund with shared ARM + treasury...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const crowdfund = await ArmadaCrowdfund.deploy(
@@ -197,6 +188,11 @@ async function main() {
   );
   await crowdfund.waitForDeployment();
   log("DEPLOY", `ArmadaCrowdfund: ${await crowdfund.getAddress()}`);
+
+  // 1h. Configure ARM token
+  await armToken.setNoDelegation(await treasury.getAddress());
+  await armToken.initWhitelist([deployer.address, await treasury.getAddress()]);
+  log("CONFIG", "ARM token: noDelegation set for treasury, whitelist initialized");
 
   // 1i. Transfer ARM
   const treasuryArm  = ethers.parseUnits(TREASURY_ARM, 18);
@@ -400,29 +396,27 @@ async function main() {
   //  PHASE 4: GOVERNANCE ACTIVATION
   // ================================================================
 
-  section("PHASE 4: Governance Activation \u2014 Lock ARM + Quorum Analysis");
+  section("PHASE 4: Governance Activation \u2014 Delegate ARM + Quorum Analysis");
 
-  // Deployer locks any remaining ARM for governance participation
-  const deployerLockAmt = await armToken.balanceOf(deployer.address);
-  if (deployerLockAmt > 0n) {
-    await armToken.connect(deployer).approve(await votingLocker.getAddress(), deployerLockAmt);
-    await votingLocker.connect(deployer).lock(deployerLockAmt);
-    log("LOCK", `Deployer locks ${fmtArm(deployerLockAmt)} ARM`);
+  // Deployer self-delegates any remaining ARM for governance participation
+  const deployerArmBal = await armToken.balanceOf(deployer.address);
+  if (deployerArmBal > 0n) {
+    await armToken.connect(deployer).delegate(deployer.address);
+    log("DELEGATE", `Deployer self-delegates ${fmtArm(deployerArmBal)} ARM`);
   } else {
-    log("LOCK", "Deployer has no remaining ARM to lock (fully allocated to treasury + crowdfund)");
+    log("DELEGATE", "Deployer has no ARM to delegate (fully allocated to treasury + crowdfund)");
   }
 
-  // All seeds lock their claimed ARM
-  let totalSeedLocked = 0n;
+  // All seeds self-delegate their claimed ARM
+  let totalSeedDelegated = 0n;
   for (const s of seeds) {
     const bal = await armToken.balanceOf(s.address);
     if (bal > 0n) {
-      await armToken.connect(s).approve(await votingLocker.getAddress(), bal);
-      await votingLocker.connect(s).lock(bal);
-      totalSeedLocked += bal;
+      await armToken.connect(s).delegate(s.address);
+      totalSeedDelegated += bal;
     }
   }
-  log("LOCK", `${seeds.length} seeds lock claimed ARM: ${fmtArm(totalSeedLocked)} total`);
+  log("DELEGATE", `${seeds.length} seeds self-delegate claimed ARM: ${fmtArm(totalSeedDelegated)} total`);
 
   // Mine a block so checkpoints are visible for proposals
   await network.provider.send("evm_mine");
@@ -560,18 +554,18 @@ async function main() {
   // Deployer votes — but show it's insufficient alone for 30% quorum
   await governor.connect(deployer).castVote(pid2, Vote.For);
   const actualQuorum2 = await governor.quorum(pid2);
-  log("VOTE", `Deployer votes FOR with ${fmtArm(deployerLockAmt)}`);
-  log("NOTE", `Deployer alone: ${fmtArm(deployerLockAmt)} < ${fmtArm(actualQuorum2)} quorum \u2192 INSUFFICIENT`);
+  log("VOTE", `Deployer votes FOR with ${fmtArm(deployerArmBal)}`);
+  log("NOTE", `Deployer alone: ${fmtArm(deployerArmBal)} < ${fmtArm(actualQuorum2)} quorum \u2192 INSUFFICIENT`);
   log("NOTE", "Need community participation to pass steward election...");
 
   // All seeds vote FOR
   for (const s of seeds) {
-    const locked = await votingLocker.getLockedBalance(s.address);
-    if (locked > 0n) {
+    const votes = await armToken.getVotes(s.address);
+    if (votes > 0n) {
       await governor.connect(s).castVote(pid2, Vote.For);
     }
   }
-  log("VOTE", `${seeds.length} seeds vote FOR (${fmtArm(totalSeedLocked)} total)`);
+  log("VOTE", `${seeds.length} seeds vote FOR (${fmtArm(totalSeedDelegated)} total)`);
 
   const [,,,,forVotes2, againstVotes2, abstainVotes2] = await governor.getProposal(pid2);
   log("TALLY", `For: ${fmtArm(forVotes2)} | Against: ${fmtArm(againstVotes2)} | Abstain: ${fmtArm(abstainVotes2)}`);
@@ -624,13 +618,11 @@ async function main() {
   const finalTreasuryUsdc  = await usdc.balanceOf(await treasury.getAddress());
   const finalCrowdfundArm  = await armToken.balanceOf(await crowdfund.getAddress());
   const finalDeployerArm   = await armToken.balanceOf(deployer.address);
-  const finalLockerArm     = await armToken.balanceOf(await votingLocker.getAddress());
   const finalRecipientUsdc = await usdc.balanceOf(grantRecipient.address);
 
   console.log("  ARM Distribution:");
   console.log(`    Treasury (governed):     ${fmtArm(finalTreasuryArm)}`);
-  console.log(`    VotingLocker (locked):   ${fmtArm(finalLockerArm)}`);
-  console.log(`    Deployer (free):         ${fmtArm(finalDeployerArm)}`);
+  console.log(`    Deployer (delegated):    ${fmtArm(finalDeployerArm)}`);
   console.log(`    Crowdfund (unclaimed):   ${fmtArm(finalCrowdfundArm)}`);
   console.log(`    Total:                   ${fmtArm(await armToken.totalSupply())}`);
   console.log("");

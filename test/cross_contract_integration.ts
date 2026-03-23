@@ -2,7 +2,7 @@
  * Cross-Contract Integration Tests (Phase 6)
  *
  * Tests the full lifecycle across all contracts:
- * 1. End-to-end: crowdfund → claim ARM → lock in VotingLocker → propose → vote → execute
+ * 1. End-to-end: crowdfund → claim ARM → delegate → propose → vote → execute
  * 2. Token supply consistency: quorum calculations after crowdfund distributes tokens
  * 3. Adversarial cross-contract: snapshot manipulation, timelock permission checks
  */
@@ -30,12 +30,12 @@ const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 
 // Amount of ARM the deployer keeps for governance testing after treasury + crowdfund allocations.
 // Eligible supply ≈ DEPLOYER_KEEP + seed-claimed ARM. Quorum = 20% of eligible.
-// Deployer locks half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
+// Deployer delegates half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
 // With 100 seeds × $15K = $1.5M (hits ELASTIC_TRIGGER), MAX_SALE = $1.8M applies.
 // Hop-0 ceiling = 70% × ($1.8M - $90K) = $1,197K. Demand $1.5M > ceiling → pro-rata.
 // Each seed gets $1,197K / 100 = $11,970 ARM. Total claimed = 1,197,000 ARM.
 // Eligible ≈ 1.2M + ~1.197M = ~2.397M, quorum = 20% ≈ ~479K.
-// Deployer locks 600K > 479K quorum. ✓
+// Deployer delegates 1.2M > 479K quorum. ✓
 const DEPLOYER_KEEP = ARM(1_200_000);
 
 describe("Cross-Contract Integration (Phase 6)", function () {
@@ -43,7 +43,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
   let armToken: any;
   let usdc: any;
   let crowdfund: any;
-  let votingLocker: any;
   let timelockController: any;
   let governor: any;
   let treasuryGov: any;
@@ -68,8 +67,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     // Deploy tokens
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
+    armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
+    await armToken.initWhitelist([deployer.address]);
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -105,15 +105,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await timelockController.waitForDeployment();
     const timelockAddr = await timelockController.getAddress();
 
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(
-      await armToken.getAddress(), deployer.address, MAX_PAUSE_DURATION, timelockAddr
-    );
-    await votingLocker.waitForDeployment();
-
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
-      await votingLocker.getAddress(),
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
@@ -133,6 +126,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
     treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
     await treasuryGov.waitForDeployment();
+
+    // Whitelist contracts that transfer ARM tokens
+    await armToken.addToWhitelist(await crowdfund.getAddress());
 
     // Send most ARM to treasury address to make quorum reachable.
     // Keep DEPLOYER_KEEP for governance testing.
@@ -186,23 +182,18 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // 6b. Skip past 7-day governance quiet period
       await time.increase(SEVEN_DAYS + 1);
 
-      // 7. Deployer needs voting power to propose AND reach quorum.
-      // Deployer kept DEPLOYER_KEEP ARM. Lock most of it.
-      const deployerLock = DEPLOYER_KEEP / 2n;
-      await armToken.approve(await votingLocker.getAddress(), deployerLock);
-      await votingLocker.lock(deployerLock);
+      // 7. Deployer and seeds delegate to activate ERC20Votes voting power
+      await armToken.delegate(deployer.address);
 
-      // 8. Seeds lock their claimed ARM in VotingLocker
+      // 8. Seeds delegate their claimed ARM for voting power
       for (const seed of claimedSeeds) {
-        const balance = await armToken.balanceOf(seed.address);
-        await armToken.connect(seed).approve(await votingLocker.getAddress(), balance);
-        await votingLocker.connect(seed).lock(balance);
+        await armToken.connect(seed).delegate(seed.address);
       }
 
       // Verify voting power
       await mine(1); // need a new block for snapshot
-      const seed0VotingPower = await votingLocker.getLockedBalance(claimedSeeds[0].address);
-      expect(seed0VotingPower).to.equal(seed0Arm);
+      const seed0VotingPower = await armToken.getVotes(claimedSeeds[0].address);
+      expect(seed0VotingPower).to.be.gt(0);
 
       // 9. Create a governance proposal (treasury owner is already the timelock from deployment)
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -233,8 +224,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(forVotes).to.be.gt(0);
       expect(againstVotes).to.equal(0);
 
-      // 13. Wait for voting period to end (5 days)
-      await time.increase(FIVE_DAYS + 1);
+      // 13. Wait for voting period to end (7 days)
+      await time.increase(SEVEN_DAYS + 1);
 
       // Check quorum is reached
       const state = await governor.state(proposalId);
@@ -291,9 +282,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await runCrowdfundAndClaim();
 
       // Quorum = (totalSupply - treasuryBalance) * quorumBps / 10000
-      const deployerLock = DEPLOYER_KEEP / 2n;
-      await armToken.approve(await votingLocker.getAddress(), deployerLock);
-      await votingLocker.lock(deployerLock);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
       await mine(1);
 
       // Create proposal to check quorum
@@ -332,6 +321,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(seedBalance).to.be.lt(threshold); // single seed can't propose
 
       // 11 seeds pooling tokens: transfer to one address
+      // Whitelist seeds so they can transfer ARM to the pooled address
+      for (let i = 0; i < 11; i++) {
+        await armToken.addToWhitelist(seeds[i].address);
+      }
       const pooledSeed = seeds[0];
       for (let i = 1; i < 11; i++) {
         const bal = await armToken.balanceOf(seeds[i].address);
@@ -341,9 +334,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const pooledBalance = await armToken.balanceOf(pooledSeed.address);
       expect(pooledBalance).to.be.gte(threshold); // pooled seeds can propose
 
-      // Lock and propose
-      await armToken.connect(pooledSeed).approve(await votingLocker.getAddress(), pooledBalance);
-      await votingLocker.connect(pooledSeed).lock(pooledBalance);
+      // Delegate and propose
+      await armToken.connect(pooledSeed).delegate(pooledSeed.address);
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -384,22 +376,17 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Skip past 7-day governance quiet period
       await time.increase(SEVEN_DAYS + 1);
 
-      // Deployer locks enough to propose AND contribute to quorum
-      const deployerLock = DEPLOYER_KEEP / 2n;
-      await armToken.approve(await votingLocker.getAddress(), deployerLock);
-      await votingLocker.lock(deployerLock);
+      // Deployer delegates to activate ERC20Votes voting power
+      await armToken.delegate(deployer.address);
     }
 
-    it("claim ARM, lock, unlock, transfer to other address — other address has no voting power at snapshot", async function () {
+    it("claim ARM, delegate, transfer to other address — other address has no voting power at snapshot", async function () {
       await setupCrowdfundAndGovernance();
 
       const alice = seeds[0];
-      const bob = seeds[9]; // bob already claimed too
 
-      // Alice locks her ARM
-      const aliceBalance = await armToken.balanceOf(alice.address);
-      await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceBalance);
-      await votingLocker.connect(alice).lock(aliceBalance);
+      // Alice delegates to herself to activate ERC20Votes voting power
+      await armToken.connect(alice).delegate(alice.address);
 
       // Create proposal (snapshot is taken at current block - 1)
       await mine(1);
@@ -413,14 +400,14 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       );
       const proposalId = 1;
 
-      // Now alice unlocks and transfers ARM to a non-participant (address with no prior locks)
-      await votingLocker.connect(alice).unlock(aliceBalance);
-      const recipient = hop1Addrs[0]; // never locked before
+      // Now alice transfers ARM to a non-participant (address with no prior delegation)
+      const aliceBalance = await armToken.balanceOf(alice.address);
+      await armToken.addToWhitelist(alice.address); // whitelist so alice can transfer
+      const recipient = hop1Addrs[0]; // never delegated before
       await armToken.connect(alice).transfer(recipient.address, aliceBalance);
 
-      // Recipient locks the ARM
-      await armToken.connect(recipient).approve(await votingLocker.getAddress(), aliceBalance);
-      await votingLocker.connect(recipient).lock(aliceBalance);
+      // Recipient delegates (after proposal creation)
+      await armToken.connect(recipient).delegate(recipient.address);
 
       // Fast-forward to voting period
       await time.increase(TWO_DAYS + 1);
@@ -430,10 +417,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         governor.connect(recipient).castVote(proposalId, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
 
-      // Alice also can't vote (she unlocked before snapshot was for current block - 1,
-      // but she had voting power at snapshot block since lock was before proposal)
-      // Actually: alice locked BEFORE the proposal, so she HAD power at snapshot.
-      // Let's verify alice CAN still vote despite having unlocked after.
+      // Alice had voting power at snapshot (delegated before proposal), so she CAN still vote
+      // even though she transferred her tokens after proposal creation.
       await governor.connect(alice).castVote(proposalId, Vote.For);
 
       // Verify alice's vote was counted
@@ -446,11 +431,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // withdrawUnallocatedArm is permissionless, so governance can call it
       // even though timelock is not the crowdfund admin.
 
-      // Seeds lock to create voting power
+      // Seeds delegate to activate voting power
       for (let i = 0; i < 10; i++) {
-        const bal = await armToken.balanceOf(seeds[i].address);
-        await armToken.connect(seeds[i]).approve(await votingLocker.getAddress(), bal);
-        await votingLocker.connect(seeds[i]).lock(bal);
+        await armToken.connect(seeds[i]).delegate(seeds[i].address);
       }
       await mine(1);
 
@@ -474,7 +457,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await governor.connect(seeds[i]).castVote(proposalId, Vote.For);
       }
       await governor.castVote(proposalId, Vote.For);
-      await time.increase(FIVE_DAYS + 1);
+      await time.increase(SEVEN_DAYS + 1);
 
       // Queue and wait
       await governor.queue(proposalId);
@@ -484,18 +467,16 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.execute(proposalId);
     });
 
-    it("voting power reflects lock state at proposal snapshot, not current state", async function () {
+    it("voting power reflects delegation state at proposal snapshot, not current state", async function () {
       await setupCrowdfundAndGovernance();
 
       const alice = seeds[0];
       const bob = seeds[1];
 
-      // Alice locks 100% of her ARM
-      const aliceBal = await armToken.balanceOf(alice.address);
-      await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceBal);
-      await votingLocker.connect(alice).lock(aliceBal);
+      // Alice delegates to activate ERC20Votes voting power
+      await armToken.connect(alice).delegate(alice.address);
 
-      // Bob does NOT lock yet
+      // Bob does NOT delegate yet
       await mine(2);
 
       // Create proposal — snapshot is block.number - 1
@@ -510,10 +491,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       );
       const proposalId = 1;
 
-      // NOW bob locks (after proposal creation)
-      const bobBal = await armToken.balanceOf(bob.address);
-      await armToken.connect(bob).approve(await votingLocker.getAddress(), bobBal);
-      await votingLocker.connect(bob).lock(bobBal);
+      // NOW bob delegates (after proposal creation)
+      await armToken.connect(bob).delegate(bob.address);
 
       // Fast-forward to voting
       await time.increase(TWO_DAYS + 1);
@@ -522,7 +501,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       expect(await governor.hasVoted(proposalId, alice.address)).to.be.true;
 
-      // Bob cannot vote (locked AFTER snapshot)
+      // Bob cannot vote (delegated AFTER snapshot)
       await expect(
         governor.connect(bob).castVote(proposalId, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
@@ -538,10 +517,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         crowdfund.connect(alice).claim()
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
 
-      // Alice locks and votes
-      const aliceBal = await armToken.balanceOf(alice.address);
-      await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceBal);
-      await votingLocker.connect(alice).lock(aliceBal);
+      // Alice delegates and votes
+      await armToken.connect(alice).delegate(alice.address);
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -562,7 +539,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       ).to.be.revertedWith("ArmadaGovernor: already voted");
     });
 
-    it("unclaimed crowdfund participant cannot vote (no ARM, no lock, no voting power)", async function () {
+    it("unclaimed crowdfund participant cannot vote (no ARM, no delegation, no voting power)", async function () {
       // Run crowdfund but DON'T claim
       await crowdfund.addSeeds(seeds.map(s => s.address));
       await crowdfund.startWindow();
@@ -582,10 +559,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // DON'T claim — seeds have 0 ARM balance
       expect(await armToken.balanceOf(seeds[0].address)).to.equal(0);
 
-      // Deployer locks to create proposal
-      const lockAmt = DEPLOYER_KEEP / 2n;
-      await armToken.approve(await votingLocker.getAddress(), lockAmt);
-      await votingLocker.lock(lockAmt);
+      // Deployer delegates to create proposal
+      await armToken.delegate(deployer.address);
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -599,7 +574,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       await time.increase(TWO_DAYS + 1);
 
-      // Unclaimed seed tries to vote — no ARM, no lock, no voting power
+      // Unclaimed seed tries to vote — no ARM, no delegation, no voting power
       await expect(
         governor.connect(seeds[0]).castVote(1, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
@@ -626,7 +601,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     let localArmToken: any;
     let localUsdc: any;
     let localCrowdfund: any;
-    let localVotingLocker: any;
     let localTimelockController: any;
     let localGovernor: any;
     let localTreasury: any;
@@ -640,8 +614,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Step 1: Deploy canonical ARM token
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      localArmToken = await ArmadaToken.deploy(localDeployer.address);
+      localArmToken = await ArmadaToken.deploy(localDeployer.address, localDeployer.address);
       await localArmToken.waitForDeployment();
+      await localArmToken.initWhitelist([localDeployer.address]);
 
       // Step 2: Deploy governance stack
       const LOCAL_MAX_PAUSE = 14 * ONE_DAY;
@@ -656,12 +631,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localTimelockController.waitForDeployment();
       const localTlAddr = await localTimelockController.getAddress();
 
-      const VotingLocker = await ethers.getContractFactory("VotingLocker");
-      localVotingLocker = await VotingLocker.deploy(
-        await localArmToken.getAddress(), localDeployer.address, LOCAL_MAX_PAUSE, localTlAddr
-      );
-      await localVotingLocker.waitForDeployment();
-
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
       localTreasury = await ArmadaTreasuryGov.deploy(
         localTlAddr, localDeployer.address, LOCAL_MAX_PAUSE
@@ -670,7 +639,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       localGovernor = await ArmadaGovernor.deploy(
-        await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
         localTlAddr,
         await localTreasury.getAddress(),
@@ -703,6 +671,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       );
       await localCrowdfund.waitForDeployment();
 
+      // Whitelist contracts that transfer ARM tokens
+      await localArmToken.addToWhitelist(await localCrowdfund.getAddress());
+
       // Step 5: Fund crowdfund from deployer remainder
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);
       await localCrowdfund.loadArm();
@@ -731,10 +702,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     });
 
     it("quorum excludes both treasury and crowdfund balances", async function () {
-      // Lock deployer tokens for proposal threshold
-      const deployerLock = ARM(200_000);
-      await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
-      await localVotingLocker.lock(deployerLock);
+      // Delegate deployer tokens for proposal threshold
+      await localArmToken.delegate(localDeployer.address);
       await mine(1);
 
       // Create a proposal to get quorum value
@@ -780,10 +749,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Before any claims: crowdfund still holds all ARM
       const crowdfundArmBefore = await localArmToken.balanceOf(await localCrowdfund.getAddress());
 
-      // Lock deployer tokens for proposal
-      const deployerLock = ARM(200_000);
-      await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
-      await localVotingLocker.lock(deployerLock);
+      // Delegate deployer tokens for proposal
+      await localArmToken.delegate(localDeployer.address);
       await mine(1);
 
       // Create proposal before claims
@@ -876,7 +843,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(armAfter).to.be.gt(armBefore);
     });
 
-    it("full lifecycle: crowdfund → claim → lock → propose → vote → execute", async function () {
+    it("full lifecycle: crowdfund → claim → delegate → propose → vote → execute", async function () {
       // Run crowdfund
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
       await localCrowdfund.startWindow();
@@ -900,18 +867,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Skip past 7-day governance quiet period
       await time.increase(SEVEN_DAYS + 1);
 
-      // Deployer locks enough to propose and exceed quorum
-      // Quorum = 20% of (supply - treasury - crowdfund) = 20% of deployer remainder
-      const deployerRemainder = TOTAL_SUPPLY - TREASURY_ALLOCATION - CROWDFUND_ALLOCATION;
-      const deployerLock = (deployerRemainder * 25n) / 100n; // lock 25% of remainder
-      await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
-      await localVotingLocker.lock(deployerLock);
+      // Deployer and seeds delegate to activate ERC20Votes voting power
+      await localArmToken.delegate(localDeployer.address);
 
-      // Seeds lock their claimed ARM
+      // Seeds delegate their claimed ARM
       for (const seed of claimedSeeds) {
-        const balance = await localArmToken.balanceOf(seed.address);
-        await localArmToken.connect(seed).approve(await localVotingLocker.getAddress(), balance);
-        await localVotingLocker.connect(seed).lock(balance);
+        await localArmToken.connect(seed).delegate(seed.address);
       }
 
       await mine(1);
@@ -934,8 +895,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       }
       await localGovernor.castVote(proposalId, Vote.For);
 
-      // Wait for voting period
-      await time.increase(FIVE_DAYS + 1);
+      // Wait for voting period (7 days)
+      await time.increase(SEVEN_DAYS + 1);
       expect(await localGovernor.state(proposalId)).to.equal(ProposalState.Succeeded);
 
       // Queue and execute
@@ -962,7 +923,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Deploy a fresh governor to test (the existing one already has it locked)
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       const freshGovernor = await ArmadaGovernor.deploy(
-        await localVotingLocker.getAddress(),
         await localArmToken.getAddress(),
         await localTimelockController.getAddress(),
         await localTreasury.getAddress(),

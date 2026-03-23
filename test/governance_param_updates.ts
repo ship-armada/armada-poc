@@ -23,22 +23,23 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
-const FIVE_DAYS = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
-const FOUR_DAYS = 4 * ONE_DAY;
 const FOURTEEN_DAYS = 14 * ONE_DAY;
 const MAX_PAUSE_DURATION = FOURTEEN_DAYS;
+const STANDARD_VOTING_PERIOD = SEVEN_DAYS;
+const EXTENDED_VOTING_PERIOD = FOURTEEN_DAYS;
+const STANDARD_EXECUTION_DELAY = TWO_DAYS;
+const EXTENDED_EXECUTION_DELAY = SEVEN_DAYS;
 
 const ARM_DECIMALS = 18;
 const TOTAL_SUPPLY = ethers.parseUnits("12000000", ARM_DECIMALS); // must match ArmadaToken.INITIAL_SUPPLY
 const TREASURY_AMOUNT = TOTAL_SUPPLY * 65n / 100n; // 65% to treasury
 const ALICE_AMOUNT = TOTAL_SUPPLY * 20n / 100n;    // 20% to Alice (voter)
 const BOB_AMOUNT = TOTAL_SUPPLY * 15n / 100n;      // 15% to Bob (voter)
-const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000 / 10000);
+const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
 
 describe("Governance Parameter Updates", function () {
   let armToken: any;
-  let votingLocker: any;
   let timelockController: any;
   let governor: any;
   let treasury: any;
@@ -74,11 +75,11 @@ describe("Governance Parameter Updates", function () {
       await governor.connect(v.signer).castVote(proposalId, v.support);
     }
 
-    const votingPeriod = proposalType === ProposalType.StewardElection ? SEVEN_DAYS : FIVE_DAYS;
+    const votingPeriod = proposalType === ProposalType.StewardElection ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
     await time.increase(votingPeriod + 1);
     await governor.queue(proposalId);
 
-    const executionDelay = proposalType === ProposalType.StewardElection ? FOUR_DAYS : TWO_DAYS;
+    const executionDelay = proposalType === ProposalType.StewardElection ? EXTENDED_EXECUTION_DELAY : TWO_DAYS;
     await time.increase(executionDelay + 1);
     await governor.execute(proposalId);
 
@@ -106,11 +107,11 @@ describe("Governance Parameter Updates", function () {
       await governor.connect(v.signer).castVote(proposalId, v.support);
     }
 
-    const votingPeriod = proposalType === ProposalType.StewardElection ? SEVEN_DAYS : FIVE_DAYS;
+    const votingPeriod = proposalType === ProposalType.StewardElection ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
     await time.increase(votingPeriod + 1);
     await governor.queue(proposalId);
 
-    const executionDelay = proposalType === ProposalType.StewardElection ? FOUR_DAYS : TWO_DAYS;
+    const executionDelay = proposalType === ProposalType.StewardElection ? EXTENDED_EXECUTION_DELAY : TWO_DAYS;
     await time.increase(executionDelay + 1);
 
     return proposalId;
@@ -119,10 +120,7 @@ describe("Governance Parameter Updates", function () {
   beforeEach(async function () {
     [deployer, alice, bob, carol] = await ethers.getSigners();
 
-    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
-    await armToken.waitForDeployment();
-
+    // Deploy TimelockController first (needed by ArmadaToken)
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       TWO_DAYS, [], [], deployer.address
@@ -130,12 +128,9 @@ describe("Governance Parameter Updates", function () {
     await timelockController.waitForDeployment();
     const timelockAddr = await timelockController.getAddress();
 
-    const VotingLocker = await ethers.getContractFactory("VotingLocker");
-    votingLocker = await VotingLocker.deploy(
-      await armToken.getAddress(),
-      deployer.address, MAX_PAUSE_DURATION, timelockAddr
-    );
-    await votingLocker.waitForDeployment();
+    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+    armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
+    await armToken.waitForDeployment();
 
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
     treasury = await ArmadaTreasuryGov.deploy(
@@ -145,7 +140,6 @@ describe("Governance Parameter Updates", function () {
 
     const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
     governor = await ArmadaGovernor.deploy(
-      await votingLocker.getAddress(),
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
@@ -172,16 +166,18 @@ describe("Governance Parameter Updates", function () {
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
+    // Configure token: mark treasury as no-delegation, whitelist all participants
+    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initWhitelist([deployer.address, await treasury.getAddress(), alice.address, bob.address]);
+
     // Distribute ARM tokens
     await armToken.transfer(await treasury.getAddress(), TREASURY_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
 
-    // Lock tokens for voting
-    await armToken.connect(alice).approve(await votingLocker.getAddress(), ALICE_AMOUNT);
-    await votingLocker.connect(alice).lock(ALICE_AMOUNT);
-    await armToken.connect(bob).approve(await votingLocker.getAddress(), BOB_AMOUNT);
-    await votingLocker.connect(bob).lock(BOB_AMOUNT);
+    // Delegate voting power to self
+    await armToken.connect(alice).delegate(alice.address);
+    await armToken.connect(bob).delegate(bob.address);
 
     await mineBlock();
   });
@@ -227,7 +223,6 @@ describe("Governance Parameter Updates", function () {
     beforeEach(async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       standaloneGovernor = await ArmadaGovernor.deploy(
-        await votingLocker.getAddress(),
         await armToken.getAddress(),
         deployer.address,   // deployer acts as timelock
         await treasury.getAddress(),
@@ -370,7 +365,6 @@ describe("Governance Parameter Updates", function () {
 
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       standaloneGovernor = await ArmadaGovernor.deploy(
-        await votingLocker.getAddress(),
         await armToken.getAddress(),
         tlAddr,
         await treasury.getAddress(),
@@ -529,7 +523,7 @@ describe("Governance Parameter Updates", function () {
 
       const minDelayAfter = await stewardContract.minActionDelay();
 
-      // Before: (2d + 5d + 2d) * 1.2 = 10.8d
+      // Before: (2d + 7d + 2d) * 1.2 = 13.2d
       // After:  (1d + 3d + 1d) * 1.2 = 6d
       expect(minDelayAfter).to.be.lt(minDelayBefore);
 

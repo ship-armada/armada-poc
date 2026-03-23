@@ -3,7 +3,7 @@
  *
  * Deploys the crowdfund system and runs through:
  *   Flow 1: Full crowdfund lifecycle (seeds → window → invite + commit → finalize → claim)
- *   Flow 2: Governance bridge (claimed ARM → lock in VotingLocker → voting power)
+ *   Flow 2: Governance bridge (claimed ARM → delegate → voting power)
  *
  * Uses time.increase() to fast-forward through delays.
  *
@@ -270,19 +270,13 @@ async function main() {
   console.log("-".repeat(70));
   console.log("");
 
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(
-    await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address
-  );
-  await votingLocker.waitForDeployment();
-
+  // Self-delegate to activate voting power via ERC20Votes
   const armBal = await armToken.balanceOf(bigSeeds[0].address);
-  await armToken.connect(bigSeeds[0]).approve(await votingLocker.getAddress(), armBal);
-  await votingLocker.connect(bigSeeds[0]).lock(armBal);
+  await armToken.connect(bigSeeds[0]).delegate(bigSeeds[0].address);
 
-  const locked = await votingLocker.getLockedBalance(bigSeeds[0].address);
-  log("LOCK", `Seed locks ${fmtArm(armBal)} in VotingLocker`);
-  log("VOTE", `Voting power: ${fmtArm(locked)}`);
+  const votingPower = await armToken.getVotes(bigSeeds[0].address);
+  log("DELEGATE", `Seed self-delegates ${fmtArm(armBal)} ARM`);
+  log("VOTE", `Voting power: ${fmtArm(votingPower)}`);
   log("VOTE", `Seed can now participate in Armada governance \u2713`);
 
   // ============ DONE ============
@@ -293,7 +287,7 @@ async function main() {
   console.log("");
   console.log("  Flows demonstrated:");
   console.log("  1. Crowdfund: seeds \u2192 window \u2192 invite + commit \u2192 finalize \u2192 claim");
-  console.log("  2. Governance bridge: claimed ARM \u2192 VotingLocker \u2192 voting power");
+  console.log("  2. Governance bridge: claimed ARM \u2192 delegate \u2192 voting power");
   console.log("");
 }
 

@@ -57,10 +57,6 @@ async function main() {
   // ============ SETUP ============
   log("SETUP", "Deploying governance system...");
 
-  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-  const armToken = await ArmadaToken.deploy(deployer.address);
-  await armToken.waitForDeployment();
-
   const MAX_PAUSE = 14 * ONE_DAY;
 
   const TimelockController = await ethers.getContractFactory("TimelockController");
@@ -68,11 +64,9 @@ async function main() {
   await timelock.waitForDeployment();
   const tlAddr = await timelock.getAddress();
 
-  const VotingLocker = await ethers.getContractFactory("VotingLocker");
-  const votingLocker = await VotingLocker.deploy(
-    await armToken.getAddress(), deployer.address, MAX_PAUSE, tlAddr
-  );
-  await votingLocker.waitForDeployment();
+  const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+  const armToken = await ArmadaToken.deploy(deployer.address, tlAddr);
+  await armToken.waitForDeployment();
 
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
   const treasury = await ArmadaTreasuryGov.deploy(tlAddr, deployer.address, MAX_PAUSE);
@@ -80,7 +74,6 @@ async function main() {
 
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governor = await ArmadaGovernor.deploy(
-    await votingLocker.getAddress(),
     await armToken.getAddress(),
     tlAddr,
     await treasury.getAddress(),
@@ -107,6 +100,10 @@ async function main() {
   const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
   await usdc.waitForDeployment();
 
+  // Configure ARM token
+  await armToken.setNoDelegation(await treasury.getAddress());
+  await armToken.initWhitelist([deployer.address, await treasury.getAddress()]);
+
   // ARM distribution for demo: treasury gets 65%, remainder split between voters.
   // Amounts are derived from total supply so they adapt if supply changes.
   const totalSupply = await armToken.totalSupply();
@@ -123,14 +120,12 @@ async function main() {
   log("SETUP", `Minting 100,000 USDC to treasury`);
   console.log("");
 
-  // Lock tokens
-  await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceArm);
-  await votingLocker.connect(alice).lock(aliceArm);
-  log("LOCK", `Alice locks ${fmtArm(aliceArm)} \u2192 voting power: ${fmtArm(aliceArm)}`);
+  // Delegate voting power via ERC20Votes
+  await armToken.connect(alice).delegate(alice.address);
+  log("DELEGATE", `Alice self-delegates \u2192 voting power: ${fmtArm(aliceArm)}`);
 
-  await armToken.connect(bob).approve(await votingLocker.getAddress(), bobArm);
-  await votingLocker.connect(bob).lock(bobArm);
-  log("LOCK", `Bob locks ${fmtArm(bobArm)} \u2192 voting power: ${fmtArm(bobArm)}`);
+  await armToken.connect(bob).delegate(bob.address);
+  log("DELEGATE", `Bob self-delegates \u2192 voting power: ${fmtArm(bobArm)}`);
 
   await network.provider.send("evm_mine");
 
@@ -274,7 +269,7 @@ async function main() {
   console.log("=".repeat(70));
   console.log("");
   console.log("  Flows demonstrated:");
-  console.log("  1. Treasury proposal: lock \u2192 propose \u2192 vote \u2192 queue \u2192 execute \u2192 USDC paid");
+  console.log("  1. Treasury proposal: delegate \u2192 propose \u2192 vote \u2192 queue \u2192 execute \u2192 USDC paid");
   console.log("  2. Steward election \u2192 operational spend \u2192 governance removal");
   console.log("");
 }

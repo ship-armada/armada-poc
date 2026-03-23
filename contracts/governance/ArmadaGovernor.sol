@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
+// ABOUTME: Custom governance engine with typed proposals, per-type quorum/timing, and timelock execution.
+// ABOUTME: Voting power comes from ARM token delegation (ERC20Votes), not from a separate locking contract.
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/governance/TimelockController.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
 import "./EmergencyPausable.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
-/// @title ArmadaGovernor — Custom governance with typed proposals and token locking
+/// @title ArmadaGovernor — Custom governance with typed proposals and ERC20Votes delegation
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
-///         voting via locked tokens, and timelock execution.
+///         voting via delegated ARM tokens, and timelock execution.
 contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     // ============ Types ============
@@ -55,8 +57,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     // ============ State ============
 
-    IVotingLocker public immutable votingLocker;
-    IERC20 public immutable armToken;
+    ArmadaToken public immutable armToken;
     TimelockController public immutable timelock;
     address public immutable treasuryAddress;
     address public immutable deployer;
@@ -120,34 +121,31 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     // ============ Constructor ============
 
     constructor(
-        address _votingLocker,
         address _armToken,
         address payable _timelock,
         address _treasuryAddress,
         address _guardian,
         uint256 _maxPauseDuration
     ) EmergencyPausable(_guardian, _maxPauseDuration, _timelock) {
-        require(_votingLocker != address(0), "ArmadaGovernor: zero votingLocker");
         require(_armToken != address(0), "ArmadaGovernor: zero armToken");
         require(_timelock != address(0), "ArmadaGovernor: zero timelock");
         require(_treasuryAddress != address(0), "ArmadaGovernor: zero treasury");
-        votingLocker = IVotingLocker(_votingLocker);
-        armToken = IERC20(_armToken);
+        armToken = ArmadaToken(_armToken);
         timelock = TimelockController(_timelock);
         treasuryAddress = _treasuryAddress;
         deployer = msg.sender;
 
-        // Standard proposals: 2d delay, 5d voting, 2d execution, 20% quorum
+        // Standard proposals: 2d delay, 7d voting, 2d execution, 20% quorum
         proposalTypeParams[ProposalType.ParameterChange] = ProposalParams({
             votingDelay: 2 days,
-            votingPeriod: 5 days,
+            votingPeriod: 7 days,
             executionDelay: 2 days,
             quorumBps: 2000
         });
 
         proposalTypeParams[ProposalType.Treasury] = ProposalParams({
             votingDelay: 2 days,
-            votingPeriod: 5 days,
+            votingPeriod: 7 days,
             executionDelay: 2 days,
             quorumBps: 2000
         });
@@ -155,11 +153,11 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
         quietPeriodDuration = 7 days;
 
-        // Extended: 2d delay, 7d voting, 4d execution, 30% quorum
+        // Extended: 2d delay, 14d voting, 7d execution, 30% quorum
         proposalTypeParams[ProposalType.StewardElection] = ProposalParams({
             votingDelay: 2 days,
-            votingPeriod: 7 days,
-            executionDelay: 4 days,
+            votingPeriod: 14 days,
+            executionDelay: 7 days,
             quorumBps: 3000
         });
     }
@@ -278,9 +276,9 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         return proposalId;
     }
 
-    /// @dev Check that proposer has enough locked tokens (0.1% of total supply)
+    /// @dev Check that proposer has enough delegated voting power (0.1% of total supply)
     function _checkProposalThreshold(address proposer) internal view {
-        uint256 proposerVotes = votingLocker.getPastLockedBalance(proposer, block.number - 1);
+        uint256 proposerVotes = armToken.getPastVotes(proposer, block.number - 1);
         uint256 threshold = (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
         require(proposerVotes >= threshold, "ArmadaGovernor: below proposal threshold");
     }
@@ -302,12 +300,19 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         p.executionDelay = params.executionDelay;
         p.description = description;
 
-        // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation
+        // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation.
+        // Excluded addresses (treasury, crowdfund, etc.) are subtracted from total supply
+        // so that undelegated/non-voting tokens don't inflate the quorum denominator.
         p.snapshotQuorumBps = params.quorumBps;
-        uint256 totalSupply = armToken.totalSupply();
+        uint256 totalSupply = armToken.getPastTotalSupply(p.snapshotBlock);
         uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
         for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
             excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+        }
+        // Cap excludedBalance to prevent underflow if tokens moved into excluded
+        // addresses between the snapshot block and now.
+        if (excludedBalance > totalSupply) {
+            excludedBalance = totalSupply;
         }
         p.snapshotEligibleSupply = totalSupply - excludedBalance;
     }
@@ -323,7 +328,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         require(!hasVoted[proposalId][msg.sender], "ArmadaGovernor: already voted");
         require(support <= 2, "ArmadaGovernor: invalid vote type");
 
-        uint256 weight = votingLocker.getPastLockedBalance(msg.sender, p.snapshotBlock);
+        uint256 weight = armToken.getPastVotes(msg.sender, p.snapshotBlock);
         require(weight > 0, "ArmadaGovernor: no voting power");
 
         hasVoted[proposalId][msg.sender] = true;

@@ -90,8 +90,9 @@ describe("Crowdfund Integration", function () {
 
     // Deploy ArmadaToken (12M ARM to deployer)
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
+    armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
+    await armToken.initWhitelist([deployer.address]);
 
     // Deploy ArmadaCrowdfund
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
@@ -104,6 +105,7 @@ describe("Crowdfund Integration", function () {
       deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
+    await armToken.addToWhitelist(await crowdfund.getAddress());
 
     // Fund ARM to crowdfund (enough for MAX_SALE) and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
@@ -203,8 +205,9 @@ describe("Crowdfund Integration", function () {
 
     beforeEach(async function () {
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-      freshArmToken = await ArmadaToken.deploy(deployer.address);
+      freshArmToken = await ArmadaToken.deploy(deployer.address, deployer.address);
       await freshArmToken.waitForDeployment();
+      await freshArmToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       freshCrowdfund = await ArmadaCrowdfund.deploy(
@@ -216,6 +219,7 @@ describe("Crowdfund Integration", function () {
         deployer.address        // securityCouncil
       );
       await freshCrowdfund.waitForDeployment();
+      await freshArmToken.addToWhitelist(await freshCrowdfund.getAddress());
     });
 
     it("loadArm() reverts when ARM balance is zero", async function () {
@@ -1399,6 +1403,7 @@ describe("Crowdfund Integration", function () {
         await armToken.getAddress(), seeds[0].address, 14 * 86400, seeds[0].address
       );
       await votingLocker.waitForDeployment();
+      await armToken.addToWhitelist(await votingLocker.getAddress());
 
       await armToken.connect(seeds[0]).approve(await votingLocker.getAddress(), armBalance);
       await votingLocker.connect(seeds[0]).lock(armBalance);

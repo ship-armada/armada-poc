@@ -95,7 +95,10 @@ contract VotingLockerInvariantTest is Test {
 
     function setUp() public {
         // Deploy
-        armToken = new ArmadaToken(address(this));
+        armToken = new ArmadaToken(address(this), address(this));
+        address[] memory wl = new address[](1);
+        wl[0] = address(this);
+        armToken.initWhitelist(wl);
         locker = new VotingLocker(address(armToken), address(this), 14 days, address(this));
 
         // Create actors and fund them

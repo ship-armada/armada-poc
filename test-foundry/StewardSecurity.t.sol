@@ -33,13 +33,16 @@ contract StewardSecurityTest is Test {
 
     // Governor ParameterChange timing: 2d + 5d + 2d = 9 days
     // Min delay = 9 days * 120% = 10.8 days = 933120 seconds
-    uint256 constant EXPECTED_MIN_DELAY = (2 days + 5 days + 2 days) * 12000 / 10000;
+    uint256 constant EXPECTED_MIN_DELAY = (2 days + 7 days + 2 days) * 12000 / 10000;
     // Use exactly the min delay for test setup
     uint256 constant TEST_ACTION_DELAY = EXPECTED_MIN_DELAY;
 
     function setUp() public {
         // Deploy ARM token
-        armToken = new ArmadaToken(address(this));
+        armToken = new ArmadaToken(address(this), address(this));
+        address[] memory wl = new address[](1);
+        wl[0] = address(this);
+        armToken.initWhitelist(wl);
 
         // Deploy TimelockController (this test contract acts as admin)
         address[] memory proposers = new address[](0);
@@ -59,7 +62,6 @@ contract StewardSecurityTest is Test {
 
         // Deploy governor
         governor = new ArmadaGovernor(
-            address(locker),
             address(armToken),
             payable(address(timelock)),
             address(treasury),

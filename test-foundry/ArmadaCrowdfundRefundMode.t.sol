@@ -28,7 +28,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         treasury = address(0xCAFE);
 
         usdc = new MockUSDCV2("Mock USDC", "USDC");
-        armToken = new ArmadaToken(admin);
+        armToken = new ArmadaToken(admin, admin);
         crowdfund = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
@@ -37,6 +37,12 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             admin,
             admin   // securityCouncil
         );
+
+        // Whitelist admin and crowdfund so token transfers work
+        address[] memory wl = new address[](2);
+        wl[0] = admin;
+        wl[1] = address(crowdfund);
+        armToken.initWhitelist(wl);
 
         armToken.transfer(address(crowdfund), ARM_FUNDING);
         crowdfund.loadArm();

@@ -70,8 +70,9 @@ describe("Crowdfund Settlement Rework", function () {
     await usdc.waitForDeployment();
 
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
-    armToken = await ArmadaToken.deploy(deployer.address);
+    armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
+    await armToken.initWhitelist([deployer.address]);
 
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
     crowdfund = await ArmadaCrowdfund.deploy(
@@ -83,6 +84,7 @@ describe("Crowdfund Settlement Rework", function () {
       securityCouncil.address   // securityCouncil
     );
     await crowdfund.waitForDeployment();
+    await armToken.addToWhitelist(await crowdfund.getAddress());
 
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();

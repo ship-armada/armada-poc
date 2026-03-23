@@ -57,11 +57,11 @@ export function ProposalsPanel({ contracts, wallet, govData }: ProposalsPanelPro
             <p className="mt-0.5 font-mono text-neutral-200">{fmtArm(eligible)} ARM</p>
           </div>
           <div>
-            <p className="text-neutral-500">Treasury/Param Quorum (20%)</p>
+            <p className="text-neutral-500">Standard Quorum (20%)</p>
             <p className="mt-0.5 font-mono text-neutral-200">{fmtArm(quorum20)} ARM</p>
           </div>
           <div>
-            <p className="text-neutral-500">Steward Election Quorum (30%)</p>
+            <p className="text-neutral-500">Extended Quorum (30%)</p>
             <p className="mt-0.5 font-mono text-neutral-200">{fmtArm(quorum30)} ARM</p>
           </div>
         </div>

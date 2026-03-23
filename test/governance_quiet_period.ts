@@ -14,7 +14,7 @@ import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ONE_DAY = 86400;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
@@ -119,7 +119,7 @@ describe("Governance Quiet Period (T6.1)", function () {
     const treasuryAddress = await treasury.getAddress();
     const calldata = treasury.interface.encodeFunctionData("setSteward", [deployer.address]);
     return governor.propose(
-      ProposalType.ParameterChange,
+      ProposalType.Standard,
       [treasuryAddress],
       [0],
       [calldata],

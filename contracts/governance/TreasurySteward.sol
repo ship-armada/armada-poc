@@ -9,7 +9,7 @@ import "./IArmadaGovernance.sol";
 import "./EmergencyPausable.sol";
 
 /// @title TreasurySteward — Elected steward with action queue and veto mechanism
-/// @notice Steward is elected via governance (StewardElection proposal). Has limited powers:
+/// @notice Steward is elected via governance (Extended proposal). Has limited powers:
 ///         can propose and execute actions on whitelisted target contracts, but tokenholders
 ///         can veto actions via governance proposals before they are executed.
 ///         The action delay is enforced to be >= 120% of the fastest governance veto cycle,
@@ -219,10 +219,10 @@ contract TreasurySteward is ReentrancyGuard, EmergencyPausable {
     // ============ View Functions ============
 
     /// @notice Minimum action delay derived from governor timing: 120% of the fastest governance cycle
-    /// @dev Fastest cycle is ParameterChange: votingDelay + votingPeriod + executionDelay
+    /// @dev Fastest cycle is Standard: votingDelay + votingPeriod + executionDelay
     function minActionDelay() public view returns (uint256) {
         (uint256 votingDelay, uint256 votingPeriod, uint256 executionDelay,) =
-            IArmadaGovernorTiming(governor).proposalTypeParams(ProposalType.ParameterChange);
+            IArmadaGovernorTiming(governor).proposalTypeParams(ProposalType.Standard);
         uint256 governanceCycle = votingDelay + votingPeriod + executionDelay;
         return (governanceCycle * DELAY_SAFETY_MARGIN_BPS) / BPS_DENOMINATOR;
     }

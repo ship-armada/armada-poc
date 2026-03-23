@@ -15,7 +15,7 @@ import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
 // Proposal types (must match IArmadaGovernance.sol enum order)
-const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 // Proposal states
 const ProposalState = {
   Pending: 0, Active: 1, Defeated: 2, Succeeded: 3,
@@ -94,14 +94,14 @@ describe("Governance Integration", function () {
     }
 
     // Fast-forward past voting period
-    const votingPeriod = proposalType === ProposalType.StewardElection ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
+    const votingPeriod = proposalType === ProposalType.Extended ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
     await time.increase(votingPeriod + 1);
 
     // Queue
     await governor.queue(proposalId);
 
     // Fast-forward past execution delay
-    const executionDelay = proposalType === ProposalType.StewardElection ? EXTENDED_EXECUTION_DELAY : STANDARD_EXECUTION_DELAY;
+    const executionDelay = proposalType === ProposalType.Extended ? EXTENDED_EXECUTION_DELAY : STANDARD_EXECUTION_DELAY;
     await time.increase(executionDelay + 1);
 
     // Execute
@@ -229,10 +229,10 @@ describe("Governance Integration", function () {
   });
 
   // ============================================================
-  // 3. Proposal Lifecycle — Parameter Change
+  // 3. Proposal Lifecycle — Standard
   // ============================================================
 
-  describe("Proposal Lifecycle - ParameterChange", function () {
+  describe("Proposal Lifecycle - Standard", function () {
     it("should create proposal with sufficient voting power", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
@@ -241,7 +241,7 @@ describe("Governance Integration", function () {
       ])];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas,
+        ProposalType.Standard, targets, values, calldatas,
         "Test parameter change"
       );
 
@@ -257,7 +257,7 @@ describe("Governance Integration", function () {
 
       await expect(
         governor.connect(carol).propose(
-          ProposalType.ParameterChange, targets, values, calldatas, "Should fail"
+          ProposalType.Standard, targets, values, calldatas, "Should fail"
         )
       ).to.be.revertedWith("ArmadaGovernor: below proposal threshold");
     });
@@ -270,7 +270,7 @@ describe("Governance Integration", function () {
       ])];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Lifecycle test"
+        ProposalType.Standard, targets, values, calldatas, "Lifecycle test"
       );
 
       // Pending
@@ -297,7 +297,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "No votes"
+        ProposalType.Standard, targets, values, calldatas, "No votes"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -313,7 +313,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Majority against"
+        ProposalType.Standard, targets, values, calldatas, "Majority against"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -336,7 +336,7 @@ describe("Governance Integration", function () {
       ])];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Execute test"
+        ProposalType.Standard, targets, values, calldatas, "Execute test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -368,7 +368,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Timing test"
+        ProposalType.Standard, targets, values, calldatas, "Timing test"
       );
 
       const [,, voteStart, voteEnd] = await governor.getProposal(1);
@@ -382,10 +382,10 @@ describe("Governance Integration", function () {
   });
 
   // ============================================================
-  // 4. Proposal Lifecycle — Treasury
+  // 4. Proposal Lifecycle — Standard (Treasury Target)
   // ============================================================
 
-  describe("Proposal Lifecycle - Treasury", function () {
+  describe("Proposal Lifecycle - Standard (Treasury Target)", function () {
     it("should pay USDC to an address via treasury proposal", async function () {
       const payAmount = ethers.parseUnits("500", USDC_DECIMALS);
       const targets = [await treasury.getAddress()];
@@ -397,7 +397,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Treasury, targets, values, calldatas,
+        ProposalType.Standard, targets, values, calldatas,
         "Pay Carol 500 USDC"
       );
 
@@ -413,7 +413,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.Treasury, targets, values, calldatas, "Quorum test"
+        ProposalType.Standard, targets, values, calldatas, "Quorum test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -434,7 +434,7 @@ describe("Governance Integration", function () {
       const values = [0n];
       const calldatas = ["0x"];
       await governor.connect(alice).propose(
-        ProposalType.Treasury, targets, values, calldatas, "Quorum calc test"
+        ProposalType.Standard, targets, values, calldatas, "Quorum calc test"
       );
 
       const actualQuorum = await governor.quorum(1);
@@ -451,7 +451,7 @@ describe("Governance Integration", function () {
       const values = [0n];
       const calldatas = ["0x"];
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Quorum floor test"
+        ProposalType.Standard, targets, values, calldatas, "Quorum floor test"
       );
 
       const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
@@ -466,7 +466,7 @@ describe("Governance Integration", function () {
       const values = [0n];
       const calldatas = ["0x"];
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Percentage quorum test"
+        ProposalType.Standard, targets, values, calldatas, "Percentage quorum test"
       );
 
       const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT;
@@ -486,7 +486,7 @@ describe("Governance Integration", function () {
       const values = [0n];
       const calldatas = ["0x"];
       await governor.connect(alice).propose(
-        ProposalType.StewardElection, targets, values, calldatas, "Extended quorum floor test"
+        ProposalType.Extended, targets, values, calldatas, "Extended quorum floor test"
       );
 
       const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
@@ -495,10 +495,10 @@ describe("Governance Integration", function () {
   });
 
   // ============================================================
-  // 5. Proposal Lifecycle — Steward Election
+  // 5. Proposal Lifecycle — Extended
   // ============================================================
 
-  describe("Proposal Lifecycle - StewardElection", function () {
+  describe("Proposal Lifecycle - Extended", function () {
     it("should elect steward via proposal with extended timing", async function () {
       const targets = [
         await stewardContract.getAddress(),
@@ -515,7 +515,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.StewardElection, targets, values, calldatas,
+        ProposalType.Extended, targets, values, calldatas,
         "Elect Dave as steward"
       );
 
@@ -524,7 +524,7 @@ describe("Governance Integration", function () {
       expect(await treasury.steward()).to.equal(await stewardContract.getAddress());
     });
 
-    it("should use 30% quorum for steward elections", async function () {
+    it("should use 30% quorum for Extended proposals", async function () {
       // 30% of eligible (35% of supply) = 10.5% of total supply
       // Bob (15% of supply) should meet this
       const targets = [await stewardContract.getAddress()];
@@ -534,7 +534,7 @@ describe("Governance Integration", function () {
       ];
 
       await governor.connect(alice).propose(
-        ProposalType.StewardElection, targets, values, calldatas, "30% quorum test"
+        ProposalType.Extended, targets, values, calldatas, "30% quorum test"
       );
 
       const expectedQuorum = ((TOTAL_SUPPLY - TREASURY_AMOUNT) * 3000n) / 10000n;
@@ -549,7 +549,7 @@ describe("Governance Integration", function () {
       ];
 
       await governor.connect(alice).propose(
-        ProposalType.StewardElection, targets, values, calldatas, "Extended timing"
+        ProposalType.Extended, targets, values, calldatas, "Extended timing"
       );
 
       const [,, voteStart, voteEnd] = await governor.getProposal(1);
@@ -576,7 +576,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Treasury, targets, values, calldatas,
+        ProposalType.Standard, targets, values, calldatas,
         "Create claim for Carol"
       );
 
@@ -600,7 +600,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Treasury, targets, values, calldatas,
+        ProposalType.Standard, targets, values, calldatas,
         "Partial claim test"
       );
 
@@ -623,7 +623,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Treasury, targets, values, calldatas,
+        ProposalType.Standard, targets, values, calldatas,
         "Non-beneficiary test"
       );
 
@@ -655,7 +655,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.StewardElection, targets, values, calldatas,
+        ProposalType.Extended, targets, values, calldatas,
         "Elect Dave"
       );
     }
@@ -745,7 +745,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.ParameterChange, vetoTargets, vetoValues, vetoCalldatas,
+        ProposalType.Standard, vetoTargets, vetoValues, vetoCalldatas,
         "Veto steward action #1"
       );
 
@@ -804,7 +804,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.StewardElection, targets, values, calldatas,
+        ProposalType.Extended, targets, values, calldatas,
         "Elect Carol as steward"
       );
       expect(await stewardContract.currentSteward()).to.equal(carol.address);
@@ -869,7 +869,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.StewardElection, targets, values, calldatas,
+        ProposalType.Extended, targets, values, calldatas,
         "Elect Carol as steward"
       );
 
@@ -902,7 +902,7 @@ describe("Governance Integration", function () {
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.StewardElection, targets, values, calldatas,
+        ProposalType.Extended, targets, values, calldatas,
         "Re-elect Dave"
       );
 
@@ -932,7 +932,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Vote test"
+        ProposalType.Standard, targets, values, calldatas, "Vote test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -954,7 +954,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "No power test"
+        ProposalType.Standard, targets, values, calldatas, "No power test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -971,7 +971,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Vote switch test"
+        ProposalType.Standard, targets, values, calldatas, "Vote switch test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -999,7 +999,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Switch test 2"
+        ProposalType.Standard, targets, values, calldatas, "Switch test 2"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -1018,7 +1018,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Same vote test"
+        ProposalType.Standard, targets, values, calldatas, "Same vote test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -1035,7 +1035,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Quorum conservation test"
+        ProposalType.Standard, targets, values, calldatas, "Quorum conservation test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -1061,7 +1061,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Multi-switch test"
+        ProposalType.Standard, targets, values, calldatas, "Multi-switch test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -1084,7 +1084,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Re-delegation test"
+        ProposalType.Standard, targets, values, calldatas, "Re-delegation test"
       );
 
       await time.increase(TWO_DAYS + 1);
@@ -1111,7 +1111,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Cancel test"
+        ProposalType.Standard, targets, values, calldatas, "Cancel test"
       );
 
       await governor.connect(alice).cancel(1);
@@ -1124,7 +1124,7 @@ describe("Governance Integration", function () {
       const calldatas = ["0x"];
 
       await governor.connect(alice).propose(
-        ProposalType.ParameterChange, targets, values, calldatas, "Cancel auth test"
+        ProposalType.Standard, targets, values, calldatas, "Cancel auth test"
       );
 
       await expect(
@@ -1134,7 +1134,73 @@ describe("Governance Integration", function () {
   });
 
   // ============================================================
-  // 10. Full End-to-End Flow
+  // 10. Proposal Types
+  // ============================================================
+
+  describe("Proposal Types", function () {
+    it("should have correct Standard proposal params", async function () {
+      const [votingDelay, votingPeriod, executionDelay, quorumBps] =
+        await governor.proposalTypeParams(ProposalType.Standard);
+      expect(votingDelay).to.equal(TWO_DAYS);
+      expect(votingPeriod).to.equal(SEVEN_DAYS);
+      expect(executionDelay).to.equal(TWO_DAYS);
+      expect(quorumBps).to.equal(2000);
+    });
+
+    it("should have correct Extended proposal params", async function () {
+      const [votingDelay, votingPeriod, executionDelay, quorumBps] =
+        await governor.proposalTypeParams(ProposalType.Extended);
+      expect(votingDelay).to.equal(TWO_DAYS);
+      expect(votingPeriod).to.equal(FOURTEEN_DAYS);
+      expect(executionDelay).to.equal(SEVEN_DAYS);
+      expect(quorumBps).to.equal(3000);
+    });
+
+    it("should have correct VetoRatification proposal params", async function () {
+      const [votingDelay, votingPeriod, executionDelay, quorumBps] =
+        await governor.proposalTypeParams(ProposalType.VetoRatification);
+      expect(votingDelay).to.equal(0);
+      expect(votingPeriod).to.equal(SEVEN_DAYS);
+      expect(executionDelay).to.equal(0);
+      expect(quorumBps).to.equal(2000);
+    });
+
+    it("should reject manual creation of VetoRatification proposals", async function () {
+      const targets = [await treasury.getAddress()];
+      const values = [0n];
+      const calldatas = ["0x"];
+
+      await expect(
+        governor.connect(alice).propose(
+          ProposalType.VetoRatification, targets, values, calldatas, "Manual veto test"
+        )
+      ).to.be.revertedWith("ArmadaGovernor: auto-created only");
+    });
+
+    it("should reject governance updates to VetoRatification params", async function () {
+      // VetoRatification params are immutable — setProposalTypeParams reverts.
+      // We need to call through the timelock. Use passProposal to test this.
+      // But since the revert happens inside the timelock execution, we test directly
+      // by impersonating the timelock.
+      const timelockAddr = await governor.timelock();
+      await ethers.provider.send("hardhat_impersonateAccount", [timelockAddr]);
+      // Fund the timelock to send transactions
+      await alice.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+      const timelockSigner = await ethers.getSigner(timelockAddr);
+
+      await expect(
+        governor.connect(timelockSigner).setProposalTypeParams(
+          ProposalType.VetoRatification,
+          { votingDelay: 0, votingPeriod: SEVEN_DAYS, executionDelay: 0, quorumBps: 2000 }
+        )
+      ).to.be.revertedWith("ArmadaGovernor: VetoRatification immutable");
+
+      await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
+    });
+  });
+
+  // ============================================================
+  // 11. Full End-to-End Flow
   // ============================================================
 
   describe("Full Flow", function () {
@@ -1149,7 +1215,7 @@ describe("Governance Integration", function () {
 
       // Propose
       await governor.connect(alice).propose(
-        ProposalType.Treasury, targets, values, calldatas, "Pay Carol 2500 USDC"
+        ProposalType.Standard, targets, values, calldatas, "Pay Carol 2500 USDC"
       );
       expect(await governor.state(1)).to.equal(ProposalState.Pending);
 

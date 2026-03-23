@@ -141,30 +141,34 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         deployer = msg.sender;
 
         // Standard proposals: 2d delay, 7d voting, 2d execution, 20% quorum
-        proposalTypeParams[ProposalType.ParameterChange] = ProposalParams({
+        proposalTypeParams[ProposalType.Standard] = ProposalParams({
             votingDelay: 2 days,
             votingPeriod: 7 days,
             executionDelay: 2 days,
             quorumBps: 2000
         });
 
-        proposalTypeParams[ProposalType.Treasury] = ProposalParams({
-            votingDelay: 2 days,
-            votingPeriod: 7 days,
-            executionDelay: 2 days,
-            quorumBps: 2000
-        });
-
-        // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
-        quietPeriodDuration = 7 days;
-
-        // Extended: 2d delay, 14d voting, 7d execution, 30% quorum
-        proposalTypeParams[ProposalType.StewardElection] = ProposalParams({
+        // Extended proposals: 2d delay, 14d voting, 7d execution, 30% quorum
+        proposalTypeParams[ProposalType.Extended] = ProposalParams({
             votingDelay: 2 days,
             votingPeriod: 14 days,
             executionDelay: 7 days,
             quorumBps: 3000
         });
+
+        // VetoRatification: immediate voting, 7d period, no execution delay, 20% quorum.
+        // These params bypass setProposalTypeParams() bounds (MIN_VOTING_DELAY=1d,
+        // MIN_EXECUTION_DELAY=1d), making VetoRatification timing effectively immutable
+        // via governance. Only the veto mechanism (Phase 4) can create these proposals.
+        proposalTypeParams[ProposalType.VetoRatification] = ProposalParams({
+            votingDelay: 0,
+            votingPeriod: 7 days,
+            executionDelay: 0,
+            quorumBps: 2000
+        });
+
+        // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
+        quietPeriodDuration = 7 days;
     }
 
     // ============ Quorum Exclusion ============
@@ -211,6 +215,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         ProposalParams calldata params
     ) external {
         require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(
+            proposalType != ProposalType.VetoRatification,
+            "ArmadaGovernor: VetoRatification immutable"
+        );
         require(
             params.votingDelay >= MIN_VOTING_DELAY && params.votingDelay <= MAX_VOTING_DELAY,
             "ArmadaGovernor: votingDelay out of bounds"
@@ -262,6 +270,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         require(
             targets.length == values.length && targets.length == calldatas.length,
             "ArmadaGovernor: length mismatch"
+        );
+        require(
+            proposalType != ProposalType.VetoRatification,
+            "ArmadaGovernor: auto-created only"
         );
         _checkQuietPeriod();
         _checkProposalThreshold(msg.sender);

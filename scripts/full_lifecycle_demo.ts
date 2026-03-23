@@ -56,7 +56,7 @@ const STEWARD_ACTION_DELAY = Math.ceil((TWO_DAYS + FIVE_DAYS + TWO_DAYS) * 12000
 const TIMELOCK_MIN_DELAY   = TWO_DAYS;
 
 // Governance enums
-const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
 const PhaseNames  = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
 const StateNames  = ["PENDING", "ACTIVE", "DEFEATED", "SUCCEEDED", "QUEUED", "EXECUTED", "CANCELED"];
@@ -438,9 +438,9 @@ async function main() {
   const totalLocked = deployerLockAmt + totalSeedLocked;
   const proposalThreshold = await armToken.totalSupply() / 10000n * 10n; // 0.1%
 
-  log("QUORUM", `Treasury/ParameterChange (20%): ${fmtArm(quorum20pct)}`);
+  log("QUORUM", `Standard (20%): ${fmtArm(quorum20pct)}`);
   log("QUORUM", `  Deployer alone: ${fmtArm(deployerLockAmt)} ${deployerLockAmt >= quorum20pct ? "\u2713 SUFFICIENT" : "\u2717 INSUFFICIENT"}`);
-  log("QUORUM", `StewardElection (30%):          ${fmtArm(quorum30pct)}`);
+  log("QUORUM", `Extended (30%):          ${fmtArm(quorum30pct)}`);
   log("QUORUM", `  Deployer alone: ${fmtArm(deployerLockAmt)} ${deployerLockAmt >= quorum30pct ? "\u2713 SUFFICIENT" : "\u2717 INSUFFICIENT"}`);
   log("QUORUM", `  Deployer + seeds: ${fmtArm(totalLocked)} ${totalLocked >= quorum30pct ? "\u2713 SUFFICIENT" : "\u2717 INSUFFICIENT"}`);
 
@@ -451,7 +451,7 @@ async function main() {
   log("THRESHOLD", `Proposal threshold (0.1%): ${fmtArm(proposalThreshold)}`);
   verify("Deployer exceeds proposal threshold", deployerLockAmt >= proposalThreshold);
   verify("Treasury quorum reachable", totalLocked >= quorum20pct);
-  verify("StewardElection quorum reachable", totalLocked >= quorum30pct);
+  verify("Extended quorum reachable", totalLocked >= quorum30pct);
 
   // ================================================================
   //  PHASE 5: TREASURY PROPOSAL
@@ -467,7 +467,7 @@ async function main() {
   ])];
 
   await governor.connect(deployer).propose(
-    ProposalType.Treasury, targets5, values5, calldatas5,
+    ProposalType.Standard, targets5, values5, calldatas5,
     `Distribute ${DISTRIBUTE_AMOUNT} USDC to community grant recipient`
   );
   const pid1 = Number(await governor.proposalCount());
@@ -540,12 +540,12 @@ async function main() {
   ];
 
   await governor.connect(deployer).propose(
-    ProposalType.StewardElection, electTargets, electValues, electCalldatas,
+    ProposalType.Extended, electTargets, electValues, electCalldatas,
     "Elect treasury steward"
   );
   const pid2 = Number(await governor.proposalCount());
   log("PROPOSE", `Proposal #${pid2}: "Elect treasury steward"`);
-  log("PROPOSE", `Type: StewardElection (2d delay, 7d voting, 4d execution, 30% quorum)`);
+  log("PROPOSE", `Type: Extended (2d delay, 7d voting, 4d execution, 30% quorum)`);
   log("STATE", `Proposal #${pid2}: ${StateNames[Number(await governor.state(pid2))]}`);
 
   await fastForward(TWO_DAYS, "2 days (voting delay)");

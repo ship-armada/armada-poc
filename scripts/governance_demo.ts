@@ -15,7 +15,7 @@
 
 import { ethers, network } from "hardhat";
 
-const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
 const StateNames = ["PENDING", "ACTIVE", "DEFEATED", "SUCCEEDED", "QUEUED", "EXECUTED", "CANCELED"];
 
@@ -144,7 +144,7 @@ async function main() {
   ])];
 
   await governor.connect(alice).propose(
-    ProposalType.Treasury, targets1, values1, calldatas1, "Pay Carol 500 USDC"
+    ProposalType.Standard, targets1, values1, calldatas1, "Pay Carol 500 USDC"
   );
   const pid1 = Number(await governor.proposalCount());
   log("PROPOSE", `Alice creates Treasury proposal #${pid1}: "Pay Carol 500 USDC"`);
@@ -199,11 +199,11 @@ async function main() {
   ];
 
   await governor.connect(alice).propose(
-    ProposalType.StewardElection, electTargets, electValues, electCalldatas,
+    ProposalType.Extended, electTargets, electValues, electCalldatas,
     "Elect Dave as steward"
   );
   const pid2 = Number(await governor.proposalCount());
-  log("PROPOSE", `Alice creates StewardElection proposal #${pid2}: "Elect Dave as steward"`);
+  log("PROPOSE", `Alice creates Extended proposal #${pid2}: "Elect Dave as steward"`);
 
   await fastForward(TWO_DAYS, "2 days (voting delay)");
   await governor.connect(alice).castVote(pid2, Vote.For);
@@ -244,7 +244,7 @@ async function main() {
   ];
 
   await governor.connect(alice).propose(
-    ProposalType.ParameterChange, vetoTargets, vetoValues, vetoCalldatas,
+    ProposalType.Standard, vetoTargets, vetoValues, vetoCalldatas,
     "Remove Dave as steward"
   );
   const pid3 = Number(await governor.proposalCount());

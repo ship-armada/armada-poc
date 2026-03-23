@@ -14,7 +14,7 @@ import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-const ProposalType = { ParameterChange: 0, Treasury: 1, StewardElection: 2 };
+const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
 
 const ONE_DAY = 86400;
@@ -75,11 +75,11 @@ describe("Governance Emergency Pause", function () {
       await governor.connect(v.signer).castVote(proposalId, v.support);
     }
 
-    const votingPeriod = proposalType === ProposalType.StewardElection ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
+    const votingPeriod = proposalType === ProposalType.Extended ? EXTENDED_VOTING_PERIOD : STANDARD_VOTING_PERIOD;
     await time.increase(votingPeriod + 1);
     await governor.queue(proposalId);
 
-    const executionDelay = proposalType === ProposalType.StewardElection ? EXTENDED_EXECUTION_DELAY : STANDARD_EXECUTION_DELAY;
+    const executionDelay = proposalType === ProposalType.Extended ? EXTENDED_EXECUTION_DELAY : STANDARD_EXECUTION_DELAY;
     await time.increase(executionDelay + 1);
 
     return proposalId;
@@ -591,7 +591,7 @@ describe("Governance Emergency Pause", function () {
       await standaloneGovernor.connect(guardian).emergencyPause();
 
       await standaloneGovernor.connect(alice).propose(
-        ProposalType.ParameterChange,
+        ProposalType.Standard,
         [await standaloneGovernor.getAddress()],
         [0n],
         [standaloneGovernor.interface.encodeFunctionData("proposalCount")],
@@ -603,7 +603,7 @@ describe("Governance Emergency Pause", function () {
     it("castVote still works when paused", async function () {
       // Create a proposal first
       await standaloneGovernor.connect(alice).propose(
-        ProposalType.ParameterChange,
+        ProposalType.Standard,
         [await standaloneGovernor.getAddress()],
         [0n],
         [standaloneGovernor.interface.encodeFunctionData("proposalCount")],
@@ -622,7 +622,7 @@ describe("Governance Emergency Pause", function () {
     it("execute reverts when paused", async function () {
       // Create and advance a proposal to Queued state
       await standaloneGovernor.connect(alice).propose(
-        ProposalType.ParameterChange,
+        ProposalType.Standard,
         [await standaloneGovernor.getAddress()],
         [0n],
         [standaloneGovernor.interface.encodeFunctionData("proposalCount")],

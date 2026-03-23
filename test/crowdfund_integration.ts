@@ -1403,6 +1403,7 @@ describe("Crowdfund Integration", function () {
         await armToken.getAddress(), seeds[0].address, 14 * 86400, seeds[0].address
       );
       await votingLocker.waitForDeployment();
+      await armToken.addToWhitelist(await votingLocker.getAddress());
 
       await armToken.connect(seeds[0]).approve(await votingLocker.getAddress(), armBalance);
       await votingLocker.connect(seeds[0]).lock(armBalance);

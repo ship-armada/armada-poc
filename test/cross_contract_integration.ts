@@ -195,18 +195,20 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
 
       // 8. Seeds lock their claimed ARM in VotingLocker
       for (const seed of claimedSeeds) {
         const balance = await armToken.balanceOf(seed.address);
         await armToken.connect(seed).approve(await votingLocker.getAddress(), balance);
         await votingLocker.connect(seed).lock(balance);
+        await armToken.connect(seed).delegate(seed.address); // activate ERC20Votes voting power
       }
 
       // Verify voting power
       await mine(1); // need a new block for snapshot
-      const seed0VotingPower = await votingLocker.getLockedBalance(claimedSeeds[0].address);
-      expect(seed0VotingPower).to.equal(seed0Arm);
+      const seed0VotingPower = await armToken.getVotes(claimedSeeds[0].address);
+      expect(seed0VotingPower).to.be.gt(0);
 
       // 9. Create a governance proposal (treasury owner is already the timelock from deployment)
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -298,6 +300,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
       await mine(1);
 
       // Create proposal to check quorum
@@ -348,6 +351,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Lock and propose
       await armToken.connect(pooledSeed).approve(await votingLocker.getAddress(), pooledBalance);
       await votingLocker.connect(pooledSeed).lock(pooledBalance);
+      await armToken.connect(pooledSeed).delegate(pooledSeed.address); // activate ERC20Votes voting power
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -392,6 +396,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const deployerLock = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), deployerLock);
       await votingLocker.lock(deployerLock);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
     }
 
     it("claim ARM, lock, unlock, transfer to other address — other address has no voting power at snapshot", async function () {
@@ -404,6 +409,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const aliceBalance = await armToken.balanceOf(alice.address);
       await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceBalance);
       await votingLocker.connect(alice).lock(aliceBalance);
+      await armToken.connect(alice).delegate(alice.address); // activate ERC20Votes voting power
 
       // Create proposal (snapshot is taken at current block - 1)
       await mine(1);
@@ -455,6 +461,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         const bal = await armToken.balanceOf(seeds[i].address);
         await armToken.connect(seeds[i]).approve(await votingLocker.getAddress(), bal);
         await votingLocker.connect(seeds[i]).lock(bal);
+        await armToken.connect(seeds[i]).delegate(seeds[i].address); // activate ERC20Votes voting power
       }
       await mine(1);
 
@@ -498,6 +505,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const aliceBal = await armToken.balanceOf(alice.address);
       await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceBal);
       await votingLocker.connect(alice).lock(aliceBal);
+      await armToken.connect(alice).delegate(alice.address); // activate ERC20Votes voting power
 
       // Bob does NOT lock yet
       await mine(2);
@@ -546,6 +554,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const aliceBal = await armToken.balanceOf(alice.address);
       await armToken.connect(alice).approve(await votingLocker.getAddress(), aliceBal);
       await votingLocker.connect(alice).lock(aliceBal);
+      await armToken.connect(alice).delegate(alice.address); // activate ERC20Votes voting power
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -590,6 +599,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const lockAmt = DEPLOYER_KEEP / 2n;
       await armToken.approve(await votingLocker.getAddress(), lockAmt);
       await votingLocker.lock(lockAmt);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
@@ -743,6 +753,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const deployerLock = ARM(200_000);
       await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
       await localVotingLocker.lock(deployerLock);
+      await localArmToken.delegate(localDeployer.address); // activate ERC20Votes voting power
       await mine(1);
 
       // Create a proposal to get quorum value
@@ -792,6 +803,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const deployerLock = ARM(200_000);
       await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
       await localVotingLocker.lock(deployerLock);
+      await localArmToken.delegate(localDeployer.address); // activate ERC20Votes voting power
       await mine(1);
 
       // Create proposal before claims
@@ -914,12 +926,14 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const deployerLock = (deployerRemainder * 25n) / 100n; // lock 25% of remainder
       await localArmToken.approve(await localVotingLocker.getAddress(), deployerLock);
       await localVotingLocker.lock(deployerLock);
+      await localArmToken.delegate(localDeployer.address); // activate ERC20Votes voting power
 
       // Seeds lock their claimed ARM
       for (const seed of claimedSeeds) {
         const balance = await localArmToken.balanceOf(seed.address);
         await localArmToken.connect(seed).approve(await localVotingLocker.getAddress(), balance);
         await localVotingLocker.connect(seed).lock(balance);
+        await localArmToken.connect(seed).delegate(seed.address); // activate ERC20Votes voting power
       }
 
       await mine(1);

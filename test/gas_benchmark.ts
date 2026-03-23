@@ -368,6 +368,7 @@ describe("Gas Benchmarks", function () {
       const deployerLock = ARM(200_000); // 0.2% > 0.1% threshold
       await armToken.approve(await locker.getAddress(), ethers.MaxUint256);
       await locker.lock(deployerLock);
+      await armToken.delegate(deployer.address); // activate ERC20Votes voting power
 
       // Fund voters with varying amounts — lock half, keep half for checkpoint creation
       for (let i = 0; i < voters.length; i++) {
@@ -375,6 +376,7 @@ describe("Gas Benchmarks", function () {
         await armToken.transfer(voters[i].address, amount);
         await armToken.connect(voters[i]).approve(await locker.getAddress(), ethers.MaxUint256);
         await locker.connect(voters[i]).lock(ARM(500_000)); // lock half, keep 500K for checkpoints
+        await armToken.connect(voters[i]).delegate(voters[i].address); // activate ERC20Votes voting power
       }
 
       // Create checkpoints via alternating lock/unlock to avoid running out of tokens

@@ -31,7 +31,7 @@
     "deploy:governance": "hardhat run scripts/deploy_governance.ts --network hub",
     "deploy:crowdfund": "hardhat run scripts/deploy_crowdfund.ts --network hub",
     "test": "hardhat test test/privacy_pool_integration.ts",
-    "test:governance": "hardhat test test/governance_integration.ts test/governance_adversarial.ts",
+    "test:governance": "hardhat test test/governance_integration.ts test/governance_adversarial.ts test/governance_veto.ts",
     "test:crowdfund": "hardhat test test/crowdfund_integration.ts test/crowdfund_adversarial.ts",
     "test:all": "hardhat test",
     "test:mcp": "npx mocha --require ts-node/register mcp-server/test/unit.test.ts",

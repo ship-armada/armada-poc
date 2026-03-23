@@ -70,6 +70,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
     armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
+    await armToken.initWhitelist([deployer.address]);
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -641,6 +642,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       localArmToken = await ArmadaToken.deploy(localDeployer.address, localDeployer.address);
       await localArmToken.waitForDeployment();
+      await localArmToken.initWhitelist([localDeployer.address]);
 
       // Step 2: Deploy governance stack
       const LOCAL_MAX_PAUSE = 14 * ONE_DAY;

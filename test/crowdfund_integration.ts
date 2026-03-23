@@ -92,6 +92,7 @@ describe("Crowdfund Integration", function () {
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
     armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
     await armToken.waitForDeployment();
+    await armToken.initWhitelist([deployer.address]);
 
     // Deploy ArmadaCrowdfund
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
@@ -205,6 +206,7 @@ describe("Crowdfund Integration", function () {
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       freshArmToken = await ArmadaToken.deploy(deployer.address, deployer.address);
       await freshArmToken.waitForDeployment();
+      await freshArmToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       freshCrowdfund = await ArmadaCrowdfund.deploy(

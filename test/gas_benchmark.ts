@@ -55,6 +55,7 @@ describe("Gas Benchmarks", function () {
 
         const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
         const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
         const crowdfund = await ArmadaCrowdfund.deploy(
@@ -160,6 +161,7 @@ describe("Gas Benchmarks", function () {
 
         const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
         const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
         const crowdfund = await ArmadaCrowdfund.deploy(
@@ -198,6 +200,7 @@ describe("Gas Benchmarks", function () {
 
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const crowdfund = await ArmadaCrowdfund.deploy(
@@ -264,6 +267,7 @@ describe("Gas Benchmarks", function () {
       // Deploy governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
@@ -327,6 +331,7 @@ describe("Gas Benchmarks", function () {
       // Full governance stack
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
@@ -461,6 +466,7 @@ describe("Gas Benchmarks", function () {
 
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const crowdfund = await ArmadaCrowdfund.deploy(

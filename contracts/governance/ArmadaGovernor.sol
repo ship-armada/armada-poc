@@ -134,6 +134,18 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     }
     mapping(uint256 => BondInfo) public proposalBonds;
 
+    // ============ Veto & Ratification ============
+
+    /// @notice Calldata hashes of proposals where community denied the SC's veto.
+    /// Prevents the SC from vetoing identical proposal content twice.
+    mapping(bytes32 => bool) public vetoDeniedHashes;
+
+    /// @notice Maps ratification proposalId → original vetoed proposalId
+    mapping(uint256 => uint256) public ratificationOf;
+
+    /// @notice Maps vetoed proposalId → ratification proposalId (reverse lookup)
+    mapping(uint256 => uint256) public vetoRatificationId;
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -158,6 +170,9 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event ExtendedSelectorRemoved(bytes4 indexed selector);
     event BondPosted(uint256 indexed proposalId, address indexed depositor, uint256 amount);
     event BondClaimed(uint256 indexed proposalId, address indexed depositor, uint256 amount);
+    event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
+    event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
+    event SecurityCouncilEjected(uint256 indexed ratificationId);
 
     // ============ Constructor ============
 
@@ -361,6 +376,137 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         securityCouncil = newSC;
     }
 
+    // ============ Veto Mechanism ============
+
+    /// @notice Security Council vetoes a queued proposal, triggering a ratification vote.
+    /// @param proposalId The queued proposal to veto
+    /// @param rationaleHash Off-chain rationale hash for verifiability
+    function veto(uint256 proposalId, bytes32 rationaleHash) external {
+        require(msg.sender == securityCouncil, "ArmadaGovernor: not security council");
+        require(securityCouncil != address(0), "ArmadaGovernor: SC ejected");
+        require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
+
+        // Double-veto prevention: community denied a veto on identical calldata
+        bytes32 calldataHash = _proposalCalldataHash(proposalId);
+        require(!vetoDeniedHashes[calldataHash], "ArmadaGovernor: community overrode, no double veto");
+
+        Proposal storage p = _proposals[proposalId];
+
+        // Cancel the original proposal
+        p.canceled = true;
+
+        // Cancel the timelock operation
+        bytes32 timelockId = timelock.hashOperationBatch(
+            p.targets, p.values, p.calldatas, 0, _proposalSalt(proposalId)
+        );
+        timelock.cancel(timelockId);
+
+        // Auto-create ratification vote
+        uint256 ratId = _createRatificationProposal(proposalId, rationaleHash);
+
+        emit ProposalVetoed(proposalId, rationaleHash, ratId);
+    }
+
+    /// @notice Resolve a veto ratification vote after voting ends.
+    /// FOR or quorum-not-met = veto upheld. AGAINST with quorum = SC ejected.
+    /// @param ratificationId The ratification proposal to resolve
+    function resolveRatification(uint256 ratificationId) external {
+        uint256 vetoedId = ratificationOf[ratificationId];
+        require(vetoedId != 0, "ArmadaGovernor: not a ratification proposal");
+
+        Proposal storage p = _proposals[ratificationId];
+        require(block.timestamp > p.voteEnd, "ArmadaGovernor: voting not ended");
+        require(!p.executed, "ArmadaGovernor: already resolved");
+
+        p.executed = true;
+
+        // Evaluate outcome: does the community uphold or deny the veto?
+        bool quorumMet = _quorumReached(ratificationId);
+        bool majorityAgainst = quorumMet && !_voteSucceeded(ratificationId);
+
+        if (majorityAgainst) {
+            // Community denies the veto → eject SC, store calldata hash
+            address oldSC = securityCouncil;
+            securityCouncil = address(0);
+
+            vetoDeniedHashes[_proposalCalldataHash(vetoedId)] = true;
+
+            emit SecurityCouncilEjected(ratificationId);
+            emit SecurityCouncilUpdated(oldSC, address(0));
+            emit RatificationResolved(ratificationId, false);
+        } else {
+            // FOR wins or quorum not met → veto stands
+            emit RatificationResolved(ratificationId, true);
+        }
+    }
+
+    /// @dev Create a ratification proposal internally (bypasses propose() guards).
+    function _createRatificationProposal(
+        uint256 vetoedProposalId,
+        bytes32 rationaleHash
+    ) internal returns (uint256) {
+        uint256 ratId = ++proposalCount;
+
+        // Build description for on-chain verifiability
+        string memory desc = string(abi.encodePacked(
+            "Veto ratification for proposal #",
+            _uint2str(vetoedProposalId),
+            " | rationale: ",
+            _bytes32ToHex(rationaleHash)
+        ));
+
+        _initProposal(ratId, ProposalType.VetoRatification, desc);
+
+        // Ratification has no execution calldata — consequences handled by resolveRatification()
+        // (targets, values, calldatas arrays remain empty/default)
+
+        // Store bidirectional mappings
+        ratificationOf[ratId] = vetoedProposalId;
+        vetoRatificationId[vetoedProposalId] = ratId;
+
+        Proposal storage p = _proposals[ratId];
+        emit ProposalCreated(
+            ratId, msg.sender, ProposalType.VetoRatification,
+            p.voteStart, p.voteEnd, desc
+        );
+
+        return ratId;
+    }
+
+    /// @dev Compute a deterministic hash of a proposal's calldata for double-veto prevention.
+    function _proposalCalldataHash(uint256 proposalId) internal view returns (bytes32) {
+        Proposal storage p = _proposals[proposalId];
+        return keccak256(abi.encode(p.targets, p.values, p.calldatas));
+    }
+
+    /// @dev Convert uint to decimal string for ratification description.
+    function _uint2str(uint256 value) internal pure returns (string memory) {
+        if (value == 0) return "0";
+        uint256 temp = value;
+        uint256 digits;
+        while (temp != 0) { digits++; temp /= 10; }
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits--;
+            buffer[digits] = bytes1(uint8(48 + value % 10));
+            value /= 10;
+        }
+        return string(buffer);
+    }
+
+    /// @dev Convert bytes32 to hex string (0x-prefixed) for ratification description.
+    function _bytes32ToHex(bytes32 value) internal pure returns (string memory) {
+        bytes memory hexChars = "0123456789abcdef";
+        bytes memory str = new bytes(66); // "0x" + 64 hex chars
+        str[0] = "0";
+        str[1] = "x";
+        for (uint256 i = 0; i < 32; i++) {
+            str[2 + i * 2] = hexChars[uint8(value[i] >> 4)];
+            str[3 + i * 2] = hexChars[uint8(value[i] & 0x0f)];
+        }
+        return string(str);
+    }
+
     // ============ Wind-Down ============
 
     /// @notice One-time setter: register the wind-down contract address.
@@ -558,6 +704,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         require(state(proposalId) == ProposalState.Succeeded, "ArmadaGovernor: not succeeded");
 
         Proposal storage p = _proposals[proposalId];
+        require(p.proposalType != ProposalType.VetoRatification, "ArmadaGovernor: use resolveRatification");
         p.queued = true;
 
         bytes32 timelockId = timelock.hashOperationBatch(
@@ -579,6 +726,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
 
         Proposal storage p = _proposals[proposalId];
+        require(p.proposalType != ProposalType.VetoRatification, "ArmadaGovernor: use resolveRatification");
         p.executed = true;
 
         timelock.executeBatch{value: msg.value}(
@@ -618,8 +766,17 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             // Passed and executed: immediately claimable
             unlockTime = 0;
         } else if (currentState == ProposalState.Canceled) {
-            // Proposer self-cancelled during Pending: immediately claimable
-            unlockTime = 0;
+            uint256 ratId = vetoRatificationId[proposalId];
+            if (ratId != 0) {
+                // Vetoed proposal: bond deferred until ratification resolves.
+                // Proposer did nothing wrong — proposal passed on merit — so no penalty.
+                Proposal storage rat = _proposals[ratId];
+                require(rat.executed, "ArmadaGovernor: ratification not resolved");
+                unlockTime = 0;
+            } else {
+                // Proposer self-cancelled during Pending: immediately claimable
+                unlockTime = 0;
+            }
         } else if (currentState == ProposalState.Defeated) {
             // Determine defeat reason: quorum not met vs majority against
             bool quorumMet = _quorumReached(proposalId);

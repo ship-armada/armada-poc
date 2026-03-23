@@ -105,6 +105,7 @@ describe("Crowdfund Integration", function () {
       deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
+    await armToken.addToWhitelist(await crowdfund.getAddress());
 
     // Fund ARM to crowdfund (enough for MAX_SALE) and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
@@ -218,6 +219,7 @@ describe("Crowdfund Integration", function () {
         deployer.address        // securityCouncil
       );
       await freshCrowdfund.waitForDeployment();
+      await freshArmToken.addToWhitelist(await freshCrowdfund.getAddress());
     });
 
     it("loadArm() reverts when ARM balance is zero", async function () {

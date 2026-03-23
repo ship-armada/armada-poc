@@ -67,6 +67,8 @@ describe("Gas Benchmarks", function () {
           deployer.address  // securityCouncil
         );
 
+        await armToken.addToWhitelist(await crowdfund.getAddress());
+
         // Fund ARM for MAX_SALE
         await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
         await crowdfund.loadArm();
@@ -212,6 +214,7 @@ describe("Gas Benchmarks", function () {
         deployer.address  // securityCouncil
       );
 
+      await armToken.addToWhitelist(await crowdfund.getAddress());
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
       await crowdfund.loadArm();
 
@@ -271,6 +274,7 @@ describe("Gas Benchmarks", function () {
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
+      await armToken.addToWhitelist(await locker.getAddress());
 
       const alice = allSigners[1];
 
@@ -335,6 +339,7 @@ describe("Gas Benchmarks", function () {
 
       const VotingLocker = await ethers.getContractFactory("VotingLocker");
       const locker = await VotingLocker.deploy(await armToken.getAddress(), deployer.address, 14 * 86400, deployer.address);
+      await armToken.addToWhitelist(await locker.getAddress());
 
       const proposers = [deployer]; // deployer proposes
       const voters = allSigners.slice(1, 6); // 5 voters with varying checkpoint depths
@@ -478,6 +483,7 @@ describe("Gas Benchmarks", function () {
         deployer.address  // securityCouncil
       );
 
+      await armToken.addToWhitelist(await crowdfund.getAddress());
       await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
       await crowdfund.loadArm();
 

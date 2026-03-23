@@ -134,6 +134,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
     await treasuryGov.waitForDeployment();
 
+    // Whitelist contracts that transfer ARM tokens
+    await armToken.addToWhitelist(await crowdfund.getAddress());
+    await armToken.addToWhitelist(await votingLocker.getAddress());
+
     // Send most ARM to treasury address to make quorum reachable.
     // Keep DEPLOYER_KEEP for governance testing.
     const deployerBal = await armToken.balanceOf(deployer.address);
@@ -702,6 +706,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         localDeployer.address   // securityCouncil
       );
       await localCrowdfund.waitForDeployment();
+
+      // Whitelist contracts that transfer ARM tokens
+      await localArmToken.addToWhitelist(await localCrowdfund.getAddress());
+      await localArmToken.addToWhitelist(await localVotingLocker.getAddress());
 
       // Step 5: Fund crowdfund from deployer remainder
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);

@@ -72,6 +72,7 @@ describe("Crowdfund Adversarial", function () {
       deployer.address        // securityCouncil
     );
     await crowdfund.waitForDeployment();
+    await armToken.addToWhitelist(await crowdfund.getAddress());
 
     // Fund ARM for MAX_SALE and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);

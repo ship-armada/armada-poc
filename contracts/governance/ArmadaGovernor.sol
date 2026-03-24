@@ -672,6 +672,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         require(!authorizedAdapters[adapter], "ArmadaGovernor: already authorized");
 
         authorizedAdapters[adapter] = true;
+        withdrawOnlyAdapters[adapter] = false; // Clear withdraw-only in case of re-authorization
 
         emit AdapterAuthorized(adapter);
     }

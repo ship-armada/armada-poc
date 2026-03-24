@@ -9,9 +9,10 @@ import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
 /// @title GovernorVetoTest — Tests for SC veto, ratification, ejection, and double-veto prevention
-contract GovernorVetoTest is Test {
+contract GovernorVetoTest is Test, GovernorDeployHelper {
     // Mirror events from governor for expectEmit
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
@@ -60,7 +61,7 @@ contract GovernorVetoTest is Test {
         treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
 
         // Deploy governor
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),

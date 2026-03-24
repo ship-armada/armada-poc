@@ -11,6 +11,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ProposalState = {
@@ -105,14 +106,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await timelockController.waitForDeployment();
     const timelockAddr = await timelockController.getAddress();
 
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
       deployer.address, MAX_PAUSE_DURATION
     );
-    await governor.waitForDeployment();
 
     // Grant governor roles on timelock
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
@@ -637,14 +636,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       );
       await localTreasury.waitForDeployment();
 
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      localGovernor = await ArmadaGovernor.deploy(
+      localGovernor = await deployGovernorProxy(
         await localArmToken.getAddress(),
         localTlAddr,
         await localTreasury.getAddress(),
         localDeployer.address, LOCAL_MAX_PAUSE
       );
-      await localGovernor.waitForDeployment();
 
       // Grant governor roles on timelock
       const PROPOSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PROPOSER_ROLE"));
@@ -921,14 +918,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     it("non-deployer cannot call setExcludedAddresses", async function () {
       // Deploy a fresh governor to test (the existing one already has it locked)
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const freshGovernor = await ArmadaGovernor.deploy(
+      const freshGovernor = await deployGovernorProxy(
         await localArmToken.getAddress(),
         await localTimelockController.getAddress(),
         await localTreasury.getAddress(),
         localDeployer.address, 14 * ONE_DAY
       );
-      await freshGovernor.waitForDeployment();
 
       // Non-deployer tries to call
       const nonDeployer = localSeeds[0];

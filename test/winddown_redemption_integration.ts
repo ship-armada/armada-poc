@@ -15,6 +15,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
@@ -88,15 +89,13 @@ describe("Wind-Down & Redemption Integration", function () {
     treasuryContract = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
     await treasuryContract.waitForDeployment();
 
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasuryContract.getAddress(),
       deployer.address,
       MAX_PAUSE_DURATION,
     );
-    await governor.waitForDeployment();
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
@@ -570,10 +569,22 @@ describe("Wind-Down & Redemption Integration", function () {
       const addr1 = await usdc.getAddress();
       const addr2 = await weth.getAddress();
 
-      // Put higher address first (unsorted)
-      const tokens = addr1 > addr2 ? [addr1, addr2] : [addr2, addr1];
+      // Ensure Alice has ARM for this test (prior tests may have consumed her balance)
+      const redeemAmount = ethers.parseUnits("100", 18);
+      const aliceBalance = await armToken.balanceOf(alice.address);
+      if (aliceBalance < redeemAmount) {
+        // Top up from deployer (deployer is whitelisted and has remaining ARM)
+        const [deployer_] = await ethers.getSigners();
+        await armToken.connect(deployer_).transfer(alice.address, redeemAmount);
+      }
+
+      // Put higher address first (unsorted — descending order).
+      // Use lowercase for comparison because JS string comparison is case-sensitive
+      // but Solidity address comparison is numeric (case-insensitive).
+      const tokens = addr1.toLowerCase() > addr2.toLowerCase()
+        ? [addr1, addr2] : [addr2, addr1];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(redeemAmount, tokens, false)
       ).to.be.revertedWith("ArmadaRedemption: tokens not sorted/unique");
     });
 

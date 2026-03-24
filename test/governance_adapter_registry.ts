@@ -5,6 +5,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 // Proposal types (must match IArmadaGovernance.sol enum order)
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2, Steward: 3 };
@@ -127,14 +128,12 @@ describe("Governance Adapter Registry", function () {
     await treasury.waitForDeployment();
 
     // 4. Deploy Governor
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
       deployer.address, MAX_PAUSE_DURATION
     );
-    await governor.waitForDeployment();
 
     // 5. Configure timelock roles
     const govAddr = await governor.getAddress();

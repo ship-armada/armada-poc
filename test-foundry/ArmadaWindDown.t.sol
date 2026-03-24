@@ -12,6 +12,7 @@ import "../contracts/governance/ShieldPauseController.sol";
 import "../contracts/governance/ArmadaRedemption.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
 /// @dev Mock RevenueCounter for testing
 contract MockRevenueCounter {
@@ -28,7 +29,7 @@ contract MockUSDCWindDown is ERC20 {
     function mint(address to, uint256 amount) external { _mint(to, amount); }
 }
 
-contract ArmadaWindDownTest is Test {
+contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     // Mirror events
     event WindDownTriggered(address indexed caller, uint256 timestamp);
     event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
@@ -69,7 +70,7 @@ contract ArmadaWindDownTest is Test {
 
         armToken = new ArmadaToken(deployer, address(timelock));
         treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),

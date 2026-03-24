@@ -6,6 +6,7 @@ import "../contracts/governance/ArmadaGovernor.sol";
 import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
 // ══════════════════════════════════════════════════════════════════════════
 // INV-G1: ARM total supply is constant (matches INITIAL_SUPPLY)
@@ -265,7 +266,7 @@ contract GovernorHandler is Test {
 }
 
 /// @title GovernorInvariantTest — Foundry invariant test suite for ArmadaGovernor
-contract GovernorInvariantTest is Test {
+contract GovernorInvariantTest is Test, GovernorDeployHelper {
     ArmadaGovernor public governor;
     ArmadaToken public armToken;
     TimelockController public timelock;
@@ -295,7 +296,7 @@ contract GovernorInvariantTest is Test {
         treasuryAddr = address(0xBABE);
 
         // Deploy Governor
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             treasuryAddr,

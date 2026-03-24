@@ -13,6 +13,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ProposalState = {
@@ -139,14 +140,12 @@ describe("Governance Parameter Updates", function () {
     );
     await treasury.waitForDeployment();
 
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
       deployer.address, MAX_PAUSE_DURATION
     );
-    await governor.waitForDeployment();
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
     stewardContract = await TreasurySteward.deploy(
@@ -219,14 +218,12 @@ describe("Governance Parameter Updates", function () {
     let standaloneGovernor: any;
 
     beforeEach(async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      standaloneGovernor = await ArmadaGovernor.deploy(
+      standaloneGovernor = await deployGovernorProxy(
         await armToken.getAddress(),
         deployer.address,   // deployer acts as timelock
         await treasury.getAddress(),
         deployer.address, MAX_PAUSE_DURATION
       );
-      await standaloneGovernor.waitForDeployment();
     });
 
     const validParams = {
@@ -361,14 +358,12 @@ describe("Governance Parameter Updates", function () {
       await standaloneTimelock.waitForDeployment();
       const tlAddr = await standaloneTimelock.getAddress();
 
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      standaloneGovernor = await ArmadaGovernor.deploy(
+      standaloneGovernor = await deployGovernorProxy(
         await armToken.getAddress(),
         tlAddr,
         await treasury.getAddress(),
         deployer.address, MAX_PAUSE_DURATION
       );
-      await standaloneGovernor.waitForDeployment();
 
       // Grant roles — governor for proposals, deployer for direct schedule/execute in tests
       const PROPOSER_ROLE = await standaloneTimelock.PROPOSER_ROLE();

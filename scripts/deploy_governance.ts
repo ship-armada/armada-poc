@@ -47,6 +47,7 @@ interface GovernanceDeployment {
     armToken: string;
     treasury: string;
     governor: string;
+    governorImpl: string;
     steward: string;
     revenueCounter: string;
     revenueCounterImpl: string;
@@ -117,16 +118,26 @@ async function main() {
   const treasuryAddress = await treasury.getAddress();
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
-  // 4. Deploy ArmadaGovernor
-  console.log("4. Deploying ArmadaGovernor...");
+  // 4. Deploy ArmadaGovernor (UUPS proxy)
+  console.log("4. Deploying ArmadaGovernor (UUPS proxy)...");
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-  const governor = await ArmadaGovernor.deploy(
+  const governorImpl = await ArmadaGovernor.deploy(nm.override());
+  await governorImpl.deploymentTransaction()!.wait();
+  const governorImplAddress = await governorImpl.getAddress();
+  console.log(`   ArmadaGovernor (impl): ${governorImplAddress}`);
+
+  const governorInitData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
     armTokenAddress, timelockAddress, treasuryAddress,
-    guardianAddress, maxPauseDuration, nm.override()
+    guardianAddress, maxPauseDuration
+  ]);
+  const GovernorProxy = await ethers.getContractFactory("ERC1967Proxy");
+  const governorProxy = await GovernorProxy.deploy(
+    governorImplAddress, governorInitData, nm.override()
   );
-  await governor.deploymentTransaction()!.wait();
-  const governorAddress = await governor.getAddress();
-  console.log(`   ArmadaGovernor: ${governorAddress}`);
+  await governorProxy.deploymentTransaction()!.wait();
+  const governorAddress = await governorProxy.getAddress();
+  const governor = ArmadaGovernor.attach(governorAddress) as typeof governorImpl;
+  console.log(`   ArmadaGovernor (proxy): ${governorAddress}`);
 
   // 5. Deploy TreasurySteward (identity management only — proposals flow through governor)
   console.log("5. Deploying TreasurySteward...");
@@ -291,6 +302,7 @@ async function main() {
       armToken: armTokenAddress,
       treasury: treasuryAddress,
       governor: governorAddress,
+      governorImpl: governorImplAddress,
       steward: stewardAddress,
       revenueCounter: revenueCounterAddress,
       revenueCounterImpl: revenueCounterImplAddress,

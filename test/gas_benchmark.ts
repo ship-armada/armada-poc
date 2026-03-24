@@ -15,6 +15,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ONE_DAY = 86400;
 const THREE_WEEKS = 21 * ONE_DAY;
@@ -339,8 +340,7 @@ describe("Gas Benchmarks", function () {
       const timelock = await TimelockController.deploy(0, [deployer.address], [deployer.address], deployer.address);
 
       // Deploy governor
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const governor = await ArmadaGovernor.deploy(
+      const governor = await deployGovernorProxy(
         await armToken.getAddress(),
         await timelock.getAddress(),
         deployer.address, // treasury

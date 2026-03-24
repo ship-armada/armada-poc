@@ -13,6 +13,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 // Proposal types (must match IArmadaGovernance.sol enum order)
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2, Steward: 3 };
@@ -139,15 +140,13 @@ describe("Governance Integration", function () {
     await treasury.waitForDeployment();
 
     // 4. Deploy ArmadaGovernor
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
       deployer.address,        // guardian
       MAX_PAUSE_DURATION
     );
-    await governor.waitForDeployment();
 
     // 5. Deploy TreasurySteward (identity management only)
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");

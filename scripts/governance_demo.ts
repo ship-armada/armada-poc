@@ -73,13 +73,16 @@ async function main() {
   await treasury.waitForDeployment();
 
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-  const governor = await ArmadaGovernor.deploy(
-    await armToken.getAddress(),
-    tlAddr,
-    await treasury.getAddress(),
+  const governorImpl = await ArmadaGovernor.deploy();
+  await governorImpl.waitForDeployment();
+  const governorInitData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
+    await armToken.getAddress(), tlAddr, await treasury.getAddress(),
     deployer.address, MAX_PAUSE
-  );
-  await governor.waitForDeployment();
+  ]);
+  const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
+  const governorProxy = await ERC1967Proxy.deploy(await governorImpl.getAddress(), governorInitData);
+  await governorProxy.waitForDeployment();
+  const governor = ArmadaGovernor.attach(await governorProxy.getAddress()) as typeof governorImpl;
 
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const stewardContract = await TreasurySteward.deploy(

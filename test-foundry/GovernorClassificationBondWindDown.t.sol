@@ -10,6 +10,7 @@ import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
 /// @dev Minimal mock ERC20 for treasury balance checks in classification tests
 contract MockUSDC is ERC20 {
@@ -21,7 +22,7 @@ contract MockUSDC is ERC20 {
 }
 
 /// @title GovernorClassificationBondWindDownTest — Tests for extended classification, bond mechanism, and wind-down
-contract GovernorClassificationBondWindDownTest is Test {
+contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
     // Mirror events from governor for expectEmit
     event WindDownActivated();
 
@@ -57,7 +58,7 @@ contract GovernorClassificationBondWindDownTest is Test {
         treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
 
         // Deploy governor
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),

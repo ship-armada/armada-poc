@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Custom governance engine with typed proposals, per-type quorum/timing, and timelock execution.
+// ABOUTME: UUPS-upgradeable governance engine with typed proposals, per-type quorum/timing, and timelock execution.
 // ABOUTME: Voting power comes from ARM token delegation (ERC20Votes), not from a separate locking contract.
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/governance/TimelockController.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
-import "./EmergencyPausable.sol";
+import "./EmergencyPausableUpgradeable.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
-/// @title ArmadaGovernor — Custom governance with typed proposals and ERC20Votes delegation
+/// @title ArmadaGovernor — UUPS-upgradeable governance with typed proposals and ERC20Votes delegation
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
-///         voting via delegated ARM tokens, and timelock execution.
-contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
+///         voting via delegated ARM tokens, and timelock execution. Upgradeable via UUPS,
+///         gated by the timelock (requires extended governance proposal).
+contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgradeable, EmergencyPausableUpgradeable {
 
     // ============ Types ============
 
@@ -58,10 +61,10 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     // ============ State ============
 
-    ArmadaToken public immutable armToken;
-    TimelockController public immutable timelock;
-    address public immutable treasuryAddress;
-    address public immutable deployer;
+    ArmadaToken public armToken;
+    TimelockController public timelock;
+    address public treasuryAddress;
+    address public deployer;
 
     uint256 public proposalCount;
     mapping(uint256 => Proposal) private _proposals;
@@ -191,15 +194,30 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event AdapterDeauthorized(address indexed adapter);
     event AdapterFullyDeauthorized(address indexed adapter);
 
-    // ============ Constructor ============
+    // ============ Constructor & Initializer ============
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Initialize the governor behind a UUPS proxy.
+    /// @param _armToken ARM governance token address
+    /// @param _timelock TimelockController address for execution
+    /// @param _treasuryAddress Treasury contract address
+    /// @param _guardian Emergency pause guardian address
+    /// @param _maxPauseDuration Maximum pause duration in seconds
+    function initialize(
         address _armToken,
         address payable _timelock,
         address _treasuryAddress,
         address _guardian,
         uint256 _maxPauseDuration
-    ) EmergencyPausable(_guardian, _maxPauseDuration, _timelock) {
+    ) external initializer {
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+        __EmergencyPausable_init(_guardian, _maxPauseDuration, _timelock);
+
         require(_armToken != address(0), "ArmadaGovernor: zero armToken");
         require(_timelock != address(0), "ArmadaGovernor: zero timelock");
         require(_treasuryAddress != address(0), "ArmadaGovernor: zero treasury");
@@ -1125,4 +1143,18 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             "ArmadaGovernor: quiet period active"
         );
     }
+
+    // ============ UUPS ============
+
+    /// @dev Only the timelock (governance) can authorize upgrades.
+    ///      The upgradeTo/upgradeToAndCall selectors are registered as extended selectors,
+    ///      so upgrade proposals automatically require Extended-type quorum and timing.
+    function _authorizeUpgrade(address) internal override {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+    }
+
+    // ============ Storage Gap ============
+
+    /// @dev Reserved storage for future upgrades. 23 state slots + 27 gap = 50 total.
+    uint256[27] private __gap;
 }

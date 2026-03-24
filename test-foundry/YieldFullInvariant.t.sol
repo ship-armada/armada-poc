@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import "../contracts/yield/ArmadaYieldVault.sol";
 import "../contracts/yield/ArmadaTreasury.sol";
 import "../contracts/yield/ArmadaYieldAdapter.sol";
+import "../contracts/governance/MockAdapterRegistry.sol";
 import "../contracts/aave-mock/MockAaveSpoke.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 
@@ -186,8 +187,12 @@ contract YieldFullInvariantTest is Test {
             "ayUSDC"
         );
 
+        // Deploy mock adapter registry and authorize the adapter
+        MockAdapterRegistry mockRegistry = new MockAdapterRegistry();
+
         // Deploy adapter (no privacy pool integration in this test)
-        adapter = new ArmadaYieldAdapter(address(usdc), address(vault));
+        adapter = new ArmadaYieldAdapter(address(usdc), address(vault), address(mockRegistry));
+        mockRegistry.setAuthorized(address(adapter), true);
 
         // Create actors and fund
         for (uint256 i = 0; i < 5; i++) {

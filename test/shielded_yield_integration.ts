@@ -166,12 +166,18 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
     );
     vaultAddress = await armadaYieldVault.getAddress();
 
+    const MockAdapterRegistry = await ethers.getContractFactory("MockAdapterRegistry");
+    const mockRegistry = await MockAdapterRegistry.deploy();
+    await mockRegistry.waitForDeployment();
+
     const ArmadaYieldAdapter = await ethers.getContractFactory("ArmadaYieldAdapter");
     armadaYieldAdapter = await ArmadaYieldAdapter.deploy(
       await hubUsdc.getAddress(),
-      vaultAddress
+      vaultAddress,
+      await mockRegistry.getAddress()
     );
     adapterAddress = await armadaYieldAdapter.getAddress();
+    await mockRegistry.setAuthorized(adapterAddress, true);
     usdcAddress = await hubUsdc.getAddress();
 
     await armadaYieldVault.setAdapter(adapterAddress);

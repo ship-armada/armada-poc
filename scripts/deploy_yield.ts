@@ -9,6 +9,7 @@
  * Prerequisites:
  *   - CCTP infrastructure deployed/configured (for USDC address)
  *   - Mock Aave deployed (for MockAaveSpoke address)
+ *   - Governance deployed (for governor address — adapter registry)
  *
  * Usage (local):
  *   npx hardhat run scripts/deploy_yield.ts --network hub
@@ -25,6 +26,7 @@ import {
   getChainRole,
   getCCTPDeploymentFile,
   getAaveMockDeploymentFile,
+  getGovernanceDeploymentFile,
   getYieldDeploymentFile,
   type ChainRole,
 } from "../config/networks";
@@ -88,6 +90,16 @@ async function main() {
   console.log(`Using MockAaveSpoke at: ${mockAaveSpokeAddress}`);
   console.log(`Using reserve ID: ${reserveId}`);
 
+  // Load Governance deployment for governor address (adapter registry)
+  const govFilename = getGovernanceDeploymentFile();
+  const govDeployment = loadDeployment(govFilename);
+  if (!govDeployment) {
+    console.error(`Governance deployment not found: ${govFilename}. Deploy governance first.`);
+    process.exit(1);
+  }
+  const governorAddress = govDeployment.contracts.governor;
+  console.log(`Using Governor at: ${governorAddress}`);
+
   // 1. Deploy ArmadaTreasury
   console.log("\n1. Deploying ArmadaTreasury...");
   const ArmadaTreasury = await ethers.getContractFactory("ArmadaTreasury");
@@ -111,12 +123,13 @@ async function main() {
   const armadaYieldVaultAddress = await armadaYieldVault.getAddress();
   console.log(`   ArmadaYieldVault: ${armadaYieldVaultAddress}`);
 
-  // 3. Deploy ArmadaYieldAdapter
+  // 3. Deploy ArmadaYieldAdapter (with governor for adapter registry checks)
   console.log("\n3. Deploying ArmadaYieldAdapter...");
   const ArmadaYieldAdapter = await ethers.getContractFactory("ArmadaYieldAdapter");
   const armadaYieldAdapter = await ArmadaYieldAdapter.deploy(
     usdcAddress,
     armadaYieldVaultAddress,
+    governorAddress,
     nm.override()
   );
   await armadaYieldAdapter.deploymentTransaction()!.wait();

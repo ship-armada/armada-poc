@@ -9,7 +9,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "chains": "./scripts/setup_chains.sh",
-    "setup": "npm run compile && npm run deploy:cctp && npm run deploy:privacy-pool && npm run deploy:aave && npm run deploy:yield && npm run link && npm run deploy:faucets && npm run deploy:governance && npm run deploy:crowdfund",
+    "setup": "npm run compile && npm run deploy:cctp && npm run deploy:privacy-pool && npm run deploy:aave && npm run deploy:governance && npm run deploy:yield && npm run link && npm run deploy:faucets && npm run deploy:crowdfund",
     "deploy:cctp:hub": "hardhat run scripts/deploy_cctp_v3.ts --network hub",
     "deploy:cctp:client": "hardhat run scripts/deploy_cctp_v3.ts --network client",
     "deploy:cctp:clientB": "hardhat run scripts/deploy_cctp_v3.ts --network clientB",

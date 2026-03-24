@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../privacy-pool/interfaces/IPrivacyPool.sol";
 import "../railgun/logic/Globals.sol";
 import "./YieldAdaptParams.sol";
+import "../governance/IArmadaGovernance.sol";
 
 /**
  * @title IArmadaYieldVault
@@ -50,6 +51,9 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     /// @notice The vault share token (same as vault for ERC-20)
     IERC20 public immutable shareToken;
 
+    /// @notice Adapter registry for governance-managed authorization checks
+    IAdapterRegistry public immutable adapterRegistry;
+
     // ============ State ============
 
     /// @notice Contract owner
@@ -90,14 +94,17 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
      * @notice Initialize the adapter
      * @param _usdc USDC token address
      * @param _vault ArmadaYieldVault address
+     * @param _governor Governor address (implements IAdapterRegistry)
      */
-    constructor(address _usdc, address _vault) {
+    constructor(address _usdc, address _vault, address _governor) {
         require(_usdc != address(0), "ArmadaYieldAdapter: zero usdc");
         require(_vault != address(0), "ArmadaYieldAdapter: zero vault");
+        require(_governor != address(0), "ArmadaYieldAdapter: zero governor");
 
         usdc = IERC20(_usdc);
         vault = IArmadaYieldVault(_vault);
         shareToken = IERC20(_vault);
+        adapterRegistry = IAdapterRegistry(_governor);
         owner = msg.sender;
 
         // Approve vault to spend USDC
@@ -123,6 +130,25 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         require(newOwner != address(0), "ArmadaYieldAdapter: zero owner");
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
+    }
+
+    // ============ Adapter Registry Enforcement ============
+
+    /// @dev Reverts if this adapter is not fully authorized in the governance registry.
+    function _requireAuthorized() internal view {
+        require(
+            adapterRegistry.authorizedAdapters(address(this)),
+            "ArmadaYieldAdapter: not authorized"
+        );
+    }
+
+    /// @dev Reverts if this adapter is neither authorized nor in withdraw-only mode.
+    function _requireAuthorizedOrWithdrawOnly() internal view {
+        require(
+            adapterRegistry.authorizedAdapters(address(this)) ||
+            adapterRegistry.withdrawOnlyAdapters(address(this)),
+            "ArmadaYieldAdapter: not authorized or withdraw-only"
+        );
     }
 
     // ============ Trustless Shielded Operations ============
@@ -155,6 +181,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         bytes32 _npk,
         ShieldCiphertext calldata _shieldCiphertext
     ) external nonReentrant returns (uint256 shares) {
+        _requireAuthorized();
         require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
 
         // 1. Verify this transaction is bound to this adapter
@@ -234,6 +261,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         bytes32 _npk,
         ShieldCiphertext calldata _shieldCiphertext
     ) external nonReentrant returns (uint256 assets) {
+        _requireAuthorizedOrWithdrawOnly();
         require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
 
         // 1. Verify this transaction is bound to this adapter

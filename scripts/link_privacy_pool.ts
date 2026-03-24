@@ -26,6 +26,7 @@ import * as path from "path";
 import {
   getNetworkConfig,
   getCCTPDeploymentFile,
+  getGovernanceDeploymentFile,
   getPrivacyPoolDeploymentFile,
   getYieldDeploymentFile,
   isCCTPReal,
@@ -287,6 +288,24 @@ async function main() {
     console.log(`  Adapter privacy pool set to: ${hubPoolAddress}`);
     await (await privacyPool.setPrivilegedShieldCaller(adapterAddress, true)).wait();
     console.log(`  Adapter set as privileged shield caller (fee exemption)`);
+
+    // Authorize adapter in governance adapter registry (via timelock impersonation on local)
+    const govFilename = getGovernanceDeploymentFile();
+    const govDeployment = loadDeployment(govFilename);
+    if (govDeployment?.contracts?.governor && govDeployment?.contracts?.timelockController) {
+      const timelockAddr = govDeployment.contracts.timelockController;
+      const governorAddr = govDeployment.contracts.governor;
+
+      // Impersonate timelock to call authorizeAdapter directly (local/Anvil only)
+      await ethers.provider.send("hardhat_impersonateAccount", [timelockAddr]);
+      const [deployer] = await ethers.getSigners();
+      await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+      const timelockSigner = await ethers.getSigner(timelockAddr);
+      const governor = await ethers.getContractAt("ArmadaGovernor", governorAddr);
+      await (await governor.connect(timelockSigner).authorizeAdapter(adapterAddress)).wait();
+      await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
+      console.log(`  Adapter authorized in governance registry`);
+    }
   }
 
   console.log("");

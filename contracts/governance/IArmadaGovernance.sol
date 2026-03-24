@@ -46,3 +46,8 @@ interface ITreasurySteward {
     function currentSteward() external view returns (address);
     function isStewardActive() external view returns (bool);
 }
+
+interface IAdapterRegistry {
+    function authorizedAdapters(address adapter) external view returns (bool);
+    function withdrawOnlyAdapters(address adapter) external view returns (bool);
+}

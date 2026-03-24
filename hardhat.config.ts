@@ -41,6 +41,7 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       accounts: { count: 200 },
+      allowUnlimitedContractSize: true,
     },
 
     // ========== Local Anvil Networks ==========

@@ -73,13 +73,19 @@ describe("Yield Integration", function () {
     );
     await armadaYieldVault.waitForDeployment();
 
-    // 7. Deploy ArmadaYieldAdapter
+    // 7. Deploy MockAdapterRegistry and ArmadaYieldAdapter
+    const MockAdapterRegistry = await ethers.getContractFactory("MockAdapterRegistry");
+    const mockRegistry = await MockAdapterRegistry.deploy();
+    await mockRegistry.waitForDeployment();
+
     const ArmadaYieldAdapter = await ethers.getContractFactory("ArmadaYieldAdapter");
     armadaYieldAdapter = await ArmadaYieldAdapter.deploy(
       await usdc.getAddress(),
-      await armadaYieldVault.getAddress()
+      await armadaYieldVault.getAddress(),
+      await mockRegistry.getAddress()
     );
     await armadaYieldAdapter.waitForDeployment();
+    await mockRegistry.setAuthorized(await armadaYieldAdapter.getAddress(), true);
 
     // 8. Configure vault adapter
     await armadaYieldVault.setAdapter(await armadaYieldAdapter.getAddress());

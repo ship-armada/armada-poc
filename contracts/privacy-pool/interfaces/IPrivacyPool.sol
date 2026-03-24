@@ -23,6 +23,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when default finality threshold is changed
     event DefaultFinalityThresholdSet(uint32 threshold);
 
+    /// @notice Emitted when shield pause controller contract is set
+    event ShieldPauseContractSet(address indexed shieldPauseContract);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════

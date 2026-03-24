@@ -9,6 +9,7 @@ import "../interfaces/IShieldModule.sol";
 import "../interfaces/IMerkleModule.sol";
 import "../types/CCTPTypes.sol";
 import "../../railgun/logic/Poseidon.sol";
+import "../../governance/IShieldPauseController.sol";
 
 /**
  * @title ShieldModule
@@ -34,6 +35,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
      * @param _shieldRequests Array of shield requests to process
      */
     function shield(ShieldRequest[] calldata _shieldRequests) external override onlyDelegatecall {
+        _requireShieldsNotPaused();
         uint256 numRequests = _shieldRequests.length;
         require(numRequests > 0, "ShieldModule: No requests");
 
@@ -82,6 +84,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
      * @param data Shield data from the CCTP payload
      */
     function processIncomingShield(uint256 amount, ShieldData calldata data) external override onlyDelegatecall {
+        _requireShieldsNotPaused();
         // Verify caller is the router (self, since we're called via delegatecall)
         // This is implicitly enforced by the router only calling this on valid CCTP messages
 
@@ -294,5 +297,15 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             return bytes32(uint256(uint160(_tokenData.tokenAddress)));
         }
         return bytes32(uint256(keccak256(abi.encode(_tokenData))) % SNARK_SCALAR_FIELD);
+    }
+
+    /// @notice Reverts if shields are currently paused. No-op if no pause contract is set.
+    function _requireShieldsNotPaused() internal view {
+        if (shieldPauseContract != address(0)) {
+            require(
+                !IShieldPauseController(shieldPauseContract).shieldsPaused(),
+                "ShieldModule: shields paused"
+            );
+        }
     }
 }

@@ -347,6 +347,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         emit DefaultFinalityThresholdSet(_threshold);
     }
 
+    /**
+     * @notice Set the shield pause controller contract
+     * @param _shieldPauseContract Address of the ShieldPauseController
+     */
+    function setShieldPauseContract(address _shieldPauseContract) external {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        shieldPauseContract = _shieldPauseContract;
+        emit ShieldPauseContractSet(_shieldPauseContract);
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // VIEW FUNCTIONS (from IPrivacyPool)
     // ══════════════════════════════════════════════════════════════════════════

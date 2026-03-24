@@ -196,7 +196,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(seed0VotingPower).to.be.gt(0);
 
       // 9. Create a governance proposal (treasury owner is already the timelock from deployment)
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       const proposalTx = await governor.propose(
         ProposalType.Standard,
         [await treasuryGov.getAddress()],
@@ -286,7 +286,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create proposal to check quorum
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
         [await treasuryGov.getAddress()],
@@ -338,7 +338,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await armToken.connect(pooledSeed).delegate(pooledSeed.address);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       await expect(
         governor.connect(pooledSeed).propose(
           ProposalType.Standard,
@@ -390,7 +390,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal (snapshot is taken at current block - 1)
       await mine(1);
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
         [await treasuryGov.getAddress()],
@@ -481,7 +481,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Create proposal — snapshot is block.number - 1
       // At snapshot: Alice has voting power, Bob does not
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
         [await treasuryGov.getAddress()],
@@ -521,7 +521,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await armToken.connect(alice).delegate(alice.address);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
         [await treasuryGov.getAddress()],
@@ -563,7 +563,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await armToken.delegate(deployer.address);
       await mine(1);
 
-      const dummyCalldata = treasuryGov.interface.encodeFunctionData("setSteward", [deployer.address]);
+      const dummyCalldata = treasuryGov.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
         [await treasuryGov.getAddress()],
@@ -707,7 +707,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create a proposal to get quorum value
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("createClaim", [await localUsdc.getAddress(), localDeployer.address, 1]);
       await localGovernor.propose(
         ProposalType.Standard,
         [await localTreasury.getAddress()],
@@ -754,7 +754,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await mine(1);
 
       // Create proposal before claims
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("createClaim", [await localUsdc.getAddress(), localDeployer.address, 1]);
       await localGovernor.propose(
         ProposalType.Standard,
         [await localTreasury.getAddress()],
@@ -877,8 +877,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       await mine(1);
 
-      // Propose: set treasury steward (demo governance action)
-      const dummyCalldata = localTreasury.interface.encodeFunctionData("setSteward", [localDeployer.address]);
+      // Propose: create a claim (demo governance action)
+      const dummyCalldata = localTreasury.interface.encodeFunctionData("createClaim", [await localUsdc.getAddress(), localDeployer.address, 1]);
       await localGovernor.propose(
         ProposalType.Standard,
         [await localTreasury.getAddress()],

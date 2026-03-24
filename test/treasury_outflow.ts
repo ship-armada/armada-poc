@@ -48,8 +48,7 @@ describe("Treasury Outflow Rate Limits", function () {
     );
     await treasury.waitForDeployment();
 
-    // Set steward
-    await treasury.setSteward(stewardAddr.address);
+    // stewardAddr is used as a non-owner signer to test access-control rejections
   }
 
   async function fundTreasury(amount: bigint) {
@@ -317,8 +316,11 @@ describe("Treasury Outflow Rate Limits", function () {
       await fundTreasury(USDC(500_000));
       await initUsdcOutflow(); // 10% of $500K = $50K < $100K → limit = $100K
 
-      // Steward spends $5K (within 1% steward budget = $5K, and outflow limit)
-      await treasury.connect(stewardAddr).stewardSpend(
+      // Authorize USDC for steward spending (limit = $10K, window = 30d)
+      await treasury.addStewardBudgetToken(await usdc.getAddress(), USDC(10_000), THIRTY_DAYS);
+
+      // Owner calls stewardSpend — $5K within steward budget and outflow limit
+      await treasury.stewardSpend(
         await usdc.getAddress(), recipient.address, USDC(5_000)
       );
 
@@ -333,19 +335,21 @@ describe("Treasury Outflow Rate Limits", function () {
 
     it("should enforce outflow limit on stewardSpend independently of budget", async function () {
       // Tiny treasury: $60K, outflow limit with absolute = $50K
-      // Steward budget = 1% of $60K = $600 (budget is more restrictive here)
       // But outflow limit applies as an aggregate cap on all outflows
       await fundTreasury(USDC(60_000));
       await treasury.initOutflowConfig(
         await usdc.getAddress(), THIRTY_DAYS, 1000, USDC(50_000), USDC(50_000)
       );
 
+      // Authorize USDC for steward spending (large limit — outflow limit is more restrictive here)
+      await treasury.addStewardBudgetToken(await usdc.getAddress(), USDC(60_000), THIRTY_DAYS);
+
       // Governance distributes $50K (at the outflow limit)
       await treasury.distribute(await usdc.getAddress(), recipient.address, USDC(50_000));
 
-      // Steward spend of $1 should fail outflow limit (even if within budget)
+      // Steward spend of $1 should fail outflow limit (even if within steward budget)
       await expect(
-        treasury.connect(stewardAddr).stewardSpend(
+        treasury.stewardSpend(
           await usdc.getAddress(), recipient.address, 1n
         )
       ).to.be.revertedWith("ArmadaTreasuryGov: outflow limit exceeded");

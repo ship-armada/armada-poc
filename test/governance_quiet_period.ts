@@ -117,7 +117,7 @@ describe("Governance Quiet Period (T6.1)", function () {
   // Helper: create a basic proposal (async — resolves treasury address)
   async function propose(description = "Test proposal") {
     const treasuryAddress = await treasury.getAddress();
-    const calldata = treasury.interface.encodeFunctionData("setSteward", [deployer.address]);
+    const calldata = treasury.interface.encodeFunctionData("createClaim", [await usdc.getAddress(), deployer.address, 1]);
     return governor.propose(
       ProposalType.Standard,
       [treasuryAddress],

@@ -103,13 +103,8 @@ describe("Governance Adversarial", function () {
     await governor.waitForDeployment();
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-    // Minimum action delay = 120% of governance cycle (2d + 7d + 2d = 11d)
-    const stewardActionDelay = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
     stewardContract = await TreasurySteward.deploy(
       timelockAddr,
-      await treasuryContract.getAddress(),
-      await governor.getAddress(),
-      stewardActionDelay,
       deployer.address, MAX_PAUSE_DURATION
     );
     await stewardContract.waitForDeployment();
@@ -510,58 +505,33 @@ describe("Governance Adversarial", function () {
 
     it("TreasurySteward rejects zero timelock", async function () {
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-      const stewardDelay = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
       // Zero timelock is caught by EmergencyPausable first
       await expect(
         TreasurySteward.deploy(
           ethers.ZeroAddress,
-          await treasuryContract.getAddress(),
-          await governor.getAddress(),
-          stewardDelay,
           deployer.address, MAX_PAUSE
         )
       ).to.be.revertedWith("EmergencyPausable: zero timelock");
     });
 
-    it("TreasurySteward rejects zero treasury", async function () {
+    it("TreasurySteward rejects zero guardian", async function () {
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-      const stewardDelay = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
       await expect(
         TreasurySteward.deploy(
           await timelockController.getAddress(),
-          ethers.ZeroAddress,
-          await governor.getAddress(),
-          stewardDelay,
-          deployer.address, MAX_PAUSE
+          ethers.ZeroAddress, MAX_PAUSE
         )
-      ).to.be.revertedWith("TreasurySteward: zero treasury");
+      ).to.be.revertedWith("EmergencyPausable: zero guardian");
     });
 
-    it("TreasurySteward rejects zero governor", async function () {
-      const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-      const stewardDelay = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
-      await expect(
-        TreasurySteward.deploy(
-          await timelockController.getAddress(),
-          await treasuryContract.getAddress(),
-          ethers.ZeroAddress,
-          stewardDelay,
-          deployer.address, MAX_PAUSE
-        )
-      ).to.be.revertedWith("TreasurySteward: zero governor");
-    });
-
-    it("TreasurySteward rejects delay below governance cycle", async function () {
+    it("TreasurySteward rejects zero maxPauseDuration", async function () {
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
       await expect(
         TreasurySteward.deploy(
           await timelockController.getAddress(),
-          await treasuryContract.getAddress(),
-          await governor.getAddress(),
-          ONE_DAY, // way below minimum
-          deployer.address, MAX_PAUSE
+          deployer.address, 0
         )
-      ).to.be.revertedWith("TreasurySteward: delay below governance cycle");
+      ).to.be.revertedWith("EmergencyPausable: zero duration");
     });
   });
 
@@ -816,200 +786,206 @@ describe("Governance Adversarial", function () {
   });
 
   // ============================================================
-  // 9. Steward Budget Snapshot
+  // 9. Steward Budget Enforcement
   // ============================================================
 
-  describe("Steward Budget Snapshot", function () {
+  describe("Steward Budget Enforcement", function () {
     // Deploy a standalone treasury with deployer as owner for direct steward tests.
     // The main treasuryContract is owned by the timelock, which complicates direct testing.
+    // stewardSpend is onlyOwner — deployer calls it directly as the authorized timelock/owner.
     let budgetTreasury: any;
     const TREASURY_USDC = ethers.parseUnits("1000000", 6); // $1M USDC
+    const STEWARD_LIMIT = ethers.parseUnits("10000", 6);   // $10K steward budget per window
+    const STEWARD_WINDOW = 30 * ONE_DAY;
 
     async function setupBudgetTreasury() {
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
       budgetTreasury = await ArmadaTreasuryGov.deploy(deployer.address, deployer.address, 14 * ONE_DAY);
       await budgetTreasury.waitForDeployment();
 
-      // Fund with USDC and set carol as steward
+      // Fund with USDC and authorize token for steward spending
       await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
-      await budgetTreasury.setSteward(carol.address);
+      await budgetTreasury.addStewardBudgetToken(await usdc.getAddress(), STEWARD_LIMIT, STEWARD_WINDOW);
     }
 
-    it("budget is based on snapshotted balance, not current balance", async function () {
+    it("stewardSpend enforces the authorized budget limit", async function () {
       await setupBudgetTreasury();
 
-      // First spend triggers period reset and snapshots $1M balance
-      // Budget = 1% of $1M = $10K
-      const firstSpend = ethers.parseUnits("5000", 6); // $5K
-      await budgetTreasury.connect(carol).stewardSpend(
+      // $5K spend — within $10K limit
+      const firstSpend = ethers.parseUnits("5000", 6);
+      await budgetTreasury.stewardSpend(
         await usdc.getAddress(), dave.address, firstSpend
       );
 
-      // Deposit another $1M into treasury mid-period
-      await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
-
-      // Budget should still be based on original $1M snapshot, not current $1.995M
-      // Remaining = $10K - $5K = $5K
-      const secondSpend = ethers.parseUnits("5000", 6); // $5K — should succeed
-      await budgetTreasury.connect(carol).stewardSpend(
+      // Another $5K — reaches limit
+      const secondSpend = ethers.parseUnits("5000", 6);
+      await budgetTreasury.stewardSpend(
         await usdc.getAddress(), dave.address, secondSpend
       );
 
       // $10K budget fully used — even $1 more should fail
       await expect(
-        budgetTreasury.connect(carol).stewardSpend(
+        budgetTreasury.stewardSpend(
           await usdc.getAddress(), dave.address, 1n
         )
-      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds steward budget");
     });
 
-    it("budget does not shrink when treasury balance decreases mid-period", async function () {
+    it("stewardSpend budget resets after window expires", async function () {
       await setupBudgetTreasury();
 
-      // First spend triggers snapshot at $1M → budget = $10K
-      const smallSpend = ethers.parseUnits("1000", 6); // $1K
-      await budgetTreasury.connect(carol).stewardSpend(
-        await usdc.getAddress(), dave.address, smallSpend
+      // Use the full $10K budget
+      await budgetTreasury.stewardSpend(
+        await usdc.getAddress(), dave.address, STEWARD_LIMIT
       );
 
-      // Governance distributes $900K out of the treasury (owner = deployer in this test)
-      await budgetTreasury.distribute(
-        await usdc.getAddress(), alice.address, ethers.parseUnits("900000", 6)
-      );
+      // At limit — next spend fails
+      await expect(
+        budgetTreasury.stewardSpend(await usdc.getAddress(), dave.address, 1n)
+      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds steward budget");
 
-      // Treasury now holds ~$99K, but budget is still based on $1M snapshot
-      // Remaining = $10K - $1K = $9K — steward can still spend up to $9K
-      const largeSpend = ethers.parseUnits("9000", 6);
-      await budgetTreasury.connect(carol).stewardSpend(
-        await usdc.getAddress(), dave.address, largeSpend
-      );
+      // Advance past window
+      await time.increase(STEWARD_WINDOW + 1);
 
-      expect(await usdc.balanceOf(dave.address)).to.equal(smallSpend + largeSpend);
+      // Budget resets — can spend again
+      await budgetTreasury.stewardSpend(
+        await usdc.getAddress(), dave.address, STEWARD_LIMIT
+      );
+      expect(await usdc.balanceOf(dave.address)).to.equal(STEWARD_LIMIT * 2n);
     });
 
-    it("new period snapshots the current balance", async function () {
+    it("getStewardBudget returns correct values during active window", async function () {
       await setupBudgetTreasury();
 
-      // First period: snapshot at $1M
-      const spend = ethers.parseUnits("5000", 6);
-      await budgetTreasury.connect(carol).stewardSpend(
+      const spend = ethers.parseUnits("3000", 6);
+      await budgetTreasury.stewardSpend(
         await usdc.getAddress(), dave.address, spend
       );
 
-      // Governance distributes $500K out
-      await budgetTreasury.distribute(
-        await usdc.getAddress(), alice.address, ethers.parseUnits("500000", 6)
+      const [budget, spent, remaining] = await budgetTreasury.getStewardBudget(await usdc.getAddress());
+      expect(budget).to.equal(STEWARD_LIMIT);
+      expect(spent).to.equal(spend);
+      expect(remaining).to.equal(STEWARD_LIMIT - spend);
+    });
+
+    it("getStewardBudget shows full budget after window expires", async function () {
+      await setupBudgetTreasury();
+
+      // Spend some in current window
+      const spend = ethers.parseUnits("3000", 6);
+      await budgetTreasury.stewardSpend(
+        await usdc.getAddress(), dave.address, spend
       );
 
-      // Fast-forward past the 30-day period
-      await time.increase(30 * ONE_DAY + 1);
+      // Advance past window
+      await time.increase(STEWARD_WINDOW + 1);
 
-      // New period: snapshot at current balance (~$495K)
-      // New budget = 1% of ~$495K = ~$4,950
-      const newBudget = ethers.parseUnits("4950", 6);
-      await budgetTreasury.connect(carol).stewardSpend(
-        await usdc.getAddress(), dave.address, newBudget
-      );
+      // Spent resets to 0 (view-level reset)
+      const [budget, spent, remaining] = await budgetTreasury.getStewardBudget(await usdc.getAddress());
+      expect(budget).to.equal(STEWARD_LIMIT);
+      expect(spent).to.equal(0n);
+      expect(remaining).to.equal(STEWARD_LIMIT);
+    });
 
-      // Exceeding the new (lower) budget should fail
+    it("non-owner cannot call stewardSpend", async function () {
+      await setupBudgetTreasury();
+
       await expect(
         budgetTreasury.connect(carol).stewardSpend(
-          await usdc.getAddress(), dave.address, 1n
+          await usdc.getAddress(), dave.address, ethers.parseUnits("100", 6)
         )
-      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
+      ).to.be.revertedWith("ArmadaTreasuryGov: not owner");
     });
 
-    it("getStewardBudget reflects snapshot during active period", async function () {
+    it("stewardSpend reverts for unauthorized token", async function () {
       await setupBudgetTreasury();
 
-      // Trigger first period
-      const spend = ethers.parseUnits("3000", 6);
-      await budgetTreasury.connect(carol).stewardSpend(
-        await usdc.getAddress(), dave.address, spend
-      );
+      // Deploy a second token not authorized for steward spending
+      const MockERC20 = await ethers.getContractFactory("MockUSDCV2");
+      const otherToken = await MockERC20.deploy("Other Token", "OTH");
+      await otherToken.waitForDeployment();
+      await otherToken.mint(await budgetTreasury.getAddress(), ethers.parseUnits("100000", 6));
 
-      // Deposit more USDC mid-period
-      await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
-
-      // getStewardBudget should reflect the original snapshot, not current balance
-      const [budget, spent, remaining] = await budgetTreasury.getStewardBudget(await usdc.getAddress());
-      const expectedBudget = TREASURY_USDC / 100n; // 1% of $1M = $10K
-      expect(budget).to.equal(expectedBudget);
-      expect(spent).to.equal(spend);
-      expect(remaining).to.equal(expectedBudget - spend);
+      await expect(
+        budgetTreasury.stewardSpend(
+          await otherToken.getAddress(), dave.address, ethers.parseUnits("100", 6)
+        )
+      ).to.be.revertedWith("ArmadaTreasuryGov: token not authorized for steward");
     });
   });
 
-  describe("Steward Action Error Encoding", function () {
-    // Deploy a standalone steward with deployer as timelock for direct control.
+  describe("TreasurySteward Identity Management", function () {
+    // TreasurySteward is identity-only: election, term tracking, and removal.
+    // All calls to electSteward/removeSteward are onlyTimelock.
     let testSteward: any;
-    let testTreasury: any;
-    // Steward delay: 120% of governance cycle (2d + 7d + 2d = 11d)
-    const testStewardDelay = Math.ceil((TWO_DAYS + STANDARD_VOTING_PERIOD + STANDARD_EXECUTION_DELAY) * 12000 / 10000);
 
     async function setupStewardTest() {
-      const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-      testTreasury = await ArmadaTreasuryGov.deploy(deployer.address, deployer.address, 14 * ONE_DAY);
-      await testTreasury.waitForDeployment();
-
       const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
       testSteward = await TreasurySteward.deploy(
-        deployer.address,                    // deployer acts as timelock
-        await testTreasury.getAddress(),
-        await governor.getAddress(),
-        testStewardDelay,
+        deployer.address,   // deployer acts as timelock for direct control
         deployer.address, 14 * ONE_DAY
       );
       await testSteward.waitForDeployment();
-
-      // Elect carol as steward
-      await testSteward.electSteward(carol.address);
-
-      // Fund treasury with USDC and set steward contract as the treasury's steward
-      await usdc.mint(await testTreasury.getAddress(), ethers.parseUnits("1000000", 6));
-      await testTreasury.setSteward(await testSteward.getAddress());
     }
 
-    it("failed executeAction bubbles up the original revert reason", async function () {
+    it("electSteward sets currentSteward and emits StewardElected", async function () {
       await setupStewardTest();
 
-      // Propose a spend that exceeds the budget (budget = 1% of $1M = $10K)
-      const overBudget = ethers.parseUnits("20000", 6); // $20K > $10K budget
-      const spendData = testTreasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), dave.address, overBudget
-      ]);
-      await testSteward.connect(carol).proposeAction(
-        await testTreasury.getAddress(), spendData, 0
-      );
-      await time.increase(testStewardDelay + 1);
+      await expect(testSteward.electSteward(carol.address))
+        .to.emit(testSteward, "StewardElected")
+        .withArgs(carol.address, (v: bigint) => v > 0n, (v: bigint) => v > 0n);
 
-      // The original revert reason from the treasury is bubbled up
-      await expect(
-        testSteward.connect(carol).executeAction(await testSteward.actionCount())
-      ).to.be.revertedWith("ArmadaTreasuryGov: exceeds monthly budget");
+      expect(await testSteward.currentSteward()).to.equal(carol.address);
+      expect(await testSteward.isStewardActive()).to.be.true;
     });
 
-    it("successful executeAction emits ActionExecuted", async function () {
+    it("removeSteward clears currentSteward and emits StewardRemoved", async function () {
       await setupStewardTest();
 
-      // Propose a spend within budget (budget = 1% of $1M = $10K)
-      const withinBudget = ethers.parseUnits("5000", 6); // $5K < $10K budget
-      const spendData = testTreasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), dave.address, withinBudget
-      ]);
-      await testSteward.connect(carol).proposeAction(
-        await testTreasury.getAddress(), spendData, 0
-      );
-      await time.increase(testStewardDelay + 1);
+      await testSteward.electSteward(carol.address);
+      await expect(testSteward.removeSteward())
+        .to.emit(testSteward, "StewardRemoved")
+        .withArgs(carol.address);
 
-      const actionId = await testSteward.actionCount();
+      expect(await testSteward.currentSteward()).to.equal(ethers.ZeroAddress);
+      expect(await testSteward.isStewardActive()).to.be.false;
+    });
 
-      // Successful action emits ActionExecuted
+    it("non-timelock cannot call electSteward", async function () {
+      await setupStewardTest();
+
       await expect(
-        testSteward.connect(carol).executeAction(actionId)
-      ).to.emit(testSteward, "ActionExecuted").withArgs(actionId);
+        testSteward.connect(carol).electSteward(carol.address)
+      ).to.be.revertedWith("TreasurySteward: not timelock");
+    });
 
-      expect(await usdc.balanceOf(dave.address)).to.equal(withinBudget);
+    it("non-timelock cannot call removeSteward", async function () {
+      await setupStewardTest();
+
+      await testSteward.electSteward(carol.address);
+      await expect(
+        testSteward.connect(carol).removeSteward()
+      ).to.be.revertedWith("TreasurySteward: not timelock");
+    });
+
+    it("isStewardActive returns false after TERM_DURATION expires", async function () {
+      await setupStewardTest();
+
+      await testSteward.electSteward(carol.address);
+      expect(await testSteward.isStewardActive()).to.be.true;
+
+      const termDuration = await testSteward.TERM_DURATION();
+      await time.increase(Number(termDuration) + 1);
+
+      expect(await testSteward.isStewardActive()).to.be.false;
+    });
+
+    it("electSteward zero address reverts", async function () {
+      await setupStewardTest();
+
+      await expect(
+        testSteward.electSteward(ethers.ZeroAddress)
+      ).to.be.revertedWith("TreasurySteward: zero address");
     });
   });
 

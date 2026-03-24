@@ -111,6 +111,11 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     address public windDownContract;
     bool public windDownContractSet;
 
+    // Steward contract: registered via one-time setter. The governor calls it to verify
+    // that msg.sender is the elected steward when creating steward proposals.
+    address public stewardContract;
+    bool public stewardContractLocked;
+
     // Extended proposal classification: function selectors that force Extended type regardless
     // of what the proposer declared. Governance can add/remove selectors via extended proposal.
     mapping(bytes4 => bool) public extendedSelectors;
@@ -170,6 +175,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event ExtendedSelectorRemoved(bytes4 indexed selector);
     event BondPosted(uint256 indexed proposalId, address indexed depositor, uint256 amount);
     event BondClaimed(uint256 indexed proposalId, address indexed depositor, uint256 amount);
+    event StewardContractSet(address indexed steward);
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
@@ -218,6 +224,17 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             quorumBps: 2000
         });
 
+        // Steward: immediate voting, 7d review window, 2d timelock, 20% quorum.
+        // Pass-by-default: passes unless quorum met AND majority votes AGAINST.
+        // These params bypass setProposalTypeParams() bounds, making Steward timing
+        // effectively immutable via governance. Only proposeStewardSpend() creates these.
+        proposalTypeParams[ProposalType.Steward] = ProposalParams({
+            votingDelay: 0,
+            votingPeriod: 7 days,
+            executionDelay: 2 days,
+            quorumBps: 2000
+        });
+
         // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
         quietPeriodDuration = 7 days;
 
@@ -244,6 +261,11 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         // Steward election/removal (on TreasurySteward)
         extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
         extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
+
+        // Steward budget management (on ArmadaTreasuryGov)
+        extendedSelectors[bytes4(keccak256("addStewardBudgetToken(address,uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("updateStewardBudgetToken(address,uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
 
         // ARM token transfer whitelist
         extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
@@ -292,6 +314,19 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         emit CrowdfundAddressSet(_crowdfund);
     }
 
+    /// @notice One-time setter: register the TreasurySteward contract.
+    /// Deployer-only; locks permanently after the first call.
+    function setStewardContract(address _steward) external {
+        require(msg.sender == deployer, "ArmadaGovernor: not deployer");
+        require(!stewardContractLocked, "ArmadaGovernor: already locked");
+        require(_steward != address(0), "ArmadaGovernor: zero address");
+
+        stewardContractLocked = true;
+        stewardContract = _steward;
+
+        emit StewardContractSet(_steward);
+    }
+
     // ============ Governance-Updatable Parameters ============
 
     /// @notice Update proposal type parameters (timing and quorum).
@@ -303,8 +338,8 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     ) external {
         require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
         require(
-            proposalType != ProposalType.VetoRatification,
-            "ArmadaGovernor: VetoRatification immutable"
+            proposalType != ProposalType.VetoRatification && proposalType != ProposalType.Steward,
+            "ArmadaGovernor: immutable proposal type"
         );
         require(
             params.votingDelay >= MIN_VOTING_DELAY && params.votingDelay <= MAX_VOTING_DELAY,
@@ -507,6 +542,86 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         return string(str);
     }
 
+    // ============ Steward Proposals ============
+
+    /// @notice Create a steward spend proposal (pass-by-default governance proposal).
+    /// Only callable by the elected steward via the registered TreasurySteward contract.
+    /// The governor constructs stewardSpend calldata internally — the steward cannot
+    /// submit arbitrary targets or calldata, only structured spend requests.
+    /// @param tokens Token addresses to spend (must be authorized in treasury budget table)
+    /// @param recipients Recipient addresses for each spend
+    /// @param amounts Amounts to spend for each entry
+    /// @param description Human-readable description
+    function proposeStewardSpend(
+        address[] memory tokens,
+        address[] memory recipients,
+        uint256[] memory amounts,
+        string memory description
+    ) external returns (uint256) {
+        require(!windDownActive, "ArmadaGovernor: governance ended");
+        require(stewardContract != address(0), "ArmadaGovernor: steward contract not set");
+        require(
+            msg.sender == ITreasurySteward(stewardContract).currentSteward(),
+            "ArmadaGovernor: not current steward"
+        );
+        require(
+            ITreasurySteward(stewardContract).isStewardActive(),
+            "ArmadaGovernor: steward not active"
+        );
+        require(tokens.length > 0, "ArmadaGovernor: empty proposal");
+        require(
+            tokens.length == recipients.length && tokens.length == amounts.length,
+            "ArmadaGovernor: length mismatch"
+        );
+        _checkQuietPeriod();
+
+        // Self-payment check: steward cannot be a recipient in any spend
+        for (uint256 i = 0; i < recipients.length; i++) {
+            require(recipients[i] != msg.sender, "ArmadaGovernor: self-payment not allowed");
+        }
+
+        // Governor constructs the calldata — steward only provides structured spend params
+        address[] memory targets = new address[](tokens.length);
+        uint256[] memory values = new uint256[](tokens.length);
+        bytes[] memory calldatas = new bytes[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            targets[i] = treasuryAddress;
+            calldatas[i] = abi.encodeWithSignature(
+                "stewardSpend(address,address,uint256)",
+                tokens[i], recipients[i], amounts[i]
+            );
+        }
+
+        uint256 proposalId = ++proposalCount;
+        _initProposal(proposalId, ProposalType.Steward, description);
+
+        Proposal storage p = _proposals[proposalId];
+        p.targets = targets;
+        p.values = values;
+        p.calldatas = calldatas;
+
+        // Bond: required only when ARM is transferable (same as regular proposals)
+        if (armToken.transferable()) {
+            require(
+                armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND),
+                "ArmadaGovernor: bond transfer failed"
+            );
+            proposalBonds[proposalId] = BondInfo({
+                depositor: msg.sender,
+                amount: PROPOSAL_BOND,
+                unlockTime: 0,
+                claimed: false
+            });
+            emit BondPosted(proposalId, msg.sender, PROPOSAL_BOND);
+        }
+
+        emit ProposalCreated(
+            proposalId, msg.sender, ProposalType.Steward,
+            p.voteStart, p.voteEnd, description
+        );
+        return proposalId;
+    }
+
     // ============ Wind-Down ============
 
     /// @notice One-time setter: register the wind-down contract address.
@@ -558,7 +673,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             "ArmadaGovernor: length mismatch"
         );
         require(
-            proposalType != ProposalType.VetoRatification,
+            proposalType != ProposalType.VetoRatification && proposalType != ProposalType.Steward,
             "ArmadaGovernor: auto-created only"
         );
         _checkQuietPeriod();
@@ -814,8 +929,15 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         if (block.timestamp <= p.voteEnd) return ProposalState.Active;
 
         // After voting ends: check quorum and majority
-        if (!_quorumReached(proposalId) || !_voteSucceeded(proposalId)) {
-            return ProposalState.Defeated;
+        if (p.proposalType == ProposalType.Steward) {
+            // Pass-by-default: defeated ONLY if quorum met AND strict majority votes against
+            if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
+                return ProposalState.Defeated;
+            }
+        } else {
+            if (!_quorumReached(proposalId) || !_voteSucceeded(proposalId)) {
+                return ProposalState.Defeated;
+            }
         }
 
         if (p.queued) return ProposalState.Queued;

@@ -111,6 +111,7 @@ abstract contract EmergencyPausableUpgradeable is Initializable {
 
     // ============ Storage Gap ============
 
-    /// @dev Reserved storage for future upgrades. 5 slots used above, 45 reserved = 50 total.
-    uint256[45] private __gap;
+    /// @dev Reserved storage for future upgrades. 4 slots used above, 46 reserved = 50 total.
+    /// (_paused and guardian pack into the same slot as Initializable's fields.)
+    uint256[46] private __gap;
 }

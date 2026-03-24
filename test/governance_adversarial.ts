@@ -476,13 +476,16 @@ describe("Governance Adversarial", function () {
         deployer.address, MAX_PAUSE
       ]);
       const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
-      await expect(ERC1967Proxy.deploy(await impl.getAddress(), initData)).to.be.reverted;
+      await expect(
+        ERC1967Proxy.deploy(await impl.getAddress(), initData)
+      ).to.be.revertedWith("ArmadaGovernor: zero armToken");
     });
 
     it("ArmadaGovernor rejects zero timelock", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
       const impl = await ArmadaGovernor.deploy();
       await impl.waitForDeployment();
+      // Zero timelock is caught by EmergencyPausable first
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         await armToken.getAddress(),
         ethers.ZeroAddress,
@@ -490,7 +493,9 @@ describe("Governance Adversarial", function () {
         deployer.address, MAX_PAUSE
       ]);
       const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
-      await expect(ERC1967Proxy.deploy(await impl.getAddress(), initData)).to.be.reverted;
+      await expect(
+        ERC1967Proxy.deploy(await impl.getAddress(), initData)
+      ).to.be.revertedWith("EmergencyPausable: zero timelock");
     });
 
     it("ArmadaGovernor rejects zero treasury", async function () {
@@ -504,7 +509,9 @@ describe("Governance Adversarial", function () {
         deployer.address, MAX_PAUSE
       ]);
       const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
-      await expect(ERC1967Proxy.deploy(await impl.getAddress(), initData)).to.be.reverted;
+      await expect(
+        ERC1967Proxy.deploy(await impl.getAddress(), initData)
+      ).to.be.revertedWith("ArmadaGovernor: zero treasury");
     });
 
     it("TreasurySteward rejects zero timelock", async function () {

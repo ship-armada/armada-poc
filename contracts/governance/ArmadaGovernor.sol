@@ -139,6 +139,14 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     }
     mapping(uint256 => BondInfo) public proposalBonds;
 
+    // ============ Adapter Registry ============
+
+    /// @notice Fully authorized adapters can perform all operations (deposit + withdraw).
+    mapping(address => bool) public authorizedAdapters;
+
+    /// @notice Deauthorized adapters in withdraw-only mode (users can exit positions).
+    mapping(address => bool) public withdrawOnlyAdapters;
+
     // ============ Veto & Ratification ============
 
     /// @notice Calldata hashes of proposals where community denied the SC's veto.
@@ -179,6 +187,9 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
+    event AdapterAuthorized(address indexed adapter);
+    event AdapterDeauthorized(address indexed adapter);
+    event AdapterFullyDeauthorized(address indexed adapter);
 
     // ============ Constructor ============
 
@@ -649,6 +660,43 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         windDownActive = true;
 
         emit WindDownActivated();
+    }
+
+    // ============ Adapter Registry Management ============
+
+    /// @notice Authorize an adapter to interact with the protocol.
+    /// Adapters are deployed independently and authorized via standard governance proposal.
+    function authorizeAdapter(address adapter) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(adapter != address(0), "ArmadaGovernor: zero address");
+        require(!authorizedAdapters[adapter], "ArmadaGovernor: already authorized");
+
+        authorizedAdapters[adapter] = true;
+
+        emit AdapterAuthorized(adapter);
+    }
+
+    /// @notice Deauthorize an adapter, setting it to withdraw-only mode.
+    /// Users can still exit positions through a withdraw-only adapter.
+    function deauthorizeAdapter(address adapter) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(authorizedAdapters[adapter], "ArmadaGovernor: not authorized");
+
+        authorizedAdapters[adapter] = false;
+        withdrawOnlyAdapters[adapter] = true;
+
+        emit AdapterDeauthorized(adapter);
+    }
+
+    /// @notice Fully remove an adapter after the withdraw-only transition period.
+    /// After this, the adapter has no protocol access.
+    function fullDeauthorizeAdapter(address adapter) external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(withdrawOnlyAdapters[adapter], "ArmadaGovernor: not withdraw-only");
+
+        withdrawOnlyAdapters[adapter] = false;
+
+        emit AdapterFullyDeauthorized(adapter);
     }
 
     // ============ Proposal Lifecycle ============

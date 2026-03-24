@@ -1,3 +1,6 @@
+// ABOUTME: Shared types, enums, and interfaces for the Armada governance system.
+// ABOUTME: Defines ProposalType, ProposalState, ProposalParams, and contract interfaces (governor, steward, token).
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 

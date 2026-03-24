@@ -1,3 +1,6 @@
+// ABOUTME: Deployment script for Armada governance contracts (timelock, token, treasury, governor, steward).
+// ABOUTME: Handles role grants, steward contract registration, and whitelist initialization.
+
 /**
  * Deploy Armada Governance Contracts
  *

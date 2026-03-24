@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // ABOUTME: Foundry tests for ArmadaRedemption — pro-rata treasury redemption for ARM holders.
-// ABOUTME: Covers single/sequential redemption, ETH redemption, denominator math, and edge cases.
+// ABOUTME: Covers single/sequential redemption, ETH redemption, denominator math, guards, and edge cases.
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
@@ -17,8 +17,7 @@ contract MockTokenRedemption is ERC20 {
 
 contract ArmadaRedemptionTest is Test {
     // Mirror events
-    event Redeemed(address indexed redeemer, uint256 armAmount, address[] tokens);
-    event RedeemedETH(address indexed redeemer, uint256 armAmount, uint256 ethAmount);
+    event Redeemed(address indexed redeemer, uint256 armAmount, address[] tokens, uint256 ethAmount);
 
     ArmadaRedemption public redemption;
     ArmadaToken public armToken;
@@ -97,7 +96,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
 
         // Alice has 600K out of 1.2M circulating = 50% → $250k USDC
         assertEq(usdc.balanceOf(alice), 250_000e6);
@@ -106,11 +105,17 @@ contract ArmadaRedemptionTest is Test {
     function test_redeem_multipleTokens() public {
         uint256 aliceArm = armToken.balanceOf(alice);
         address[] memory tokens = new address[](2);
-        tokens[0] = address(usdc);
-        tokens[1] = address(weth);
+        // Must be sorted ascending
+        if (address(usdc) < address(weth)) {
+            tokens[0] = address(usdc);
+            tokens[1] = address(weth);
+        } else {
+            tokens[0] = address(weth);
+            tokens[1] = address(usdc);
+        }
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
 
         // 50% of each
         assertEq(usdc.balanceOf(alice), 250_000e6);
@@ -123,7 +128,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
 
         // ARM is in the redemption contract
         assertEq(armToken.balanceOf(address(redemption)), aliceArm);
@@ -142,7 +147,7 @@ contract ArmadaRedemptionTest is Test {
 
         // Alice redeems first (600K out of 1.2M = 50%)
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
         assertEq(usdc.balanceOf(alice), 250_000e6); // 50% of $500k
 
         // After Alice's redemption:
@@ -151,7 +156,7 @@ contract ArmadaRedemptionTest is Test {
         // - USDC remaining = 250k
         // Bob redeems (600K out of 600K = 100%)
         vm.prank(bob);
-        redemption.redeem(bobArm, tokens);
+        redemption.redeem(bobArm, tokens, false);
         assertEq(usdc.balanceOf(bob), 250_000e6); // 100% of remaining $250k
 
         // Both got equal shares: $250k each
@@ -165,13 +170,13 @@ contract ArmadaRedemptionTest is Test {
 
         // Alice redeems half her ARM (300K out of 1.2M = 25%)
         vm.prank(alice);
-        redemption.redeem(halfArm, tokens);
+        redemption.redeem(halfArm, tokens, false);
         assertEq(usdc.balanceOf(alice), 125_000e6); // 25% of $500k
 
         // Alice redeems other half (300K out of 900K remaining circulating)
         // 300K / 900K = 33.3% of remaining $375k = $125k
         vm.prank(alice);
-        redemption.redeem(halfArm, tokens);
+        redemption.redeem(halfArm, tokens, false);
         assertEq(usdc.balanceOf(alice), 250_000e6); // Total still $250k
     }
 
@@ -182,11 +187,110 @@ contract ArmadaRedemptionTest is Test {
         vm.deal(address(redemption), 10 ether);
 
         uint256 aliceArm = armToken.balanceOf(alice); // 600K out of 1.2M = 50%
+        address[] memory tokens = new address[](0);
 
         vm.prank(alice);
-        redemption.redeemETH(aliceArm);
+        redemption.redeem(aliceArm, tokens, true);
 
         assertEq(alice.balance, 5 ether); // 50% of 10 ETH
+    }
+
+    function test_redeem_ERC20AndETHTogether() public {
+        // Fund redemption with ETH
+        vm.deal(address(redemption), 10 ether);
+
+        uint256 aliceArm = armToken.balanceOf(alice); // 600K out of 1.2M = 50%
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, true);
+
+        // Gets 50% of both in one deposit
+        assertEq(usdc.balanceOf(alice), 250_000e6);
+        assertEq(alice.balance, 5 ether);
+    }
+
+    function test_sequential_ERC20AndETH() public {
+        // Fund redemption with ETH
+        vm.deal(address(redemption), 10 ether);
+
+        uint256 aliceArm = armToken.balanceOf(alice); // 600K
+        uint256 bobArm = armToken.balanceOf(bob);     // 600K
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        // Alice redeems all assets in one call
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, true);
+        assertEq(usdc.balanceOf(alice), 250_000e6);
+        assertEq(alice.balance, 5 ether);
+
+        // Bob redeems — gets 100% of remaining
+        vm.prank(bob);
+        redemption.redeem(bobArm, tokens, true);
+        assertEq(usdc.balanceOf(bob), 250_000e6);
+        assertEq(bob.balance, 5 ether);
+    }
+
+    // ======== ARM Token Guard ========
+
+    function test_revert_cannotRedeemARM() public {
+        uint256 aliceArm = armToken.balanceOf(alice);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(armToken);
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: cannot redeem ARM");
+        redemption.redeem(aliceArm, tokens, false);
+    }
+
+    function test_revert_cannotRedeemARMInMultiTokenList() public {
+        uint256 aliceArm = armToken.balanceOf(alice);
+        address[] memory tokens = new address[](2);
+        // Put ARM as second token (after a valid token)
+        if (address(usdc) < address(armToken)) {
+            tokens[0] = address(usdc);
+            tokens[1] = address(armToken);
+        } else {
+            tokens[0] = address(armToken);
+            tokens[1] = address(usdc);
+        }
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: cannot redeem ARM");
+        redemption.redeem(aliceArm, tokens, false);
+    }
+
+    // ======== Duplicate Token Guard ========
+
+    function test_revert_duplicateTokens() public {
+        uint256 aliceArm = armToken.balanceOf(alice);
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(usdc);
+        tokens[1] = address(usdc);
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: tokens not sorted/unique");
+        redemption.redeem(aliceArm, tokens, false);
+    }
+
+    function test_revert_unsortedTokens() public {
+        uint256 aliceArm = armToken.balanceOf(alice);
+        address[] memory tokens = new address[](2);
+        // Put higher address first
+        if (address(usdc) > address(weth)) {
+            tokens[0] = address(usdc);
+            tokens[1] = address(weth);
+        } else {
+            tokens[0] = address(weth);
+            tokens[1] = address(usdc);
+        }
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: tokens not sorted/unique");
+        redemption.redeem(aliceArm, tokens, false);
     }
 
     // ======== Circulating Supply ========
@@ -210,7 +314,7 @@ contract ArmadaRedemptionTest is Test {
 
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
 
         uint256 circulatingAfter = redemption.circulatingSupply();
         assertTrue(circulatingAfter < circulatingBefore);
@@ -225,13 +329,15 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero amount");
-        redemption.redeem(0, tokens);
+        redemption.redeem(0, tokens, false);
     }
 
     function test_revert_zeroArmAmount_eth() public {
+        address[] memory tokens = new address[](0);
+
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero amount");
-        redemption.redeemETH(0);
+        redemption.redeem(0, tokens, true);
     }
 
     function test_redeem_emptyTokenList() public {
@@ -240,7 +346,7 @@ contract ArmadaRedemptionTest is Test {
 
         // Should succeed — ARM is transferred, but no tokens distributed
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
 
         // ARM is locked
         assertEq(armToken.balanceOf(alice), 0);
@@ -254,9 +360,38 @@ contract ArmadaRedemptionTest is Test {
 
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens);
+        redemption.redeem(aliceArm, tokens, false);
 
         assertEq(emptyToken.balanceOf(alice), 0);
+    }
+
+    function test_redeem_ethOnlyNoERC20() public {
+        vm.deal(address(redemption), 10 ether);
+        address[] memory tokens = new address[](0);
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, true);
+
+        assertEq(alice.balance, 5 ether);
+        // No USDC should have been touched
+        assertEq(usdc.balanceOf(alice), 0);
+    }
+
+    function test_redeem_includeETHFalse_noETHSent() public {
+        vm.deal(address(redemption), 10 ether);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, false);
+
+        // Got USDC but no ETH
+        assertEq(usdc.balanceOf(alice), 250_000e6);
+        assertEq(alice.balance, 0);
+        // ETH still in contract
+        assertEq(address(redemption).balance, 10 ether);
     }
 
     function test_redemptionCanReceiveETH() public {

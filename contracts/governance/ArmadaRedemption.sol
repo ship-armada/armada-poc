@@ -40,8 +40,7 @@ contract ArmadaRedemption is ReentrancyGuard {
 
     // ============ Events ============
 
-    event Redeemed(address indexed redeemer, uint256 armAmount, address[] tokens);
-    event RedeemedETH(address indexed redeemer, uint256 armAmount, uint256 ethAmount);
+    event Redeemed(address indexed redeemer, uint256 armAmount, address[] tokens, uint256 ethAmount);
 
     // ============ Constructor ============
 
@@ -68,11 +67,18 @@ contract ArmadaRedemption is ReentrancyGuard {
 
     // ============ Redemption Functions ============
 
-    /// @notice Deposit ARM and receive pro-rata share of specified ERC20 tokens.
-    ///         ARM is locked permanently in this contract.
+    /// @notice Deposit ARM and receive pro-rata share of specified ERC20 tokens and/or ETH.
+    ///         ARM is locked permanently in this contract. A single ARM deposit covers all
+    ///         requested asset types — per the spec, one deposit yields shares of all assets.
     /// @param armAmount Amount of ARM to deposit
-    /// @param tokens Array of ERC20 token addresses to redeem
-    function redeem(uint256 armAmount, address[] calldata tokens) external nonReentrant {
+    /// @param tokens Array of ERC20 token addresses to redeem (must be sorted ascending, no
+    ///        duplicates, and must not include the ARM token)
+    /// @param includeETH If true, also redeem pro-rata share of ETH held by this contract
+    function redeem(
+        uint256 armAmount,
+        address[] calldata tokens,
+        bool includeETH
+    ) external nonReentrant {
         require(armAmount > 0, "ArmadaRedemption: zero amount");
 
         // Calculate circulating supply BEFORE the ARM transfer (depositor's ARM is still
@@ -83,8 +89,16 @@ contract ArmadaRedemption is ReentrancyGuard {
         // Transfer ARM from redeemer to this contract (locked permanently)
         armToken.safeTransferFrom(msg.sender, address(this), armAmount);
 
-        // Distribute pro-rata share of each requested token
+        // Distribute pro-rata share of each requested ERC20 token
         for (uint256 i = 0; i < tokens.length; i++) {
+            // ARM deposited in this contract is locked permanently — never distributable
+            require(tokens[i] != address(armToken), "ArmadaRedemption: cannot redeem ARM");
+
+            // Tokens must be sorted ascending with no duplicates to prevent double-claiming
+            if (i > 0) {
+                require(tokens[i] > tokens[i - 1], "ArmadaRedemption: tokens not sorted/unique");
+            }
+
             uint256 available = IERC20(tokens[i]).balanceOf(address(this));
             uint256 share = (available * armAmount) / circulating;
             if (share > 0) {
@@ -92,31 +106,18 @@ contract ArmadaRedemption is ReentrancyGuard {
             }
         }
 
-        emit Redeemed(msg.sender, armAmount, tokens);
-    }
-
-    /// @notice Deposit ARM and receive pro-rata share of ETH held by this contract.
-    ///         ARM is locked permanently in this contract.
-    /// @param armAmount Amount of ARM to deposit
-    function redeemETH(uint256 armAmount) external nonReentrant {
-        require(armAmount > 0, "ArmadaRedemption: zero amount");
-
-        // Calculate circulating supply BEFORE the ARM transfer
-        uint256 circulating = circulatingSupply();
-        require(circulating > 0, "ArmadaRedemption: no circulating supply");
-
-        // Transfer ARM from redeemer to this contract (locked permanently)
-        armToken.safeTransferFrom(msg.sender, address(this), armAmount);
-
-        // Calculate and send ETH share
-        uint256 ethBalance = address(this).balance;
-        uint256 share = (ethBalance * armAmount) / circulating;
-        if (share > 0) {
-            (bool success,) = msg.sender.call{value: share}("");
-            require(success, "ArmadaRedemption: ETH transfer failed");
+        // Distribute pro-rata share of ETH if requested
+        uint256 ethPayout;
+        if (includeETH) {
+            uint256 ethBalance = address(this).balance;
+            ethPayout = (ethBalance * armAmount) / circulating;
+            if (ethPayout > 0) {
+                (bool success,) = msg.sender.call{value: ethPayout}("");
+                require(success, "ArmadaRedemption: ETH transfer failed");
+            }
         }
 
-        emit RedeemedETH(msg.sender, armAmount, share);
+        emit Redeemed(msg.sender, armAmount, tokens, ethPayout);
     }
 
     // ============ View Functions ============

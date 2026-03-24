@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: MIT
 // ABOUTME: Interface for shield pause controller, consumed by PrivacyPool's ShieldModule.
 // ABOUTME: Exposes a single view function to check if shields are currently paused.
-
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
 /// @title IShieldPauseController — Minimal interface for shield pause status

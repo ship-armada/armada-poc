@@ -360,6 +360,35 @@ contract ArmadaWindDownTest is Test {
         );
     }
 
+    function test_constructorRejectsZeroThreshold() public {
+        vm.expectRevert("ArmadaWindDown: zero threshold");
+        new ArmadaWindDown(
+            address(armToken), address(treasury), address(governor), address(redemption),
+            address(pauseController), address(revenueCounter), address(timelock),
+            0, WIND_DOWN_DEADLINE
+        );
+    }
+
+    // ======== Parameter Bounds ========
+
+    function test_setRevenueThreshold_rejectsZero() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaWindDown: zero threshold");
+        windDown.setRevenueThreshold(0);
+    }
+
+    function test_setWindDownDeadline_rejectsPastTimestamp() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaWindDown: deadline in past");
+        windDown.setWindDownDeadline(block.timestamp - 1);
+    }
+
+    function test_setWindDownDeadline_rejectsCurrentTimestamp() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaWindDown: deadline in past");
+        windDown.setWindDownDeadline(block.timestamp);
+    }
+
     // ======== Helpers ========
 
     function _triggerWindDown() internal {

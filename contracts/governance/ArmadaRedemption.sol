@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: MIT
 // ABOUTME: Permissionless redemption contract for wind-down. ARM holders deposit ARM to receive
 // ABOUTME: pro-rata shares of treasury assets (USDC, ETH, etc.) after wind-down triggers.
-
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+/// @notice Minimal interface for ARM token transferable flag
+interface IArmadaTokenRedemption {
+    function transferable() external view returns (bool);
+}
 
 /// @title ArmadaRedemption — Pro-rata treasury redemption for ARM holders
 /// @notice Not upgradeable. Permissionless. No admin functions. No deadline.
@@ -80,6 +84,13 @@ contract ArmadaRedemption is ReentrancyGuard {
         bool includeETH
     ) external nonReentrant {
         require(armAmount > 0, "ArmadaRedemption: zero amount");
+        // Defense-in-depth: ARM transfers are enabled by the wind-down contract via
+        // setTransferable(true). While the safeTransferFrom below would revert for
+        // non-whitelisted callers pre-wind-down, this makes the invariant explicit.
+        require(
+            IArmadaTokenRedemption(address(armToken)).transferable(),
+            "ArmadaRedemption: wind-down not triggered"
+        );
 
         // Calculate circulating supply BEFORE the ARM transfer (depositor's ARM is still
         // in circulation and counts in the denominator for correct pro-rata math)

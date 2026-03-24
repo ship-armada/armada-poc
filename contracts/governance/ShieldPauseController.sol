@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: MIT
 // ABOUTME: Security Council shield pause controller with 24h auto-expiry.
 // ABOUTME: Reads SC address from governor; supports post-wind-down single-pause behavior.
-
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
 import "./IShieldPauseController.sol";

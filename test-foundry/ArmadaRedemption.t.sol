@@ -401,6 +401,35 @@ contract ArmadaRedemptionTest is Test {
         assertEq(address(redemption).balance, 1 ether);
     }
 
+    // ======== Wind-Down Gate ========
+
+    function test_revert_redeemBeforeWindDown() public {
+        // Deploy a fresh ARM token where transferable is still false
+        ArmadaToken freshArm = new ArmadaToken(deployer, address(timelock));
+
+        // Enable transfers on freshArm so we can distribute, then disable
+        freshArm.setWindDownContract(windDown);
+        vm.prank(windDown);
+        freshArm.setTransferable(true);
+
+        ArmadaRedemption freshRedemption = new ArmadaRedemption(
+            address(freshArm), treasuryAddr, revenueLock, crowdfund
+        );
+
+        freshArm.transfer(alice, 1000e18);
+        vm.prank(alice);
+        freshArm.approve(address(freshRedemption), type(uint256).max);
+
+        // Disable transfers (simulating pre-wind-down state)
+        vm.prank(windDown);
+        freshArm.setTransferable(false);
+
+        address[] memory tokens = new address[](0);
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: wind-down not triggered");
+        freshRedemption.redeem(1000e18, tokens, false);
+    }
+
     // ======== Constructor Validation ========
 
     function test_constructorRejectsZeroArmToken() public {

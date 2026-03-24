@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: MIT
 // ABOUTME: Wind-down contract with permissionless trigger and governance trigger.
 // ABOUTME: Sweeps treasury assets to redemption contract; enables ARM transfers; disables governance.
-
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -118,6 +117,7 @@ contract ArmadaWindDown {
         require(_revenueCounter != address(0), "ArmadaWindDown: zero revenueCounter");
         require(_timelock != address(0), "ArmadaWindDown: zero timelock");
         require(_windDownDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
+        require(_revenueThreshold > 0, "ArmadaWindDown: zero threshold");
 
         armToken = _armToken;
         treasury = ITreasuryWindDown(_treasury);
@@ -179,17 +179,23 @@ contract ArmadaWindDown {
     // ============ Parameter Setters (Governance) ============
 
     /// @notice Update the revenue threshold. Timelock-only. Cannot change after trigger.
+    ///         Threshold must be > 0 to prevent governance from disabling the permissionless
+    ///         trigger (setting 0 would make `recognizedRevenue < 0` always false for uint256).
     function setRevenueThreshold(uint256 _newThreshold) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
         require(!triggered, "ArmadaWindDown: already triggered");
+        require(_newThreshold > 0, "ArmadaWindDown: zero threshold");
         emit RevenueThresholdUpdated(revenueThreshold, _newThreshold);
         revenueThreshold = _newThreshold;
     }
 
     /// @notice Update the wind-down deadline. Timelock-only. Cannot change after trigger.
+    ///         Deadline must be in the future (same invariant the constructor enforces) to
+    ///         prevent governance from disabling the permissionless trigger.
     function setWindDownDeadline(uint256 _newDeadline) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
         require(!triggered, "ArmadaWindDown: already triggered");
+        require(_newDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
         emit WindDownDeadlineUpdated(windDownDeadline, _newDeadline);
         windDownDeadline = _newDeadline;
     }

@@ -13,6 +13,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ONE_DAY = 86400;
@@ -88,15 +89,13 @@ describe("Governance Quiet Period (T6.1)", function () {
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
 
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
       deployer.address,
       MAX_PAUSE_DURATION
     );
-    await governor.waitForDeployment();
 
     // Grant governor roles on timelock
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());

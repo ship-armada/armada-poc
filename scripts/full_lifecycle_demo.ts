@@ -149,16 +149,19 @@ async function main() {
   await treasury.waitForDeployment();
   log("DEPLOY", `ArmadaTreasuryGov: ${await treasury.getAddress()}`);
 
-  // 1d. Governor (uses ArmadaToken ERC20Votes for voting power)
+  // 1d. Governor (UUPS proxy, uses ArmadaToken ERC20Votes for voting power)
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-  const governor = await ArmadaGovernor.deploy(
-    await armToken.getAddress(),
-    tlAddr,
-    await treasury.getAddress(),
+  const governorImpl = await ArmadaGovernor.deploy();
+  await governorImpl.waitForDeployment();
+  const governorInitData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
+    await armToken.getAddress(), tlAddr, await treasury.getAddress(),
     deployer.address, MAX_PAUSE
-  );
-  await governor.waitForDeployment();
-  log("DEPLOY", `ArmadaGovernor: ${await governor.getAddress()}`);
+  ]);
+  const GovernorProxy = await ethers.getContractFactory("ERC1967Proxy");
+  const governorProxy = await GovernorProxy.deploy(await governorImpl.getAddress(), governorInitData);
+  await governorProxy.waitForDeployment();
+  const governor = ArmadaGovernor.attach(await governorProxy.getAddress()) as typeof governorImpl;
+  log("DEPLOY", `ArmadaGovernor (proxy): ${await governor.getAddress()}`);
 
   // 1e. TreasurySteward
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");

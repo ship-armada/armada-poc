@@ -13,6 +13,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
@@ -125,14 +126,12 @@ describe("Governance Emergency Pause", function () {
     await treasury.waitForDeployment();
 
     // 4. Deploy ArmadaGovernor (uses ArmadaToken ERC20Votes for voting power)
-    const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-    governor = await ArmadaGovernor.deploy(
+    governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
       guardian.address, MAX_PAUSE_DURATION
     );
-    await governor.waitForDeployment();
 
     // 5. Deploy TreasurySteward
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
@@ -541,14 +540,12 @@ describe("Governance Emergency Pause", function () {
       // Deploy standalone governor with deployer as pauseTimelock via the guardian constructor param
       // Actually, the pauseTimelock IS the timelock param. So we need the governor to use
       // a timelock we control. Let's use the standaloneTimelock but keep deployer as admin.
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      standaloneGovernor = await ArmadaGovernor.deploy(
+      standaloneGovernor = await deployGovernorProxy(
         await armToken.getAddress(),
         tlAddr,
         await treasury.getAddress(),
         guardian.address, MAX_PAUSE_DURATION
       );
-      await standaloneGovernor.waitForDeployment();
 
       // Grant governor the proposer/executor roles on the timelock
       const PROPOSER_ROLE = await standaloneTimelock.PROPOSER_ROLE();

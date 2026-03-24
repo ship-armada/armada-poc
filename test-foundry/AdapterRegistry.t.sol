@@ -9,9 +9,10 @@ import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
 /// @title AdapterRegistryTest — Tests for governance-managed adapter authorization lifecycle
-contract AdapterRegistryTest is Test {
+contract AdapterRegistryTest is Test, GovernorDeployHelper {
     // Mirror events from governor for expectEmit
     event AdapterAuthorized(address indexed adapter);
     event AdapterDeauthorized(address indexed adapter);
@@ -53,7 +54,7 @@ contract AdapterRegistryTest is Test {
         treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
 
         // Deploy governor
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),

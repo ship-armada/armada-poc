@@ -12,6 +12,7 @@ import "../contracts/governance/TreasurySteward.sol";
 import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
 /// @dev Minimal mock ERC20 for budget tests
 contract MockToken is ERC20 {
@@ -23,7 +24,7 @@ contract MockToken is ERC20 {
 }
 
 /// @title GovernorStewardTest — Tests for steward pass-by-default proposals and budget enforcement
-contract GovernorStewardTest is Test {
+contract GovernorStewardTest is Test, GovernorDeployHelper {
     // Mirror events
     event ProposalCreated(
         uint256 indexed proposalId,
@@ -70,7 +71,7 @@ contract GovernorStewardTest is Test {
         treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
 
         // Deploy governor
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),
@@ -386,7 +387,7 @@ contract GovernorStewardTest is Test {
 
     function test_setStewardContract_rejectsNonDeployer() public {
         // Deploy a fresh governor to test before lock
-        ArmadaGovernor freshGovernor = new ArmadaGovernor(
+        ArmadaGovernor freshGovernor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),

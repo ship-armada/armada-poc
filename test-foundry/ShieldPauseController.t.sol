@@ -9,8 +9,9 @@ import "../contracts/governance/ArmadaGovernor.sol";
 import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
+import "./helpers/GovernorDeployHelper.sol";
 
-contract ShieldPauseControllerTest is Test {
+contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
     // Mirror events for expectEmit
     event ShieldsPaused(address indexed securityCouncil, uint256 expiry);
     event ShieldsUnpaused(address indexed caller);
@@ -43,7 +44,7 @@ contract ShieldPauseControllerTest is Test {
 
         armToken = new ArmadaToken(deployer, address(timelock));
         treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
-        governor = new ArmadaGovernor(
+        governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
             address(treasury),

@@ -6,7 +6,7 @@
  * - Bounded parameter validation (min/max for all fields)
  * - Full governance lifecycle to change params (auto-classified as Extended)
  * - Quorum snapshotting: in-flight proposals unaffected by param changes
- * - TreasurySteward.minActionDelay() reflects updated governor timing
+ * - Budget management selectors auto-classified as Extended proposals
  */
 
 import { expect } from "chai";

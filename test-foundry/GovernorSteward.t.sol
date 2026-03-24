@@ -207,6 +207,29 @@ contract GovernorStewardTest is Test {
         assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
     }
 
+    function test_stewardProposal_passesOnTiedVote() public {
+        // Create a voter with equal power to bob (15%) so they can tie
+        // Deployer has 15% remaining (100% - 20% alice - 15% bob - 50% treasury)
+        address tieVoter = address(0x71ED);
+        armToken.transfer(tieVoter, TOTAL_SUPPLY * 15 / 100);
+        vm.prank(tieVoter);
+        armToken.delegate(tieVoter);
+        vm.roll(block.number + 1);
+
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // bob votes FOR (15%), tieVoter votes AGAINST (15%) — tied, quorum met (30% > 20%)
+        vm.prank(bob);
+        governor.castVote(proposalId, 1); // FOR
+        vm.prank(tieVoter);
+        governor.castVote(proposalId, 0); // AGAINST
+
+        _passVotingPeriod(proposalId);
+
+        // Tied vote is NOT a majority against → passes by default
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // Access control
     // ══════════════════════════════════════════════════════════════════════

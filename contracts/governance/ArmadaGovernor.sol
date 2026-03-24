@@ -930,8 +930,8 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
         // After voting ends: check quorum and majority
         if (p.proposalType == ProposalType.Steward) {
-            // Pass-by-default: defeated ONLY if quorum met AND majority votes against
-            if (_quorumReached(proposalId) && !_voteSucceeded(proposalId)) {
+            // Pass-by-default: defeated ONLY if quorum met AND strict majority votes against
+            if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
                 return ProposalState.Defeated;
             }
         } else {

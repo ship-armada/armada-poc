@@ -665,16 +665,16 @@ describe("Governance Integration", function () {
       );
     }
 
-    // Helper: submit steward proposal via governor and pass it (no votes = pass-by-default)
-    async function passStewardProposal(
+    // Helper: submit steward spend proposal via governor and pass it (no votes = pass-by-default)
+    async function passStewardSpend(
       stewardSigner: any,
-      targets: string[],
-      values: bigint[],
-      calldatas: string[],
+      token: string,
+      recipient: string,
+      amount: bigint,
       description: string
     ): Promise<number> {
-      await governor.connect(stewardSigner).proposeStewardAction(
-        targets, values, calldatas, description
+      await governor.connect(stewardSigner).proposeStewardSpend(
+        [token], [recipient], [amount], description
       );
       const proposalId = Number(await governor.proposalCount());
 
@@ -702,13 +702,9 @@ describe("Governance Integration", function () {
 
       const spendAmount = ethers.parseUnits("500", USDC_DECIMALS);
 
-      await passStewardProposal(
+      await passStewardSpend(
         dave,
-        [await treasury.getAddress()],
-        [0n],
-        [treasury.interface.encodeFunctionData("stewardSpend", [
-          await usdc.getAddress(), carol.address, spendAmount
-        ])],
+        await usdc.getAddress(), carol.address, spendAmount,
         "Steward spend: 500 USDC to Carol"
       );
 
@@ -724,29 +720,23 @@ describe("Governance Integration", function () {
       expect(await stewardContract.isStewardActive()).to.be.false;
 
       // Steward tries to propose via governor — should fail
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, ethers.parseUnits("10", USDC_DECIMALS)
-      ]);
-
       await expect(
-        governor.connect(dave).proposeStewardAction(
-          [await treasury.getAddress()], [0n], [spendData],
+        governor.connect(dave).proposeStewardSpend(
+          [await usdc.getAddress()], [carol.address],
+          [ethers.parseUnits("10", USDC_DECIMALS)],
           "Late steward spend"
         )
       ).to.be.revertedWith("ArmadaGovernor: steward not active");
     });
 
-    it("should reject non-steward from calling proposeStewardAction", async function () {
+    it("should reject non-steward from calling proposeStewardSpend", async function () {
       await electDaveSteward();
-
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), carol.address, ethers.parseUnits("10", USDC_DECIMALS)
-      ]);
 
       // Alice is not the steward
       await expect(
-        governor.connect(alice).proposeStewardAction(
-          [await treasury.getAddress()], [0n], [spendData],
+        governor.connect(alice).proposeStewardSpend(
+          [await usdc.getAddress()], [carol.address],
+          [ethers.parseUnits("10", USDC_DECIMALS)],
           "Unauthorized steward spend"
         )
       ).to.be.revertedWith("ArmadaGovernor: not current steward");
@@ -761,11 +751,8 @@ describe("Governance Integration", function () {
       const spendAmount = ethers.parseUnits("100", USDC_DECIMALS);
 
       // Submit steward proposal
-      await governor.connect(dave).proposeStewardAction(
-        [await treasury.getAddress()], [0n],
-        [treasury.interface.encodeFunctionData("stewardSpend", [
-          await usdc.getAddress(), carol.address, spendAmount
-        ])],
+      await governor.connect(dave).proposeStewardSpend(
+        [await usdc.getAddress()], [carol.address], [spendAmount],
         "Pass by default test"
       );
       const proposalId = Number(await governor.proposalCount());
@@ -781,11 +768,9 @@ describe("Governance Integration", function () {
       await electDaveSteward();
 
       // Submit steward proposal
-      await governor.connect(dave).proposeStewardAction(
-        [await treasury.getAddress()], [0n],
-        [treasury.interface.encodeFunctionData("stewardSpend", [
-          await usdc.getAddress(), carol.address, ethers.parseUnits("10", USDC_DECIMALS)
-        ])],
+      await governor.connect(dave).proposeStewardSpend(
+        [await usdc.getAddress()], [carol.address],
+        [ethers.parseUnits("10", USDC_DECIMALS)],
         "Community rejects this"
       );
       const proposalId = Number(await governor.proposalCount());
@@ -806,13 +791,10 @@ describe("Governance Integration", function () {
       await electDaveSteward();
 
       // Steward tries to pay themselves
-      const spendData = treasury.interface.encodeFunctionData("stewardSpend", [
-        await usdc.getAddress(), dave.address, ethers.parseUnits("100", USDC_DECIMALS)
-      ]);
-
       await expect(
-        governor.connect(dave).proposeStewardAction(
-          [await treasury.getAddress()], [0n], [spendData],
+        governor.connect(dave).proposeStewardSpend(
+          [await usdc.getAddress()], [dave.address],
+          [ethers.parseUnits("100", USDC_DECIMALS)],
           "Pay myself"
         )
       ).to.be.revertedWith("ArmadaGovernor: self-payment not allowed");

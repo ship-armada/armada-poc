@@ -214,7 +214,7 @@ async function main() {
   log("STATE", `Steward active: ${await stewardContract.isStewardActive()}`);
 
   // In the production flow, a steward submits spend requests via governance proposals
-  // (ArmadaGovernor.proposeStewardAction creates pass-by-default proposals).
+  // (ArmadaGovernor.proposeStewardSpend creates pass-by-default proposals).
   // For demo brevity, we show the final governance-approved spend directly from the timelock.
   // The timelock (owner) calls stewardSpend after steward budget token is authorized.
   log("NOTE", `Steward spending flows through governance — demo skips full proposal cycle`);

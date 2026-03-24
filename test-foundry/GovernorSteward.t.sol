@@ -127,19 +127,17 @@ contract GovernorStewardTest is Test {
 
     // ======== Helpers ========
 
-    /// @dev Create a steward proposal for stewardSpend
+    /// @dev Create a single steward spend proposal
     function _proposeStewardSpend(address recipient, uint256 amount) internal returns (uint256) {
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature(
-            "stewardSpend(address,address,uint256)",
-            address(usdc), recipient, amount
-        );
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = recipient;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = amount;
 
         vm.prank(stewardPerson);
-        return governor.proposeStewardAction(targets, values, calldatas, "steward spend");
+        return governor.proposeStewardSpend(tokens, recipients, amounts, "steward spend");
     }
 
     /// @dev Fast-forward past voting period and check state
@@ -213,46 +211,49 @@ contract GovernorStewardTest is Test {
     // Access control
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_proposeStewardAction_rejectsNonSteward() public {
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature("stewardSpend(address,address,uint256)", address(usdc), alice, 100);
+    function test_proposeStewardSpend_rejectsNonSteward() public {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
 
         vm.prank(alice);
         vm.expectRevert("ArmadaGovernor: not current steward");
-        governor.proposeStewardAction(targets, values, calldatas, "test");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
-    function test_proposeStewardAction_rejectsExpiredSteward() public {
+    function test_proposeStewardSpend_rejectsExpiredSteward() public {
         // Warp past 6-month term
         vm.warp(block.timestamp + 181 days);
 
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature("stewardSpend(address,address,uint256)", address(usdc), alice, 100);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
 
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: steward not active");
-        governor.proposeStewardAction(targets, values, calldatas, "test");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
-    function test_proposeStewardAction_rejectsRemovedSteward() public {
+    function test_proposeStewardSpend_rejectsRemovedSteward() public {
         vm.prank(address(timelock));
         stewardContract.removeSteward();
 
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature("stewardSpend(address,address,uint256)", address(usdc), alice, 100);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
 
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: not current steward");
-        governor.proposeStewardAction(targets, values, calldatas, "test");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -288,34 +289,37 @@ contract GovernorStewardTest is Test {
     // Self-payment filter
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_selfPaymentFilter_blocksStewdSpendToSteward() public {
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature(
-            "stewardSpend(address,address,uint256)",
-            address(usdc), stewardPerson, 100
-        );
+    function test_selfPaymentFilter_blocksStewardAsRecipient() public {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = stewardPerson; // steward paying themselves
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
 
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: self-payment not allowed");
-        governor.proposeStewardAction(targets, values, calldatas, "self pay");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "self pay");
     }
 
-    function test_selfPaymentFilter_blocksDistributeToSteward() public {
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature(
-            "distribute(address,address,uint256)",
-            address(usdc), stewardPerson, 100
-        );
+    function test_selfPaymentFilter_blocksStewardInBatch() public {
+        // Batch of 3: second recipient is the steward
+        address[] memory tokens = new address[](3);
+        tokens[0] = address(usdc);
+        tokens[1] = address(usdc);
+        tokens[2] = address(usdc);
+        address[] memory recipients = new address[](3);
+        recipients[0] = alice;
+        recipients[1] = stewardPerson; // hidden self-payment in batch
+        recipients[2] = bob;
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = 100;
+        amounts[1] = 200;
+        amounts[2] = 300;
 
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: self-payment not allowed");
-        governor.proposeStewardAction(targets, values, calldatas, "self distribute");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "batch self pay");
     }
 
     function test_selfPaymentFilter_allowsNonStewardRecipient() public {
@@ -328,22 +332,23 @@ contract GovernorStewardTest is Test {
     // Wind-down blocks steward proposals
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_proposeStewardAction_blockedByWindDown() public {
+    function test_proposeStewardSpend_blockedByWindDown() public {
         // Setup wind-down
         vm.prank(address(timelock));
         governor.setWindDownContract(windDown);
         vm.prank(windDown);
         governor.setWindDownActive();
 
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature("stewardSpend(address,address,uint256)", address(usdc), alice, 100);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
 
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: governance ended");
-        governor.proposeStewardAction(targets, values, calldatas, "test");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -369,6 +374,52 @@ contract GovernorStewardTest is Test {
         vm.prank(alice);
         vm.expectRevert("ArmadaGovernor: not deployer");
         freshGovernor.setStewardContract(address(stewardContract));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Batch proposals
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_proposeStewardSpend_batchMultipleRecipients() public {
+        // Batch spend to alice and bob in one proposal
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(usdc);
+        tokens[1] = address(usdc);
+        address[] memory recipients = new address[](2);
+        recipients[0] = alice;
+        recipients[1] = bob;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 100 * 1e6;
+        amounts[1] = 200 * 1e6;
+
+        vm.prank(stewardPerson);
+        uint256 proposalId = governor.proposeStewardSpend(tokens, recipients, amounts, "batch spend");
+        assertTrue(proposalId > 0);
+    }
+
+    function test_proposeStewardSpend_rejectsEmptyArrays() public {
+        address[] memory tokens = new address[](0);
+        address[] memory recipients = new address[](0);
+        uint256[] memory amounts = new uint256[](0);
+
+        vm.prank(stewardPerson);
+        vm.expectRevert("ArmadaGovernor: empty proposal");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "empty");
+    }
+
+    function test_proposeStewardSpend_rejectsLengthMismatch() public {
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(usdc);
+        tokens[1] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 100;
+        amounts[1] = 200;
+
+        vm.prank(stewardPerson);
+        vm.expectRevert("ArmadaGovernor: length mismatch");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "mismatch");
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -559,15 +610,16 @@ contract GovernorStewardTest is Test {
         vm.assume(caller != stewardPerson);
         vm.assume(caller != address(0));
 
-        address[] memory targets = new address[](1);
-        targets[0] = address(treasury);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSignature("stewardSpend(address,address,uint256)", address(usdc), alice, 100);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
 
         vm.prank(caller);
         vm.expectRevert("ArmadaGovernor: not current steward");
-        governor.proposeStewardAction(targets, values, calldatas, "test");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
     // ══════════════════════════════════════════════════════════════════════

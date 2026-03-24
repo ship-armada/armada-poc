@@ -227,7 +227,7 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
         // Steward: immediate voting, 7d review window, 2d timelock, 20% quorum.
         // Pass-by-default: passes unless quorum met AND majority votes AGAINST.
         // These params bypass setProposalTypeParams() bounds, making Steward timing
-        // effectively immutable via governance. Only proposeStewardAction() creates these.
+        // effectively immutable via governance. Only proposeStewardSpend() creates these.
         proposalTypeParams[ProposalType.Steward] = ProposalParams({
             votingDelay: 0,
             votingPeriod: 7 days,
@@ -544,17 +544,18 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
 
     // ============ Steward Proposals ============
 
-    /// @notice Create a steward proposal (pass-by-default governance proposal).
+    /// @notice Create a steward spend proposal (pass-by-default governance proposal).
     /// Only callable by the elected steward via the registered TreasurySteward contract.
-    /// Steward proposals do not require a proposal threshold (authority comes from election).
-    /// @param targets Target addresses for execution
-    /// @param values ETH values for each call
-    /// @param calldatas Encoded function calls
+    /// The governor constructs stewardSpend calldata internally — the steward cannot
+    /// submit arbitrary targets or calldata, only structured spend requests.
+    /// @param tokens Token addresses to spend (must be authorized in treasury budget table)
+    /// @param recipients Recipient addresses for each spend
+    /// @param amounts Amounts to spend for each entry
     /// @param description Human-readable description
-    function proposeStewardAction(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
+    function proposeStewardSpend(
+        address[] memory tokens,
+        address[] memory recipients,
+        uint256[] memory amounts,
         string memory description
     ) external returns (uint256) {
         require(!windDownActive, "ArmadaGovernor: governance ended");
@@ -567,13 +568,29 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             ITreasurySteward(stewardContract).isStewardActive(),
             "ArmadaGovernor: steward not active"
         );
-        require(targets.length > 0, "ArmadaGovernor: empty proposal");
+        require(tokens.length > 0, "ArmadaGovernor: empty proposal");
         require(
-            targets.length == values.length && targets.length == calldatas.length,
+            tokens.length == recipients.length && tokens.length == amounts.length,
             "ArmadaGovernor: length mismatch"
         );
         _checkQuietPeriod();
-        _checkSelfPayment(msg.sender, calldatas);
+
+        // Self-payment check: steward cannot be a recipient in any spend
+        for (uint256 i = 0; i < recipients.length; i++) {
+            require(recipients[i] != msg.sender, "ArmadaGovernor: self-payment not allowed");
+        }
+
+        // Governor constructs the calldata — steward only provides structured spend params
+        address[] memory targets = new address[](tokens.length);
+        uint256[] memory values = new uint256[](tokens.length);
+        bytes[] memory calldatas = new bytes[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            targets[i] = treasuryAddress;
+            calldatas[i] = abi.encodeWithSignature(
+                "stewardSpend(address,address,uint256)",
+                tokens[i], recipients[i], amounts[i]
+            );
+        }
 
         uint256 proposalId = ++proposalCount;
         _initProposal(proposalId, ProposalType.Steward, description);
@@ -603,37 +620,6 @@ contract ArmadaGovernor is ReentrancyGuard, EmergencyPausable {
             p.voteStart, p.voteEnd, description
         );
         return proposalId;
-    }
-
-    /// @dev Prevent steward proposals from paying the steward's own address.
-    /// Checks stewardSpend and distribute calldatas for the recipient parameter.
-    function _checkSelfPayment(address stewardAddr, bytes[] memory calldatas) internal pure {
-        bytes4 stewardSpendSelector = bytes4(keccak256("stewardSpend(address,address,uint256)"));
-        bytes4 distributeSelector = bytes4(keccak256("distribute(address,address,uint256)"));
-
-        for (uint256 i = 0; i < calldatas.length; i++) {
-            if (calldatas[i].length < 4) continue;
-
-            bytes4 selector;
-            // solhint-disable-next-line no-inline-assembly
-            assembly {
-                let dataPtr := mload(add(add(calldatas, 0x20), mul(i, 0x20)))
-                selector := mload(add(dataPtr, 0x20))
-            }
-
-            if (selector == stewardSpendSelector || selector == distributeSelector) {
-                // Both signatures: fn(address token, address recipient, uint256 amount)
-                // Recipient is the 2nd parameter at ABI offset 36 (4 + 32)
-                require(calldatas[i].length >= 68, "ArmadaGovernor: calldata too short");
-                address recipient;
-                // solhint-disable-next-line no-inline-assembly
-                assembly {
-                    let dataPtr := mload(add(add(calldatas, 0x20), mul(i, 0x20)))
-                    recipient := mload(add(dataPtr, 0x44)) // 0x20 (length) + 0x04 (selector) + 0x20 (1st param)
-                }
-                require(recipient != stewardAddr, "ArmadaGovernor: self-payment not allowed");
-            }
-        }
     }
 
     // ============ Wind-Down ============

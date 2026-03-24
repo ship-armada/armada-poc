@@ -9,7 +9,7 @@ import "./EmergencyPausable.sol";
 
 /// @title TreasurySteward — Steward identity management
 /// @notice Steward is elected via governance (Extended proposal). The steward submits
-///         spending proposals through ArmadaGovernor.proposeStewardAction(), which creates
+///         spending proposals through ArmadaGovernor.proposeStewardSpend(), which creates
 ///         pass-by-default governance proposals. This contract tracks steward identity only:
 ///         election, term duration, removal, and active status.
 contract TreasurySteward is EmergencyPausable {

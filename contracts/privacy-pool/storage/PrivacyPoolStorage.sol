@@ -166,11 +166,16 @@ abstract contract PrivacyPoolStorage {
     /// @dev Used by TransactModule for cross-chain unshields. Shields use per-transaction choice.
     uint32 public defaultFinalityThreshold;
 
+    /// @notice Shield pause controller contract address (governance concern, external to pool)
+    /// @dev ShieldModule calls IShieldPauseController(shieldPauseContract).shieldsPaused()
+    ///      to check if shields are paused. When address(0), shields are never paused.
+    address public shieldPauseContract;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 }

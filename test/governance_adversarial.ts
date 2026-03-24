@@ -989,23 +989,18 @@ describe("Governance Adversarial", function () {
     });
   });
 
-  describe("Treasury ETH Rejection", function () {
-    it("treasury rejects direct ETH transfers", async function () {
-      await expect(
-        deployer.sendTransaction({
-          to: await treasuryContract.getAddress(),
-          value: ethers.parseEther("1.0"),
-        })
-      ).to.be.reverted;
-    });
-
-    it("treasury rejects ETH via selfdestruct-style forced sends", async function () {
-      // Even without receive(), ETH can be forced via selfdestruct.
-      // This test documents that the contract has no way to recover forced ETH,
-      // but at least it won't silently accept voluntary transfers.
+  describe("Treasury ETH Handling", function () {
+    it("treasury accepts direct ETH transfers (needed for wind-down sweep)", async function () {
       const treasuryAddr = await treasuryContract.getAddress();
       const balanceBefore = await ethers.provider.getBalance(treasuryAddr);
-      expect(balanceBefore).to.equal(0n);
+
+      await deployer.sendTransaction({
+        to: treasuryAddr,
+        value: ethers.parseEther("1.0"),
+      });
+
+      const balanceAfter = await ethers.provider.getBalance(treasuryAddr);
+      expect(balanceAfter).to.equal(balanceBefore + ethers.parseEther("1.0"));
     });
   });
 });

@@ -72,6 +72,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     mapping(address => OutflowConfig) internal _outflowConfigs;
     mapping(address => OutflowRecord[]) internal _outflowHistory;
 
+    // Wind-down sweep authority
+    /// @notice Wind-down contract address (only caller for transferTo/transferETHTo)
+    address public windDownContract;
+    /// @notice Whether the wind-down contract has been set (one-time setter lock)
+    bool public windDownContractSet;
+
     // ============ Events ============
 
     event DirectDistribution(address indexed token, address indexed recipient, uint256 amount);
@@ -85,6 +91,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     event OutflowWindowUpdated(address indexed token, uint256 newWindow);
     event OutflowLimitBpsUpdated(address indexed token, uint256 newBps);
     event OutflowLimitAbsoluteUpdated(address indexed token, uint256 newAbsolute);
+    event WindDownContractSet(address indexed windDownContract);
+    event WindDownTransfer(address indexed token, address indexed recipient, uint256 amount);
+    event WindDownETHTransfer(address indexed recipient, uint256 amount);
 
     // ============ Modifiers ============
 
@@ -338,6 +347,39 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
             total += r.amount;
         }
     }
+
+    // ============ Wind-Down Sweep Authority ============
+
+    /// @notice Set the wind-down contract address. One-time setter, timelock-only.
+    function setWindDownContract(address _windDownContract) external onlyOwner {
+        require(!windDownContractSet, "ArmadaTreasuryGov: wind-down already set");
+        require(_windDownContract != address(0), "ArmadaTreasuryGov: zero address");
+        windDownContractSet = true;
+        windDownContract = _windDownContract;
+        emit WindDownContractSet(_windDownContract);
+    }
+
+    /// @notice Transfer ERC20 tokens from treasury to recipient. Wind-down contract only.
+    ///         Bypasses outflow limits and pause — wind-down is a special authority.
+    function transferTo(address token, address recipient, uint256 amount) external {
+        require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
+        require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        IERC20(token).safeTransfer(recipient, amount);
+        emit WindDownTransfer(token, recipient, amount);
+    }
+
+    /// @notice Transfer ETH from treasury to recipient. Wind-down contract only.
+    ///         Bypasses outflow limits and pause — wind-down is a special authority.
+    function transferETHTo(address payable recipient, uint256 amount) external {
+        require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
+        require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        (bool success,) = recipient.call{value: amount}("");
+        require(success, "ArmadaTreasuryGov: ETH transfer failed");
+        emit WindDownETHTransfer(recipient, amount);
+    }
+
+    /// @notice Accept ETH deposits
+    receive() external payable {}
 
     // ============ View Functions ============
 

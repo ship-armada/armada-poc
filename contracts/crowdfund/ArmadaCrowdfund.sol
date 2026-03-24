@@ -154,7 +154,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         hopConfigs[2] = HopConfig({ ceilingBps: 0,    capUsdc: 1_000 * 1e6,  maxInvites: 0, maxInvitesReceived: 20 });
     }
 
-    // ============ Setup Phase ============
+    // ============ Seed Management ============
 
     /// @notice Add seed addresses (hop 0). Allowed before invite period ends (requires ARM loaded).
     function addSeeds(address[] calldata seeds) external onlyAdmin {
@@ -336,7 +336,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // ============ Finalization ============
 
     /// @notice Security council emergency cancel. Immediate and irreversible.
-    ///         Available at any pre-finalization phase (Setup, Active, or post-window).
+    ///         Available during Active phase (pre- or post-window).
     function cancel() external {
         require(msg.sender == securityCouncil, "ArmadaCrowdfund: not security council");
         require(phase != Phase.Finalized, "ArmadaCrowdfund: already finalized");
@@ -669,6 +669,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     /// @dev Enforces that seeds can only be added before the invite period ends (requires ARM loaded).
     function _requireArmLoadedAndPreInviteEnd() internal view {
+        require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp < launchTeamInviteEnd,

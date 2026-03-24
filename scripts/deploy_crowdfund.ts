@@ -98,7 +98,8 @@ async function main() {
   // 3. Deploy ArmadaCrowdfund (with treasury as immutable destination)
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
-  const openTimestamp = Math.floor(Date.now() / 1000) + 60; // 1 minute in the future
+  const latestBlock = await ethers.provider.getBlock('latest');
+  const openTimestamp = latestBlock!.timestamp + 60; // 1 minute after latest block
   const crowdfund = await ArmadaCrowdfund.deploy(
     usdcAddress, armTokenAddress, deployer.address, treasuryAddress, deployer.address, deployer.address, openTimestamp, nm.override()
   );

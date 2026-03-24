@@ -59,13 +59,15 @@ describe("Gas Benchmarks", function () {
       await armToken.initWhitelist([deployer.address]);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+        const openTimestamp1 = (await time.latest()) + 300;
         const crowdfund = await ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
           deployer.address,
           deployer.address, // treasury
           deployer.address, // launchTeam
-          deployer.address  // securityCouncil
+          deployer.address, // securityCouncil
+          openTimestamp1    // openTimestamp
         );
 
         await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -77,7 +79,7 @@ describe("Gas Benchmarks", function () {
         // Add seeds — all participants are hop-0 for simplicity
         const seeds = allSigners.slice(1, count + 1);
         await crowdfund.addSeeds(seeds.map(s => s.address));
-        await crowdfund.startWindow();
+        { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
         // Each seed commits $15K (max hop-0 cap)
         // Total: count * $15K. Need >= $1M (MIN_SALE) for finalize() to succeed.
@@ -87,7 +89,7 @@ describe("Gas Benchmarks", function () {
         for (const s of seeds) {
           await usdc.mint(s.address, commitAmount);
           await usdc.connect(s).approve(await crowdfund.getAddress(), commitAmount);
-          await crowdfund.connect(s).commit(commitAmount, 0);
+          await crowdfund.connect(s).commit(0, commitAmount);
         }
 
         // Skip to after active window
@@ -167,14 +169,20 @@ describe("Gas Benchmarks", function () {
       await armToken.initWhitelist([deployer.address]);
 
         const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+        const openTimestamp2 = (await time.latest()) + 300;
         const crowdfund = await ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
           deployer.address,
           deployer.address, // treasury
           deployer.address, // launchTeam
-          deployer.address  // securityCouncil
+          deployer.address, // securityCouncil
+          openTimestamp2    // openTimestamp
         );
+        await armToken.addToWhitelist(await crowdfund.getAddress());
+        const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
+        await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+        await crowdfund.loadArm();
 
         const seeds = allSigners.slice(1, batchSize + 1);
         const tx = await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -206,13 +214,15 @@ describe("Gas Benchmarks", function () {
       await armToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      const openTimestamp3 = (await time.latest()) + 300;
       const crowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
         deployer.address,
         deployer.address, // treasury
         deployer.address, // launchTeam
-        deployer.address  // securityCouncil
+        deployer.address, // securityCouncil
+        openTimestamp3    // openTimestamp
       );
 
       await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -222,12 +232,12 @@ describe("Gas Benchmarks", function () {
       const count = 100;
       const seeds = allSigners.slice(1, count + 1);
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startWindow();
+      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       for (const s of seeds) {
         await usdc.mint(s.address, USDC(15_000));
         await usdc.connect(s).approve(await crowdfund.getAddress(), USDC(15_000));
-        await crowdfund.connect(s).commit(USDC(15_000), 0);
+        await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
       await time.increase(THREE_WEEKS + 1);
@@ -461,13 +471,15 @@ describe("Gas Benchmarks", function () {
       await armToken.initWhitelist([deployer.address]);
 
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      const openTimestamp4 = (await time.latest()) + 300;
       const crowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
         deployer.address,
         deployer.address, // treasury
         deployer.address, // launchTeam
-        deployer.address  // securityCouncil
+        deployer.address, // securityCouncil
+        openTimestamp4    // openTimestamp
       );
 
       await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -476,7 +488,7 @@ describe("Gas Benchmarks", function () {
 
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      await crowdfund.startWindow();
+      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       // Fund all seeds
       for (const s of seeds) {
@@ -485,15 +497,15 @@ describe("Gas Benchmarks", function () {
       }
 
       // First commit (cold storage write — more expensive)
-      const tx1 = await crowdfund.connect(seeds[0]).commit(USDC(5_000), 0);
+      const tx1 = await crowdfund.connect(seeds[0]).commit(0, USDC(5_000));
       const r1 = await tx1.wait();
 
       // Second commit from same address (warm storage — cheaper)
-      const tx2 = await crowdfund.connect(seeds[0]).commit(USDC(5_000), 0);
+      const tx2 = await crowdfund.connect(seeds[0]).commit(0, USDC(5_000));
       const r2 = await tx2.wait();
 
       // First commit from different address
-      const tx3 = await crowdfund.connect(seeds[1]).commit(USDC(5_000), 0);
+      const tx3 = await crowdfund.connect(seeds[1]).commit(0, USDC(5_000));
       const r3 = await tx3.wait();
 
       console.log(`    commit() | first commit (cold)    | ${r1!.gasUsed.toLocaleString()} gas`);

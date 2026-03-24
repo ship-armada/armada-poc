@@ -35,7 +35,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             admin,
             treasury,
             admin,
-            admin   // securityCouncil
+            admin,  // securityCouncil
+            block.timestamp
         );
 
         // Whitelist admin and crowdfund so token transfers work
@@ -54,7 +55,6 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             seeds.push(address(uint160(0xA000 + i)));
         }
         crowdfund.addSeeds(seeds);
-        crowdfund.startWindow();
     }
 
     /// @notice Helper: each seed commits full $15K at hop-0
@@ -64,7 +64,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             usdc.mint(seeds[i], amount);
             vm.startPrank(seeds[i]);
             usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(amount, 0);
+            crowdfund.commit(0, amount);
             vm.stopPrank();
         }
     }
@@ -180,7 +180,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     function test_refundMode_cannotHappenAfterExpansion() public {
         // Deploy a fresh crowdfund with 100 seeds to reach ELASTIC_TRIGGER
         ArmadaCrowdfund cf2 = new ArmadaCrowdfund(
-            address(usdc), address(armToken), admin, treasury, admin, admin
+            address(usdc), address(armToken), admin, treasury, admin, admin, block.timestamp
         );
         armToken.transfer(address(cf2), ARM_FUNDING);
         cf2.loadArm();
@@ -190,7 +190,6 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             moreSeeds[i] = address(uint160(0xF000 + i));
         }
         cf2.addSeeds(moreSeeds);
-        cf2.startWindow();
 
         // 100 seeds × $15K = $1.5M = ELASTIC_TRIGGER, triggers expansion
         for (uint256 i = 0; i < 100; i++) {
@@ -198,7 +197,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             usdc.mint(moreSeeds[i], amount);
             vm.startPrank(moreSeeds[i]);
             usdc.approve(address(cf2), amount);
-            cf2.commit(amount, 0);
+            cf2.commit(0, amount);
             vm.stopPrank();
         }
         assertEq(cf2.totalCommitted(), 1_500_000 * 1e6);
@@ -223,7 +222,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         usdc.mint(seeds[seedIdx], commitAmount);
         vm.startPrank(seeds[seedIdx]);
         usdc.approve(address(crowdfund), commitAmount);
-        crowdfund.commit(commitAmount, 0);
+        crowdfund.commit(0, commitAmount);
         vm.stopPrank();
 
         // Need enough total to pass MIN_SALE for finalize to not revert.
@@ -241,7 +240,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             usdc.mint(seeds[i], amount);
             vm.startPrank(seeds[i]);
             usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(amount, 0);
+            crowdfund.commit(0, amount);
             vm.stopPrank();
             totalSoFar += amount;
         }
@@ -283,7 +282,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         usdc.mint(seeds[0], amount);
         vm.startPrank(seeds[0]);
         usdc.approve(address(crowdfund), amount);
-        crowdfund.commit(amount, 0);
+        crowdfund.commit(0, amount);
         vm.stopPrank();
 
         vm.warp(crowdfund.windowEnd() + 1);
@@ -301,7 +300,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         usdc.mint(seeds[0], amount);
         vm.startPrank(seeds[0]);
         usdc.approve(address(crowdfund), amount);
-        crowdfund.commit(amount, 0);
+        crowdfund.commit(0, amount);
         vm.stopPrank();
 
         // Window expires, nobody calls finalize or cancel
@@ -324,7 +323,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         usdc.mint(seeds[0], amount);
         vm.startPrank(seeds[0]);
         usdc.approve(address(crowdfund), amount);
-        crowdfund.commit(amount, 0);
+        crowdfund.commit(0, amount);
         vm.stopPrank();
 
         // Still in active window
@@ -344,7 +343,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             usdc.mint(seeds[i], amount);
             vm.startPrank(seeds[i]);
             usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(amount, 0);
+            crowdfund.commit(0, amount);
             vm.stopPrank();
         }
 
@@ -362,7 +361,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             usdc.mint(hop1Addrs[i], amount);
             vm.startPrank(hop1Addrs[i]);
             usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(amount, 1);
+            crowdfund.commit(1, amount);
             vm.stopPrank();
         }
 

@@ -6,7 +6,6 @@
  *
  * Usage:
  *   npx hardhat cf-add-seeds --addresses 0x1,0x2,0x3 --network hub
- *   npx hardhat cf-start --network hub
  *   npx hardhat cf-invite --invitee 0x... --network hub
  *   npx hardhat cf-commit --amount 5000 --network hub
  *   npx hardhat cf-finalize --network hub
@@ -19,7 +18,7 @@ import { task } from "hardhat/config";
 import * as fs from "fs";
 import * as path from "path";
 
-const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
+const PhaseNames = ["ACTIVE", "FINALIZED", "CANCELED"];
 
 function loadCrowdfundDeployment(networkName: string) {
   const filePath = path.join(__dirname, "..", "deployments", `crowdfund-${networkName}.json`);
@@ -50,33 +49,6 @@ task("cf-add-seeds", "Add seed addresses (hop 0)")
 
     await crowdfund.addSeeds(seeds);
     console.log(`Added ${seeds.length} seed(s): ${seeds.join(", ")}`);
-  });
-
-task("cf-start", "Start the active window (invites + commits)")
-  .setAction(async (_, hre) => {
-    const { ethers } = hre;
-    const chainId = Number((await ethers.provider.getNetwork()).chainId);
-    const deployment = loadCrowdfundDeployment(getNetworkName(chainId));
-
-    const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
-
-    // Ensure ARM is loaded before starting window
-    const armLoaded = await crowdfund.armLoaded();
-    if (!armLoaded) {
-      console.log("ARM not loaded — calling loadArm()...");
-      await crowdfund.loadArm();
-      console.log("ARM loaded and verified");
-    }
-
-    await crowdfund.startWindow();
-
-    const winStart = await crowdfund.windowStart();
-    const winEnd = await crowdfund.windowEnd();
-    const ltEnd = await crowdfund.launchTeamInviteEnd();
-    console.log("Active window started (invites + commits concurrent)");
-    console.log(`  Window start: ${new Date(Number(winStart) * 1000).toISOString()}`);
-    console.log(`  Launch team invite cutoff: ${new Date(Number(ltEnd) * 1000).toISOString()}`);
-    console.log(`  Window ends: ${new Date(Number(winEnd) * 1000).toISOString()}`);
   });
 
 // ============ Active Window ============
@@ -115,7 +87,7 @@ task("cf-commit", "Commit USDC to the crowdfund")
     const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", deployment.contracts.crowdfund);
 
     await usdcToken.approve(deployment.contracts.crowdfund, amount);
-    await crowdfund.commit(amount, hop);
+    await crowdfund.commit(hop, amount);
 
     const committed = await crowdfund.getCommitment(signer.address, hop);
     console.log(`Committed $${args.amount} USDC. Total committed: $${ethers.formatUnits(committed, 6)}`);
@@ -134,7 +106,7 @@ task("cf-finalize", "Finalize the crowdfund (compute allocations or cancel)")
 
     const phase = Number(await crowdfund.phase());
     console.log(`Crowdfund finalized: ${PhaseNames[phase]}`);
-    if (phase === 2) {
+    if (phase === 1) {
       // Finalized
       const saleSize = await crowdfund.saleSize();
       const totalAlloc = await crowdfund.totalAllocated();
@@ -156,7 +128,7 @@ task("cf-claim", "Claim ARM allocation and USDC refund")
     const phase = Number(await crowdfund.phase());
 
     const inRefundMode = await crowdfund.refundMode();
-    if (phase === 3 || inRefundMode) {
+    if (phase === 2 || inRefundMode) {
       // Canceled or refundMode — use claimRefund()
       await crowdfund.claimRefund();
       console.log("Full USDC refund claimed (sale was canceled or in refund mode)");
@@ -193,7 +165,7 @@ task("cf-stats", "Show crowdfund statistics")
       console.log(`  Hop ${h}: ${wc} whitelisted, ${uc} committed, $${ethers.formatUnits(tc, 6)} total`);
     }
 
-    if (Number(phase) === 2) {
+    if (Number(phase) === 1) {
       console.log(`\n  Sale size: $${ethers.formatUnits(await crowdfund.saleSize(), 6)}`);
       console.log(`  Total ARM allocated: ${ethers.formatUnits(await crowdfund.totalAllocated(), 18)}`);
     }
@@ -219,7 +191,7 @@ task("cf-allocation", "Check allocation for an address")
     console.log(`  Committed: $${ethers.formatUnits(committed, 6)}`);
 
     const phase = Number(await crowdfund.phase());
-    if (phase === 2) {
+    if (phase === 1) {
       const [alloc, refund, claimed] = await crowdfund.getAllocation(args.address);
       console.log(`  Allocation: ${ethers.formatUnits(alloc, 18)} ARM`);
       console.log(`  Refund: $${ethers.formatUnits(refund, 6)}`);

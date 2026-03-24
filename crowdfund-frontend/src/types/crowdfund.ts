@@ -2,10 +2,9 @@
 // ABOUTME: Used throughout the frontend to type contract return values.
 
 export const Phase = {
-  Setup: 0,
-  Active: 1,
-  Finalized: 2,
-  Canceled: 3,
+  Active: 0,
+  Finalized: 1,
+  Canceled: 2,
 } as const
 
 export type Phase = (typeof Phase)[keyof typeof Phase]

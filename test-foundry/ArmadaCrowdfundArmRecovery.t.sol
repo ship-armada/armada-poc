@@ -31,7 +31,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             admin,
             treasury,
             admin,
-            admin   // securityCouncil
+            admin,  // securityCouncil
+            block.timestamp
         );
 
         // Whitelist admin and crowdfund so token transfers work
@@ -44,11 +45,10 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         armToken.transfer(address(crowdfund), ARM_FUNDING);
         crowdfund.loadArm();
 
-        // Start window to set windowEnd
+        // Add seeds (window is already open from constructor)
         address[] memory seeds = new address[](1);
         seeds[0] = address(0xA);
         crowdfund.addSeeds(seeds);
-        crowdfund.startWindow();
     }
 
     /// @notice Helper: cancel via security council
@@ -95,16 +95,17 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
 
     // ============ Phase guards: still reverts in pre-finalization phases ============
 
-    /// @notice Reverts in Setup phase
-    function test_withdrawUnallocatedArm_setupPhase_reverts() public {
-        // Deploy a fresh crowdfund still in Setup phase
+    /// @notice Reverts in Active phase (fresh deploy, not finalized or canceled)
+    function test_withdrawUnallocatedArm_activePhase_fresh_reverts() public {
+        // Deploy a fresh crowdfund in Active phase (no finalization or cancel)
         ArmadaCrowdfund fresh = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
             admin,
             treasury,
             admin,
-            admin   // securityCouncil
+            admin,  // securityCouncil
+            block.timestamp
         );
 
         vm.expectRevert("ArmadaCrowdfund: not finalized or canceled");
@@ -142,7 +143,8 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             admin,
             treasury,
             admin,
-            admin   // securityCouncil
+            admin,  // securityCouncil
+            block.timestamp
         );
         armToken.addToWhitelist(address(fuzzCrowdfund));
         armToken.transfer(address(fuzzCrowdfund), funding);
@@ -151,7 +153,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         address[] memory seeds = new address[](1);
         seeds[0] = address(0xA);
         fuzzCrowdfund.addSeeds(seeds);
-        fuzzCrowdfund.startWindow();
 
         // Cancel via security council (admin == securityCouncil in test setup)
         fuzzCrowdfund.cancel();

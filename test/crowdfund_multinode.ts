@@ -6,7 +6,7 @@ import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-const Phase = { Setup: 0, Active: 1, Finalized: 2, Canceled: 3 };
+const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 const ONE_DAY = 86400;
 const THREE_WEEKS = 21 * ONE_DAY;
@@ -34,7 +34,7 @@ describe("Crowdfund Multi-Node", function () {
 
   async function setupWithSeeds(seeds: SignerWithAddress[]) {
     await crowdfund.addSeeds(seeds.map(s => s.address));
-    await crowdfund.startWindow();
+    { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
   }
 
   beforeEach(async function () {
@@ -51,13 +51,15 @@ describe("Crowdfund Multi-Node", function () {
     await armToken.initWhitelist([deployer.address]);
 
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+    const openTimestamp = (await time.latest()) + 300;
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
       deployer.address,
       treasury.address,
       deployer.address,
-      deployer.address        // securityCouncil
+      deployer.address,       // securityCouncil
+      openTimestamp            // openTimestamp
     );
     await crowdfund.waitForDeployment();
     await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -146,7 +148,7 @@ describe("Crowdfund Multi-Node", function () {
       await crowdfund.connect(seed2).invite(alice.address, 0);
 
       // Alice can commit up to $8000
-      await crowdfund.connect(alice).commit(USDC(8_000), 1);
+      await crowdfund.connect(alice).commit(1, USDC(8_000));
       expect(await crowdfund.getCommitment(alice.address, 1)).to.equal(USDC(8_000));
     });
 
@@ -157,7 +159,7 @@ describe("Crowdfund Multi-Node", function () {
       await crowdfund.connect(seed1).invite(alice.address, 0);
 
       await expect(
-        crowdfund.connect(alice).commit(USDC(4_001), 1)
+        crowdfund.connect(alice).commit(1, USDC(4_001))
       ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
     });
 
@@ -341,9 +343,9 @@ describe("Crowdfund Multi-Node", function () {
       expect(await crowdfund.getEffectiveCap(seed1.address, 2)).to.equal(USDC(6_000));  // 6 * $1k
 
       // Commit at all three hops
-      await crowdfund.connect(seed1).commit(USDC(15_000), 0);
-      await crowdfund.connect(seed1).commit(USDC(12_000), 1);
-      await crowdfund.connect(seed1).commit(USDC(6_000), 2);
+      await crowdfund.connect(seed1).commit(0, USDC(15_000));
+      await crowdfund.connect(seed1).commit(1, USDC(12_000));
+      await crowdfund.connect(seed1).commit(2, USDC(6_000));
 
       // Verify commitments
       expect(await crowdfund.getCommitment(seed1.address, 0)).to.equal(USDC(15_000));
@@ -364,8 +366,8 @@ describe("Crowdfund Multi-Node", function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
-      await crowdfund.connect(seed1).commit(USDC(100), 0);
-      await crowdfund.connect(seed1).commit(USDC(100), 1);
+      await crowdfund.connect(seed1).commit(0, USDC(100));
+      await crowdfund.connect(seed1).commit(1, USDC(100));
 
       // Each hop should show 1 unique committer
       const [, committers0] = await crowdfund.getHopStats(0);
@@ -379,9 +381,9 @@ describe("Crowdfund Multi-Node", function () {
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
       // Max out hop-0 cap
-      await crowdfund.connect(seed1).commit(USDC(15_000), 0);
+      await crowdfund.connect(seed1).commit(0, USDC(15_000));
       // Can still commit at hop-1 (independent cap)
-      await crowdfund.connect(seed1).commit(USDC(4_000), 1);
+      await crowdfund.connect(seed1).commit(1, USDC(4_000));
 
       expect(await crowdfund.getCommitment(seed1.address, 0)).to.equal(USDC(15_000));
       expect(await crowdfund.getCommitment(seed1.address, 1)).to.equal(USDC(4_000));
@@ -416,7 +418,7 @@ describe("Crowdfund Multi-Node", function () {
       // Use many seeds to get above MIN_SALE
       const seeds = signers.slice(1, 80);
       await crowdfund.addSeeds(seeds.map((s: SignerWithAddress) => s.address));
-      await crowdfund.startWindow();
+      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       // seed1 self-invites to hop-1
       await crowdfund.connect(seed1).invite(seed1.address, 0);
@@ -432,17 +434,17 @@ describe("Crowdfund Multi-Node", function () {
       for (const s of seeds) {
         const extra = s.address === seed1.address ? USDC(19_000) : USDC(15_000);
         await fundAndApprove(s, extra);
-        await crowdfund.connect(s).commit(USDC(15_000), 0);
+        await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
       // seed1 also commits $4k at hop-1
-      await crowdfund.connect(seed1).commit(USDC(4_000), 1);
+      await crowdfund.connect(seed1).commit(1, USDC(4_000));
 
       // hop-1 participants commit $4K each → 50 × $4K = $200K
       // totalAllocUsdc = $798K (hop-0) + $204K (hop-1) = $1,002K > MIN_SALE
       for (const h of hop1Pool) {
         await fundAndApprove(h, USDC(4_000));
-        await crowdfund.connect(h).commit(USDC(4_000), 1);
+        await crowdfund.connect(h).commit(1, USDC(4_000));
       }
 
       await time.increase(THREE_WEEKS + 1);
@@ -482,8 +484,8 @@ describe("Crowdfund Multi-Node", function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
-      await crowdfund.connect(seed1).commit(USDC(15_000), 0);
-      await crowdfund.connect(seed1).commit(USDC(4_000), 1);
+      await crowdfund.connect(seed1).commit(0, USDC(15_000));
+      await crowdfund.connect(seed1).commit(1, USDC(4_000));
 
       // Not enough total → finalize reverts, use claimRefund deadline fallback
       await time.increase(THREE_WEEKS + 1);

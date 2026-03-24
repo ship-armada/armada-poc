@@ -6,7 +6,6 @@ export const CROWDFUND_ABI = [
   'function addSeed(address seed) external',
   'function addSeeds(address[] calldata seeds) external',
   'function loadArm() external',
-  'function startWindow() external',
   'function finalize() external',
   'function cancel() external',
   'function withdrawUnallocatedArm() external',
@@ -15,12 +14,12 @@ export const CROWDFUND_ABI = [
 
   // Participant actions
   'function invite(address invitee, uint8 inviterHop) external',
-  'function commit(uint256 amount, uint8 hop) external',
+  'function commit(uint8 hop, uint256 amount) external',
   'function claim() external',
   'function claimRefund() external',
 
   // Launch team actions
-  'function launchTeamInvite(address invitee, uint8 hop) external',
+  'function launchTeamInvite(address invitee, uint8 fromHop) external',
 
   // State variables (public getters)
   'function phase() view returns (uint8)',
@@ -66,7 +65,6 @@ export const CROWDFUND_ABI = [
 
   // Events
   'event SeedAdded(address indexed seed)',
-  'event WindowStarted(uint256 windowStart, uint256 windowEnd, uint256 launchTeamInviteEnd)',
   'event Invited(address indexed inviter, address indexed invitee, uint8 hop)',
   'event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount)',
   'event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop)',

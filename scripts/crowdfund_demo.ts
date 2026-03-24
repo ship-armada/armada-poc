@@ -22,7 +22,7 @@
 
 import { ethers, network } from "hardhat";
 
-const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
+const PhaseNames = ["ACTIVE", "FINALIZED", "CANCELED"];
 
 const THREE_WEEKS = 21 * 86400;
 
@@ -74,13 +74,15 @@ async function main() {
   await usdc.waitForDeployment();
 
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+  const openTimestamp = Math.floor(Date.now() / 1000) + 2; // 2 seconds in the future (Anvil)
   const crowdfund = await ArmadaCrowdfund.deploy(
     await usdc.getAddress(),
     await armToken.getAddress(),
     deployer.address,
     treasuryAddr.address,
     deployer.address,
-    deployer.address        // securityCouncil (demo)
+    deployer.address,       // securityCouncil (demo)
+    openTimestamp
   );
   await crowdfund.waitForDeployment();
 
@@ -99,7 +101,7 @@ async function main() {
 
   // ============ PHASE: SEEDS ============
   console.log("-".repeat(70));
-  console.log("  PHASE: SETUP (Add Seeds)");
+  console.log("  Add Seeds (before window opens)");
   console.log("-".repeat(70));
   console.log("");
 
@@ -116,8 +118,10 @@ async function main() {
   console.log("-".repeat(70));
   console.log("");
 
-  await crowdfund.startWindow();
-  log("START", `Crowdfund window opened`);
+  // Advance past openTimestamp so the window is active
+  await network.provider.send("evm_increaseTime", [3]);
+  await network.provider.send("evm_mine");
+  log("START", `Crowdfund window is open (past openTimestamp)`);
 
   // Each seed invites 3 hop-1 addresses
   let hop1Count = 0;
@@ -152,7 +156,7 @@ async function main() {
     const amount = ethers.parseUnits("15000", 6);
     await usdc.mint(seeds[i].address, amount);
     await usdc.connect(seeds[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(seeds[i]).commit(amount, 0);
+    await crowdfund.connect(seeds[i]).commit(0, amount);
     log("COMMIT", `Seed-${String.fromCharCode(65 + i)} commits $15,000 USDC`);
   }
 
@@ -161,7 +165,7 @@ async function main() {
     const amount = ethers.parseUnits("4000", 6); // max hop-1 cap
     await usdc.mint(hop1Addrs[i].address, amount);
     await usdc.connect(hop1Addrs[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(hop1Addrs[i]).commit(amount, 1);
+    await crowdfund.connect(hop1Addrs[i]).commit(1, amount);
   }
   log("COMMIT", `${hop1Count} hop-1 addresses commit $4,000 each`);
 
@@ -170,7 +174,7 @@ async function main() {
     const amount = ethers.parseUnits("1000", 6);
     await usdc.mint(hop2Addrs[i].address, amount);
     await usdc.connect(hop2Addrs[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(hop2Addrs[i]).commit(amount, 2);
+    await crowdfund.connect(hop2Addrs[i]).commit(2, amount);
   }
   log("COMMIT", `${hop2Count} hop-2 addresses commit $1,000 each`);
 
@@ -203,13 +207,15 @@ async function main() {
   console.log("-".repeat(70));
   console.log("");
 
+  const openTimestamp2 = Math.floor(Date.now() / 1000) + 2;
   const cf2 = await ArmadaCrowdfund.deploy(
     await usdc.getAddress(),
     await armToken.getAddress(),
     deployer.address,
     treasuryAddr.address,
     deployer.address,
-    deployer.address        // securityCouncil (demo)
+    deployer.address,       // securityCouncil (demo)
+    openTimestamp2
   );
   await cf2.waitForDeployment();
 
@@ -222,15 +228,17 @@ async function main() {
   await cf2.addSeeds(bigSeeds.map(s => s.address));
   log("SETUP", `Added ${bigSeeds.length} seeds to second crowdfund`);
 
-  await cf2.startWindow();
-  log("START", "Crowdfund window opened");
+  // Advance past openTimestamp so the window is active
+  await network.provider.send("evm_increaseTime", [3]);
+  await network.provider.send("evm_mine");
+  log("START", "Crowdfund window is open (past openTimestamp)");
 
   // Each seed commits $15K
   for (const s of bigSeeds) {
     const amt = ethers.parseUnits("15000", 6);
     await usdc.mint(s.address, amt);
     await usdc.connect(s).approve(await cf2.getAddress(), amt);
-    await cf2.connect(s).commit(amt, 0);
+    await cf2.connect(s).commit(0, amt);
   }
   const total2 = await cf2.totalCommitted();
   log("COMMIT", `${bigSeeds.length} seeds commit $15K each = ${fmtUsdc(total2)}`);

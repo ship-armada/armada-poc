@@ -94,10 +94,10 @@ async function main() {
 
   // Check phase
   const phase = Number(await crowdfund.phase());
-  const PhaseNames = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
+  const PhaseNames = ["ACTIVE", "FINALIZED", "CANCELED"];
   if (phase !== 0) {
     throw new Error(
-      `Contract is in ${PhaseNames[phase]} phase (expected SETUP).\n` +
+      `Contract is in ${PhaseNames[phase]} phase (expected ACTIVE).\n` +
       `Redeploy with 'npm run chains && npm run setup' for a fresh contract.`
     );
   }
@@ -222,10 +222,19 @@ async function main() {
     log("ARM", "ARM already loaded");
   }
 
-  // ============ START WINDOW ============
-  const startTx = await crowdfund.startWindow();
-  await startTx.wait();
-  log("PHASE", "Crowdfund window opened (invites + commits concurrent)");
+  // ============ ADVANCE PAST WINDOW START ============
+  // The contract opens at its constructor-set openTimestamp.
+  // Ensure chain time is past windowStart before committing.
+  const windowStart = Number(await crowdfund.windowStart());
+  const curBlockPre = await ethers.provider.getBlock("latest");
+  const curTsPre = curBlockPre!.timestamp;
+  if (curTsPre < windowStart) {
+    const jumpToStart = windowStart - curTsPre + 1;
+    log("TIME", `Advancing ${jumpToStart}s to pass windowStart...`);
+    await network.provider.send("evm_increaseTime", [jumpToStart]);
+    await network.provider.send("evm_mine");
+  }
+  log("PHASE", "Crowdfund window is open (invites + commits concurrent)");
 
   // ============ INVITATIONS (if hops enabled) ============
   if (includeHops) {
@@ -290,7 +299,7 @@ async function main() {
       for (const p of batch) {
         const appTx = await usdc.connect(p).approve(crowdfundAddr, amount);
         await appTx.wait();
-        const cmtTx = await crowdfund.connect(p).commit(amount, hop);
+        const cmtTx = await crowdfund.connect(p).commit(hop, amount);
         await cmtTx.wait();
       }
 

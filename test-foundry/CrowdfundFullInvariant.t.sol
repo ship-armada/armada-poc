@@ -71,7 +71,7 @@ contract CrowdfundFullHandler is Test {
         vm.startPrank(seed);
         usdc.approve(address(crowdfund), amount);
 
-        try crowdfund.commit(amount, 0) {
+        try crowdfund.commit(0, amount) {
             ghost_totalUsdcIn += amount;
             ghost_committed[seed] += amount;
             if (ghost_committed[seed] == amount) {
@@ -99,7 +99,7 @@ contract CrowdfundFullHandler is Test {
         vm.startPrank(addr);
         usdc.approve(address(crowdfund), amount);
 
-        try crowdfund.commit(amount, 1) {
+        try crowdfund.commit(1, amount) {
             ghost_totalUsdcIn += amount;
             ghost_committed[addr] += amount;
             if (ghost_committed[addr] == amount) {
@@ -127,7 +127,7 @@ contract CrowdfundFullHandler is Test {
         vm.startPrank(addr);
         usdc.approve(address(crowdfund), amount);
 
-        try crowdfund.commit(amount, 2) {
+        try crowdfund.commit(2, amount) {
             ghost_totalUsdcIn += amount;
             ghost_committed[addr] += amount;
             if (ghost_committed[addr] == amount) {
@@ -192,7 +192,8 @@ contract CrowdfundFullInvariantTest is Test {
             admin,
             address(0xBEEF), // treasury
             admin,
-            admin             // securityCouncil
+            admin,            // securityCouncil
+            block.timestamp
         );
 
         // Fund ARM to crowdfund and verify pre-load
@@ -212,9 +213,6 @@ contract CrowdfundFullInvariantTest is Test {
 
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
-
-        // Start window
-        crowdfund.startWindow();
 
         // Do invitations
         uint256 hop1Idx = 0;

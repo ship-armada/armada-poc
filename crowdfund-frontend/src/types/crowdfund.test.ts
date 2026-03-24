@@ -5,10 +5,9 @@ import { Phase, CROWDFUND_CONSTANTS } from './crowdfund'
 
 describe('Phase', () => {
   it('has correct numeric values', () => {
-    expect(Phase.Setup).toBe(0)
-    expect(Phase.Active).toBe(1)
-    expect(Phase.Finalized).toBe(2)
-    expect(Phase.Canceled).toBe(3)
+    expect(Phase.Active).toBe(0)
+    expect(Phase.Finalized).toBe(1)
+    expect(Phase.Canceled).toBe(2)
   })
 })
 

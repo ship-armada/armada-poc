@@ -9,7 +9,6 @@ pragma solidity ^0.8.17;
 // ========== Enums ==========
 
 enum Phase {
-    Setup,          // Admin configures seeds
     Active,         // Invites + commits happen concurrently (3-week window)
     Finalized,      // Allocations computed, claims open
     Canceled        // Below minimum raise, full refunds

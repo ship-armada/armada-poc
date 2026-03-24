@@ -50,7 +50,6 @@ export function formatCountdown(seconds: number): string {
 /** Get human-readable phase name */
 export function phaseName(phase: Phase): string {
   switch (phase) {
-    case Phase.Setup: return 'Setup'
     case Phase.Active: return 'Active'
     case Phase.Finalized: return 'Finalized'
     case Phase.Canceled: return 'Canceled'
@@ -61,7 +60,6 @@ export function phaseName(phase: Phase): string {
 /** Get Tailwind color classes for a phase badge */
 export function phaseColor(phase: Phase): string {
   switch (phase) {
-    case Phase.Setup: return 'bg-muted text-muted-foreground'
     case Phase.Active: return 'bg-info/20 text-info'
     case Phase.Finalized: return 'bg-success/20 text-success'
     case Phase.Canceled: return 'bg-destructive/20 text-destructive'

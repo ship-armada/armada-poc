@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { ShieldCheck, ShieldAlert, Play, Flag, Coins, Zap, Users } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, Flag, Coins, Zap, Users } from 'lucide-react'
 import { Phase } from '@/types/crowdfund'
 import type { CrowdfundState } from '@/atoms/crowdfund'
 import type { useCrowdfund } from '@/hooks/useCrowdfund'
@@ -28,7 +28,7 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
   const [seedInput, setSeedInput] = useState('')
   const [treasuryInput, setTreasuryInput] = useState('')
   const [ltInviteAddr, setLtInviteAddr] = useState('')
-  const [ltInviteHop, setLtInviteHop] = useState<1 | 2>(1)
+  const [ltInviteHop, setLtInviteHop] = useState<0 | 1>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const isAdmin = currentAddress && state.adminAddress
@@ -112,12 +112,6 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
     setIsSubmitting(false)
   }
 
-  const handleStartWindow = async () => {
-    setIsSubmitting(true)
-    await crowdfund.startWindow()
-    setIsSubmitting(false)
-  }
-
   const handleFinalize = async () => {
     setIsSubmitting(true)
     await crowdfund.finalize()
@@ -153,8 +147,8 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Setup Phase: Add Seeds (admin only) */}
-        {phase === Phase.Setup && isAdmin && (
+        {/* Active Phase: Add Seeds + ARM Pre-Load (admin only, before window opens) */}
+        {phase === Phase.Active && isAdmin && Number(state.windowStart) > 0 && state.blockTimestamp < Number(state.windowStart) && (
           <>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -218,21 +212,6 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
               </div>
             </div>
 
-            <Button
-              onClick={handleStartWindow}
-              disabled={isSubmitting || !state.armLoaded || !state.hopStats || state.hopStats[0].whitelistCount === 0}
-              className="w-full gap-2"
-            >
-              <Play className="h-4 w-4" />
-              Start Window
-            </Button>
-            {!state.armLoaded && (
-              <p className="text-xs text-muted-foreground">ARM must be loaded before starting the window</p>
-            )}
-            {state.armLoaded && state.hopStats && state.hopStats[0].whitelistCount === 0 && (
-              <p className="text-xs text-muted-foreground">Add at least one seed first</p>
-            )}
-
             <Separator />
 
             <Button
@@ -252,7 +231,7 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
         {phase === Phase.Active && isLaunchTeam && (() => {
           const budget = state.launchTeamBudget
           const inviteWindowOpen = state.blockTimestamp > 0 && state.blockTimestamp < Number(state.launchTeamInviteEnd)
-          const selectedBudget = ltInviteHop === 1 ? budget?.hop1Remaining : budget?.hop2Remaining
+          const selectedBudget = ltInviteHop === 0 ? budget?.hop1Remaining : budget?.hop2Remaining
           return (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -304,17 +283,17 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
                     <Label>Hop</Label>
                     <div className="flex gap-2">
                       <Button
-                        variant={ltInviteHop === 1 ? 'default' : 'outline'}
+                        variant={ltInviteHop === 0 ? 'default' : 'outline'}
                         size="sm"
-                        onClick={() => setLtInviteHop(1)}
+                        onClick={() => setLtInviteHop(0)}
                         className="flex-1"
                       >
                         Hop 1 ({budget?.hop1Remaining ?? '?'} left)
                       </Button>
                       <Button
-                        variant={ltInviteHop === 2 ? 'default' : 'outline'}
+                        variant={ltInviteHop === 1 ? 'default' : 'outline'}
                         size="sm"
-                        onClick={() => setLtInviteHop(2)}
+                        onClick={() => setLtInviteHop(1)}
                         className="flex-1"
                       >
                         Hop 2 ({budget?.hop2Remaining ?? '?'} left)

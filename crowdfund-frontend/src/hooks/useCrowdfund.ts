@@ -134,7 +134,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       // Fetch aggregate allocation if finalized and not in refund mode
       let currentAllocation = null
       let userHopAllocations: UserHopAllocation[] = []
-      if (parsedPhase === 2 && !isRefundMode) {
+      if (parsedPhase === 1 && !isRefundMode) {
         // Aggregate allocation for the claim button
         const hasCommitted = userHops.some((h) => h.participant.committed > 0n)
         if (hasCommitted) {
@@ -226,7 +226,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       const contract = getCrowdfundContract(deployment, provider)
       const count = Number(await contract.getParticipantCount())
       const phase = Number(await contract.phase())
-      const isFinalized = phase === 2 // Phase.Finalized
+      const isFinalized = phase === 1 // Phase.Finalized
       const isRefundMode = isFinalized ? (await contract.refundMode()) as boolean : false
       const rows: ParticipantRow[] = []
 
@@ -394,15 +394,6 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     [executeTx],
   )
 
-  const startWindow = useCallback(
-    () =>
-      executeTx('Starting window', (signer, dep) => {
-        const contract = getCrowdfundContract(dep, signer)
-        return contract.startWindow()
-      }),
-    [executeTx],
-  )
-
   const invite = useCallback(
     (invitee: string, inviterHop: number) =>
       executeTx('Sending invite', (signer, dep) => {
@@ -438,7 +429,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           await approveTx.wait()
         }
 
-        return contract.commit(amount, hop)
+        return contract.commit(hop, amount)
       }),
     [executeTx],
   )
@@ -555,7 +546,6 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     // Write operations
     addSeeds,
     loadArm,
-    startWindow,
     invite,
     launchTeamInvite,
     approveAndCommit,

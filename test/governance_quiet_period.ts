@@ -72,13 +72,15 @@ describe("Governance Quiet Period (T6.1)", function () {
 
     // Deploy crowdfund
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+    const openTimestamp = (await time.latest()) + 300;
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
       deployer.address,
       treasuryAddr.address,
       deployer.address,
-      deployer.address // securityCouncil
+      deployer.address, // securityCouncil
+      openTimestamp      // openTimestamp
     );
     await crowdfund.waitForDeployment();
 
@@ -139,13 +141,13 @@ describe("Governance Quiet Period (T6.1)", function () {
   // Helper: run crowdfund to finalization (normal path — above MIN_SALE)
   async function finalizeCrowdfund() {
     await crowdfund.addSeeds(seeds.map(s => s.address));
-    await crowdfund.startWindow();
+    { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
     for (const seed of seeds) {
       const amount = USDC(15_000);
       await usdc.mint(seed.address, amount);
       await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
-      await crowdfund.connect(seed).commit(amount, 0);
+      await crowdfund.connect(seed).commit(0, amount);
     }
 
     await time.increase(THREE_WEEKS + 1);
@@ -317,13 +319,13 @@ describe("Governance Quiet Period (T6.1)", function () {
       // No hop-1/2 participants → totalAllocUsdc = $840K < $1M → refundMode. ✓
       const refundSeeds = seeds.slice(0, 70);
       await crowdfund.addSeeds(refundSeeds.map(s => s.address));
-      await crowdfund.startWindow();
+      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       for (const seed of refundSeeds) {
         const amount = USDC(15_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
-        await crowdfund.connect(seed).commit(amount, 0);
+        await crowdfund.connect(seed).commit(0, amount);
       }
 
       await time.increase(THREE_WEEKS + 1);

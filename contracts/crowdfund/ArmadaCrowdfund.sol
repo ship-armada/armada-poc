@@ -102,7 +102,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
-    event WindowStarted(uint256 windowStart, uint256 windowEnd, uint256 launchTeamInviteEnd);
     event Invited(address indexed inviter, address indexed invitee, uint8 hop);
     event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount);
     event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop);
@@ -121,32 +120,34 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         _;
     }
 
-    modifier inPhase(Phase _phase) {
-        require(phase == _phase, "ArmadaCrowdfund: wrong phase");
-        _;
-    }
-
     // ============ Constructor ============
 
+    /// @param _openTimestamp When the 3-week active window begins (must be >= block.timestamp)
     constructor(
         address _usdc,
         address _armToken,
         address _admin,
         address _treasury,
         address _launchTeam,
-        address _securityCouncil
+        address _securityCouncil,
+        uint256 _openTimestamp
     ) {
         require(_admin != address(0), "ArmadaCrowdfund: zero admin");
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
         require(_securityCouncil != address(0), "ArmadaCrowdfund: zero securityCouncil");
+        require(_openTimestamp >= block.timestamp, "ArmadaCrowdfund: openTimestamp in past");
         usdc = IERC20(_usdc);
         armToken = IERC20(_armToken);
         admin = _admin;
         treasury = _treasury;
         launchTeam = _launchTeam;
         securityCouncil = _securityCouncil;
-        phase = Phase.Setup;
+
+        windowStart = _openTimestamp;
+        windowEnd = _openTimestamp + WINDOW_DURATION;
+        launchTeamInviteEnd = _openTimestamp + LAUNCH_TEAM_INVITE_PERIOD;
+        // phase defaults to Phase.Active (value 0)
 
         hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3, maxInvitesReceived: 1 });
         hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 4_000 * 1e6,  maxInvites: 2, maxInvitesReceived: 10 });
@@ -155,17 +156,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Setup Phase ============
 
-    /// @notice Add seed addresses (hop 0). Allowed during Setup or week 1 of the active window.
+    /// @notice Add seed addresses (hop 0). Allowed before invite period ends (requires ARM loaded).
     function addSeeds(address[] calldata seeds) external onlyAdmin {
-        _requireSetupOrWeek1();
+        _requireArmLoadedAndPreInviteEnd();
         for (uint256 i = 0; i < seeds.length; i++) {
             _addSeed(seeds[i]);
         }
     }
 
-    /// @notice Add a single seed address (hop 0). Allowed during Setup or week 1 of the active window.
+    /// @notice Add a single seed address (hop 0). Allowed before invite period ends (requires ARM loaded).
     function addSeed(address seed) external onlyAdmin {
-        _requireSetupOrWeek1();
+        _requireArmLoadedAndPreInviteEnd();
         _addSeed(seed);
     }
 
@@ -185,7 +186,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     /// @notice Verify the contract holds sufficient ARM for the maximum possible sale.
     ///         Permissionless. Idempotent: no-op if already loaded.
-    ///         Must be called before startWindow().
     function loadArm() external {
         if (armLoaded) return;
 
@@ -195,19 +195,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
         armLoaded = true;
         emit ArmLoaded(balance);
-    }
-
-    /// @notice Start the 3-week active window (invites + commits concurrent)
-    function startWindow() external onlyAdmin inPhase(Phase.Setup) {
-        require(hopStats[0].whitelistCount > 0, "ArmadaCrowdfund: no seeds");
-        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
-
-        windowStart = block.timestamp;
-        windowEnd = block.timestamp + WINDOW_DURATION;
-        launchTeamInviteEnd = block.timestamp + LAUNCH_TEAM_INVITE_PERIOD;
-        phase = Phase.Active;
-
-        emit WindowStarted(windowStart, windowEnd, launchTeamInviteEnd);
     }
 
     // ============ Invitation Phase ============
@@ -262,18 +249,20 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     ///         The launch team is a sentinel with predeclared invite budgets — it is not
     ///         a participant and cannot commit USDC.
     /// @param invitee Address to invite
-    /// @param hop Target hop level (must be 1 or 2)
-    function launchTeamInvite(address invitee, uint8 hop) external whenNotPaused {
+    /// @param fromHop Source hop level (0 = invite to hop-1, 1 = invite to hop-2)
+    function launchTeamInvite(address invitee, uint8 fromHop) external whenNotPaused {
         require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(
             block.timestamp < launchTeamInviteEnd,
             "ArmadaCrowdfund: launch team invite window closed"
         );
-        require(hop == 1 || hop == 2, "ArmadaCrowdfund: invalid hop for launch team");
+        require(fromHop == 0 || fromHop == 1, "ArmadaCrowdfund: invalid hop for launch team");
         require(invitee != address(0), "ArmadaCrowdfund: zero address");
 
-        if (hop == 1) {
+        uint8 inviteeHop = fromHop + 1;
+
+        if (fromHop == 0) {
             require(launchTeamHop1Used < LAUNCH_TEAM_HOP1_BUDGET, "ArmadaCrowdfund: hop-1 budget exhausted");
             launchTeamHop1Used++;
         } else {
@@ -281,33 +270,33 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             launchTeamHop2Used++;
         }
 
-        Participant storage inviteeNode = participants[invitee][hop];
+        Participant storage inviteeNode = participants[invitee][inviteeHop];
 
         if (!inviteeNode.isWhitelisted) {
             inviteeNode.isWhitelisted = true;
             inviteeNode.invitesReceived = 1;
             inviteeNode.invitedBy = msg.sender;
-            participantNodes.push(ParticipantNode(invitee, hop));
-            hopStats[hop].whitelistCount++;
+            participantNodes.push(ParticipantNode(invitee, inviteeHop));
+            hopStats[inviteeHop].whitelistCount++;
 
-            emit Invited(msg.sender, invitee, hop);
+            emit Invited(msg.sender, invitee, inviteeHop);
         } else {
             require(
-                inviteeNode.invitesReceived < hopConfigs[hop].maxInvitesReceived,
+                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
                 "ArmadaCrowdfund: max invites received"
             );
             inviteeNode.invitesReceived++;
 
-            emit InviteAdded(msg.sender, invitee, hop, inviteeNode.invitesReceived);
+            emit InviteAdded(msg.sender, invitee, inviteeHop, inviteeNode.invitesReceived);
         }
     }
 
     // ============ Commitment Phase ============
 
     /// @notice Commit USDC to the crowdfund at a specific hop level
-    /// @param amount USDC amount to commit (6 decimals)
     /// @param hop Which of the caller's (address, hop) nodes to commit to
-    function commit(uint256 amount, uint8 hop) external nonReentrant whenNotPaused {
+    /// @param amount USDC amount to commit (6 decimals)
+    function commit(uint8 hop, uint256 amount) external nonReentrant whenNotPaused {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
@@ -678,12 +667,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
 
     // ============ Internal ============
 
-    /// @dev Enforces that seeds can only be added during Setup or week 1 of the active window.
-    function _requireSetupOrWeek1() internal view {
+    /// @dev Enforces that seeds can only be added before the invite period ends (requires ARM loaded).
+    function _requireArmLoadedAndPreInviteEnd() internal view {
+        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
-            phase == Phase.Setup ||
-            (phase == Phase.Active && block.timestamp < launchTeamInviteEnd),
-            "ArmadaCrowdfund: seeds only during setup or week 1"
+            block.timestamp < launchTeamInviteEnd,
+            "ArmadaCrowdfund: seeds only before invite period ends"
         );
     }
 

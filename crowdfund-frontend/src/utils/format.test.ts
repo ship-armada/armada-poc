@@ -97,7 +97,6 @@ describe('formatCountdown', () => {
 
 describe('phaseName', () => {
   it('returns correct names', () => {
-    expect(phaseName(Phase.Setup)).toBe('Setup')
     expect(phaseName(Phase.Active)).toBe('Active')
     expect(phaseName(Phase.Finalized)).toBe('Finalized')
     expect(phaseName(Phase.Canceled)).toBe('Canceled')
@@ -106,7 +105,7 @@ describe('phaseName', () => {
 
 describe('phaseColor', () => {
   it('returns non-empty class strings', () => {
-    expect(phaseColor(Phase.Setup)).toBeTruthy()
+    expect(phaseColor(Phase.Active)).toContain('info')
     expect(phaseColor(Phase.Finalized)).toContain('success')
     expect(phaseColor(Phase.Canceled)).toContain('destructive')
   })

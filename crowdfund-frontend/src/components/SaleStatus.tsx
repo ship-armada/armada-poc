@@ -24,7 +24,7 @@ interface SaleStatusProps {
  * The contract phase maps directly to display state.
  */
 function getEffectivePhase(state: CrowdfundState, _now: number): Phase {
-  if (state.phase === null) return Phase.Setup
+  if (state.phase === null) return Phase.Active
   return state.phase
 }
 

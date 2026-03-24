@@ -58,7 +58,7 @@ const TIMELOCK_MIN_DELAY   = TWO_DAYS;
 // Governance enums
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const Vote = { Against: 0, For: 1, Abstain: 2 };
-const PhaseNames  = ["SETUP", "ACTIVE", "FINALIZED", "CANCELED"];
+const PhaseNames  = ["ACTIVE", "FINALIZED", "CANCELED"];
 const StateNames  = ["PENDING", "ACTIVE", "DEFEATED", "SUCCEEDED", "QUEUED", "EXECUTED", "CANCELED"];
 
 // ============ Utility Functions ============
@@ -181,13 +181,15 @@ async function main() {
   // 1g. Crowdfund (shared ARM token + unified treasury)
   log("DEPLOY", "Deploying crowdfund with shared ARM + treasury...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+  const openTimestamp = Math.floor(Date.now() / 1000) + 2; // 2 seconds in the future (Anvil)
   const crowdfund = await ArmadaCrowdfund.deploy(
     await usdc.getAddress(),
     await armToken.getAddress(),
     deployer.address,       // admin
     await treasury.getAddress(),  // immutable treasury destination
     deployer.address,       // launchTeam
-    deployer.address        // securityCouncil (demo: deployer acts as council)
+    deployer.address,       // securityCouncil (demo: deployer acts as council)
+    openTimestamp
   );
   await crowdfund.waitForDeployment();
   log("DEPLOY", `ArmadaCrowdfund: ${await crowdfund.getAddress()}`);
@@ -248,9 +250,10 @@ async function main() {
   await crowdfund.addSeeds(seeds.map(s => s.address));
   log("SEED", `Added ${seeds.length} seeds (hop 0, $${SEED_CAP} cap, 3 invites each)`);
 
-  // 2b: Start window (invites + commits concurrent for 3 weeks)
-  await crowdfund.startWindow();
-  log("START", "Crowdfund window opened (3-week duration, invites + commits concurrent)");
+  // 2b: Advance past openTimestamp so the window is active
+  await network.provider.send("evm_increaseTime", [3]);
+  await network.provider.send("evm_mine");
+  log("START", "Crowdfund window is open (past openTimestamp, 3-week duration)");
 
   // 2c: Invitation chains — first 3 seeds invite hop-1, hop-1 invite hop-2
   let hop1Count = 0;
@@ -283,7 +286,7 @@ async function main() {
     const amount = ethers.parseUnits(SEED_CAP, 6);
     await usdc.mint(s.address, amount);
     await usdc.connect(s).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(s).commit(amount, 0);
+    await crowdfund.connect(s).commit(0, amount);
   }
   log("COMMIT", `${seeds.length} seeds commit $${SEED_CAP} each = ${fmtUsdc(ethers.parseUnits(SEED_CAP, 6) * BigInt(seeds.length))}`);
 
@@ -292,7 +295,7 @@ async function main() {
     const amount = ethers.parseUnits(HOP1_CAP, 6);
     await usdc.mint(hop1Addrs[i].address, amount);
     await usdc.connect(hop1Addrs[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(hop1Addrs[i]).commit(amount, 1);
+    await crowdfund.connect(hop1Addrs[i]).commit(1, amount);
   }
   log("COMMIT", `${hop1Count} hop-1 commit $${HOP1_CAP} each = ${fmtUsdc(ethers.parseUnits(HOP1_CAP, 6) * BigInt(hop1Count))}`);
 
@@ -301,7 +304,7 @@ async function main() {
     const amount = ethers.parseUnits(HOP2_CAP, 6);
     await usdc.mint(hop2Addrs[i].address, amount);
     await usdc.connect(hop2Addrs[i]).approve(await crowdfund.getAddress(), amount);
-    await crowdfund.connect(hop2Addrs[i]).commit(amount, 2);
+    await crowdfund.connect(hop2Addrs[i]).commit(2, amount);
   }
   log("COMMIT", `${hop2Count} hop-2 commit $${HOP2_CAP} each = ${fmtUsdc(ethers.parseUnits(HOP2_CAP, 6) * BigInt(hop2Count))}`);
 
@@ -366,7 +369,7 @@ async function main() {
   const [h2Alloc, h2Refund] = await crowdfund.getAllocation(hop2Addrs[0].address);
   log("CLAIM", `  ${hop2Claimers} hop-2 claim: ${fmtArm(h2Alloc)} + ${fmtUsdc(h2Refund)} refund each`);
 
-  verify("Phase is FINALIZED", phase === 2);
+  verify("Phase is FINALIZED", phase === 1);
   verify("Total committed > MIN_SALE ($1M)", totalCommitted > ethers.parseUnits("1000000", 6));
 
   // ================================================================

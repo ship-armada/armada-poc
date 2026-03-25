@@ -1,4 +1,4 @@
-// ABOUTME: Tests for eager per-address allocation at finalization (Task 9).
+// ABOUTME: Tests for eager per-address allocation at finalization.
 // ABOUTME: Covers single-tx and phased settlement modes, stored allocation values, and conservation invariants.
 
 import { expect } from "chai";

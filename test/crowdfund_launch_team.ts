@@ -72,6 +72,7 @@ describe("Launch Team & Seed Cap", function () {
     const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
+    await time.increaseTo(await crowdfund.windowStart());
   });
 
   // ============ 150-Seed Cap ============
@@ -123,7 +124,7 @@ describe("Launch Team & Seed Cap", function () {
       [, , , invitee1, invitee2, seed1] = allSigners;
       // Add a seed and start the active window
       await crowdfund.addSeed(seed1.address);
-      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+
     });
 
     it("launch team can invite to hop-1", async function () {
@@ -165,7 +166,7 @@ describe("Launch Team & Seed Cap", function () {
       await time.increase(7 * ONE_DAY + 1);
       await expect(
         crowdfund.launchTeamInvite(invitee1.address, 0)
-      ).to.be.revertedWith("ArmadaCrowdfund: launch team invite window closed");
+      ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
 
     it("invite graph shows launch team as inviter", async function () {
@@ -209,7 +210,7 @@ describe("Launch Team & Seed Cap", function () {
   describe("Budget Exhaustion", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
-      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+
     });
 
     it("allows exactly 60 hop-1 invites", async function () {
@@ -272,7 +273,7 @@ describe("Launch Team & Seed Cap", function () {
   describe("7-Day Invite Window Timing", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
-      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+
     });
 
     it("launch team invite on day 6 succeeds", async function () {
@@ -285,7 +286,7 @@ describe("Launch Team & Seed Cap", function () {
       await time.increase(7 * ONE_DAY + 1);
       await expect(
         crowdfund.launchTeamInvite(allSigners[4].address, 0)
-      ).to.be.revertedWith("ArmadaCrowdfund: launch team invite window closed");
+      ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
 
     it("launch team invite at exactly 7 days reverts (boundary)", async function () {
@@ -293,7 +294,7 @@ describe("Launch Team & Seed Cap", function () {
       await time.increase(7 * ONE_DAY);
       await expect(
         crowdfund.launchTeamInvite(allSigners[4].address, 0)
-      ).to.be.revertedWith("ArmadaCrowdfund: launch team invite window closed");
+      ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
 
     it("regular seed invites still work after week 1", async function () {
@@ -308,7 +309,7 @@ describe("Launch Team & Seed Cap", function () {
   describe("Launch Team Cannot Commit", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
-      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+
     });
 
     it("launch team address cannot commit USDC", async function () {
@@ -338,7 +339,7 @@ describe("Launch Team & Seed Cap", function () {
 
       // Add launchTeam as a seed (launch team calls addSeed)
       await cf.connect(ltSigner).addSeed(ltSigner.address);
-      { const ws = Number(await cf.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await time.increaseTo(await cf.windowStart());
 
       // Fund the launch team address
       await fundAndApprove(ltSigner, USDC(15000));
@@ -356,7 +357,7 @@ describe("Launch Team & Seed Cap", function () {
     beforeEach(async function () {
       invitee = allSigners[4];
       await crowdfund.addSeed(allSigners[3].address);
-      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+
     });
 
     it("re-invite to same (address, hop) increments invitesReceived", async function () {
@@ -419,11 +420,11 @@ describe("Launch Team & Seed Cap", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
     });
 
-    it("emits InviteAdded on re-invite", async function () {
+    it("emits Invited on re-invite", async function () {
       await crowdfund.launchTeamInvite(invitee.address, 0);
       await expect(crowdfund.launchTeamInvite(invitee.address, 0))
-        .to.emit(crowdfund, "InviteAdded")
-        .withArgs(deployer.address, invitee.address, 1, 2);
+        .to.emit(crowdfund, "Invited")
+        .withArgs(deployer.address, invitee.address, 1, 0);
     });
   });
 

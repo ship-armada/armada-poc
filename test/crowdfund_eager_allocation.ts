@@ -42,6 +42,7 @@ describe("Eager Allocation at Finalization", function () {
     await armToken.addToWhitelist(await crowdfund.getAddress());
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
+    await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;
   }
 
@@ -50,10 +51,6 @@ describe("Eager Allocation at Finalization", function () {
   async function setupFinalizableScenario(crowdfund: any, seedCount: number) {
     const seeds = allSigners.slice(5, 5 + seedCount);
     await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
-    {
-      const ws = Number(await crowdfund.windowStart());
-      if ((await time.latest()) < ws) await time.increaseTo(ws);
-    }
 
     // Seeds commit at hop 0
     for (const s of seeds) {
@@ -288,10 +285,7 @@ describe("Eager Allocation at Finalization", function () {
       // No hop-1 demand → totalAllocUsdc = $798K < $1M MIN_SALE → refundMode.
       const seeds = allSigners.slice(5, 85);
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      {
-        const ws = Number(await crowdfund.windowStart());
-        if ((await time.latest()) < ws) await time.increaseTo(ws);
-      }
+
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);
         await crowdfund.connect(s).commit(0, USDC(15_000));
@@ -488,10 +482,7 @@ describe("Eager Allocation at Finalization", function () {
       // Create refundMode scenario
       const seeds = allSigners.slice(5, 85);
       await crowdfund.addSeeds(seeds.map(s => s.address));
-      {
-        const ws = Number(await crowdfund.windowStart());
-        if ((await time.latest()) < ws) await time.increaseTo(ws);
-      }
+
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);
         await crowdfund.connect(s).commit(0, USDC(15_000));

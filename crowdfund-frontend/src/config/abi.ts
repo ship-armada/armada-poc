@@ -15,7 +15,7 @@ export const CROWDFUND_ABI = [
   // Participant actions
   'function invite(address invitee, uint8 inviterHop) external',
   'function commit(uint8 hop, uint256 amount) external',
-  'function claim() external',
+  'function claim(address delegate) external',
   'function claimRefund() external',
 
   // Launch team actions
@@ -37,7 +37,7 @@ export const CROWDFUND_ABI = [
   'function windowStart() view returns (uint256)',
   'function windowEnd() view returns (uint256)',
   'function launchTeamInviteEnd() view returns (uint256)',
-  'function participants(address, uint8) view returns (bool isWhitelisted, uint16 invitesReceived, uint256 committed, uint256 allocation, uint256 refund, bool claimed, address invitedBy, uint16 invitesSent)',
+  'function participants(address, uint8) view returns (bool isWhitelisted, uint16 invitesReceived, uint256 committed, uint256 allocation, uint256 refund, bool armClaimed, bool refundClaimed, address invitedBy, uint16 invitesSent)',
   'function participantNodes(uint256) view returns (address addr, uint8 hop)',
   'function hopStats(uint256) view returns (uint256 totalCommitted, uint256 cappedCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
   'function hopConfigs(uint256) view returns (uint16 ceilingBps, uint256 capUsdc, uint8 maxInvites, uint16 maxInvitesReceived)',
@@ -70,8 +70,8 @@ export const CROWDFUND_ABI = [
   'event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc)',
   'event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds)',
   'event SaleCanceled(uint256 totalCommitted)',
-  'event Claimed(address indexed participant, uint256 armAmount, uint256 usdcRefund)',
-  'event Refunded(address indexed participant, uint256 amount)',
+  'event ArmClaimed(address indexed participant, uint256 armAmount, address delegate)',
+  'event RefundClaimed(address indexed participant, uint256 usdcAmount)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
   'event ArmLoaded(uint256 balance)',
 ] as const

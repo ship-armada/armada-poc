@@ -344,7 +344,7 @@ async function main() {
   let totalSeedArm  = 0n;
   let totalSeedRefund = 0n;
   for (const s of seeds) {
-    await crowdfund.connect(s).claim();
+    await crowdfund.connect(s).claim(ethers.ZeroAddress);
     const bal = await armToken.balanceOf(s.address);
     totalSeedArm += bal;
   }
@@ -356,14 +356,14 @@ async function main() {
   // Claim a few hop-1 and hop-2 for demonstration
   const hop1Claimers = Math.min(3, hop1Count);
   for (let i = 0; i < hop1Claimers; i++) {
-    await crowdfund.connect(hop1Addrs[i]).claim();
+    await crowdfund.connect(hop1Addrs[i]).claim(ethers.ZeroAddress);
   }
   const [h1Alloc, h1Refund] = await crowdfund.getAllocation(hop1Addrs[0].address);
   log("CLAIM", `  ${hop1Claimers} hop-1 claim: ${fmtArm(h1Alloc)} + ${fmtUsdc(h1Refund)} refund each`);
 
   const hop2Claimers = Math.min(3, hop2Count);
   for (let i = 0; i < hop2Claimers; i++) {
-    await crowdfund.connect(hop2Addrs[i]).claim();
+    await crowdfund.connect(hop2Addrs[i]).claim(ethers.ZeroAddress);
   }
   const [h2Alloc, h2Refund] = await crowdfund.getAllocation(hop2Addrs[0].address);
   log("CLAIM", `  ${hop2Claimers} hop-2 claim: ${fmtArm(h2Alloc)} + ${fmtUsdc(h2Refund)} refund each`);

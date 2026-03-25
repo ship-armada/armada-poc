@@ -24,9 +24,9 @@ function eventColor(name: string): string {
       return 'bg-success/20 text-success'
     case 'SaleCanceled':
       return 'bg-destructive/20 text-destructive'
-    case 'Claimed':
+    case 'ArmClaimed':
       return 'bg-success/20 text-success'
-    case 'Refunded':
+    case 'RefundClaimed':
       return 'bg-warning/20 text-warning'
     case 'ProceedsWithdrawn':
     case 'UnallocatedArmWithdrawn':
@@ -68,13 +68,12 @@ function formatEventArgs(name: string, args: Record<string, unknown>): string {
         const total = Number(safeBigInt(args.totalCommitted)) / 1e6
         return `Total: $${total.toLocaleString()}`
       }
-      case 'Claimed': {
+      case 'ArmClaimed': {
         const arm = Number(safeBigInt(args.armAmount)) / 1e18
-        const refund = Number(safeBigInt(args.usdcRefund)) / 1e6
-        return `${safeAddr(args.participant)} ${arm.toLocaleString()} ARM + $${refund.toLocaleString()} refund`
+        return `${safeAddr(args.participant)} ${arm.toLocaleString()} ARM (delegate: ${safeAddr(args.delegate)})`
       }
-      case 'Refunded': {
-        const amount = Number(safeBigInt(args.amount)) / 1e6
+      case 'RefundClaimed': {
+        const amount = Number(safeBigInt(args.usdcAmount)) / 1e6
         return `${safeAddr(args.participant)} $${amount.toLocaleString()}`
       }
       default:

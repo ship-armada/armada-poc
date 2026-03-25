@@ -10,9 +10,10 @@ export function parseParticipant(result: any): Participant {
     committed: BigInt(result[2]),
     allocation: BigInt(result[3]),
     refund: BigInt(result[4]),
-    claimed: result[5] as boolean,
-    invitedBy: result[6] as string,
-    invitesSent: Number(result[7]),
+    armClaimed: result[5] as boolean,
+    refundClaimed: result[6] as boolean,
+    invitedBy: result[7] as string,
+    invitesSent: Number(result[8]),
   }
 }
 

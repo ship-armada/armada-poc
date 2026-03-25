@@ -462,7 +462,7 @@ describe("Crowdfund Multi-Node", function () {
       expect(allocBefore).to.be.gt(0);
 
       const armBefore = await armToken.balanceOf(seed1.address);
-      await crowdfund.connect(seed1).claim();
+      await crowdfund.connect(seed1).claim(ethers.ZeroAddress);
       const armAfter = await armToken.balanceOf(seed1.address);
 
       expect(armAfter - armBefore).to.equal(allocBefore);
@@ -471,11 +471,11 @@ describe("Crowdfund Multi-Node", function () {
     it("should revert double-claim", async function () {
       await setupAndFinalize();
 
-      await crowdfund.connect(seed1).claim();
+      await crowdfund.connect(seed1).claim(ethers.ZeroAddress);
 
       await expect(
-        crowdfund.connect(seed1).claim()
-      ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
+        crowdfund.connect(seed1).claim(ethers.ZeroAddress)
+      ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
     });
   });
 

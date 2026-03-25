@@ -42,8 +42,9 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
     0n,
   )
 
-  // Check if any hop has been claimed (claim() is aggregate across all hops)
-  const anyClaimed = state.userHops.some((h) => h.participant.claimed)
+  // Check if ARM or refund has been claimed (claim/claimRefund are independent)
+  const anyArmClaimed = state.userHops.some((h) => h.participant.armClaimed)
+  const anyRefundClaimed = state.userHops.some((h) => h.participant.refundClaimed)
 
   // Use chain block timestamp (not Date.now()) — EVM time diverges from wall clock in local mode
   const now = state.blockTimestamp || Math.floor(Date.now() / 1000)
@@ -251,13 +252,13 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
               )}
               <Button
                 onClick={handleClaim}
-                disabled={isSubmitting || anyClaimed}
+                disabled={isSubmitting || anyArmClaimed}
                 className="w-full"
               >
-                {anyClaimed ? 'Already Claimed' : 'Claim'}
+                {anyArmClaimed ? 'Already Claimed' : 'Claim ARM'}
               </Button>
               {/* Claim deadline */}
-              {state.claimDeadline > 0n && !anyClaimed && (
+              {state.claimDeadline > 0n && !anyArmClaimed && (
                 <p className="text-xs text-muted-foreground">
                   Claim by: {new Date(Number(state.claimDeadline) * 1000).toLocaleDateString()}
                 </p>
@@ -281,11 +282,11 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
               </p>
               <Button
                 onClick={handleRefund}
-                disabled={isSubmitting || anyClaimed}
+                disabled={isSubmitting || anyRefundClaimed}
                 className="w-full"
                 variant="destructive"
               >
-                {anyClaimed ? 'Already Refunded' : 'Claim Refund'}
+                {anyRefundClaimed ? 'Already Refunded' : 'Claim Refund'}
               </Button>
             </div>
           </>
@@ -303,11 +304,11 @@ export function ParticipantPanel({ state, crowdfund }: ParticipantPanelProps) {
               <p className="text-sm">Full refund: <span className="font-medium">{formatUsdc(totalUserCommitted)}</span></p>
               <Button
                 onClick={handleRefund}
-                disabled={isSubmitting || anyClaimed}
+                disabled={isSubmitting || anyRefundClaimed}
                 className="w-full"
                 variant="destructive"
               >
-                {anyClaimed ? 'Already Refunded' : 'Claim Refund'}
+                {anyRefundClaimed ? 'Already Refunded' : 'Claim Refund'}
               </Button>
             </div>
           </>

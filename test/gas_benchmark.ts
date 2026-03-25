@@ -243,15 +243,15 @@ describe("Gas Benchmarks", function () {
       // Measure gas for first, middle, and last claims
       const claimGas: { position: string; gas: bigint }[] = [];
 
-      const firstTx = await crowdfund.connect(seeds[0]).claim();
+      const firstTx = await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
       const firstReceipt = await firstTx.wait();
       claimGas.push({ position: "first", gas: firstReceipt!.gasUsed });
 
-      const midTx = await crowdfund.connect(seeds[49]).claim();
+      const midTx = await crowdfund.connect(seeds[49]).claim(ethers.ZeroAddress);
       const midReceipt = await midTx.wait();
       claimGas.push({ position: "middle (50th)", gas: midReceipt!.gasUsed });
 
-      const lastTx = await crowdfund.connect(seeds[99]).claim();
+      const lastTx = await crowdfund.connect(seeds[99]).claim(ethers.ZeroAddress);
       const lastReceipt = await lastTx.wait();
       claimGas.push({ position: "last (100th)", gas: lastReceipt!.gasUsed });
 

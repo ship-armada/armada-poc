@@ -23,8 +23,8 @@ const EVENT_NAMES = [
   'Committed',
   'SaleFinalized',
   'SaleCanceled',
-  'Claimed',
-  'Refunded',
+  'ArmClaimed',
+  'RefundClaimed',
   'ProceedsWithdrawn',
   'UnallocatedArmWithdrawn',
 ] as const

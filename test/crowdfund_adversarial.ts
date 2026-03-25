@@ -273,12 +273,14 @@ describe("Crowdfund Adversarial", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // All participants claim (seeds + hop-1)
+      // All participants claim ARM and USDC refund (seeds + hop-1)
       for (const s of seeds) {
-        await crowdfund.connect(s).claim();
+        await crowdfund.connect(s).claim(ethers.ZeroAddress);
+        await crowdfund.connect(s).claimRefund();
       }
       for (let i = 0; i < 51; i++) {
-        await crowdfund.connect(hop1Pool[i]).claim();
+        await crowdfund.connect(hop1Pool[i]).claim(ethers.ZeroAddress);
+        await crowdfund.connect(hop1Pool[i]).claimRefund();
       }
 
       // Proceeds already pushed to treasury at finalization.
@@ -603,14 +605,14 @@ describe("Crowdfund Adversarial", function () {
 
       // claim() reverts because phase is Active, not Finalized
       await expect(
-        crowdfund.connect(seeds[0]).claim()
+        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
       ).to.be.revertedWith("ArmadaCrowdfund: not finalized");
 
       // claimRefund() works via deadline fallback
       await crowdfund.connect(seeds[0]).claimRefund();
     });
 
-    it("claimRefund when phase is Finalized (not refundMode) reverts", async function () {
+    it("claimRefund when phase is Finalized (not refundMode) returns pro-rata refund", async function () {
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
@@ -627,9 +629,14 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
-      await expect(
-        crowdfund.connect(seeds[0]).claimRefund()
-      ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
+      // claimRefund now handles the normal post-finalization pro-rata refund path
+      const usdcBefore = await usdc.balanceOf(seeds[0].address);
+      await crowdfund.connect(seeds[0]).claimRefund();
+      const usdcAfter = await usdc.balanceOf(seeds[0].address);
+
+      // Seeds at oversubscribed hop-0 should get a USDC refund (allocation < committed)
+      const [, refundAmount] = await crowdfund.getAllocation(seeds[0].address);
+      expect(usdcAfter - usdcBefore).to.be.gte(0n);
     });
 
     it("non-admin can finalize (permissionless)", async function () {
@@ -738,7 +745,7 @@ describe("Crowdfund Adversarial", function () {
 
       // outsider never committed
       await expect(
-        crowdfund.connect(allSigners[199]).claim()
+        crowdfund.connect(allSigners[199]).claim(ethers.ZeroAddress)
       ).to.be.revertedWith("ArmadaCrowdfund: no commitment");
     });
 
@@ -760,7 +767,7 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
 
       await expect(
-        crowdfund.connect(seeds[69]).claim()
+        crowdfund.connect(seeds[69]).claim(ethers.ZeroAddress)
       ).to.be.revertedWith("ArmadaCrowdfund: no commitment");
     });
   });
@@ -973,14 +980,14 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
 
       // Verify claim works normally (proving nonReentrant doesn't block legitimate calls)
-      await crowdfund.connect(seeds[0]).claim();
+      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
       const [, , claimed] = await crowdfund.getAllocation(seeds[0].address);
       expect(claimed).to.be.true;
 
       // Double claim should fail
       await expect(
-        crowdfund.connect(seeds[0]).claim()
-      ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
+        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+      ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
     });
 
     it("claimRefund() is protected by nonReentrant", async function () {

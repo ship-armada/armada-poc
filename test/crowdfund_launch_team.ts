@@ -63,7 +63,8 @@ describe("Launch Team & Seed Cap", function () {
       treasury.address,   // treasury
       deployer.address,   // launchTeam
       deployer.address,   // securityCouncil
-      openTimestamp        // openTimestamp
+      openTimestamp,       // openTimestamp
+      false                // single-tx settlement
     );
     await crowdfund.waitForDeployment();
 
@@ -325,7 +326,8 @@ describe("Launch Team & Seed Cap", function () {
         treasury.address,
         ltSigner.address,   // separate launch team
         deployer.address,   // securityCouncil
-        cfOpenTimestamp      // openTimestamp
+        cfOpenTimestamp,     // openTimestamp
+        false                // single-tx settlement
       );
       await cf.waitForDeployment();
 
@@ -436,7 +438,8 @@ describe("Launch Team & Seed Cap", function () {
           treasury.address,
           ethers.ZeroAddress,
           deployer.address,
-          cvOpenTimestamp
+          cvOpenTimestamp,
+          false
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero launchTeam");
     });

@@ -81,7 +81,8 @@ async function main() {
     treasuryAddr.address,
     deployer.address,
     deployer.address,       // securityCouncil (demo)
-    openTimestamp
+    openTimestamp,
+    false  // single-tx settlement
   );
   await crowdfund.waitForDeployment();
 
@@ -213,7 +214,8 @@ async function main() {
     treasuryAddr.address,
     deployer.address,
     deployer.address,       // securityCouncil (demo)
-    openTimestamp2
+    openTimestamp2,
+    false  // single-tx settlement
   );
   await cf2.waitForDeployment();
 

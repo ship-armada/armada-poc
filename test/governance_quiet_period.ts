@@ -79,7 +79,8 @@ describe("Governance Quiet Period (T6.1)", function () {
       treasuryAddr.address,
       deployer.address,
       deployer.address, // securityCouncil
-      openTimestamp      // openTimestamp
+      openTimestamp,     // openTimestamp
+      false              // single-tx settlement
     );
     await crowdfund.waitForDeployment();
 

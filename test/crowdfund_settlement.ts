@@ -82,7 +82,8 @@ describe("Crowdfund Settlement Rework", function () {
       treasury.address,
       deployer.address,         // launchTeam
       securityCouncil.address,  // securityCouncil
-      openTimestamp              // openTimestamp
+      openTimestamp,             // openTimestamp
+      false                      // single-tx settlement
     );
     await crowdfund.waitForDeployment();
     await armToken.addToWhitelist(await crowdfund.getAddress());

@@ -35,7 +35,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             treasury,
             admin,
             admin,  // securityCouncil
-            block.timestamp
+            block.timestamp,
+            false   // single-tx settlement
         );
 
         // Whitelist admin and crowdfund so token transfers work
@@ -179,7 +180,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     function test_refundMode_cannotHappenAfterExpansion() public {
         // Deploy a fresh crowdfund with 100 seeds to reach ELASTIC_TRIGGER
         ArmadaCrowdfund cf2 = new ArmadaCrowdfund(
-            address(usdc), address(armToken), treasury, admin, admin, block.timestamp
+            address(usdc), address(armToken), treasury, admin, admin, block.timestamp, false
         );
         armToken.transfer(address(cf2), ARM_FUNDING);
         cf2.loadArm();

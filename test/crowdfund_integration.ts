@@ -103,7 +103,8 @@ describe("Crowdfund Integration", function () {
       treasury.address,
       deployer.address,
       deployer.address,       // securityCouncil
-      openTimestamp
+      openTimestamp,
+      false                   // single-tx settlement
     );
     await crowdfund.waitForDeployment();
     await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -226,7 +227,8 @@ describe("Crowdfund Integration", function () {
         treasury.address,
         deployer.address,
         deployer.address,       // securityCouncil
-        freshOpenTimestamp
+        freshOpenTimestamp,
+        false                   // single-tx settlement
       );
       await freshCrowdfund.waitForDeployment();
       await freshArmToken.addToWhitelist(await freshCrowdfund.getAddress());
@@ -837,7 +839,8 @@ describe("Crowdfund Integration", function () {
         treasury.address,
         deployer.address,
         deployer.address,       // securityCouncil
-        unfundedOpenTimestamp
+        unfundedOpenTimestamp,
+        false                   // single-tx settlement
       );
       await unfundedCrowdfund.waitForDeployment();
 
@@ -1081,7 +1084,8 @@ describe("Crowdfund Integration", function () {
         const cf = await (await ethers.getContractFactory("ArmadaCrowdfund")).deploy(
           await usdc.getAddress(), await armToken.getAddress(),
           treasury.address, deployer.address, deployer.address,
-          (await time.latest()) + 10
+          (await time.latest()) + 10,
+          false  // single-tx settlement
         );
         await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
         await cf.loadArm();
@@ -1479,7 +1483,8 @@ describe("Crowdfund Integration", function () {
         treasury.address,        // treasury
         deployer.address,        // launchTeam
         outsider.address,        // securityCouncil (different from launchTeam)
-        pauseOpenTimestamp
+        pauseOpenTimestamp,
+        false  // single-tx settlement
       );
       const freshAddr = await freshCrowdfund.getAddress();
       await armToken.transfer(freshAddr, ARM(1_800_000));
@@ -1525,7 +1530,8 @@ describe("Crowdfund Integration", function () {
         treasury.address,        // treasury
         deployer.address,        // launchTeam
         outsider.address,        // securityCouncil (different from launchTeam)
-        cancelOpenTimestamp
+        cancelOpenTimestamp,
+        false  // single-tx settlement
       );
 
       // Security council cancels

@@ -192,7 +192,8 @@ contract CrowdfundFullInvariantTest is Test {
             address(0xBEEF), // treasury
             admin,
             admin,            // securityCouncil
-            block.timestamp
+            block.timestamp,
+            false             // single-tx settlement
         );
 
         // Fund ARM to crowdfund and verify pre-load

@@ -117,7 +117,8 @@ describe("Crowdfund EIP-712 Invites", function () {
       treasury.address,
       deployer.address, // launchTeam
       deployer.address, // securityCouncil
-      openTimestamp
+      openTimestamp,
+      false             // single-tx settlement
     );
     await crowdfund.waitForDeployment();
     await armToken.addToWhitelist(await crowdfund.getAddress());

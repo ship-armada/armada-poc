@@ -86,7 +86,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       treasuryAddr.address,
       deployer.address,
       deployer.address,       // securityCouncil
-      openTimestamp            // openTimestamp
+      openTimestamp,           // openTimestamp
+      false                    // single-tx settlement
     );
     await crowdfund.waitForDeployment();
 
@@ -666,7 +667,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localTreasury.getAddress(),
         localDeployer.address,
         localDeployer.address,  // securityCouncil
-        localOpenTimestamp       // openTimestamp
+        localOpenTimestamp,      // openTimestamp
+        false                    // single-tx settlement
       );
       await localCrowdfund.waitForDeployment();
 

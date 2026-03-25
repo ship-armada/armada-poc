@@ -70,7 +70,8 @@ describe("Crowdfund Adversarial", function () {
       treasuryAddr.address,
       deployer.address,
       deployer.address,       // securityCouncil
-      openTimestamp
+      openTimestamp,
+      false                   // single-tx settlement
     );
     await crowdfund.waitForDeployment();
     await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -707,7 +708,8 @@ describe("Crowdfund Adversarial", function () {
           ethers.ZeroAddress,
           deployer.address,
           deployer.address,
-          localOpenTimestamp
+          localOpenTimestamp,
+          false
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero treasury");
     });
@@ -722,7 +724,8 @@ describe("Crowdfund Adversarial", function () {
           treasuryAddr.address,
           deployer.address,
           ethers.ZeroAddress,
-          localOpenTimestamp
+          localOpenTimestamp,
+          false
         )
       ).to.be.revertedWith("ArmadaCrowdfund: zero securityCouncil");
     });
@@ -871,9 +874,11 @@ describe("Crowdfund Adversarial", function () {
       const hop2Ceiling = await crowdfund.finalCeilings(2);
       expect(hop2Ceiling).to.equal(USDC(198_000));
 
-      // Treasury leftover = $1.2M - ($798K + $204K) = $198K
+      // Treasury leftover = saleSize - exactTotalUsdc. With per-address floor rounding
+      // on oversubscribed hop-0, exactTotalUsdc is slightly less than the hop-level
+      // sum, so treasuryLeftover absorbs the rounding dust.
       const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
-      expect(treasuryLeftover).to.equal(USDC(198_000));
+      expect(treasuryLeftover).to.be.closeTo(USDC(198_000), 100n); // within $0.0001
 
       // Key assertion: rollover flowed through hop-1 to hop-2 despite 0 committers
       // at hop-2 — unconditional rollover ensures unused capacity always cascades.
@@ -910,9 +915,9 @@ describe("Crowdfund Adversarial", function () {
       // Hop-1 eff ceiling = min($513K + $0, $342K remaining) = $342K
       // Hop-1 demand = $204K < $342K → under-subscribed, leftover = $138K
       // Hop-2 eff ceiling = $60K floor + $138K leftover = $198K
-      // Treasury leftover = $1.2M - ($798K + $204K) = $198K
+      // Treasury leftover absorbs per-address floor rounding dust from oversubscribed hop-0
       const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
-      expect(treasuryLeftover).to.equal(USDC(198_000));
+      expect(treasuryLeftover).to.be.closeTo(USDC(198_000), 100n); // within $0.0001
     });
 
     it("rollover preserves sum-of-parts invariant: alloc + treasury = saleSize", async function () {

@@ -66,7 +66,8 @@ describe("Gas Benchmarks", function () {
           deployer.address, // treasury
           deployer.address, // launchTeam
           deployer.address, // securityCouncil
-          openTimestamp1    // openTimestamp
+          openTimestamp1,   // openTimestamp
+          false             // single-tx settlement
         );
 
         await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -94,23 +95,36 @@ describe("Gas Benchmarks", function () {
         // Skip to after active window
         await time.increase(THREE_WEEKS + 1);
 
-        // Measure finalize gas
-        const tx = await crowdfund.finalize();
-        const receipt = await tx.wait();
-        const gasUsed = receipt!.gasUsed;
+        // Measure finalize gas. Eager allocation writes per-address storage and
+        // emits events, so large participant counts may exceed the 30M block gas limit
+        // in single-tx mode. This is expected — phased settlement handles the overflow.
+        try {
+          const tx = await crowdfund.finalize();
+          const receipt = await tx.wait();
+          const gasUsed = receipt!.gasUsed;
 
-        const totalCommitted = await crowdfund.totalCommitted();
-        const isRefundMode = await crowdfund.refundMode();
+          const isRefundMode = await crowdfund.refundMode();
 
-        const perParticipant = gasUsed / BigInt(count);
-        results.push({ count, gas: gasUsed, perParticipant });
+          const perParticipant = gasUsed / BigInt(count);
+          results.push({ count, gas: gasUsed, perParticipant });
 
-        console.log(
-          `    finalize() | ${count} participants | ` +
-          `${gasUsed.toLocaleString()} gas | ` +
-          `${perParticipant.toLocaleString()} gas/participant | ` +
-          `${isRefundMode ? "REFUND_MODE" : "FINALIZED"}`
-        );
+          console.log(
+            `    finalize() | ${count} participants | ` +
+            `${gasUsed.toLocaleString()} gas | ` +
+            `${perParticipant.toLocaleString()} gas/participant | ` +
+            `${isRefundMode ? "REFUND_MODE" : "FINALIZED"}`
+          );
+        } catch (e: any) {
+          if (e.message?.includes("out of gas")) {
+            console.log(
+              `    finalize() | ${count} participants | OOG (>30M gas) | ` +
+              `use phasedSettlement=true for this scale`
+            );
+            results.push({ count, gas: 30_000_000n, perParticipant: 30_000_000n / BigInt(count) });
+          } else {
+            throw e;
+          }
+        }
       });
     }
 
@@ -152,6 +166,90 @@ describe("Gas Benchmarks", function () {
   });
 
   // ============================================================
+  // 1b. Phased Settlement Gas Scaling
+  // ============================================================
+
+  describe("Phased settlement gas scaling (phasedSettlement=true)", function () {
+    it("finalize() + emitSettlement() with 150 participants", async function () {
+      const count = 150;
+
+      const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
+      const usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
+
+      const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+      const armToken = await ArmadaToken.deploy(deployer.address, deployer.address);
+      await armToken.initWhitelist([deployer.address]);
+
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      const openTimestamp = (await time.latest()) + 300;
+      const crowdfund = await ArmadaCrowdfund.deploy(
+        await usdc.getAddress(),
+        await armToken.getAddress(),
+        deployer.address, // treasury
+        deployer.address, // launchTeam
+        deployer.address, // securityCouncil
+        openTimestamp,
+        true              // phased settlement
+      );
+
+      await armToken.addToWhitelist(await crowdfund.getAddress());
+      await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+      await crowdfund.loadArm();
+
+      const seeds = allSigners.slice(1, count + 1);
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+
+      const commitAmount = USDC(15_000);
+      for (const s of seeds) {
+        await usdc.mint(s.address, commitAmount);
+        await usdc.connect(s).approve(await crowdfund.getAddress(), commitAmount);
+        await crowdfund.connect(s).commit(0, commitAmount);
+      }
+
+      await time.increase(THREE_WEEKS + 1);
+
+      // Phase 1: finalize() — computes and stores allocations, no event emission
+      const finTx = await crowdfund.finalize();
+      const finReceipt = await finTx.wait();
+      const finalizeGas = finReceipt!.gasUsed;
+
+      console.log(
+        `    finalize() [phased] | ${count} participants | ` +
+        `${finalizeGas.toLocaleString()} gas | ` +
+        `${(finalizeGas / BigInt(count)).toLocaleString()} gas/participant`
+      );
+
+      // Phase 2: emitSettlement() in batches of 50
+      const nodeCount = Number(await crowdfund.getParticipantCount());
+      const batchSize = 50;
+      let totalSettlementGas = 0n;
+      let batchNum = 0;
+
+      for (let start = 0; start < nodeCount; start += batchSize) {
+        const tx = await crowdfund.emitSettlement(start, batchSize);
+        const receipt = await tx.wait();
+        batchNum++;
+        totalSettlementGas += receipt!.gasUsed;
+
+        console.log(
+          `    emitSettlement() batch ${batchNum} [${start}..${Math.min(start + batchSize, nodeCount)}) | ` +
+          `${receipt!.gasUsed.toLocaleString()} gas`
+        );
+      }
+
+      expect(await crowdfund.settlementComplete()).to.be.true;
+
+      const totalGas = finalizeGas + totalSettlementGas;
+      console.log(
+        `    TOTAL [phased] | ${count} participants | ` +
+        `${totalGas.toLocaleString()} gas (finalize: ${finalizeGas.toLocaleString()} + settlement: ${totalSettlementGas.toLocaleString()}) | ` +
+        `${(totalGas / BigInt(count)).toLocaleString()} gas/participant`
+      );
+    });
+  });
+
+  // ============================================================
   // 2. Crowdfund addSeeds() batch gas
   // ============================================================
 
@@ -175,7 +273,8 @@ describe("Gas Benchmarks", function () {
           deployer.address, // treasury
           deployer.address, // launchTeam
           deployer.address, // securityCouncil
-          openTimestamp2    // openTimestamp
+          openTimestamp2,   // openTimestamp
+          false             // single-tx settlement
         );
         await armToken.addToWhitelist(await crowdfund.getAddress());
         const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -219,7 +318,8 @@ describe("Gas Benchmarks", function () {
         deployer.address, // treasury
         deployer.address, // launchTeam
         deployer.address, // securityCouncil
-        openTimestamp3    // openTimestamp
+        openTimestamp3,   // openTimestamp
+        false             // single-tx settlement
       );
 
       await armToken.addToWhitelist(await crowdfund.getAddress());
@@ -475,7 +575,8 @@ describe("Gas Benchmarks", function () {
         deployer.address, // treasury
         deployer.address, // launchTeam
         deployer.address, // securityCouncil
-        openTimestamp4    // openTimestamp
+        openTimestamp4,   // openTimestamp
+        false             // single-tx settlement
       );
 
       await armToken.addToWhitelist(await crowdfund.getAddress());

@@ -188,7 +188,8 @@ async function main() {
     await treasury.getAddress(),  // immutable treasury destination
     deployer.address,       // launchTeam
     deployer.address,       // securityCouncil (demo: deployer acts as council)
-    openTimestamp
+    openTimestamp,
+    false  // single-tx settlement
   );
   await crowdfund.waitForDeployment();
   log("DEPLOY", `ArmadaCrowdfund: ${await crowdfund.getAddress()}`);

@@ -1,5 +1,5 @@
 // ABOUTME: Account switching hook for both Anvil (local) and MetaMask (Sepolia).
-// ABOUTME: Provides signer, provider, address, and admin detection.
+// ABOUTME: Provides signer, provider, address, and launch team detection.
 import { useCallback, useEffect, useMemo } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { JsonRpcProvider, Wallet, BrowserProvider, type Signer, type Provider } from 'ethers'

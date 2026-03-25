@@ -378,7 +378,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         // Mark nonce as used
         usedNonces[inviter][nonce] = true;
 
-        // --- Invite logic (adapted from invite()) ---
+        // --- Whitelist registration ---
         require(fromHop < NUM_HOPS - 1, "ArmadaCrowdfund: max hop reached");
 
         Participant storage inviterNode = participants[inviter][fromHop];
@@ -407,7 +407,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         }
         inviterNode.invitesSent++;
 
-        // --- Commit logic (adapted from commit()) ---
+        // --- USDC escrow ---
         require(msg.sender != launchTeam, "ArmadaCrowdfund: launch team cannot commit");
         require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
 

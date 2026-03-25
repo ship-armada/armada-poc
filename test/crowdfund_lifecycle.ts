@@ -1,4 +1,4 @@
-// ABOUTME: Comprehensive end-to-end lifecycle tests for ArmadaCrowdfund (Task 14).
+// ABOUTME: Comprehensive end-to-end lifecycle tests for ArmadaCrowdfund.
 // ABOUTME: Exercises all lifecycle paths with conservation invariant verification.
 
 import { expect } from "chai";
@@ -526,27 +526,32 @@ describe("Crowdfund Full Lifecycle", function () {
         "USDC conservation violated"
       );
 
-      // ---- ARM Conservation: totalAllocated + unsoldArm == MAX_SALE_ARM ----
+      // ---- ARM Conservation: claimed + swept + remaining == MAX_SALE_ARM ----
+      // After some claims and the sweep, verify all ARM is accounted for.
       const totalAllocated = await crowdfund.totalAllocated();
-      const unsoldArm = MAX_SALE_ARM - totalAllocated;
-      expect(totalAllocated + unsoldArm).to.equal(
+      const totalArmClaimed = await crowdfund.totalArmClaimed();
+      const contractArmBalance = await armToken.balanceOf(cfAddr);
+      const sweptArm = treasuryArmAfter - treasuryArmBefore;
+      expect(totalArmClaimed + sweptArm + contractArmBalance).to.equal(
         MAX_SALE_ARM,
-        "ARM conservation violated"
+        "ARM conservation violated: claimed + swept + remaining != MAX_SALE_ARM"
       );
+      expect(totalAllocated).to.be.gt(0n);
+      expect(totalAllocated).to.be.lte(MAX_SALE_ARM);
 
       // ---- Balance integrity: claim all remaining participants ----
       // Claim ARM + refund for all remaining participants
       for (const p of allParticipants) {
-        // Skip already-claimed
+        // Skip participants who already claimed; re-throw unexpected errors
         try {
           await crowdfund.connect(p).claim(p.address);
-        } catch {
-          /* already claimed */
+        } catch (e: any) {
+          expect(e.message).to.include("ARM already claimed");
         }
         try {
           await crowdfund.connect(p).claimRefund();
-        } catch {
-          /* already claimed */
+        } catch (e: any) {
+          expect(e.message).to.include("already refunded");
         }
       }
 
@@ -609,11 +614,17 @@ describe("Crowdfund Full Lifecycle", function () {
         "USDC conservation violated (expansion)"
       );
 
-      // Conservation: ARM
+      // Conservation: ARM — verify contract holds all ARM and allocation is sensible
       const totalAllocated = await crowdfund.totalAllocated();
-      expect(totalAllocated + (MAX_SALE_ARM - totalAllocated)).to.equal(
-        MAX_SALE_ARM
+      const contractArmBalance = await armToken.balanceOf(
+        await crowdfund.getAddress()
       );
+      expect(contractArmBalance).to.equal(
+        MAX_SALE_ARM,
+        "ARM conservation violated: contract should hold all ARM before claims/sweep"
+      );
+      expect(totalAllocated).to.be.gt(0n);
+      expect(totalAllocated).to.be.lte(MAX_SALE_ARM);
     });
   });
 
@@ -682,8 +693,9 @@ describe("Crowdfund Full Lifecycle", function () {
       for (const s of seeds) {
         try {
           await crowdfund.connect(s).claimRefund();
-        } catch {
-          /* seed[0] already claimed */
+        } catch (e: any) {
+          // Only seed[0] should have already claimed; re-throw unexpected errors
+          expect(e.message).to.include("already refunded");
         }
         totalRefunded += await usdc.balanceOf(s.address);
       }

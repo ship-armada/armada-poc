@@ -287,6 +287,49 @@ describe("Crowdfund Settlement Rework", function () {
       // No USDC pushed in refundMode
       expect(treasuryAfter - treasuryBefore).to.equal(0);
     });
+
+    it("emits Finalized event on normal finalization", async function () {
+      await setupAndFinalize(80, USDC(15_000));
+
+      // Read the finalized state to verify event args
+      const saleSize = await crowdfund.saleSize();
+      const totalAllocArm = await crowdfund.totalAllocated();
+      const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
+
+      expect(saleSize).to.be.gt(0);
+      expect(totalAllocArm).to.be.gt(0);
+      expect(totalAllocUsdc).to.be.gt(0);
+
+      // Verify the Finalized event was emitted in the finalize() tx
+      // setupAndFinalize already called finalize(), so query past events
+      const filter = crowdfund.filters.Finalized();
+      const events = await crowdfund.queryFilter(filter);
+      expect(events).to.have.lengthOf(1);
+
+      const ev = events[0];
+      expect(ev.args.saleSize).to.equal(saleSize);
+      expect(ev.args.allocatedArm).to.equal(totalAllocArm);
+      expect(ev.args.netProceeds).to.equal(totalAllocUsdc);
+      expect(ev.args.refundMode).to.equal(false);
+    });
+
+    it("emits Finalized event with zeros in refundMode", async function () {
+      // 80 seeds at hop-0 only → enters refundMode (hop-0 ceiling < MIN_SALE)
+      const seeds = allSigners.slice(5, 85);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
+      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+      await time.increase(THREE_WEEKS + 1);
+
+      await expect(crowdfund.finalize())
+        .to.emit(crowdfund, "Finalized")
+        .withArgs(0, 0, 0, true);
+    });
   });
 
   // ============================================================

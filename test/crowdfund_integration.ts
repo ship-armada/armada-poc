@@ -55,13 +55,12 @@ describe("Crowdfund Integration", function () {
     await usdc.connect(signer).approve(await crowdfund.getAddress(), amount);
   }
 
-  // Setup helper: add seeds and start the 3-week active window
+  // Setup helper: register seed addresses in the crowdfund
   async function setupWithSeeds(seeds: SignerWithAddress[]) {
     await crowdfund.addSeeds(seeds.map(s => s.address));
   }
 
-  // Setup through active phase: seeds added and time advanced to window start.
-  // Commits are permitted once the active window opens.
+  // Setup helper: register seeds (time advancement to windowStart handled by beforeEach)
   async function setupActive(seeds: SignerWithAddress[]) {
     await setupWithSeeds(seeds);
   }

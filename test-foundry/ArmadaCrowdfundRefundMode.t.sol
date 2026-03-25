@@ -332,8 +332,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     }
 
     /// @notice claimRefund returns pro-rata USDC after successful finalization (not refundMode).
-    ///         With claim separation, claimRefund() handles all refund paths including
-    ///         the normal post-finalization pro-rata refund.
+    ///         claimRefund() handles all refund paths including the normal
+    ///         post-finalization pro-rata refund.
     function test_claimRefund_returnsProRataUsdc_afterSuccessfulFinalize() public {
         // Need demand spread across hops so totalAllocUsdc >= MIN_SALE.
         // At BASE_SALE: hop-0 ceiling = $798K, hop-1 ceiling = $513K.

@@ -882,7 +882,7 @@ describe("Crowdfund Integration", function () {
       const usdcAfter = await usdc.balanceOf(seeds[0].address);
 
       expect(armAfter).to.be.gt(armBefore); // received ARM
-      expect(usdcAfter).to.equal(usdcBefore); // claim() no longer transfers USDC — use claimRefund()
+      expect(usdcAfter).to.equal(usdcBefore); // claim() transfers ARM only; use claimRefund() for USDC
     });
 
     it("should reject double claim", async function () {

@@ -629,7 +629,7 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
-      // claimRefund now handles the normal post-finalization pro-rata refund path
+      // claimRefund handles the post-finalization pro-rata refund path
       const usdcBefore = await usdc.balanceOf(seeds[0].address);
       await crowdfund.connect(seeds[0]).claimRefund();
       const usdcAfter = await usdc.balanceOf(seeds[0].address);

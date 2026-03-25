@@ -55,7 +55,6 @@ describe("Crowdfund Multi-Node", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,
       treasury.address,
       deployer.address,
       deployer.address,       // securityCouncil
@@ -152,15 +151,20 @@ describe("Crowdfund Multi-Node", function () {
       expect(await crowdfund.getCommitment(alice.address, 1)).to.equal(USDC(8_000));
     });
 
-    it("should reject commitment exceeding scaled cap", async function () {
+    it("should accept commitment exceeding scaled cap (excess refunded at settlement)", async function () {
       await setupWithSeeds([seed1]);
 
       // One invite → cap = 1 * $4000 = $4000
       await crowdfund.connect(seed1).invite(alice.address, 0);
 
-      await expect(
-        crowdfund.connect(alice).commit(1, USDC(4_001))
-      ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
+      await crowdfund.connect(alice).commit(1, USDC(4_001));
+
+      // Over-cap deposits are accepted; raw commitment includes the full amount
+      const committed = await crowdfund.getCommitment(alice.address, 1);
+      expect(committed).to.equal(USDC(4_001));
+
+      const [tc1] = await crowdfund.getHopStats(1);
+      expect(tc1).to.equal(USDC(4_001));
     });
 
     it("should scale outgoing invite budget with invitesReceived", async function () {
@@ -370,8 +374,8 @@ describe("Crowdfund Multi-Node", function () {
       await crowdfund.connect(seed1).commit(1, USDC(100));
 
       // Each hop should show 1 unique committer
-      const [, committers0] = await crowdfund.getHopStats(0);
-      const [, committers1] = await crowdfund.getHopStats(1);
+      const [, , committers0] = await crowdfund.getHopStats(0);
+      const [, , committers1] = await crowdfund.getHopStats(1);
       expect(committers0).to.equal(1);
       expect(committers1).to.equal(1);
     });

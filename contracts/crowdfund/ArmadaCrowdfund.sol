@@ -8,13 +8,15 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "./IArmadaCrowdfund.sol";
 
 /// @title ArmadaCrowdfund — Word-of-mouth whitelist crowdfund with hop-based allocation
 /// @notice Implements the full crowdfund lifecycle: seed management, invitation chains,
 ///         USDC commitment escrow, deterministic allocation with pro-rata scaling and rollover,
 ///         elastic expansion, and refund mechanism.
-contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
+contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     using SafeERC20 for IERC20;
 
     // ============ Constants ============
@@ -36,15 +38,16 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
     uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
 
+    // EIP-712 typehash for off-chain invite signatures
+    bytes32 public constant INVITE_TYPEHASH = keccak256(
+        "Invite(address invitee,uint8 fromHop,uint256 nonce,uint256 deadline)"
+    );
+
     // ============ Immutable ============
 
     IERC20 public immutable usdc;
     IERC20 public immutable armToken;
-    address public immutable admin;
     /// @notice Protocol treasury — destination for sale proceeds and unallocated ARM.
-    // TODO: Admin is immutable. For production, add an admin transfer function
-    // so governance (timelock) can take over post-sale admin duties.
-    // Tracked in Codeberg issue.
     address public immutable treasury;
     /// @notice Launch team sentinel — issues predeclared invite budgets, not a participant.
     address public immutable launchTeam;
@@ -69,6 +72,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // Aggregate stats
     HopStats[3] public hopStats;
     uint256 public totalCommitted;
+    uint256 public cappedDemand;    // sum of capped deposits (set at finalization)
 
     // Finalization results
     uint256 public saleSize;
@@ -99,10 +103,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // 7-day governance quiet period. Set on both normal and refundMode paths.
     uint256 public finalizedAt;
 
+    // EIP-712 invite nonce tracking — used/revoked nonces per inviter
+    mapping(address => mapping(uint256 => bool)) public usedNonces;
+
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
-    event Invited(address indexed inviter, address indexed invitee, uint8 hop);
+    event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce);
     event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount);
     event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop);
     event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc);
@@ -112,11 +119,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded(uint256 balance);
     event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds);
+    event InviteNonceRevoked(address indexed inviter, uint256 nonce);
 
     // ============ Modifiers ============
 
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "ArmadaCrowdfund: not admin");
+    modifier onlyLaunchTeam() {
+        require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
         _;
     }
 
@@ -126,20 +134,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     constructor(
         address _usdc,
         address _armToken,
-        address _admin,
         address _treasury,
         address _launchTeam,
         address _securityCouncil,
         uint256 _openTimestamp
-    ) {
-        require(_admin != address(0), "ArmadaCrowdfund: zero admin");
+    ) EIP712("ArmadaCrowdfund", "1") {
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
         require(_securityCouncil != address(0), "ArmadaCrowdfund: zero securityCouncil");
         require(_openTimestamp >= block.timestamp, "ArmadaCrowdfund: openTimestamp in past");
         usdc = IERC20(_usdc);
         armToken = IERC20(_armToken);
-        admin = _admin;
         treasury = _treasury;
         launchTeam = _launchTeam;
         securityCouncil = _securityCouncil;
@@ -157,7 +162,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // ============ Seed Management ============
 
     /// @notice Add seed addresses (hop 0). Allowed before invite period ends (requires ARM loaded).
-    function addSeeds(address[] calldata seeds) external onlyAdmin {
+    function addSeeds(address[] calldata seeds) external onlyLaunchTeam {
         _requireArmLoadedAndPreInviteEnd();
         for (uint256 i = 0; i < seeds.length; i++) {
             _addSeed(seeds[i]);
@@ -165,7 +170,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     }
 
     /// @notice Add a single seed address (hop 0). Allowed before invite period ends (requires ARM loaded).
-    function addSeed(address seed) external onlyAdmin {
+    function addSeed(address seed) external onlyLaunchTeam {
         _requireArmLoadedAndPreInviteEnd();
         _addSeed(seed);
     }
@@ -230,7 +235,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             participantNodes.push(ParticipantNode(invitee, inviteeHop));
             hopStats[inviteeHop].whitelistCount++;
 
-            emit Invited(msg.sender, invitee, inviteeHop);
+            emit Invited(msg.sender, invitee, inviteeHop, 0);
         } else {
             // Subsequent invite — increment counter (scales cap + outgoing budget)
             require(
@@ -279,7 +284,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             participantNodes.push(ParticipantNode(invitee, inviteeHop));
             hopStats[inviteeHop].whitelistCount++;
 
-            emit Invited(msg.sender, invitee, inviteeHop);
+            emit Invited(msg.sender, invitee, inviteeHop, 0);
         } else {
             require(
                 inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
@@ -310,12 +315,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         require(p.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
         require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
 
-        // Invite-scaling cap: invitesReceived * per-slot cap
-        uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
-        require(
-            p.committed + amount <= effectiveCap,
-            "ArmadaCrowdfund: exceeds hop cap"
-        );
+        // Over-cap deposits are accepted. Excess beyond effective cap is refunded
+        // at settlement. Capped demand is computed at finalization time.
 
         bool firstCommit = (p.committed == 0);
 
@@ -331,6 +332,107 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Committed(msg.sender, amount, p.committed, hop);
+    }
+
+    /// @notice Redeem an off-chain EIP-712 signed invite and commit USDC in one transaction.
+    ///         The inviter signs an invite ticket off-chain; the invitee (msg.sender) presents
+    ///         the signature along with their USDC commitment.
+    /// @param inviter Address that signed the invite
+    /// @param fromHop Source hop level of the inviter (invitee joins at fromHop + 1)
+    /// @param nonce Unique nonce for this invite (must be > 0; 0 is reserved for direct invites)
+    /// @param deadline Timestamp after which the invite expires
+    /// @param signature EIP-712 signature from inviter (supports EOA and EIP-1271 wallets)
+    /// @param amount USDC amount to commit (6 decimals)
+    function commitWithInvite(
+        address inviter,
+        uint8 fromHop,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature,
+        uint256 amount
+    ) external nonReentrant whenNotPaused {
+        require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
+        require(
+            block.timestamp >= windowStart && block.timestamp <= windowEnd,
+            "ArmadaCrowdfund: not active window"
+        );
+        require(nonce > 0, "ArmadaCrowdfund: zero nonce");
+        require(block.timestamp <= deadline, "ArmadaCrowdfund: invite expired");
+        require(!usedNonces[inviter][nonce], "ArmadaCrowdfund: nonce already used");
+
+        // Verify EIP-712 signature
+        bytes32 structHash = keccak256(abi.encode(
+            INVITE_TYPEHASH,
+            msg.sender,     // invitee
+            fromHop,
+            nonce,
+            deadline
+        ));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        require(
+            SignatureChecker.isValidSignatureNow(inviter, digest, signature),
+            "ArmadaCrowdfund: invalid invite signature"
+        );
+
+        // Mark nonce as used
+        usedNonces[inviter][nonce] = true;
+
+        // --- Whitelist registration ---
+        require(fromHop < NUM_HOPS - 1, "ArmadaCrowdfund: max hop reached");
+
+        Participant storage inviterNode = participants[inviter][fromHop];
+        require(inviterNode.isWhitelisted, "ArmadaCrowdfund: inviter not whitelisted");
+        uint16 maxBudget = inviterNode.invitesReceived * uint16(hopConfigs[fromHop].maxInvites);
+        require(inviterNode.invitesSent < maxBudget, "ArmadaCrowdfund: invite limit reached");
+
+        uint8 inviteeHop = fromHop + 1;
+        Participant storage inviteeNode = participants[msg.sender][inviteeHop];
+
+        if (!inviteeNode.isWhitelisted) {
+            inviteeNode.isWhitelisted = true;
+            inviteeNode.invitesReceived = 1;
+            inviteeNode.invitedBy = inviter;
+            participantNodes.push(ParticipantNode(msg.sender, inviteeHop));
+            hopStats[inviteeHop].whitelistCount++;
+
+            emit Invited(inviter, msg.sender, inviteeHop, nonce);
+        } else {
+            require(
+                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
+                "ArmadaCrowdfund: max invites received"
+            );
+            inviteeNode.invitesReceived++;
+            emit InviteAdded(inviter, msg.sender, inviteeHop, inviteeNode.invitesReceived);
+        }
+        inviterNode.invitesSent++;
+
+        // --- USDC escrow ---
+        require(msg.sender != launchTeam, "ArmadaCrowdfund: launch team cannot commit");
+        require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
+
+        bool firstCommit = (inviteeNode.committed == 0);
+
+        inviteeNode.committed += amount;
+        hopStats[inviteeHop].totalCommitted += amount;
+        totalCommitted += amount;
+
+        if (firstCommit) {
+            hopStats[inviteeHop].uniqueCommitters++;
+        }
+
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Committed(msg.sender, amount, inviteeNode.committed, inviteeHop);
+    }
+
+    /// @notice Revoke an invite nonce so it can no longer be used.
+    /// @param nonce The nonce to revoke (must be > 0)
+    function revokeInviteNonce(uint256 nonce) external {
+        require(nonce > 0, "ArmadaCrowdfund: zero nonce");
+        require(!usedNonces[msg.sender][nonce], "ArmadaCrowdfund: nonce already used");
+        usedNonces[msg.sender][nonce] = true;
+        emit InviteNonceRevoked(msg.sender, nonce);
     }
 
     // ============ Finalization ============
@@ -351,10 +453,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     function finalize() external nonReentrant whenNotPaused {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");
-        require(totalCommitted >= MIN_SALE, "ArmadaCrowdfund: below minimum raise");
 
-        // Step 1: Elastic expansion
-        if (totalCommitted >= ELASTIC_TRIGGER) {
+        // Compute capped demand by iterating all participant nodes. Over-cap
+        // deposits are accepted during commit() but only capped amounts count
+        // toward minimum raise, expansion trigger, and hop-level allocation.
+        _computeCappedDemand();
+        require(cappedDemand >= MIN_SALE, "ArmadaCrowdfund: below minimum raise");
+
+        // Step 1: Elastic expansion (based on capped demand)
+        if (cappedDemand >= ELASTIC_TRIGGER) {
             saleSize = MAX_SALE;
         } else {
             saleSize = BASE_SALE;
@@ -428,7 +535,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
             hasCommitment = true;
             require(!p.claimed, "ArmadaCrowdfund: already claimed");
 
-            (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h);
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
+            (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
 
             p.claimed = true;
             p.allocation = allocArm;    // store for record-keeping
@@ -459,10 +567,21 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     ///         2. Phase.Canceled — security council cancel
     ///         3. Deadline fallback — window expired, not finalized, below MIN_SALE
     function claimRefund() external nonReentrant whenNotPaused {
+        // Deadline fallback path: compute capped demand on-the-fly to check
+        // if the sale failed to meet minimum. Only runs in the edge case where
+        // the window expired without finalization.
+        bool deadlineFallback = false;
+        if (!refundMode && phase != Phase.Canceled) {
+            if (block.timestamp > windowEnd && phase != Phase.Finalized) {
+                _computeCappedDemand();
+                deadlineFallback = cappedDemand < MIN_SALE;
+            }
+        }
+
         require(
             refundMode ||
             phase == Phase.Canceled ||
-            (block.timestamp > windowEnd && phase != Phase.Finalized && totalCommitted < MIN_SALE),
+            deadlineFallback,
             "ArmadaCrowdfund: refund not available"
         );
 
@@ -518,28 +637,28 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     // ============ Emergency Pause ============
 
     /// @notice Pause invite(), commit(), claim(), and claimRefund() in case of emergency.
-    ///         Pre-finalization: admin or security council. Post-finalization/cancel: security council only.
+    ///         Pre-finalization: launch team or security council. Post-finalization/cancel: security council only.
     function pause() external {
         if (phase == Phase.Finalized || phase == Phase.Canceled) {
             require(msg.sender == securityCouncil, "ArmadaCrowdfund: only security council");
         } else {
             require(
-                msg.sender == admin || msg.sender == securityCouncil,
-                "ArmadaCrowdfund: not admin or security council"
+                msg.sender == launchTeam || msg.sender == securityCouncil,
+                "ArmadaCrowdfund: not launch team or security council"
             );
         }
         _pause();
     }
 
     /// @notice Unpause to resume normal operations.
-    ///         Pre-finalization: admin or security council. Post-finalization/cancel: security council only.
+    ///         Pre-finalization: launch team or security council. Post-finalization/cancel: security council only.
     function unpause() external {
         if (phase == Phase.Finalized || phase == Phase.Canceled) {
             require(msg.sender == securityCouncil, "ArmadaCrowdfund: only security council");
         } else {
             require(
-                msg.sender == admin || msg.sender == securityCouncil,
-                "ArmadaCrowdfund: not admin or security council"
+                msg.sender == launchTeam || msg.sender == securityCouncil,
+                "ArmadaCrowdfund: not launch team or security council"
             );
         }
         _unpause();
@@ -550,12 +669,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     /// @notice Get aggregate stats for a hop (visible during sale)
     function getHopStats(uint8 hop) external view returns (
         uint256 _totalCommitted,
+        uint256 _cappedCommitted,
         uint32 _uniqueCommitters,
         uint32 _whitelistCount
     ) {
         require(hop < NUM_HOPS, "ArmadaCrowdfund: invalid hop");
         HopStats storage s = hopStats[hop];
-        return (s.totalCommitted, s.uniqueCommitters, s.whitelistCount);
+        return (s.totalCommitted, s.cappedCommitted, s.uniqueCommitters, s.whitelistCount);
     }
 
     /// @notice Get overall sale stats
@@ -617,7 +737,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
                 totalAllocArm += p.allocation;
                 totalRefundUsdc += p.refund;
             } else {
-                (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h);
+                uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
+                (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
                 totalAllocArm += allocArm;
                 totalRefundUsdc += refundUsdc;
             }
@@ -638,7 +759,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         if (p.claimed) {
             return (p.allocation, p.refund, true);
         }
-        (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, hop);
+        uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
+        (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, hop, effectiveCap);
         return (allocArm, refundUsdc, false);
     }
 
@@ -691,7 +813,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         uint256 hop1Ceiling = (available * hopConfigs[1].ceilingBps) / 10000;
 
         // --- Hop-0: allocate from available pool ---
-        uint256 demand = hopStats[0].totalCommitted;
+        // Uses cappedCommitted (set by _computeCappedDemand) — over-cap deposits excluded
+        uint256 demand = hopStats[0].cappedCommitted;
         uint256 alloc = demand <= hop0Ceiling ? demand : hop0Ceiling;
         uint256 leftover = hop0Ceiling - alloc;
         uint256 remainingAvailable = available - alloc;
@@ -702,7 +825,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         totalAllocArm_ = (alloc * 1e18) / ARM_PRICE;
 
         // --- Hop-1: allocate from remaining available, ceiling boosted by hop-0 leftover ---
-        demand = hopStats[1].totalCommitted;
+        demand = hopStats[1].cappedCommitted;
         uint256 hop1EffCeiling = hop1Ceiling + leftover;
         if (hop1EffCeiling > remainingAvailable) {
             hop1EffCeiling = remainingAvailable;
@@ -716,7 +839,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
         totalAllocArm_ += (alloc * 1e18) / ARM_PRICE;
 
         // --- Hop-2: allocate from floor + hop-1 leftover (no BPS ceiling) ---
-        demand = hopStats[2].totalCommitted;
+        demand = hopStats[2].cappedCommitted;
         uint256 hop2EffCeiling = hop2Floor + leftover;
         alloc = demand <= hop2EffCeiling ? demand : hop2EffCeiling;
 
@@ -727,24 +850,51 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable {
     }
 
     /// @dev Compute allocation for a participant from stored hop-level ceilings/demands.
-    ///      Uses the budget-capped ceiling stored at finalization for pro-rata scaling.
-    function _computeAllocation(uint256 committed, uint8 hop) internal view returns (
+    ///      Uses capped committed amount (min of raw committed and effectiveCap) for
+    ///      allocation math. Over-cap excess is refunded in full.
+    function _computeAllocation(uint256 committed, uint8 hop, uint256 effectiveCap) internal view returns (
         uint256 allocArm,
         uint256 allocUsdc,
         uint256 refundUsdc
     ) {
         if (committed == 0) return (0, 0, 0);
 
+        uint256 cappedCommitted = committed < effectiveCap ? committed : effectiveCap;
+
         if (finalDemands[hop] <= finalCeilings[hop]) {
-            // Under-subscribed: full allocation
-            allocUsdc = committed;
-            allocArm = (committed * 1e18) / ARM_PRICE;
+            // Under-subscribed: full allocation of capped amount
+            allocUsdc = cappedCommitted;
         } else {
-            // Over-subscribed: pro-rata
-            allocUsdc = (committed * finalCeilings[hop]) / finalDemands[hop];
-            // Compute ARM directly to avoid divide-before-multiply precision loss
-            allocArm = (committed * finalCeilings[hop] * 1e18) / (finalDemands[hop] * ARM_PRICE);
+            // Over-subscribed: pro-rata of capped amount
+            allocUsdc = (cappedCommitted * finalCeilings[hop]) / finalDemands[hop];
         }
+        allocArm = (allocUsdc * 1e18) / ARM_PRICE;
+        // Refund = raw committed minus allocated (includes over-cap excess + pro-rata excess)
         refundUsdc = committed - allocUsdc;
+    }
+
+    /// @dev Iterate all participant nodes and compute capped demand per hop and globally.
+    ///      Sets hopStats[h].cappedCommitted and cappedDemand. Matches spec finalization
+    ///      pseudocode step 1-2: cap each (address, hop) at invitesReceived * capUsdc.
+    function _computeCappedDemand() internal {
+        uint256 globalCapped = 0;
+        // Reset per-hop capped totals
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            hopStats[h].cappedCommitted = 0;
+        }
+
+        uint256 len = participantNodes.length;
+        for (uint256 i = 0; i < len; i++) {
+            ParticipantNode storage node = participantNodes[i];
+            Participant storage p = participants[node.addr][node.hop];
+            if (p.committed == 0) continue;
+
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[node.hop].capUsdc;
+            uint256 capped = p.committed < effectiveCap ? p.committed : effectiveCap;
+            hopStats[node.hop].cappedCommitted += capped;
+            globalCapped += capped;
+        }
+
+        cappedDemand = globalCapped;
     }
 }

@@ -31,9 +31,6 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
   const [ltInviteHop, setLtInviteHop] = useState<0 | 1>(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const isAdmin = currentAddress && state.adminAddress
-    ? currentAddress.toLowerCase() === state.adminAddress.toLowerCase()
-    : false
   const isLaunchTeam = currentAddress && state.launchTeamAddress
     ? currentAddress.toLowerCase() === state.launchTeamAddress.toLowerCase()
     : false
@@ -44,10 +41,10 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
     const treasuryAddr = crowdfund.deployment?.contracts.treasury
     if (treasuryAddr) {
       setTreasuryInput(treasuryAddr)
-    } else if (state.adminAddress) {
-      setTreasuryInput(state.adminAddress)
+    } else if (state.launchTeamAddress) {
+      setTreasuryInput(state.launchTeamAddress)
     }
-  }, [crowdfund.deployment, state.adminAddress]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [crowdfund.deployment, state.launchTeamAddress]) // eslint-disable-line react-hooks/exhaustive-deps
   const [treasuryUsdc, setTreasuryUsdc] = useState<bigint | null>(null)
   const [treasuryArm, setTreasuryArm] = useState<bigint | null>(null)
 
@@ -148,7 +145,7 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Active Phase: Add Seeds + ARM Pre-Load (admin only, before window opens) */}
-        {phase === Phase.Active && isAdmin && Number(state.windowStart) > 0 && state.blockTimestamp < Number(state.windowStart) && (
+        {phase === Phase.Active && isLaunchTeam && Number(state.windowStart) > 0 && state.blockTimestamp < Number(state.windowStart) && (
           <>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -318,7 +315,7 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
         })()}
 
         {/* After window ends: Finalize (admin or anyone) */}
-        {phase === Phase.Active && isAdmin && (
+        {phase === Phase.Active && isLaunchTeam && (
           <div className="space-y-2">
             <Button
               onClick={handleFinalize}
@@ -349,7 +346,7 @@ export function AdminPanel({ state, crowdfund, currentAddress }: AdminPanelProps
         )}
 
         {/* Finalized: Withdrawals (admin only) */}
-        {phase === Phase.Finalized && isAdmin && (
+        {phase === Phase.Finalized && isLaunchTeam && (
           <>
             <div className="space-y-2">
               <Label>Treasury Address</Label>

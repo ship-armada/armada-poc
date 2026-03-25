@@ -23,7 +23,6 @@ export const CROWDFUND_ABI = [
 
   // State variables (public getters)
   'function phase() view returns (uint8)',
-  'function admin() view returns (address)',
   'function launchTeam() view returns (address)',
   'function usdc() view returns (address)',
   'function armToken() view returns (address)',
@@ -40,7 +39,7 @@ export const CROWDFUND_ABI = [
   'function launchTeamInviteEnd() view returns (uint256)',
   'function participants(address, uint8) view returns (bool isWhitelisted, uint16 invitesReceived, uint256 committed, uint256 allocation, uint256 refund, bool claimed, address invitedBy, uint16 invitesSent)',
   'function participantNodes(uint256) view returns (address addr, uint8 hop)',
-  'function hopStats(uint256) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
+  'function hopStats(uint256) view returns (uint256 totalCommitted, uint256 cappedCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
   'function hopConfigs(uint256) view returns (uint16 ceilingBps, uint256 capUsdc, uint8 maxInvites, uint16 maxInvitesReceived)',
   'function finalCeilings(uint256) view returns (uint256)',
   'function finalDemands(uint256) view returns (uint256)',
@@ -50,7 +49,7 @@ export const CROWDFUND_ABI = [
   'function treasuryLeftoverUsdc() view returns (uint256)',
 
   // View functions
-  'function getHopStats(uint8 hop) view returns (uint256 totalCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
+  'function getHopStats(uint8 hop) view returns (uint256 totalCommitted, uint256 cappedCommitted, uint32 uniqueCommitters, uint32 whitelistCount)',
   'function getSaleStats() view returns (uint256 totalCommitted, uint8 phase, uint256 windowStart, uint256 windowEnd)',
   'function isWhitelisted(address addr, uint8 hop) view returns (bool)',
   'function getCommitment(address addr, uint8 hop) view returns (uint256 committed)',
@@ -65,7 +64,7 @@ export const CROWDFUND_ABI = [
 
   // Events
   'event SeedAdded(address indexed seed)',
-  'event Invited(address indexed inviter, address indexed invitee, uint8 hop)',
+  'event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce)',
   'event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount)',
   'event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop)',
   'event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc)',

@@ -35,10 +35,7 @@ export function App() {
   }
 
   const currentAddress = accounts.currentAddress
-  const isLaunchTeam = currentAddress && state.launchTeamAddress
-    ? currentAddress.toLowerCase() === state.launchTeamAddress.toLowerCase()
-    : false
-  const showAdminPanel = accounts.isAdmin || isLaunchTeam
+  const showAdminPanel = accounts.isLaunchTeam
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -51,7 +48,7 @@ export function App() {
           )}
           <ParticipantPanel state={state} crowdfund={crowdfund} />
         </div>
-        {isLocalMode() && accounts.isAdmin && <TimeControls state={state} crowdfund={crowdfund} />}
+        {isLocalMode() && accounts.isLaunchTeam && <TimeControls state={state} crowdfund={crowdfund} />}
         <ParticipantsTable state={state} crowdfund={crowdfund} />
         <EventLog events={events} />
       </main>

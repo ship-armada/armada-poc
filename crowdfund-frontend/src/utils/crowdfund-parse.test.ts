@@ -74,32 +74,35 @@ describe('parseParticipant', () => {
 
 describe('parseHopStats', () => {
   it('parses a hop stats struct', () => {
-    const result = [800_000_000_000n, 5n, 10n]
+    const result = [800_000_000_000n, 600_000_000_000n, 5n, 10n]
     const s = parseHopStats(result)
 
     expect(s.totalCommitted).toBe(800_000_000_000n)
+    expect(s.cappedCommitted).toBe(600_000_000_000n)
     expect(s.uniqueCommitters).toBe(5)
     expect(s.whitelistCount).toBe(10)
   })
 
   it('parses zero values', () => {
-    const result = [0n, 0n, 0n]
+    const result = [0n, 0n, 0n, 0n]
     const s = parseHopStats(result)
 
     expect(s.totalCommitted).toBe(0n)
+    expect(s.cappedCommitted).toBe(0n)
     expect(s.uniqueCommitters).toBe(0)
     expect(s.whitelistCount).toBe(0)
   })
 
-  it('preserves totalCommitted as bigint', () => {
-    const result = [1_200_000_000_000n, 100n, 150n]
+  it('preserves totalCommitted and cappedCommitted as bigint', () => {
+    const result = [1_200_000_000_000n, 900_000_000_000n, 100n, 150n]
     const s = parseHopStats(result)
 
     expect(typeof s.totalCommitted).toBe('bigint')
+    expect(typeof s.cappedCommitted).toBe('bigint')
   })
 
   it('converts uniqueCommitters and whitelistCount to number', () => {
-    const result = [0n, 42n, 99n]
+    const result = [0n, 0n, 42n, 99n]
     const s = parseHopStats(result)
 
     expect(typeof s.uniqueCommitters).toBe('number')

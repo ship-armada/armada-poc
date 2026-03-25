@@ -63,7 +63,6 @@ describe("Gas Benchmarks", function () {
         const crowdfund = await ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address,
           deployer.address, // treasury
           deployer.address, // launchTeam
           deployer.address, // securityCouncil
@@ -173,7 +172,6 @@ describe("Gas Benchmarks", function () {
         const crowdfund = await ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address,
           deployer.address, // treasury
           deployer.address, // launchTeam
           deployer.address, // securityCouncil
@@ -218,7 +216,6 @@ describe("Gas Benchmarks", function () {
       const crowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address,
         deployer.address, // treasury
         deployer.address, // launchTeam
         deployer.address, // securityCouncil
@@ -475,7 +472,6 @@ describe("Gas Benchmarks", function () {
       const crowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address,
         deployer.address, // treasury
         deployer.address, // launchTeam
         deployer.address, // securityCouncil

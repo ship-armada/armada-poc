@@ -6,7 +6,6 @@ import type { Phase, HopStats, Participant, CrowdfundEvent, CrowdfundDeployment,
 export interface CrowdfundState {
   // Contract phase and timing
   phase: Phase | null
-  adminAddress: string | null
   launchTeamAddress: string | null
   launchTeamBudget: LaunchTeamBudget | null
   windowStart: bigint
@@ -45,7 +44,6 @@ export interface CrowdfundState {
 
 const DEFAULT_STATE: CrowdfundState = {
   phase: null,
-  adminAddress: null,
   launchTeamAddress: null,
   launchTeamBudget: null,
   windowStart: 0n,

@@ -100,7 +100,6 @@ describe("Crowdfund Integration", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,
       treasury.address,
       deployer.address,
       deployer.address,       // securityCouncil
@@ -161,7 +160,7 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.isWhitelisted(seed1.address, 0)).to.be.true;
       expect(await crowdfund.getParticipantCount()).to.equal(1);
 
-      const [totalComm, uniqueComm, whitelistCount] = await crowdfund.getHopStats(0);
+      const [totalComm, _cappedComm, uniqueComm, whitelistCount] = await crowdfund.getHopStats(0);
       expect(whitelistCount).to.equal(1);
     });
 
@@ -173,10 +172,10 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.getParticipantCount()).to.equal(3);
     });
 
-    it("should reject non-admin adding seeds", async function () {
+    it("should reject non-launch-team adding seeds", async function () {
       await expect(
         crowdfund.connect(seed1).addSeed(seed2.address)
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin");
+      ).to.be.revertedWith("ArmadaCrowdfund: not launch team");
     });
 
     it("should reject adding zero address as seed", async function () {
@@ -224,7 +223,6 @@ describe("Crowdfund Integration", function () {
       freshCrowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await freshArmToken.getAddress(),
-        deployer.address,
         treasury.address,
         deployer.address,
         deployer.address,       // securityCouncil
@@ -435,9 +433,9 @@ describe("Crowdfund Integration", function () {
       await crowdfund.connect(seed2).invite(hop1c.address, 0);
       await crowdfund.connect(hop1a).invite(hop2a.address, 1);
 
-      const [, , wc0] = await crowdfund.getHopStats(0);
-      const [, , wc1] = await crowdfund.getHopStats(1);
-      const [, , wc2] = await crowdfund.getHopStats(2);
+      const [, , , wc0] = await crowdfund.getHopStats(0);
+      const [, , , wc1] = await crowdfund.getHopStats(1);
+      const [, , , wc2] = await crowdfund.getHopStats(2);
       expect(wc0).to.equal(2);
       expect(wc1).to.equal(3);
       expect(wc2).to.equal(1);
@@ -495,31 +493,45 @@ describe("Crowdfund Integration", function () {
       expect(committed).to.equal(USDC(15_000));
     });
 
-    it("should enforce per-hop cap ($15K for hop 0)", async function () {
+    it("should accept over-cap commit ($15K for hop 0) for refund at settlement", async function () {
       await setupActive([seed1]);
 
-      await expect(
-        crowdfund.connect(seed1).commit(0, USDC(15_001))
-      ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
+      await crowdfund.connect(seed1).commit(0, USDC(15_001));
+
+      // Over-cap deposits are accepted; totalCommitted includes the raw amount
+      const [tc0] = await crowdfund.getHopStats(0);
+      expect(tc0).to.equal(USDC(15_001));
+
+      // Participant's raw commitment includes the full over-cap amount
+      const committed = await crowdfund.getCommitment(seed1.address, 0);
+      expect(committed).to.equal(USDC(15_001));
     });
 
-    it("should enforce per-hop cap ($4K for hop 1)", async function () {
+    it("should accept over-cap commit ($4K for hop 1) for refund at settlement", async function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(hop1a.address, 0);
 
-      await expect(
-        crowdfund.connect(hop1a).commit(1, USDC(4_001))
-      ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
+      await crowdfund.connect(hop1a).commit(1, USDC(4_001));
+
+      const [tc1] = await crowdfund.getHopStats(1);
+      expect(tc1).to.equal(USDC(4_001));
+
+      const committed = await crowdfund.getCommitment(hop1a.address, 1);
+      expect(committed).to.equal(USDC(4_001));
     });
 
-    it("should enforce per-hop cap ($1K for hop 2)", async function () {
+    it("should accept over-cap commit ($1K for hop 2) for refund at settlement", async function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(hop1a.address, 0);
       await crowdfund.connect(hop1a).invite(hop2a.address, 1);
 
-      await expect(
-        crowdfund.connect(hop2a).commit(2, USDC(1_001))
-      ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
+      await crowdfund.connect(hop2a).commit(2, USDC(1_001));
+
+      const [tc2] = await crowdfund.getHopStats(2);
+      expect(tc2).to.equal(USDC(1_001));
+
+      const committed = await crowdfund.getCommitment(hop2a.address, 2);
+      expect(committed).to.equal(USDC(1_001));
     });
 
     it("should reject commit from non-whitelisted address", async function () {
@@ -567,11 +579,11 @@ describe("Crowdfund Integration", function () {
       await crowdfund.connect(seed2).commit(0, USDC(8_000));
       await crowdfund.connect(hop1a).commit(1, USDC(3_000));
 
-      const [tc0, uc0] = await crowdfund.getHopStats(0);
+      const [tc0, , uc0] = await crowdfund.getHopStats(0);
       expect(tc0).to.equal(USDC(18_000));
       expect(uc0).to.equal(2);
 
-      const [tc1, uc1] = await crowdfund.getHopStats(1);
+      const [tc1, , uc1] = await crowdfund.getHopStats(1);
       expect(tc1).to.equal(USDC(3_000));
       expect(uc1).to.equal(1);
 
@@ -583,12 +595,12 @@ describe("Crowdfund Integration", function () {
 
       // First commit: uniqueCommitters should go from 0 to 1
       await crowdfund.connect(seed1).commit(0, USDC(1_000));
-      const [, uc1] = await crowdfund.getHopStats(0);
+      const [, , uc1] = await crowdfund.getHopStats(0);
       expect(uc1).to.equal(1);
 
       // Second commit from same address: uniqueCommitters should stay at 1
       await crowdfund.connect(seed1).commit(0, USDC(1_000));
-      const [, uc2] = await crowdfund.getHopStats(0);
+      const [, , uc2] = await crowdfund.getHopStats(0);
       expect(uc2).to.equal(1);
     });
   });
@@ -822,7 +834,6 @@ describe("Crowdfund Integration", function () {
       const unfundedCrowdfund = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address,
         treasury.address,
         deployer.address,
         deployer.address,       // securityCouncil
@@ -1295,19 +1306,18 @@ describe("Crowdfund Integration", function () {
     it("outsider cannot pause pre-finalization", async function () {
       await expect(
         crowdfund.connect(outsider).pause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin or security council");
+      ).to.be.revertedWith("ArmadaCrowdfund: not launch team or security council");
     });
 
-    it("admin cannot pause post-finalization", async function () {
-      // Need a crowdfund where admin != securityCouncil to test this
+    it("launch team cannot pause post-finalization", async function () {
+      // Need a crowdfund where launchTeam != securityCouncil to test this
       const pauseOpenTimestamp = (await time.latest()) + 300;
       const freshCrowdfund = await (await ethers.getContractFactory("ArmadaCrowdfund")).deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address,        // admin
         treasury.address,        // treasury
         deployer.address,        // launchTeam
-        outsider.address,        // securityCouncil (different from admin)
+        outsider.address,        // securityCouncil (different from launchTeam)
         pauseOpenTimestamp
       );
       const freshAddr = await freshCrowdfund.getAddress();
@@ -1336,7 +1346,7 @@ describe("Crowdfund Integration", function () {
       await time.increase(THREE_WEEKS + 1);
       await freshCrowdfund.finalize();
 
-      // Admin (deployer) cannot pause post-finalization
+      // Launch team (deployer) cannot pause post-finalization
       await expect(
         freshCrowdfund.pause()
       ).to.be.revertedWith("ArmadaCrowdfund: only security council");
@@ -1346,22 +1356,21 @@ describe("Crowdfund Integration", function () {
       expect(await freshCrowdfund.paused()).to.be.true;
     });
 
-    it("admin cannot pause post-cancel", async function () {
+    it("launch team cannot pause post-cancel", async function () {
       const cancelOpenTimestamp = (await time.latest()) + 300;
       const freshCrowdfund = await (await ethers.getContractFactory("ArmadaCrowdfund")).deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address,        // admin
         treasury.address,        // treasury
         deployer.address,        // launchTeam
-        outsider.address,        // securityCouncil (different from admin)
+        outsider.address,        // securityCouncil (different from launchTeam)
         cancelOpenTimestamp
       );
 
       // Security council cancels
       await freshCrowdfund.connect(outsider).cancel();
 
-      // Admin cannot pause
+      // Launch team cannot pause
       await expect(
         freshCrowdfund.pause()
       ).to.be.revertedWith("ArmadaCrowdfund: only security council");

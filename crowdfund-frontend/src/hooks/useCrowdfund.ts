@@ -56,7 +56,6 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
       // Batch all read calls (excluding per-hop participant data)
       const [
         phase,
-        admin,
         launchTeamAddr,
         armLoaded,
         totalCommitted,
@@ -76,7 +75,6 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         launchTeamBudgetRaw,
       ] = await Promise.all([
         contract.phase(),
-        contract.admin(),
         contract.launchTeam(),
         contract.armLoaded(),
         contract.totalCommitted(),
@@ -173,7 +171,6 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
 
       setState({
         phase: parsedPhase,
-        adminAddress: admin as string,
         launchTeamAddress: launchTeamAddr as string,
         launchTeamBudget: {
           hop1Remaining: Number(launchTeamBudgetRaw[0]),

@@ -67,7 +67,6 @@ describe("Crowdfund Adversarial", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,
       treasuryAddr.address,
       deployer.address,
       deployer.address,       // securityCouncil
@@ -90,14 +89,14 @@ describe("Crowdfund Adversarial", function () {
     it("unauthorized address cannot pause pre-finalization", async function () {
       await expect(
         crowdfund.connect(allSigners[1]).pause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin or security council");
+      ).to.be.revertedWith("ArmadaCrowdfund: not launch team or security council");
     });
 
     it("unauthorized address cannot unpause pre-finalization", async function () {
       await crowdfund.pause();
       await expect(
         crowdfund.connect(allSigners[1]).unpause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not admin or security council");
+      ).to.be.revertedWith("ArmadaCrowdfund: not launch team or security council");
     });
 
     it("double pause reverts", async function () {
@@ -312,17 +311,21 @@ describe("Crowdfund Adversarial", function () {
       expect(committed).to.equal(USDC(15_000));
     });
 
-    it("commit over hop cap reverts", async function () {
+    it("commit over hop cap succeeds (excess refunded at settlement)", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       await fundAndApprove(allSigners[1], USDC(15_010));
       await crowdfund.connect(allSigners[1]).commit(0, USDC(15_000));
 
-      // $10 more (meets MIN_COMMIT but exceeds hop cap)
-      await expect(
-        crowdfund.connect(allSigners[1]).commit(0, USDC(10))
-      ).to.be.revertedWith("ArmadaCrowdfund: exceeds hop cap");
+      // $10 more (meets MIN_COMMIT, exceeds hop cap — accepted for refund at settlement)
+      await crowdfund.connect(allSigners[1]).commit(0, USDC(10));
+
+      const committed = await crowdfund.getCommitment(allSigners[1].address, 0);
+      expect(committed).to.equal(USDC(15_010));
+
+      const [tc0] = await crowdfund.getHopStats(0);
+      expect(tc0).to.equal(USDC(15_010));
     });
 
     it("totalCommitted exactly at MIN_SALE finalizes (not cancel)", async function () {
@@ -444,8 +447,8 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
       // Hop-1 and hop-2 should have 0 committers
-      const [, uc1] = await crowdfund.getHopStats(1);
-      const [, uc2] = await crowdfund.getHopStats(2);
+      const [, , uc1] = await crowdfund.getHopStats(1);
+      const [, , uc2] = await crowdfund.getHopStats(2);
       expect(uc1).to.equal(0);
       expect(uc2).to.equal(0);
     });
@@ -687,22 +690,6 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: nothing to sweep");
     });
 
-    it("constructor rejects zero admin address", async function () {
-      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
-      const localOpenTimestamp = (await time.latest()) + 300;
-      await expect(
-        ArmadaCrowdfund.deploy(
-          await usdc.getAddress(),
-          await armToken.getAddress(),
-          ethers.ZeroAddress,
-          treasuryAddr.address,
-          deployer.address,
-          deployer.address,
-          localOpenTimestamp
-        )
-      ).to.be.revertedWith("ArmadaCrowdfund: zero admin");
-    });
-
     it("constructor rejects zero treasury address", async function () {
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const localOpenTimestamp = (await time.latest()) + 300;
@@ -710,7 +697,6 @@ describe("Crowdfund Adversarial", function () {
         ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address,
           ethers.ZeroAddress,
           deployer.address,
           deployer.address,
@@ -726,7 +712,6 @@ describe("Crowdfund Adversarial", function () {
         ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address,
           treasuryAddr.address,
           deployer.address,
           ethers.ZeroAddress,

@@ -83,7 +83,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,
       treasuryAddr.address,
       deployer.address,
       deployer.address,       // securityCouncil
@@ -664,7 +663,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       localCrowdfund = await ArmadaCrowdfund.deploy(
         await localUsdc.getAddress(),
         await localArmToken.getAddress(),
-        localDeployer.address,
         await localTreasury.getAddress(),
         localDeployer.address,
         localDeployer.address,  // securityCouncil

@@ -346,7 +346,7 @@ async function main() {
   log("RESULT", `Phase: ${PhaseNames[finalPhase]}`);
 
   for (let h = 0; h < 3; h++) {
-    const [tc, uc, wc] = await crowdfund.getHopStats(h);
+    const [tc, , uc, wc] = await crowdfund.getHopStats(h);
     if (Number(wc) > 0) {
       log("STATS", `  Hop ${h}: ${wc} whitelisted, ${uc} committers, ${fmtUsdc(tc)} committed`);
     }

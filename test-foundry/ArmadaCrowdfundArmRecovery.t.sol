@@ -28,7 +28,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         crowdfund = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
-            admin,
             treasury,
             admin,
             admin,  // securityCouncil
@@ -101,7 +100,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         ArmadaCrowdfund fresh = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
-            admin,
             treasury,
             admin,
             admin,  // securityCouncil
@@ -140,7 +138,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         ArmadaCrowdfund fuzzCrowdfund = new ArmadaCrowdfund(
             address(usdc),
             address(armToken),
-            admin,
             treasury,
             admin,
             admin,  // securityCouncil

@@ -23,7 +23,7 @@ interface HeaderProps {
 }
 
 export function Header({ accounts, crowdfund }: HeaderProps) {
-  const { currentAddress, isAdmin, wallet, selectAnvilAccount, connectMetaMask, disconnectMetaMask, anvilAccounts } = accounts
+  const { currentAddress, isLaunchTeam, wallet, selectAnvilAccount, connectMetaMask, disconnectMetaMask, anvilAccounts } = accounts
   const { state, mintUsdc } = crowdfund
   const local = isLocalMode()
   const [copied, setCopied] = useState(false)
@@ -132,8 +132,8 @@ export function Header({ accounts, crowdfund }: HeaderProps) {
           )}
 
           {/* Admin indicator */}
-          {isAdmin && (
-            <Badge className="bg-accent text-accent-foreground">Admin</Badge>
+          {isLaunchTeam && (
+            <Badge className="bg-accent text-accent-foreground">Launch Team</Badge>
           )}
         </div>
       </div>

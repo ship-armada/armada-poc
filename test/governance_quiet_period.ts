@@ -76,7 +76,6 @@ describe("Governance Quiet Period (T6.1)", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,
       treasuryAddr.address,
       deployer.address,
       deployer.address, // securityCouncil

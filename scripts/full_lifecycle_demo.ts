@@ -185,7 +185,6 @@ async function main() {
   const crowdfund = await ArmadaCrowdfund.deploy(
     await usdc.getAddress(),
     await armToken.getAddress(),
-    deployer.address,       // admin
     await treasury.getAddress(),  // immutable treasury destination
     deployer.address,       // launchTeam
     deployer.address,       // securityCouncil (demo: deployer acts as council)
@@ -274,9 +273,9 @@ async function main() {
   }
   log("INVITE", `${hop1Count} hop-1 addresses invited ${hop2Count} hop-2 addresses`);
 
-  const [, , wc0] = await crowdfund.getHopStats(0);
-  const [, , wc1] = await crowdfund.getHopStats(1);
-  const [, , wc2] = await crowdfund.getHopStats(2);
+  const [, , , wc0] = await crowdfund.getHopStats(0);
+  const [, , , wc1] = await crowdfund.getHopStats(1);
+  const [, , , wc2] = await crowdfund.getHopStats(2);
   log("STATS", `Whitelisted \u2014 Hop 0: ${wc0} | Hop 1: ${wc1} | Hop 2: ${wc2}`);
 
   // 2d: Commitments (concurrent with invitations — no time jump needed)
@@ -311,7 +310,7 @@ async function main() {
   const totalCommitted = await crowdfund.totalCommitted();
   log("STATS", `Total committed: ${fmtUsdc(totalCommitted)}`);
   for (let h = 0; h < 3; h++) {
-    const [tc, uc] = await crowdfund.getHopStats(h);
+    const [tc, , uc] = await crowdfund.getHopStats(h);
     log("STATS", `  Hop ${h}: ${uc} committers, ${fmtUsdc(tc)}`);
   }
 

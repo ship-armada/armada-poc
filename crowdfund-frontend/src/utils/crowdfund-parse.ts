@@ -20,7 +20,8 @@ export function parseParticipant(result: any): Participant {
 export function parseHopStats(result: any): HopStats {
   return {
     totalCommitted: BigInt(result[0]),
-    uniqueCommitters: Number(result[1]),
-    whitelistCount: Number(result[2]),
+    cappedCommitted: BigInt(result[1]),
+    uniqueCommitters: Number(result[2]),
+    whitelistCount: Number(result[3]),
   }
 }

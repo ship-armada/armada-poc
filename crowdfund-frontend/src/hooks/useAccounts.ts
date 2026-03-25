@@ -25,7 +25,7 @@ export function useAccounts() {
     return null
   }, [wallet.mode, wallet.anvilAccount, provider])
 
-  const isAdmin = useMemo(() => {
+  const isLaunchTeam = useMemo(() => {
     if (!currentAddress || !deployment) return false
     return currentAddress.toLowerCase() === deployment.deployer.toLowerCase()
   }, [currentAddress, deployment])
@@ -140,7 +140,7 @@ export function useAccounts() {
     currentAddress,
     provider,
     signer,
-    isAdmin,
+    isLaunchTeam,
     selectAnvilAccount,
     connectMetaMask,
     disconnectMetaMask,

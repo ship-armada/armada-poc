@@ -22,7 +22,7 @@ describe("Launch Team & Seed Cap", function () {
   let armToken: any;
   let usdc: any;
 
-  let deployer: SignerWithAddress; // also admin and launchTeam for testing
+  let deployer: SignerWithAddress; // also launchTeam for testing
   let treasury: SignerWithAddress;
   let outsider: SignerWithAddress;
   let allSigners: SignerWithAddress[];
@@ -60,9 +60,8 @@ describe("Launch Team & Seed Cap", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,   // admin
       treasury.address,   // treasury
-      deployer.address,   // launchTeam (same as admin for local testing)
+      deployer.address,   // launchTeam
       deployer.address,   // securityCouncil
       openTimestamp        // openTimestamp
     );
@@ -323,7 +322,6 @@ describe("Launch Team & Seed Cap", function () {
       const cf = await ArmadaCrowdfund.deploy(
         await usdc.getAddress(),
         await armToken.getAddress(),
-        deployer.address,
         treasury.address,
         ltSigner.address,   // separate launch team
         deployer.address,   // securityCouncil
@@ -336,8 +334,8 @@ describe("Launch Team & Seed Cap", function () {
       await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
       await cf.loadArm();
 
-      // Add launchTeam as a seed (admin can do this)
-      await cf.addSeed(ltSigner.address);
+      // Add launchTeam as a seed (launch team calls addSeed)
+      await cf.connect(ltSigner).addSeed(ltSigner.address);
       { const ws = Number(await cf.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       // Fund the launch team address
@@ -435,7 +433,6 @@ describe("Launch Team & Seed Cap", function () {
         ArmadaCrowdfund.deploy(
           await usdc.getAddress(),
           await armToken.getAddress(),
-          deployer.address,
           treasury.address,
           ethers.ZeroAddress,
           deployer.address,

@@ -41,7 +41,8 @@ struct ParticipantNode {
 }
 
 struct HopStats {
-    uint256 totalCommitted;     // aggregate USDC committed for this hop
+    uint256 totalCommitted;     // aggregate USDC committed for this hop (raw, including over-cap)
+    uint256 cappedCommitted;    // aggregate USDC committed capped at effective caps (set at finalization)
     uint32 uniqueCommitters;    // count of unique addresses that committed > 0
     uint32 whitelistCount;      // count of whitelisted addresses at this hop
 }

@@ -161,7 +161,7 @@ task("cf-stats", "Show crowdfund statistics")
 
     console.log("\nPer-Hop Stats:");
     for (let h = 0; h < 3; h++) {
-      const [tc, uc, wc] = await crowdfund.getHopStats(h);
+      const [tc, , uc, wc] = await crowdfund.getHopStats(h);
       console.log(`  Hop ${h}: ${wc} whitelisted, ${uc} committed, $${ethers.formatUnits(tc, 6)} total`);
     }
 

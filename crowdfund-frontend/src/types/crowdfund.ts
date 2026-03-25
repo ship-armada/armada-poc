@@ -22,6 +22,7 @@ export interface Participant {
 
 export interface HopStats {
   totalCommitted: bigint
+  cappedCommitted: bigint
   uniqueCommitters: number
   whitelistCount: number
 }

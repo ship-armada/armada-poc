@@ -124,18 +124,18 @@ Exhaustive catalog of testing scenarios for ArmadaCrowdfund, organized by lifecy
 | 4.6 | Commit at `commitmentEnd + 1` | Revert: "not commitment window" | **None** |
 | 4.7 | Commit at `commitmentStart - 1` (during invitation window) | Revert: "not commitment window" | Integration |
 
-### Cap Enforcement
+### Over-Cap Acceptance (excess refunded at settlement)
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
 | 4.8 | Hop-0: commit exactly $15,000 | Succeeds | Adversarial |
-| 4.9 | Hop-0: commit $15,001 | Revert: "exceeds hop cap" | Integration |
-| 4.10 | Hop-0: commit $10K then $5,001 (cumulative over cap) | Revert: "exceeds hop cap" | **None** |
+| 4.9 | Hop-0: commit $15,001 | Succeeds (excess refunded at settlement) | Integration |
+| 4.10 | Hop-0: commit $10K then $5,001 (cumulative over cap) | Succeeds (excess refunded at settlement) | **None** |
 | 4.11 | Hop-1: commit exactly $4,000 | Succeeds | **None** |
-| 4.12 | Hop-1: commit $4,001 | Revert: "exceeds hop cap" | Integration |
+| 4.12 | Hop-1: commit $4,001 | Succeeds (excess refunded at settlement) | Integration |
 | 4.13 | Hop-2: commit exactly $1,000 | Succeeds | **None** |
-| 4.14 | Hop-2: commit $1,001 | Revert: "exceeds hop cap" | Integration |
-| 4.15 | Commit 1 wei over cap (after prior commits) | Revert: "exceeds hop cap" | Adversarial |
+| 4.14 | Hop-2: commit $1,001 | Succeeds (excess refunded at settlement) | Integration |
+| 4.15 | Commit 1 wei over cap (after prior commits) | Succeeds (excess refunded at settlement) | Adversarial |
 
 ### Invalid Commits
 

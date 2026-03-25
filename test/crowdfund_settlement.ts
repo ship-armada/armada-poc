@@ -79,7 +79,6 @@ describe("Crowdfund Settlement Rework", function () {
     crowdfund = await ArmadaCrowdfund.deploy(
       await usdc.getAddress(),
       await armToken.getAddress(),
-      deployer.address,
       treasury.address,
       deployer.address,         // launchTeam
       securityCouncil.address,  // securityCouncil

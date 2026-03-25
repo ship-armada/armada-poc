@@ -337,9 +337,9 @@ describe("Launch Team & Seed Cap", function () {
       await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
       await cf.loadArm();
 
-      // Add launchTeam as a seed (launch team calls addSeed)
-      await cf.connect(ltSigner).addSeed(ltSigner.address);
+      // Advance to window start, then add launchTeam as a seed
       await time.increaseTo(await cf.windowStart());
+      await cf.connect(ltSigner).addSeed(ltSigner.address);
 
       // Fund the launch team address
       await fundAndApprove(ltSigner, USDC(15000));

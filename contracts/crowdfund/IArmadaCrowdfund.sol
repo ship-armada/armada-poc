@@ -11,7 +11,7 @@ pragma solidity ^0.8.17;
 enum Phase {
     Active,         // Invites + commits happen concurrently (3-week window)
     Finalized,      // Allocations computed, claims open
-    Canceled        // Below minimum raise, full refunds
+    Canceled        // Security Council cancel or permanent shutdown; full refunds
 }
 
 // ========== Structs ==========

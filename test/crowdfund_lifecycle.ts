@@ -84,6 +84,7 @@ describe("Crowdfund Full Lifecycle", function () {
     await armToken.addToWhitelist(await crowdfund.getAddress());
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
+    await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;
   }
 
@@ -151,9 +152,7 @@ describe("Crowdfund Full Lifecycle", function () {
       const seedEvents = parseEvents(crowdfund, addSeedsReceipt, "SeedAdded");
       expect(seedEvents.length).to.equal(70);
 
-      // Advance to window start
-      const ws = Number(await crowdfund.windowStart());
-      await time.increaseTo(ws);
+      // deployCrowdfund() already advances to windowStart
 
       // ---- Week 1: Launch team invites ----
       // 3 hop-1 invites from launch team
@@ -581,8 +580,7 @@ describe("Crowdfund Full Lifecycle", function () {
       // At MAX_SALE, hop-0 ceiling ≈ $1.197M > MIN_SALE, so no hop-1 needed.
       const seeds = allSigners.slice(5, 105); // 100 seeds
       await crowdfund.addSeeds(seeds.map((s) => s.address));
-      const ws = Number(await crowdfund.windowStart());
-      await time.increaseTo(ws);
+      // deployCrowdfund() already advances to windowStart
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);
@@ -641,8 +639,7 @@ describe("Crowdfund Full Lifecycle", function () {
       // is $798K. No hop-1 demand → totalAllocUsdc = $798K < MIN_SALE → refundMode.
       const seeds = allSigners.slice(5, 85); // 80 seeds
       await crowdfund.addSeeds(seeds.map((s) => s.address));
-      const ws = Number(await crowdfund.windowStart());
-      await time.increaseTo(ws);
+      // deployCrowdfund() already advances to windowStart
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);
@@ -657,10 +654,10 @@ describe("Crowdfund Full Lifecycle", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.refundMode()).to.be.true;
 
-      // Finalized event: zeros + refundMode=true
+      // Finalized event: saleSize set, zero allocations, refundMode=true
       const fEvents = parseEvents(crowdfund, receipt, "Finalized");
       expect(fEvents.length).to.equal(1);
-      expect(fEvents[0].args.saleSize).to.equal(0n);
+      expect(fEvents[0].args.saleSize).to.equal(BASE_SALE);
       expect(fEvents[0].args.allocatedArm).to.equal(0n);
       expect(fEvents[0].args.netProceeds).to.equal(0n);
       expect(fEvents[0].args.refundMode).to.be.true;
@@ -719,8 +716,7 @@ describe("Crowdfund Full Lifecycle", function () {
       // Setup: 10 seeds, some commits
       const seeds = allSigners.slice(5, 15);
       await crowdfund.addSeeds(seeds.map((s) => s.address));
-      const ws = Number(await crowdfund.windowStart());
-      await time.increaseTo(ws);
+      // deployCrowdfund() already advances to windowStart
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);
@@ -777,8 +773,7 @@ describe("Crowdfund Full Lifecycle", function () {
       // Small commitments well below MIN_SALE
       const seeds = allSigners.slice(5, 8); // 3 seeds
       await crowdfund.addSeeds(seeds.map((s) => s.address));
-      const ws = Number(await crowdfund.windowStart());
-      await time.increaseTo(ws);
+      // deployCrowdfund() already advances to windowStart
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);
@@ -819,8 +814,7 @@ describe("Crowdfund Full Lifecycle", function () {
       // Setup: 70 seeds + hop-1 demand for successful finalization
       const seeds = allSigners.slice(5, 75);
       await crowdfund.addSeeds(seeds.map((s) => s.address));
-      const ws = Number(await crowdfund.windowStart());
-      await time.increaseTo(ws);
+      // deployCrowdfund() already advances to windowStart
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000), crowdfund);

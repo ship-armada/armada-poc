@@ -34,7 +34,6 @@ describe("Crowdfund Multi-Node", function () {
 
   async function setupWithSeeds(seeds: SignerWithAddress[]) {
     await crowdfund.addSeeds(seeds.map(s => s.address));
-    { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
   }
 
   beforeEach(async function () {
@@ -66,6 +65,7 @@ describe("Crowdfund Multi-Node", function () {
 
     await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
+    await time.increaseTo(await crowdfund.windowStart());
 
     for (const signer of [seed1, seed2, seed3, alice, bob]) {
       await fundAndApprove(signer, USDC(50_000));
@@ -206,15 +206,15 @@ describe("Crowdfund Multi-Node", function () {
       expect(await crowdfund.getInvitesReceived(alice.address, 1)).to.equal(2);
     });
 
-    it("should emit InviteAdded on re-invite (not Invited)", async function () {
+    it("should emit Invited on re-invite", async function () {
       await setupWithSeeds([seed1, seed2]);
 
       await crowdfund.connect(seed1).invite(alice.address, 0);
 
-      // Second invite should emit InviteAdded
+      // Second invite should also emit Invited (spec: every invite edge emits Invited)
       await expect(crowdfund.connect(seed2).invite(alice.address, 0))
-        .to.emit(crowdfund, "InviteAdded")
-        .withArgs(seed2.address, alice.address, 1, 2);
+        .to.emit(crowdfund, "Invited")
+        .withArgs(seed2.address, alice.address, 1, 0);
     });
 
     it("should not duplicate participantNodes entry on re-invite", async function () {
@@ -423,7 +423,6 @@ describe("Crowdfund Multi-Node", function () {
       // Use many seeds to get above MIN_SALE
       const seeds = signers.slice(1, 80);
       await crowdfund.addSeeds(seeds.map((s: SignerWithAddress) => s.address));
-      { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
 
       // seed1 self-invites to hop-1
       await crowdfund.connect(seed1).invite(seed1.address, 0);

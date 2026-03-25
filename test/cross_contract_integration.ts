@@ -145,8 +145,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // === CROWDFUND PHASE ===
 
       // 1. Add seeds and start invitations
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       // 2. Seeds invite hop-1 addresses
       for (let i = 0; i < 3 && i < hop1Addrs.length; i++) {
@@ -249,8 +249,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
   describe("Token Supply Consistency", function () {
     async function runCrowdfundAndClaim() {
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const seed of seeds) {
         const amount = USDC(15_000);
@@ -357,8 +357,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
   describe("Adversarial Cross-Contract", function () {
     async function setupCrowdfundAndGovernance() {
       // Run crowdfund
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const seed of seeds) {
         const amount = USDC(15_000);
@@ -542,8 +542,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     it("unclaimed crowdfund participant cannot vote (no ARM, no delegation, no voting power)", async function () {
       // Run crowdfund but DON'T claim
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const seed of seeds) {
         const amount = USDC(15_000);
@@ -731,8 +731,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     it("quorum denominator shifts as participants claim ARM from crowdfund", async function () {
       // Run crowdfund lifecycle
-      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
       { const ws = Number(await localCrowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -791,8 +791,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     it("finalize pushes USDC proceeds to treasury contract", async function () {
       // Run crowdfund
-      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
       { const ws = Number(await localCrowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -821,8 +821,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     it("withdrawUnallocatedArm sends ARM to treasury contract", async function () {
       // Run crowdfund
-      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
       { const ws = Number(await localCrowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);
@@ -846,8 +846,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
     it("full lifecycle: crowdfund → claim → delegate → propose → vote → execute", async function () {
       // Run crowdfund
-      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
       { const ws = Number(await localCrowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
         const amount = USDC(15_000);

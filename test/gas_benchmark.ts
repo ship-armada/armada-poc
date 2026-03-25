@@ -78,8 +78,8 @@ describe("Gas Benchmarks", function () {
 
         // Add seeds — all participants are hop-0 for simplicity
         const seeds = allSigners.slice(1, count + 1);
-        await crowdfund.addSeeds(seeds.map(s => s.address));
         { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+        await crowdfund.addSeeds(seeds.map(s => s.address));
 
         // Each seed commits $15K (max hop-0 cap)
         // Total: count * $15K. Need >= $1M (MIN_SALE) for finalize() to succeed.
@@ -197,8 +197,8 @@ describe("Gas Benchmarks", function () {
       await crowdfund.loadArm();
 
       const seeds = allSigners.slice(1, count + 1);
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       const commitAmount = USDC(15_000);
       for (const s of seeds) {
@@ -280,6 +280,7 @@ describe("Gas Benchmarks", function () {
         const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
         await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
         await crowdfund.loadArm();
+        await time.increaseTo(await crowdfund.windowStart());
 
         const seeds = allSigners.slice(1, batchSize + 1);
         const tx = await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -328,8 +329,8 @@ describe("Gas Benchmarks", function () {
 
       const count = 100;
       const seeds = allSigners.slice(1, count + 1);
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const s of seeds) {
         await usdc.mint(s.address, USDC(15_000));
@@ -584,8 +585,8 @@ describe("Gas Benchmarks", function () {
       await crowdfund.loadArm();
 
       const seeds = allSigners.slice(1, 4);
-      await crowdfund.addSeeds(seeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
 
       // Fund all seeds
       for (const s of seeds) {

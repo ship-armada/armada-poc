@@ -140,8 +140,8 @@ describe("Governance Quiet Period (T6.1)", function () {
 
   // Helper: run crowdfund to finalization (normal path — above MIN_SALE)
   async function finalizeCrowdfund() {
-    await crowdfund.addSeeds(seeds.map(s => s.address));
     { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+    await crowdfund.addSeeds(seeds.map(s => s.address));
 
     for (const seed of seeds) {
       const amount = USDC(15_000);
@@ -318,8 +318,8 @@ describe("Governance Quiet Period (T6.1)", function () {
       // Hop-0 ceiling = 70% × $1.2M = $840K. Demand $1.05M > $840K → pro-rata $840K.
       // No hop-1/2 participants → totalAllocUsdc = $840K < $1M → refundMode. ✓
       const refundSeeds = seeds.slice(0, 70);
-      await crowdfund.addSeeds(refundSeeds.map(s => s.address));
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
+      await crowdfund.addSeeds(refundSeeds.map(s => s.address));
 
       for (const seed of refundSeeds) {
         const amount = USDC(15_000);

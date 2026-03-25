@@ -60,9 +60,9 @@ describe("Crowdfund EIP-712 Invites", function () {
 
   // Setup helper: add seeds and advance to window start
   async function setupWithSeeds(seeds: SignerWithAddress[]) {
-    await crowdfund.addSeeds(seeds.map((s) => s.address));
     const ws = Number(await crowdfund.windowStart());
     if ((await time.latest()) < ws) await time.increaseTo(ws);
+    await crowdfund.addSeeds(seeds.map((s) => s.address));
   }
 
   // Build an EIP-712 invite value object
@@ -127,6 +127,7 @@ describe("Crowdfund EIP-712 Invites", function () {
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
     await crowdfund.loadArm();
+    await time.increaseTo(await crowdfund.windowStart());
 
     // Fund potential participants with USDC
     for (const signer of [seed1, seed2, hop1a, hop1b, hop1c, hop1d]) {
@@ -330,14 +331,17 @@ describe("Crowdfund EIP-712 Invites", function () {
       ).to.be.revertedWith("Pausable: paused");
     });
 
-    it("should revert before window start", async function () {
-      // Add seeds but do NOT advance time to window start
+    it("should revert after window end", async function () {
       await crowdfund.addSeeds([seed1.address]);
 
-      const deadline = (await time.latest()) + ONE_DAY;
+      const deadline = (await time.latest()) + 30 * ONE_DAY;
       const nonce = 1;
 
       const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+
+      // Advance past window end
+      const THREE_WEEKS = 21 * ONE_DAY;
+      await time.increase(THREE_WEEKS + 1);
 
       await expect(
         crowdfund

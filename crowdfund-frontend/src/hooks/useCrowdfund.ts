@@ -2,7 +2,7 @@
 // ABOUTME: Provides read (polling), write (tx), and faucet operations.
 import { useCallback, useEffect, useRef } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { type Signer, type Provider } from 'ethers'
+import { type Signer, type Provider, ethers } from 'ethers'
 import { toast } from 'sonner'
 import {
   crowdfundStateAtom,
@@ -259,11 +259,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         for (let j = 0; j < addressesAndHops.length; j++) {
           const parsed = parseParticipant(participants[j])
 
-          // Override allocation/refund/claimed with computed values
+          // Override allocation/refund/armClaimed with computed values from getAllocationAtHop
           if (allocations?.[j]) {
             parsed.allocation = BigInt(allocations[j][0])
             parsed.refund = BigInt(allocations[j][1])
-            parsed.claimed = allocations[j][2] as boolean
+            parsed.armClaimed = allocations[j][2] as boolean
           } else if (isRefundMode) {
             // In refundMode, full committed amount is refundable
             parsed.allocation = 0n
@@ -444,7 +444,7 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
     () =>
       executeTx('Claiming allocation', async (signer, dep) => {
         const contract = getCrowdfundContract(dep, signer)
-        const tx = await contract.claim()
+        const tx = await contract.claim(ethers.ZeroAddress)
         return tx
       }),
     [executeTx],

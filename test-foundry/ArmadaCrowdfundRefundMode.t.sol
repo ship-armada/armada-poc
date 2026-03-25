@@ -94,7 +94,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
         vm.prank(seeds[0]);
         vm.expectRevert("ArmadaCrowdfund: sale in refund mode");
-        crowdfund.claim();
+        crowdfund.claim(address(0));
     }
 
     /// @notice claimRefund() returns full deposited USDC in refundMode
@@ -331,8 +331,10 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         crowdfund.claimRefund();
     }
 
-    /// @notice claimRefund reverts after successful finalization (not refundMode)
-    function test_claimRefund_revertsAfterSuccessfulFinalize() public {
+    /// @notice claimRefund returns pro-rata USDC after successful finalization (not refundMode).
+    ///         claimRefund() handles all refund paths including the normal
+    ///         post-finalization pro-rata refund.
+    function test_claimRefund_returnsProRataUsdc_afterSuccessfulFinalize() public {
         // Need demand spread across hops so totalAllocUsdc >= MIN_SALE.
         // At BASE_SALE: hop-0 ceiling = $798K, hop-1 ceiling = $513K.
         // 53 seeds × $15K = $795K (under hop-0 ceiling → full allocation).
@@ -371,9 +373,17 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertFalse(crowdfund.refundMode());
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
 
-        // claimRefund should revert for a seed that committed
+        // claimRefund should succeed and return the pro-rata USDC refund
+        // Hop-0 is under-subscribed ($795K < $798K ceiling) so seeds get full allocation
+        // with no refund (refund = 0 since committed <= ceiling allocation).
+        uint256 balBefore = usdc.balanceOf(seeds[0]);
         vm.prank(seeds[0]);
-        vm.expectRevert("ArmadaCrowdfund: refund not available");
         crowdfund.claimRefund();
+        uint256 balAfter = usdc.balanceOf(seeds[0]);
+
+        // When hop-0 is under-subscribed, full committed amount is allocated,
+        // so pro-rata refund is 0 (or minimal rounding dust)
+        uint256 refundAmount = balAfter - balBefore;
+        assertTrue(refundAmount <= 1, "Under-subscribed hop should have zero or dust refund");
     }
 }

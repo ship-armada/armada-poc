@@ -25,8 +25,8 @@ contract CrowdfundHandler is Test {
     // Ghost variables for invariant checking
     uint256 public ghost_totalUsdcIn;       // USDC deposited via commit()
     uint256 public ghost_totalArmClaimed;   // ARM withdrawn via claim()
-    uint256 public ghost_totalUsdcRefunded; // USDC returned via claim() refunds
-    uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode)
+    uint256 public ghost_totalUsdcRefunded; // USDC returned via claimRefund() (normal pro-rata path)
+    uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode full refund)
     uint256 public ghost_proceedsPushed;    // USDC pushed to treasury at finalization
     uint256 public ghost_unallocArmWithdrawn; // ARM withdrawn via withdrawUnallocatedArm()
     uint256 public ghost_claimCount;        // number of successful claims
@@ -166,7 +166,7 @@ contract CrowdfundHandler is Test {
         } catch {}
     }
 
-    /// @dev Claim for a random committer
+    /// @dev Claim ARM for a random committer (ARM only, no USDC)
     function claim(uint256 idx) external {
         if (!ghost_finalized) return;
         if (allCommitters.length == 0) return;
@@ -175,21 +175,19 @@ contract CrowdfundHandler is Test {
         address claimer = allCommitters[idx];
 
         uint256 armBefore = armToken.balanceOf(claimer);
-        uint256 usdcBefore = usdc.balanceOf(claimer);
 
         vm.prank(claimer);
-        try crowdfund.claim() {
+        try crowdfund.claim(address(0)) {
             uint256 armGained = armToken.balanceOf(claimer) - armBefore;
-            uint256 usdcGained = usdc.balanceOf(claimer) - usdcBefore;
             ghost_totalArmClaimed += armGained;
-            ghost_totalUsdcRefunded += usdcGained;
             ghost_claimCount++;
         } catch {}
     }
 
-    /// @dev ClaimRefund for a random committer (if canceled or refundMode)
+    /// @dev ClaimRefund for a random committer. Handles both normal pro-rata
+    ///      refunds (post-finalization) and full refunds (canceled/refundMode).
     function claimRefund(uint256 idx) external {
-        if (!ghost_canceled && !ghost_refundMode) return;
+        if (!ghost_finalized && !ghost_canceled) return;
         if (allCommitters.length == 0) return;
         idx = bound(idx, 0, allCommitters.length - 1);
 
@@ -199,7 +197,11 @@ contract CrowdfundHandler is Test {
         vm.prank(claimer);
         try crowdfund.claimRefund() {
             uint256 usdcGained = usdc.balanceOf(claimer) - usdcBefore;
-            ghost_totalUsdcCancelRefunded += usdcGained;
+            if (ghost_canceled || ghost_refundMode) {
+                ghost_totalUsdcCancelRefunded += usdcGained;
+            } else {
+                ghost_totalUsdcRefunded += usdcGained;
+            }
         } catch {}
     }
 

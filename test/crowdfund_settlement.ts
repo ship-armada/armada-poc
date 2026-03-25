@@ -252,12 +252,13 @@ describe("Crowdfund Settlement Rework", function () {
       expect(contractUsdc).to.be.lte(totalCommitted - totalAllocUsdc + 500n);
     });
 
-    it("all participants can still claim after proceeds push", async function () {
+    it("all participants can still claim ARM and refund USDC after proceeds push", async function () {
       const seeds = await setupAndFinalize(80, USDC(15_000));
 
-      // All seeds claim
+      // All seeds claim ARM and then claim USDC refund
       for (const s of seeds) {
-        await crowdfund.connect(s).claim();
+        await crowdfund.connect(s).claim(ethers.ZeroAddress);
+        await crowdfund.connect(s).claimRefund();
       }
 
       // Contract should have minimal USDC left (dust from rounding)
@@ -308,7 +309,7 @@ describe("Crowdfund Settlement Rework", function () {
       await time.increaseTo(deadline - 2n);
 
       // Should succeed (block.timestamp <= claimDeadline)
-      await crowdfund.connect(seeds[0]).claim();
+      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
     });
 
     it("claim after deadline reverts", async function () {
@@ -318,7 +319,7 @@ describe("Crowdfund Settlement Rework", function () {
       await time.increaseTo(deadline);
 
       await expect(
-        crowdfund.connect(seeds[0]).claim()
+        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
       ).to.be.revertedWith("ArmadaCrowdfund: claim deadline passed");
     });
 
@@ -412,7 +413,7 @@ describe("Crowdfund Settlement Rework", function () {
 
       // Half the seeds claim — reduces armStillOwed
       for (let i = 0; i < 34; i++) {
-        await crowdfund.connect(seeds[i]).claim();
+        await crowdfund.connect(seeds[i]).claim(ethers.ZeroAddress);
       }
 
       // armStillOwed decreased, but no new unsold ARM. Balance = totalAlloc - claimed.
@@ -430,7 +431,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
 
       // Only 1 of 68 seeds claims
-      await crowdfund.connect(seeds[0]).claim();
+      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
 
       // Before deadline: can't sweep unclaimed
       await expect(

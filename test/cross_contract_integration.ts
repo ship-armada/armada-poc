@@ -170,7 +170,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // 6. Seeds claim their ARM
       const claimedSeeds = seeds.slice(0, 5); // claim first 5 for governance testing
       for (const seed of claimedSeeds) {
-        await crowdfund.connect(seed).claim();
+        await crowdfund.connect(seed).claim(ethers.ZeroAddress);
       }
 
       // Verify seeds received ARM
@@ -263,7 +263,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Claim all
       for (const seed of seeds) {
-        await crowdfund.connect(seed).claim();
+        await crowdfund.connect(seed).claim(ethers.ZeroAddress);
       }
 
       // Skip past 7-day governance quiet period
@@ -370,7 +370,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Claim first 10 seeds
       for (let i = 0; i < 10; i++) {
-        await crowdfund.connect(seeds[i]).claim();
+        await crowdfund.connect(seeds[i]).claim(ethers.ZeroAddress);
       }
 
       // Skip past 7-day governance quiet period
@@ -514,8 +514,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Alice tries to claim again — should revert
       await expect(
-        crowdfund.connect(alice).claim()
-      ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
+        crowdfund.connect(alice).claim(ethers.ZeroAddress)
+      ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
 
       // Alice delegates and votes
       await armToken.connect(alice).delegate(alice.address);
@@ -765,7 +765,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Now all seeds claim their ARM — ARM leaves the crowdfund contract
       for (const seed of localSeeds) {
-        await localCrowdfund.connect(seed).claim();
+        await localCrowdfund.connect(seed).claim(ethers.ZeroAddress);
       }
 
       const crowdfundArmAfter = await localArmToken.balanceOf(await localCrowdfund.getAddress());
@@ -804,7 +804,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // All seeds claim
       for (const seed of localSeeds) {
-        await localCrowdfund.connect(seed).claim();
+        await localCrowdfund.connect(seed).claim(ethers.ZeroAddress);
       }
 
       const treasuryAddress = await localTreasury.getAddress();
@@ -860,7 +860,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // 5 seeds claim
       const claimedSeeds = localSeeds.slice(0, 5);
       for (const seed of claimedSeeds) {
-        await localCrowdfund.connect(seed).claim();
+        await localCrowdfund.connect(seed).claim(ethers.ZeroAddress);
       }
 
       // Skip past 7-day governance quiet period

@@ -114,8 +114,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop);
     event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc);
     event SaleCanceled(uint256 totalCommitted);
-    event Claimed(address indexed participant, uint256 armAmount, uint256 usdcRefund);
-    event Refunded(address indexed participant, uint256 amount);
+    event ArmClaimed(address indexed participant, uint256 armAmount, address delegate);
+    event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded(uint256 balance);
     event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds);
@@ -514,18 +514,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
 
     // ============ Claims & Withdrawals ============
 
-    /// @notice Claim ARM allocation and USDC refund after finalization.
-    ///         Aggregates across all hops where the caller has committed.
-    ///         Proceeds (allocated USDC) are pushed to treasury at finalization, so
-    ///         participants only receive ARM + their pro-rata USDC refund.
+    /// @notice Claim ARM allocation after finalization. ARM tokens only — USDC
+    ///         refunds are handled separately by claimRefund().
+    /// @param delegate Governance delegate preference, emitted in ArmClaimed for
+    ///        off-chain indexing. Actual ERC20Votes delegation must be performed by
+    ///        the claimant directly on the ARM token contract (delegate() uses msg.sender).
     /// @dev Allocation is computed lazily from stored hop-level reserves/demands
-    function claim() external nonReentrant whenNotPaused {
+    function claim(address delegate) external nonReentrant whenNotPaused {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         require(block.timestamp <= claimDeadline, "ArmadaCrowdfund: claim deadline passed");
 
         uint256 totalAllocArm = 0;
-        uint256 totalRefundUsdc = 0;
         bool hasCommitment = false;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
@@ -533,17 +533,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
             if (p.committed == 0) continue;
 
             hasCommitment = true;
-            require(!p.claimed, "ArmadaCrowdfund: already claimed");
+            require(!p.armClaimed, "ArmadaCrowdfund: ARM already claimed");
 
             uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
-            (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
+            (uint256 allocArm, , ) = _computeAllocation(p.committed, h, effectiveCap);
 
-            p.claimed = true;
+            p.armClaimed = true;
             p.allocation = allocArm;    // store for record-keeping
-            p.refund = refundUsdc;      // store for record-keeping
 
             totalAllocArm += allocArm;
-            totalRefundUsdc += refundUsdc;
         }
 
         require(hasCommitment, "ArmadaCrowdfund: no commitment");
@@ -553,39 +551,39 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         if (totalAllocArm > 0) {
             armToken.safeTransfer(msg.sender, totalAllocArm);
         }
-        if (totalRefundUsdc > 0) {
-            usdc.safeTransfer(msg.sender, totalRefundUsdc);
-        }
 
-        emit Claimed(msg.sender, totalAllocArm, totalRefundUsdc);
+        emit ArmClaimed(msg.sender, totalAllocArm, delegate);
     }
 
-    /// @notice Full USDC refund when the sale did not succeed.
-    ///         Aggregates across all hops where the caller has committed.
-    ///         Three eligibility paths (any one suffices):
-    ///         1. refundMode — finalized but net proceeds below MIN_SALE
-    ///         2. Phase.Canceled — security council cancel
-    ///         3. Deadline fallback — window expired, not finalized, below MIN_SALE
+    /// @notice Claim USDC refund. Four eligibility paths (any one suffices):
+    ///         1. Normal post-finalization — pro-rata refund (finalized, not refundMode)
+    ///         2. RefundMode — full deposit refund (finalized + refundMode)
+    ///         3. Phase.Canceled — full deposit refund (security council cancel)
+    ///         4. Deadline fallback — full deposit refund (window expired, not finalized, below MIN_SALE)
+    ///         ARM claims are handled separately by claim().
     function claimRefund() external nonReentrant whenNotPaused {
-        // Deadline fallback path: compute capped demand on-the-fly to check
-        // if the sale failed to meet minimum. Only runs in the edge case where
-        // the window expired without finalization.
-        bool deadlineFallback = false;
-        if (!refundMode && phase != Phase.Canceled) {
-            if (block.timestamp > windowEnd && phase != Phase.Finalized) {
-                _computeCappedDemand();
-                deadlineFallback = cappedDemand < MIN_SALE;
+        // Determine which refund path applies
+        bool normalRefund = false;
+        bool fullRefund = false;
+
+        if (phase == Phase.Finalized && !refundMode) {
+            // Path 1: Normal post-finalization pro-rata refund
+            require(block.timestamp <= claimDeadline, "ArmadaCrowdfund: claim deadline passed");
+            normalRefund = true;
+        } else if (refundMode || phase == Phase.Canceled) {
+            // Paths 2 & 3: Full deposit refund (no deadline — participants must always recover USDC)
+            fullRefund = true;
+        } else if (block.timestamp > windowEnd && phase != Phase.Finalized) {
+            // Path 4: Deadline fallback — window expired without finalization
+            _computeCappedDemand();
+            if (cappedDemand < MIN_SALE) {
+                fullRefund = true;
             }
         }
 
-        require(
-            refundMode ||
-            phase == Phase.Canceled ||
-            deadlineFallback,
-            "ArmadaCrowdfund: refund not available"
-        );
+        require(normalRefund || fullRefund, "ArmadaCrowdfund: refund not available");
 
-        uint256 totalAmount = 0;
+        uint256 totalRefundUsdc = 0;
         bool hasCommitment = false;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
@@ -593,17 +591,29 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
             if (p.committed == 0) continue;
 
             hasCommitment = true;
-            require(!p.claimed, "ArmadaCrowdfund: already refunded");
+            require(!p.refundClaimed, "ArmadaCrowdfund: already refunded");
 
-            p.claimed = true;
-            totalAmount += p.committed;
+            p.refundClaimed = true;
+
+            if (normalRefund) {
+                // Pro-rata refund: committed minus allocated portion
+                uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
+                (, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
+                p.refund = refundUsdc;  // store for record-keeping
+                totalRefundUsdc += refundUsdc;
+            } else {
+                // Full refund: return entire committed amount
+                totalRefundUsdc += p.committed;
+            }
         }
 
         require(hasCommitment, "ArmadaCrowdfund: no commitment");
 
-        usdc.safeTransfer(msg.sender, totalAmount);
+        if (totalRefundUsdc > 0) {
+            usdc.safeTransfer(msg.sender, totalRefundUsdc);
+        }
 
-        emit Refunded(msg.sender, totalAmount);
+        emit RefundClaimed(msg.sender, totalRefundUsdc);
     }
 
     /// @notice Sweep unallocated or unclaimed ARM to treasury. Permissionless. Callable
@@ -712,8 +722,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         return participants[invitee][hop].invitedBy;
     }
 
-    /// @notice Get aggregate allocation across all hops (only after finalization)
-    /// @dev Computes allocation on the fly from stored hop-level data if not yet claimed
+    /// @notice Get aggregate allocation across all hops (only after finalization).
+    ///         The `claimed` return reflects ARM claim status (armClaimed); refund
+    ///         claim status is tracked separately via refundClaimed.
+    /// @dev Computes allocation on the fly from stored hop-level data if ARM not yet claimed
     function getAllocation(address addr) external view returns (
         uint256 allocation,
         uint256 _refund,
@@ -725,21 +737,25 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         uint256 totalAllocArm = 0;
         uint256 totalRefundUsdc = 0;
         bool anyClaimed = false;
-        bool anyCommitted = false;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             Participant storage p = participants[addr][h];
             if (p.committed == 0) continue;
-            anyCommitted = true;
 
-            if (p.claimed) {
+            if (p.armClaimed) {
                 anyClaimed = true;
                 totalAllocArm += p.allocation;
+            } else {
+                uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
+                (uint256 allocArm, , ) = _computeAllocation(p.committed, h, effectiveCap);
+                totalAllocArm += allocArm;
+            }
+
+            if (p.refundClaimed) {
                 totalRefundUsdc += p.refund;
             } else {
                 uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
-                (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
-                totalAllocArm += allocArm;
+                (, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
                 totalRefundUsdc += refundUsdc;
             }
         }
@@ -747,7 +763,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         return (totalAllocArm, totalRefundUsdc, anyClaimed);
     }
 
-    /// @notice Get allocation at a specific hop (only after finalization)
+    /// @notice Get allocation at a specific hop (only after finalization).
+    ///         The `claimed` return reflects ARM claim status (armClaimed).
     function getAllocationAtHop(address addr, uint8 hop) external view returns (
         uint256 allocation,
         uint256 _refund,
@@ -756,12 +773,25 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         Participant storage p = participants[addr][hop];
-        if (p.claimed) {
-            return (p.allocation, p.refund, true);
+
+        uint256 allocArm;
+        uint256 refundUsdc;
+
+        if (p.armClaimed) {
+            allocArm = p.allocation;
+        } else {
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
+            (allocArm, , ) = _computeAllocation(p.committed, hop, effectiveCap);
         }
-        uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
-        (uint256 allocArm, , uint256 refundUsdc) = _computeAllocation(p.committed, hop, effectiveCap);
-        return (allocArm, refundUsdc, false);
+
+        if (p.refundClaimed) {
+            refundUsdc = p.refund;
+        } else {
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
+            (, , refundUsdc) = _computeAllocation(p.committed, hop, effectiveCap);
+        }
+
+        return (allocArm, refundUsdc, p.armClaimed);
     }
 
     /// @notice Get effective cap for an address at a hop (invitesReceived * per-slot cap)

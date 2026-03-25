@@ -265,9 +265,9 @@ async function main() {
 
   // Claim one seed
   const [allocEx, refundEx] = await cf2.getAllocation(bigSeeds[0].address);
-  log("CLAIM", `Seed claims: ${fmtArm(allocEx)} + ${fmtUsdc(refundEx)} USDC refund`);
-  await cf2.connect(bigSeeds[0]).claim();
-  log("CLAIM", `Claimed successfully \u2713`);
+  log("CLAIM", `Seed claims ARM: ${fmtArm(allocEx)} (USDC refund available via claimRefund: ${fmtUsdc(refundEx)})`);
+  await cf2.connect(bigSeeds[0]).claim(ethers.ZeroAddress);
+  log("CLAIM", `ARM claimed successfully \u2713`);
 
   // ============ GOVERNANCE BRIDGE ============
   console.log("");

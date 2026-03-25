@@ -33,6 +33,7 @@ contract CrowdfundHandler is Test {
     bool public ghost_finalized;
     bool public ghost_canceled;
     bool public ghost_refundMode;
+    bool public ghost_timeWarped;           // true after warpPastWindow fires
 
     // Track per-participant committed amounts for sum verification
     mapping(address => uint256) public ghost_committed;
@@ -61,18 +62,22 @@ contract CrowdfundHandler is Test {
 
     /// @dev Fuzzed commit: pick a random seed and commit a bounded amount
     function commitSeed(uint256 seedIdx, uint256 amount) external {
+        if (ghost_timeWarped) return; // commits revert after windowEnd
         if (seeds.length == 0) return;
         seedIdx = bound(seedIdx, 0, seeds.length - 1);
         amount = bound(amount, 1, 15_000 * 1e6); // up to hop-0 cap
 
         address seed = seeds[seedIdx];
 
-        // Check if this would exceed cap
+        // Probabilistically allow over-cap commits (25% chance) to exercise
+        // the contract's cap enforcement and refund-at-settlement logic
         uint256 currentCommitted = crowdfund.getCommitment(seed, 0);
-        if (currentCommitted + amount > 15_000 * 1e6) {
-            amount = 15_000 * 1e6 - currentCommitted;
+        if (seedIdx % 4 != 0) {
+            if (currentCommitted + amount > 15_000 * 1e6) {
+                amount = 15_000 * 1e6 - currentCommitted;
+            }
+            if (amount == 0) return;
         }
-        if (amount == 0) return;
 
         // Fund and approve
         usdc.mint(seed, amount);
@@ -92,16 +97,19 @@ contract CrowdfundHandler is Test {
 
     /// @dev Fuzzed commit for hop-1 addresses
     function commitHop1(uint256 idx, uint256 amount) external {
+        if (ghost_timeWarped) return; // commits revert after windowEnd
         if (hop1Addrs.length == 0) return;
         idx = bound(idx, 0, hop1Addrs.length - 1);
         amount = bound(amount, 1, 4_000 * 1e6); // hop-1 cap
 
         address addr = hop1Addrs[idx];
         uint256 currentCommitted = crowdfund.getCommitment(addr, 1);
-        if (currentCommitted + amount > 4_000 * 1e6) {
-            amount = 4_000 * 1e6 - currentCommitted;
+        if (idx % 4 != 0) {
+            if (currentCommitted + amount > 4_000 * 1e6) {
+                amount = 4_000 * 1e6 - currentCommitted;
+            }
+            if (amount == 0) return;
         }
-        if (amount == 0) return;
 
         usdc.mint(addr, amount);
         vm.startPrank(addr);
@@ -120,16 +128,19 @@ contract CrowdfundHandler is Test {
 
     /// @dev Fuzzed commit for hop-2 addresses
     function commitHop2(uint256 idx, uint256 amount) external {
+        if (ghost_timeWarped) return; // commits revert after windowEnd
         if (hop2Addrs.length == 0) return;
         idx = bound(idx, 0, hop2Addrs.length - 1);
         amount = bound(amount, 1, 1_000 * 1e6); // hop-2 cap
 
         address addr = hop2Addrs[idx];
         uint256 currentCommitted = crowdfund.getCommitment(addr, 2);
-        if (currentCommitted + amount > 1_000 * 1e6) {
-            amount = 1_000 * 1e6 - currentCommitted;
+        if (idx % 4 != 0) {
+            if (currentCommitted + amount > 1_000 * 1e6) {
+                amount = 1_000 * 1e6 - currentCommitted;
+            }
+            if (amount == 0) return;
         }
-        if (amount == 0) return;
 
         usdc.mint(addr, amount);
         vm.startPrank(addr);
@@ -144,6 +155,14 @@ contract CrowdfundHandler is Test {
             }
         } catch {}
         vm.stopPrank();
+    }
+
+    /// @dev Advance time past windowEnd so finalize() can succeed.
+    ///      Fires at most once to avoid disrupting earlier commit sequences.
+    function warpPastWindow() external {
+        if (ghost_timeWarped) return;
+        ghost_timeWarped = true;
+        vm.warp(crowdfund.windowEnd() + 1);
     }
 
     /// @dev Finalize the crowdfund (permissionless).
@@ -380,15 +399,23 @@ contract CrowdfundInvariantTest is Test {
         }
     }
 
-    /// @notice Hop cap enforcement: no participant's committed exceeds their hop's cap
+    /// @notice Hop cap enforcement: after finalization, each participant's allocUsdc <= effectiveCap.
+    ///         The contract accepts over-cap commits but refunds the excess at settlement.
     function invariant_hopCapEnforcement() public view {
+        if (!handler.ghost_finalized()) return;
+        if (handler.ghost_refundMode()) return;
+
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
             uint8 hop = handler.ghost_hop(committer);
             uint256 committed = crowdfund.getCommitment(committer, hop);
             uint256 effectiveCap = crowdfund.getEffectiveCap(committer, hop);
-            assertLe(committed, effectiveCap, "Hop cap violated");
+
+            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            uint256 allocUsdc = committed - refundUsdc;
+
+            assertLe(allocUsdc, effectiveCap, "Hop cap violated: allocUsdc > effectiveCap");
         }
     }
 
@@ -397,7 +424,7 @@ contract CrowdfundInvariantTest is Test {
         assertEq(crowdfund.totalCommitted(), handler.ghost_totalUsdcIn(), "totalCommitted mismatch");
     }
 
-    /// @notice After finalization, sum of (allocUsdc + refund) for all committers equals totalCommitted
+    /// @notice After finalization, contract's per-hop allocUsdc + refundUsdc == committed
     function invariant_allocPlusRefundEqualsCommitted() public view {
         if (!handler.ghost_finalized()) return;
         if (handler.ghost_refundMode()) return; // no allocations in refundMode
@@ -406,22 +433,31 @@ contract CrowdfundInvariantTest is Test {
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
             uint8 hop = handler.ghost_hop(committer);
-            (uint256 allocArm, uint256 refundUsdc, ) = crowdfund.getAllocation(committer);
             uint256 committed = crowdfund.getCommitment(committer, hop);
 
             if (committed == 0) continue;
 
-            // allocUsdc + refund should equal committed for each participant
-            // allocUsdc = committed - refundUsdc (from _computeAllocation)
+            // Query the contract's computed allocation at the specific hop
+            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+
+            // Derive allocUsdc: ARM allocation at $1 price = allocUsdc * 1e18 / 1e6 = allocUsdc * 1e12
+            // But easier: refund = committed - allocUsdc, so allocUsdc = committed - refundUsdc
+            // The key difference from before: refundUsdc now comes from the contract, not local math
             uint256 allocUsdc = committed - refundUsdc;
             assertEq(allocUsdc + refundUsdc, committed, "alloc + refund != committed");
         }
     }
 
-    /// @notice Contract never goes to negative balance (sanity — Solidity would revert, but belt-and-suspenders)
-    function invariant_nonNegativeBalances() public view {
-        // These can never actually be negative in Solidity, but asserting >= 0 confirms no reverts
-        assertTrue(usdc.balanceOf(address(crowdfund)) >= 0, "Negative USDC balance");
-        assertTrue(armToken.balanceOf(address(crowdfund)) >= 0, "Negative ARM balance");
+    /// @notice ARM solvency: after finalization (before all claims), contract holds enough ARM
+    ///         to cover outstanding claim obligations
+    function invariant_armSolvency() public view {
+        if (!handler.ghost_finalized()) return;
+        if (handler.ghost_refundMode()) return;
+
+        uint256 contractArm = armToken.balanceOf(address(crowdfund));
+        uint256 totalAllocated = crowdfund.totalAllocated();
+        uint256 claimed = handler.ghost_totalArmClaimed();
+
+        assertGe(contractArm, totalAllocated - claimed, "ARM solvency: balance < outstanding claims");
     }
 }

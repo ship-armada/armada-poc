@@ -484,7 +484,7 @@ describe("Crowdfund Multi-Node", function () {
   // ============================================================
 
   describe("Aggregate Refund", function () {
-    it("should aggregate refund across hops when canceled", async function () {
+    it("should aggregate refund across hops via deadline fallback", async function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
@@ -493,6 +493,25 @@ describe("Crowdfund Multi-Node", function () {
 
       // Not enough total → finalize reverts, use claimRefund deadline fallback
       await time.increase(THREE_WEEKS + 1);
+
+      const usdcBefore = await usdc.balanceOf(seed1.address);
+      await crowdfund.connect(seed1).claimRefund();
+      const usdcAfter = await usdc.balanceOf(seed1.address);
+
+      // Full $19k refund (both hops)
+      expect(usdcAfter - usdcBefore).to.equal(USDC(19_000));
+    });
+
+    it("should aggregate refund across hops when canceled", async function () {
+      await setupWithSeeds([seed1]);
+      await crowdfund.connect(seed1).invite(seed1.address, 0);
+
+      await crowdfund.connect(seed1).commit(0, USDC(15_000));
+      await crowdfund.connect(seed1).commit(1, USDC(4_000));
+
+      // securityCouncil (deployer in this test's beforeEach) cancels the crowdfund
+      await crowdfund.connect(deployer).cancel();
+      expect(await crowdfund.phase()).to.equal(2); // Phase.Canceled
 
       const usdcBefore = await usdc.balanceOf(seed1.address);
       await crowdfund.connect(seed1).claimRefund();

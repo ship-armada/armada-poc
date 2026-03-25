@@ -292,8 +292,6 @@ describe("Crowdfund Adversarial", function () {
       // Contract should have ~0 of both tokens (rounding dust at most)
       const armBalance = await armToken.balanceOf(await crowdfund.getAddress());
       const usdcBalance = await usdc.balanceOf(await crowdfund.getAddress());
-      expect(armBalance).to.be.gte(0);
-      expect(usdcBalance).to.be.gte(0);
       // With exact math, residual should be small (rounding from pro-rata)
       expect(usdcBalance).to.be.lte(USDC(1)); // at most $1 dust
     });
@@ -354,10 +352,14 @@ describe("Crowdfund Adversarial", function () {
       const total = await crowdfund.totalCommitted();
       expect(total).to.equal(USDC(1_000_000));
 
+      // Add hop-1 demand so totalAllocUsdc exceeds MIN_SALE (hop-0 ceiling $798K < $1M)
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.equal(false);
     });
 
     it("totalCommitted 1 below MIN_SALE causes finalize to revert", async function () {
@@ -433,10 +435,11 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE_SALE
     });
 
-    it("finalize with 0 committers in hop-1 and hop-2 (seeds only)", async function () {
+    it("finalize with seeds only enters refundMode (hop-0 ceiling < MIN_SALE)", async function () {
       // Only seeds commit — no hop-1/2 participants.
-      // With unconditional rollover, hop-0 leftover flows to hop-1/hop-2, but since
-      // there's no demand at those hops, unallocated capacity becomes treasury leftover.
+      // At BASE_SALE, hop-0 ceiling is $798K which is below MIN_SALE ($1M).
+      // Without hop-1/hop-2 demand, totalAllocUsdc cannot reach MIN_SALE, so
+      // finalization enters refundMode and all participants get full refunds.
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
@@ -449,6 +452,7 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.equal(true);
 
       // Hop-1 and hop-2 should have 0 committers
       const [, , uc1] = await crowdfund.getHopStats(1);
@@ -504,7 +508,7 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.getInvitesReceived(seed.address, 1)).to.equal(1);
     });
 
-    it("invite reverts at exact windowEnd (strict < boundary)", async function () {
+    it("invite reverts after windowEnd", async function () {
       const seed = allSigners[1];
       const invitee = allSigners[2];
       await crowdfund.addSeeds([seed.address]);
@@ -660,7 +664,7 @@ describe("Crowdfund Adversarial", function () {
 
       // Seeds at oversubscribed hop-0 should get a USDC refund (allocation < committed)
       const [, refundAmount] = await crowdfund.getAllocation(seeds[0].address);
-      expect(usdcAfter - usdcBefore).to.be.gte(0n);
+      expect(usdcAfter - usdcBefore).to.equal(refundAmount);
     });
 
     it("non-admin can finalize (permissionless)", async function () {
@@ -986,11 +990,11 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
-  // 5. Reentrancy Protection Verification
+  // 5. Double-Action Guards
   // ============================================================
 
-  describe("Reentrancy Protection", function () {
-    it("claim() is protected by nonReentrant", async function () {
+  describe("Double-Action Guards", function () {
+    it("claim() rejects double-claim", async function () {
       // Deploy the attacker contract
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -1018,7 +1022,7 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
     });
 
-    it("claimRefund() is protected by nonReentrant", async function () {
+    it("claimRefund() rejects double-refund", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
 

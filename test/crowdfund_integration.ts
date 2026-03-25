@@ -1223,48 +1223,6 @@ describe("Crowdfund Integration", function () {
   // ============================================================
 
   describe("End-to-End Flows", function () {
-    it("complete flow: seeds → invite → commit → finalize → claim", async function () {
-      // Use enough signers to reach minimum
-      const seeds = allSigners.slice(1, 50);
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
-      }
-
-      // Setup
-      await crowdfund.addSeeds(seeds.map(s => s.address));
-
-
-      // Invitations (some seeds invite hop-1 participants)
-      // Use remaining signers for hop-1
-      const hop1Signers = allSigners.slice(50, 80);
-      for (const s of hop1Signers) {
-        await fundAndApprove(s, USDC(4_000));
-      }
-      // Each seed invites up to 3 hop-1 addresses (limited by available signers)
-      let hop1Idx = 0;
-      for (let i = 0; i < Math.min(seeds.length, 10) && hop1Idx < hop1Signers.length; i++) {
-        await crowdfund.connect(seeds[i]).invite(hop1Signers[hop1Idx].address, 0);
-        hop1Idx++;
-      }
-
-      // Commitments
-      for (const s of seeds) {
-        await crowdfund.connect(s).commit(0, USDC(15_000));
-      }
-      // 49 seeds × $15K = $735,000
-      // hop-1 commits
-      for (let i = 0; i < hop1Idx; i++) {
-        await crowdfund.connect(hop1Signers[i]).commit(1, USDC(4_000));
-      }
-      // 10 hop-1 × $4K = $40,000
-      // Total: $775,000 — below $1M min → will cancel
-
-      // Need more: increase seed count or commitment
-      // Actually 49 × 15000 = 735000, + 10 × 4000 = 40000 = $775K. Below min.
-      // Let's adjust: use 68 seeds
-      // This test fixture uses 49 seeds which isn't enough. Let's restructure.
-    });
-
     it("complete flow with sufficient commitments", async function () {
       // Setup 70 seeds, each commits $15K = $1.05M > MIN_SALE
       const seeds = allSigners.slice(1, 71);

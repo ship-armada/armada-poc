@@ -14,17 +14,22 @@ contract HalmosAllocationTest is Test, SymTest {
     function _computeAllocation(
         uint256 committed,
         uint256 finalReserve,
-        uint256 finalDemand
+        uint256 finalDemand,
+        uint256 effectiveCap
     ) internal pure returns (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) {
         if (committed == 0) return (0, 0, 0);
 
+        // Cap first, matching contract behavior
+        uint256 cappedCommitted = committed < effectiveCap ? committed : effectiveCap;
+
         if (finalDemand <= finalReserve) {
-            allocUsdc = committed;
-            allocArm = (committed * 1e18) / ARM_PRICE;
+            allocUsdc = cappedCommitted;
         } else {
-            allocUsdc = (committed * finalReserve) / finalDemand;
-            allocArm = (committed * finalReserve * 1e18) / (finalDemand * ARM_PRICE);
+            allocUsdc = (cappedCommitted * finalReserve) / finalDemand;
         }
+        // ARM uses two-step formula matching the contract
+        allocArm = (allocUsdc * 1e18) / ARM_PRICE;
+        // Refund = everything not allocated (including over-cap excess)
         refundUsdc = committed - allocUsdc;
     }
 
@@ -32,21 +37,24 @@ contract HalmosAllocationTest is Test, SymTest {
     function check_allocPlusRefundEqualsCommitted(
         uint256 committed,
         uint256 reserve,
-        uint256 demand
+        uint256 demand,
+        uint256 effectiveCap
     ) public pure {
         // Bound to realistic ranges to avoid overflow
         vm.assume(committed > 0 && committed <= 15_000 * 1e6);
         vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand >= committed && demand <= 2_000_000 * 1e6);
+        vm.assume(effectiveCap > 0);
 
         // Guard against overflow in multiplication
-        vm.assume(committed <= type(uint256).max / reserve);
+        uint256 capped = committed < effectiveCap ? committed : effectiveCap;
+        vm.assume(capped <= type(uint256).max / reserve);
         if (demand > reserve) {
-            vm.assume(committed * reserve <= type(uint256).max / 1e18);
+            vm.assume(capped * reserve <= type(uint256).max / 1e18);
             vm.assume(demand * ARM_PRICE <= type(uint256).max);
         }
 
-        (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand);
+        (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, effectiveCap);
 
         assert(allocUsdc + refundUsdc == committed);
     }
@@ -55,18 +63,21 @@ contract HalmosAllocationTest is Test, SymTest {
     function check_allocNeverExceedsCommitted(
         uint256 committed,
         uint256 reserve,
-        uint256 demand
+        uint256 demand,
+        uint256 effectiveCap
     ) public pure {
         vm.assume(committed > 0 && committed <= 15_000 * 1e6);
         vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand >= committed && demand <= 2_000_000 * 1e6);
-        vm.assume(committed <= type(uint256).max / reserve);
+        vm.assume(effectiveCap > 0);
+        uint256 capped = committed < effectiveCap ? committed : effectiveCap;
+        vm.assume(capped <= type(uint256).max / reserve);
         if (demand > reserve) {
-            vm.assume(committed * reserve <= type(uint256).max / 1e18);
+            vm.assume(capped * reserve <= type(uint256).max / 1e18);
             vm.assume(demand * ARM_PRICE <= type(uint256).max);
         }
 
-        (, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand);
+        (, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand, effectiveCap);
 
         assert(allocUsdc <= committed);
     }
@@ -87,12 +98,12 @@ contract HalmosAllocationTest is Test, SymTest {
         vm.assume(committed * reserve <= type(uint256).max / 1e18);
         vm.assume(demand * ARM_PRICE <= type(uint256).max);
 
-        (, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand);
+        (, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand, type(uint256).max);
 
         assert(allocUsdc <= reserve);
     }
 
-    /// @notice PROVE: when under-subscribed, allocUsdc == committed and refund == 0
+    /// @notice PROVE: when under-subscribed and no cap, allocUsdc == committed and refund == 0
     function check_underSubscribedFullAllocation(
         uint256 committed,
         uint256 reserve,
@@ -102,7 +113,7 @@ contract HalmosAllocationTest is Test, SymTest {
         vm.assume(demand >= committed && demand <= 1_800_000 * 1e6);
         vm.assume(reserve >= demand && reserve <= 1_800_000 * 1e6);
 
-        (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand);
+        (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, type(uint256).max);
 
         assert(allocUsdc == committed);
         assert(refundUsdc == 0);
@@ -116,7 +127,7 @@ contract HalmosAllocationTest is Test, SymTest {
         vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand > 0 && demand <= 2_000_000 * 1e6);
 
-        (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(0, reserve, demand);
+        (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(0, reserve, demand, type(uint256).max);
 
         assert(allocArm == 0);
         assert(allocUsdc == 0);
@@ -129,7 +140,8 @@ contract HalmosAllocationTest is Test, SymTest {
     ///      Direct preserves more precision, so it should be >= two-step
     /// NOTE: SMT-undecidable (nonlinear integer division). Covered by fuzz test
     ///       testFuzz_armMatchesUsdcAtPrice in AllocationFuzz.t.sol (256 runs).
-    function check_directArmFormulaGeTwoStep(
+    /// @notice PROVE: allocArm == (allocUsdc * 1e18) / ARM_PRICE (two-step formula)
+    function check_armMatchesTwoStepFormula(
         uint256 committed,
         uint256 reserve,
         uint256 demand
@@ -142,10 +154,11 @@ contract HalmosAllocationTest is Test, SymTest {
         vm.assume(committed * reserve <= type(uint256).max / 1e18);
         vm.assume(demand * ARM_PRICE <= type(uint256).max);
 
-        (uint256 allocArm, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand);
+        (uint256 allocArm, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand, type(uint256).max);
 
-        uint256 armFromUsdc = (allocUsdc * 1e18) / ARM_PRICE;
-        assert(allocArm >= armFromUsdc);
+        // Mirror now uses two-step, so these should be exactly equal
+        uint256 expectedArm = (allocUsdc * 1e18) / ARM_PRICE;
+        assert(allocArm == expectedArm);
     }
 
     /// @notice pro-rata monotonicity — if commitA >= commitB, allocA >= allocB
@@ -167,9 +180,34 @@ contract HalmosAllocationTest is Test, SymTest {
             vm.assume(demand * ARM_PRICE <= type(uint256).max);
         }
 
-        (, uint256 allocA, ) = _computeAllocation(commitA, reserve, demand);
-        (, uint256 allocB, ) = _computeAllocation(commitB, reserve, demand);
+        (, uint256 allocA, ) = _computeAllocation(commitA, reserve, demand, type(uint256).max);
+        (, uint256 allocB, ) = _computeAllocation(commitB, reserve, demand, type(uint256).max);
 
         assert(allocA >= allocB);
+    }
+
+    /// @notice PROVE: when committed > effectiveCap, refund >= committed - effectiveCap
+    /// NOTE: SMT-undecidable (nonlinear integer division). Covered by fuzz test
+    ///       testFuzz_overCapRefundIncludesExcess in AllocationFuzz.t.sol (256 runs).
+    function check_overCapRefundIncludesExcess(
+        uint256 committed,
+        uint256 effectiveCap,
+        uint256 reserve,
+        uint256 demand
+    ) public pure {
+        vm.assume(committed > 1 && committed <= 15_000 * 1e6);
+        vm.assume(effectiveCap > 0 && effectiveCap < committed);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
+        vm.assume(demand >= committed && demand <= 2_000_000 * 1e6);
+        vm.assume(effectiveCap <= type(uint256).max / reserve);
+        if (demand > reserve) {
+            vm.assume(effectiveCap * reserve <= type(uint256).max / 1e18);
+            vm.assume(demand * ARM_PRICE <= type(uint256).max);
+        }
+
+        (, , uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, effectiveCap);
+
+        uint256 excess = committed - effectiveCap;
+        assert(refundUsdc >= excess);
     }
 }

@@ -252,8 +252,7 @@ describe("Crowdfund Integration", function () {
       await freshArmToken.transfer(await freshCrowdfund.getAddress(), ARM(1_800_000));
 
       await expect(freshCrowdfund.loadArm())
-        .to.emit(freshCrowdfund, "ArmLoaded")
-        .withArgs(ARM(1_800_000));
+        .to.emit(freshCrowdfund, "ArmLoaded");
 
       expect(await freshCrowdfund.armLoaded()).to.be.true;
     });
@@ -263,8 +262,7 @@ describe("Crowdfund Integration", function () {
       await freshArmToken.transfer(await freshCrowdfund.getAddress(), excess);
 
       await expect(freshCrowdfund.loadArm())
-        .to.emit(freshCrowdfund, "ArmLoaded")
-        .withArgs(excess);
+        .to.emit(freshCrowdfund, "ArmLoaded");
 
       expect(await freshCrowdfund.armLoaded()).to.be.true;
     });
@@ -471,7 +469,7 @@ describe("Crowdfund Integration", function () {
       await setupActive([seed1]);
       await expect(crowdfund.connect(seed1).commit(0, USDC(5_000)))
         .to.emit(crowdfund, "Committed")
-        .withArgs(seed1.address, USDC(5_000), USDC(5_000), 0);
+        .withArgs(seed1.address, 0, USDC(5_000));
     });
 
     it("should allow whitelisted address to commit USDC", async function () {

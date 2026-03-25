@@ -66,14 +66,13 @@ export const CROWDFUND_ABI = [
   'event SeedAdded(address indexed seed)',
   'event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce)',
   'event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount)',
-  'event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop)',
-  'event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc)',
-  'event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds)',
-  'event SaleCanceled(uint256 totalCommitted)',
+  'event Committed(address indexed participant, uint8 hop, uint256 amount)',
+  'event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode)',
+  'event Cancelled()',
   'event ArmClaimed(address indexed participant, uint256 armAmount, address delegate)',
   'event RefundClaimed(address indexed participant, uint256 usdcAmount)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
-  'event ArmLoaded(uint256 balance)',
+  'event ArmLoaded()',
 ] as const
 
 export const ERC20_ABI = [

@@ -192,15 +192,14 @@ describe("Crowdfund Settlement Rework", function () {
       expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
     });
 
-    it("emits SaleCanceled event", async function () {
+    it("emits Cancelled event", async function () {
       await crowdfund.addSeeds([allSigners[5].address]);
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
       await fundAndApprove(allSigners[5], USDC(10_000));
       await crowdfund.connect(allSigners[5]).commit(0, USDC(10_000));
 
       await expect(crowdfund.connect(securityCouncil).cancel())
-        .to.emit(crowdfund, "SaleCanceled")
-        .withArgs(USDC(10_000));
+        .to.emit(crowdfund, "Cancelled");
     });
 
     it("securityCouncil immutable is set correctly", async function () {

@@ -121,14 +121,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     event SeedAdded(address indexed seed);
     event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce);
     event InviteAdded(address indexed inviter, address indexed invitee, uint8 hop, uint16 newInviteCount);
-    event Committed(address indexed participant, uint256 amount, uint256 totalForParticipant, uint8 hop);
-    event SaleFinalized(uint256 saleSize, uint256 totalAllocUsdc, uint256 totalAllocArm, uint256 treasuryLeftoverUsdc);
-    event SaleCanceled(uint256 totalCommitted);
+    event Committed(address indexed participant, uint8 hop, uint256 amount);
+    event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode);
+    event Cancelled();
     event ArmClaimed(address indexed participant, uint256 armAmount, address delegate);
     event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
-    event ArmLoaded(uint256 balance);
-    event SaleFinalizedRefundMode(uint256 totalCommitted, uint256 netProceeds);
+    event ArmLoaded();
     event InviteNonceRevoked(address indexed inviter, uint256 nonce);
     event Allocated(address indexed participant, uint256 totalArmAmount, uint256 totalRefundAmount);
     event AllocatedHop(address indexed participant, uint8 indexed hop, uint256 armAmount);
@@ -216,7 +215,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         require(balance >= requiredArm, "ArmadaCrowdfund: insufficient ARM for MAX_SALE");
 
         armLoaded = true;
-        emit ArmLoaded(balance);
+        emit ArmLoaded();
     }
 
     // ============ Invitation Phase ============
@@ -348,7 +347,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
-        emit Committed(msg.sender, amount, p.committed, hop);
+        emit Committed(msg.sender, hop, amount);
     }
 
     /// @notice Redeem an off-chain EIP-712 signed invite and commit USDC in one transaction.
@@ -440,7 +439,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
-        emit Committed(msg.sender, amount, inviteeNode.committed, inviteeHop);
+        emit Committed(msg.sender, inviteeHop, amount);
     }
 
     /// @notice Revoke an invite nonce so it can no longer be used.
@@ -461,7 +460,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         require(phase != Phase.Finalized, "ArmadaCrowdfund: already finalized");
         require(phase != Phase.Canceled, "ArmadaCrowdfund: already canceled");
         phase = Phase.Canceled;
-        emit SaleCanceled(totalCommitted);
+        emit Cancelled();
     }
 
     /// @notice Finalize the crowdfund: compute allocations.
@@ -506,7 +505,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
             refundMode = true;
             phase = Phase.Finalized;
             finalizedAt = block.timestamp;
-            emit SaleFinalizedRefundMode(totalCommitted, totalAllocUsdc_);
+            emit Finalized(0, 0, 0, true);
             return;
         }
 
@@ -534,7 +533,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
             : 0;
         usdc.safeTransfer(treasury, proceedsPush);
 
-        emit SaleFinalized(saleSize, exactTotalUsdc, exactTotalArm, treasuryLeftoverUsdc);
+        emit Finalized(saleSize, exactTotalArm, exactTotalUsdc, false);
     }
 
     // ============ Claims & Withdrawals ============

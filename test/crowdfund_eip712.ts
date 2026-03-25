@@ -174,7 +174,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       // Verify Committed event
       await expect(tx)
         .to.emit(crowdfund, "Committed")
-        .withArgs(hop1a.address, commitAmount, commitAmount, 1);
+        .withArgs(hop1a.address, 1, commitAmount);
 
       // Verify on-chain state
       expect(await crowdfund.isWhitelisted(hop1a.address, 1)).to.be.true;

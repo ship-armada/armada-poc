@@ -344,7 +344,7 @@ describe("Eager Allocation at Finalization", function () {
       expect(netProceeds + totalRefunds).to.equal(totalDeposited);
     });
 
-    it("ARM conservation: sum(allocations) + unsoldArm == MAX_SALE_ARM", async function () {
+    it("ARM solvency: contract holds enough ARM to cover outstanding claims", async function () {
       const crowdfund = await deployCrowdfund(false);
       await setupFinalizableScenario(crowdfund, 70);
 
@@ -352,10 +352,10 @@ describe("Eager Allocation at Finalization", function () {
       await crowdfund.finalize();
 
       const totalAllocated = await crowdfund.totalAllocated();
-      const maxSaleArm = ARM(1_800_000);
-      const unsoldArm = maxSaleArm - totalAllocated;
+      const armBalance = await armToken.balanceOf(await crowdfund.getAddress());
 
-      expect(totalAllocated + unsoldArm).to.equal(maxSaleArm);
+      // Contract must hold at least enough ARM to cover all allocations
+      expect(armBalance).to.be.gte(totalAllocated);
     });
 
     it("totalAllocatedUsdc + treasuryLeftoverUsdc == saleSize", async function () {

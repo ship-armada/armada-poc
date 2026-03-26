@@ -392,10 +392,6 @@ describe("Governance Emergency Pause", function () {
         await usdc.getAddress(), ethers.parseUnits("10000", USDC_DECIMALS), 30 * ONE_DAY
       );
 
-      // Create a claim for alice
-      await standaloneTreasury.createClaim(
-        await usdc.getAddress(), alice.address, ethers.parseUnits("10000", USDC_DECIMALS)
-      );
     });
 
     it("distribute reverts when paused", async function () {
@@ -403,14 +399,6 @@ describe("Governance Emergency Pause", function () {
 
       await expect(
         standaloneTreasury.distribute(await usdc.getAddress(), bob.address, ethers.parseUnits("100", USDC_DECIMALS))
-      ).to.be.revertedWith("Pausable: paused");
-    });
-
-    it("exerciseClaim reverts when paused", async function () {
-      await standaloneTreasury.connect(guardian).emergencyPause();
-
-      await expect(
-        standaloneTreasury.connect(alice).exerciseClaim(1, ethers.parseUnits("100", USDC_DECIMALS))
       ).to.be.revertedWith("Pausable: paused");
     });
 
@@ -425,17 +413,6 @@ describe("Governance Emergency Pause", function () {
       ).to.be.revertedWith("Pausable: paused");
     });
 
-    it("createClaim still works when paused (owner-only, no fund outflow)", async function () {
-      await standaloneTreasury.connect(guardian).emergencyPause();
-
-      // Creating a claim is safe — it doesn't move funds out
-      await standaloneTreasury.createClaim(
-        await usdc.getAddress(), bob.address, ethers.parseUnits("5000", USDC_DECIMALS)
-      );
-      const remaining = await standaloneTreasury.getClaimRemaining(2);
-      expect(remaining).to.equal(ethers.parseUnits("5000", USDC_DECIMALS));
-    });
-
     it("all paused functions resume after unpause", async function () {
       await standaloneTreasury.connect(guardian).emergencyPause();
       await standaloneTreasury.connect(deployer).emergencyUnpause();
@@ -444,9 +421,6 @@ describe("Governance Emergency Pause", function () {
       await standaloneTreasury.distribute(
         await usdc.getAddress(), bob.address, ethers.parseUnits("100", USDC_DECIMALS)
       );
-
-      // exerciseClaim should work
-      await standaloneTreasury.connect(alice).exerciseClaim(1, ethers.parseUnits("100", USDC_DECIMALS));
 
       // stewardSpend should work (deployer is owner/timelock in standalone setup)
       await standaloneTreasury.stewardSpend(

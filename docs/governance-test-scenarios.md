@@ -106,23 +106,7 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 | F7 | Non-owner calls distribute | Revert: "not owner" |
 | F8 | Distribute, then check steward budget decreased | Budget is 1% of current (now lower) balance |
 
-## G. ArmadaTreasuryGov — Claims
-
-| # | Scenario | Expected Behavior |
-|---|----------|-------------------|
-| G1 | Create claim, exercise full amount at once | Beneficiary receives all tokens |
-| G2 | Create claim, exercise in 3 partial amounts | Each partial works; `getClaimRemaining` decreases |
-| G3 | Exercise more than remaining | Revert: "exceeds claim" |
-| G4 | Non-beneficiary exercises claim | Revert: "not beneficiary" |
-| G5 | Exercise 0 amount | Revert: "zero amount" |
-| G6 | Create claim with 0 amount | Revert: "zero amount" |
-| G7 | Create claim to zero address | Revert: "zero address" |
-| G8 | Create claim, then treasury gets drained, then exercise | Revert (safeTransfer fails — insufficient balance) |
-| G9 | Multiple claims for same beneficiary | All work independently |
-| G10 | Exercise claim after treasury ownership changed | Should still work (claim data is in storage) |
-| G11 | Create claim, never exercise | Sits forever (no revocation — bug #23) |
-
-## H. ArmadaTreasuryGov — Steward Budget
+## G. ArmadaTreasuryGov — Steward Budget
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|

@@ -552,80 +552,8 @@ describe("Governance Integration", function () {
   });
 
   // ============================================================
-  // 6. Treasury Claims
   // ============================================================
-
-  describe("Treasury Claims", function () {
-    it("should create and exercise a claim via governance", async function () {
-      const claimAmount = ethers.parseUnits("1000", USDC_DECIMALS);
-      const targets = [await treasury.getAddress()];
-      const values = [0n];
-      const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
-        await usdc.getAddress(), carol.address, claimAmount
-      ])];
-
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard, targets, values, calldatas,
-        "Create claim for Carol"
-      );
-
-      // Carol exercises the claim
-      const claimId = 1;
-      expect(await treasury.getClaimRemaining(claimId)).to.equal(claimAmount);
-
-      await treasury.connect(carol).exerciseClaim(claimId, claimAmount);
-      expect(await usdc.balanceOf(carol.address)).to.equal(claimAmount);
-      expect(await treasury.getClaimRemaining(claimId)).to.equal(0);
-    });
-
-    it("should support partial claim exercise", async function () {
-      const claimAmount = ethers.parseUnits("1000", USDC_DECIMALS);
-      const targets = [await treasury.getAddress()];
-      const values = [0n];
-      const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
-        await usdc.getAddress(), carol.address, claimAmount
-      ])];
-
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard, targets, values, calldatas,
-        "Partial claim test"
-      );
-
-      const half = claimAmount / 2n;
-      await treasury.connect(carol).exerciseClaim(1, half);
-      expect(await treasury.getClaimRemaining(1)).to.equal(half);
-
-      await treasury.connect(carol).exerciseClaim(1, half);
-      expect(await treasury.getClaimRemaining(1)).to.equal(0);
-    });
-
-    it("should reject exercise by non-beneficiary", async function () {
-      const claimAmount = ethers.parseUnits("100", USDC_DECIMALS);
-      const targets = [await treasury.getAddress()];
-      const values = [0n];
-      const calldatas = [treasury.interface.encodeFunctionData("createClaim", [
-        await usdc.getAddress(), carol.address, claimAmount
-      ])];
-
-      await passProposal(
-        alice,
-        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard, targets, values, calldatas,
-        "Non-beneficiary test"
-      );
-
-      await expect(
-        treasury.connect(dave).exerciseClaim(1, claimAmount)
-      ).to.be.revertedWith("ArmadaTreasuryGov: not beneficiary");
-    });
-  });
-
-  // ============================================================
-  // 7. Treasury Steward (governor-based flow)
+  // 6. Treasury Steward (governor-based flow)
   // ============================================================
 
   describe("Treasury Steward", function () {

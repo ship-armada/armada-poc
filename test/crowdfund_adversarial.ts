@@ -1078,6 +1078,83 @@ describe("Crowdfund Adversarial", function () {
       // Invariant: alloc + treasury = saleSize
       expect(totalAlloc + treasuryLeftover).to.equal(USDC(1_200_000));
     });
+
+    it("multi-hop oversubscription: hop-0 and hop-1 both oversubscribed simultaneously", async function () {
+      // Use invite stacking to oversubscribe hop-1 with fewer participants.
+      // Hop-0: 54 seeds × $15K = $810K. Ceiling = 70% of $1,140K = $798K → oversubscribed.
+      // Hop-0 leftover = $0. remaining_available = $1,140K - $798K = $342K.
+      // Hop-1 eff ceiling = min(45% × $1,140K, $342K) = $342K.
+      // Hop-1: 29 participants × 3 stacked invites = $12K cap each.
+      //        29 × $12K = $348K > $342K → oversubscribed.
+      // Total participants: 54 + 29 = 83 (well within gas limits).
+
+      const seeds = allSigners.slice(1, 55); // 54 seeds
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      // 29 hop-1 participants, each invited 3 times by different seeds.
+      // Seeds 0-28 give first invite, seeds 29-53 + wraparound give 2nd and 3rd.
+      const hop1Count = 29;
+      const hop1Pool = allSigners.slice(55, 55 + hop1Count);
+
+      for (let h = 0; h < hop1Count; h++) {
+        // Three different seeds invite the same hop-1 address (invite stacking).
+        // Offsets of 0, 18, 36 mod 54 guarantee distinct seeds and ≤2 invites per seed.
+        await crowdfund.connect(seeds[h % seeds.length]).invite(hop1Pool[h].address, 0);
+        await crowdfund.connect(seeds[(h + 18) % seeds.length]).invite(hop1Pool[h].address, 0);
+        await crowdfund.connect(seeds[(h + 36) % seeds.length]).invite(hop1Pool[h].address, 0);
+
+        // Effective cap = 3 × $4K = $12K per hop-1 participant
+        await fundAndApprove(hop1Pool[h], USDC(12_000));
+        await crowdfund.connect(hop1Pool[h]).commit(1, USDC(12_000));
+      }
+
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+
+      // --- Verify hop-0 is oversubscribed with pro-rata ---
+      // Hop-0 demand = $810K, ceiling = $798K. Scale = $798K / $810K ≈ 0.985
+      const [, hop0Refund] = await crowdfund.getAllocationAtHop(seeds[0].address, 0);
+      // Each seed committed $15K. refund = $15K × (1 - 798/810) ≈ $222
+      expect(hop0Refund).to.be.gt(0n); // confirms oversubscription
+      expect(hop0Refund).to.be.lt(USDC(500)); // small refund, hop-0 barely oversubscribed
+
+      // --- Verify hop-1 is oversubscribed with pro-rata ---
+      // Hop-1 cappedDemand = $348K > hop-1 eff ceiling = $342K. Scale ≈ 0.983
+      const [, hop1Refund] = await crowdfund.getAllocationAtHop(hop1Pool[0].address, 1);
+      expect(hop1Refund).to.be.gt(0n); // confirms hop-1 oversubscription
+      // hop-1 refund per participant ≈ $12K × (1 - 342/348) ≈ $207
+      expect(hop1Refund).to.be.lt(USDC(500)); // bounded refund
+
+      // --- Sum-of-parts invariant across all participants ---
+      let sumAllocUsdc = 0n;
+      let sumRefund = 0n;
+
+      for (const s of seeds) {
+        const [, refundUsdc] = await crowdfund.getAllocation(s.address);
+        const committed = await crowdfund.getCommitment(s.address, 0);
+        sumAllocUsdc += (committed - refundUsdc);
+        sumRefund += refundUsdc;
+      }
+      for (const h of hop1Pool) {
+        const [, refundUsdc] = await crowdfund.getAllocation(h.address);
+        const committed = await crowdfund.getCommitment(h.address, 1);
+        sumAllocUsdc += (committed - refundUsdc);
+        sumRefund += refundUsdc;
+      }
+
+      const totalCommitted = await crowdfund.totalCommitted();
+      expect(sumAllocUsdc + sumRefund).to.equal(totalCommitted);
+
+      // totalAllocatedUsdc + treasuryLeftover = saleSize
+      const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
+      const treasuryLeftover = await crowdfund.treasuryLeftoverUsdc();
+      expect(totalAllocUsdc + treasuryLeftover).to.equal(USDC(1_200_000));
+    });
   });
 
   // ============================================================

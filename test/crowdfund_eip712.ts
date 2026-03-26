@@ -489,6 +489,56 @@ describe("Crowdfund EIP-712 Invites", function () {
   });
 
   // ============================================================
+  // commitWithInvite amount boundary tests
+  // ============================================================
+
+  describe("commitWithInvite amount boundaries", function () {
+    it("commitWithInvite with amount=0 reverts", async function () {
+      await setupWithSeeds([seed1]);
+      const deadline = await futureDeadline();
+      const nonce = 100;
+
+      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+
+      await expect(
+        crowdfund.connect(hop1a).commitWithInvite(
+          seed1.address, 0, nonce, deadline, signature, 0n
+        )
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+    });
+
+    it("commitWithInvite with amount < MIN_COMMIT ($10) reverts", async function () {
+      await setupWithSeeds([seed1]);
+      const deadline = await futureDeadline();
+      const nonce = 101;
+
+      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+
+      // $9.999999 (one wei below MIN_COMMIT)
+      await expect(
+        crowdfund.connect(hop1a).commitWithInvite(
+          seed1.address, 0, nonce, deadline, signature, USDC(10) - 1n
+        )
+      ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
+    });
+
+    it("commitWithInvite with exactly MIN_COMMIT ($10) succeeds", async function () {
+      await setupWithSeeds([seed1]);
+      const deadline = await futureDeadline();
+      const nonce = 102;
+
+      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+
+      await crowdfund.connect(hop1a).commitWithInvite(
+        seed1.address, 0, nonce, deadline, signature, USDC(10)
+      );
+
+      const committed = await crowdfund.getCommitment(hop1a.address, 1);
+      expect(committed).to.equal(USDC(10));
+    });
+  });
+
+  // ============================================================
   // Direct invite() nonce=0 verification
   // ============================================================
 

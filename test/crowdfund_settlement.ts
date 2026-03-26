@@ -346,25 +346,20 @@ describe("Crowdfund Settlement Rework", function () {
       expect(deadline).to.be.gt(0);
     });
 
-    it("claim just before deadline succeeds", async function () {
+    it("claim at exact deadline succeeds, claim at deadline+1 reverts", async function () {
       const seeds = await setupAndFinalize(80, USDC(15_000));
 
       const deadline = await crowdfund.claimDeadline();
-      // increaseTo sets next block timestamp; claim tx executes in the block after that
-      await time.increaseTo(deadline - 2n);
 
-      // Should succeed (block.timestamp <= claimDeadline)
+      // Contract uses: require(block.timestamp <= claimDeadline)
+      // increaseTo(N) sets next block timestamp to N; the tx mines at N.
+      // So increaseTo(deadline - 1n) → claim tx executes at block.timestamp == deadline
+      await time.increaseTo(deadline - 1n);
       await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
-    });
 
-    it("claim after deadline reverts", async function () {
-      const seeds = await setupAndFinalize(80, USDC(15_000));
-
-      const deadline = await crowdfund.claimDeadline();
-      await time.increaseTo(deadline);
-
+      // Now block.timestamp == deadline. Next tx will be at deadline + 1 → reverts.
       await expect(
-        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+        crowdfund.connect(seeds[1]).claim(ethers.ZeroAddress)
       ).to.be.revertedWith("ArmadaCrowdfund: claim deadline passed");
     });
 

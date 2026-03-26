@@ -512,7 +512,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         // Evaluate outcome: does the community uphold or deny the veto?
         bool quorumMet = _quorumReached(ratificationId);
-        bool majorityAgainst = quorumMet && !_voteSucceeded(ratificationId);
+        bool majorityAgainst = quorumMet && (p.againstVotes > p.forVotes);
 
         if (majorityAgainst) {
             // Community denies the veto → eject SC, store calldata hash

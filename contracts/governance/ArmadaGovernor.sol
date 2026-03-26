@@ -162,6 +162,21 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Maps vetoed proposalId → ratification proposalId (reverse lookup)
     mapping(uint256 => uint256) public vetoRatificationId;
 
+    // ============ Steward Circuit Breaker ============
+
+    /// @notice Number of consecutive steward proposals with participation below 30%.
+    /// When this reaches CIRCUIT_BREAKER_THRESHOLD, the steward channel pauses.
+    uint256 public consecutiveLowParticipationCount;
+
+    /// @notice Whether the steward channel is currently paused due to circuit breaker.
+    bool public stewardChannelPaused;
+
+    /// @notice Tracks whether a steward proposal's participation has been resolved.
+    mapping(uint256 => bool) public stewardProposalResolved;
+
+    uint256 public constant CIRCUIT_BREAKER_THRESHOLD = 5;
+    uint256 public constant CIRCUIT_BREAKER_PARTICIPATION_BPS = 3000; // 30%
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -193,6 +208,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event AdapterAuthorized(address indexed adapter);
     event AdapterDeauthorized(address indexed adapter);
     event AdapterFullyDeauthorized(address indexed adapter);
+    event StewardChannelPaused(uint256 indexed triggeringProposalId);
+    event StewardChannelResumed();
 
     // ============ Constructor & Initializer ============
 
@@ -281,8 +298,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[this.addExtendedSelector.selector] = true;
         extendedSelectors[this.removeExtendedSelector.selector] = true;
 
-        // Fee parameters (on privacy pool)
+        // Fee parameters (on privacy pool and yield vault)
         extendedSelectors[bytes4(keccak256("setShieldFee(uint120)"))] = true;
+        extendedSelectors[bytes4(keccak256("setUnshieldFee(uint120)"))] = true;
+        extendedSelectors[bytes4(keccak256("setYieldFeeBps(uint256)"))] = true;
+
+        // Governance parameter changes (on governor, via timelock)
+        extendedSelectors[bytes4(keccak256("setQuietPeriodDuration(uint256)"))] = true;
 
         // Security Council management
         extendedSelectors[this.setSecurityCouncil.selector] = true;
@@ -298,6 +320,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         // ARM token transfer whitelist
         extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
+
+        // Revenue definition expansion (on RevenueCounter)
+        extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
+
+        // Steward circuit breaker resume (on governor, via timelock)
+        extendedSelectors[this.resumeStewardChannel.selector] = true;
 
         // Treasury outflow limit parameters
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
@@ -597,6 +625,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             ITreasurySteward(stewardContract).isStewardActive(),
             "ArmadaGovernor: steward not active"
         );
+        require(!stewardChannelPaused, "ArmadaGovernor: steward channel paused");
         require(tokens.length > 0, "ArmadaGovernor: empty proposal");
         require(
             tokens.length == recipients.length && tokens.length == amounts.length,
@@ -649,6 +678,49 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             p.voteStart, p.voteEnd, description
         );
         return proposalId;
+    }
+
+    /// @notice Resolve a steward proposal's participation for the circuit breaker.
+    /// Must be called after the steward proposal's voting period ends. Tracks whether
+    /// participation was below 30% and pauses the steward channel if 5 consecutive
+    /// proposals fail to meet the threshold.
+    /// @param proposalId The steward proposal to resolve
+    function resolveStewardProposal(uint256 proposalId) external {
+        Proposal storage p = _proposals[proposalId];
+        require(p.id != 0, "ArmadaGovernor: unknown proposal");
+        require(p.proposalType == ProposalType.Steward, "ArmadaGovernor: not steward proposal");
+        require(block.timestamp > p.voteEnd, "ArmadaGovernor: voting not ended");
+        require(!stewardProposalResolved[proposalId], "ArmadaGovernor: already resolved");
+
+        stewardProposalResolved[proposalId] = true;
+
+        // Participation = total votes cast / eligible supply at snapshot
+        uint256 totalVotesCast = p.forVotes + p.againstVotes + p.abstainVotes;
+        uint256 participationBps = p.snapshotEligibleSupply > 0
+            ? (totalVotesCast * 10000) / p.snapshotEligibleSupply
+            : 0;
+
+        if (participationBps < CIRCUIT_BREAKER_PARTICIPATION_BPS) {
+            consecutiveLowParticipationCount++;
+            if (consecutiveLowParticipationCount >= CIRCUIT_BREAKER_THRESHOLD) {
+                stewardChannelPaused = true;
+                emit StewardChannelPaused(proposalId);
+            }
+        } else {
+            consecutiveLowParticipationCount = 0;
+        }
+    }
+
+    /// @notice Resume the steward channel after a circuit breaker pause.
+    /// Auto-classified as Extended (30% quorum, 14-day voting) via the timelock.
+    function resumeStewardChannel() external {
+        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        require(stewardChannelPaused, "ArmadaGovernor: not paused");
+
+        stewardChannelPaused = false;
+        consecutiveLowParticipationCount = 0;
+
+        emit StewardChannelResumed();
     }
 
     // ============ Wind-Down ============
@@ -810,6 +882,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Snapshot eligible supply and quorumBps so quorum is fixed at proposal creation.
         // Excluded addresses (treasury, crowdfund, etc.) are subtracted from total supply
         // so that undelegated/non-voting tokens don't inflate the quorum denominator.
+        //
+        // Known property: totalSupply is historical (getPastTotalSupply at snapshot block),
+        // but excluded balances use current balanceOf(). ERC20Votes has no getPastBalanceOf —
+        // only getPastVotes (delegated power), which returns 0 for undelegated excluded
+        // addresses. Since snapshotBlock = block.number - 1, the drift window is exactly
+        // one block. Treasury and crowdfund balances change only via governance actions,
+        // so the practical impact is negligible.
         p.snapshotQuorumBps = params.quorumBps;
         uint256 totalSupply = armToken.getPastTotalSupply(p.snapshotBlock);
         uint256 excludedBalance = armToken.balanceOf(treasuryAddress);

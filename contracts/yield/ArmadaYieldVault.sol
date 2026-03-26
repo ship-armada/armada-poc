@@ -56,11 +56,17 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
 
     // ============ Constants ============
 
-    /// @notice Yield fee in basis points (10% = 1000 bps)
-    uint256 public constant YIELD_FEE_BPS = 1000;
-
     /// @notice Basis points denominator
     uint256 public constant BPS_DENOMINATOR = 10000;
+
+    /// @notice Minimum yield fee: 1% (100 bps)
+    uint256 public constant MIN_YIELD_FEE_BPS = 100;
+
+    /// @notice Maximum yield fee: 50% (5000 bps)
+    uint256 public constant MAX_YIELD_FEE_BPS = 5000;
+
+    /// @notice Yield fee in basis points, governable via extended proposal.
+    uint256 public yieldFeeBps = 1000; // 10% at launch
 
     // ============ Immutables ============
 
@@ -118,6 +124,7 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event AdapterUpdated(address indexed oldAdapter, address indexed newAdapter);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
+    event YieldFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
 
     // ============ Modifiers ============
 
@@ -182,6 +189,17 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         require(newOwner != address(0), "ArmadaYieldVault: zero owner");
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
+    }
+
+    /**
+     * @notice Update yield fee basis points. Governance-only (via timelock).
+     * @param _feeBps New yield fee in basis points (bounded by MIN/MAX)
+     */
+    function setYieldFeeBps(uint256 _feeBps) external onlyOwner {
+        require(_feeBps >= MIN_YIELD_FEE_BPS, "ArmadaYieldVault: below min fee");
+        require(_feeBps <= MAX_YIELD_FEE_BPS, "ArmadaYieldVault: above max fee");
+        emit YieldFeeUpdated(yieldFeeBps, _feeBps);
+        yieldFeeBps = _feeBps;
     }
 
     // ============ Core Functions ============
@@ -275,7 +293,7 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         uint256 yieldFee = 0;
         if (grossAssets > principalPortion) {
             uint256 yield_ = grossAssets - principalPortion;
-            yieldFee = (yield_ * YIELD_FEE_BPS) / BPS_DENOMINATOR;
+            yieldFee = (yield_ * yieldFeeBps) / BPS_DENOMINATOR;
         }
 
         assets = grossAssets - yieldFee;
@@ -358,7 +376,7 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         // Calculate fee
         if (grossAssets > principalPortion) {
             uint256 yield_ = grossAssets - principalPortion;
-            uint256 yieldFee = (yield_ * YIELD_FEE_BPS) / BPS_DENOMINATOR;
+            uint256 yieldFee = (yield_ * yieldFeeBps) / BPS_DENOMINATOR;
             assets = grossAssets - yieldFee;
         } else {
             assets = grossAssets;

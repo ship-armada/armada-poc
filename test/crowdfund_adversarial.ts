@@ -86,38 +86,6 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
-  // 0a. Emergency Pause — Adversarial
-  // ============================================================
-
-  describe("Emergency Pause Adversarial", function () {
-    it("unauthorized address cannot pause pre-finalization", async function () {
-      await expect(
-        crowdfund.connect(allSigners[1]).pause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not launch team or security council");
-    });
-
-    it("unauthorized address cannot unpause pre-finalization", async function () {
-      await crowdfund.pause();
-      await expect(
-        crowdfund.connect(allSigners[1]).unpause()
-      ).to.be.revertedWith("ArmadaCrowdfund: not launch team or security council");
-    });
-
-    it("double pause reverts", async function () {
-      await crowdfund.pause();
-      await expect(
-        crowdfund.pause()
-      ).to.be.revertedWith("Pausable: paused");
-    });
-
-    it("double unpause reverts", async function () {
-      await expect(
-        crowdfund.unpause()
-      ).to.be.revertedWith("Pausable: not paused");
-    });
-  });
-
-  // ============================================================
   // 1. Precision & Accounting Invariants
   // ============================================================
 

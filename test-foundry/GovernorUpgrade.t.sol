@@ -42,7 +42,6 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
-    uint256 constant MAX_PAUSE = 14 days;
 
     function setUp() public {
         // Deploy timelock
@@ -54,15 +53,13 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         armToken = new ArmadaToken(deployer, address(timelock));
 
         // Deploy treasury
-        treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
+        treasury = new ArmadaTreasuryGov(address(timelock));
 
         // Deploy governor behind proxy
         governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
 
         // Grant timelock roles to governor
@@ -201,9 +198,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         governor.initialize(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
     }
 
@@ -214,9 +209,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         impl.initialize(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
     }
 
@@ -226,24 +219,6 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         // upgradeTo selector should be classified as extended
         assertTrue(governor.extendedSelectors(bytes4(keccak256("upgradeTo(address)"))));
         assertTrue(governor.extendedSelectors(bytes4(keccak256("upgradeToAndCall(address,bytes)"))));
-    }
-
-    // ============ Pause State Persistence ============
-
-    function test_upgrade_pauseStatePersists() public {
-        assertEq(governor.maxPauseDuration(), MAX_PAUSE);
-        assertEq(governor.pauseTimelock(), address(timelock));
-        assertEq(governor.guardian(), deployer);
-
-        // Upgrade
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
-        vm.prank(address(timelock));
-        governor.upgradeTo(address(v2Impl));
-
-        // Verify pause state persists
-        assertEq(governor.maxPauseDuration(), MAX_PAUSE);
-        assertEq(governor.pauseTimelock(), address(timelock));
-        assertEq(governor.guardian(), deployer);
     }
 
     // ============ Wind-Down State Persistence ============

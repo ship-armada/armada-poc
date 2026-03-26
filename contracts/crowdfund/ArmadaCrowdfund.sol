@@ -7,7 +7,6 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "./IArmadaCrowdfund.sol";
@@ -16,7 +15,7 @@ import "./IArmadaCrowdfund.sol";
 /// @notice Implements the full crowdfund lifecycle: seed management, invitation chains,
 ///         USDC commitment escrow, deterministic allocation with pro-rata scaling and rollover,
 ///         elastic expansion, and refund mechanism.
-contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
+contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
 
     // ============ Constants ============
@@ -224,7 +223,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     ///         invitesReceived counter, scaling its cap and outgoing invite budget.
     /// @param invitee Address to invite
     /// @param inviterHop Which of the caller's hop-level nodes is doing the inviting
-    function invite(address invitee, uint8 inviterHop) external whenNotPaused {
+    function invite(address invitee, uint8 inviterHop) external {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(block.timestamp <= windowEnd, "ArmadaCrowdfund: window closed");
@@ -268,7 +267,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     ///         a participant and cannot commit USDC.
     /// @param invitee Address to invite
     /// @param fromHop Source hop level (0 = invite to hop-1, 1 = invite to hop-2)
-    function launchTeamInvite(address invitee, uint8 fromHop) external whenNotPaused {
+    function launchTeamInvite(address invitee, uint8 fromHop) external {
         require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(
@@ -312,7 +311,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     /// @notice Commit USDC to the crowdfund at a specific hop level
     /// @param hop Which of the caller's (address, hop) nodes to commit to
     /// @param amount USDC amount to commit (6 decimals)
-    function commit(uint8 hop, uint256 amount) external nonReentrant whenNotPaused {
+    function commit(uint8 hop, uint256 amount) external nonReentrant {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
@@ -361,7 +360,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         uint256 deadline,
         bytes calldata signature,
         uint256 amount
-    ) external nonReentrant whenNotPaused {
+    ) external nonReentrant {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
@@ -459,7 +458,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     /// @notice Finalize the crowdfund: compute allocations.
     ///         Permissionless — anyone may call once the window has ended and
     ///         totalCommitted meets the minimum raise.
-    function finalize() external nonReentrant whenNotPaused {
+    function finalize() external nonReentrant {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");
 
@@ -537,7 +536,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     ///        off-chain indexing. Actual ERC20Votes delegation must be performed by
     ///        the claimant directly on the ARM token contract (delegate() uses msg.sender).
     /// @dev Reads pre-computed allocations stored by finalize() — no recomputation.
-    function claim(address delegate) external nonReentrant whenNotPaused {
+    function claim(address delegate) external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         require(block.timestamp <= claimDeadline, "ArmadaCrowdfund: claim deadline passed");
@@ -568,7 +567,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
     ///         3. Phase.Canceled — full deposit refund (security council cancel)
     ///         4. Deadline fallback — full deposit refund (window expired, not finalized, below MIN_SALE)
     ///         ARM claims are handled separately by claim().
-    function claimRefund() external nonReentrant whenNotPaused {
+    function claimRefund() external nonReentrant {
         // Determine which refund path applies
         bool normalRefund = false;
         bool fullRefund = false;
@@ -646,36 +645,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, Pausable, EIP712 {
         armToken.safeTransfer(treasury, sweepable);
 
         emit UnallocatedArmWithdrawn(treasury, sweepable);
-    }
-
-    // ============ Emergency Pause ============
-
-    /// @notice Pause invite(), commit(), claim(), and claimRefund() in case of emergency.
-    ///         Pre-finalization: launch team or security council. Post-finalization/cancel: security council only.
-    function pause() external {
-        if (phase == Phase.Finalized || phase == Phase.Canceled) {
-            require(msg.sender == securityCouncil, "ArmadaCrowdfund: only security council");
-        } else {
-            require(
-                msg.sender == launchTeam || msg.sender == securityCouncil,
-                "ArmadaCrowdfund: not launch team or security council"
-            );
-        }
-        _pause();
-    }
-
-    /// @notice Unpause to resume normal operations.
-    ///         Pre-finalization: launch team or security council. Post-finalization/cancel: security council only.
-    function unpause() external {
-        if (phase == Phase.Finalized || phase == Phase.Canceled) {
-            require(msg.sender == securityCouncil, "ArmadaCrowdfund: only security council");
-        } else {
-            require(
-                msg.sender == launchTeam || msg.sender == securityCouncil,
-                "ArmadaCrowdfund: not launch team or security council"
-            );
-        }
-        _unpause();
     }
 
     // ============ View Functions ============

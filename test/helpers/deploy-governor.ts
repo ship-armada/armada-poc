@@ -11,8 +11,6 @@ export async function deployGovernorProxy(
   armTokenAddress: string,
   timelockAddress: string,
   treasuryAddress: string,
-  guardianAddress: string,
-  maxPauseDuration: number | bigint
 ) {
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const impl = await ArmadaGovernor.deploy();
@@ -22,8 +20,6 @@ export async function deployGovernorProxy(
     armTokenAddress,
     timelockAddress,
     treasuryAddress,
-    guardianAddress,
-    maxPauseDuration,
   ]);
 
   const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");

@@ -46,7 +46,6 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
     uint256 constant FOURTEEN_DAYS = 14 days;
-    uint256 constant MAX_PAUSE = 14 days;
 
     function setUp() public {
         // Deploy timelock
@@ -58,15 +57,13 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         armToken = new ArmadaToken(deployer, address(timelock));
 
         // Deploy treasury
-        treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
+        treasury = new ArmadaTreasuryGov(address(timelock));
 
         // Deploy governor
         governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
 
         // Whitelist participants

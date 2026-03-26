@@ -299,9 +299,7 @@ contract GovernorInvariantTest is Test, GovernorDeployHelper {
         governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            treasuryAddr,
-            address(this),
-            14 days
+            treasuryAddr
         );
 
         // Grant governor the proposer role on timelock

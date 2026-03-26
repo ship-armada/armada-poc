@@ -96,7 +96,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await crowdfund.loadArm();
 
     // Deploy governance
-    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
@@ -112,7 +111,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
-      deployer.address, MAX_PAUSE_DURATION
     );
 
     // Grant governor roles on timelock
@@ -125,7 +123,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     // Deploy TreasuryGov (holds ARM for governance distributions)
     // Owner is set to timelock at deployment and is immutable — governance controls the treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
+    treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasuryGov.waitForDeployment();
 
     // Whitelist contracts that transfer ARM tokens
@@ -622,8 +620,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localArmToken.initWhitelist([localDeployer.address]);
 
       // Step 2: Deploy governance stack
-      const LOCAL_MAX_PAUSE = 14 * ONE_DAY;
-
       const TimelockController = await ethers.getContractFactory("TimelockController");
       localTimelockController = await TimelockController.deploy(
         ONE_DAY,
@@ -635,16 +631,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const localTlAddr = await localTimelockController.getAddress();
 
       const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-      localTreasury = await ArmadaTreasuryGov.deploy(
-        localTlAddr, localDeployer.address, LOCAL_MAX_PAUSE
-      );
+      localTreasury = await ArmadaTreasuryGov.deploy(localTlAddr);
       await localTreasury.waitForDeployment();
 
       localGovernor = await deployGovernorProxy(
         await localArmToken.getAddress(),
         localTlAddr,
         await localTreasury.getAddress(),
-        localDeployer.address, LOCAL_MAX_PAUSE
       );
 
       // Grant governor roles on timelock
@@ -929,7 +922,6 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localArmToken.getAddress(),
         await localTimelockController.getAddress(),
         await localTreasury.getAddress(),
-        localDeployer.address, 14 * ONE_DAY
       );
 
       // Non-deployer tries to call

@@ -318,23 +318,6 @@ describe("Crowdfund EIP-712 Invites", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: invite limit reached");
     });
 
-    it("should revert when contract is paused", async function () {
-      await setupWithSeeds([seed1]);
-      const deadline = await futureDeadline();
-      const nonce = 1;
-
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
-
-      // deployer is launchTeam, can pause
-      await crowdfund.pause();
-
-      await expect(
-        crowdfund
-          .connect(hop1a)
-          .commitWithInvite(seed1.address, 0, nonce, deadline, signature, USDC(1_000))
-      ).to.be.revertedWith("Pausable: paused");
-    });
-
     it("should revert after window end", async function () {
       await crowdfund.addSeeds([seed1.address]);
 

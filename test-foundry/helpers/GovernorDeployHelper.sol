@@ -12,18 +12,14 @@ abstract contract GovernorDeployHelper {
     function _deployGovernorProxy(
         address _armToken,
         address payable _timelock,
-        address _treasury,
-        address _guardian,
-        uint256 _maxPauseDuration
+        address _treasury
     ) internal returns (ArmadaGovernor) {
         ArmadaGovernor impl = new ArmadaGovernor();
         bytes memory initData = abi.encodeWithSelector(
             ArmadaGovernor.initialize.selector,
             _armToken,
             _timelock,
-            _treasury,
-            _guardian,
-            _maxPauseDuration
+            _treasury
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return ArmadaGovernor(address(proxy));

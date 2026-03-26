@@ -38,7 +38,6 @@ const ALICE_AMOUNT = TOTAL_SUPPLY * 5n / 100n;
 const BOB_AMOUNT = TOTAL_SUPPLY * 5n / 100n;
 
 const REVENUE_THRESHOLD = ethers.parseUnits("10000", 18); // $10k in 18-decimal
-const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 
 describe("Wind-Down & Redemption Integration", function () {
   let armToken: any;
@@ -94,19 +93,17 @@ describe("Wind-Down & Redemption Integration", function () {
     await armToken.waitForDeployment();
 
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryContract = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
+    treasuryContract = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasuryContract.waitForDeployment();
 
     governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasuryContract.getAddress(),
-      deployer.address,
-      MAX_PAUSE_DURATION,
     );
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-    stewardContract = await TreasurySteward.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
+    stewardContract = await TreasurySteward.deploy(timelockAddr);
     await stewardContract.waitForDeployment();
 
     // Deploy mock USDC
@@ -879,14 +876,12 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
 
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasuryContract = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
+    treasuryContract = await ArmadaTreasuryGov.deploy(timelockAddr);
 
     governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasuryContract.getAddress(),
-      deployer.address,
-      MAX_PAUSE_DURATION,
     );
 
     // Deploy mock USDC

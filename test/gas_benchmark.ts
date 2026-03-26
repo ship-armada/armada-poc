@@ -452,8 +452,6 @@ describe("Gas Benchmarks", function () {
         await armToken.getAddress(),
         await timelock.getAddress(),
         deployer.address, // treasury
-        deployer.address, // guardian
-        14 * 86400         // maxPauseDuration
       );
 
       // Grant roles

@@ -37,7 +37,6 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
-    uint256 constant MAX_PAUSE = 14 days;
 
     event StewardChannelPaused(uint256 indexed triggeringProposalId);
     event StewardChannelResumed();
@@ -52,19 +51,17 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
         armToken = new ArmadaToken(deployer, address(timelock));
 
         // Deploy treasury
-        treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
+        treasury = new ArmadaTreasuryGov(address(timelock));
 
         // Deploy governor
         governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
 
         // Deploy steward contract
-        stewardContract = new TreasurySteward(address(timelock), deployer, MAX_PAUSE);
+        stewardContract = new TreasurySteward(address(timelock));
 
         // Register steward contract on governor
         governor.setStewardContract(address(stewardContract));

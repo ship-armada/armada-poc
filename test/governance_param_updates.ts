@@ -26,7 +26,6 @@ const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const FOURTEEN_DAYS = 14 * ONE_DAY;
-const MAX_PAUSE_DURATION = FOURTEEN_DAYS;
 const STANDARD_VOTING_PERIOD = SEVEN_DAYS;
 const EXTENDED_VOTING_PERIOD = FOURTEEN_DAYS;
 const STANDARD_EXECUTION_DELAY = TWO_DAYS;
@@ -135,23 +134,17 @@ describe("Governance Parameter Updates", function () {
     await armToken.waitForDeployment();
 
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(
-      timelockAddr, deployer.address, MAX_PAUSE_DURATION
-    );
+    treasury = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasury.waitForDeployment();
 
     governor = await deployGovernorProxy(
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
-      deployer.address, MAX_PAUSE_DURATION
     );
 
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-    stewardContract = await TreasurySteward.deploy(
-      timelockAddr,
-      deployer.address, MAX_PAUSE_DURATION
-    );
+    stewardContract = await TreasurySteward.deploy(timelockAddr);
     await stewardContract.waitForDeployment();
 
     // Configure timelock roles
@@ -222,7 +215,6 @@ describe("Governance Parameter Updates", function () {
         await armToken.getAddress(),
         deployer.address,   // deployer acts as timelock
         await treasury.getAddress(),
-        deployer.address, MAX_PAUSE_DURATION
       );
     });
 
@@ -362,7 +354,6 @@ describe("Governance Parameter Updates", function () {
         await armToken.getAddress(),
         tlAddr,
         await treasury.getAddress(),
-        deployer.address, MAX_PAUSE_DURATION
       );
 
       // Grant roles — governor for proposals, deployer for direct schedule/execute in tests

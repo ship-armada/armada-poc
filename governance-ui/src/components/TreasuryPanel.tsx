@@ -1,5 +1,5 @@
-// ABOUTME: Treasury panel showing balances, claims, steward budget, and claim exercise.
-// ABOUTME: Displays treasury-held ARM/USDC, active claims, and steward budget status.
+// ABOUTME: Treasury panel showing balances and steward budget status.
+// ABOUTME: Displays treasury-held ARM/USDC and steward budget spending.
 
 import { useState } from 'react'
 import { ethers } from 'ethers'
@@ -15,10 +15,6 @@ interface TreasuryPanelProps {
 }
 
 export function TreasuryPanel({ contracts, wallet, govData }: TreasuryPanelProps) {
-  const [exerciseClaimId, setExerciseClaimId] = useState('')
-  const [exerciseAmount, setExerciseAmount] = useState('')
-  const [txStatus, setTxStatus] = useState<string | null>(null)
-  const [txError, setTxError] = useState<string | null>(null)
 
   const fmtArm = (v: bigint) => {
     const num = Number(ethers.formatUnits(v, 18))
@@ -31,35 +27,6 @@ export function TreasuryPanel({ contracts, wallet, govData }: TreasuryPanelProps
 
   const truncAddr = (addr: string) =>
     addr ? `${addr.slice(0, 10)}...${addr.slice(-6)}` : 'None'
-
-  const handleExerciseClaim = async () => {
-    if (!wallet.account || !contracts.deployment || !exerciseClaimId || !exerciseAmount) return
-    setTxStatus('Exercising claim...')
-    setTxError(null)
-    try {
-      const signer = await wallet.getSigner()
-      const treasury = new ethers.Contract(
-        contracts.deployment.contracts.treasury,
-        ['function exerciseClaim(uint256 claimId, uint256 amount)'],
-        signer,
-      )
-      // Determine decimals from claim token (check if it matches ARM or USDC)
-      const claim = govData.claims.find((c) => c.id === Number(exerciseClaimId))
-      const decimals = claim?.token.toLowerCase() === contracts.deployment.contracts.armToken.toLowerCase() ? 18 : 6
-      const amount = ethers.parseUnits(exerciseAmount, decimals)
-      const tx = await treasury.exerciseClaim(Number(exerciseClaimId), amount)
-      setTxStatus('Confirming...')
-      await tx.wait()
-      setTxStatus('Claim exercised!')
-      setExerciseClaimId('')
-      setExerciseAmount('')
-      await govData.refresh()
-      setTimeout(() => setTxStatus(null), 3000)
-    } catch (err) {
-      setTxError(err instanceof Error ? err.message : 'Failed to exercise claim')
-      setTxStatus(null)
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -103,78 +70,6 @@ export function TreasuryPanel({ contracts, wallet, govData }: TreasuryPanelProps
         </div>
       )}
 
-      {/* Claims */}
-      <div>
-        <h3 className="mb-3 text-sm font-medium text-neutral-300">
-          Claims ({govData.claimCount})
-        </h3>
-        {govData.claims.length === 0 ? (
-          <p className="text-sm text-neutral-500">No claims yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-neutral-800 text-left text-neutral-500">
-                  <th className="pb-2 pr-3">ID</th>
-                  <th className="pb-2 pr-3">Token</th>
-                  <th className="pb-2 pr-3">Beneficiary</th>
-                  <th className="pb-2 pr-3 text-right">Total</th>
-                  <th className="pb-2 pr-3 text-right">Exercised</th>
-                  <th className="pb-2 text-right">Remaining</th>
-                </tr>
-              </thead>
-              <tbody>
-                {govData.claims.map((claim) => {
-                  const isArm = contracts.deployment
-                    ? claim.token.toLowerCase() === contracts.deployment.contracts.armToken.toLowerCase()
-                    : false
-                  const fmt = isArm ? fmtArm : fmtUsdc
-                  return (
-                    <tr key={claim.id} className="border-b border-neutral-900 text-neutral-300">
-                      <td className="py-2 pr-3 font-mono">{claim.id}</td>
-                      <td className="py-2 pr-3">{isArm ? 'ARM' : 'USDC'}</td>
-                      <td className="py-2 pr-3 font-mono">{truncAddr(claim.beneficiary)}</td>
-                      <td className="py-2 pr-3 text-right">{fmt(claim.amount)}</td>
-                      <td className="py-2 pr-3 text-right">{fmt(claim.exercised)}</td>
-                      <td className="py-2 text-right font-medium">{fmt(claim.remaining)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Exercise Claim */}
-      <div className="rounded border border-neutral-800 bg-neutral-900 p-4">
-        <h3 className="mb-3 text-sm font-medium text-neutral-300">Exercise Claim</h3>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={exerciseClaimId}
-            onChange={(e) => setExerciseClaimId(e.target.value)}
-            placeholder="Claim ID"
-            className="w-24 rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
-          />
-          <input
-            type="text"
-            value={exerciseAmount}
-            onChange={(e) => setExerciseAmount(e.target.value)}
-            placeholder="Amount"
-            className="flex-1 rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
-          />
-          <button
-            onClick={handleExerciseClaim}
-            disabled={!wallet.account || !exerciseClaimId || !exerciseAmount}
-            className="rounded bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50"
-          >
-            Exercise
-          </button>
-        </div>
-        {txStatus && <div className="mt-2 text-xs text-blue-400">{txStatus}</div>}
-        {txError && <div className="mt-2 text-xs text-red-400">{txError}</div>}
-      </div>
     </div>
   )
 }

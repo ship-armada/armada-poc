@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Governance-controlled treasury with claims, steward budget, and aggregate outflow rate limits.
+// ABOUTME: Governance-controlled treasury with steward budget and aggregate outflow rate limits.
 // ABOUTME: Outflow limits enforce a rolling-window cap per token to defend against governance capture.
 pragma solidity ^0.8.17;
 
@@ -8,22 +8,14 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./EmergencyPausable.sol";
 
-/// @title ArmadaTreasuryGov — Governance-controlled treasury with claims mechanism
+/// @title ArmadaTreasuryGov — Governance-controlled treasury
 /// @notice Owned by TimelockController (immutable). Supports direct distributions,
-///         claims (deferred exercise), steward operational budget, and aggregate
-///         outflow rate limits per token over a rolling window.
+///         steward operational budget, and aggregate outflow rate limits per token
+///         over a rolling window.
 contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     using SafeERC20 for IERC20;
 
     // ============ Types ============
-
-    struct Claim {
-        address token;
-        address beneficiary;
-        uint256 amount;
-        uint256 exercised;
-        uint256 createdAt;
-    }
 
     /// @notice Per-token outflow rate limit configuration.
     /// The effective limit is: max(percentageOfBalance, limitAbsolute),
@@ -45,10 +37,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     // ============ State ============
 
     address public immutable owner; // TimelockController address (set once at deployment, cannot be changed)
-    // Claims system
-    uint256 public claimCount;
-    mapping(uint256 => Claim) public claims;
-    mapping(address => uint256[]) private _beneficiaryClaims;
 
     // Per-token steward budget table (governance-managed via Extended proposals).
     // Each authorized token has an absolute spending limit per rolling window.
@@ -81,8 +69,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     // ============ Events ============
 
     event DirectDistribution(address indexed token, address indexed recipient, uint256 amount);
-    event ClaimCreated(uint256 indexed claimId, address indexed beneficiary, address token, uint256 amount);
-    event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount);
     event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining);
     event StewardBudgetTokenAdded(address indexed token, uint256 limit, uint256 window);
     event StewardBudgetTokenUpdated(address indexed token, uint256 limit, uint256 window);
@@ -121,50 +107,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
         _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
         emit DirectDistribution(token, recipient, amount);
-    }
-
-    /// @notice Create a claim: right to receive tokens, exercisable by beneficiary
-    /// @param token Token address
-    /// @param beneficiary Address that can exercise the claim
-    /// @param amount Total claimable amount
-    function createClaim(
-        address token,
-        address beneficiary,
-        uint256 amount
-    ) external onlyOwner returns (uint256) {
-        require(beneficiary != address(0), "ArmadaTreasuryGov: zero address");
-        require(amount > 0, "ArmadaTreasuryGov: zero amount");
-
-        uint256 claimId = ++claimCount;
-        claims[claimId] = Claim({
-            token: token,
-            beneficiary: beneficiary,
-            amount: amount,
-            exercised: 0,
-            createdAt: block.timestamp
-        });
-        _beneficiaryClaims[beneficiary].push(claimId);
-
-        emit ClaimCreated(claimId, beneficiary, token, amount);
-        return claimId;
-    }
-
-    // ============ Claim Functions ============
-
-    /// @notice Exercise a claim — beneficiary receives tokens at their discretion
-    /// @param claimId Claim to exercise
-    /// @param amount Amount to exercise (can be partial)
-    function exerciseClaim(uint256 claimId, uint256 amount) external nonReentrant whenNotPaused {
-        Claim storage c = claims[claimId];
-        require(c.beneficiary == msg.sender, "ArmadaTreasuryGov: not beneficiary");
-        require(amount > 0, "ArmadaTreasuryGov: zero amount");
-        require(c.exercised + amount <= c.amount, "ArmadaTreasuryGov: exceeds claim");
-
-        c.exercised += amount;
-        _checkAndRecordOutflow(c.token, amount);
-        IERC20(c.token).safeTransfer(c.beneficiary, amount);
-
-        emit ClaimExercised(claimId, c.beneficiary, amount);
     }
 
     // ============ Steward Spending (executed by timelock via governor) ============
@@ -385,15 +327,6 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
 
     function getBalance(address token) external view returns (uint256) {
         return IERC20(token).balanceOf(address(this));
-    }
-
-    function getBeneficiaryClaims(address beneficiary) external view returns (uint256[] memory) {
-        return _beneficiaryClaims[beneficiary];
-    }
-
-    function getClaimRemaining(uint256 claimId) external view returns (uint256) {
-        Claim storage c = claims[claimId];
-        return c.amount - c.exercised;
     }
 
     /// @notice View the steward's current budget status for a token

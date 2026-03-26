@@ -45,17 +45,6 @@ export interface ProposalData {
   userVoteChoice: number | null
 }
 
-/** Treasury claim data from ArmadaTreasuryGov.claims() */
-export interface ClaimData {
-  id: number
-  token: string
-  beneficiary: string
-  amount: bigint
-  exercised: bigint
-  remaining: bigint
-  createdAt: bigint
-}
-
 /** Steward action data from TreasurySteward.getAction() */
 export interface StewardActionData {
   id: number

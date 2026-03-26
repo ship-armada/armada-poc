@@ -51,23 +51,15 @@ export const GOVERNOR_ABI = [
 export const TREASURY_ABI = [
   // Write functions
   'function distribute(address token, address recipient, uint256 amount)',
-  'function createClaim(address token, address beneficiary, uint256 amount) returns (uint256)',
-  'function exerciseClaim(uint256 claimId, uint256 amount)',
   'function setSteward(address _steward)',
   'function stewardSpend(address token, address recipient, uint256 amount)',
   // Read functions
   'function getBalance(address token) view returns (uint256)',
-  'function claimCount() view returns (uint256)',
-  'function claims(uint256 claimId) view returns (address token, address beneficiary, uint256 amount, uint256 exercised, uint256 createdAt)',
-  'function getBeneficiaryClaims(address beneficiary) view returns (uint256[])',
-  'function getClaimRemaining(uint256 claimId) view returns (uint256)',
   'function getStewardBudget(address token) view returns (uint256 budget, uint256 spent, uint256 remaining)',
   'function steward() view returns (address)',
   'function owner() view returns (address)',
   // Events
   'event DirectDistribution(address indexed token, address indexed recipient, uint256 amount)',
-  'event ClaimCreated(uint256 indexed claimId, address indexed beneficiary, address token, uint256 amount)',
-  'event ClaimExercised(uint256 indexed claimId, address indexed beneficiary, uint256 amount)',
   'event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining)',
   'event StewardUpdated(address indexed oldSteward, address indexed newSteward)',
   'event OwnerUpdated(address indexed oldOwner, address indexed newOwner)',

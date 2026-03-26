@@ -1,5 +1,5 @@
 // ABOUTME: Form for creating governance proposals with calldata template builders.
-// ABOUTME: Supports Standard (distribute/claim), Extended (steward election), and manual calldata types.
+// ABOUTME: Supports Standard (distribute), Extended (steward election), and manual calldata types.
 
 import { useState } from 'react'
 import { ethers } from 'ethers'
@@ -13,8 +13,6 @@ interface CreateProposalFormProps {
   onCreated: () => Promise<void>
 }
 
-type TreasuryAction = 'distribute' | 'createClaim'
-
 export function CreateProposalForm({ contracts, wallet, onCreated }: CreateProposalFormProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [proposalType, setProposalType] = useState<ProposalType>(ProposalType.Standard)
@@ -23,7 +21,6 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
   const [txError, setTxError] = useState<string | null>(null)
 
   // Treasury template fields
-  const [treasuryAction, setTreasuryAction] = useState<TreasuryAction>('distribute')
   const [treasuryToken, setTreasuryToken] = useState<'arm' | 'usdc'>('usdc')
   const [treasuryRecipient, setTreasuryRecipient] = useState('')
   const [treasuryAmount, setTreasuryAmount] = useState('')
@@ -51,12 +48,9 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       const amount = ethers.parseUnits(treasuryAmount, decimals)
       const iface = new ethers.Interface([
         'function distribute(address token, address recipient, uint256 amount)',
-        'function createClaim(address token, address beneficiary, uint256 amount)',
       ])
 
-      const calldata = treasuryAction === 'distribute'
-        ? iface.encodeFunctionData('distribute', [tokenAddr, treasuryRecipient, amount])
-        : iface.encodeFunctionData('createClaim', [tokenAddr, treasuryRecipient, amount])
+      const calldata = iface.encodeFunctionData('distribute', [tokenAddr, treasuryRecipient, amount])
 
       return {
         targets: [deployment.contracts.treasury],
@@ -205,20 +199,6 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       {proposalType === ProposalType.Standard && (
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
-            <button
-              onClick={() => setTreasuryAction('distribute')}
-              className={`rounded px-3 py-1 text-xs ${treasuryAction === 'distribute' ? 'bg-green-800 text-green-200' : 'bg-neutral-800 text-neutral-400'}`}
-            >
-              Distribute
-            </button>
-            <button
-              onClick={() => setTreasuryAction('createClaim')}
-              className={`rounded px-3 py-1 text-xs ${treasuryAction === 'createClaim' ? 'bg-purple-800 text-purple-200' : 'bg-neutral-800 text-neutral-400'}`}
-            >
-              Create Claim
-            </button>
-          </div>
-          <div className="flex gap-2">
             <select
               value={treasuryToken}
               onChange={(e) => setTreasuryToken(e.target.value as 'arm' | 'usdc')}
@@ -232,7 +212,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
             type="text"
             value={treasuryRecipient}
             onChange={(e) => setTreasuryRecipient(e.target.value)}
-            placeholder={treasuryAction === 'distribute' ? 'Recipient address' : 'Beneficiary address'}
+            placeholder="Recipient address"
             className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
           />
           <input

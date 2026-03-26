@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ethers } from 'ethers'
 import type { GovernanceContracts } from './useGovernanceContracts'
-import type { ProposalData, ClaimData, StewardActionData } from '../governance-types'
+import type { ProposalData, StewardActionData } from '../governance-types'
 import { ProposalState, ProposalType } from '../governance-types'
 
 const POLL_INTERVAL_MS = 10_000
@@ -27,8 +27,6 @@ export interface GovernanceData {
   treasuryUsdcBalance: bigint
   treasuryOwner: string
   treasurySteward: string
-  claimCount: number
-  claims: ClaimData[]
   stewardBudget: { budget: bigint; spent: bigint; remaining: bigint } | null
 
   // Steward
@@ -62,8 +60,6 @@ const EMPTY_DATA: GovernanceData = {
   treasuryUsdcBalance: 0n,
   treasuryOwner: '',
   treasurySteward: '',
-  claimCount: 0,
-  claims: [],
   stewardBudget: null,
   currentSteward: '',
   isStewardActive: false,
@@ -176,7 +172,6 @@ export function useGovernanceData(
       let treasuryUsdcBalance = 0n
       let treasuryOwner = ''
       let treasurySteward = ''
-      let claimCount = 0
       let stewardBudget: { budget: bigint; spent: bigint; remaining: bigint } | null = null
 
       try {
@@ -189,9 +184,6 @@ export function useGovernanceData(
         if (usdc) {
           treasuryUsdcBalance = await treasury.getBalance(await usdc.getAddress())
         }
-
-        const claimCountRaw = await treasury.claimCount()
-        claimCount = Number(claimCountRaw)
 
         if (usdc && contracts.usdcAddress) {
           try {
@@ -207,28 +199,6 @@ export function useGovernanceData(
         }
       } catch {
         // Treasury queries may fail
-      }
-
-      // Fetch claims
-      const claims: ClaimData[] = []
-      for (let i = 1; i <= claimCount; i++) {
-        try {
-          const [claimData, remaining] = await Promise.all([
-            treasury.claims(i),
-            treasury.getClaimRemaining(i),
-          ])
-          claims.push({
-            id: i,
-            token: claimData[0] as string,
-            beneficiary: claimData[1] as string,
-            amount: claimData[2] as bigint,
-            exercised: claimData[3] as bigint,
-            remaining: remaining as bigint,
-            createdAt: claimData[4] as bigint,
-          })
-        } catch {
-          // Claim may not exist
-        }
       }
 
       // Steward data
@@ -285,8 +255,6 @@ export function useGovernanceData(
         treasuryUsdcBalance,
         treasuryOwner,
         treasurySteward,
-        claimCount,
-        claims,
         stewardBudget,
         currentSteward,
         isStewardActive,

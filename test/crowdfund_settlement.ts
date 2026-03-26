@@ -416,6 +416,57 @@ describe("Crowdfund Settlement Rework", function () {
   });
 
   // ============================================================
+  // claim() Refund Mode Guard
+  // ============================================================
+
+  describe("claim() Refund Mode Guard", function () {
+    it("claim() reverts when refundMode is true", async function () {
+      // 80 seeds at hop-0 only → hop-0 ceiling $798K < MIN_SALE → refundMode = true
+      const seeds = allSigners.slice(5, 85);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
+
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+
+      // Verify we're in refundMode
+      expect(await crowdfund.refundMode()).to.be.true;
+
+      // claim() should revert — if this guard were missing, users could drain ARM
+      await expect(
+        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+      ).to.be.revertedWith("ArmadaCrowdfund: sale in refund mode");
+    });
+
+    it("claimRefund() succeeds when refundMode is true (counterpart)", async function () {
+      // Same refundMode setup
+      const seeds = allSigners.slice(5, 85);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
+
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
+
+      // claimRefund should return full committed amount
+      const usdcBefore = await usdc.balanceOf(seeds[0].address);
+      await crowdfund.connect(seeds[0]).claimRefund();
+      const usdcAfter = await usdc.balanceOf(seeds[0].address);
+      expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
+    });
+  });
+
+  // ============================================================
   // T4.8 — Multi-Window withdrawUnallocatedArm
   // ============================================================
 

@@ -192,6 +192,91 @@ describe("Crowdfund Multi-Node", function () {
   });
 
   // ============================================================
+  // Invite Stacking Economics
+  // ============================================================
+
+  describe("Invite Stacking Economics", function () {
+    it("should increment invitesReceived on each re-invite from different inviters", async function () {
+      await setupWithSeeds([seed1, seed2, seed3]);
+
+      await crowdfund.connect(seed1).invite(alice.address, 0);
+      expect(await crowdfund.getInvitesReceived(alice.address, 1)).to.equal(1);
+
+      await crowdfund.connect(seed2).invite(alice.address, 0);
+      expect(await crowdfund.getInvitesReceived(alice.address, 1)).to.equal(2);
+
+      await crowdfund.connect(seed3).invite(alice.address, 0);
+      expect(await crowdfund.getInvitesReceived(alice.address, 1)).to.equal(3);
+    });
+
+    it("should scale effective cap linearly: invitesReceived * capUsdc", async function () {
+      await setupWithSeeds([seed1, seed2, seed3]);
+
+      await crowdfund.connect(seed1).invite(alice.address, 0);
+      expect(await crowdfund.getEffectiveCap(alice.address, 1)).to.equal(USDC(4_000));
+
+      await crowdfund.connect(seed2).invite(alice.address, 0);
+      expect(await crowdfund.getEffectiveCap(alice.address, 1)).to.equal(USDC(8_000));
+
+      await crowdfund.connect(seed3).invite(alice.address, 0);
+      expect(await crowdfund.getEffectiveCap(alice.address, 1)).to.equal(USDC(12_000));
+    });
+
+    it("should scale outgoing invite budget linearly: invitesReceived * maxInvites", async function () {
+      await setupWithSeeds([seed1, seed2, seed3]);
+
+      // Hop-1 maxInvites=2, so budget = invitesReceived * 2
+      await crowdfund.connect(seed1).invite(alice.address, 0);
+      expect(await crowdfund.getInvitesRemaining(alice.address, 1)).to.equal(2);
+
+      await crowdfund.connect(seed2).invite(alice.address, 0);
+      expect(await crowdfund.getInvitesRemaining(alice.address, 1)).to.equal(4);
+
+      await crowdfund.connect(seed3).invite(alice.address, 0);
+      expect(await crowdfund.getInvitesRemaining(alice.address, 1)).to.equal(6);
+    });
+
+    it("should allow commit at stacked cap through finalization to claim", async function () {
+      const signers = await ethers.getSigners();
+
+      // 3 seeds invite alice to hop-1 (cap = 3 * $4K = $12K)
+      await setupWithSeeds([seed1, seed2, seed3]);
+      await crowdfund.connect(seed1).invite(alice.address, 0);
+      await crowdfund.connect(seed2).invite(alice.address, 0);
+      await crowdfund.connect(seed3).invite(alice.address, 0);
+
+      // Alice commits $12K at her stacked cap
+      await crowdfund.connect(alice).commit(1, USDC(12_000));
+
+      // Add enough seeds + hop-1 demand to avoid refundMode
+      const extraSeeds = signers.slice(10, 80);
+      await crowdfund.addSeeds(extraSeeds.map((s: SignerWithAddress) => s.address));
+      for (const s of extraSeeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      // Add hop-1 demand to push totalAllocUsdc above MIN_SALE
+      const hop1Pool = signers.slice(140, 191);
+      for (let i = 0; i < 51; i++) {
+        await crowdfund.connect(extraSeeds[i]).invite(hop1Pool[i].address, 0);
+        await fundAndApprove(hop1Pool[i], USDC(4_000));
+        await crowdfund.connect(hop1Pool[i]).commit(1, USDC(4_000));
+      }
+
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.equal(false);
+
+      // Alice claims ARM — stacking → commit → settlement → claim end-to-end
+      const armBefore = await armToken.balanceOf(alice.address);
+      await crowdfund.connect(alice).claim(ethers.ZeroAddress);
+      const armAfter = await armToken.balanceOf(alice.address);
+      expect(armAfter - armBefore).to.be.gt(0);
+    });
+  });
+
+  // ============================================================
   // Re-Invite (Subsequent Invites to Same Node)
   // ============================================================
 
@@ -296,6 +381,13 @@ describe("Crowdfund Multi-Node", function () {
       await expect(
         crowdfund.connect(hop1Addrs[20]).invite(alice.address, 1)
       ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
+    });
+
+    it("hop-0 nodes always have invitesReceived=1 (cannot be re-invited)", async function () {
+      await setupWithSeeds([seed1]);
+      // Hop-0 seeds are added with invitesReceived=1; there is no mechanism to
+      // increase it because invite() targets inviterHop+1, so hop-0 can never be the target.
+      expect(await crowdfund.getInvitesReceived(seed1.address, 0)).to.equal(1);
     });
 
     it("different hops enforce different caps", async function () {

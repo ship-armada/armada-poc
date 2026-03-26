@@ -113,6 +113,9 @@ contract CrowdfundElasticFuzzTest is Test {
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
 
+        // Assert directly on cappedDemand: must be exactly 100 × $15K, not inflated by the $20K
+        assertEq(cf.cappedDemand(), 100 * HOP0_CAP, "Over-cap commit must not inflate cappedDemand");
+
         // cappedDemand = 100 × $15K = $1,500,000 = ELASTIC_TRIGGER → MAX_SALE
         assertEq(cf.saleSize(), MAX_SALE, "Capped demand at exact trigger should use MAX_SALE");
 

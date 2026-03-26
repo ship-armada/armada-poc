@@ -23,6 +23,8 @@ contract MaliciousERC20 is ERC20 {
     bool public attackFired;
     /// @notice Whether the reentry callback succeeded (false = blocked by nonReentrant)
     bool public callSucceeded;
+    /// @notice Revert data from a failed reentry callback (for asserting revert reason)
+    bytes public revertData;
 
     uint8 private _decimals;
 
@@ -51,6 +53,7 @@ contract MaliciousERC20 is ERC20 {
         attackActive = true;
         attackFired = false;
         callSucceeded = false;
+        revertData = "";
     }
 
     function disableAttack() external {
@@ -61,8 +64,11 @@ contract MaliciousERC20 is ERC20 {
         super._transfer(from, to, amount);
         if (attackActive && !attackFired) {
             attackFired = true;
-            (bool success, ) = attackTarget.call(attackCalldata);
+            (bool success, bytes memory ret) = attackTarget.call(attackCalldata);
             callSucceeded = success;
+            if (!success) {
+                revertData = ret;
+            }
         }
     }
 }
@@ -140,7 +146,19 @@ contract CrowdfundReentrancyTest is Test {
         armToken.initWhitelist(wl);
     }
 
-    // ============ Helper ============
+    // ============ Helpers ============
+
+    /// @notice Extract the revert reason string from raw revert data.
+    ///         Assumes Error(string) encoding: 4-byte selector + abi-encoded string.
+    function _extractRevertReason(bytes memory data) internal pure returns (string memory) {
+        require(data.length >= 4, "revert data too short");
+        // Strip the 4-byte Error(string) selector, then abi-decode the string
+        bytes memory payload = new bytes(data.length - 4);
+        for (uint256 i = 4; i < data.length; i++) {
+            payload[i - 4] = data[i];
+        }
+        return abi.decode(payload, (string));
+    }
 
     /// @notice Build address arrays for a crowdfund with multi-hop demand.
     ///         Does NOT add seeds — caller must loadArm() first, then addSeeds().
@@ -209,9 +227,14 @@ contract CrowdfundReentrancyTest is Test {
         vm.prank(seeds[0]);
         cf.claim(address(0));
 
-        // Reentry was attempted and blocked
+        // Reentry was attempted and blocked by nonReentrant specifically
         assertTrue(maliciousArm.attackFired(), "Attack callback must have fired");
         assertFalse(maliciousArm.callSucceeded(), "Reentry call must have been blocked");
+        assertEq(
+            _extractRevertReason(maliciousArm.revertData()),
+            "ReentrancyGuard: reentrant call",
+            "Reentry must be blocked by nonReentrant guard, not another check"
+        );
 
         // Verify only one claim went through (no double ARM)
         uint256 armReceived = maliciousArm.balanceOf(seeds[0]) - armBefore;
@@ -268,9 +291,10 @@ contract CrowdfundReentrancyTest is Test {
             abi.encodeWithSelector(ArmadaCrowdfund.claim.selector, address(0))
         );
 
-        // Outer call reverts because reentry revert propagates through the token transfer
+        // Outer call reverts because reentry revert propagates through the token transfer.
+        // The propagated revert reason must be the nonReentrant guard.
         vm.prank(seeds[0]);
-        vm.expectRevert();
+        vm.expectRevert("ReentrancyGuard: reentrant call");
         cf.claim(address(0));
 
         // Attacker received nothing
@@ -332,9 +356,14 @@ contract CrowdfundReentrancyTest is Test {
         vm.prank(seeds[0]);
         cf.claimRefund();
 
-        // Reentry was attempted and blocked
+        // Reentry was attempted and blocked by nonReentrant specifically
         assertTrue(maliciousUsdc.attackFired(), "Attack callback must have fired");
         assertFalse(maliciousUsdc.callSucceeded(), "Reentry call must have been blocked");
+        assertEq(
+            _extractRevertReason(maliciousUsdc.revertData()),
+            "ReentrancyGuard: reentrant call",
+            "Reentry must be blocked by nonReentrant guard, not another check"
+        );
 
         // Only one refund went through
         uint256 refundReceived = maliciousUsdc.balanceOf(seeds[0]) - balBefore;
@@ -386,9 +415,14 @@ contract CrowdfundReentrancyTest is Test {
         vm.prank(seed);
         cf.commit(0, commitAmt);
 
-        // Reentry was attempted and blocked
+        // Reentry was attempted and blocked by nonReentrant specifically
         assertTrue(maliciousUsdc.attackFired(), "Attack callback must have fired");
         assertFalse(maliciousUsdc.callSucceeded(), "Reentry call must have been blocked");
+        assertEq(
+            _extractRevertReason(maliciousUsdc.revertData()),
+            "ReentrancyGuard: reentrant call",
+            "Reentry must be blocked by nonReentrant guard, not another check"
+        );
 
         // Only one commit recorded (no double-counting)
         assertEq(cf.totalCommitted(), commitAmt, "Must record exactly one commit, not double");

@@ -495,4 +495,59 @@ describe("Eager Allocation at Finalization", function () {
         .to.be.revertedWith("ArmadaCrowdfund: refund mode");
     });
   });
+
+  // ============================================================
+  // Settlement Mode Equivalence
+  // ============================================================
+
+  describe("Settlement Mode Equivalence", function () {
+    it("phased and single-tx modes produce identical allocations for same scenario", async function () {
+      const cfSingleTx = await deployCrowdfund(false);
+      const cfPhased = await deployCrowdfund(true);
+
+      // Run identical scenarios on both instances
+      const { seeds: seedsST, hop1Invitees: hop1ST } = await setupFinalizableScenario(cfSingleTx, 70);
+      const { seeds: seedsP, hop1Invitees: hop1P } = await setupFinalizableScenario(cfPhased, 70);
+
+      await time.increase(THREE_WEEKS + 1);
+
+      // Finalize both
+      await cfSingleTx.finalize();
+      await cfPhased.finalize();
+
+      // For phased: complete settlement event emission
+      const nodeCount = Number(await cfPhased.getParticipantCount());
+      await cfPhased.emitSettlement(0, nodeCount);
+
+      // Compare allocations for all seed participants
+      for (let i = 0; i < seedsST.length; i++) {
+        const addr = seedsST[i].address;
+        const armST = await cfSingleTx.addressArmAllocation(addr);
+        const armP = await cfPhased.addressArmAllocation(addr);
+        expect(armST).to.equal(armP, `ARM allocation mismatch for seed ${i}`);
+
+        const refundST = await cfSingleTx.addressRefundAmount(addr);
+        const refundP = await cfPhased.addressRefundAmount(addr);
+        expect(refundST).to.equal(refundP, `Refund mismatch for seed ${i}`);
+      }
+
+      // Compare allocations for hop-1 participants
+      for (let i = 0; i < hop1ST.length; i++) {
+        const addr = hop1ST[i].address;
+        const armST = await cfSingleTx.addressArmAllocation(addr);
+        const armP = await cfPhased.addressArmAllocation(addr);
+        expect(armST).to.equal(armP, `ARM allocation mismatch for hop1 ${i}`);
+
+        const refundST = await cfSingleTx.addressRefundAmount(addr);
+        const refundP = await cfPhased.addressRefundAmount(addr);
+        expect(refundST).to.equal(refundP, `Refund mismatch for hop1 ${i}`);
+      }
+
+      // Compare aggregate values
+      expect(await cfSingleTx.totalAllocated()).to.equal(await cfPhased.totalAllocated());
+      expect(await cfSingleTx.totalAllocatedUsdc()).to.equal(await cfPhased.totalAllocatedUsdc());
+      expect(await cfSingleTx.saleSize()).to.equal(await cfPhased.saleSize());
+      expect(await cfSingleTx.treasuryLeftoverUsdc()).to.equal(await cfPhased.treasuryLeftoverUsdc());
+    });
+  });
 });

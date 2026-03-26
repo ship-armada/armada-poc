@@ -31,6 +31,7 @@ contract CrowdfundFullHandler is Test {
     uint256 public ghost_totalUsdcIn;
     mapping(address => uint256) public ghost_committed;
     mapping(address => uint8) public ghost_hop;
+    uint8[] public ghost_hopForEntry;
     bool public ghost_finalized;
     bool public ghost_canceled;
     bool public ghost_refundMode;
@@ -81,6 +82,7 @@ contract CrowdfundFullHandler is Test {
             if (ghost_committed[seed] == amount) {
                 allCommitters.push(seed);
                 ghost_hop[seed] = 0;
+                ghost_hopForEntry.push(0);
             }
         } catch {}
         vm.stopPrank();
@@ -112,6 +114,7 @@ contract CrowdfundFullHandler is Test {
             if (ghost_committed[addr] == amount) {
                 allCommitters.push(addr);
                 ghost_hop[addr] = 1;
+                ghost_hopForEntry.push(1);
             }
         } catch {}
         vm.stopPrank();
@@ -143,6 +146,7 @@ contract CrowdfundFullHandler is Test {
             if (ghost_committed[addr] == amount) {
                 allCommitters.push(addr);
                 ghost_hop[addr] = 2;
+                ghost_hopForEntry.push(2);
             }
         } catch {}
         vm.stopPrank();
@@ -174,6 +178,10 @@ contract CrowdfundFullHandler is Test {
 
     function getCommitter(uint256 idx) external view returns (address) {
         return allCommitters[idx];
+    }
+
+    function getHopForEntry(uint256 idx) external view returns (uint8) {
+        return ghost_hopForEntry[idx];
     }
 }
 
@@ -315,7 +323,7 @@ contract CrowdfundFullInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
-            uint8 hop = handler.ghost_hop(committer);
+            uint8 hop = handler.getHopForEntry(i);
             uint256 committed = crowdfund.getCommitment(committer, hop);
             uint256 effectiveCap = crowdfund.getEffectiveCap(committer, hop);
 
@@ -332,6 +340,7 @@ contract CrowdfundFullInvariantTest is Test {
 
     /// @notice After finalization, allocArm and refundUsdc from the contract are consistent
     ///         with each other and with the participant's committed amount.
+    ///         Uses per-(address, hop) tuple tracking to handle multi-hop participants.
     function invariant_allocPlusRefundEqualsCommitted() public view {
         if (!handler.ghost_finalized()) return;
         if (handler.ghost_refundMode()) return; // no allocations in refundMode
@@ -339,7 +348,7 @@ contract CrowdfundFullInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
-            uint8 hop = handler.ghost_hop(committer);
+            uint8 hop = handler.getHopForEntry(i);
             uint256 committed = crowdfund.getCommitment(committer, hop);
 
             if (committed == 0) continue;

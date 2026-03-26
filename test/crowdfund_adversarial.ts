@@ -461,6 +461,38 @@ describe("Crowdfund Adversarial", function () {
       expect(uc2).to.equal(0);
     });
 
+    it("ELASTIC_TRIGGER boundary uses cappedDemand not totalCommitted (over-cap commits ignored)", async function () {
+      // Construct a scenario where totalCommitted >= $1.5M but cappedDemand < $1.5M.
+      // 99 seeds × $15K = $1,485K (all at cap, cappedDemand from seeds = $1,485K).
+      // 3 hop-1 participants commit $6K each (over $4K cap by $2K).
+      // totalCommitted = $1,485K + $18K = $1,503K >= ELASTIC_TRIGGER ($1.5M)
+      // cappedDemand = $1,485K + 3×$4K = $1,497K < ELASTIC_TRIGGER ($1.5M)
+      const seeds = allSigners.slice(1, 100); // 99 seeds
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      // 3 hop-1 participants commit $6K each (over $4K cap)
+      for (let i = 0; i < 3; i++) {
+        const hop1Addr = allSigners[140 + i];
+        await crowdfund.connect(seeds[i]).invite(hop1Addr.address, 0);
+        await fundAndApprove(hop1Addr, USDC(6_000));
+        await crowdfund.connect(hop1Addr).commit(1, USDC(6_000));
+      }
+
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+
+      const cappedDemandVal = await crowdfund.cappedDemand();
+      expect(cappedDemandVal).to.be.lt(USDC(1_500_000));
+
+      // Expansion should NOT trigger — saleSize remains BASE_SALE
+      expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000));
+    });
+
     it("finalize with all whitelisted but 0 committers reverts", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -723,6 +755,55 @@ describe("Crowdfund Adversarial", function () {
       await expect(
         crowdfund.withdrawUnallocatedArm()
       ).to.be.revertedWith("ArmadaCrowdfund: nothing to sweep");
+    });
+
+    it("pro-rata refund amounts match getAllocation exactly for each participant", async function () {
+      const seeds = allSigners.slice(1, 71);
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+
+      // Verify exact refund amounts for 5 representative seeds
+      for (let i = 0; i < 5; i++) {
+        const [, refundUsdc] = await crowdfund.getAllocation(seeds[i].address);
+        const usdcBefore = await usdc.balanceOf(seeds[i].address);
+        await crowdfund.connect(seeds[i]).claimRefund();
+        const usdcAfter = await usdc.balanceOf(seeds[i].address);
+        expect(usdcAfter - usdcBefore).to.equal(refundUsdc);
+      }
+    });
+
+    it("withdrawUnallocatedArm reverts in Active phase", async function () {
+      await crowdfund.addSeeds([allSigners[1].address]);
+
+      await fundAndApprove(allSigners[1], USDC(15_000));
+      await crowdfund.connect(allSigners[1]).commit(0, USDC(15_000));
+
+      // Phase is still Active (window not ended, not finalized)
+      expect(await crowdfund.phase()).to.equal(Phase.Active);
+
+      await expect(
+        crowdfund.withdrawUnallocatedArm()
+      ).to.be.revertedWith("ArmadaCrowdfund: not finalized or canceled");
+    });
+
+    it("launch team cannot commit via commit()", async function () {
+      // deployer IS launchTeam in this file's beforeEach
+      await crowdfund.addSeeds([deployer.address]);
+
+      await fundAndApprove(deployer, USDC(1_000));
+
+      await expect(
+        crowdfund.connect(deployer).commit(0, USDC(1_000))
+      ).to.be.revertedWith("ArmadaCrowdfund: launch team cannot commit");
     });
 
     it("constructor rejects zero treasury address", async function () {

@@ -779,6 +779,16 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: no commitment");
     });
 
+    it("launch team cannot commit via commit()", async function () {
+      // deployer IS launchTeam in this file's beforeEach
+      await crowdfund.addSeeds([deployer.address]);
+      await fundAndApprove(deployer, USDC(15_000));
+
+      await expect(
+        crowdfund.connect(deployer).commit(0, USDC(1_000))
+      ).to.be.revertedWith("ArmadaCrowdfund: launch team cannot commit");
+    });
+
     it("whitelisted-but-uncommitted participant cannot claim", async function () {
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -990,7 +1000,78 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
-  // 5. Double-Action Guards
+  // 5. Deadline Fallback Refund (Path 4)
+  // ============================================================
+
+  describe("Deadline Fallback Refund (Path 4)", function () {
+    it("full refund when window expired, not finalized, cappedDemand < MIN_SALE", async function () {
+      // 3 seeds commit $15K each = $45K (well below MIN_SALE $1M)
+      const seeds = allSigners.slice(1, 4);
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      // Advance past windowEnd — do NOT call finalize
+      await time.increase(THREE_WEEKS + 1);
+
+      const usdcBefore = await usdc.balanceOf(seeds[0].address);
+      await crowdfund.connect(seeds[0]).claimRefund();
+      const usdcAfter = await usdc.balanceOf(seeds[0].address);
+
+      expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
+    });
+
+    it("deadline fallback reverts when cappedDemand >= MIN_SALE (sale should finalize)", async function () {
+      // 70 seeds commit $15K = $1.05M, plus 51 hop-1 at $4K → cappedDemand > MIN_SALE
+      const seeds = allSigners.slice(1, 71);
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
+
+      // Advance past windowEnd — do NOT call finalize
+      await time.increase(THREE_WEEKS + 1);
+
+      // Path 4 correctly rejects when the sale could succeed
+      await expect(
+        crowdfund.connect(seeds[0]).claimRefund()
+      ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
+    });
+
+    it("deadline fallback computes cappedDemand lazily and caches it", async function () {
+      // 3 seeds commit small amounts, advance past windowEnd
+      const seeds = allSigners.slice(1, 4);
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      await time.increase(THREE_WEEKS + 1);
+
+      // First claimRefund triggers _computeCappedDemand()
+      await crowdfund.connect(seeds[0]).claimRefund();
+      const cappedDemandAfter = await crowdfund.cappedDemand();
+      expect(cappedDemandAfter).to.be.gt(0);
+
+      // Second claimRefund also succeeds (uses cached value)
+      const usdcBefore = await usdc.balanceOf(seeds[1].address);
+      await crowdfund.connect(seeds[1]).claimRefund();
+      const usdcAfter = await usdc.balanceOf(seeds[1].address);
+      expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
+    });
+  });
+
+  // ============================================================
+  // 6. Double-Action Guards
   // ============================================================
 
   describe("Double-Action Guards", function () {

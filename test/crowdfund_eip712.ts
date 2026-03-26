@@ -34,6 +34,8 @@ describe("Crowdfund EIP-712 Invites", function () {
   let hop1d: SignerWithAddress;
   let treasury: SignerWithAddress;
   let outsider: SignerWithAddress;
+  let alice: SignerWithAddress;
+  let allSigners: SignerWithAddress[];
 
   // EIP-712 domain (set after deploy)
   let domain: {
@@ -93,8 +95,8 @@ describe("Crowdfund EIP-712 Invites", function () {
   }
 
   beforeEach(async function () {
-    const allSigners = await ethers.getSigners();
-    [deployer, seed1, seed2, hop1a, hop1b, hop1c, hop1d, treasury, outsider] =
+    allSigners = await ethers.getSigners();
+    [deployer, seed1, seed2, hop1a, hop1b, hop1c, hop1d, treasury, outsider, alice] =
       allSigners;
 
     // Deploy MockUSDCV2
@@ -130,7 +132,7 @@ describe("Crowdfund EIP-712 Invites", function () {
     await time.increaseTo(await crowdfund.windowStart());
 
     // Fund potential participants with USDC
-    for (const signer of [seed1, seed2, hop1a, hop1b, hop1c, hop1d]) {
+    for (const signer of [seed1, seed2, hop1a, hop1b, hop1c, hop1d, alice]) {
       await fundAndApprove(signer, USDC(20_000));
     }
 
@@ -348,6 +350,89 @@ describe("Crowdfund EIP-712 Invites", function () {
           .connect(hop1a)
           .commitWithInvite(seed1.address, 0, nonce, deadline, signature, USDC(1_000))
       ).to.be.revertedWith("ArmadaCrowdfund: not active window");
+    });
+
+    it("should succeed with fromHop=1 (hop-1 inviter to hop-2 invitee)", async function () {
+      // seed1 (hop-0) invites hop1a at hop-1 via direct invite
+      await setupWithSeeds([seed1]);
+      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+
+      // hop1a (hop-1) signs EIP-712 invite for hop1b to join at hop-2
+      const deadline = await futureDeadline();
+      const nonce = 1;
+      const signature = await signInvite(hop1a, hop1b.address, 1, nonce, deadline);
+
+      const commitAmount = USDC(500);
+      await crowdfund
+        .connect(hop1b)
+        .commitWithInvite(hop1a.address, 1, nonce, deadline, signature, commitAmount);
+
+      // Verify hop1b is whitelisted at hop-2 with correct commitment
+      expect(await crowdfund.isWhitelisted(hop1b.address, 2)).to.be.true;
+      expect(await crowdfund.getCommitment(hop1b.address, 2)).to.equal(commitAmount);
+    });
+
+    it("should revert with fromHop=2 (hop-2 cannot invite further)", async function () {
+      // Create a hop-2 address: seed1 → hop1a (hop-1) → hop1b (hop-2)
+      await setupWithSeeds([seed1]);
+      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      await crowdfund.connect(hop1a).invite(hop1b.address, 1);
+
+      // hop1b (hop-2) signs invite with fromHop=2
+      const deadline = await futureDeadline();
+      const nonce = 1;
+      const signature = await signInvite(hop1b, hop1c.address, 2, nonce, deadline);
+
+      // Contract checks fromHop < NUM_HOPS - 1 (i.e., fromHop < 2)
+      await expect(
+        crowdfund
+          .connect(hop1c)
+          .commitWithInvite(hop1b.address, 2, nonce, deadline, signature, USDC(500))
+      ).to.be.revertedWith("ArmadaCrowdfund: max hop reached");
+    });
+
+    it("should revert when caller is launchTeam", async function () {
+      // seed1 signs invite for deployer (who is launchTeam)
+      await setupWithSeeds([seed1]);
+      const deadline = await futureDeadline();
+      const nonce = 1;
+      const signature = await signInvite(seed1, deployer.address, 0, nonce, deadline);
+
+      await fundAndApprove(deployer, USDC(1_000));
+
+      // The invite registration whitelists deployer at hop-1, then
+      // commit() fires require(msg.sender != launchTeam)
+      await expect(
+        crowdfund
+          .connect(deployer)
+          .commitWithInvite(seed1.address, 0, nonce, deadline, signature, USDC(1_000))
+      ).to.be.revertedWith("ArmadaCrowdfund: launch team cannot commit");
+    });
+
+    it("should revert when invitee already at maxInvitesReceived", async function () {
+      // Hop-1 maxInvitesReceived=10. Use 11 seeds: first 10 invite alice, 11th fails.
+      const seeds = allSigners.slice(10, 21); // 11 seeds
+      await setupWithSeeds(seeds);
+
+      // 10 seeds invite alice to hop-1 via direct invite (saturates maxInvitesReceived)
+      for (let i = 0; i < 10; i++) {
+        await crowdfund.connect(seeds[i]).invite(alice.address, 0);
+      }
+      expect(await crowdfund.getInvitesReceived(alice.address, 1)).to.equal(10);
+
+      // 11th seed signs EIP-712 invite for alice
+      const deadline = await futureDeadline();
+      const nonce = 1;
+      const signature = await signInvite(seeds[10], alice.address, 0, nonce, deadline);
+
+      await fundAndApprove(alice, USDC(1_000));
+
+      // Should revert: alice already at maxInvitesReceived for hop-1
+      await expect(
+        crowdfund
+          .connect(alice)
+          .commitWithInvite(seeds[10].address, 0, nonce, deadline, signature, USDC(1_000))
+      ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
     });
   });
 

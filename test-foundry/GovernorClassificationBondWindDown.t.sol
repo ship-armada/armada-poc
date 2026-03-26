@@ -287,6 +287,18 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Extended));
     }
 
+    function test_classify_resumeStewardChannelIsStandard() public {
+        // resumeStewardChannel is NOT registered as an extended selector,
+        // so proposals targeting it should be classified as Standard.
+        assertFalse(governor.extendedSelectors(governor.resumeStewardChannel.selector));
+
+        bytes memory data = abi.encodeWithSelector(governor.resumeStewardChannel.selector);
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Standard));
+    }
+
     function test_classify_addExtendedSelector() public {
         bytes4 newSelector = bytes4(keccak256("someNewFunction(uint256)"));
 

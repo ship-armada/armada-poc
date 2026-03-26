@@ -373,16 +373,25 @@ describe("Wind-Down & Redemption Integration", function () {
       expect(await shieldPauseController.windDownActive()).to.be.true;
     });
 
+    it("shields permanently paused after wind-down (withdraw-only mode)", async function () {
+      // Wind-down makes shieldsPaused() return true permanently
+      expect(await shieldPauseController.shieldsPaused()).to.be.true;
+
+      // Still true even though no SC pause was triggered — wind-down alone is sufficient
+      await time.increase(TWENTY_FOUR_HOURS + 1);
+      expect(await shieldPauseController.shieldsPaused()).to.be.true;
+    });
+
     it("post-wind-down: SC gets exactly one pause", async function () {
-      // First pause succeeds
+      // SC pause still succeeds (useful if SC needs to signal an issue)
       await shieldPauseController.connect(carol).pauseShields();
       expect(await shieldPauseController.shieldsPaused()).to.be.true;
 
-      // Wait for expiry
+      // After SC pause expiry, shields remain paused due to wind-down
       await time.increase(TWENTY_FOUR_HOURS + 1);
-      expect(await shieldPauseController.shieldsPaused()).to.be.false;
+      expect(await shieldPauseController.shieldsPaused()).to.be.true;
 
-      // Second pause reverts
+      // Second SC pause still reverts (single-use post-wind-down)
       await expect(
         shieldPauseController.connect(carol).pauseShields()
       ).to.be.revertedWith("ShieldPauseController: post-wind-down pause already used");
@@ -669,19 +678,23 @@ describe("Wind-Down & Redemption Integration", function () {
       await time.increaseTo(windDownDeadline + 1);
       await windDown.triggerWindDown();
 
+      // Shields are permanently paused due to wind-down (withdraw-only mode)
+      expect(await shieldPauseController.shieldsPaused()).to.be.true;
+
       // SC gets one pause post-wind-down
       await shieldPauseController.connect(carol).pauseShields();
       expect(await shieldPauseController.shieldsPaused()).to.be.true;
 
-      // Wait for expiry
+      // After SC pause expiry, shields remain paused (wind-down is permanent)
       await time.increase(TWENTY_FOUR_HOURS + 1);
+      expect(await shieldPauseController.shieldsPaused()).to.be.true;
 
       // Cannot pause again
       await expect(
         shieldPauseController.connect(carol).pauseShields()
       ).to.be.revertedWith("ShieldPauseController: post-wind-down pause already used");
 
-      // Sweep and redeem still works
+      // Sweep and redeem still works (unshields unaffected)
       await windDown.sweepToken(await usdc.getAddress());
       await armToken.connect(alice).approve(await redemption.getAddress(), ethers.MaxUint256);
 

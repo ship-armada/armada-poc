@@ -256,6 +256,21 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         assertTrue(pauseController.shieldsPaused());
     }
 
+    function test_postWindDown_shieldsPermanentlyPaused() public {
+        // Setup wind-down
+        vm.prank(address(timelock));
+        pauseController.setWindDownContract(windDown);
+        vm.prank(windDown);
+        pauseController.setWindDownActive();
+
+        // Shields permanently paused without any SC action
+        assertTrue(pauseController.shieldsPaused());
+
+        // Still paused after arbitrary time
+        vm.warp(block.timestamp + 365 days);
+        assertTrue(pauseController.shieldsPaused());
+    }
+
     function test_postWindDown_secondPauseReverts() public {
         // Setup wind-down
         vm.prank(address(timelock));
@@ -263,15 +278,15 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         vm.prank(windDown);
         pauseController.setWindDownActive();
 
-        // First pause
+        // First SC pause succeeds
         vm.prank(securityCouncil);
         pauseController.pauseShields();
 
-        // Expire the pause
+        // After SC pause expiry, shields remain paused due to wind-down
         vm.warp(block.timestamp + TWENTY_FOUR_HOURS);
-        assertFalse(pauseController.shieldsPaused());
+        assertTrue(pauseController.shieldsPaused());
 
-        // Second pause reverts
+        // Second SC pause reverts
         vm.prank(securityCouncil);
         vm.expectRevert("ShieldPauseController: post-wind-down pause already used");
         pauseController.pauseShields();

@@ -656,20 +656,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.values = values;
         p.calldatas = calldatas;
 
-        // Bond: required only when ARM is transferable (same as regular proposals)
-        if (armToken.transferable()) {
-            require(
-                armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND),
-                "ArmadaGovernor: bond transfer failed"
-            );
-            proposalBonds[proposalId] = BondInfo({
-                depositor: msg.sender,
-                amount: PROPOSAL_BOND,
-                unlockTime: 0,
-                claimed: false
-            });
-            emit BondPosted(proposalId, msg.sender, PROPOSAL_BOND);
-        }
+        // No bond required for steward proposals — the steward is an elected role
+        // operating within budget limits. Bonds are for standard/extended proposals only.
 
         emit ProposalCreated(
             proposalId, msg.sender, ProposalType.Steward,

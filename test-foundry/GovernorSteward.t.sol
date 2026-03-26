@@ -51,7 +51,6 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     address public windDown = address(0xD00D);
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
-    uint256 constant BOND_AMOUNT = 1_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
     uint256 constant MAX_PAUSE = 14 days;
@@ -373,6 +372,36 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: governance ended");
         governor.proposeStewardSpend(tokens, recipients, amounts, "test");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // No bond on steward proposals
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_proposeStewardSpend_noBondRequired() public {
+        // Enable ARM transfers so bonds would normally be required
+        armToken.setWindDownContract(windDown);
+        vm.prank(windDown);
+        armToken.setTransferable(true);
+
+        // Give steward some ARM so bond transfer would succeed if attempted
+        armToken.transfer(stewardPerson, 2_000 * 1e18);
+        uint256 stewardBalanceBefore = armToken.balanceOf(stewardPerson);
+
+        // Create proposal — no bond should be taken even with transferable ARM
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+        assertTrue(proposalId > 0);
+
+        // Steward's ARM balance should be unchanged (no bond deducted)
+        assertEq(armToken.balanceOf(stewardPerson), stewardBalanceBefore);
+    }
+
+    function test_proposeStewardSpend_noBondClaimable() public {
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // No bond was posted, so claimBond should revert
+        vm.expectRevert("ArmadaGovernor: no bond");
+        governor.claimBond(proposalId);
     }
 
     // ══════════════════════════════════════════════════════════════════════

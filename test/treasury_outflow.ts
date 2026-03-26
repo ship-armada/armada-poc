@@ -19,7 +19,6 @@ import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 
 const ONE_DAY = 86400;
 const THIRTY_DAYS = 30 * ONE_DAY;
-const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 const USDC_DECIMALS = 6;
 
 const USDC = (n: number) => ethers.parseUnits(n.toString(), USDC_DECIMALS);
@@ -31,10 +30,9 @@ describe("Treasury Outflow Rate Limits", function () {
   let deployer: SignerWithAddress;
   let stewardAddr: SignerWithAddress;
   let recipient: SignerWithAddress;
-  let guardian: SignerWithAddress;
 
   async function deployTreasury() {
-    [deployer, stewardAddr, recipient, guardian] = await ethers.getSigners();
+    [deployer, stewardAddr, recipient] = await ethers.getSigners();
 
     // Deploy mock USDC
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
@@ -43,9 +41,7 @@ describe("Treasury Outflow Rate Limits", function () {
 
     // Deploy treasury (deployer acts as owner/timelock for direct testing)
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(
-      deployer.address, guardian.address, MAX_PAUSE_DURATION
-    );
+    treasury = await ArmadaTreasuryGov.deploy(deployer.address);
     await treasury.waitForDeployment();
 
     // stewardAddr is used as a non-owner signer to test access-control rejections

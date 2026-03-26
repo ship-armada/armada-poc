@@ -53,8 +53,6 @@ describe("Governance Quiet Period (T6.1)", function () {
     await usdc.waitForDeployment();
 
     // Deploy governance infrastructure (timelock first — ArmadaToken needs its address)
-    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
-
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
       ONE_DAY,
@@ -95,8 +93,6 @@ describe("Governance Quiet Period (T6.1)", function () {
       await armToken.getAddress(),
       timelockAddr,
       treasuryAddr.address,
-      deployer.address,
-      MAX_PAUSE_DURATION
     );
 
     // Grant governor roles on timelock
@@ -105,7 +101,7 @@ describe("Governance Quiet Period (T6.1)", function () {
 
     // Deploy treasury for dummy calldata target
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
+    treasury = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasury.waitForDeployment();
   }
 

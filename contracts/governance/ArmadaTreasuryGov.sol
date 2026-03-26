@@ -6,13 +6,12 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./EmergencyPausable.sol";
 
 /// @title ArmadaTreasuryGov — Governance-controlled treasury
 /// @notice Owned by TimelockController (immutable). Supports direct distributions,
 ///         steward operational budget, and aggregate outflow rate limits per token
 ///         over a rolling window.
-contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
+contract ArmadaTreasuryGov is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ============ Types ============
@@ -90,11 +89,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
 
     // ============ Constructor ============
 
-    constructor(
-        address _owner,
-        address _guardian,
-        uint256 _maxPauseDuration
-    ) EmergencyPausable(_guardian, _maxPauseDuration, _owner) {
+    constructor(address _owner) {
         require(_owner != address(0), "ArmadaTreasuryGov: zero owner");
         owner = _owner; // Should be the timelock address
     }
@@ -102,7 +97,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     // ============ Governance Functions (owner = timelock) ============
 
     /// @notice Direct distribution: send tokens to recipient immediately
-    function distribute(address token, address recipient, uint256 amount) external onlyOwner whenNotPaused {
+    function distribute(address token, address recipient, uint256 amount) external onlyOwner {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
         _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
@@ -115,7 +110,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     /// @dev Called by the timelock after a steward proposal passes through governance.
     /// Budget enforcement uses an absolute per-token limit over a rolling window,
     /// configured via addStewardBudgetToken/updateStewardBudgetToken.
-    function stewardSpend(address token, address recipient, uint256 amount) external onlyOwner whenNotPaused {
+    function stewardSpend(address token, address recipient, uint256 amount) external onlyOwner {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
 
@@ -302,7 +297,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     }
 
     /// @notice Transfer ERC20 tokens from treasury to recipient. Wind-down contract only.
-    ///         Bypasses outflow limits and pause — wind-down is a special authority.
+    ///         Bypasses outflow limits — wind-down is a special authority.
     function transferTo(address token, address recipient, uint256 amount) external {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
@@ -311,7 +306,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     }
 
     /// @notice Transfer ETH from treasury to recipient. Wind-down contract only.
-    ///         Bypasses outflow limits and pause — wind-down is a special authority.
+    ///         Bypasses outflow limits — wind-down is a special authority.
     function transferETHTo(address payable recipient, uint256 amount) external {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");

@@ -119,7 +119,6 @@ describe("Governance Veto", function () {
     );
     await timelockController.waitForDeployment();
     const timelockAddr = await timelockController.getAddress();
-    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
 
     // 2. Deploy ARM token
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
@@ -128,9 +127,7 @@ describe("Governance Veto", function () {
 
     // 3. Deploy Treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(
-      timelockAddr, deployer.address, MAX_PAUSE_DURATION
-    );
+    treasury = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasury.waitForDeployment();
 
     // 4. Deploy Governor
@@ -138,7 +135,6 @@ describe("Governance Veto", function () {
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
-      deployer.address, MAX_PAUSE_DURATION
     );
 
     // 5. Configure timelock roles: PROPOSER, EXECUTOR, and CANCELLER for governor

@@ -127,16 +127,9 @@ describe("Governance Integration", function () {
     armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
     await armToken.waitForDeployment();
 
-    // Emergency pause config: deployer as guardian, 14 day max pause duration
-    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
-
     // 3. Deploy ArmadaTreasuryGov (owned by timelock)
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(
-      timelockAddr,
-      deployer.address,        // guardian
-      MAX_PAUSE_DURATION
-    );
+    treasury = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasury.waitForDeployment();
 
     // 4. Deploy ArmadaGovernor
@@ -144,17 +137,11 @@ describe("Governance Integration", function () {
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
-      deployer.address,        // guardian
-      MAX_PAUSE_DURATION
     );
 
     // 5. Deploy TreasurySteward (identity management only)
     const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
-    stewardContract = await TreasurySteward.deploy(
-      timelockAddr,
-      deployer.address,        // guardian
-      MAX_PAUSE_DURATION
-    );
+    stewardContract = await TreasurySteward.deploy(timelockAddr);
     await stewardContract.waitForDeployment();
 
     // 5b. Register steward contract on governor

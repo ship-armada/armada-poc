@@ -22,9 +22,7 @@ contract StewardSecurityTest is Test {
 
     function setUp() public {
         steward = new TreasurySteward(
-            address(this),  // this contract acts as timelock for test convenience
-            address(this),  // guardian
-            14 days
+            address(this)  // this contract acts as timelock for test convenience
         );
 
         // Elect steward person
@@ -36,12 +34,8 @@ contract StewardSecurityTest is Test {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_constructor_rejectsZeroTimelock() public {
-        vm.expectRevert("EmergencyPausable: zero timelock");
-        new TreasurySteward(
-            address(0),
-            address(this),
-            14 days
-        );
+        vm.expectRevert("TreasurySteward: zero timelock");
+        new TreasurySteward(address(0));
     }
 
     // ══════════════════════════════════════════════════════════════════════

@@ -11,7 +11,6 @@ describe("Governance UUPS Upgrade", function () {
   let armToken: any, timelock: any, treasury: any, governor: any;
 
   const TOTAL_SUPPLY = ethers.parseUnits("12000000", 18);
-  const MAX_PAUSE = 14 * 24 * 60 * 60; // 14 days in seconds
   const TWO_DAYS = 2 * 24 * 60 * 60;
 
   beforeEach(async function () {
@@ -31,14 +30,13 @@ describe("Governance UUPS Upgrade", function () {
 
     // Deploy treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE);
+    treasury = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasury.waitForDeployment();
     const treasuryAddr = await treasury.getAddress();
 
     // Deploy governor behind UUPS proxy
     governor = await deployGovernorProxy(
       armTokenAddr, timelockAddr, treasuryAddr,
-      deployer.address, MAX_PAUSE
     );
 
     // Grant timelock roles
@@ -184,8 +182,6 @@ describe("Governance UUPS Upgrade", function () {
           await armToken.getAddress(),
           await timelock.getAddress(),
           await treasury.getAddress(),
-          deployer.address,
-          MAX_PAUSE
         )
       ).to.be.revertedWith("Initializable: contract is already initialized");
     });
@@ -200,8 +196,6 @@ describe("Governance UUPS Upgrade", function () {
           await armToken.getAddress(),
           await timelock.getAddress(),
           await treasury.getAddress(),
-          deployer.address,
-          MAX_PAUSE
         )
       ).to.be.revertedWith("Initializable: contract is already initialized");
     });

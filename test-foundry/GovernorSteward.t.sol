@@ -53,7 +53,6 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
-    uint256 constant MAX_PAUSE = 14 days;
     uint256 constant BUDGET_LIMIT = 10_000 * 1e6; // 10,000 USDC
     uint256 constant BUDGET_WINDOW = 30 days;
 
@@ -67,23 +66,17 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         armToken = new ArmadaToken(deployer, address(timelock));
 
         // Deploy treasury
-        treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
+        treasury = new ArmadaTreasuryGov(address(timelock));
 
         // Deploy governor
         governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
 
         // Deploy steward contract
-        stewardContract = new TreasurySteward(
-            address(timelock),
-            deployer,
-            MAX_PAUSE
-        );
+        stewardContract = new TreasurySteward(address(timelock));
 
         // Register steward contract on governor
         governor.setStewardContract(address(stewardContract));
@@ -419,9 +412,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         ArmadaGovernor freshGovernor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
 
         vm.prank(alice);

@@ -80,11 +80,6 @@ async function main() {
 
   const timelockDelay = config.timelockDelay;
 
-  // Emergency pause config: deployer as initial guardian, 14 day max pause
-  // TODO: Transfer guardian to a dedicated multisig after deployment
-  const guardianAddress = deployer.address;
-  const maxPauseDuration = 14 * 24 * 60 * 60; // 14 days
-
   console.log("=== Deploying Armada Governance Contracts ===");
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Chain ID: ${chainId}`);
@@ -114,7 +109,7 @@ async function main() {
   console.log("3. Deploying ArmadaTreasuryGov...");
   const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
   const treasury = await ArmadaTreasuryGov.deploy(
-    timelockAddress, guardianAddress, maxPauseDuration, nm.override()
+    timelockAddress, nm.override()
   );
   await treasury.deploymentTransaction()!.wait();
   const treasuryAddress = await treasury.getAddress();
@@ -130,7 +125,6 @@ async function main() {
 
   const governorInitData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
     armTokenAddress, timelockAddress, treasuryAddress,
-    guardianAddress, maxPauseDuration
   ]);
   const GovernorProxy = await ethers.getContractFactory("ERC1967Proxy");
   const governorProxy = await GovernorProxy.deploy(
@@ -145,8 +139,7 @@ async function main() {
   console.log("5. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
   const steward = await TreasurySteward.deploy(
-    timelockAddress,
-    guardianAddress, maxPauseDuration, nm.override()
+    timelockAddress, nm.override()
   );
   await steward.deploymentTransaction()!.wait();
   const stewardAddress = await steward.getAddress();
@@ -358,8 +351,7 @@ async function main() {
   console.log("  1. Set ARM whitelist for crowdfund address (via addToWhitelist governance proposal)");
   console.log("  2. Configure treasury outflow limits for USDC and ARM (via governance proposal)");
   console.log("  3. Set fee collector on RevenueCounter (via governance proposal)");
-  console.log("  4. Transfer guardian to dedicated multisig (via governance proposal)");
-  console.log("  5. Set shieldPauseContract on PrivacyPool (owner calls setShieldPauseContract)");
+  console.log("  4. Set shieldPauseContract on PrivacyPool (owner calls setShieldPauseContract)");
   if (windDownAddress !== ethers.ZeroAddress) {
     console.log("  6. Wire wind-down to governor, treasury, pause controller (via governance proposals)");
   } else {

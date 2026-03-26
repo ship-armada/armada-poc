@@ -10,14 +10,13 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
-import "./EmergencyPausableUpgradeable.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
 /// @title ArmadaGovernor — UUPS-upgradeable governance with typed proposals and ERC20Votes delegation
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
 ///         voting via delegated ARM tokens, and timelock execution. Upgradeable via UUPS,
 ///         gated by the timelock (requires extended governance proposal).
-contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgradeable, EmergencyPausableUpgradeable {
+contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
 
     // ============ Types ============
 
@@ -222,18 +221,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param _armToken ARM governance token address
     /// @param _timelock TimelockController address for execution
     /// @param _treasuryAddress Treasury contract address
-    /// @param _guardian Emergency pause guardian address
-    /// @param _maxPauseDuration Maximum pause duration in seconds
     function initialize(
         address _armToken,
         address payable _timelock,
-        address _treasuryAddress,
-        address _guardian,
-        uint256 _maxPauseDuration
+        address _treasuryAddress
     ) external initializer {
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
-        __EmergencyPausable_init(_guardian, _maxPauseDuration, _timelock);
 
         require(_armToken != address(0), "ArmadaGovernor: zero armToken");
         require(_timelock != address(0), "ArmadaGovernor: zero timelock");
@@ -969,7 +963,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Execute a queued proposal after timelock delay
-    function execute(uint256 proposalId) external payable nonReentrant whenNotPaused {
+    function execute(uint256 proposalId) external payable nonReentrant {
         require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
 
         Proposal storage p = _proposals[proposalId];

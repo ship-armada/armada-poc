@@ -43,13 +43,11 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         timelock = new TimelockController(TWO_DAYS, proposers, executors, deployer);
 
         armToken = new ArmadaToken(deployer, address(timelock));
-        treasury = new ArmadaTreasuryGov(address(timelock), deployer, MAX_PAUSE);
+        treasury = new ArmadaTreasuryGov(address(timelock));
         governor = _deployGovernorProxy(
             address(armToken),
             payable(address(timelock)),
-            address(treasury),
-            deployer,
-            MAX_PAUSE
+            address(treasury)
         );
 
         // Set SC on governor

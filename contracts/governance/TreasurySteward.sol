@@ -5,14 +5,13 @@
 pragma solidity ^0.8.17;
 
 import "./IArmadaGovernance.sol";
-import "./EmergencyPausable.sol";
 
 /// @title TreasurySteward — Steward identity management
 /// @notice Steward is elected via governance (Extended proposal). The steward submits
 ///         spending proposals through ArmadaGovernor.proposeStewardSpend(), which creates
 ///         pass-by-default governance proposals. This contract tracks steward identity only:
 ///         election, term duration, removal, and active status.
-contract TreasurySteward is EmergencyPausable {
+contract TreasurySteward {
 
     // ============ State ============
 
@@ -37,13 +36,7 @@ contract TreasurySteward is EmergencyPausable {
     // ============ Constructor ============
 
     /// @param _timelock TimelockController address
-    /// @param _guardian Emergency pause guardian address
-    /// @param _maxPauseDuration Maximum duration of emergency pause in seconds
-    constructor(
-        address _timelock,
-        address _guardian,
-        uint256 _maxPauseDuration
-    ) EmergencyPausable(_guardian, _maxPauseDuration, _timelock) {
+    constructor(address _timelock) {
         require(_timelock != address(0), "TreasurySteward: zero timelock");
         timelock = _timelock;
     }

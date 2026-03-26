@@ -105,8 +105,6 @@ describe("Governance Adapter Registry", function () {
 
     adapterAddr = carol.address; // Use carol's address as a stand-in adapter
 
-    const MAX_PAUSE_DURATION = 14 * ONE_DAY;
-
     // 1. Deploy TimelockController
     const TimelockController = await ethers.getContractFactory("TimelockController");
     timelockController = await TimelockController.deploy(
@@ -122,9 +120,7 @@ describe("Governance Adapter Registry", function () {
 
     // 3. Deploy Treasury
     const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
-    treasury = await ArmadaTreasuryGov.deploy(
-      timelockAddr, deployer.address, MAX_PAUSE_DURATION
-    );
+    treasury = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasury.waitForDeployment();
 
     // 4. Deploy Governor
@@ -132,7 +128,6 @@ describe("Governance Adapter Registry", function () {
       await armToken.getAddress(),
       timelockAddr,
       await treasury.getAddress(),
-      deployer.address, MAX_PAUSE_DURATION
     );
 
     // 5. Configure timelock roles

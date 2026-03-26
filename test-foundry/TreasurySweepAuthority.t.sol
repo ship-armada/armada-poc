@@ -23,15 +23,12 @@ contract TreasurySweepAuthorityTest is Test {
     MockToken public usdc;
 
     address public timelockAddr = address(0x7171); // mock timelock (owner)
-    address public guardian = address(0x6666);
     address public windDown = address(0xD00D);
     address public recipient = address(0xBEEF);
     address public randomUser = address(0xCAFE);
 
-    uint256 constant MAX_PAUSE = 14 days;
-
     function setUp() public {
-        treasury = new ArmadaTreasuryGov(timelockAddr, guardian, MAX_PAUSE);
+        treasury = new ArmadaTreasuryGov(timelockAddr);
         usdc = new MockToken("Mock USDC", "USDC");
 
         // Fund treasury with USDC

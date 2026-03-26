@@ -39,6 +39,8 @@ contract CrowdfundHandler is Test {
     mapping(address => uint256) public ghost_committed;
     // Track each committer's hop for API calls that require it
     mapping(address => uint8) public ghost_hop;
+    // Per-(address, hop) tuple tracking for multi-hop participants
+    uint8[] public ghost_hopForEntry;
 
     constructor(
         ArmadaCrowdfund _crowdfund,
@@ -90,6 +92,7 @@ contract CrowdfundHandler is Test {
             if (ghost_committed[seed] == amount) {
                 allCommitters.push(seed);
                 ghost_hop[seed] = 0;
+                ghost_hopForEntry.push(0);
             }
         } catch {}
         vm.stopPrank();
@@ -121,6 +124,7 @@ contract CrowdfundHandler is Test {
             if (ghost_committed[addr] == amount) {
                 allCommitters.push(addr);
                 ghost_hop[addr] = 1;
+                ghost_hopForEntry.push(1);
             }
         } catch {}
         vm.stopPrank();
@@ -152,6 +156,7 @@ contract CrowdfundHandler is Test {
             if (ghost_committed[addr] == amount) {
                 allCommitters.push(addr);
                 ghost_hop[addr] = 2;
+                ghost_hopForEntry.push(2);
             }
         } catch {}
         vm.stopPrank();
@@ -244,6 +249,10 @@ contract CrowdfundHandler is Test {
 
     function getCommitter(uint256 idx) external view returns (address) {
         return allCommitters[idx];
+    }
+
+    function getHopForEntry(uint256 idx) external view returns (uint8) {
+        return ghost_hopForEntry[idx];
     }
 }
 
@@ -376,11 +385,11 @@ contract CrowdfundInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
-            (uint256 allocArm, uint256 refundUsdc, bool claimed) = crowdfund.getAllocation(committer);
-            if (!claimed && allocArm == 0) continue; // not yet allocated
-
-            uint8 hop = handler.ghost_hop(committer);
+            uint8 hop = handler.getHopForEntry(i);
             uint256 committed = crowdfund.getCommitment(committer, hop);
+            if (committed == 0) continue;
+
+            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
             // allocUsdc = committed - refund, which must be <= committed
             uint256 allocUsdc = committed - refundUsdc;
             assertLe(allocUsdc, committed, "Allocation exceeds commitment");
@@ -408,7 +417,7 @@ contract CrowdfundInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
-            uint8 hop = handler.ghost_hop(committer);
+            uint8 hop = handler.getHopForEntry(i);
             uint256 committed = crowdfund.getCommitment(committer, hop);
             uint256 effectiveCap = crowdfund.getEffectiveCap(committer, hop);
 
@@ -426,6 +435,7 @@ contract CrowdfundInvariantTest is Test {
 
     /// @notice After finalization, allocArm and refundUsdc from the contract are consistent
     ///         with each other and with the participant's committed amount.
+    ///         Uses per-(address, hop) tuple tracking to handle multi-hop participants.
     function invariant_allocPlusRefundEqualsCommitted() public view {
         if (!handler.ghost_finalized()) return;
         if (handler.ghost_refundMode()) return; // no allocations in refundMode
@@ -433,7 +443,7 @@ contract CrowdfundInvariantTest is Test {
         uint256 count = handler.getCommittersCount();
         for (uint256 i = 0; i < count; i++) {
             address committer = handler.getCommitter(i);
-            uint8 hop = handler.ghost_hop(committer);
+            uint8 hop = handler.getHopForEntry(i);
             uint256 committed = crowdfund.getCommitment(committer, hop);
 
             if (committed == 0) continue;

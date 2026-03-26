@@ -416,6 +416,47 @@ describe("Crowdfund Settlement Rework", function () {
   });
 
   // ============================================================
+  // Full USDC Token Flow Conservation
+  // ============================================================
+
+  describe("Full USDC Token Flow Conservation", function () {
+    it("absolute USDC flow: treasury delta + sum(refunds) + residual == totalCommitted", async function () {
+      const treasuryBefore = await usdc.balanceOf(treasury.address);
+      const seeds = await setupAndFinalize(80, USDC(15_000));
+      const treasuryAfter = await usdc.balanceOf(treasury.address);
+      const treasuryDelta = treasuryAfter - treasuryBefore;
+
+      // Collect hop-1 invitees (same pattern as setupAndFinalize)
+      const hop1Pool = allSigners.slice(140, 195);
+      const inviterCount = Math.min(80, 18);
+      const hop1Invitees: HardhatEthersSigner[] = [];
+      for (let i = 0; i < inviterCount; i++) {
+        for (let j = 0; j < 3 && (i * 3 + j) < hop1Pool.length; j++) {
+          hop1Invitees.push(hop1Pool[i * 3 + j]);
+        }
+      }
+
+      // All participants claim refunds, tracking actual USDC received
+      let sumRefundsPaid = 0n;
+      const allParticipants = [...seeds, ...hop1Invitees];
+      for (const p of allParticipants) {
+        const before = await usdc.balanceOf(p.address);
+        await crowdfund.connect(p).claimRefund();
+        const after = await usdc.balanceOf(p.address);
+        sumRefundsPaid += (after - before);
+      }
+
+      const residual = await usdc.balanceOf(await crowdfund.getAddress());
+      const totalCommitted = await crowdfund.totalCommitted();
+
+      // Conservation: every USDC deposited is accounted for
+      expect(treasuryDelta + sumRefundsPaid + residual).to.equal(totalCommitted);
+      // Contract should have only dust remaining
+      expect(residual).to.be.lte(USDC(1));
+    });
+  });
+
+  // ============================================================
   // claim() Refund Mode Guard
   // ============================================================
 
@@ -548,6 +589,31 @@ describe("Crowdfund Settlement Rework", function () {
 
       expect(treasuryAfter - treasuryBefore).to.equal(armBalance);
       expect(await armToken.balanceOf(await crowdfund.getAddress())).to.equal(0);
+    });
+
+    it("after refundMode finalization: sweeps all ARM (armStillOwed = 0)", async function () {
+      // 80 seeds at hop-0 only (no hop-1 demand) → hop-0 ceiling < MIN_SALE → refundMode
+      const seeds = allSigners.slice(5, 85);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
+
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.be.true;
+
+      // In refundMode, armStillOwed = 0, so full ARM balance is sweepable
+      const treasuryBefore = await armToken.balanceOf(treasury.address);
+      await crowdfund.withdrawUnallocatedArm();
+      const treasuryAfter = await armToken.balanceOf(treasury.address);
+
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
     });
 
     it("after cancel: sweeps all ARM", async function () {

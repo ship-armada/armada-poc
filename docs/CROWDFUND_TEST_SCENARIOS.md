@@ -122,27 +122,27 @@ Off-chain signed invitations via `commitWithInvite()` allow gasless invite distr
 | 4.7 | Tampered data (signature for different invitee) | Revert | `crowdfund_eip712.ts` |
 | 4.8 | Inviter budget exhausted | Revert | `crowdfund_eip712.ts` |
 | 4.9 | After window end | Revert | `crowdfund_eip712.ts` |
-| 4.11 | fromHop=1 (hop-1 inviter → hop-2 invitee) | Succeeds | `crowdfund_eip712.ts` |
-| 4.12 | fromHop=2 (hop-2 cannot invite further) | Revert | `crowdfund_eip712.ts` |
-| 4.13 | Caller is launchTeam address | Revert (launchTeam cannot commit) | `crowdfund_eip712.ts` |
-| 4.14 | Invitee already at maxInvitesReceived | Revert | `crowdfund_eip712.ts` |
+| 4.10 | fromHop=1 (hop-1 inviter → hop-2 invitee) | Succeeds | `crowdfund_eip712.ts` |
+| 4.11 | fromHop=2 (hop-2 cannot invite further) | Revert | `crowdfund_eip712.ts` |
+| 4.12 | Caller is launchTeam address | Revert (launchTeam cannot commit) | `crowdfund_eip712.ts` |
+| 4.13 | Invitee already at maxInvitesReceived | Revert | `crowdfund_eip712.ts` |
 
 ### commitWithInvite Amount Boundaries
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.15 | amount = 0 | Revert | `crowdfund_eip712.ts` |
-| 4.16 | amount < MIN_COMMIT ($10) | Revert | `crowdfund_eip712.ts` |
-| 4.17 | amount = MIN_COMMIT exactly | Succeeds | `crowdfund_eip712.ts` |
+| 4.14 | amount = 0 | Revert | `crowdfund_eip712.ts` |
+| 4.15 | amount < MIN_COMMIT ($10) | Revert | `crowdfund_eip712.ts` |
+| 4.16 | amount = MIN_COMMIT exactly | Succeeds | `crowdfund_eip712.ts` |
 
 ### revokeInviteNonce
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 4.18 | Revoke unused nonce | Succeeds, emits `InviteNonceRevoked` | `crowdfund_eip712.ts` |
-| 4.19 | Revoke nonce 0 (reserved) | Revert | `crowdfund_eip712.ts` |
-| 4.20 | Revoke already-used nonce | Revert | `crowdfund_eip712.ts` |
-| 4.21 | Revoke already-revoked nonce | Revert | `crowdfund_eip712.ts` |
+| 4.17 | Revoke unused nonce | Succeeds, emits `InviteNonceRevoked` | `crowdfund_eip712.ts` |
+| 4.18 | Revoke nonce 0 (reserved) | Revert | `crowdfund_eip712.ts` |
+| 4.19 | Revoke already-used nonce | Revert | `crowdfund_eip712.ts` |
+| 4.20 | Revoke already-revoked nonce | Revert | `crowdfund_eip712.ts` |
 
 ---
 
@@ -180,10 +180,10 @@ Commitments happen concurrently with invitations during the 3-week active window
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 5.13 | `hopStats[h].totalCommitted` accumulates correctly per hop | Sum matches expected | `crowdfund_integration.ts` |
-| 5.14 | `uniqueCommitters` increments on first commit only | First commit: +1, subsequent: no change | `crowdfund_integration.ts`, `crowdfund_multinode.ts` |
-| 5.15 | `totalCommitted` equals sum across all hops | Global sum correct | `crowdfund_integration.ts` |
-| 5.16 | Contract USDC balance equals `totalCommitted` before finalization | Exact match | `CrowdfundInvariant.t.sol` (INV-C3) |
+| 5.12 | `hopStats[h].totalCommitted` accumulates correctly per hop | Sum matches expected | `crowdfund_integration.ts` |
+| 5.13 | `uniqueCommitters` increments on first commit only | First commit: +1, subsequent: no change | `crowdfund_integration.ts`, `crowdfund_multinode.ts` |
+| 5.14 | `totalCommitted` equals sum across all hops | Global sum correct | `crowdfund_integration.ts` |
+| 5.15 | Contract USDC balance equals `totalCommitted` before finalization | Exact match | `CrowdfundInvariant.t.sol` (INV-C3) |
 
 ---
 
@@ -547,9 +547,9 @@ Two-role model: `launchTeam` (operational, pre-finalization) and `securityCounci
 | 15.2 | `launchTeamInvite()` — onlyLaunchTeam | Non-launchTeam reverts | `crowdfund_launch_team.ts` |
 | 15.3 | `cancel()` — onlySecurityCouncil | Non-securityCouncil reverts | `crowdfund_settlement.ts` |
 | 15.4 | `finalize()` — permissionless | Any address succeeds | `crowdfund_adversarial.ts` |
-| 15.7 | `withdrawUnallocatedArm()` — permissionless | Any address succeeds | `crowdfund_settlement.ts` |
-| 15.8 | `invite()`, `commit()`, `claim()`, `claimRefund()` — any qualifying participant | No role check | `crowdfund_integration.ts` |
-| 15.9 | launchTeam and securityCouncil are immutable | No setter exists | `crowdfund_settlement.ts`, `crowdfund_launch_team.ts` |
+| 15.5 | `withdrawUnallocatedArm()` — permissionless | Any address succeeds | `crowdfund_settlement.ts` |
+| 15.6 | `invite()`, `commit()`, `claim()`, `claimRefund()` — any qualifying participant | No role check | `crowdfund_integration.ts` |
+| 15.7 | launchTeam and securityCouncil are immutable | No setter exists | `crowdfund_settlement.ts`, `crowdfund_launch_team.ts` |
 
 ---
 

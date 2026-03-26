@@ -75,8 +75,11 @@ contract ShieldPauseController is IShieldPauseController {
 
     // ============ View Functions ============
 
-    /// @notice Returns true only if paused AND the pause has not expired
+    /// @notice Returns true if shields are paused.
+    ///         Post-wind-down: permanently true (withdraw-only mode per spec).
+    ///         Pre-wind-down: true only during an active SC pause (24h auto-expiry).
     function shieldsPaused() external view override returns (bool) {
+        if (windDownActive) return true;
         return _paused && block.timestamp < pauseExpiry;
     }
 
@@ -123,7 +126,8 @@ contract ShieldPauseController is IShieldPauseController {
 
     // ============ Wind-Down Functions ============
 
-    /// @notice Called by the wind-down contract to activate post-wind-down pause restrictions
+    /// @notice Called by the wind-down contract to activate withdraw-only mode.
+    ///         Shields are permanently disabled; unshields remain available indefinitely.
     function setWindDownActive() external {
         require(msg.sender == windDownContract, "ShieldPauseController: not wind-down contract");
         require(windDownContract != address(0), "ShieldPauseController: wind-down not set");

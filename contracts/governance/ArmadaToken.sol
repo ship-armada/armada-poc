@@ -126,10 +126,13 @@ contract ArmadaToken is ERC20Votes {
     }
 
     /// @notice Enable unrestricted transfers. Only callable by the wind-down contract.
+    ///         One-way: transfers cannot be re-restricted once enabled.
     function setTransferable(bool _transferable) external {
         require(msg.sender == windDownContract, "ArmadaToken: not wind-down contract");
-        transferable = _transferable;
-        emit TransferableSet(_transferable);
+        require(_transferable, "ArmadaToken: can only enable transfers");
+        require(!transferable, "ArmadaToken: transfers already enabled");
+        transferable = true;
+        emit TransferableSet(true);
     }
 
     /// @notice Delegate voting power on behalf of another address. Only callable by

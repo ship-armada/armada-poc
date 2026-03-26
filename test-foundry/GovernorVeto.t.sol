@@ -364,6 +364,58 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         assertEq(governor.securityCouncil(), sc);
     }
 
+    function test_resolve_tiedVoteVetoStands() public {
+        uint256 proposalId = _createAndQueueProposal(alice);
+
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("rationale"));
+
+        // Tied vote: alice votes FOR (uphold), bob votes AGAINST (deny)
+        // alice has 20% of supply, bob has 15% — not equal weight.
+        // To get a true tie, give carol tokens equal to alice and have her vote AGAINST.
+        // Instead, use alice FOR and bob AGAINST with equal weight:
+        // Transfer tokens so alice and bob each have exactly 25% of supply.
+        uint256 aliceBal = armToken.balanceOf(alice);
+        uint256 bobBal = armToken.balanceOf(bob);
+        uint256 equalAmount = (aliceBal + bobBal) / 2;
+
+        // Rebalance: deployer facilitates (alice sends excess to deployer, deployer sends to bob)
+        uint256 aliceExcess = aliceBal - equalAmount;
+        vm.prank(alice);
+        armToken.transfer(deployer, aliceExcess);
+        armToken.transfer(bob, aliceExcess);
+
+        // Re-delegate to update checkpoints
+        vm.prank(alice);
+        armToken.delegate(alice);
+        vm.prank(bob);
+        armToken.delegate(bob);
+        vm.roll(block.number + 1);
+
+        // Create a fresh proposal and veto it (checkpoints are per-block)
+        uint256 proposalId2 = _createAndQueueProposal(alice);
+        vm.prank(sc);
+        governor.veto(proposalId2, keccak256("rationale2"));
+        uint256 ratId2 = governor.proposalCount();
+
+        // Now cast tied votes on the ratification
+        vm.prank(alice);
+        governor.castVote(ratId2, 1); // FOR (uphold veto)
+        vm.prank(bob);
+        governor.castVote(ratId2, 0); // AGAINST (deny veto)
+
+        // Advance past voting period
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        vm.expectEmit(true, false, false, true);
+        emit RatificationResolved(ratId2, true); // vetoUpheld = true
+
+        governor.resolveRatification(ratId2);
+
+        // SC retains seat on a tie — strict majority AGAINST is required for ejection
+        assertEq(governor.securityCouncil(), sc);
+    }
+
     function test_resolve_againstWinsSCEjected() public {
         uint256 proposalId = _createAndQueueProposal(alice);
 

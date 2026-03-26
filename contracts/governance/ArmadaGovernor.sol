@@ -324,8 +324,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Revenue definition expansion (on RevenueCounter)
         extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
 
-        // Steward circuit breaker resume (on governor, via timelock)
-        extendedSelectors[this.resumeStewardChannel.selector] = true;
 
         // Treasury outflow limit parameters
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
@@ -514,7 +512,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         // Evaluate outcome: does the community uphold or deny the veto?
         bool quorumMet = _quorumReached(ratificationId);
-        bool majorityAgainst = quorumMet && !_voteSucceeded(ratificationId);
+        bool majorityAgainst = quorumMet && (p.againstVotes > p.forVotes);
 
         if (majorityAgainst) {
             // Community denies the veto → eject SC, store calldata hash
@@ -658,20 +656,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.values = values;
         p.calldatas = calldatas;
 
-        // Bond: required only when ARM is transferable (same as regular proposals)
-        if (armToken.transferable()) {
-            require(
-                armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND),
-                "ArmadaGovernor: bond transfer failed"
-            );
-            proposalBonds[proposalId] = BondInfo({
-                depositor: msg.sender,
-                amount: PROPOSAL_BOND,
-                unlockTime: 0,
-                claimed: false
-            });
-            emit BondPosted(proposalId, msg.sender, PROPOSAL_BOND);
-        }
+        // No bond required for steward proposals — the steward is an elected role
+        // operating within budget limits. Bonds are for standard/extended proposals only.
 
         emit ProposalCreated(
             proposalId, msg.sender, ProposalType.Steward,
@@ -712,7 +698,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Resume the steward channel after a circuit breaker pause.
-    /// Auto-classified as Extended (30% quorum, 14-day voting) via the timelock.
+    /// Standard proposal (20% quorum, 7-day voting) per governance spec §Circuit breaker.
     function resumeStewardChannel() external {
         require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
         require(stewardChannelPaused, "ArmadaGovernor: not paused");

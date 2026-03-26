@@ -257,6 +257,19 @@ describe("ArmadaToken — ERC20Votes", function () {
       ).to.be.revertedWith("ArmadaToken: not wind-down contract");
     });
 
+    it("should reject setTransferable(false) — one-way only", async function () {
+      await expect(
+        armToken.connect(windDownContract).setTransferable(false)
+      ).to.be.revertedWith("ArmadaToken: can only enable transfers");
+    });
+
+    it("should reject setTransferable(true) when already enabled", async function () {
+      await armToken.connect(windDownContract).setTransferable(true);
+      await expect(
+        armToken.connect(windDownContract).setTransferable(true)
+      ).to.be.revertedWith("ArmadaToken: transfers already enabled");
+    });
+
     it("should allow setWindDownContract only once (deployer-only)", async function () {
       // Already called in beforeEach
       await expect(

@@ -11,6 +11,7 @@ import "../interfaces/IVerifierModule.sol";
 import "../types/CCTPTypes.sol";
 import "../../cctp/ICCTPV2.sol";
 import "../../railgun/logic/Poseidon.sol";
+import "../../governance/IShieldPauseController.sol";
 
 /**
  * @title TransactModule
@@ -38,6 +39,10 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      */
     function transact(Transaction[] calldata _transactions) external override onlyDelegatecall {
         require(_transactions.length > 0, "TransactModule: No transactions");
+
+        // In withdraw-only mode (post-wind-down), block pure private transfers.
+        // Unshield transactions are allowed — users must always be able to exit.
+        _requireNotWithdrawOnly(_transactions);
 
         // Calculate total commitments (excluding unshield outputs)
         uint256 commitmentsCount = _sumCommitments(_transactions);
@@ -424,5 +429,22 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             return bytes32(uint256(uint160(_tokenData.tokenAddress)));
         }
         return bytes32(uint256(keccak256(abi.encode(_tokenData))) % SNARK_SCALAR_FIELD);
+    }
+
+    /**
+     * @notice Reverts if pool is in withdraw-only mode and any transaction is a pure transfer.
+     *         After wind-down, only unshields are allowed per spec §Wind-Down → Sequence step 3.
+     *         No-op if no pause contract is set or if withdraw-only mode is not active.
+     */
+    function _requireNotWithdrawOnly(Transaction[] calldata _transactions) internal view {
+        if (shieldPauseContract == address(0)) return;
+        if (!IShieldPauseController(shieldPauseContract).withdrawOnlyMode()) return;
+
+        for (uint256 i = 0; i < _transactions.length; i++) {
+            require(
+                _transactions[i].boundParams.unshield != UnshieldType.NONE,
+                "TransactModule: withdraw only"
+            );
+        }
     }
 }

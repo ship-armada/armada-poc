@@ -83,6 +83,13 @@ contract ShieldPauseController is IShieldPauseController {
         return _paused && block.timestamp < pauseExpiry;
     }
 
+    /// @notice Returns true if pool is in withdraw-only mode (wind-down active).
+    ///         When true, only unshields are allowed — shields and private transfers are blocked.
+    ///         SC pause does NOT activate withdraw-only mode (SC pause only affects shields).
+    function withdrawOnlyMode() external view override returns (bool) {
+        return windDownActive;
+    }
+
     // ============ Security Council Functions ============
 
     /// @notice SC triggers shield pause. Auto-expires after 24 hours.

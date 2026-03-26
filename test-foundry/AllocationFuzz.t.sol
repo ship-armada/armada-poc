@@ -106,7 +106,6 @@ contract AllocationFuzzTest is Test {
         assertEq(refundUsdc, 0, "Under-subscribed: refund should be 0");
     }
 
-    /// @notice ARM allocation matches USDC allocation at ARM_PRICE rate
     /// @notice ARM allocation matches USDC allocation at ARM_PRICE rate (two-step formula)
     function testFuzz_armMatchesUsdcAtPrice(
         uint256 committed,
@@ -120,7 +119,7 @@ contract AllocationFuzzTest is Test {
         // No cap for this test — focus on ARM/USDC relationship
         (uint256 allocArm, uint256 allocUsdc, ) = _computeAllocation(committed, reserve, demand, type(uint256).max);
 
-        // Mirror now uses two-step formula: allocArm = (allocUsdc * 1e18) / ARM_PRICE
+        // Two-step formula: allocArm = (allocUsdc * 1e18) / ARM_PRICE
         uint256 expectedArm = (allocUsdc * 1e18) / ARM_PRICE;
         assertEq(allocArm, expectedArm, "ARM should equal (allocUsdc * 1e18) / ARM_PRICE");
     }

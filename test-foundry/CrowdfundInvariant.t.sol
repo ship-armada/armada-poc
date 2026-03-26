@@ -424,7 +424,8 @@ contract CrowdfundInvariantTest is Test {
         assertEq(crowdfund.totalCommitted(), handler.ghost_totalUsdcIn(), "totalCommitted mismatch");
     }
 
-    /// @notice After finalization, contract's per-hop allocUsdc + refundUsdc == committed
+    /// @notice After finalization, allocArm and refundUsdc from the contract are consistent
+    ///         with each other and with the participant's committed amount.
     function invariant_allocPlusRefundEqualsCommitted() public view {
         if (!handler.ghost_finalized()) return;
         if (handler.ghost_refundMode()) return; // no allocations in refundMode
@@ -437,14 +438,17 @@ contract CrowdfundInvariantTest is Test {
 
             if (committed == 0) continue;
 
-            // Query the contract's computed allocation at the specific hop
-            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            // Both allocArm and refundUsdc are returned by the contract
+            (uint256 allocArm, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
 
-            // Derive allocUsdc: ARM allocation at $1 price = allocUsdc * 1e18 / 1e6 = allocUsdc * 1e12
-            // But easier: refund = committed - allocUsdc, so allocUsdc = committed - refundUsdc
-            // The key difference from before: refundUsdc now comes from the contract, not local math
-            uint256 allocUsdc = committed - refundUsdc;
+            // Derive allocUsdc from allocArm via ARM_PRICE ($1 = 1e6 USDC decimals)
+            // allocArm = allocUsdc * 1e18 / 1e6 = allocUsdc * 1e12 (exact, no truncation)
+            uint256 allocUsdc = allocArm / 1e12;
+
+            // Cross-check: the two independently-returned values must reconcile with committed
             assertEq(allocUsdc + refundUsdc, committed, "alloc + refund != committed");
+            // Verify allocArm is an exact multiple of 1e12 (no hidden precision loss)
+            assertEq(allocArm, allocUsdc * 1e12, "allocArm has unexpected sub-1e12 remainder");
         }
     }
 

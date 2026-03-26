@@ -37,6 +37,12 @@ contract ArmadaToken is ERC20Votes {
     mapping(address => bool) public noDelegation;
     bool public noDelegationSet;
 
+    // ============ Authorized Delegator State ============
+
+    /// @notice Contracts authorized to call delegateOnBehalf (e.g. RevenueLock, Crowdfund).
+    mapping(address => bool) public authorizedDelegator;
+    bool public authorizedDelegatorsInitialized;
+
     // ============ Events ============
 
     event WhitelistAdded(address indexed account);
@@ -44,6 +50,7 @@ contract ArmadaToken is ERC20Votes {
     event TransferableSet(bool transferable);
     event WindDownContractSet(address indexed windDownContract);
     event NoDelegationSet(address indexed account);
+    event AuthorizedDelegatorsInitialized(address[] delegators);
 
     // ============ Constructor ============
 
@@ -95,6 +102,19 @@ contract ArmadaToken is ERC20Votes {
         emit NoDelegationSet(account);
     }
 
+    /// @notice Set contracts authorized to call delegateOnBehalf. Callable once by deployer.
+    ///         Follows the same one-time pattern as initWhitelist.
+    function initAuthorizedDelegators(address[] calldata delegators) external {
+        require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
+        require(!authorizedDelegatorsInitialized, "ArmadaToken: delegators already initialized");
+        authorizedDelegatorsInitialized = true;
+        for (uint256 i = 0; i < delegators.length; i++) {
+            require(delegators[i] != address(0), "ArmadaToken: zero address");
+            authorizedDelegator[delegators[i]] = true;
+        }
+        emit AuthorizedDelegatorsInitialized(delegators);
+    }
+
     // ============ Governance Functions ============
 
     /// @notice Add an address to the transfer whitelist. Timelock-only, add-only (no removal).
@@ -110,6 +130,15 @@ contract ArmadaToken is ERC20Votes {
         require(msg.sender == windDownContract, "ArmadaToken: not wind-down contract");
         transferable = _transferable;
         emit TransferableSet(_transferable);
+    }
+
+    /// @notice Delegate voting power on behalf of another address. Only callable by
+    ///         authorized contracts (e.g. RevenueLock, Crowdfund) for atomic transfer+delegation.
+    /// @param delegator The address whose voting power is being delegated
+    /// @param delegatee The address to receive the voting power
+    function delegateOnBehalf(address delegator, address delegatee) external {
+        require(authorizedDelegator[msg.sender], "ArmadaToken: not authorized delegator");
+        _delegate(delegator, delegatee);
     }
 
     // ============ Transfer Restriction ============

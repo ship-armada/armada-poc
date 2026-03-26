@@ -11,12 +11,13 @@
  * - ArmadaGovernor
  * - TreasurySteward
  * - RevenueCounter (UUPS proxy)
+ * - RevenueLock (immutable, team + airdrop token release)
  * - ShieldPauseController
  * - ArmadaRedemption
  * - ArmadaWindDown
  *
  * Post-deploy configuration:
- * - ARM token: setNoDelegation, initWhitelist, setWindDownContract
+ * - ARM token: setNoDelegation, initWhitelist, initAuthorizedDelegators, setWindDownContract
  * - Treasury: initOutflowConfig, setWindDownContract
  * - Governor: setWindDownContract
  * - ShieldPauseController: setWindDownContract
@@ -51,6 +52,7 @@ interface GovernanceDeployment {
     steward: string;
     revenueCounter: string;
     revenueCounterImpl: string;
+    revenueLock: string;
     shieldPauseController: string;
     redemption: string;
     windDown: string;
@@ -171,8 +173,32 @@ async function main() {
   const revenueCounterAddress = await revenueCounterProxy.getAddress();
   console.log(`   RevenueCounter (proxy): ${revenueCounterAddress}`);
 
-  // 7. Deploy ShieldPauseController
-  console.log("7. Deploying ShieldPauseController...");
+  // 7. Deploy RevenueLock (immutable — holds team + airdrop ARM)
+  console.log("7. Deploying RevenueLock...");
+  // TODO: Replace placeholder beneficiaries with finalized mainnet list (see issue #144)
+  const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
+  // Local dev: use Anvil default accounts as placeholder beneficiaries
+  const revenueLockBeneficiaries = [
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", // Anvil account #1
+    "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", // Anvil account #2
+    "0x90F79bf6EB2c4f870365E785982E1f101E93b906", // Anvil account #3
+  ];
+  const revenueLockAmounts = [
+    ethers.parseUnits("1200000", 18), // team member 1
+    ethers.parseUnits("800000", 18),  // team member 2 / Knowable Safe placeholder
+    ethers.parseUnits("400000", 18),  // airdrop placeholder
+  ];
+  const RevenueLock = await ethers.getContractFactory("RevenueLock");
+  const revenueLockContract = await RevenueLock.deploy(
+    armTokenAddress, revenueCounterAddress,
+    revenueLockBeneficiaries, revenueLockAmounts, nm.override()
+  );
+  await revenueLockContract.deploymentTransaction()!.wait();
+  const revenueLockAddress = await revenueLockContract.getAddress();
+  console.log(`   RevenueLock: ${revenueLockAddress}`);
+
+  // 8. Deploy ShieldPauseController
+  console.log("8. Deploying ShieldPauseController...");
   const ShieldPauseController = await ethers.getContractFactory("ShieldPauseController");
   const shieldPause = await ShieldPauseController.deploy(
     governorAddress, timelockAddress, nm.override()
@@ -181,17 +207,16 @@ async function main() {
   const shieldPauseAddress = await shieldPause.getAddress();
   console.log(`   ShieldPauseController: ${shieldPauseAddress}`);
 
-  // 8. Deploy ArmadaRedemption
-  // TODO: revenueLock and crowdfund addresses should come from config once those contracts exist
-  const revenueLockAddress = ethers.ZeroAddress; // placeholder — set before mainnet
+  // 9. Deploy ArmadaRedemption
+  // TODO: crowdfund address should come from config once that contract is deployed
   const crowdfundAddress = ethers.ZeroAddress;   // placeholder — set before mainnet
-  console.log("8. Deploying ArmadaRedemption...");
+  console.log("9. Deploying ArmadaRedemption...");
   const ArmadaRedemption = await ethers.getContractFactory("ArmadaRedemption");
   // NOTE: Redemption requires non-zero addresses for all constructor params.
   //       On local dev, we use placeholder addresses. On mainnet, these must be real.
   //       Skipping deployment if placeholders are zero (can't deploy with zero addresses).
   let redemptionAddress = ethers.ZeroAddress;
-  if (revenueLockAddress !== ethers.ZeroAddress && crowdfundAddress !== ethers.ZeroAddress) {
+  if (crowdfundAddress !== ethers.ZeroAddress) {
     const redemption = await ArmadaRedemption.deploy(
       armTokenAddress, treasuryAddress, revenueLockAddress, crowdfundAddress, nm.override()
     );
@@ -199,13 +224,13 @@ async function main() {
     redemptionAddress = await redemption.getAddress();
     console.log(`   ArmadaRedemption: ${redemptionAddress}`);
   } else {
-    console.log("   ArmadaRedemption: SKIPPED (revenueLock/crowdfund addresses not set)");
+    console.log("   ArmadaRedemption: SKIPPED (crowdfund address not set)");
   }
 
-  // 9. Deploy ArmadaWindDown
+  // 10. Deploy ArmadaWindDown
   let windDownAddress = ethers.ZeroAddress;
   if (redemptionAddress !== ethers.ZeroAddress) {
-    console.log("9. Deploying ArmadaWindDown...");
+    console.log("10. Deploying ArmadaWindDown...");
     const windDownDeadline = Math.floor(new Date("2026-12-31T00:00:00Z").getTime() / 1000);
     const revenueThreshold = ethers.parseUnits("10000", 18); // $10k in 18-decimal USD
     const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
@@ -218,13 +243,13 @@ async function main() {
     windDownAddress = await windDownContract.getAddress();
     console.log(`   ArmadaWindDown: ${windDownAddress}`);
   } else {
-    console.log("9. ArmadaWindDown: SKIPPED (redemption not deployed)");
+    console.log("10. ArmadaWindDown: SKIPPED (redemption not deployed)");
   }
 
   // ============ Post-deploy configuration ============
 
-  // 10. Configure timelock roles
-  console.log("10. Configuring timelock roles...");
+  // 11. Configure timelock roles
+  console.log("11. Configuring timelock roles...");
   const PROPOSER_ROLE = await timelock.PROPOSER_ROLE();
   const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
   const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
@@ -237,15 +262,19 @@ async function main() {
   await (await timelock.grantRole(CANCELLER_ROLE, governorAddress, nm.override())).wait();
   console.log("   Granted CANCELLER_ROLE to governor (for SC veto)");
 
-  // 11. Configure ARM token (one-time setters)
-  console.log("11. Configuring ARM token...");
+  // 12. Configure ARM token (one-time setters)
+  console.log("12. Configuring ARM token...");
   await (await armToken.setNoDelegation(treasuryAddress, nm.override())).wait();
   console.log(`   setNoDelegation: ${treasuryAddress} (treasury)`);
 
-  // Whitelist: treasury, deployer (for initial distribution), crowdfund (if applicable)
-  const whitelistAddresses = [deployer.address, treasuryAddress];
+  // Whitelist: deployer, treasury, revenueLock (for release transfers)
+  const whitelistAddresses = [deployer.address, treasuryAddress, revenueLockAddress];
   await (await armToken.initWhitelist(whitelistAddresses, nm.override())).wait();
   console.log(`   initWhitelist: ${whitelistAddresses.length} addresses`);
+
+  // Authorize RevenueLock for delegateOnBehalf
+  await (await armToken.initAuthorizedDelegators([revenueLockAddress], nm.override())).wait();
+  console.log(`   initAuthorizedDelegators: [${revenueLockAddress}] (RevenueLock)`);
   // Set wind-down contract on ARM token (deployer-only one-time setter)
   if (windDownAddress !== ethers.ZeroAddress) {
     await (await armToken.setWindDownContract(windDownAddress, nm.override())).wait();
@@ -254,28 +283,30 @@ async function main() {
     console.log("   setWindDownContract: DEFERRED (wind-down not deployed)");
   }
 
-  // 12. Distribute ARM tokens
+  // 13. Distribute ARM tokens
   const treasuryAllocation = ethers.parseUnits(config.armDistribution.treasury, 18);
-  console.log("12. Distributing ARM tokens...");
+  console.log("13. Distributing ARM tokens...");
   await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
+  await (await armToken.transfer(revenueLockAddress, revenueLockAllocation, nm.override())).wait();
+  console.log(`   Sent ${config.armDistribution.revenueLock} ARM to RevenueLock`);
 
-  // 13. Initialize treasury outflow limits
+  // 14. Initialize treasury outflow limits
   // TODO: These defaults should be moved to config/networks.ts when finalized
-  console.log("13. Initializing treasury outflow limits...");
+  console.log("14. Initializing treasury outflow limits...");
   // Outflow limits are configured per-token via governance after deployment.
   // The deployer (as initial owner/timelock admin) cannot call initOutflowConfig directly
   // because the treasury's owner is the timelock. Outflow config will be set via the
   // first governance proposal after ARM delegation and governance activation.
   console.log("   Outflow limits will be configured via governance proposal post-launch");
 
-  // 14. Wire wind-down contract to governor, treasury, and pause controller
+  // 15. Wire wind-down contract to governor, treasury, and pause controller
   // These are timelock-only calls. Since deployer is still timelock admin at this point,
   // we call them directly via the timelock's schedule/execute pattern.
   // NOTE: On local dev with zero timelock delay, we can call via the timelock directly.
   // On mainnet, these would need to be governance proposals.
   if (windDownAddress !== ethers.ZeroAddress) {
-    console.log("14. Wiring wind-down contract...");
+    console.log("15. Wiring wind-down contract...");
     // Governor: setWindDownContract (timelock-only)
     // NOTE: On local with deployer as timelock admin, these go through the timelock.
     // For simplicity in local dev, we schedule+execute immediately.
@@ -285,11 +316,11 @@ async function main() {
     console.log(`   TODO: treasury.setWindDownContract(${windDownAddress})`);
     console.log(`   TODO: shieldPause.setWindDownContract(${windDownAddress})`);
   } else {
-    console.log("14. Wind-down wiring: SKIPPED (wind-down not deployed)");
+    console.log("15. Wind-down wiring: SKIPPED (wind-down not deployed)");
   }
 
-  // 15. Renounce timelock admin (last step — deployer relinquishes admin role)
-  console.log("15. Renouncing timelock admin...");
+  // 16. Renounce timelock admin (last step — deployer relinquishes admin role)
+  console.log("16. Renouncing timelock admin...");
   await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
@@ -306,6 +337,7 @@ async function main() {
       steward: stewardAddress,
       revenueCounter: revenueCounterAddress,
       revenueCounterImpl: revenueCounterImplAddress,
+      revenueLock: revenueLockAddress,
       shieldPauseController: shieldPauseAddress,
       redemption: redemptionAddress,
       windDown: windDownAddress,
@@ -331,7 +363,7 @@ async function main() {
   if (windDownAddress !== ethers.ZeroAddress) {
     console.log("  6. Wire wind-down to governor, treasury, pause controller (via governance proposals)");
   } else {
-    console.log("  6. Deploy ArmadaRedemption + ArmadaWindDown when revenueLock/crowdfund are ready");
+    console.log("  6. Deploy ArmadaRedemption + ArmadaWindDown when crowdfund is ready");
     console.log("  7. Wire wind-down to all consumers after deployment");
   }
 }

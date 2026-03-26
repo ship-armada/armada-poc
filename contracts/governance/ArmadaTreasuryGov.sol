@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Governance-controlled treasury with claims, steward budget, and aggregate outflow rate limits.
+// ABOUTME: Governance-controlled treasury with steward budget and aggregate outflow rate limits.
 // ABOUTME: Outflow limits enforce a rolling-window cap per token to defend against governance capture.
 pragma solidity ^0.8.17;
 
@@ -8,10 +8,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./EmergencyPausable.sol";
 
-/// @title ArmadaTreasuryGov — Governance-controlled treasury with claims mechanism
+/// @title ArmadaTreasuryGov — Governance-controlled treasury
 /// @notice Owned by TimelockController (immutable). Supports direct distributions,
-///         claims (deferred exercise), steward operational budget, and aggregate
-///         outflow rate limits per token over a rolling window.
+///         steward operational budget, and aggregate outflow rate limits per token
+///         over a rolling window.
 contract ArmadaTreasuryGov is ReentrancyGuard, EmergencyPausable {
     using SafeERC20 for IERC20;
 

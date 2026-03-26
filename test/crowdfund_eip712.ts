@@ -35,6 +35,7 @@ describe("Crowdfund EIP-712 Invites", function () {
   let treasury: SignerWithAddress;
   let outsider: SignerWithAddress;
   let alice: SignerWithAddress;
+  let securityCouncil: SignerWithAddress;
   let allSigners: SignerWithAddress[];
 
   // EIP-712 domain (set after deploy)
@@ -98,6 +99,7 @@ describe("Crowdfund EIP-712 Invites", function () {
     allSigners = await ethers.getSigners();
     [deployer, seed1, seed2, hop1a, hop1b, hop1c, hop1d, treasury, outsider, alice] =
       allSigners;
+    securityCouncil = allSigners[10];
 
     // Deploy MockUSDCV2
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
@@ -117,8 +119,8 @@ describe("Crowdfund EIP-712 Invites", function () {
       await usdc.getAddress(),
       await armToken.getAddress(),
       treasury.address,
-      deployer.address, // launchTeam
-      deployer.address, // securityCouncil
+      deployer.address,         // launchTeam
+      securityCouncil.address,  // securityCouncil
       openTimestamp,
       false             // single-tx settlement
     );

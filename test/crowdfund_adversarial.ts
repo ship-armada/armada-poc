@@ -29,6 +29,7 @@ describe("Crowdfund Adversarial", function () {
 
   let deployer: SignerWithAddress;
   let treasuryAddr: SignerWithAddress;
+  let securityCouncil: SignerWithAddress;
   let allSigners: SignerWithAddress[];
 
   async function fundAndApprove(signer: SignerWithAddress, amount: bigint) {
@@ -52,6 +53,7 @@ describe("Crowdfund Adversarial", function () {
     allSigners = await ethers.getSigners();
     deployer = allSigners[0];
     treasuryAddr = allSigners[199];
+    securityCouncil = allSigners[198];
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -69,7 +71,7 @@ describe("Crowdfund Adversarial", function () {
       await armToken.getAddress(),
       treasuryAddr.address,
       deployer.address,
-      deployer.address,       // securityCouncil
+      securityCouncil.address, // securityCouncil
       openTimestamp,
       false                   // single-tx settlement
     );

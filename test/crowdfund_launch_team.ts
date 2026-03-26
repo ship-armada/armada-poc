@@ -25,6 +25,7 @@ describe("Launch Team & Seed Cap", function () {
   let deployer: SignerWithAddress; // also launchTeam for testing
   let treasury: SignerWithAddress;
   let outsider: SignerWithAddress;
+  let securityCouncil: SignerWithAddress;
   let allSigners: SignerWithAddress[];
 
   // Generate deterministic addresses for bulk operations
@@ -45,6 +46,7 @@ describe("Launch Team & Seed Cap", function () {
   beforeEach(async function () {
     allSigners = await ethers.getSigners();
     [deployer, treasury, outsider] = allSigners;
+    securityCouncil = allSigners[10];
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -62,7 +64,7 @@ describe("Launch Team & Seed Cap", function () {
       await armToken.getAddress(),
       treasury.address,   // treasury
       deployer.address,   // launchTeam
-      deployer.address,   // securityCouncil
+      securityCouncil.address, // securityCouncil
       openTimestamp,       // openTimestamp
       false                // single-tx settlement
     );
@@ -325,8 +327,8 @@ describe("Launch Team & Seed Cap", function () {
         await usdc.getAddress(),
         await armToken.getAddress(),
         treasury.address,
-        ltSigner.address,   // separate launch team
-        deployer.address,   // securityCouncil
+        ltSigner.address,         // separate launch team
+        securityCouncil.address,  // securityCouncil
         cfOpenTimestamp,     // openTimestamp
         false                // single-tx settlement
       );

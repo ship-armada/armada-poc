@@ -16,6 +16,14 @@ import { ethers } from "hardhat";
 import { time, mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
+import * as fs from "fs";
+import * as path from "path";
+// @ts-ignore
+import { buildPoseidon } from "circomlibjs";
+import {
+  loadVerificationKeys,
+  TESTING_ARTIFACT_CONFIGS,
+} from "../lib/artifacts";
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
@@ -701,6 +709,483 @@ describe("Wind-Down & Redemption Integration", function () {
       const tokens = [await usdc.getAddress()];
       await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
+    });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Wind-Down Pool Withdraw-Only Mode
+// Tests that the privacy pool enforces withdraw-only mode after wind-down:
+// shield() blocked, private transfer() blocked, unshield() always available.
+// Spec: §Wind-Down → Sequence step 3
+// ══════════════════════════════════════════════════════════════════════════
+
+const poseidonBytecode = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "lib", "poseidon_bytecode.json"), "utf-8")
+);
+
+const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+const POOL_DOMAINS = { hub: 100 };
+
+describe("Wind-Down Pool Withdraw-Only Mode", function () {
+  // Governance stack
+  let armToken: any;
+  let timelockController: any;
+  let governor: any;
+  let treasuryContract: any;
+  let shieldPauseController: any;
+  let windDown: any;
+  let redemption: any;
+  let revenueCounter: any;
+
+  // Privacy pool stack
+  let privacyPool: any;
+  let hubUsdc: any;
+
+  // Signers
+  let deployer: SignerWithAddress;
+  let alice: SignerWithAddress;
+  let bob: SignerWithAddress;
+  let carol: SignerWithAddress; // security council
+  let revenueLockAddr: SignerWithAddress;
+  let crowdfundAddr: SignerWithAddress;
+
+  // Poseidon
+  let poseidon: any;
+  let F: any;
+
+  let windDownDeadline: number;
+  let privacyPoolAddress: string;
+  let aliceAddress: string;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Helpers (adapted from privacy_pool_adversarial.ts)
+  // ═══════════════════════════════════════════════════════════════════
+
+  function validNpk(): string {
+    const raw = BigInt(ethers.keccak256(ethers.toUtf8Bytes("test-npk")));
+    return ethers.zeroPadValue(ethers.toBeHex(raw % SNARK_SCALAR_FIELD), 32);
+  }
+
+  function makeShieldRequest(token: string, amount: bigint, npk?: string) {
+    return {
+      preimage: {
+        npk: npk ?? validNpk(),
+        token: { tokenType: 0, tokenAddress: token, tokenSubID: 0 },
+        value: amount,
+      },
+      ciphertext: {
+        encryptedBundle: [
+          ethers.keccak256(ethers.toUtf8Bytes("enc1")),
+          ethers.keccak256(ethers.toUtf8Bytes("enc2")),
+          ethers.keccak256(ethers.toUtf8Bytes("enc3")),
+        ],
+        shieldKey: ethers.keccak256(ethers.toUtf8Bytes("key")),
+      },
+    };
+  }
+
+  function makeTransaction(opts: {
+    merkleRoot: string;
+    nullifiers: string[];
+    commitments: string[];
+    unshield?: number;
+    unshieldPreimage?: any;
+    ciphertextCount?: number;
+  }) {
+    const unshieldType = opts.unshield ?? 0;
+    const ciphertextCount = opts.ciphertextCount ??
+      (unshieldType !== 0 ? opts.commitments.length - 1 : opts.commitments.length);
+
+    const ciphertext = Array.from({ length: ciphertextCount }, () => ({
+      ciphertext: [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
+      blindedSenderViewingKey: ethers.ZeroHash,
+      blindedReceiverViewingKey: ethers.ZeroHash,
+      annotationData: "0x",
+      memo: "0x",
+    }));
+
+    return {
+      proof: { a: { x: 0, y: 0 }, b: { x: [0, 0], y: [0, 0] }, c: { x: 0, y: 0 } },
+      merkleRoot: opts.merkleRoot,
+      nullifiers: opts.nullifiers,
+      commitments: opts.commitments,
+      boundParams: {
+        treeNumber: 0,
+        minGasPrice: 0,
+        unshield: unshieldType,
+        chainID: 31337,
+        adaptContract: ethers.ZeroAddress,
+        adaptParams: ethers.ZeroHash,
+        commitmentCiphertext: ciphertext,
+      },
+      unshieldPreimage: opts.unshieldPreimage ?? {
+        npk: ethers.ZeroHash,
+        token: { tokenType: 0, tokenAddress: ethers.ZeroAddress, tokenSubID: 0 },
+        value: 0,
+      },
+    };
+  }
+
+  function computeCommitmentHash(npkBigInt: bigint, tokenId: bigint, value: bigint): string {
+    const hash = poseidon([F.e(npkBigInt), F.e(tokenId), F.e(value)]);
+    return ethers.zeroPadValue(ethers.toBeHex(BigInt(F.toString(hash))), 32);
+  }
+
+  async function shieldAndGetRoot(amount: bigint): Promise<string> {
+    const usdcAddr = await hubUsdc.getAddress();
+    await hubUsdc.mint(aliceAddress, amount);
+    await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
+    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)]);
+    return await privacyPool.merkleRoot();
+  }
+
+  async function asTimelock() {
+    const timelockAddr = await timelockController.getAddress();
+    await ethers.provider.send("hardhat_impersonateAccount", [timelockAddr]);
+    await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+    return await ethers.getSigner(timelockAddr) as unknown as SignerWithAddress;
+  }
+
+  async function stopImpersonatingTimelock() {
+    await ethers.provider.send("hardhat_stopImpersonatingAccount", [
+      await timelockController.getAddress(),
+    ]);
+  }
+
+  async function triggerWindDown() {
+    await time.increaseTo(windDownDeadline + 1);
+    await windDown.triggerWindDown();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Setup
+  // ═══════════════════════════════════════════════════════════════════
+
+  before(async function () {
+    [deployer, alice, bob, carol, revenueLockAddr, crowdfundAddr] = await ethers.getSigners();
+    aliceAddress = await alice.getAddress();
+
+    poseidon = await buildPoseidon();
+    F = poseidon.F;
+
+    // --- Deploy governance stack ---
+
+    const TimelockController = await ethers.getContractFactory("TimelockController");
+    timelockController = await TimelockController.deploy(TWO_DAYS, [], [], deployer.address);
+    const timelockAddr = await timelockController.getAddress();
+
+    const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
+    armToken = await ArmadaToken.deploy(deployer.address, timelockAddr);
+
+    const ArmadaTreasuryGov = await ethers.getContractFactory("ArmadaTreasuryGov");
+    treasuryContract = await ArmadaTreasuryGov.deploy(timelockAddr, deployer.address, MAX_PAUSE_DURATION);
+
+    governor = await deployGovernorProxy(
+      await armToken.getAddress(),
+      timelockAddr,
+      await treasuryContract.getAddress(),
+      deployer.address,
+      MAX_PAUSE_DURATION,
+    );
+
+    // Deploy mock USDC
+    const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
+    hubUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
+
+    // Deploy RevenueCounter behind proxy
+    const RevenueCounter = await ethers.getContractFactory("RevenueCounter");
+    const rcImpl = await RevenueCounter.deploy();
+    const initData = RevenueCounter.interface.encodeFunctionData("initialize", [timelockAddr]);
+    const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
+    const rcProxy = await ERC1967Proxy.deploy(await rcImpl.getAddress(), initData);
+    revenueCounter = RevenueCounter.attach(await rcProxy.getAddress());
+
+    // Deploy ShieldPauseController
+    const ShieldPauseController = await ethers.getContractFactory("ShieldPauseController");
+    shieldPauseController = await ShieldPauseController.deploy(
+      await governor.getAddress(),
+      timelockAddr,
+    );
+
+    // Deploy ArmadaRedemption
+    const ArmadaRedemption = await ethers.getContractFactory("ArmadaRedemption");
+    redemption = await ArmadaRedemption.deploy(
+      await armToken.getAddress(),
+      await treasuryContract.getAddress(),
+      revenueLockAddr.address,
+      crowdfundAddr.address,
+    );
+
+    // Deploy ArmadaWindDown
+    windDownDeadline = (await time.latest()) + 365 * ONE_DAY;
+    const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
+    windDown = await ArmadaWindDown.deploy(
+      await armToken.getAddress(),
+      await treasuryContract.getAddress(),
+      await governor.getAddress(),
+      await redemption.getAddress(),
+      await shieldPauseController.getAddress(),
+      await revenueCounter.getAddress(),
+      timelockAddr,
+      REVENUE_THRESHOLD,
+      windDownDeadline,
+    );
+
+    // Wire governance contracts
+    await armToken.setWindDownContract(await windDown.getAddress());
+
+    const timelockSigner = await asTimelock();
+    await governor.connect(timelockSigner).setSecurityCouncil(carol.address);
+    await governor.connect(timelockSigner).setWindDownContract(await windDown.getAddress());
+    await treasuryContract.connect(timelockSigner).setWindDownContract(await windDown.getAddress());
+    await shieldPauseController.connect(timelockSigner).setWindDownContract(await windDown.getAddress());
+    await stopImpersonatingTimelock();
+
+    // Configure timelock roles
+    const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();
+    const EXECUTOR_ROLE = await timelockController.EXECUTOR_ROLE();
+    const ADMIN_ROLE = await timelockController.TIMELOCK_ADMIN_ROLE();
+    await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
+    await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
+    await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
+
+    // Distribute ARM
+    await armToken.initWhitelist([
+      deployer.address,
+      await treasuryContract.getAddress(),
+      alice.address,
+      bob.address,
+      revenueLockAddr.address,
+      crowdfundAddr.address,
+      await redemption.getAddress(),
+    ]);
+    await armToken.transfer(await treasuryContract.getAddress(), TREASURY_AMOUNT);
+    await armToken.transfer(alice.address, ALICE_AMOUNT);
+    await armToken.transfer(bob.address, BOB_AMOUNT);
+    await armToken.connect(alice).delegate(alice.address);
+
+    // --- Deploy privacy pool ---
+
+    // Deploy Poseidon libraries
+    const poseidonT3Tx = await deployer.sendTransaction({ data: poseidonBytecode.PoseidonT3.bytecode });
+    const poseidonT3Address = (await poseidonT3Tx.wait())!.contractAddress!;
+    const poseidonT4Tx = await deployer.sendTransaction({ data: poseidonBytecode.PoseidonT4.bytecode });
+    const poseidonT4Address = (await poseidonT4Tx.wait())!.contractAddress!;
+
+    // Deploy modules with Poseidon linking
+    const merkleModule = await (await ethers.getContractFactory("MerkleModule", {
+      libraries: { PoseidonT3: poseidonT3Address },
+    })).deploy();
+    const verifierModule = await (await ethers.getContractFactory("VerifierModule")).deploy();
+    const shieldModule = await (await ethers.getContractFactory("ShieldModule", {
+      libraries: { PoseidonT4: poseidonT4Address },
+    })).deploy();
+    const transactModule = await (await ethers.getContractFactory("TransactModule", {
+      libraries: { PoseidonT4: poseidonT4Address },
+    })).deploy();
+
+    // Deploy mock CCTP
+    const MockMessageTransmitterV2 = await ethers.getContractFactory("MockMessageTransmitterV2");
+    const hubMessageTransmitter = await MockMessageTransmitterV2.deploy(POOL_DOMAINS.hub, deployer.address);
+    const MockTokenMessengerV2 = await ethers.getContractFactory("MockTokenMessengerV2");
+    const hubTokenMessenger = await MockTokenMessengerV2.deploy(
+      await hubMessageTransmitter.getAddress(),
+      await hubUsdc.getAddress(),
+      POOL_DOMAINS.hub,
+    );
+    await hubMessageTransmitter.setTokenMessenger(await hubTokenMessenger.getAddress());
+    await hubUsdc.addMinter(await hubTokenMessenger.getAddress());
+
+    // Deploy and initialize PrivacyPool
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    privacyPool = await PrivacyPool.deploy();
+    privacyPoolAddress = await privacyPool.getAddress();
+
+    await privacyPool.initialize(
+      await shieldModule.getAddress(),
+      await transactModule.getAddress(),
+      await merkleModule.getAddress(),
+      await verifierModule.getAddress(),
+      await hubTokenMessenger.getAddress(),
+      await hubMessageTransmitter.getAddress(),
+      await hubUsdc.getAddress(),
+      POOL_DOMAINS.hub,
+      deployer.address,
+    );
+
+    await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
+    await privacyPool.setTestingMode(true);
+    await privacyPool.setTreasury(deployer.address);
+    await privacyPool.setShieldPauseContract(await shieldPauseController.getAddress());
+
+    await mine(1);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Tests: Pre-wind-down (regression)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Pre-wind-down: all operations allowed", function () {
+    it("shield succeeds before wind-down", async function () {
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(aliceAddress, amount);
+      await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
+
+      await expect(
+        privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)])
+      ).to.not.be.reverted;
+    });
+
+    it("pure private transfer succeeds before wind-down", async function () {
+      const root = await shieldAndGetRoot(ethers.parseUnits("100", 6));
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("pre-wd-transfer-null"));
+      const commitment = ethers.keccak256(ethers.toUtf8Bytes("pre-wd-transfer-commit"));
+
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitment],
+        unshield: 0, // UnshieldType.NONE — pure transfer
+      });
+
+      // Should not revert with "withdraw only" (may succeed or fail on proof validation)
+      await expect(privacyPool.transact([tx])).to.not.be.revertedWith(
+        "TransactModule: withdraw only"
+      );
+    });
+
+    it("unshield succeeds before wind-down", async function () {
+      const shieldAmount = ethers.parseUnits("200", 6);
+      const root = await shieldAndGetRoot(shieldAmount);
+      const usdcAddr = await hubUsdc.getAddress();
+      const recipientAddr = await bob.getAddress();
+
+      const unshieldAmount = ethers.parseUnits("100", 6);
+      const npkBigInt = BigInt(recipientAddr);
+      const tokenId = BigInt(usdcAddr);
+      const commitHash = computeCommitmentHash(npkBigInt, tokenId, unshieldAmount);
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("pre-wd-unshield-null"));
+
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitHash],
+        unshield: 1, // UnshieldType.NORMAL
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(recipientAddr, 32),
+          token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
+          value: unshieldAmount,
+        },
+      });
+
+      const bobBefore = await hubUsdc.balanceOf(recipientAddr);
+      await privacyPool.transact([tx]);
+      const bobAfter = await hubUsdc.balanceOf(recipientAddr);
+
+      expect(bobAfter - bobBefore).to.equal(unshieldAmount);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Tests: Post-wind-down (withdraw-only mode)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Post-wind-down: withdraw-only mode", function () {
+    before(async function () {
+      await triggerWindDown();
+    });
+
+    it("shield reverts after wind-down", async function () {
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(aliceAddress, amount);
+      await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
+
+      await expect(
+        privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)])
+      ).to.be.revertedWith("ShieldModule: shields paused");
+    });
+
+    it("pure private transfer reverts after wind-down", async function () {
+      const root = await privacyPool.merkleRoot();
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("post-wd-transfer-null"));
+      const commitment = ethers.keccak256(ethers.toUtf8Bytes("post-wd-transfer-commit"));
+
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitment],
+        unshield: 0, // UnshieldType.NONE — pure transfer
+      });
+
+      await expect(privacyPool.transact([tx])).to.be.revertedWith(
+        "TransactModule: withdraw only"
+      );
+    });
+
+    it("mixed batch (transfer + unshield) reverts after wind-down", async function () {
+      const root = await privacyPool.merkleRoot();
+      const usdcAddr = await hubUsdc.getAddress();
+      const recipientAddr = await bob.getAddress();
+      const unshieldAmount = ethers.parseUnits("50", 6);
+      const npkBigInt = BigInt(recipientAddr);
+      const tokenId = BigInt(usdcAddr);
+      const commitHash = computeCommitmentHash(npkBigInt, tokenId, unshieldAmount);
+
+      const unshieldTx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("mixed-unshield-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(recipientAddr, 32),
+          token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
+          value: unshieldAmount,
+        },
+      });
+
+      const transferTx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("mixed-transfer-null"))],
+        commitments: [ethers.keccak256(ethers.toUtf8Bytes("mixed-transfer-commit"))],
+        unshield: 0,
+      });
+
+      await expect(privacyPool.transact([unshieldTx, transferTx])).to.be.revertedWith(
+        "TransactModule: withdraw only"
+      );
+    });
+
+    it("unshield succeeds after wind-down", async function () {
+      const root = await privacyPool.merkleRoot();
+      const usdcAddr = await hubUsdc.getAddress();
+      const recipientAddr = await bob.getAddress();
+
+      const unshieldAmount = ethers.parseUnits("50", 6);
+      const npkBigInt = BigInt(recipientAddr);
+      const tokenId = BigInt(usdcAddr);
+      const commitHash = computeCommitmentHash(npkBigInt, tokenId, unshieldAmount);
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("post-wd-unshield-null"));
+
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(recipientAddr, 32),
+          token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
+          value: unshieldAmount,
+        },
+      });
+
+      const bobBefore = await hubUsdc.balanceOf(recipientAddr);
+      await privacyPool.transact([tx]);
+      const bobAfter = await hubUsdc.balanceOf(recipientAddr);
+
+      expect(bobAfter - bobBefore).to.equal(unshieldAmount);
     });
   });
 });

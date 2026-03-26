@@ -212,53 +212,44 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     // ============ Fuzz: claimRefund returns exact committed amount ============
 
-    /// @notice Fuzz: in refundMode, each participant's claimRefund returns their exact deposit
+    /// @notice Fuzz: in refundMode, each participant's claimRefund returns their exact deposit.
+    ///         All 80 seeds commit (79 at $15K, 1 at fuzzed amount) to guarantee cappedDemand
+    ///         is in [MIN_SALE, ELASTIC_TRIGGER), which always triggers refundMode at BASE_SALE
+    ///         because hop-0 ceiling ($798K) < MIN_SALE ($1M).
     function testFuzz_claimRefund_exactAmount(uint256 seedIdx, uint256 commitAmount) public {
-        // Only use first 100 seeds (already set up)
         seedIdx = bound(seedIdx, 0, seeds.length - 1);
-        commitAmount = bound(commitAmount, 10 * 1e6, 15_000 * 1e6); // MIN_COMMIT to hop-0 cap
+        commitAmount = bound(commitAmount, 10 * 1e6, 15_000 * 1e6);
 
-        // Commit the fuzzed amount from one seed
+        // All non-target seeds commit full $15K to guarantee cappedDemand >= MIN_SALE
+        for (uint256 i = 0; i < seeds.length; i++) {
+            if (i == seedIdx) continue;
+            uint256 amount = 15_000 * 1e6;
+            usdc.mint(seeds[i], amount);
+            vm.startPrank(seeds[i]);
+            usdc.approve(address(crowdfund), amount);
+            crowdfund.commit(0, amount);
+            vm.stopPrank();
+        }
+
+        // Commit the fuzzed amount from the target seed
         usdc.mint(seeds[seedIdx], commitAmount);
         vm.startPrank(seeds[seedIdx]);
         usdc.approve(address(crowdfund), commitAmount);
         crowdfund.commit(0, commitAmount);
         vm.stopPrank();
 
-        // Need enough total to pass MIN_SALE for finalize to not revert.
-        // Commit from remaining seeds to reach MIN_SALE.
-        uint256 totalSoFar = commitAmount;
-        for (uint256 i = 0; i < seeds.length && totalSoFar < MIN_SALE; i++) {
-            if (i == seedIdx) continue;
-            uint256 amount = 15_000 * 1e6;
-            if (totalSoFar + amount > 1_400_000 * 1e6) {
-                // Cap total at $1.4M to stay at BASE_SALE (below ELASTIC_TRIGGER)
-                // and maximize chance of refundMode
-                amount = 1_400_000 * 1e6 - totalSoFar;
-                if (amount < 10 * 1e6) break;
-            }
-            usdc.mint(seeds[i], amount);
-            vm.startPrank(seeds[i]);
-            usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(0, amount);
-            vm.stopPrank();
-            totalSoFar += amount;
-        }
-
         vm.warp(crowdfund.windowEnd() + 1);
+        crowdfund.finalize();
 
-        // Try to finalize. If refundMode triggers, verify exact refund.
-        try crowdfund.finalize() {
-            if (crowdfund.refundMode()) {
-                uint256 balBefore = usdc.balanceOf(seeds[seedIdx]);
-                vm.prank(seeds[seedIdx]);
-                crowdfund.claimRefund();
-                uint256 balAfter = usdc.balanceOf(seeds[seedIdx]);
-                assertEq(balAfter - balBefore, commitAmount, "Refund should be exact committed amount");
-            }
-        } catch {
-            // finalize reverted (below MIN_SALE) — not a refundMode scenario
-        }
+        // 80 seeds × max $15K = $1.2M cappedDemand < ELASTIC_TRIGGER ($1.5M)
+        // → saleSize = BASE_SALE → hop-0 ceiling = $798K < MIN_SALE → refundMode guaranteed
+        assertTrue(crowdfund.refundMode(), "Must be in refund mode with only hop-0 at BASE_SALE");
+
+        uint256 balBefore = usdc.balanceOf(seeds[seedIdx]);
+        vm.prank(seeds[seedIdx]);
+        crowdfund.claimRefund();
+        uint256 balAfter = usdc.balanceOf(seeds[seedIdx]);
+        assertEq(balAfter - balBefore, commitAmount, "Refund must equal exact committed amount");
     }
 
     // ============ Permissionless finalize ============

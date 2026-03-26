@@ -66,13 +66,15 @@ export interface NetworkConfig {
   /**
    * ARM token distribution (12M total supply).
    * All values are whole-token counts (no decimals). The deployer retains the remainder.
-   *   Treasury:  10.2M — protocol treasury (65%) + parked team (15%) + parked airdrop (5%)
-   *   Crowdfund: 1.8M  — backs MAX_SALE at $1/ARM
+   *   Treasury:    7.8M — protocol treasury (65%)
+   *   Crowdfund:   1.8M — backs MAX_SALE at $1/ARM
+   *   RevenueLock: 2.4M — team (15%) + airdrop (5%), revenue-gated release
    *   Deployer remainder: 0
    */
   armDistribution: {
     treasury: string;
     crowdfund: string;
+    revenueLock: string;
   };
   /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
   cctpFinalityMode: "fast" | "standard";
@@ -196,8 +198,9 @@ export function getNetworkConfig(): NetworkConfig {
     ethUsdcPrice: numEnv("ETH_USDC_PRICE", 2000),
     treasuryAddress: process.env.TREASURY_ADDRESS ?? "",
     armDistribution: {
-      treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "10200000"),
+      treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "7800000"),
       crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),
+      revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
   };

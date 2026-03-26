@@ -324,6 +324,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Revenue definition expansion (on RevenueCounter)
         extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
 
+        // Steward circuit breaker resume (on governor, via timelock)
+        extendedSelectors[this.resumeStewardChannel.selector] = true;
+
         // Treasury outflow limit parameters
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
@@ -709,7 +712,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Resume the steward channel after a circuit breaker pause.
-    /// Requires a standard governance proposal (quorum + majority FOR) via the timelock.
+    /// Auto-classified as Extended (30% quorum, 14-day voting) via the timelock.
     function resumeStewardChannel() external {
         require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
         require(stewardChannelPaused, "ArmadaGovernor: not paused");

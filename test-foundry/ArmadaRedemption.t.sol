@@ -404,13 +404,15 @@ contract ArmadaRedemptionTest is Test {
     // ======== Wind-Down Gate ========
 
     function test_revert_redeemBeforeWindDown() public {
-        // Deploy a fresh ARM token where transferable is still false
+        // Deploy a fresh ARM token where transferable is still false (pre-wind-down)
         ArmadaToken freshArm = new ArmadaToken(deployer, address(timelock));
-
-        // Enable transfers on freshArm so we can distribute, then disable
         freshArm.setWindDownContract(windDown);
-        vm.prank(windDown);
-        freshArm.setTransferable(true);
+
+        // Whitelist deployer and alice so we can distribute tokens without enabling global transfers
+        address[] memory wl = new address[](2);
+        wl[0] = deployer;
+        wl[1] = alice;
+        freshArm.initWhitelist(wl);
 
         ArmadaRedemption freshRedemption = new ArmadaRedemption(
             address(freshArm), treasuryAddr, revenueLock, crowdfund
@@ -420,10 +422,7 @@ contract ArmadaRedemptionTest is Test {
         vm.prank(alice);
         freshArm.approve(address(freshRedemption), type(uint256).max);
 
-        // Disable transfers (simulating pre-wind-down state)
-        vm.prank(windDown);
-        freshArm.setTransferable(false);
-
+        // transferable is still false — redeem should revert
         address[] memory tokens = new address[](0);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: wind-down not triggered");

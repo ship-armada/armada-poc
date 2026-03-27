@@ -35,7 +35,7 @@ export const PRIVACY_POOL_EVENTS = {
  */
 export const PRIVACY_POOL_CLIENT_EVENTS = {
   // CrossChainShieldInitiated event
-  CrossChainShieldInitiated: ethers.id('CrossChainShieldInitiated(address,uint256,bytes32,uint64)'),
+  CrossChainShieldInitiated: ethers.id('CrossChainShieldInitiated(uint256,bytes32,uint64)'),
 
   // UnshieldReceived event
   UnshieldReceived: ethers.id('UnshieldReceived(address,uint256)'),

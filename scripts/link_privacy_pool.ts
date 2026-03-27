@@ -108,6 +108,14 @@ async function main() {
     await setRemoteTx.wait();
     console.log(`  Remote pool set for domain ${clientConfig.domain}`);
 
+    // Set remote hook router on Hub (for destinationCaller enforcement)
+    if (clientDeployment.contracts.hookRouter) {
+      const clientHookRouterBytes32 = ethers.zeroPadValue(clientDeployment.contracts.hookRouter, 32);
+      console.log(`  Setting remote hook router on Hub...`);
+      await (await privacyPool.setRemoteHookRouter(clientConfig.domain, clientHookRouterBytes32)).wait();
+      console.log(`  Remote hook router set for domain ${clientConfig.domain}`);
+    }
+
     // In mock mode, we need to configure TokenMessenger cross-references
     // In real CCTP mode, Circle manages this - skip
     if (!isCCTPReal()) {
@@ -156,13 +164,24 @@ async function main() {
 
     const clientPoolContract = new ethers.Contract(
       clientDeployment.contracts.privacyPoolClient,
-      ["function setHookRouter(address _hookRouter) external"],
+      [
+        "function setHookRouter(address _hookRouter) external",
+        "function setHubHookRouter(bytes32 _hubHookRouter) external",
+      ],
       clientSigner
     );
 
     console.log(`Setting hookRouter on ${clientConfig.name} PrivacyPoolClient...`);
     await (await clientPoolContract.setHookRouter(clientDeployment.contracts.hookRouter)).wait();
     console.log(`  hookRouter set to: ${clientDeployment.contracts.hookRouter}`);
+
+    // Set hubHookRouter on client (for destinationCaller enforcement on shields)
+    if (hubHookRouterAddress) {
+      const hubHookRouterBytes32 = ethers.zeroPadValue(hubHookRouterAddress, 32);
+      console.log(`Setting hubHookRouter on ${clientConfig.name} PrivacyPoolClient...`);
+      await (await clientPoolContract.setHubHookRouter(hubHookRouterBytes32)).wait();
+      console.log(`  hubHookRouter set to: ${hubHookRouterAddress}`);
+    }
     console.log("");
   }
 

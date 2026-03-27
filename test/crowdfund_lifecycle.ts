@@ -490,9 +490,10 @@ describe("Crowdfund Full Lifecycle", function () {
 
       // After all claims, contract USDC balance should be minimal (rounding dust)
       const contractUsdc = await usdc.balanceOf(cfAddr);
-      // Rounding buffer is participantNodes.length (small), plus any dust
+      // Rounding buffer is participantNodes.length * NUM_HOPS (max 1 USDC unit per participant per hop)
       const nodeCount = await crowdfund.getParticipantCount();
-      expect(contractUsdc).to.be.lte(nodeCount);
+      const NUM_HOPS = 3n;
+      expect(contractUsdc).to.be.lte(nodeCount * NUM_HOPS);
 
       // After sweep, remaining ARM in contract = still owed to unclaimed participants
       // Since we claimed all, it should be 0 or very small

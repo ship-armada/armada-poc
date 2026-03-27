@@ -348,7 +348,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -368,7 +369,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -391,7 +393,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -432,7 +435,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -453,7 +457,8 @@ describe("CCTP V2 Fast Finality", function () {
           params.encryptedBundle,
           params.shieldKey,
           ethers.ZeroHash
-        )
+        ,
+        ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Invalid finality threshold");
     });
 
@@ -470,7 +475,8 @@ describe("CCTP V2 Fast Finality", function () {
           params.encryptedBundle,
           params.shieldKey,
           ethers.ZeroHash
-        )
+        ,
+        ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Invalid finality threshold");
     });
   });
@@ -498,7 +504,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -526,7 +533,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -560,7 +568,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -641,7 +650,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -663,7 +673,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -698,7 +709,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -721,7 +733,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 
@@ -749,7 +762,8 @@ describe("CCTP V2 Fast Finality", function () {
         params.encryptedBundle,
         params.shieldKey,
         ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       const encodedMessage = extractMessageSent(receipt, clientMessageTransmitter);
 

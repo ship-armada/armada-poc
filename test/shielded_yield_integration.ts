@@ -259,7 +259,7 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
 
   async function shieldAndGetRoot(amount: bigint): Promise<string> {
     await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
-    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddress, amount)]);
+    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddress, amount)], ethers.ZeroAddress);
     return await privacyPool.merkleRoot();
   }
 

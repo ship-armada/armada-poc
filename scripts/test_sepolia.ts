@@ -466,7 +466,8 @@ async function testCrossChainShield(config: ReturnType<typeof getNetworkConfig>,
     shieldKey,
     ethers.ZeroHash, // any relayer can relay
     fees2
-  );
+  ,
+  ethers.ZeroAddress);
   info(`Tx: ${shieldTx.hash}`);
   const receipt = await waitForTx(shieldTx);
   passed(`Cross-chain shield initiated in block ${receipt.blockNumber}`);

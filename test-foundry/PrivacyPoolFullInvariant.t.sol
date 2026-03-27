@@ -97,7 +97,7 @@ contract PrivacyPoolFullHandler is Test {
         vm.startPrank(shielder);
         usdc.approve(address(pool), amount);
 
-        try pool.shield(requests) {
+        try pool.shield(requests, address(0)) {
             ghost_totalShieldedGross += amount;
             ghost_totalInsertions += 1;
             ghost_shieldCallCount++;
@@ -144,7 +144,7 @@ contract PrivacyPoolFullHandler is Test {
         vm.startPrank(shielder);
         usdc.approve(address(pool), totalNeeded);
 
-        try pool.shield(requests) {
+        try pool.shield(requests, address(0)) {
             ghost_totalShieldedGross += totalNeeded;
             ghost_totalInsertions += count;
             ghost_shieldCallCount++;

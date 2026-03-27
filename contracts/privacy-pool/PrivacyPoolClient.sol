@@ -119,6 +119,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      * @param shieldKey Shield key for decryption by recipient
      * @param destinationCaller Address allowed to call receiveMessage on Hub (bytes32).
      *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      * @return nonce CCTP message nonce
      */
     function crossChainShield(
@@ -128,7 +129,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
-        bytes32 destinationCaller
+        bytes32 destinationCaller,
+        address integrator
     ) external override returns (uint64) {
         require(amount > 0, "PrivacyPoolClient: Amount must be > 0");
         require(maxFee < amount, "PrivacyPoolClient: Fee exceeds amount");
@@ -142,7 +144,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         IERC20(usdc).safeApprove(tokenMessenger, amount);
 
         // Encode shield payload and execute CCTP burn in helper (avoids stack-too-deep)
-        _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, destinationCaller);
+        _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, destinationCaller, integrator);
 
         emit CrossChainShieldInitiated(msg.sender, amount, npk, 0);
 
@@ -258,13 +260,15 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
-        bytes32 destinationCaller
+        bytes32 destinationCaller,
+        address integrator
     ) internal {
         bytes memory hookData = CCTPPayloadLib.encodeShield(ShieldData({
             npk: npk,
             value: uint120(amount),
             encryptedBundle: encryptedBundle,
-            shieldKey: shieldKey
+            shieldKey: shieldKey,
+            integrator: integrator
         }));
 
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(

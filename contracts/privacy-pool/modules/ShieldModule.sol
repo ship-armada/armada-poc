@@ -10,6 +10,7 @@ import "../interfaces/IMerkleModule.sol";
 import "../types/CCTPTypes.sol";
 import "../../railgun/logic/Poseidon.sol";
 import "../../governance/IShieldPauseController.sol";
+import "../../fees/IArmadaFeeModule.sol";
 
 /**
  * @title ShieldModule
@@ -33,8 +34,9 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
      *      Fees are deducted from the shielded amount.
      *
      * @param _shieldRequests Array of shield requests to process
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function shield(ShieldRequest[] calldata _shieldRequests) external override onlyDelegatecall {
+    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override onlyDelegatecall {
         _requireShieldsNotPaused();
         uint256 numRequests = _shieldRequests.length;
         require(numRequests > 0, "ShieldModule: No requests");
@@ -51,7 +53,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             _validateCommitmentPreimage(_shieldRequests[i].preimage);
 
             // Transfer tokens in and calculate fee-adjusted commitment
-            (commitments[i], fees[i]) = _transferTokenIn(_shieldRequests[i].preimage);
+            (commitments[i], fees[i]) = _transferTokenIn(_shieldRequests[i].preimage, integrator);
 
             // Hash commitment for merkle tree
             insertionLeaves[i] = _hashCommitment(commitments[i]);
@@ -116,15 +118,16 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
 
         // Process as internal shield
         // Note: Tokens already in contract from CCTP mint, so we use _processInternalShield
-        _processInternalShield(requests[0]);
+        _processInternalShield(requests[0], data.integrator);
     }
 
     /**
      * @notice Process a shield where tokens are already in the contract
      * @dev Used for cross-chain shields where CCTP has already minted tokens to us
      * @param _request The shield request to process
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function _processInternalShield(ShieldRequest memory _request) internal {
+    function _processInternalShield(ShieldRequest memory _request, address integrator) internal {
         // Validate the commitment preimage
         _validateCommitmentPreimageMemory(_request.preimage);
 
@@ -132,14 +135,38 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         uint256 fee = 0;
         CommitmentPreimage memory adjustedPreimage = _request.preimage;
 
-        if (shieldFee > 0 && !privilegedShieldCallers[msg.sender]) {
-            (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
-            adjustedPreimage.value = base;
-            fee = feeAmount;
+        if (!privilegedShieldCallers[msg.sender]) {
+            if (feeModule != address(0)) {
+                // Fee module path: centralized fee calculation with integrator support
+                uint256 amount = uint256(_request.preimage.value);
+                (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
+                    IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
 
-            // Transfer fee to treasury
-            if (feeAmount > 0 && treasury != address(0)) {
-                IERC20(usdc).safeTransfer(treasury, feeAmount);
+                adjustedPreimage.value = uint120(amount - totalFee);
+                fee = totalFee;
+
+                // Transfer armada take to treasury
+                if (armadaTake > 0 && treasury != address(0)) {
+                    IERC20(usdc).safeTransfer(treasury, armadaTake);
+                }
+
+                // Transfer integrator fee directly to integrator
+                if (integratorFee > 0 && integrator != address(0)) {
+                    IERC20(usdc).safeTransfer(integrator, integratorFee);
+                }
+
+                // Record fee in fee module
+                IArmadaFeeModule(feeModule).recordShieldFee(integrator, amount, armadaTake, integratorFee);
+            } else if (shieldFee > 0) {
+                // Legacy flat fee path (backward compat when feeModule == address(0))
+                (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
+                adjustedPreimage.value = base;
+                fee = feeAmount;
+
+                // Transfer fee to treasury
+                if (feeAmount > 0 && treasury != address(0)) {
+                    IERC20(usdc).safeTransfer(treasury, feeAmount);
+                }
             }
         }
 
@@ -205,44 +232,84 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
     /**
      * @notice Transfer tokens into the contract and calculate fee-adjusted commitment
      * @param _note The commitment preimage (with original value)
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      * @return adjustedNote The fee-adjusted commitment preimage
      * @return fee The fee amount
      */
     function _transferTokenIn(
-        CommitmentPreimage calldata _note
+        CommitmentPreimage calldata _note,
+        address integrator
     ) internal returns (CommitmentPreimage memory adjustedNote, uint256 fee) {
         require(_note.token.tokenType == TokenType.ERC20, "ShieldModule: Only ERC20 supported");
 
         IERC20 token = IERC20(_note.token.tokenAddress);
 
-        // Privileged callers (e.g. yield adapter) bypass shield fee
-        uint120 base;
-        uint120 feeAmount;
         if (privilegedShieldCallers[msg.sender]) {
-            base = _note.value;
-            feeAmount = 0;
+            // Privileged callers (e.g. yield adapter) bypass all fees
+            adjustedNote = CommitmentPreimage({
+                npk: _note.npk,
+                token: _note.token,
+                value: _note.value
+            });
+            fee = 0;
+
+            // Transfer full amount to this contract
+            uint256 balanceBefore = token.balanceOf(address(this));
+            token.safeTransferFrom(msg.sender, address(this), _note.value);
+            uint256 balanceAfter = token.balanceOf(address(this));
+            require(balanceAfter - balanceBefore == _note.value, "ShieldModule: Transfer failed");
+        } else if (feeModule != address(0)) {
+            // Fee module path: centralized fee calculation with integrator support
+            uint256 amount = uint256(_note.value);
+            (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
+                IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
+
+            uint120 base = uint120(amount - totalFee);
+            adjustedNote = CommitmentPreimage({
+                npk: _note.npk,
+                token: _note.token,
+                value: base
+            });
+            fee = totalFee;
+
+            // Transfer base amount to this contract
+            uint256 balanceBefore = token.balanceOf(address(this));
+            token.safeTransferFrom(msg.sender, address(this), base);
+            uint256 balanceAfter = token.balanceOf(address(this));
+            require(balanceAfter - balanceBefore == base, "ShieldModule: Transfer failed");
+
+            // Transfer armada take to treasury
+            if (armadaTake > 0 && treasury != address(0)) {
+                token.safeTransferFrom(msg.sender, treasury, armadaTake);
+            }
+
+            // Transfer integrator fee directly to integrator
+            if (integratorFee > 0 && integrator != address(0)) {
+                token.safeTransferFrom(msg.sender, integrator, integratorFee);
+            }
+
+            // Record fee in fee module
+            IArmadaFeeModule(feeModule).recordShieldFee(integrator, amount, armadaTake, integratorFee);
         } else {
-            (base, feeAmount) = _getFee(_note.value, true, shieldFee);
-        }
+            // Legacy flat fee path (backward compat when feeModule == address(0))
+            (uint120 base, uint120 feeAmount) = _getFee(_note.value, true, shieldFee);
+            adjustedNote = CommitmentPreimage({
+                npk: _note.npk,
+                token: _note.token,
+                value: base
+            });
+            fee = feeAmount;
 
-        // Create adjusted preimage with fee-reduced value
-        adjustedNote = CommitmentPreimage({
-            npk: _note.npk,
-            token: _note.token,
-            value: base
-        });
-        fee = feeAmount;
+            // Transfer base amount to this contract
+            uint256 balanceBefore = token.balanceOf(address(this));
+            token.safeTransferFrom(msg.sender, address(this), base);
+            uint256 balanceAfter = token.balanceOf(address(this));
+            require(balanceAfter - balanceBefore == base, "ShieldModule: Transfer failed");
 
-        // Transfer base amount to this contract
-        uint256 balanceBefore = token.balanceOf(address(this));
-        token.safeTransferFrom(msg.sender, address(this), base);
-        uint256 balanceAfter = token.balanceOf(address(this));
-
-        require(balanceAfter - balanceBefore == base, "ShieldModule: Transfer failed");
-
-        // Transfer fee to treasury
-        if (feeAmount > 0 && treasury != address(0)) {
-            token.safeTransferFrom(msg.sender, treasury, feeAmount);
+            // Transfer fee to treasury
+            if (feeAmount > 0 && treasury != address(0)) {
+                token.safeTransferFrom(msg.sender, treasury, feeAmount);
+            }
         }
     }
 

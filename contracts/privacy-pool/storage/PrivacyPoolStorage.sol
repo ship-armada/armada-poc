@@ -171,11 +171,15 @@ abstract contract PrivacyPoolStorage {
     ///      to check if shields are paused. When address(0), shields are never paused.
     address public shieldPauseContract;
 
+    /// @notice Fee module address (ArmadaFeeModule proxy) for centralized fee calculation.
+    /// @dev When address(0), ShieldModule falls back to legacy flat shieldFee logic.
+    address public feeModule;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[47] private __gap;
+    uint256[46] private __gap;
 }

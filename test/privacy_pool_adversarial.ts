@@ -234,7 +234,7 @@ describe("Privacy Pool Adversarial", function () {
     const usdcAddr = await hubUsdc.getAddress();
     await hubUsdc.mint(aliceAddress, amount);
     await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
-    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)]);
+    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)], ethers.ZeroAddress);
     return await privacyPool.merkleRoot();
   }
 
@@ -354,7 +354,7 @@ describe("Privacy Pool Adversarial", function () {
       const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
 
       const usdcAddr = await hubUsdc.getAddress();
-      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)]);
+      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)], ethers.ZeroAddress);
 
       const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
       const poolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
@@ -551,7 +551,7 @@ describe("Privacy Pool Adversarial", function () {
       const req = makeShieldRequest(usdcAddr, 0n);
 
       await expect(
-        privacyPool.connect(alice).shield([req])
+        privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
       ).to.be.revertedWith("ShieldModule: Invalid value");
     });
 
@@ -566,7 +566,7 @@ describe("Privacy Pool Adversarial", function () {
       const req = makeShieldRequest(usdcAddr, amount, invalidNpk);
 
       await expect(
-        privacyPool.connect(alice).shield([req])
+        privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
       ).to.be.revertedWith("ShieldModule: Invalid npk");
     });
 
@@ -580,7 +580,7 @@ describe("Privacy Pool Adversarial", function () {
       const req = makeShieldRequest(usdcAddr, amount, invalidNpk);
 
       await expect(
-        privacyPool.connect(alice).shield([req])
+        privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
       ).to.be.revertedWith("ShieldModule: Invalid npk");
     });
 
@@ -880,7 +880,8 @@ describe("Privacy Pool Adversarial", function () {
           0, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash, ethers.ZeroHash
-        )
+        ,
+        ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Amount must be > 0");
     });
 
@@ -891,7 +892,8 @@ describe("Privacy Pool Adversarial", function () {
           amount, amount, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash, ethers.ZeroHash
-        )
+        ,
+        ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Fee exceeds amount");
     });
 
@@ -917,7 +919,8 @@ describe("Privacy Pool Adversarial", function () {
           amount, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
           ethers.ZeroHash, ethers.ZeroHash
-        )
+        ,
+        ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Hub not configured");
     });
   });

@@ -234,7 +234,7 @@ export async function executeDirectShield(
     },
   }
 
-  const tx = await pool.shield([shieldRequest])
+  const tx = await pool.shield([shieldRequest], ethers.ZeroAddress)
 
   console.log('[shield-contract] Direct shield submitted:', tx.hash)
 
@@ -313,6 +313,7 @@ export async function executeCrossChainShield(
     params.encryptedBundle,
     params.shieldKey,
     destinationCaller,
+    ethers.ZeroAddress, // integrator: no integrator for direct user shields
   )
 
   console.log('[shield-contract] Cross-chain shield submitted:', tx.hash)

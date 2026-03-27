@@ -240,7 +240,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
 
         // 8. Shield ayUSDC to user's npk
         shareToken.approve(privacyPool, shares);
-        IPrivacyPool(privacyPool).shield(shieldRequests);
+        IPrivacyPool(privacyPool).shield(shieldRequests, address(0));
 
         emit LendAndShield(_npk, amount, shares);
     }
@@ -317,7 +317,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
 
         // 8. Shield USDC to user's npk
         usdc.approve(privacyPool, assets);
-        IPrivacyPool(privacyPool).shield(shieldRequests);
+        IPrivacyPool(privacyPool).shield(shieldRequests, address(0));
 
         emit RedeemAndShield(_npk, shares, assets);
     }

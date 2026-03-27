@@ -18,10 +18,10 @@ contract ShieldForwarder {
 
     function approveAndShield(address token, uint256 amount, ShieldRequest[] calldata _requests) external {
         IERC20(token).approve(address(privacyPool), amount);
-        privacyPool.shield(_requests);
+        privacyPool.shield(_requests, address(0));
     }
 
     function shield(ShieldRequest[] calldata _requests) external {
-        privacyPool.shield(_requests);
+        privacyPool.shield(_requests, address(0));
     }
 }

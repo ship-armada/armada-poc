@@ -30,8 +30,9 @@ interface IShieldModule {
      * @notice Shield tokens locally (user on Hub chain)
      * @dev Transfers tokens from sender, creates commitments, inserts into merkle tree
      * @param _shieldRequests Array of shield requests to process
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function shield(ShieldRequest[] calldata _shieldRequests) external;
+    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external;
 
     /**
      * @notice Process an incoming cross-chain shield from a Client

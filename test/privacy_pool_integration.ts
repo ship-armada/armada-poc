@@ -327,7 +327,7 @@ describe("Privacy Pool Integration", function () {
 
       // Execute shield
       const treasuryBalanceBefore = await hubUsdc.balanceOf(treasuryAddress);
-      const tx = await privacyPool.connect(alice).shield([shieldRequest]);
+      const tx = await privacyPool.connect(alice).shield([shieldRequest], ethers.ZeroAddress);
       await tx.wait();
 
       // 50 bps fee: base = 100 - (100 * 50 / 10000) = 99.50 USDC, fee = 0.50 USDC
@@ -383,7 +383,8 @@ describe("Privacy Pool Integration", function () {
         encryptedBundle,
         shieldKey,
         ethers.ZeroHash  // destinationCaller = 0 (any relayer can submit)
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
 
       // Check event was emitted
@@ -428,7 +429,8 @@ describe("Privacy Pool Integration", function () {
         encryptedBundle,
         shieldKey,
         ethers.ZeroHash  // destinationCaller = 0 (any relayer)
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
 
       // Extract MessageSent(bytes) event — contains the full encoded MessageV2
@@ -526,7 +528,7 @@ describe("Privacy Pool Integration", function () {
         },
       };
 
-      await privacyPool.connect(alice).shield([shieldRequest]);
+      await privacyPool.connect(alice).shield([shieldRequest], ethers.ZeroAddress);
     });
 
     after(async function () {

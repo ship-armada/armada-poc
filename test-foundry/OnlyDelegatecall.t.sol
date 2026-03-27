@@ -36,7 +36,7 @@ contract OnlyDelegatecallTest is Test {
     function test_shieldModule_shield_revertsOnDirectCall() public {
         ShieldRequest[] memory requests = new ShieldRequest[](0);
         vm.expectRevert(bytes(EXPECTED_REVERT));
-        shieldModule.shield(requests);
+        shieldModule.shield(requests, address(0));
     }
 
     function test_shieldModule_processIncomingShield_revertsOnDirectCall() public {
@@ -44,7 +44,8 @@ contract OnlyDelegatecallTest is Test {
             npk: bytes32(0),
             value: 100,
             encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)],
-            shieldKey: bytes32(0)
+            shieldKey: bytes32(0),
+            integrator: address(0)
         });
         vm.expectRevert(bytes(EXPECTED_REVERT));
         shieldModule.processIncomingShield(100, data);

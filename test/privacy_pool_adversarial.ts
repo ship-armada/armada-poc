@@ -761,7 +761,7 @@ describe("Privacy Pool Adversarial", function () {
         await freshShield.getAddress(), await freshTransact.getAddress(),
         await freshMerkle.getAddress(), await freshVerifier.getAddress(),
         await hubTokenMessenger.getAddress(), await hubMessageTransmitter.getAddress(),
-        await hubUsdc.getAddress(), DOMAINS.hub, deployerAddress
+        await hubUsdc.getAddress(), DOMAINS.hub, deployerAddress, deployerAddress
       );
 
       const initialRoot = await freshPool.merkleRoot();

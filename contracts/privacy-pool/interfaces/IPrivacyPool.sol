@@ -44,6 +44,7 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param _usdc USDC token address
      * @param _localDomain This chain's CCTP domain ID
      * @param _owner Contract owner
+     * @param _treasury Address to receive protocol fees (immutable after init)
      */
     function initialize(
         address _shieldModule,
@@ -54,7 +55,8 @@ interface IPrivacyPool is IMessageHandlerV2 {
         address _messageTransmitter,
         address _usdc,
         uint32 _localDomain,
-        address _owner
+        address _owner,
+        address payable _treasury
     ) external;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -126,12 +128,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param feeBps Fee in basis points (50 = 0.50%)
      */
     function setUnshieldFee(uint120 feeBps) external;
-
-    /**
-     * @notice Set the treasury address for fee collection
-     * @param _treasury Address to receive protocol fees
-     */
-    function setTreasury(address payable _treasury) external;
 
     /**
      * @notice Enable or disable testing mode

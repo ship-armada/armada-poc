@@ -251,13 +251,6 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /// @inheritdoc IArmadaFeeModule
-    function setTreasury(address _treasury) external override onlyOwner {
-        require(_treasury != address(0), "ArmadaFeeModule: zero treasury");
-        emit TreasuryUpdated(treasury, _treasury);
-        treasury = _treasury;
-    }
-
-    /// @inheritdoc IArmadaFeeModule
     function setPrivacyPool(address _privacyPool) external override onlyOwner {
         require(_privacyPool != address(0), "ArmadaFeeModule: zero privacy pool");
         emit PrivacyPoolUpdated(privacyPool, _privacyPool);

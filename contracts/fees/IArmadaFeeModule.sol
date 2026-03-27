@@ -49,7 +49,6 @@ interface IArmadaFeeModule is IFeeCollector {
     event TierRemoved(uint256 index);
     event YieldFeeUpdated(uint256 oldBps, uint256 newBps);
     event IntegratorTermsSet(address indexed integrator, uint256 takeBps, uint256 threshold, bool active);
-    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event PrivacyPoolUpdated(address indexed oldPool, address indexed newPool);
     event YieldVaultUpdated(address indexed oldVault, address indexed newVault);
 
@@ -109,7 +108,6 @@ interface IArmadaFeeModule is IFeeCollector {
     function removeTier(uint256 index) external;
     function setYieldFee(uint256 bps) external;
     function setIntegratorTerms(address integrator, uint256 takeBps, uint256 threshold, bool active) external;
-    function setTreasury(address _treasury) external;
     function setPrivacyPool(address _privacyPool) external;
     function setYieldVault(address _yieldVault) external;
 

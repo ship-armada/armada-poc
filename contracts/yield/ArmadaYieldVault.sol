@@ -127,7 +127,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         uint256 yieldFee
     );
 
-    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event AdapterUpdated(address indexed oldAdapter, address indexed newAdapter);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event YieldFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
@@ -168,16 +167,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     }
 
     // ============ Admin Functions ============
-
-    /**
-     * @notice Update treasury address
-     * @param _treasury New treasury address
-     */
-    function setTreasury(address _treasury) external onlyOwner {
-        require(_treasury != address(0), "ArmadaYieldVault: zero treasury");
-        emit TreasuryUpdated(treasury, _treasury);
-        treasury = _treasury;
-    }
 
     /**
      * @notice Set privileged adapter address

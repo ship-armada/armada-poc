@@ -139,12 +139,12 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
+      deployerAddress,
       deployerAddress
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
     await privacyPool.setTestingMode(true);
-    await privacyPool.setTreasury(deployerAddress);
     await privacyPool.setShieldFee(50);
 
     // Deploy yield (vault, adapter)

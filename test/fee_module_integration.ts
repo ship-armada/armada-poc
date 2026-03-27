@@ -122,6 +122,11 @@ describe("Fee Module Integration", function () {
       await ethers.getContractFactory("TransactModule", { libraries: { PoseidonT4: poseidonT4Address } })
     ).deploy();
 
+    // Treasury (deployed before PrivacyPool so address is available for initialize)
+    const ArmadaTreasury = await ethers.getContractFactory("ArmadaTreasury");
+    armadaTreasury = await ArmadaTreasury.deploy();
+    treasuryAddress = await armadaTreasury.getAddress();
+
     // PrivacyPool
     const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
     privacyPool = await PrivacyPool.deploy();
@@ -136,17 +141,12 @@ describe("Fee Module Integration", function () {
       await hubMessageTransmitter.getAddress(),
       usdcAddress,
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      treasuryAddress
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
     await privacyPool.setTestingMode(true);
-
-    // Treasury
-    const ArmadaTreasury = await ethers.getContractFactory("ArmadaTreasury");
-    armadaTreasury = await ArmadaTreasury.deploy();
-    treasuryAddress = await armadaTreasury.getAddress();
-    await privacyPool.setTreasury(treasuryAddress);
     await privacyPool.setShieldFee(50); // 0.50% flat fee (for fallback tests)
 
     // ── Deploy ArmadaFeeModule behind UUPS proxy ──

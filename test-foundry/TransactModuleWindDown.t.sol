@@ -66,10 +66,10 @@ contract TransactModuleWindDownTest is Test {
             address(messageTransmitter),
             address(usdc),
             0, // localDomain
-            owner
+            owner,
+            payable(treasury)
         );
         pool.setTestingMode(true);
-        pool.setTreasury(payable(treasury));
 
         // Deploy ShieldPauseController
         mockGovernor = new MockGovernorSC(securityCouncil);

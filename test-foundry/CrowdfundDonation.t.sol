@@ -33,8 +33,7 @@ contract CrowdfundDonationTest is Test {
             treasury,
             admin,
             admin,
-            block.timestamp,
-            false
+            block.timestamp
         );
 
         address[] memory wl = new address[](2);
@@ -128,8 +127,8 @@ contract CrowdfundDonationTest is Test {
         assertFalse(crowdfund.refundMode());
 
         // Record allocations before ARM donation
-        uint256 totalAllocBefore = crowdfund.totalAllocated();
-        uint256 seed0AllocArm = crowdfund.addressArmAllocation(seeds[0]);
+        uint256 totalAllocBefore = crowdfund.totalAllocatedArm();
+        (uint256 seed0AllocArm, ) = crowdfund.computeAllocation(seeds[0]);
         assertTrue(totalAllocBefore > 0, "Must have allocations");
 
         // Donate extra ARM directly to the contract
@@ -137,8 +136,9 @@ contract CrowdfundDonationTest is Test {
         armToken.transfer(address(crowdfund), extraArm);
 
         // Allocations must be unchanged
-        assertEq(crowdfund.totalAllocated(), totalAllocBefore, "totalAllocated must not change");
-        assertEq(crowdfund.addressArmAllocation(seeds[0]), seed0AllocArm, "Per-address allocation must not change");
+        assertEq(crowdfund.totalAllocatedArm(), totalAllocBefore, "totalAllocatedArm must not change");
+        (uint256 seed0AllocArmAfter, ) = crowdfund.computeAllocation(seeds[0]);
+        assertEq(seed0AllocArmAfter, seed0AllocArm, "Per-address allocation must not change");
     }
 
     /// @notice withdrawUnallocatedArm captures donated ARM alongside unallocated ARM

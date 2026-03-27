@@ -82,8 +82,7 @@ describe("Crowdfund Settlement Rework", function () {
       treasury.address,
       deployer.address,         // launchTeam
       securityCouncil.address,  // securityCouncil
-      openTimestamp,             // openTimestamp
-      false                      // single-tx settlement
+      openTimestamp              // openTimestamp
     );
     await crowdfund.waitForDeployment();
     const cfAddr = await crowdfund.getAddress();
@@ -258,10 +257,9 @@ describe("Crowdfund Settlement Rework", function () {
     it("all participants can still claim ARM and refund USDC after proceeds push", async function () {
       const seeds = await setupAndFinalize(80, USDC(15_000));
 
-      // All seeds claim ARM and then claim USDC refund
+      // All seeds claim ARM + refund in one call
       for (const s of seeds) {
         await crowdfund.connect(s).claim(ethers.ZeroAddress);
-        await crowdfund.connect(s).claimRefund();
       }
 
       // Contract should have minimal USDC left (dust from rounding)
@@ -296,7 +294,7 @@ describe("Crowdfund Settlement Rework", function () {
 
       // Read the finalized state to verify event args
       const saleSize = await crowdfund.saleSize();
-      const totalAllocArm = await crowdfund.totalAllocated();
+      const totalAllocArm = await crowdfund.totalAllocatedArm();
       const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
 
       expect(saleSize).to.be.gt(0);
@@ -348,21 +346,28 @@ describe("Crowdfund Settlement Rework", function () {
       expect(deadline).to.be.gt(0);
     });
 
-    it("claim at exact deadline succeeds, claim at deadline+1 reverts", async function () {
+    it("claim at exact deadline gives ARM, claim after deadline gives refund only", async function () {
       const seeds = await setupAndFinalize(80, USDC(15_000));
 
       const deadline = await crowdfund.claimDeadline();
 
-      // Contract uses: require(block.timestamp <= claimDeadline)
+      // Contract uses: block.timestamp <= claimDeadline for ARM transfer
       // increaseTo(N) sets next block timestamp to N; the tx mines at N.
       // So increaseTo(deadline - 1n) → claim tx executes at block.timestamp == deadline
       await time.increaseTo(deadline - 1n);
+      const armBefore = await armToken.balanceOf(seeds[0].address);
       await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      const armAfter = await armToken.balanceOf(seeds[0].address);
+      expect(armAfter - armBefore).to.be.gt(0n); // ARM transferred
 
-      // Now block.timestamp == deadline. Next tx will be at deadline + 1 → reverts.
-      await expect(
-        crowdfund.connect(seeds[1]).claim(ethers.ZeroAddress)
-      ).to.be.revertedWith("ArmadaCrowdfund: claim deadline passed");
+      // Now block.timestamp == deadline. Next tx at deadline+1 → no ARM, refund only.
+      const armBefore1 = await armToken.balanceOf(seeds[1].address);
+      const usdcBefore1 = await usdc.balanceOf(seeds[1].address);
+      await crowdfund.connect(seeds[1]).claim(ethers.ZeroAddress);
+      const armAfter1 = await armToken.balanceOf(seeds[1].address);
+      const usdcAfter1 = await usdc.balanceOf(seeds[1].address);
+      expect(armAfter1 - armBefore1).to.equal(0n); // no ARM after deadline
+      expect(usdcAfter1 - usdcBefore1).to.be.gte(0n); // refund still works
     });
 
     it("claimRefund after claim deadline still succeeds (USDC has no expiry)", async function () {
@@ -433,12 +438,12 @@ describe("Crowdfund Settlement Rework", function () {
         }
       }
 
-      // All participants claim refunds, tracking actual USDC received
+      // All participants claim via claim() (handles ARM + refund), tracking actual USDC received
       let sumRefundsPaid = 0n;
       const allParticipants = [...seeds, ...hop1Invitees];
       for (const p of allParticipants) {
         const before = await usdc.balanceOf(p.address);
-        await crowdfund.connect(p).claimRefund();
+        await crowdfund.connect(p).claim(ethers.ZeroAddress);
         const after = await usdc.balanceOf(p.address);
         sumRefundsPaid += (after - before);
       }
@@ -513,7 +518,7 @@ describe("Crowdfund Settlement Rework", function () {
       // 68 seeds × $15K = $1.02M at BASE_SALE
       const seeds = await setupAndFinalize(68, USDC(15_000));
 
-      const totalAlloc = await crowdfund.totalAllocated();
+      const totalAlloc = await crowdfund.totalAllocatedArm();
       const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
       const expectedSweep = armInContract - totalAlloc;
       expect(expectedSweep).to.be.gt(0);
@@ -539,7 +544,7 @@ describe("Crowdfund Settlement Rework", function () {
       const seeds = await setupAndFinalize(68, USDC(15_000));
 
       // First sweep: unsold ARM
-      const totalAlloc = await crowdfund.totalAllocated();
+      const totalAlloc = await crowdfund.totalAllocatedArm();
       const armBalance = await armToken.balanceOf(await crowdfund.getAddress());
       const expectedFirstSweep = armBalance - totalAlloc;
       expect(expectedFirstSweep).to.be.gt(0);
@@ -553,7 +558,7 @@ describe("Crowdfund Settlement Rework", function () {
       // armStillOwed decreased, but no new unsold ARM. Balance = totalAlloc - claimed.
       // Nothing new to sweep unless there's rounding dust.
       const armAfterClaims = await armToken.balanceOf(await crowdfund.getAddress());
-      const totalArmClaimed = await crowdfund.totalArmClaimed();
+      const totalArmClaimed = await crowdfund.totalArmTransferred();
       // Contract should have exactly totalAlloc - totalArmClaimed
       expect(armAfterClaims).to.equal(totalAlloc - totalArmClaimed);
     });
@@ -629,7 +634,7 @@ describe("Crowdfund Settlement Rework", function () {
     it("emits UnallocatedArmWithdrawn event", async function () {
       const seeds = await setupAndFinalize(68, USDC(15_000));
 
-      const totalAlloc = await crowdfund.totalAllocated();
+      const totalAlloc = await crowdfund.totalAllocatedArm();
       const armInContract = await armToken.balanceOf(await crowdfund.getAddress());
       const expectedSweep = armInContract - totalAlloc;
 

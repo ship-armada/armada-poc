@@ -189,7 +189,6 @@ async function main() {
     deployer.address,       // launchTeam
     deployer.address,       // securityCouncil (demo: deployer acts as council)
     openTimestamp,
-    false  // single-tx settlement
   );
   await crowdfund.waitForDeployment();
   log("DEPLOY", `ArmadaCrowdfund: ${await crowdfund.getAddress()}`);
@@ -336,7 +335,7 @@ async function main() {
     log("ALLOC", `Hop ${h}: ceiling ${fmtUsdc(ceiling)} | demand ${fmtUsdc(demand)} \u2192 ${allocLabel}`);
   }
 
-  const totalAllocArm  = await crowdfund.totalAllocated();
+  const totalAllocArm  = await crowdfund.totalAllocatedArm();
   const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
   log("ALLOC", `Total allocated: ${fmtArm(totalAllocArm)} (${fmtUsdc(totalAllocUsdc)} USDC value)`);
 
@@ -350,7 +349,7 @@ async function main() {
     totalSeedArm += bal;
   }
   // Show one example seed allocation
-  const [exAlloc, exRefund] = await crowdfund.getAllocation(seeds[0].address);
+  const [exAlloc, exRefund] = await crowdfund.computeAllocation(seeds[0].address);
   log("CLAIM", `  Example seed: ${fmtArm(exAlloc)} + ${fmtUsdc(exRefund)} refund`);
   log("CLAIM", `  Total seed ARM claimed: ${fmtArm(totalSeedArm)}`);
 
@@ -359,14 +358,14 @@ async function main() {
   for (let i = 0; i < hop1Claimers; i++) {
     await crowdfund.connect(hop1Addrs[i]).claim(ethers.ZeroAddress);
   }
-  const [h1Alloc, h1Refund] = await crowdfund.getAllocation(hop1Addrs[0].address);
+  const [h1Alloc, h1Refund] = await crowdfund.computeAllocation(hop1Addrs[0].address);
   log("CLAIM", `  ${hop1Claimers} hop-1 claim: ${fmtArm(h1Alloc)} + ${fmtUsdc(h1Refund)} refund each`);
 
   const hop2Claimers = Math.min(3, hop2Count);
   for (let i = 0; i < hop2Claimers; i++) {
     await crowdfund.connect(hop2Addrs[i]).claim(ethers.ZeroAddress);
   }
-  const [h2Alloc, h2Refund] = await crowdfund.getAllocation(hop2Addrs[0].address);
+  const [h2Alloc, h2Refund] = await crowdfund.computeAllocation(hop2Addrs[0].address);
   log("CLAIM", `  ${hop2Claimers} hop-2 claim: ${fmtArm(h2Alloc)} + ${fmtUsdc(h2Refund)} refund each`);
 
   verify("Phase is FINALIZED", phase === 1);

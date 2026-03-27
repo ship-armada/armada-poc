@@ -137,14 +137,15 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         const hasCommitted = userHops.some((h) => h.participant.committed > 0n)
         if (hasCommitted) {
           try {
-            const allocResult = await contract.getAllocation(currentAddress)
+            const allocResult = await contract.computeAllocation(currentAddress)
+            const isClaimed = await contract.claimed(currentAddress)
             currentAllocation = {
               allocation: BigInt(allocResult[0]),
               refund: BigInt(allocResult[1]),
-              claimed: allocResult[2] as boolean,
+              claimed: isClaimed as boolean,
             }
           } catch {
-            // getAllocation may fail if not finalized
+            // computeAllocation may fail if not finalized
           }
 
           // Per-hop allocation breakdown
@@ -153,12 +154,13 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
             await Promise.all(
               hopsWithCommitments.map(async (h) => {
                 try {
-                  const res = await contract.getAllocationAtHop(currentAddress, h.hop)
+                  const res = await contract.computeAllocationAtHop(currentAddress, h.hop)
+                  const isClaimed = await contract.claimed(currentAddress)
                   return {
                     hop: h.hop,
                     allocation: BigInt(res[0]),
                     refund: BigInt(res[1]),
-                    claimed: res[2] as boolean,
+                    claimed: isClaimed as boolean,
                   }
                 } catch {
                   return null
@@ -246,12 +248,21 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
           addressesAndHops.map(({ addr, hop }) => contract.participants(addr, hop)),
         )
 
-        // After finalization, fetch computed allocations via getAllocationAtHop().
+        // After finalization, fetch computed allocations via computeAllocationAtHop().
         // In refundMode, allocations are meaningless — committed amount IS the refund.
         const allocations = isFinalized && !isRefundMode
           ? await Promise.all(
               addressesAndHops.map(({ addr, hop }) =>
-                contract.getAllocationAtHop(addr, hop).catch(() => null),
+                contract.computeAllocationAtHop(addr, hop).catch(() => null),
+              ),
+            )
+          : null
+
+        // Fetch claimed status for all addresses in the batch
+        const claimedStatuses = isFinalized && !isRefundMode
+          ? await Promise.all(
+              addressesAndHops.map(({ addr }) =>
+                contract.claimed(addr).catch(() => false),
               ),
             )
           : null
@@ -259,11 +270,11 @@ export function useCrowdfund(provider: Provider, getActiveSigner: () => Promise<
         for (let j = 0; j < addressesAndHops.length; j++) {
           const parsed = parseParticipant(participants[j])
 
-          // Override allocation/refund/armClaimed with computed values from getAllocationAtHop
+          // Override allocation/refund/claimed with computed values from computeAllocationAtHop
           if (allocations?.[j]) {
             parsed.allocation = BigInt(allocations[j][0])
             parsed.refund = BigInt(allocations[j][1])
-            parsed.armClaimed = allocations[j][2] as boolean
+            parsed.claimed = claimedStatuses?.[j] as boolean ?? false
           } else if (isRefundMode) {
             // In refundMode, full committed amount is refundable
             parsed.allocation = 0n

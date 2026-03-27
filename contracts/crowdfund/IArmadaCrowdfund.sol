@@ -27,10 +27,6 @@ struct Participant {
     bool isWhitelisted;     // true after being added as seed or invited
     uint16 invitesReceived; // times invited to this hop — scales cap and outgoing invite budget
     uint256 committed;      // USDC committed (6 decimals)
-    uint256 allocation;     // ARM allocated (18 decimals), set at claim or finalization
-    uint256 refund;         // USDC refund (6 decimals), set at claimRefund
-    bool armClaimed;        // true after claim() called (ARM transfer)
-    bool refundClaimed;     // true after claimRefund() called (USDC transfer)
     address invitedBy;      // who FIRST invited this participant (address(0) for seeds)
     uint16 invitesSent;     // outgoing invites consumed — max = invitesReceived * maxInvites
 }

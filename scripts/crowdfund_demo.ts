@@ -82,7 +82,6 @@ async function main() {
     deployer.address,
     deployer.address,       // securityCouncil (demo)
     openTimestamp,
-    false  // single-tx settlement
   );
   await crowdfund.waitForDeployment();
 
@@ -215,7 +214,6 @@ async function main() {
     deployer.address,
     deployer.address,       // securityCouncil (demo)
     openTimestamp2,
-    false  // single-tx settlement
   );
   await cf2.waitForDeployment();
 
@@ -253,7 +251,7 @@ async function main() {
   log("FINALIZE", `Phase: ${PhaseNames[phase]}`);
   log("FINALIZE", `Sale size: ${fmtUsdc(await cf2.saleSize())}`);
 
-  const totalAlloc = await cf2.totalAllocated();
+  const totalAlloc = await cf2.totalAllocatedArm();
   const totalAllocUsdc = await cf2.totalAllocatedUsdc();
   log("FINALIZE", `Total allocated: ${fmtArm(totalAlloc)} (${fmtUsdc(totalAllocUsdc)} USDC value)`);
 
@@ -266,7 +264,7 @@ async function main() {
   }
 
   // Claim one seed
-  const [allocEx, refundEx] = await cf2.getAllocation(bigSeeds[0].address);
+  const [allocEx, refundEx] = await cf2.computeAllocation(bigSeeds[0].address);
   log("CLAIM", `Seed claims ARM: ${fmtArm(allocEx)} (USDC refund available via claimRefund: ${fmtUsdc(refundEx)})`);
   await cf2.connect(bigSeeds[0]).claim(ethers.ZeroAddress);
   log("CLAIM", `ARM claimed successfully \u2713`);

@@ -24,7 +24,7 @@ contract CrowdfundHandler is Test {
 
     // Ghost variables for invariant checking
     uint256 public ghost_totalUsdcIn;       // USDC deposited via commit()
-    uint256 public ghost_totalArmClaimed;   // ARM withdrawn via claim()
+    uint256 public ghost_totalArmTransferred;   // ARM withdrawn via claim()
     uint256 public ghost_totalUsdcRefunded; // USDC returned via claimRefund() (normal pro-rata path)
     uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode full refund)
     uint256 public ghost_proceedsPushed;    // USDC pushed to treasury at finalization
@@ -203,7 +203,7 @@ contract CrowdfundHandler is Test {
         vm.prank(claimer);
         try crowdfund.claim(address(0)) {
             uint256 armGained = armToken.balanceOf(claimer) - armBefore;
-            ghost_totalArmClaimed += armGained;
+            ghost_totalArmTransferred += armGained;
             ghost_claimCount++;
         } catch {}
     }
@@ -287,8 +287,7 @@ contract CrowdfundInvariantTest is Test {
             address(0xBEEF), // treasury
             admin,
             admin,            // securityCouncil
-            block.timestamp,
-            false             // single-tx settlement
+            block.timestamp
         );
 
         // Fund ARM to crowdfund and verify pre-load
@@ -372,7 +371,7 @@ contract CrowdfundInvariantTest is Test {
     function invariant_armConservation() public view {
         uint256 contractArm = armToken.balanceOf(address(crowdfund));
         uint256 expectedArm = ARM_FUNDING
-            - handler.ghost_totalArmClaimed()
+            - handler.ghost_totalArmTransferred()
             - handler.ghost_unallocArmWithdrawn();
         assertEq(contractArm, expectedArm, "ARM conservation violated");
     }
@@ -389,7 +388,7 @@ contract CrowdfundInvariantTest is Test {
             uint256 committed = crowdfund.getCommitment(committer, hop);
             if (committed == 0) continue;
 
-            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            (, uint256 refundUsdc) = crowdfund.computeAllocationAtHop(committer, hop);
             // allocUsdc = committed - refund, which must be <= committed
             uint256 allocUsdc = committed - refundUsdc;
             assertLe(allocUsdc, committed, "Allocation exceeds commitment");
@@ -421,7 +420,7 @@ contract CrowdfundInvariantTest is Test {
             uint256 committed = crowdfund.getCommitment(committer, hop);
             uint256 effectiveCap = crowdfund.getEffectiveCap(committer, hop);
 
-            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            (, uint256 refundUsdc) = crowdfund.computeAllocationAtHop(committer, hop);
             uint256 allocUsdc = committed - refundUsdc;
 
             assertLe(allocUsdc, effectiveCap, "Hop cap violated: allocUsdc > effectiveCap");
@@ -449,7 +448,7 @@ contract CrowdfundInvariantTest is Test {
             if (committed == 0) continue;
 
             // Both allocArm and refundUsdc are returned by the contract
-            (uint256 allocArm, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            (uint256 allocArm, uint256 refundUsdc) = crowdfund.computeAllocationAtHop(committer, hop);
 
             // Derive allocUsdc from allocArm via ARM_PRICE ($1 = 1e6 USDC decimals)
             // allocArm = allocUsdc * 1e18 / 1e6 = allocUsdc * 1e12 (exact, no truncation)
@@ -469,8 +468,8 @@ contract CrowdfundInvariantTest is Test {
         if (handler.ghost_refundMode()) return;
 
         uint256 contractArm = armToken.balanceOf(address(crowdfund));
-        uint256 totalAllocated = crowdfund.totalAllocated();
-        uint256 claimed = handler.ghost_totalArmClaimed();
+        uint256 totalAllocated = crowdfund.totalAllocatedArm();
+        uint256 claimed = handler.ghost_totalArmTransferred();
 
         assertGe(contractArm, totalAllocated - claimed, "ARM solvency: balance < outstanding claims");
     }

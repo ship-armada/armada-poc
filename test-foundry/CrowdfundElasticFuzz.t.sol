@@ -41,7 +41,7 @@ contract CrowdfundElasticFuzzTest is Test {
     /// @notice Deploy a fresh crowdfund with a given number of seeds
     function _deployCrowdfund(uint256 numSeeds) internal returns (ArmadaCrowdfund cf, address[] memory seeds) {
         cf = new ArmadaCrowdfund(
-            address(usdc), address(armToken), treasury, admin, admin, block.timestamp, false
+            address(usdc), address(armToken), treasury, admin, admin, block.timestamp
         );
         armToken.transfer(address(cf), ARM_FUNDING);
         cf.loadArm();

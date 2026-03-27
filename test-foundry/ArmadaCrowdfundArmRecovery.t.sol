@@ -31,8 +31,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             treasury,
             admin,
             admin,  // securityCouncil
-            block.timestamp,
-            false   // single-tx settlement
+            block.timestamp
         );
 
         // Whitelist admin and crowdfund so token transfers work
@@ -104,8 +103,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             treasury,
             admin,
             admin,  // securityCouncil
-            block.timestamp,
-            false   // single-tx settlement
+            block.timestamp
         );
 
         vm.expectRevert("ArmadaCrowdfund: not finalized or canceled");
@@ -143,8 +141,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
             treasury,
             admin,
             admin,  // securityCouncil
-            block.timestamp,
-            false   // single-tx settlement
+            block.timestamp
         );
         armToken.addToWhitelist(address(fuzzCrowdfund));
         armToken.transfer(address(fuzzCrowdfund), funding);

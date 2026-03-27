@@ -80,14 +80,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     // Finalization results
     uint256 public saleSize;
-    uint256 public totalAllocated;       // ARM (18 dec) — hop-level upper bound
+    uint256 public totalAllocatedArm;    // ARM (18 dec) — aggregate from hop-level computation
     uint256 public totalAllocatedUsdc;   // USDC (6 dec) — hop-level upper bound
     uint256[3] public finalCeilings;     // budget-capped hop ceilings (stored at finalization)
     uint256[3] public finalDemands;      // hop demands (stored at finalization)
-    uint256 public treasuryLeftoverUsdc; // USDC (6 dec) — unallocated reserve that goes to treasury
-
     // Lazy evaluation accumulators (tracked during claims)
-    uint256 public totalArmClaimed;      // exact sum of allocArm from claims
+    uint256 public totalArmTransferred;  // exact sum of ARM transferred via claim()
 
     // Claim deadline — set at finalization, after which unclaimed ARM is sweepable
     uint256 public claimDeadline;
@@ -110,15 +108,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // EIP-712 invite nonce tracking — used/revoked nonces per inviter
     mapping(address => mapping(uint256 => bool)) public usedNonces;
 
-    // Per-address aggregate allocation (set at finalization by _computePerAddressAllocations)
-    mapping(address => uint256) public addressArmAllocation;   // total ARM across all hops
-    mapping(address => uint256) public addressRefundAmount;     // total USDC refund across all hops
-
-    // Settlement mode and progress (phased fallback for gas-constrained finalization)
-    bool public immutable phasedSettlement;
-    bool public settlementComplete;
-    uint256 public settlementIndex;
-    mapping(address => bool) private _settlementEmitted;  // dedup for phased event emission
+    // Per-address claim tracking (lazy settlement — allocation computed at claim time)
+    mapping(address => bool) public claimed;
 
     // ============ Events ============
 
@@ -127,14 +118,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     event Committed(address indexed participant, uint8 hop, uint256 amount);
     event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode);
     event Cancelled();
-    event ArmClaimed(address indexed participant, uint256 armAmount, address delegate);
     event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded();
     event InviteNonceRevoked(address indexed inviter, uint256 nonce);
-    event Allocated(address indexed participant, uint256 totalArmAmount, uint256 totalRefundAmount);
-    event AllocatedHop(address indexed participant, uint8 indexed hop, uint256 armAmount);
-    event SettlementComplete();
+    event Allocated(address indexed participant, uint256 armTransferred, uint256 refundUsdc, address delegate);
+    event AllocatedHop(address indexed participant, uint8 indexed hop, uint256 acceptedUsdc);
 
     // ============ Modifiers ============
 
@@ -146,16 +135,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // ============ Constructor ============
 
     /// @param _openTimestamp When the 3-week active window begins (must be >= block.timestamp)
-    /// @param _phasedSettlement If true, finalize() stores allocations but defers event emission
-    ///        to emitSettlement() batches. If false (preferred), finalize() emits all events atomically.
     constructor(
         address _usdc,
         address _armToken,
         address _treasury,
         address _launchTeam,
         address _securityCouncil,
-        uint256 _openTimestamp,
-        bool _phasedSettlement
+        uint256 _openTimestamp
     ) EIP712("ArmadaCrowdfund", "1") {
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
@@ -166,7 +152,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         treasury = _treasury;
         launchTeam = _launchTeam;
         securityCouncil = _securityCouncil;
-        phasedSettlement = _phasedSettlement;
 
         windowStart = _openTimestamp;
         windowEnd = _openTimestamp + WINDOW_DURATION;
@@ -506,88 +491,101 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             return;
         }
 
-        // Step 3: Eager per-address allocation — compute and store every participant's
-        // ARM allocation and USDC refund. The exact per-address ARM sum becomes
-        // totalAllocated (spec: allocated_arm = sum(allocations.values())).
-        (uint256 exactTotalArm, uint256 exactTotalUsdc) = _computePerAddressAllocations();
-
-        totalAllocatedUsdc = exactTotalUsdc;
-        totalAllocated = exactTotalArm;
-        treasuryLeftoverUsdc = saleSize - exactTotalUsdc;
+        // Step 3: Store aggregate hop-level results. Per-participant allocations
+        // are computed lazily at claim() time (user-borne gas).
+        totalAllocatedUsdc = totalAllocUsdc_;
+        totalAllocatedArm = (totalAllocUsdc_ * 1e18) / ARM_PRICE;
         claimDeadline = block.timestamp + CLAIM_DEADLINE_DURATION;
         phase = Phase.Finalized;
         finalizedAt = block.timestamp;
 
-        // Push net proceeds to treasury atomically. Contract retains refund USDC.
-        // Pro-rata division rounds each participant's allocUsdc down, making the
-        // sum of individual refunds slightly larger than (totalCommitted - totalAllocUsdc).
-        // Retain a small rounding buffer (1 unit per participant node) so the contract
-        // never runs short on refund payouts. Residual dust (< $0.01) remains
-        // in the contract as the cost of rounding safety.
-        uint256 roundingBuffer = participantNodes.length;
-        uint256 proceedsPush = exactTotalUsdc > roundingBuffer
-            ? exactTotalUsdc - roundingBuffer
+        // Push net proceeds to treasury. Retain a rounding buffer so the contract
+        // never runs short on refund payouts: lazy per-participant floor divisions
+        // can sum to slightly less than totalAllocatedUsdc, making the aggregate
+        // refund slightly larger. Buffer = participantNodes.length * NUM_HOPS
+        // (max 1 USDC unit per participant per hop). Residual dust stays in contract.
+        uint256 roundingBuffer = participantNodes.length * NUM_HOPS;
+        uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
+            ? totalAllocUsdc_ - roundingBuffer
             : 0;
         usdc.safeTransfer(treasury, proceedsPush);
 
-        emit Finalized(saleSize, exactTotalArm, exactTotalUsdc, false);
+        emit Finalized(saleSize, totalAllocatedArm, totalAllocUsdc_, false);
     }
 
     // ============ Claims & Withdrawals ============
 
-    /// @notice Claim ARM allocation after finalization. ARM tokens only — USDC
-    ///         refunds are handled separately by claimRefund().
+    /// @notice Claim ARM allocation and USDC refund after finalization.
+    ///         Computes allocation on the fly from hop-level data.
+    ///         ARM portion transfers only if within the 3-year claim deadline;
+    ///         refund portion always transfers (no expiry).
     /// @param delegate Governance delegate preference. If non-zero and the claimant
     ///        receives ARM, voting power is atomically delegated via delegateOnBehalf.
     ///        Pass address(0) to skip delegation (claimant can delegate later manually).
-    /// @dev Reads pre-computed allocations stored by finalize() — no recomputation.
     function claim(address delegate) external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
-        require(block.timestamp <= claimDeadline, "ArmadaCrowdfund: claim deadline passed");
+        require(!claimed[msg.sender], "ArmadaCrowdfund: already claimed");
 
+        // Verify sender has a commitment
         bool hasCommitment = false;
         for (uint8 h = 0; h < NUM_HOPS; h++) {
-            Participant storage p = participants[msg.sender][h];
-            if (p.committed == 0) continue;
-            hasCommitment = true;
-            require(!p.armClaimed, "ArmadaCrowdfund: ARM already claimed");
-            p.armClaimed = true;
+            if (participants[msg.sender][h].committed > 0) {
+                hasCommitment = true;
+                break;
+            }
         }
         require(hasCommitment, "ArmadaCrowdfund: no commitment");
 
-        uint256 totalAllocArm = addressArmAllocation[msg.sender];
-        totalArmClaimed += totalAllocArm;
+        claimed[msg.sender] = true;
 
-        if (totalAllocArm > 0) {
-            armToken.safeTransfer(msg.sender, totalAllocArm);
+        // Compute allocation on the fly
+        uint256 totalAllocArm = 0;
+        uint256 totalRefundUsdc = 0;
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            Participant storage p = participants[msg.sender][h];
+            if (p.committed == 0) continue;
+
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
+            (uint256 allocArm, uint256 allocUsdc, uint256 hopRefund) = _computeAllocation(p.committed, h, effectiveCap);
+            totalAllocArm += allocArm;
+            totalRefundUsdc += hopRefund;
+
+            emit AllocatedHop(msg.sender, h, allocUsdc);
+        }
+
+        // ARM: only transfer if within claim deadline
+        uint256 armTransferred = 0;
+        if (block.timestamp <= claimDeadline && totalAllocArm > 0) {
+            armTransferred = totalAllocArm;
+            totalArmTransferred += armTransferred;
+            armToken.safeTransfer(msg.sender, armTransferred);
             if (delegate != address(0)) {
                 IArmadaTokenCrowdfund(address(armToken)).delegateOnBehalf(msg.sender, delegate);
             }
         }
 
-        emit ArmClaimed(msg.sender, totalAllocArm, delegate);
+        // Refund: always transfer (no expiry)
+        if (totalRefundUsdc > 0) {
+            usdc.safeTransfer(msg.sender, totalRefundUsdc);
+        }
+
+        emit Allocated(msg.sender, armTransferred, totalRefundUsdc, delegate);
     }
 
-    /// @notice Claim USDC refund. Four eligibility paths (any one suffices):
-    ///         1. Normal post-finalization — pro-rata refund (finalized, not refundMode)
-    ///         2. RefundMode — full deposit refund (finalized + refundMode)
-    ///         3. Phase.Canceled — full deposit refund (security council cancel)
-    ///         4. Deadline fallback — full deposit refund (window expired, not finalized, below MIN_SALE)
-    ///         ARM claims are handled separately by claim().
+    /// @notice Claim USDC refund — failure paths only. Three eligibility paths:
+    ///         1. RefundMode — full deposit refund (finalized + refundMode)
+    ///         2. Phase.Canceled — full deposit refund (security council cancel)
+    ///         3. Deadline fallback — full deposit refund (window expired, not finalized, below MIN_SALE)
+    ///         Success-path refunds (pro-rata excess) are handled by claim().
     function claimRefund() external nonReentrant {
-        // Determine which refund path applies
-        bool normalRefund = false;
         bool fullRefund = false;
 
-        if (phase == Phase.Finalized && !refundMode) {
-            // Path 1: Normal post-finalization pro-rata refund (no expiry — spec: "refunds do not expire")
-            normalRefund = true;
-        } else if (refundMode || phase == Phase.Canceled) {
-            // Paths 2 & 3: Full deposit refund (no deadline — participants must always recover USDC)
+        if (refundMode || phase == Phase.Canceled) {
+            // Paths 1 & 2: Full deposit refund (no deadline — participants must always recover USDC)
             fullRefund = true;
         } else if (block.timestamp > windowEnd && phase != Phase.Finalized) {
-            // Path 4: Deadline fallback — window expired without finalization.
+            // Path 3: Deadline fallback — window expired without finalization.
             // Compute capped demand once; subsequent calls reuse the cached value.
             if (cappedDemand == 0) {
                 _computeCappedDemand();
@@ -597,27 +595,25 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             }
         }
 
-        require(normalRefund || fullRefund, "ArmadaCrowdfund: refund not available");
+        require(fullRefund, "ArmadaCrowdfund: refund not available");
+        require(!claimed[msg.sender], "ArmadaCrowdfund: already claimed");
 
+        // Verify sender has a commitment
         bool hasCommitment = false;
         for (uint8 h = 0; h < NUM_HOPS; h++) {
-            Participant storage p = participants[msg.sender][h];
-            if (p.committed == 0) continue;
-            hasCommitment = true;
-            require(!p.refundClaimed, "ArmadaCrowdfund: already refunded");
-            p.refundClaimed = true;
+            if (participants[msg.sender][h].committed > 0) {
+                hasCommitment = true;
+                break;
+            }
         }
         require(hasCommitment, "ArmadaCrowdfund: no commitment");
 
+        claimed[msg.sender] = true;
+
+        // Full refund: return entire committed amount across all hops
         uint256 totalRefundUsdc;
-        if (normalRefund) {
-            // Pro-rata refund: pre-computed by finalize() and stored per-address
-            totalRefundUsdc = addressRefundAmount[msg.sender];
-        } else {
-            // Full refund: return entire committed amount across all hops
-            for (uint8 h = 0; h < NUM_HOPS; h++) {
-                totalRefundUsdc += participants[msg.sender][h].committed;
-            }
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            totalRefundUsdc += participants[msg.sender][h].committed;
         }
 
         if (totalRefundUsdc > 0) {
@@ -629,8 +625,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @notice Sweep unallocated or unclaimed ARM to treasury. Permissionless. Callable
     ///         multiple times — no idempotency flag. Three sweep windows:
-    ///         1. Post-finalization: sweeps unsold ARM immediately (MAX_SALE - totalAllocated)
-    ///         2. Post-claim-deadline: sweeps all remaining ARM (unclaimed participant ARM)
+    ///         1. Post-finalization: sweeps unsold ARM immediately (MAX_SALE arm - totalAllocatedArm)
+    ///         2. Post-claim-deadline: sweeps all remaining ARM (unclaimed participant ARM forfeited)
     ///         3. Post-cancel/refundMode: sweeps all ARM (nothing owed)
     function withdrawUnallocatedArm() external nonReentrant {
         require(
@@ -643,9 +639,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         if (phase == Phase.Canceled || refundMode) {
             armStillOwed = 0;
         } else if (block.timestamp > claimDeadline) {
+            // Post-3yr: all unclaimed ARM is forfeited
             armStillOwed = 0;
         } else {
-            armStillOwed = totalAllocated - totalArmClaimed;
+            // Pre-3yr: owe the difference between allocated and already transferred
+            armStillOwed = totalAllocatedArm - totalArmTransferred;
         }
         uint256 sweepable = armBalance - armStillOwed;
         require(sweepable > 0, "ArmadaCrowdfund: nothing to sweep");
@@ -703,76 +701,37 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         return participants[invitee][hop].invitedBy;
     }
 
-    /// @notice Get aggregate allocation across all hops (only after finalization).
-    ///         The `claimed` return reflects ARM claim status (armClaimed); refund
-    ///         claim status is tracked separately via refundClaimed.
-    /// @dev Computes allocation on the fly from stored hop-level data if ARM not yet claimed
-    function getAllocation(address addr) external view returns (
-        uint256 allocation,
-        uint256 _refund,
-        bool claimed
+    /// @notice Compute aggregate allocation across all hops (only after finalization).
+    ///         Purely derived from hop-level data — no stored per-address state.
+    function computeAllocation(address addr) public view returns (
+        uint256 armAmount,
+        uint256 refundUsdc
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
-
-        uint256 totalAllocArm = 0;
-        uint256 totalRefundUsdc = 0;
-        bool anyClaimed = false;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             Participant storage p = participants[addr][h];
             if (p.committed == 0) continue;
 
-            if (p.armClaimed) {
-                anyClaimed = true;
-                totalAllocArm += p.allocation;
-            } else {
-                uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
-                (uint256 allocArm, , ) = _computeAllocation(p.committed, h, effectiveCap);
-                totalAllocArm += allocArm;
-            }
-
-            if (p.refundClaimed) {
-                totalRefundUsdc += p.refund;
-            } else {
-                uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
-                (, , uint256 refundUsdc) = _computeAllocation(p.committed, h, effectiveCap);
-                totalRefundUsdc += refundUsdc;
-            }
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
+            (uint256 allocArm, , uint256 hopRefund) = _computeAllocation(p.committed, h, effectiveCap);
+            armAmount += allocArm;
+            refundUsdc += hopRefund;
         }
-
-        return (totalAllocArm, totalRefundUsdc, anyClaimed);
     }
 
-    /// @notice Get allocation at a specific hop (only after finalization).
-    ///         The `claimed` return reflects ARM claim status (armClaimed).
-    function getAllocationAtHop(address addr, uint8 hop) external view returns (
-        uint256 allocation,
-        uint256 _refund,
-        bool claimed
+    /// @notice Compute allocation at a specific hop (only after finalization).
+    function computeAllocationAtHop(address addr, uint8 hop) external view returns (
+        uint256 armAmount,
+        uint256 refundUsdc
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         Participant storage p = participants[addr][hop];
 
-        uint256 allocArm;
-        uint256 refundUsdc;
-
-        if (p.armClaimed) {
-            allocArm = p.allocation;
-        } else {
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
-            (allocArm, , ) = _computeAllocation(p.committed, hop, effectiveCap);
-        }
-
-        if (p.refundClaimed) {
-            refundUsdc = p.refund;
-        } else {
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
-            (, , refundUsdc) = _computeAllocation(p.committed, hop, effectiveCap);
-        }
-
-        return (allocArm, refundUsdc, p.armClaimed);
+        uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
+        (armAmount, , refundUsdc) = _computeAllocation(p.committed, hop, effectiveCap);
     }
 
     /// @notice Get effective cap for an address at a hop (invitesReceived * per-slot cap)
@@ -909,85 +868,4 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         cappedDemand = globalCapped;
     }
 
-    /// @dev Iterate all participant nodes, compute per-(address,hop) allocations and refunds,
-    ///      store them in Participant.allocation / Participant.refund, and accumulate per-address
-    ///      aggregate totals in addressArmAllocation / addressRefundAmount.
-    ///      In single-tx mode, also emits Allocated and AllocatedHop events.
-    ///      Returns the exact total ARM and USDC allocated across all participants.
-    function _computePerAddressAllocations() internal returns (uint256 exactTotalArm, uint256 exactTotalUsdc) {
-        uint256 len = participantNodes.length;
-
-        // Pass 1: Compute and store per-node allocations, accumulate per-address aggregates
-        for (uint256 i = 0; i < len; i++) {
-            ParticipantNode storage node = participantNodes[i];
-            Participant storage p = participants[node.addr][node.hop];
-            if (p.committed == 0) continue;
-
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[node.hop].capUsdc;
-            (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(p.committed, node.hop, effectiveCap);
-
-            p.allocation = allocArm;
-            p.refund = refundUsdc;
-            addressArmAllocation[node.addr] += allocArm;
-            addressRefundAmount[node.addr] += refundUsdc;
-            exactTotalArm += allocArm;
-            exactTotalUsdc += allocUsdc;
-
-            // Single-tx mode: emit per-hop event inline
-            if (!phasedSettlement && allocArm > 0) {
-                emit AllocatedHop(node.addr, node.hop, allocArm);
-            }
-        }
-
-        // Single-tx mode: emit per-address aggregate events.
-        // Re-iterate to emit Allocated events using a dedup flag.
-        if (!phasedSettlement) {
-            for (uint256 i = 0; i < len; i++) {
-                address addr = participantNodes[i].addr;
-                if (_settlementEmitted[addr]) continue;
-                if (addressArmAllocation[addr] == 0 && addressRefundAmount[addr] == 0) continue;
-                _settlementEmitted[addr] = true;
-                emit Allocated(addr, addressArmAllocation[addr], addressRefundAmount[addr]);
-            }
-        }
-    }
-
-    /// @notice Emit Allocated and AllocatedHop events in batches. Phased settlement only.
-    ///         Iterates participantNodes[startIndex..startIndex+count), emitting events for
-    ///         each unique address encountered. Batches must be sequential (no gaps or re-emission).
-    /// @param startIndex Must equal the current settlementIndex (enforces sequential batches)
-    /// @param count Number of participantNodes to process in this batch
-    function emitSettlement(uint256 startIndex, uint256 count) external {
-        require(phasedSettlement, "ArmadaCrowdfund: single-tx mode");
-        require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(!refundMode, "ArmadaCrowdfund: refund mode");
-        require(!settlementComplete, "ArmadaCrowdfund: settlement already complete");
-        require(startIndex == settlementIndex, "ArmadaCrowdfund: non-sequential batch");
-
-        uint256 end = startIndex + count;
-        uint256 total = participantNodes.length;
-        if (end > total) end = total;
-
-        for (uint256 i = startIndex; i < end; i++) {
-            address addr = participantNodes[i].addr;
-            if (_settlementEmitted[addr]) continue;
-            _settlementEmitted[addr] = true;
-
-            // Emit per-hop allocation events
-            for (uint8 h = 0; h < NUM_HOPS; h++) {
-                uint256 allocArm = participants[addr][h].allocation;
-                if (allocArm > 0) {
-                    emit AllocatedHop(addr, h, allocArm);
-                }
-            }
-            // Emit aggregate per-address event
-            emit Allocated(addr, addressArmAllocation[addr], addressRefundAmount[addr]);
-        }
-
-        settlementIndex = end;
-        if (end >= total) {
-            settlementComplete = true;
-            emit SettlementComplete();
-        }
-    }
 }

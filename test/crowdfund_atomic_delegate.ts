@@ -33,8 +33,7 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
       treasury.address,
       deployer.address,         // launchTeam
       securityCouncil.address,
-      openTimestamp,
-      true                      // phasedSettlement
+      openTimestamp
     );
     await crowdfund.waitForDeployment();
 
@@ -103,7 +102,7 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
     const { seeds } = await setupAndFinalize(crowdfund);
 
     const claimant = seeds[0];
-    const allocArm = await crowdfund.addressArmAllocation(claimant.address);
+    const [allocArm] = await crowdfund.computeAllocation(claimant.address);
     expect(allocArm).to.be.gt(0n);
 
     // Before claim: no delegation

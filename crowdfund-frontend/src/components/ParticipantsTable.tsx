@@ -116,7 +116,7 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {row.participant.armClaimed ? (
+                          {row.participant.claimed ? (
                             <Badge variant="outline" className="border-success text-success text-xs">Yes</Badge>
                           ) : (
                             <span className="text-muted-foreground text-xs">No</span>
@@ -132,7 +132,7 @@ export function ParticipantsTable({ state, crowdfund }: ParticipantsTableProps) 
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {row.participant.refundClaimed ? (
+                          {row.participant.claimed ? (
                             <Badge variant="outline" className="border-success text-success text-xs">Yes</Badge>
                           ) : (
                             <span className="text-muted-foreground text-xs">No</span>

@@ -57,8 +57,7 @@ describe("Crowdfund Multi-Node", function () {
       treasury.address,
       deployer.address,
       deployer.address,       // securityCouncil
-      openTimestamp,           // openTimestamp
-      false                    // single-tx settlement
+      openTimestamp            // openTimestamp
     );
     await crowdfund.waitForDeployment();
     const cfAddr = await crowdfund.getAddress();
@@ -552,7 +551,7 @@ describe("Crowdfund Multi-Node", function () {
     it("should aggregate ARM from multiple hops in a single claim", async function () {
       await setupAndFinalize();
 
-      const [allocBefore] = await crowdfund.getAllocation(seed1.address);
+      const [allocBefore] = await crowdfund.computeAllocation(seed1.address);
       expect(allocBefore).to.be.gt(0);
 
       const armBefore = await armToken.balanceOf(seed1.address);
@@ -569,7 +568,7 @@ describe("Crowdfund Multi-Node", function () {
 
       await expect(
         crowdfund.connect(seed1).claim(ethers.ZeroAddress)
-      ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
+      ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
   });
 

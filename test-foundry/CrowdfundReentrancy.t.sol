@@ -184,7 +184,7 @@ contract CrowdfundReentrancyTest is Test {
         MaliciousERC20 maliciousArm = new MaliciousERC20("Bad ARM", "BARM", 18);
 
         ArmadaCrowdfund cf = new ArmadaCrowdfund(
-            address(usdc), address(maliciousArm), treasury, admin, admin, block.timestamp, false
+            address(usdc), address(maliciousArm), treasury, admin, admin, block.timestamp
         );
         maliciousArm.mint(address(cf), ARM_FUNDING);
         cf.loadArm();
@@ -238,12 +238,12 @@ contract CrowdfundReentrancyTest is Test {
 
         // Verify only one claim went through (no double ARM)
         uint256 armReceived = maliciousArm.balanceOf(seeds[0]) - armBefore;
-        uint256 expectedArm = cf.addressArmAllocation(seeds[0]);
+        (uint256 expectedArm, ) = cf.computeAllocation(seeds[0]);
         assertEq(armReceived, expectedArm, "Must receive exactly one allocation, not double");
 
         // Second claim must revert (already claimed)
         vm.prank(seeds[0]);
-        vm.expectRevert("ArmadaCrowdfund: ARM already claimed");
+        vm.expectRevert("ArmadaCrowdfund: already claimed");
         cf.claim(address(0));
     }
 
@@ -256,7 +256,7 @@ contract CrowdfundReentrancyTest is Test {
             new MaliciousERC20Propagating("Bad ARM", "BARM", 18);
 
         ArmadaCrowdfund cf = new ArmadaCrowdfund(
-            address(usdc), address(maliciousArm), treasury, admin, admin, block.timestamp, false
+            address(usdc), address(maliciousArm), treasury, admin, admin, block.timestamp
         );
         maliciousArm.mint(address(cf), ARM_FUNDING);
         cf.loadArm();
@@ -320,8 +320,7 @@ contract CrowdfundReentrancyTest is Test {
             treasury,
             admin,
             admin,
-            block.timestamp,
-            false
+            block.timestamp
         );
 
         armToken.transfer(address(cf), ARM_FUNDING);
@@ -369,9 +368,9 @@ contract CrowdfundReentrancyTest is Test {
         uint256 refundReceived = maliciousUsdc.balanceOf(seeds[0]) - balBefore;
         assertEq(refundReceived, HOP0_CAP, "Must receive exactly committed amount, not double");
 
-        // Second claimRefund must revert (already refunded)
+        // Second claimRefund must revert (already claimed)
         vm.prank(seeds[0]);
-        vm.expectRevert("ArmadaCrowdfund: already refunded");
+        vm.expectRevert("ArmadaCrowdfund: already claimed");
         cf.claimRefund();
     }
 
@@ -389,8 +388,7 @@ contract CrowdfundReentrancyTest is Test {
             treasury,
             admin,
             admin,
-            block.timestamp,
-            false
+            block.timestamp
         );
 
         armToken.transfer(address(cf), ARM_FUNDING);

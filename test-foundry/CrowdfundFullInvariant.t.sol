@@ -217,8 +217,7 @@ contract CrowdfundFullInvariantTest is Test {
             address(0xBEEF), // treasury
             admin,
             admin,            // securityCouncil
-            block.timestamp,
-            false             // single-tx settlement
+            block.timestamp
         );
 
         // Fund ARM to crowdfund and verify pre-load
@@ -327,7 +326,7 @@ contract CrowdfundFullInvariantTest is Test {
             uint256 committed = crowdfund.getCommitment(committer, hop);
             uint256 effectiveCap = crowdfund.getEffectiveCap(committer, hop);
 
-            (, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            (, uint256 refundUsdc) = crowdfund.computeAllocationAtHop(committer, hop);
             uint256 allocUsdc = committed - refundUsdc;
 
             assertLe(allocUsdc, effectiveCap, "INV-C4: allocUsdc > effectiveCap");
@@ -354,7 +353,7 @@ contract CrowdfundFullInvariantTest is Test {
             if (committed == 0) continue;
 
             // Both allocArm and refundUsdc are returned by the contract
-            (uint256 allocArm, uint256 refundUsdc, ) = crowdfund.getAllocationAtHop(committer, hop);
+            (uint256 allocArm, uint256 refundUsdc) = crowdfund.computeAllocationAtHop(committer, hop);
 
             // Derive allocUsdc from allocArm via ARM_PRICE ($1 = 1e6 USDC decimals)
             // allocArm = allocUsdc * 1e18 / 1e6 = allocUsdc * 1e12 (exact, no truncation)

@@ -642,6 +642,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             );
         }
 
+        // Defense-in-depth: verify steward calldata would not classify as Extended.
+        // Currently safe because stewardSpend is not an extended selector, but this
+        // guard protects against future selector additions that could allow sensitive
+        // operations to bypass Extended classification via the pass-by-default path.
+        require(
+            _classifyProposal(ProposalType.Standard, targets, calldatas) != ProposalType.Extended,
+            "ArmadaGovernor: steward calldata classified as extended"
+        );
+
         uint256 proposalId = ++proposalCount;
         _initProposal(proposalId, ProposalType.Steward, description);
 
@@ -979,12 +988,23 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         emit ProposalExecuted(proposalId);
     }
 
-    /// @notice Cancel a proposal (proposer only, while Pending)
+    /// @notice Cancel a proposal. Standard/Extended: proposer only, while Pending.
+    /// Steward proposals: proposer only, while Pending or Active (steward proposals
+    /// skip Pending due to zero voting delay, so Active is the earliest cancellable state).
     function cancel(uint256 proposalId) external {
         Proposal storage p = _proposals[proposalId];
         require(p.id != 0, "ArmadaGovernor: unknown proposal");
         require(msg.sender == p.proposer, "ArmadaGovernor: not proposer");
-        require(state(proposalId) == ProposalState.Pending, "ArmadaGovernor: not pending");
+
+        ProposalState currentState = state(proposalId);
+        if (p.proposalType == ProposalType.Steward) {
+            require(
+                currentState == ProposalState.Pending || currentState == ProposalState.Active,
+                "ArmadaGovernor: not pending or active"
+            );
+        } else {
+            require(currentState == ProposalState.Pending, "ArmadaGovernor: not pending");
+        }
 
         p.canceled = true;
 

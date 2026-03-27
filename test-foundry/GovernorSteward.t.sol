@@ -345,6 +345,65 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // Steward proposal cancellation (#105)
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_cancel_stewardProposalDuringActive() public {
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // Steward proposals go straight to Active (votingDelay == 0)
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Active));
+
+        // Steward should be able to cancel their own Active proposal
+        vm.prank(stewardPerson);
+        governor.cancel(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Canceled));
+    }
+
+    function test_cancel_stewardProposalRejectsNonProposer() public {
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // Non-proposer should not be able to cancel
+        vm.prank(alice);
+        vm.expectRevert("ArmadaGovernor: not proposer");
+        governor.cancel(proposalId);
+    }
+
+    function test_cancel_standardProposalStillRequiresPending() public {
+        // Standard proposals should still only be cancellable while Pending
+        vm.prank(alice);
+        armToken.delegate(alice);
+        vm.roll(block.number + 1);
+
+        address[] memory targets = new address[](1);
+        targets[0] = address(treasury);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature(
+            "distribute(address,address,uint256)",
+            address(usdc), bob, 100
+        );
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(
+            ProposalType.Standard, targets, values, calldatas, "standard proposal"
+        );
+
+        // Should be Pending (48h delay)
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Pending));
+
+        // Advance past voting delay into Active
+        vm.warp(block.timestamp + TWO_DAYS + 1);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Active));
+
+        // Cancel should fail — standard proposals can't cancel during Active
+        vm.prank(alice);
+        vm.expectRevert("ArmadaGovernor: not pending");
+        governor.cancel(proposalId);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // Wind-down blocks steward proposals
     // ══════════════════════════════════════════════════════════════════════
 
@@ -464,6 +523,29 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         vm.prank(stewardPerson);
         vm.expectRevert("ArmadaGovernor: length mismatch");
         governor.proposeStewardSpend(tokens, recipients, amounts, "mismatch");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Classification guard (#102)
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_proposeStewardSpend_revertsIfCalldataClassifiesAsExtended() public {
+        // Register stewardSpend's selector as extended (simulates future expansion)
+        bytes4 stewardSpendSelector = bytes4(keccak256("stewardSpend(address,address,uint256)"));
+        vm.prank(address(timelock));
+        governor.addExtendedSelector(stewardSpendSelector);
+
+        // Steward proposal should now revert because its calldata would classify as Extended
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 1e6;
+
+        vm.prank(stewardPerson);
+        vm.expectRevert("ArmadaGovernor: steward calldata classified as extended");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "should fail");
     }
 
     // ══════════════════════════════════════════════════════════════════════

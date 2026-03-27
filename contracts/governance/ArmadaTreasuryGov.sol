@@ -200,6 +200,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ) external onlyOwner {
         require(!_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow already initialized");
         require(windowDuration >= 1 days, "ArmadaTreasuryGov: window too short");
+        require(limitBps > 0, "ArmadaTreasuryGov: zero bps");
         require(limitBps <= 10000, "ArmadaTreasuryGov: bps out of range");
         require(limitAbsolute >= floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
 
@@ -225,6 +226,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @notice Update the percentage-based outflow limit for a token.
     function setOutflowLimitBps(address token, uint256 newBps) external onlyOwner {
         require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
+        require(newBps > 0, "ArmadaTreasuryGov: zero bps");
         require(newBps <= 10000, "ArmadaTreasuryGov: bps out of range");
         _outflowConfigs[token].limitBps = newBps;
         emit OutflowLimitBpsUpdated(token, newBps);

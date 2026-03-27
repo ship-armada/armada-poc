@@ -318,6 +318,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Revenue definition expansion (on RevenueCounter)
         extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
 
+        // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
+        extendedSelectors[bytes4(keccak256("setBaseArmadaTake(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("addTier(uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setTier(uint256,uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("removeTier(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setYieldFee(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)"))] = true;
 
         // Treasury outflow limit parameters
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;

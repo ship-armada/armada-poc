@@ -380,6 +380,82 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // ARMADA FEE MODULE SELECTOR CLASSIFICATION
+    // ═══════════════════════════════════════════════════════════════
+
+    function test_classify_setBaseArmadaTake_forcesExtended() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("setBaseArmadaTake(uint256)")),
+            uint256(500)
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    function test_classify_addTier_forcesExtended() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("addTier(uint256,uint256)")),
+            uint256(1_000_000e6),
+            uint256(300)
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    function test_classify_setTier_forcesExtended() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("setTier(uint256,uint256,uint256)")),
+            uint256(0),
+            uint256(500_000e6),
+            uint256(400)
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    function test_classify_removeTier_forcesExtended() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("removeTier(uint256)")),
+            uint256(0)
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    function test_classify_setYieldFee_forcesExtended() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("setYieldFee(uint256)")),
+            uint256(1000)
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    function test_classify_setIntegratorTerms_forcesExtended() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)")),
+            address(0x1234),
+            uint256(200),
+            uint256(100_000e6),
+            true
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // SECURITY COUNCIL STATE
     // ═══════════════════════════════════════════════════════════════
 

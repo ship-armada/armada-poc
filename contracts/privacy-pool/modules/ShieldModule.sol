@@ -158,7 +158,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                 // Record fee in fee module
                 IArmadaFeeModule(feeModule).recordShieldFee(integrator, amount, armadaTake, integratorFee);
             } else if (shieldFee > 0) {
-                // Legacy flat fee path (backward compat when feeModule == address(0))
+                // Flat fee fallback path (used when feeModule == address(0))
                 (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
                 adjustedPreimage.value = base;
                 fee = feeAmount;
@@ -291,7 +291,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             // Record fee in fee module
             IArmadaFeeModule(feeModule).recordShieldFee(integrator, amount, armadaTake, integratorFee);
         } else {
-            // Legacy flat fee path (backward compat when feeModule == address(0))
+            // Flat fee fallback path (used when feeModule == address(0))
             (uint120 base, uint120 feeAmount) = _getFee(_note.value, true, shieldFee);
             adjustedNote = CommitmentPreimage({
                 npk: _note.npk,

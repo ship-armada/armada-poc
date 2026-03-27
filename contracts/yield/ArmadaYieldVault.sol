@@ -327,7 +327,7 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
                 // Record yield fee in centralized fee module for RevenueCounter
                 IArmadaFeeModule(feeModule).recordYieldFee(yieldFee);
             } else {
-                // Legacy path: record fee in treasury for tracking
+                // Fallback path: record fee in treasury for tracking
                 IArmadaTreasury(treasury).recordFee(address(underlying), owner_, yieldFee);
             }
         }

@@ -360,7 +360,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
     /**
      * @notice Set the fee module address (ArmadaFeeModule proxy)
-     * @param _feeModule Address of the fee module (or address(0) to use legacy fees)
+     * @param _feeModule Address of the fee module (or address(0) to use flat fee fallback)
      */
     function setFeeModule(address _feeModule) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");

@@ -172,7 +172,7 @@ abstract contract PrivacyPoolStorage {
     address public shieldPauseContract;
 
     /// @notice Fee module address (ArmadaFeeModule proxy) for centralized fee calculation.
-    /// @dev When address(0), ShieldModule falls back to legacy flat shieldFee logic.
+    /// @dev When address(0), ShieldModule falls back to the flat shieldFee calculation.
     address public feeModule;
 
     // ══════════════════════════════════════════════════════════════════════════

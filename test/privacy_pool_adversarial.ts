@@ -296,6 +296,24 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPool: Already initialized");
     });
 
+    it("initialize rejects zero treasury address", async function () {
+      const freshPool = await (await ethers.getContractFactory("PrivacyPool")).deploy();
+      await expect(
+        freshPool.initialize(
+          await shieldModule.getAddress(),
+          await transactModule.getAddress(),
+          await merkleModule.getAddress(),
+          await verifierModule.getAddress(),
+          await hubTokenMessenger.getAddress(),
+          await hubMessageTransmitter.getAddress(),
+          await hubUsdc.getAddress(),
+          DOMAINS.hub,
+          deployerAddress,
+          ethers.ZeroAddress
+        )
+      ).to.be.revertedWith("PrivacyPool: zero treasury");
+    });
+
     it("double-initialize reverts on PrivacyPoolClient", async function () {
       await expect(
         privacyPoolClient.initialize(

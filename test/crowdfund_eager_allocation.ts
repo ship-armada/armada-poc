@@ -39,8 +39,12 @@ describe("Eager Allocation at Finalization", function () {
       phasedSettlement
     );
     await crowdfund.waitForDeployment();
-    await armToken.addToWhitelist(await crowdfund.getAddress());
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    if (!(await armToken.authorizedDelegatorsInitialized())) {
+      await armToken.initAuthorizedDelegators([cfAddr]);
+    }
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;

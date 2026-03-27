@@ -27,7 +27,7 @@ const MAX_SALE_ARM = ARM(1_800_000);
 // EIP-712 types for invite signatures
 const INVITE_TYPES = {
   Invite: [
-    { name: "invitee", type: "address" },
+    { name: "inviter", type: "address" },
     { name: "fromHop", type: "uint8" },
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
@@ -81,8 +81,10 @@ describe("Crowdfund Full Lifecycle", function () {
       phasedSettlement
     );
     await crowdfund.waitForDeployment();
-    await armToken.addToWhitelist(await crowdfund.getAddress());
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;
@@ -99,14 +101,13 @@ describe("Crowdfund Full Lifecycle", function () {
 
   async function signInvite(
     signer: HardhatEthersSigner,
-    invitee: string,
     fromHop: number,
     nonce: number,
     deadline: number,
     domain: any
   ): Promise<string> {
     return signer.signTypedData(domain, INVITE_TYPES, {
-      invitee,
+      inviter: signer.address,
       fromHop,
       nonce,
       deadline,
@@ -225,7 +226,6 @@ describe("Crowdfund Full Lifecycle", function () {
       const linkDeadline = Number(await crowdfund.windowEnd());
       const signature = await signInvite(
         linkInviter,
-        linkInvitee.address,
         0,
         linkNonce,
         linkDeadline,
@@ -264,7 +264,6 @@ describe("Crowdfund Full Lifecycle", function () {
       await fundAndApprove(linkInvitee2, USDC(4_000), crowdfund);
       const revokedSig = await signInvite(
         linkInviter,
-        linkInvitee2.address,
         0,
         2,
         linkDeadline,

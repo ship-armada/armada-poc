@@ -105,12 +105,14 @@ describe("Crowdfund Integration", function () {
       false                   // single-tx settlement
     );
     await crowdfund.waitForDeployment();
-    await armToken.addToWhitelist(await crowdfund.getAddress());
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Fund ARM to crowdfund (enough for MAX_SALE) and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     const maxArm = CROWDFUND_ARM_FUNDING;
-    await armToken.transfer(await crowdfund.getAddress(), maxArm);
+    await armToken.transfer(cfAddr, maxArm);
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
 

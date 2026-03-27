@@ -76,11 +76,13 @@ describe("Crowdfund Adversarial", function () {
       false                   // single-tx settlement
     );
     await crowdfund.waitForDeployment();
-    await armToken.addToWhitelist(await crowdfund.getAddress());
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Fund ARM for MAX_SALE and verify pre-load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
-    await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
+    await armToken.transfer(cfAddr, CROWDFUND_ARM_FUNDING);
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
   });
@@ -572,8 +574,12 @@ describe("Crowdfund Adversarial", function () {
         false
       );
       await freshCf.waitForDeployment();
-      await armToken.addToWhitelist(await freshCf.getAddress());
-      await armToken.transfer(await freshCf.getAddress(), ARM(1_800_000));
+      const freshCfAddr = await freshCf.getAddress();
+      await armToken.addToWhitelist(freshCfAddr);
+      if (!(await armToken.authorizedDelegatorsInitialized())) {
+        await armToken.initAuthorizedDelegators([freshCfAddr]);
+      }
+      await armToken.transfer(freshCfAddr, ARM(1_800_000));
       await freshCf.loadArm();
 
       // Advance to windowStart so addSeeds works

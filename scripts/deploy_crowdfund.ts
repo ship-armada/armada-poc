@@ -79,9 +79,11 @@ async function main() {
   const armTokenAddress = govDeployment.contracts.armToken;
   const treasuryAddress = govDeployment.contracts.treasury;
   const governorAddress = govDeployment.contracts.governor;
+  const revenueLockAddress = govDeployment.contracts.revenueLock;
   console.log(`   ARM Token (shared): ${armTokenAddress}`);
   console.log(`   Treasury: ${treasuryAddress}`);
   console.log(`   Governor: ${governorAddress}`);
+  console.log(`   RevenueLock: ${revenueLockAddress}`);
 
   const armToken = await ethers.getContractAt("ArmadaToken", armTokenAddress);
 
@@ -132,8 +134,13 @@ async function main() {
   await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
   console.log(`   Crowdfund excluded from quorum denominator`);
 
-  // 6. Register crowdfund address for governance quiet period
-  console.log("6. Registering crowdfund in governor for quiet period...");
+  // 6. Authorize delegateOnBehalf callers (one-shot — must include all delegators)
+  console.log("6. Authorizing delegateOnBehalf delegators...");
+  await (await armToken.initAuthorizedDelegators([revenueLockAddress, crowdfundAddress], nm.override())).wait();
+  console.log(`   initAuthorizedDelegators: [${revenueLockAddress}, ${crowdfundAddress}] (RevenueLock + Crowdfund)`);
+
+  // 7. Register crowdfund address for governance quiet period
+  console.log("7. Registering crowdfund in governor for quiet period...");
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
 

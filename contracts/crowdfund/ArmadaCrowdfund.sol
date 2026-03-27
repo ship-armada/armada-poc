@@ -11,6 +11,11 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "./IArmadaCrowdfund.sol";
 
+/// @notice Minimal ArmadaToken interface for atomic delegation on claim.
+interface IArmadaTokenCrowdfund {
+    function delegateOnBehalf(address delegator, address delegatee) external;
+}
+
 /// @title ArmadaCrowdfund — Word-of-mouth whitelist crowdfund with hop-based allocation
 /// @notice Implements the full crowdfund lifecycle: seed management, invitation chains,
 ///         USDC commitment escrow, deterministic allocation with pro-rata scaling and rollover,
@@ -39,7 +44,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     // EIP-712 typehash for off-chain invite signatures
     bytes32 public constant INVITE_TYPEHASH = keccak256(
-        "Invite(address invitee,uint8 fromHop,uint256 nonce,uint256 deadline)"
+        "Invite(address inviter,uint8 fromHop,uint256 nonce,uint256 deadline)"
     );
 
     // ============ Immutable ============
@@ -374,7 +379,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Verify EIP-712 signature
         bytes32 structHash = keccak256(abi.encode(
             INVITE_TYPEHASH,
-            msg.sender,     // invitee
+            inviter,        // bearer credential: inviter signs their own address
             fromHop,
             nonce,
             deadline
@@ -532,9 +537,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @notice Claim ARM allocation after finalization. ARM tokens only — USDC
     ///         refunds are handled separately by claimRefund().
-    /// @param delegate Governance delegate preference, emitted in ArmClaimed for
-    ///        off-chain indexing. Actual ERC20Votes delegation must be performed by
-    ///        the claimant directly on the ARM token contract (delegate() uses msg.sender).
+    /// @param delegate Governance delegate preference. If non-zero and the claimant
+    ///        receives ARM, voting power is atomically delegated via delegateOnBehalf.
+    ///        Pass address(0) to skip delegation (claimant can delegate later manually).
     /// @dev Reads pre-computed allocations stored by finalize() — no recomputation.
     function claim(address delegate) external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
@@ -556,6 +561,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         if (totalAllocArm > 0) {
             armToken.safeTransfer(msg.sender, totalAllocArm);
+            if (delegate != address(0)) {
+                IArmadaTokenCrowdfund(address(armToken)).delegateOnBehalf(msg.sender, delegate);
+            }
         }
 
         emit ArmClaimed(msg.sender, totalAllocArm, delegate);

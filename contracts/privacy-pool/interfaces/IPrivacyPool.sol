@@ -26,6 +26,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when shield pause controller contract is set
     event ShieldPauseContractSet(address indexed shieldPauseContract);
 
+    /// @notice Emitted when fee module is set
+    event FeeModuleSet(address indexed feeModule);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -61,8 +64,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /**
      * @notice Shield tokens into the privacy pool (local, same chain)
      * @param _shieldRequests Array of shield requests
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function shield(ShieldRequest[] calldata _shieldRequests) external;
+    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external;
 
     /**
      * @notice Execute private transactions (transfers and/or unshields)
@@ -142,6 +146,12 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param privileged True to exempt from fees
      */
     function setPrivilegedShieldCaller(address caller, bool privileged) external;
+
+    /**
+     * @notice Set the fee module address (ArmadaFeeModule proxy)
+     * @param _feeModule Address of the fee module (or address(0) to use flat fee fallback)
+     */
+    function setFeeModule(address _feeModule) external;
 
     /**
      * @notice Set the CCTP Hook Router address

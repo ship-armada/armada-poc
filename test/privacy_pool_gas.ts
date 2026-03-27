@@ -234,7 +234,7 @@ describe("Privacy Pool Gas Profiling", function () {
     const usdcAddr = await hubUsdc.getAddress();
     await hubUsdc.mint(aliceAddress, amount);
     await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
-    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount, npkSeed)]);
+    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount, npkSeed)], ethers.ZeroAddress);
     return await privacyPool.merkleRoot();
   }
 
@@ -257,7 +257,7 @@ describe("Privacy Pool Gas Profiling", function () {
           makeShieldRequest(usdcAddr, AMOUNT_PER_SHIELD, `shield-gas-${count}-${i}`)
         );
 
-        const tx = await privacyPool.connect(alice).shield(requests);
+        const tx = await privacyPool.connect(alice).shield(requests, ethers.ZeroAddress);
         const receipt = await tx.wait();
         const gasUsed = Number(receipt!.gasUsed);
 
@@ -368,7 +368,8 @@ describe("Privacy Pool Gas Profiling", function () {
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         amount, 0, 0, npk, encBundle, shieldKey, ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const receipt = await tx.wait();
       recordGas("crossChainShield (client-side)", Number(receipt!.gasUsed));
 
@@ -450,7 +451,7 @@ describe("Privacy Pool Gas Profiling", function () {
       await hubUsdc.mint(aliceAddress, amount);
       await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
 
-      const tx = await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount, "merkle-near-empty")]);
+      const tx = await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount, "merkle-near-empty")], ethers.ZeroAddress);
       const receipt = await tx.wait();
       recordGas("shield (near-empty tree)", Number(receipt!.gasUsed));
     });
@@ -469,7 +470,7 @@ describe("Privacy Pool Gas Profiling", function () {
         const requests = Array.from({ length: batchSize }, (_, j) =>
           makeShieldRequest(usdcAddr, batchAmount, `fill-50-${i}-${j}`)
         );
-        await privacyPool.connect(alice).shield(requests);
+        await privacyPool.connect(alice).shield(requests, ethers.ZeroAddress);
       }
 
       // Now measure a single shield at this fill level
@@ -477,7 +478,7 @@ describe("Privacy Pool Gas Profiling", function () {
       await hubUsdc.mint(aliceAddress, amount);
       await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
 
-      const tx = await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount, "merkle-after-50")]);
+      const tx = await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount, "merkle-after-50")], ethers.ZeroAddress);
       const receipt = await tx.wait();
       recordGas("shield (after ~50 leaves)", Number(receipt!.gasUsed));
     });

@@ -6,6 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
+import "../fees/IArmadaFeeModule.sol";
+
 /**
  * @title IArmadaTreasury
  * @notice Interface for ArmadaTreasury fee recording
@@ -90,6 +92,10 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     /// @notice Privileged adapter (can bypass fees)
     address public adapter;
 
+    /// @notice Fee module address (ArmadaFeeModule proxy) for centralized yield fee config.
+    /// @dev When address(0), uses local yieldFeeBps. When set, reads fee from fee module.
+    address public feeModule;
+
     /// @notice Total principal deposited (for yield calculation)
     uint256 public totalPrincipal;
 
@@ -125,6 +131,7 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     event AdapterUpdated(address indexed oldAdapter, address indexed newAdapter);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event YieldFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
+    event FeeModuleUpdated(address indexed oldModule, address indexed newModule);
 
     // ============ Modifiers ============
 
@@ -193,13 +200,24 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
 
     /**
      * @notice Update yield fee basis points. Governance-only (via timelock).
+     * @dev Reverts when feeModule is set — governance should use fee module instead.
      * @param _feeBps New yield fee in basis points (bounded by MIN/MAX)
      */
     function setYieldFeeBps(uint256 _feeBps) external onlyOwner {
+        require(feeModule == address(0), "ArmadaYieldVault: use fee module");
         require(_feeBps >= MIN_YIELD_FEE_BPS, "ArmadaYieldVault: below min fee");
         require(_feeBps <= MAX_YIELD_FEE_BPS, "ArmadaYieldVault: above max fee");
         emit YieldFeeUpdated(yieldFeeBps, _feeBps);
         yieldFeeBps = _feeBps;
+    }
+
+    /**
+     * @notice Set the fee module address (ArmadaFeeModule proxy)
+     * @param _feeModule Address of the fee module (or address(0) to use local yieldFeeBps)
+     */
+    function setFeeModule(address _feeModule) external onlyOwner {
+        emit FeeModuleUpdated(feeModule, _feeModule);
+        feeModule = _feeModule;
     }
 
     // ============ Core Functions ============
@@ -293,7 +311,11 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         uint256 yieldFee = 0;
         if (grossAssets > principalPortion) {
             uint256 yield_ = grossAssets - principalPortion;
-            yieldFee = (yield_ * yieldFeeBps) / BPS_DENOMINATOR;
+            // Read yield fee rate from fee module when set, otherwise use local yieldFeeBps
+            uint256 effectiveFeeBps = feeModule != address(0)
+                ? IArmadaFeeModule(feeModule).getYieldFeeBps()
+                : yieldFeeBps;
+            yieldFee = (yield_ * effectiveFeeBps) / BPS_DENOMINATOR;
         }
 
         assets = grossAssets - yieldFee;
@@ -301,8 +323,13 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         // Transfer fee to treasury and record it
         if (yieldFee > 0) {
             underlying.safeTransfer(treasury, yieldFee);
-            // Record fee in treasury for tracking
-            IArmadaTreasury(treasury).recordFee(address(underlying), owner_, yieldFee);
+            if (feeModule != address(0)) {
+                // Record yield fee in centralized fee module for RevenueCounter
+                IArmadaFeeModule(feeModule).recordYieldFee(yieldFee);
+            } else {
+                // Fallback path: record fee in treasury for tracking
+                IArmadaTreasury(treasury).recordFee(address(underlying), owner_, yieldFee);
+            }
         }
 
         // Transfer assets to receiver
@@ -376,7 +403,10 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         // Calculate fee
         if (grossAssets > principalPortion) {
             uint256 yield_ = grossAssets - principalPortion;
-            uint256 yieldFee = (yield_ * yieldFeeBps) / BPS_DENOMINATOR;
+            uint256 effectiveFeeBps = feeModule != address(0)
+                ? IArmadaFeeModule(feeModule).getYieldFeeBps()
+                : yieldFeeBps;
+            uint256 yieldFee = (yield_ * effectiveFeeBps) / BPS_DENOMINATOR;
             assets = grossAssets - yieldFee;
         } else {
             assets = grossAssets;

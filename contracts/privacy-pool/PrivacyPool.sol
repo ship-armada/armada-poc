@@ -99,9 +99,10 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     /**
      * @notice Shield tokens into the privacy pool (local, same chain)
      * @param _shieldRequests Array of shield requests
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function shield(ShieldRequest[] calldata _shieldRequests) external override {
-        _delegatecall(shieldModule, abi.encodeCall(IShieldModule.shield, (_shieldRequests)));
+    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override {
+        _delegatecall(shieldModule, abi.encodeCall(IShieldModule.shield, (_shieldRequests, integrator)));
     }
 
     /**
@@ -355,6 +356,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         shieldPauseContract = _shieldPauseContract;
         emit ShieldPauseContractSet(_shieldPauseContract);
+    }
+
+    /**
+     * @notice Set the fee module address (ArmadaFeeModule proxy)
+     * @param _feeModule Address of the fee module (or address(0) to use flat fee fallback)
+     */
+    function setFeeModule(address _feeModule) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        feeModule = _feeModule;
+        emit FeeModuleSet(_feeModule);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

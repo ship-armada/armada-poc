@@ -250,7 +250,7 @@ describe("Privacy Pool Integration Hardening", function () {
     const usdcAddr = await hubUsdc.getAddress();
     await hubUsdc.mint(signerAddr, amount);
     await hubUsdc.connect(signer).approve(privacyPoolAddress, amount);
-    await privacyPool.connect(signer).shield([makeShieldRequest(usdcAddr, amount, npkSeed)]);
+    await privacyPool.connect(signer).shield([makeShieldRequest(usdcAddr, amount, npkSeed)], ethers.ZeroAddress);
     return await privacyPool.merkleRoot();
   }
 
@@ -272,7 +272,7 @@ describe("Privacy Pool Integration Hardening", function () {
       const requests = Array.from({ length: SHIELD_COUNT }, (_, i) =>
         makeShieldRequest(usdcAddr, SHIELD_EACH, `lifecycle-${i}`)
       );
-      await privacyPool.connect(alice).shield(requests);
+      await privacyPool.connect(alice).shield(requests, ethers.ZeroAddress);
 
       const root = await privacyPool.merkleRoot();
       const nextLeaf = await privacyPool.nextLeafIndex();
@@ -336,7 +336,7 @@ describe("Privacy Pool Integration Hardening", function () {
 
       await hubUsdc.mint(aliceAddress, AMOUNT);
       await hubUsdc.connect(alice).approve(privacyPoolAddress, AMOUNT);
-      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, AMOUNT, "fee-test")]);
+      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, AMOUNT, "fee-test")], ethers.ZeroAddress);
 
       const treasuryAfter = await hubUsdc.balanceOf(treasuryAddress);
       const poolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
@@ -372,13 +372,13 @@ describe("Privacy Pool Integration Hardening", function () {
       const rootBefore = await privacyPool.merkleRoot();
 
       // All three users shield
-      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, AMOUNT, "concurrent-alice")]);
+      await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, AMOUNT, "concurrent-alice")], ethers.ZeroAddress);
       const rootAfterAlice = await privacyPool.merkleRoot();
 
-      await privacyPool.connect(bob).shield([makeShieldRequest(usdcAddr, AMOUNT, "concurrent-bob")]);
+      await privacyPool.connect(bob).shield([makeShieldRequest(usdcAddr, AMOUNT, "concurrent-bob")], ethers.ZeroAddress);
       const rootAfterBob = await privacyPool.merkleRoot();
 
-      await privacyPool.connect(charlie).shield([makeShieldRequest(usdcAddr, AMOUNT, "concurrent-charlie")]);
+      await privacyPool.connect(charlie).shield([makeShieldRequest(usdcAddr, AMOUNT, "concurrent-charlie")], ethers.ZeroAddress);
       const rootAfterCharlie = await privacyPool.merkleRoot();
 
       // Each should produce a unique root
@@ -443,7 +443,8 @@ describe("Privacy Pool Integration Hardening", function () {
 
       const clientTx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT, 0, 0, npk, encBundle, shieldKey, ethers.ZeroHash
-      );
+      ,
+      ethers.ZeroAddress);
       const clientReceipt = await clientTx.wait();
 
       // Step 2: Relay to Hub — extract full MessageV2 from MessageSent(bytes) event

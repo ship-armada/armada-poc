@@ -87,6 +87,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      * @param shieldKey Shield key for decryption
      * @param destinationCaller Address allowed to call receiveMessage on Hub (bytes32).
      *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
+     * @param integrator Integrator address for fee split (address(0) for no integrator)
      * @return nonce CCTP message nonce
      */
     function crossChainShield(
@@ -96,7 +97,8 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
-        bytes32 destinationCaller
+        bytes32 destinationCaller,
+        address integrator
     ) external returns (uint64 nonce);
 
     // ══════════════════════════════════════════════════════════════════════════

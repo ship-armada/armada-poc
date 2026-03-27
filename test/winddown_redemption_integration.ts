@@ -833,7 +833,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     const usdcAddr = await hubUsdc.getAddress();
     await hubUsdc.mint(aliceAddress, amount);
     await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
-    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)]);
+    await privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)], ethers.ZeroAddress);
     return await privacyPool.merkleRoot();
   }
 
@@ -1029,7 +1029,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
       await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
 
       await expect(
-        privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)])
+        privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)], ethers.ZeroAddress)
       ).to.not.be.reverted;
     });
 
@@ -1099,7 +1099,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
       await hubUsdc.connect(alice).approve(privacyPoolAddress, amount);
 
       await expect(
-        privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)])
+        privacyPool.connect(alice).shield([makeShieldRequest(usdcAddr, amount)], ethers.ZeroAddress)
       ).to.be.revertedWith("ShieldModule: shields paused");
     });
 

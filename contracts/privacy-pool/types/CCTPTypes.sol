@@ -37,12 +37,14 @@ struct CCTPPayload {
  * @param value Amount being shielded (gross amount before CCTP fee deduction)
  * @param encryptedBundle Shield ciphertext encrypted bundle [3 x bytes32]
  * @param shieldKey Public key for shared secret derivation
+ * @param integrator Integrator address for fee split (address(0) for no integrator)
  */
 struct ShieldData {
     bytes32 npk;
     uint120 value;
     bytes32[3] encryptedBundle;
     bytes32 shieldKey;
+    address integrator;
 }
 
 /**

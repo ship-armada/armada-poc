@@ -61,9 +61,11 @@ describe("Crowdfund Multi-Node", function () {
       false                    // single-tx settlement
     );
     await crowdfund.waitForDeployment();
-    await armToken.addToWhitelist(await crowdfund.getAddress());
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
 

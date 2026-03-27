@@ -125,11 +125,13 @@ describe("Crowdfund EIP-712 Invites", function () {
       false             // single-tx settlement
     );
     await crowdfund.waitForDeployment();
-    await armToken.addToWhitelist(await crowdfund.getAddress());
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Fund ARM to crowdfund (enough for MAX_SALE) and load
     const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
-    await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
+    await armToken.transfer(cfAddr, CROWDFUND_ARM_FUNDING);
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
 

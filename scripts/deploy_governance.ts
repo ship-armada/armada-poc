@@ -265,9 +265,10 @@ async function main() {
   await (await armToken.initWhitelist(whitelistAddresses, nm.override())).wait();
   console.log(`   initWhitelist: ${whitelistAddresses.length} addresses`);
 
-  // Authorize RevenueLock for delegateOnBehalf
-  await (await armToken.initAuthorizedDelegators([revenueLockAddress], nm.override())).wait();
-  console.log(`   initAuthorizedDelegators: [${revenueLockAddress}] (RevenueLock)`);
+  // initAuthorizedDelegators is one-shot and must include all delegators (RevenueLock + Crowdfund).
+  // Deferred to deploy_crowdfund.ts which runs after governance and has both addresses available.
+  console.log("   initAuthorizedDelegators: DEFERRED (called by deploy_crowdfund with all delegators)");
+
   // Set wind-down contract on ARM token (deployer-only one-time setter)
   if (windDownAddress !== ethers.ZeroAddress) {
     await (await armToken.setWindDownContract(windDownAddress, nm.override())).wait();

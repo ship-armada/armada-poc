@@ -13,12 +13,12 @@ export interface Participant {
   isWhitelisted: boolean
   invitesReceived: number
   committed: bigint
-  allocation: bigint
-  refund: bigint
-  armClaimed: boolean
-  refundClaimed: boolean
   invitedBy: string
   invitesSent: number
+  // Computed fields (populated from computeAllocation / computeAllocationAtHop after finalization)
+  allocation: bigint
+  refund: bigint
+  claimed: boolean
 }
 
 export interface HopStats {
@@ -31,7 +31,7 @@ export interface HopStats {
 export interface AllocationInfo {
   allocation: bigint
   refund: bigint
-  claimed: boolean  // reflects ARM claim status (armClaimed) from getAllocation()
+  claimed: boolean  // reflects claimed(address) status from contract
 }
 
 /** Per-hop data for the connected user */
@@ -53,7 +53,7 @@ export interface UserHopAllocation {
   hop: number
   allocation: bigint
   refund: bigint
-  claimed: boolean  // reflects ARM claim status (armClaimed) from getAllocationAtHop()
+  claimed: boolean  // reflects claimed(address) status from contract
 }
 
 export interface CrowdfundDeployment {

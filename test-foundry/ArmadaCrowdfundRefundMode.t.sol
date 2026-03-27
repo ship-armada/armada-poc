@@ -35,8 +35,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             treasury,
             admin,
             admin,  // securityCouncil
-            block.timestamp,
-            false   // single-tx settlement
+            block.timestamp
         );
 
         // Whitelist admin and crowdfund so token transfers work
@@ -83,7 +82,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
         assertTrue(crowdfund.refundMode());
         // In refundMode, allocations are NOT recorded
-        assertEq(crowdfund.totalAllocated(), 0);
+        assertEq(crowdfund.totalAllocatedArm(), 0);
         assertEq(crowdfund.totalAllocatedUsdc(), 0);
     }
 
@@ -122,7 +121,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         crowdfund.claimRefund();
 
         vm.prank(seeds[0]);
-        vm.expectRevert("ArmadaCrowdfund: already refunded");
+        vm.expectRevert("ArmadaCrowdfund: already claimed");
         crowdfund.claimRefund();
     }
 
@@ -152,24 +151,24 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "All ARM should be swept");
     }
 
-    /// @notice getAllocation reverts in refundMode
-    function test_getAllocation_revertsInRefundMode() public {
+    /// @notice computeAllocation reverts in refundMode
+    function test_computeAllocation_revertsInRefundMode() public {
         _allSeedsCommitFull();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
         vm.expectRevert("ArmadaCrowdfund: sale in refund mode");
-        crowdfund.getAllocation(seeds[0]);
+        crowdfund.computeAllocation(seeds[0]);
     }
 
-    /// @notice getAllocationAtHop reverts in refundMode
-    function test_getAllocationAtHop_revertsInRefundMode() public {
+    /// @notice computeAllocationAtHop reverts in refundMode
+    function test_computeAllocationAtHop_revertsInRefundMode() public {
         _allSeedsCommitFull();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
         vm.expectRevert("ArmadaCrowdfund: sale in refund mode");
-        crowdfund.getAllocationAtHop(seeds[0], 0);
+        crowdfund.computeAllocationAtHop(seeds[0], 0);
     }
 
     // ============ RefundMode cannot happen after expansion ============
@@ -180,7 +179,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     function test_refundMode_cannotHappenAfterExpansion() public {
         // Deploy a fresh crowdfund with 100 seeds to reach ELASTIC_TRIGGER
         ArmadaCrowdfund cf2 = new ArmadaCrowdfund(
-            address(usdc), address(armToken), treasury, admin, admin, block.timestamp, false
+            address(usdc), address(armToken), treasury, admin, admin, block.timestamp
         );
         armToken.transfer(address(cf2), ARM_FUNDING);
         cf2.loadArm();
@@ -323,10 +322,9 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         crowdfund.claimRefund();
     }
 
-    /// @notice claimRefund returns pro-rata USDC after successful finalization (not refundMode).
-    ///         claimRefund() handles all refund paths including the normal
-    ///         post-finalization pro-rata refund.
-    function test_claimRefund_returnsProRataUsdc_afterSuccessfulFinalize() public {
+    /// @notice After normal finalization (not refundMode), claimRefund() reverts.
+    ///         claim() now handles both ARM + refund in a single call.
+    function test_claimRefund_revertsAfterSuccessfulFinalize() public {
         // Need demand spread across hops so totalAllocUsdc >= MIN_SALE.
         // At BASE_SALE: hop-0 ceiling = $798K, hop-1 ceiling = $513K.
         // 53 seeds × $15K = $795K (under hop-0 ceiling → full allocation).
@@ -365,17 +363,9 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertFalse(crowdfund.refundMode());
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
 
-        // claimRefund should succeed and return the pro-rata USDC refund
-        // Hop-0 is under-subscribed ($795K < $798K ceiling) so seeds get full allocation
-        // with no refund (refund = 0 since committed <= ceiling allocation).
-        uint256 balBefore = usdc.balanceOf(seeds[0]);
+        // claimRefund reverts after normal finalization — claim() handles both ARM + refund
         vm.prank(seeds[0]);
+        vm.expectRevert("ArmadaCrowdfund: refund not available");
         crowdfund.claimRefund();
-        uint256 balAfter = usdc.balanceOf(seeds[0]);
-
-        // When hop-0 is under-subscribed, full committed amount is allocated,
-        // so pro-rata refund is 0 (or minimal rounding dust)
-        uint256 refundAmount = balAfter - balBefore;
-        assertTrue(refundAmount <= 1, "Under-subscribed hop should have zero or dust refund");
     }
 }

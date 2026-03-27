@@ -103,7 +103,7 @@ async function main() {
   const latestBlock = await ethers.provider.getBlock('latest');
   const openTimestamp = latestBlock!.timestamp + 60; // 1 minute after latest block
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, deployer.address, openTimestamp, false, nm.override()
+    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, deployer.address, openTimestamp, nm.override()
   );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();

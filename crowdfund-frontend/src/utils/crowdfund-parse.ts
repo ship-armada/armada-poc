@@ -8,12 +8,12 @@ export function parseParticipant(result: any): Participant {
     isWhitelisted: result[0] as boolean,
     invitesReceived: Number(result[1]),
     committed: BigInt(result[2]),
-    allocation: BigInt(result[3]),
-    refund: BigInt(result[4]),
-    armClaimed: result[5] as boolean,
-    refundClaimed: result[6] as boolean,
-    invitedBy: result[7] as string,
-    invitesSent: Number(result[8]),
+    invitedBy: result[3] as string,
+    invitesSent: Number(result[4]),
+    // Computed fields default to zero — populated later from computeAllocation
+    allocation: 0n,
+    refund: 0n,
+    claimed: false,
   }
 }
 

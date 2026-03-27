@@ -86,8 +86,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       treasuryAddr.address,
       deployer.address,
       deployer.address,       // securityCouncil
-      openTimestamp,           // openTimestamp
-      false                    // single-tx settlement
+      openTimestamp            // openTimestamp
     );
     await crowdfund.waitForDeployment();
 
@@ -516,7 +515,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Alice tries to claim again — should revert
       await expect(
         crowdfund.connect(alice).claim(ethers.ZeroAddress)
-      ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
+      ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
 
       // Alice delegates and votes
       await armToken.connect(alice).delegate(alice.address);
@@ -662,8 +661,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localTreasury.getAddress(),
         localDeployer.address,
         localDeployer.address,  // securityCouncil
-        localOpenTimestamp,      // openTimestamp
-        false                    // single-tx settlement
+        localOpenTimestamp       // openTimestamp
       );
       await localCrowdfund.waitForDeployment();
 

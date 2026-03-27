@@ -120,8 +120,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       treasury.address,
       deployer.address,         // launchTeam
       securityCouncil.address,  // securityCouncil
-      openTimestamp,
-      false             // single-tx settlement
+      openTimestamp
     );
     await crowdfund.waitForDeployment();
     const cfAddr = await crowdfund.getAddress();

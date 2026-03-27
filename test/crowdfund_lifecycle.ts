@@ -67,7 +67,7 @@ describe("Crowdfund Full Lifecycle", function () {
     await usdc.connect(signer).approve(await cf.getAddress(), amount);
   }
 
-  async function deployCrowdfund(phasedSettlement: boolean) {
+  async function deployCrowdfund() {
     const ArmadaCrowdfund =
       await ethers.getContractFactory("ArmadaCrowdfund");
     const openTimestamp = (await time.latest()) + 300;
@@ -77,8 +77,7 @@ describe("Crowdfund Full Lifecycle", function () {
       treasury.address,
       deployer.address, // launchTeam
       securityCouncil.address,
-      openTimestamp,
-      phasedSettlement
+      openTimestamp
     );
     await crowdfund.waitForDeployment();
     const cfAddr = await crowdfund.getAddress();
@@ -137,7 +136,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 1: Successful Finalization (base sale)", function () {
     it("complete lifecycle with all spec features", async function () {
-      const crowdfund = await deployCrowdfund(false);
+      const crowdfund = await deployCrowdfund();
       const cfAddr = await crowdfund.getAddress();
       const domain = buildDomain(cfAddr);
 
@@ -372,13 +371,8 @@ describe("Crowdfund Full Lifecycle", function () {
       expect(fe.args.netProceeds).to.be.gt(0n);
       expect(fe.args.refundMode).to.be.false;
 
-      // Allocated events — one per unique committing address
-      const allocatedEvents = parseEvents(
-        crowdfund,
-        finalizeReceipt,
-        "Allocated"
-      );
-      // Unique committers: 70 seeds + 51 hop-1 + 3 LT hop-1 + 1 link invitee + 4 hop-2 + 1 LT hop-2
+      // Lazy settlement: Allocated and AllocatedHop events are emitted at claim() time,
+      // not at finalize() time. Verify none appear in the finalize receipt.
       const allParticipants = [
         ...seeds,
         ...hop1Invitees,
@@ -387,41 +381,8 @@ describe("Crowdfund Full Lifecycle", function () {
         ...hop2Invitees,
         ...ltHop2,
       ];
-      const uniqueAddrs = new Set(
-        allParticipants.map((s) => s.address.toLowerCase())
-      );
-      expect(allocatedEvents.length).to.equal(uniqueAddrs.size);
-
-      // AllocatedHop events — every (addr, hop) with armAmount > 0
-      const allocatedHopEvents = parseEvents(
-        crowdfund,
-        finalizeReceipt,
-        "AllocatedHop"
-      );
-      expect(allocatedHopEvents.length).to.be.gt(0);
-      for (const e of allocatedHopEvents) {
-        expect(e.args.armAmount).to.be.gt(0n);
-      }
-
-      // Settlement invariant: sum(AllocatedHop) == Allocated.totalArmAmount per address
-      const allocMap = new Map<string, bigint>();
-      const hopSumMap = new Map<string, bigint>();
-      for (const e of allocatedEvents) {
-        allocMap.set(
-          e.args.participant.toLowerCase(),
-          e.args.totalArmAmount
-        );
-      }
-      for (const e of allocatedHopEvents) {
-        const addr = e.args.participant.toLowerCase();
-        hopSumMap.set(addr, (hopSumMap.get(addr) || 0n) + e.args.armAmount);
-      }
-      for (const [addr, total] of allocMap) {
-        expect(hopSumMap.get(addr) || 0n).to.equal(
-          total,
-          `AllocatedHop sum != Allocated for ${addr}`
-        );
-      }
+      expect(parseEvents(crowdfund, finalizeReceipt, "Allocated").length).to.equal(0);
+      expect(parseEvents(crowdfund, finalizeReceipt, "AllocatedHop").length).to.equal(0);
 
       // Claim deadline
       const finalizedAt = await crowdfund.finalizedAt();
@@ -429,66 +390,40 @@ describe("Crowdfund Full Lifecycle", function () {
         finalizedAt + BigInt(THREE_YEARS)
       );
 
-      // ---- Claims: ARM ----
+      // ---- Claims: ARM + refund in single call ----
       // Claim for first 5 seeds with a delegate
       const delegate = allSigners[3]; // treasury doubles as delegate here
       for (let i = 0; i < 5; i++) {
+        const [expectedArm, expectedRefund] = await crowdfund.computeAllocation(seeds[i].address);
         const armBefore = await armToken.balanceOf(seeds[i].address);
+        const usdcBefore = await usdc.balanceOf(seeds[i].address);
         const claimTx = await crowdfund
           .connect(seeds[i])
           .claim(delegate.address);
         const armAfter = await armToken.balanceOf(seeds[i].address);
+        const usdcAfter = await usdc.balanceOf(seeds[i].address);
 
-        const storedAlloc = await crowdfund.addressArmAllocation(
-          seeds[i].address
-        );
-        expect(armAfter - armBefore).to.equal(storedAlloc);
+        expect(armAfter - armBefore).to.equal(expectedArm);
+        expect(usdcAfter - usdcBefore).to.equal(expectedRefund);
 
         await expect(claimTx)
-          .to.emit(crowdfund, "ArmClaimed")
-          .withArgs(seeds[i].address, storedAlloc, delegate.address);
+          .to.emit(crowdfund, "Allocated")
+          .withArgs(seeds[i].address, expectedArm, expectedRefund, delegate.address);
       }
 
-      // ---- Claims: USDC refund ----
-      // Over-cap seed (seeds[0]) should get excess + pro-rata refund
-      const refundBefore0 = await usdc.balanceOf(seeds[0].address);
-      const refundTx0 = await crowdfund.connect(seeds[0]).claimRefund();
-      const refundAfter0 = await usdc.balanceOf(seeds[0].address);
-      const storedRefund0 = await crowdfund.addressRefundAmount(
-        seeds[0].address
-      );
-      expect(refundAfter0 - refundBefore0).to.equal(storedRefund0);
+      // Over-cap seed (seeds[0]) should have gotten excess + pro-rata refund
       // Over-cap: committed $20K, capped at $15K → at least $5K excess refund
-      expect(storedRefund0).to.be.gte(USDC(5_000));
-      await expect(refundTx0)
-        .to.emit(crowdfund, "RefundClaimed")
-        .withArgs(seeds[0].address, storedRefund0);
-
-      // Claim refund for a hop-1 participant
-      const refundBefore1 = await usdc.balanceOf(hop1Invitees[5].address);
-      await crowdfund.connect(hop1Invitees[5]).claimRefund();
-      const refundAfter1 = await usdc.balanceOf(hop1Invitees[5].address);
-      const storedRefund1 = await crowdfund.addressRefundAmount(
-        hop1Invitees[5].address
-      );
-      expect(refundAfter1 - refundBefore1).to.equal(storedRefund1);
-
-      // ---- Both claim + refund for same participant (both orderings) ----
-      // seeds[5]: claim first, then refund
-      await crowdfund.connect(seeds[5]).claim(seeds[5].address);
-      await crowdfund.connect(seeds[5]).claimRefund();
-
-      // seeds[6]: refund first, then claim
-      await crowdfund.connect(seeds[6]).claimRefund();
-      await crowdfund.connect(seeds[6]).claim(seeds[6].address);
+      const [, seed0Refund] = await crowdfund.computeAllocation(seeds[0].address);
+      expect(seed0Refund).to.be.gte(USDC(5_000));
 
       // ---- Double-claim reverts ----
       await expect(
         crowdfund.connect(seeds[0]).claim(seeds[0].address)
-      ).to.be.revertedWith("ArmadaCrowdfund: ARM already claimed");
+      ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
+      // claimRefund also reverts after claim (shared flag)
       await expect(
         crowdfund.connect(seeds[0]).claimRefund()
-      ).to.be.revertedWith("ArmadaCrowdfund: already refunded");
+      ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
 
       // ---- Treasury USDC: proceeds pushed at finalization ----
       const treasuryUsdcBal = await usdc.balanceOf(treasury.address);
@@ -516,26 +451,31 @@ describe("Crowdfund Full Lifecycle", function () {
       // ---- USDC Conservation: netProceeds + sum(refunds) == totalDeposited ----
       let sumRefunds = 0n;
       for (const p of allParticipants) {
-        sumRefunds += await crowdfund.addressRefundAmount(p.address);
+        const [, refund] = await crowdfund.computeAllocation(p.address);
+        sumRefunds += refund;
       }
       const netProceeds = await crowdfund.totalAllocatedUsdc();
-      expect(netProceeds + sumRefunds).to.equal(
-        rawTotal,
+      // Lazy settlement: per-participant floor divisions may sum to slightly less
+      // than totalAllocatedUsdc (aggregate). Check within rounding tolerance.
+      const totalRefundAndProceeds = netProceeds + sumRefunds;
+      expect(totalRefundAndProceeds).to.be.lte(rawTotal);
+      expect(rawTotal - totalRefundAndProceeds).to.be.lte(
+        BigInt(allParticipants.length) * 3n, // NUM_HOPS rounding buffer
         "USDC conservation violated"
       );
 
-      // ---- ARM Conservation: claimed + swept + remaining == MAX_SALE_ARM ----
+      // ---- ARM Conservation: transferred + swept + remaining == MAX_SALE_ARM ----
       // After some claims and the sweep, verify all ARM is accounted for.
-      const totalAllocated = await crowdfund.totalAllocated();
-      const totalArmClaimed = await crowdfund.totalArmClaimed();
+      const totalAllocatedArm = await crowdfund.totalAllocatedArm();
+      const totalArmTransferred = await crowdfund.totalArmTransferred();
       const contractArmBalance = await armToken.balanceOf(cfAddr);
       const sweptArm = treasuryArmAfter - treasuryArmBefore;
-      expect(totalArmClaimed + sweptArm + contractArmBalance).to.equal(
+      expect(totalArmTransferred + sweptArm + contractArmBalance).to.equal(
         MAX_SALE_ARM,
-        "ARM conservation violated: claimed + swept + remaining != MAX_SALE_ARM"
+        "ARM conservation violated: transferred + swept + remaining != MAX_SALE_ARM"
       );
-      expect(totalAllocated).to.be.gt(0n);
-      expect(totalAllocated).to.be.lte(MAX_SALE_ARM);
+      expect(totalAllocatedArm).to.be.gt(0n);
+      expect(totalAllocatedArm).to.be.lte(MAX_SALE_ARM);
 
       // ---- Balance integrity: claim all remaining participants ----
       // Claim ARM + refund for all remaining participants
@@ -544,20 +484,16 @@ describe("Crowdfund Full Lifecycle", function () {
         try {
           await crowdfund.connect(p).claim(p.address);
         } catch (e: any) {
-          expect(e.message).to.include("ARM already claimed");
-        }
-        try {
-          await crowdfund.connect(p).claimRefund();
-        } catch (e: any) {
-          expect(e.message).to.include("already refunded");
+          expect(e.message).to.include("already claimed");
         }
       }
 
       // After all claims, contract USDC balance should be minimal (rounding dust)
       const contractUsdc = await usdc.balanceOf(cfAddr);
-      // Rounding buffer is participantNodes.length (small), plus any dust
+      // Rounding buffer is participantNodes.length * NUM_HOPS (max 1 USDC unit per participant per hop)
       const nodeCount = await crowdfund.getParticipantCount();
-      expect(contractUsdc).to.be.lte(nodeCount);
+      const NUM_HOPS = 3n;
+      expect(contractUsdc).to.be.lte(nodeCount * NUM_HOPS);
 
       // After sweep, remaining ARM in contract = still owed to unclaimed participants
       // Since we claimed all, it should be 0 or very small
@@ -573,7 +509,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 2: Elastic Expansion", function () {
     it("expansion triggered at ELASTIC_TRIGGER", async function () {
-      const crowdfund = await deployCrowdfund(false);
+      const crowdfund = await deployCrowdfund();
 
       // 100 seeds × $15K = $1.5M capped demand → triggers expansion to MAX_SALE.
       // At MAX_SALE, hop-0 ceiling ≈ $1.197M > MIN_SALE, so no hop-1 needed.
@@ -602,17 +538,21 @@ describe("Crowdfund Full Lifecycle", function () {
       // Conservation: USDC
       let sumRefunds = 0n;
       for (const s of seeds) {
-        sumRefunds += await crowdfund.addressRefundAmount(s.address);
+        const [, refund] = await crowdfund.computeAllocation(s.address);
+        sumRefunds += refund;
       }
       const netProceeds = await crowdfund.totalAllocatedUsdc();
       const totalDeposited = await crowdfund.totalCommitted();
-      expect(netProceeds + sumRefunds).to.equal(
-        totalDeposited,
+      // Lazy settlement rounding tolerance
+      const totalRefAndProc = netProceeds + sumRefunds;
+      expect(totalRefAndProc).to.be.lte(totalDeposited);
+      expect(totalDeposited - totalRefAndProc).to.be.lte(
+        BigInt(seeds.length) * 3n,
         "USDC conservation violated (expansion)"
       );
 
       // Conservation: ARM — verify contract holds all ARM and allocation is sensible
-      const totalAllocated = await crowdfund.totalAllocated();
+      const totalAllocatedArm = await crowdfund.totalAllocatedArm();
       const contractArmBalance = await armToken.balanceOf(
         await crowdfund.getAddress()
       );
@@ -620,8 +560,8 @@ describe("Crowdfund Full Lifecycle", function () {
         MAX_SALE_ARM,
         "ARM conservation violated: contract should hold all ARM before claims/sweep"
       );
-      expect(totalAllocated).to.be.gt(0n);
-      expect(totalAllocated).to.be.lte(MAX_SALE_ARM);
+      expect(totalAllocatedArm).to.be.gt(0n);
+      expect(totalAllocatedArm).to.be.lte(MAX_SALE_ARM);
     });
   });
 
@@ -631,7 +571,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 3: RefundMode", function () {
     it("refundMode when net proceeds < MIN_SALE", async function () {
-      const crowdfund = await deployCrowdfund(false);
+      const crowdfund = await deployCrowdfund();
       const cfAddr = await crowdfund.getAddress();
 
       // 80 seeds × $15K at hop-0 = $1.2M raw, but hop-0 ceiling at BASE_SALE
@@ -691,7 +631,7 @@ describe("Crowdfund Full Lifecycle", function () {
           await crowdfund.connect(s).claimRefund();
         } catch (e: any) {
           // Only seed[0] should have already claimed; re-throw unexpected errors
-          expect(e.message).to.include("already refunded");
+          expect(e.message).to.include("already claimed");
         }
         totalRefunded += await usdc.balanceOf(s.address);
       }
@@ -710,7 +650,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 4: Security Council Cancel", function () {
     it("cancel + full refund", async function () {
-      const crowdfund = await deployCrowdfund(false);
+      const crowdfund = await deployCrowdfund();
 
       // Setup: 10 seeds, some commits
       const seeds = allSigners.slice(5, 15);
@@ -767,7 +707,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 5: Deadline Fallback", function () {
     it("below-minimum deadline fallback refund", async function () {
-      const crowdfund = await deployCrowdfund(false);
+      const crowdfund = await deployCrowdfund();
 
       // Small commitments well below MIN_SALE
       const seeds = allSigners.slice(5, 8); // 3 seeds
@@ -802,99 +742,4 @@ describe("Crowdfund Full Lifecycle", function () {
     });
   });
 
-  // ================================================================
-  // Path 6: Phased Settlement
-  // ================================================================
-
-  describe("Path 6: Phased Settlement", function () {
-    it("phased emitSettlement batches", async function () {
-      const crowdfund = await deployCrowdfund(true); // phased mode
-
-      // Setup: 70 seeds + hop-1 demand for successful finalization
-      const seeds = allSigners.slice(5, 75);
-      await crowdfund.addSeeds(seeds.map((s) => s.address));
-      // deployCrowdfund() already advances to windowStart
-
-      for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000), crowdfund);
-        await crowdfund.connect(s).commit(0, USDC(15_000));
-      }
-
-      // Add hop-1 demand
-      const hop1Pool = allSigners.slice(140, 195);
-      for (let i = 0; i < 18; i++) {
-        for (let j = 0; j < 3 && i * 3 + j < hop1Pool.length; j++) {
-          const idx = i * 3 + j;
-          const invitee = hop1Pool[idx];
-          await crowdfund.connect(seeds[i]).invite(invitee.address, 0);
-          await fundAndApprove(invitee, USDC(4_000), crowdfund);
-          await crowdfund.connect(invitee).commit(1, USDC(4_000));
-        }
-      }
-
-      await time.increase(THREE_WEEKS + 1);
-
-      // Finalize — should NOT emit Allocated/AllocatedHop
-      const finTx = await crowdfund.finalize();
-      const finReceipt = await finTx.wait();
-      expect(await crowdfund.refundMode()).to.be.false;
-
-      expect(parseEvents(crowdfund, finReceipt, "Allocated").length).to.equal(
-        0
-      );
-      expect(
-        parseEvents(crowdfund, finReceipt, "AllocatedHop").length
-      ).to.equal(0);
-
-      // But allocations are stored
-      const armAlloc = await crowdfund.addressArmAllocation(
-        seeds[0].address
-      );
-      expect(armAlloc).to.be.gt(0n);
-
-      // claim() works immediately (before any emitSettlement)
-      expect(await crowdfund.settlementComplete()).to.be.false;
-      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
-      expect(await armToken.balanceOf(seeds[0].address)).to.be.gt(0n);
-
-      // emitSettlement in batches — second param is COUNT, not end index
-      const nodeCount = Number(await crowdfund.getParticipantCount());
-      const batchSize = Math.ceil(nodeCount / 3);
-
-      // Batch 1: startIndex=0, count=batchSize
-      const tx1 = await crowdfund.emitSettlement(0, batchSize);
-      const receipt1 = await tx1.wait();
-      expect(
-        parseEvents(crowdfund, receipt1, "Allocated").length
-      ).to.be.gt(0);
-      expect(await crowdfund.settlementComplete()).to.be.false;
-
-      // Batch 2: startIndex=batchSize, count=batchSize
-      const tx2 = await crowdfund.emitSettlement(batchSize, batchSize);
-      const receipt2 = await tx2.wait();
-      expect(
-        parseEvents(crowdfund, receipt2, "Allocated").length
-      ).to.be.gt(0);
-      expect(await crowdfund.settlementComplete()).to.be.false;
-
-      // Batch 3 — final: startIndex=batchSize*2, count=remaining
-      const remaining = nodeCount - batchSize * 2;
-      const tx3 = await crowdfund.emitSettlement(batchSize * 2, remaining);
-      const receipt3 = await tx3.wait();
-      expect(await crowdfund.settlementComplete()).to.be.true;
-
-      // SettlementComplete event on final batch
-      const scEvents = parseEvents(
-        crowdfund,
-        receipt3,
-        "SettlementComplete"
-      );
-      expect(scEvents.length).to.equal(1);
-
-      // emitSettlement reverts after completion
-      await expect(
-        crowdfund.emitSettlement(nodeCount, 1)
-      ).to.be.revertedWith("ArmadaCrowdfund: settlement already complete");
-    });
-  });
 });

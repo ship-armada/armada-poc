@@ -77,6 +77,9 @@ describe("Privacy Pool Integration", function () {
     bobAddress = await bob.getAddress();
     relayerAddress = await relayer.getAddress();
 
+    // Configure treasury as deployer
+    treasuryAddress = deployerAddress;
+
     // Deploy Hub chain contracts
     await deployHubChain();
 
@@ -86,9 +89,7 @@ describe("Privacy Pool Integration", function () {
     // Link deployments
     await linkDeployments();
 
-    // Configure shield fee: 50 bps (0.50%) to deployer as treasury
-    treasuryAddress = deployerAddress;
-    await privacyPool.setTreasury(treasuryAddress);
+    // Configure shield fee: 50 bps (0.50%)
     await privacyPool.setShieldFee(50);
   });
 
@@ -177,7 +178,8 @@ describe("Privacy Pool Integration", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      treasuryAddress
     );
 
     // Deploy CCTPHookRouter for hub

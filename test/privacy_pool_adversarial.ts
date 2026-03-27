@@ -114,13 +114,13 @@ describe("Privacy Pool Adversarial", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
+      deployerAddress,
       deployerAddress
     );
 
     // Load verification keys and enable testing mode for transact tests
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
     await privacyPool.setTestingMode(true);
-    await privacyPool.setTreasury(deployerAddress);
     await privacyPool.setShieldFee(50); // 0.50%
 
     // ──── Deploy Client Chain ────
@@ -255,12 +255,6 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPool: Only owner");
     });
 
-    it("non-owner cannot call setTreasury", async function () {
-      await expect(
-        privacyPool.connect(attacker).setTreasury(attackerAddress)
-      ).to.be.revertedWith("PrivacyPool: Only owner");
-    });
-
     it("non-owner cannot call setTestingMode", async function () {
       await expect(
         privacyPool.connect(attacker).setTestingMode(true)
@@ -297,9 +291,27 @@ describe("Privacy Pool Adversarial", function () {
       await expect(
         privacyPool.initialize(
           ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress,
-          ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, 0, ethers.ZeroAddress
+          ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress, 0, ethers.ZeroAddress, ethers.ZeroAddress
         )
       ).to.be.revertedWith("PrivacyPool: Already initialized");
+    });
+
+    it("initialize rejects zero treasury address", async function () {
+      const freshPool = await (await ethers.getContractFactory("PrivacyPool")).deploy();
+      await expect(
+        freshPool.initialize(
+          await shieldModule.getAddress(),
+          await transactModule.getAddress(),
+          await merkleModule.getAddress(),
+          await verifierModule.getAddress(),
+          await hubTokenMessenger.getAddress(),
+          await hubMessageTransmitter.getAddress(),
+          await hubUsdc.getAddress(),
+          DOMAINS.hub,
+          deployerAddress,
+          ethers.ZeroAddress
+        )
+      ).to.be.revertedWith("PrivacyPool: zero treasury");
     });
 
     it("double-initialize reverts on PrivacyPoolClient", async function () {
@@ -767,7 +779,7 @@ describe("Privacy Pool Adversarial", function () {
         await freshShield.getAddress(), await freshTransact.getAddress(),
         await freshMerkle.getAddress(), await freshVerifier.getAddress(),
         await hubTokenMessenger.getAddress(), await hubMessageTransmitter.getAddress(),
-        await hubUsdc.getAddress(), DOMAINS.hub, deployerAddress
+        await hubUsdc.getAddress(), DOMAINS.hub, deployerAddress, deployerAddress
       );
 
       const initialRoot = await freshPool.merkleRoot();

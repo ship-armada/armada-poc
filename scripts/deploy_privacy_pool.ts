@@ -177,8 +177,21 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   const privacyPoolAddress = await privacyPool.getAddress();
   console.log(`   PrivacyPool: ${privacyPoolAddress}`);
 
-  // 7. Initialize PrivacyPool
+  // 7. Resolve treasury address and initialize PrivacyPool
   console.log("\n7. Initializing PrivacyPool...");
+  const yieldDeployment = loadDeployment(getYieldDeploymentFile());
+  let treasuryAddress = deployer.address;
+  if (config.treasuryAddress) {
+    treasuryAddress = config.treasuryAddress;
+    console.log("   Using TREASURY_ADDRESS from env");
+  } else if (yieldDeployment?.contracts?.armadaTreasury) {
+    treasuryAddress = yieldDeployment.contracts.armadaTreasury;
+    console.log("   Using ArmadaTreasury from yield deployment");
+  } else {
+    console.log("   Warning: no treasury configured, using deployer as treasury");
+  }
+  console.log("   Treasury: " + treasuryAddress);
+
   const initTx = await privacyPool.initialize(
     shieldModuleAddress,
     transactModuleAddress,
@@ -189,10 +202,11 @@ async function deployHub(): Promise<HubDeploymentInfo> {
     usdcAddress,
     domain,
     deployer.address,
+    treasuryAddress,
     nm.override()
   );
   await initTx.wait();
-  console.log("   PrivacyPool initialized");
+  console.log("   PrivacyPool initialized (treasury immutable)");
 
   // 8. Deploy CCTPHookRouter
   console.log("\n8. Deploying CCTPHookRouter...");
@@ -210,22 +224,9 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   // 10. SNARK verification enabled
   console.log("\n10. SNARK verification enabled (testing mode disabled)");
 
-  // 10b. Configure shield fee and treasury
+  // 10b. Configure shield fee
   console.log("\n10b. Configuring shield fee...");
-  const yieldDeployment = loadDeployment(getYieldDeploymentFile());
-  let treasuryAddress = deployer.address;
-  if (config.treasuryAddress) {
-    treasuryAddress = config.treasuryAddress;
-    console.log("   Using TREASURY_ADDRESS from env");
-  } else if (yieldDeployment?.contracts?.armadaTreasury) {
-    treasuryAddress = yieldDeployment.contracts.armadaTreasury;
-    console.log("   Using ArmadaTreasury from yield deployment");
-  } else {
-    console.log("   Warning: no treasury configured, using deployer as treasury");
-  }
-  await (await privacyPool.setTreasury(treasuryAddress)).wait();
   await (await privacyPool.setShieldFee(50)).wait();
-  console.log("   Treasury: " + treasuryAddress);
   console.log("   Shield fee: 50 bps (0.50%)");
 
   const deployment: HubDeploymentInfo = {

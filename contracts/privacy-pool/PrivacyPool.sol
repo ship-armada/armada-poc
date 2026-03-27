@@ -49,6 +49,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _usdc USDC token address
      * @param _localDomain This chain's CCTP domain ID
      * @param _owner Contract owner
+     * @param _treasury Address to receive protocol fees (immutable after init)
      */
     function initialize(
         address _shieldModule,
@@ -59,7 +60,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address _messageTransmitter,
         address _usdc,
         uint32 _localDomain,
-        address _owner
+        address _owner,
+        address payable _treasury
     ) external override {
         require(!initialized, "PrivacyPool: Already initialized");
         require(_shieldModule != address(0), "PrivacyPool: zero shieldModule");
@@ -70,6 +72,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(_messageTransmitter != address(0), "PrivacyPool: zero messageTransmitter");
         require(_usdc != address(0), "PrivacyPool: zero usdc");
         require(_owner != address(0), "PrivacyPool: zero owner");
+        require(_treasury != address(0), "PrivacyPool: zero treasury");
 
         // Set module addresses
         shieldModule = _shieldModule;
@@ -85,6 +88,9 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
         // Set owner
         owner = _owner;
+
+        // Set treasury (immutable after initialization)
+        treasury = _treasury;
 
         // Initialize merkle tree via delegatecall
         _delegatecall(merkleModule, abi.encodeCall(IMerkleModule.initializeMerkle, ()));
@@ -284,16 +290,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         require(_feeBps <= 10000, "PrivacyPool: Fee too high");
         unshieldFee = _feeBps;
-    }
-
-    /**
-     * @notice Set the treasury address for fee collection
-     * @param _treasury Address to receive protocol fees
-     */
-    function setTreasury(address payable _treasury) external override {
-        require(msg.sender == owner, "PrivacyPool: Only owner");
-        require(_treasury != address(0), "PrivacyPool: zero treasury");
-        treasury = _treasury;
     }
 
     /**

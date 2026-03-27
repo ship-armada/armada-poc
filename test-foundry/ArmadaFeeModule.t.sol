@@ -411,9 +411,6 @@ contract ArmadaFeeModuleTest is Test {
         feeModule.setIntegratorTerms(integrator1, 25, 100_000e6, true);
 
         vm.expectRevert("Ownable: caller is not the owner");
-        feeModule.setTreasury(alice);
-
-        vm.expectRevert("Ownable: caller is not the owner");
         feeModule.setPrivacyPool(alice);
 
         vm.expectRevert("Ownable: caller is not the owner");
@@ -499,12 +496,6 @@ contract ArmadaFeeModuleTest is Test {
     // Address Setter Views
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_setTreasury_updates() public {
-        address newTreasury = address(0xDEAD);
-        feeModule.setTreasury(newTreasury);
-        assertEq(feeModule.treasury(), newTreasury);
-    }
-
     function test_setPrivacyPool_updates() public {
         address newPool = address(0xDEAD);
         feeModule.setPrivacyPool(newPool);
@@ -515,11 +506,6 @@ contract ArmadaFeeModuleTest is Test {
         address newVault = address(0xDEAD);
         feeModule.setYieldVault(newVault);
         assertEq(feeModule.yieldVault(), newVault);
-    }
-
-    function test_setTreasury_revertsZero() public {
-        vm.expectRevert("ArmadaFeeModule: zero treasury");
-        feeModule.setTreasury(address(0));
     }
 
     function test_setPrivacyPool_revertsZero() public {

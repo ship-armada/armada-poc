@@ -1007,11 +1007,11 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
       await hubUsdc.getAddress(),
       POOL_DOMAINS.hub,
       deployer.address,
+      deployer.address,
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
     await privacyPool.setTestingMode(true);
-    await privacyPool.setTreasury(deployer.address);
     await privacyPool.setShieldPauseContract(await shieldPauseController.getAddress());
 
     await mine(1);

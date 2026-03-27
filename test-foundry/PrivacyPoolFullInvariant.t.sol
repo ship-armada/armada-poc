@@ -224,14 +224,12 @@ contract PrivacyPoolFullInvariantTest is Test {
             address(messageTransmitter),
             address(usdc),
             0, // localDomain
-            owner
+            owner,
+            payable(treasury)
         );
 
         // Enable testing mode (bypass SNARK verification)
         pool.setTestingMode(true);
-
-        // Set treasury
-        pool.setTreasury(payable(treasury));
 
         // Set shield fee to 50 bps (0.5%) to test fee math under INV-1
         pool.setShieldFee(50);

@@ -72,13 +72,14 @@ describe("CCTP V2 Fast Finality", function () {
     bobAddress = await bob.getAddress();
     relayerAddress = await relayer.getAddress();
 
+    // Configure treasury as deployer
+    treasuryAddress = deployerAddress;
+
     await deployHubChain();
     await deployClientChain();
     await linkDeployments();
 
-    // Configure treasury and shield fee
-    treasuryAddress = deployerAddress;
-    await privacyPool.setTreasury(treasuryAddress);
+    // Configure shield fee: 50 bps (0.50%)
     await privacyPool.setShieldFee(50); // 0.50%
   });
 
@@ -148,7 +149,8 @@ describe("CCTP V2 Fast Finality", function () {
       await hubMessageTransmitter.getAddress(),
       await hubUsdc.getAddress(),
       DOMAINS.hub,
-      deployerAddress
+      deployerAddress,
+      treasuryAddress
     );
 
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");

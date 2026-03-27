@@ -642,6 +642,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             );
         }
 
+        // Defense-in-depth: verify steward calldata would not classify as Extended.
+        // Currently safe because stewardSpend is not an extended selector, but this
+        // guard protects against future selector additions that could allow sensitive
+        // operations to bypass Extended classification via the pass-by-default path.
+        require(
+            _classifyProposal(ProposalType.Standard, targets, calldatas) != ProposalType.Extended,
+            "ArmadaGovernor: steward calldata classified as extended"
+        );
+
         uint256 proposalId = ++proposalCount;
         _initProposal(proposalId, ProposalType.Steward, description);
 

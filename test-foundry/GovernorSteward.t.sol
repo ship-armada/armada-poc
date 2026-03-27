@@ -467,6 +467,29 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // Classification guard (#102)
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_proposeStewardSpend_revertsIfCalldataClassifiesAsExtended() public {
+        // Register stewardSpend's selector as extended (simulates future expansion)
+        bytes4 stewardSpendSelector = bytes4(keccak256("stewardSpend(address,address,uint256)"));
+        vm.prank(address(timelock));
+        governor.addExtendedSelector(stewardSpendSelector);
+
+        // Steward proposal should now revert because its calldata would classify as Extended
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 1e6;
+
+        vm.prank(stewardPerson);
+        vm.expectRevert("ArmadaGovernor: steward calldata classified as extended");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "should fail");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // Budget management on treasury
     // ══════════════════════════════════════════════════════════════════════
 

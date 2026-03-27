@@ -110,6 +110,14 @@ describe("Treasury Outflow Rate Limits", function () {
       ).to.be.revertedWith("ArmadaTreasuryGov: outflow already initialized");
     });
 
+    it("should reject zero bps in initOutflowConfig", async function () {
+      await expect(
+        treasury.initOutflowConfig(
+          await usdc.getAddress(), THIRTY_DAYS, 0, USDC(100_000), USDC(50_000)
+        )
+      ).to.be.revertedWith("ArmadaTreasuryGov: zero bps");
+    });
+
     it("should reject absolute limit below floor", async function () {
       await expect(
         treasury.initOutflowConfig(
@@ -145,6 +153,12 @@ describe("Treasury Outflow Rate Limits", function () {
       await treasury.setOutflowLimitBps(await usdc.getAddress(), 2000);
       const config = await treasury.getOutflowConfig(await usdc.getAddress());
       expect(config.limitBps).to.equal(2000);
+    });
+
+    it("should reject zero bps", async function () {
+      await expect(
+        treasury.setOutflowLimitBps(await usdc.getAddress(), 0)
+      ).to.be.revertedWith("ArmadaTreasuryGov: zero bps");
     });
 
     it("should reject bps above 10000", async function () {

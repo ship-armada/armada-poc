@@ -988,12 +988,23 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         emit ProposalExecuted(proposalId);
     }
 
-    /// @notice Cancel a proposal (proposer only, while Pending)
+    /// @notice Cancel a proposal. Standard/Extended: proposer only, while Pending.
+    /// Steward proposals: proposer only, while Pending or Active (steward proposals
+    /// skip Pending due to zero voting delay, so Active is the earliest cancellable state).
     function cancel(uint256 proposalId) external {
         Proposal storage p = _proposals[proposalId];
         require(p.id != 0, "ArmadaGovernor: unknown proposal");
         require(msg.sender == p.proposer, "ArmadaGovernor: not proposer");
-        require(state(proposalId) == ProposalState.Pending, "ArmadaGovernor: not pending");
+
+        ProposalState currentState = state(proposalId);
+        if (p.proposalType == ProposalType.Steward) {
+            require(
+                currentState == ProposalState.Pending || currentState == ProposalState.Active,
+                "ArmadaGovernor: not pending or active"
+            );
+        } else {
+            require(currentState == ProposalState.Pending, "ArmadaGovernor: not pending");
+        }
 
         p.canceled = true;
 

@@ -48,7 +48,7 @@ describe("Crowdfund EIP-712 Invites", function () {
 
   const inviteTypes = {
     Invite: [
-      { name: "invitee", type: "address" },
+      { name: "inviter", type: "address" },
       { name: "fromHop", type: "uint8" },
       { name: "nonce", type: "uint256" },
       { name: "deadline", type: "uint256" },
@@ -68,25 +68,24 @@ describe("Crowdfund EIP-712 Invites", function () {
     await crowdfund.addSeeds(seeds.map((s) => s.address));
   }
 
-  // Build an EIP-712 invite value object
+  // Build an EIP-712 invite value object (bearer credential: signs inviter's own address)
   function inviteValue(
-    invitee: string,
+    inviter: string,
     fromHop: number,
     nonce: number,
     deadline: number
   ) {
-    return { invitee, fromHop, nonce, deadline };
+    return { inviter, fromHop, nonce, deadline };
   }
 
-  // Sign an invite using EIP-712
+  // Sign an invite using EIP-712 (bearer credential: signer signs their own address)
   async function signInvite(
     signer: SignerWithAddress,
-    invitee: string,
     fromHop: number,
     nonce: number,
     deadline: number
   ): Promise<string> {
-    const value = inviteValue(invitee, fromHop, nonce, deadline);
+    const value = inviteValue(signer.address, fromHop, nonce, deadline);
     return signer.signTypedData(domain, inviteTypes, value);
   }
 
@@ -162,7 +161,6 @@ describe("Crowdfund EIP-712 Invites", function () {
 
       const signature = await signInvite(
         seed1,
-        hop1a.address,
         0, // fromHop
         nonce,
         deadline
@@ -196,7 +194,6 @@ describe("Crowdfund EIP-712 Invites", function () {
 
       const signature = await signInvite(
         seed1,
-        hop1a.address,
         0,
         nonce,
         pastDeadline
@@ -213,7 +210,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       await setupWithSeeds([seed1]);
       const deadline = await futureDeadline();
 
-      const signature = await signInvite(seed1, hop1a.address, 0, 0, deadline);
+      const signature = await signInvite(seed1, 0, 0, deadline);
 
       await expect(
         crowdfund
@@ -228,13 +225,13 @@ describe("Crowdfund EIP-712 Invites", function () {
       const nonce = 42;
 
       // First use succeeds
-      const sig1 = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const sig1 = await signInvite(seed1, 0, nonce, deadline);
       await crowdfund
         .connect(hop1a)
         .commitWithInvite(seed1.address, 0, nonce, deadline, sig1, USDC(1_000));
 
-      // Second use with same nonce (different invitee) should fail
-      const sig2 = await signInvite(seed1, hop1b.address, 0, nonce, deadline);
+      // Second use with same nonce (different invitee) should fail — nonce consumed
+      const sig2 = await signInvite(seed1, 0, nonce, deadline);
       await expect(
         crowdfund
           .connect(hop1b)
@@ -250,7 +247,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       // Seed1 revokes the nonce before it's used
       await crowdfund.connect(seed1).revokeInviteNonce(nonce);
 
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
       await expect(
         crowdfund
@@ -267,7 +264,6 @@ describe("Crowdfund EIP-712 Invites", function () {
       // outsider signs instead of seed1
       const signature = await signInvite(
         outsider,
-        hop1a.address,
         0,
         nonce,
         deadline
@@ -281,20 +277,42 @@ describe("Crowdfund EIP-712 Invites", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: invalid invite signature");
     });
 
-    it("should revert with tampered data (signature for different invitee)", async function () {
+    it("should revert when claimed inviter does not match signer", async function () {
+      // seed1 signs a bearer invite (signing their own address)
       await setupWithSeeds([seed1]);
       const deadline = await futureDeadline();
       const nonce = 1;
 
-      // seed1 signs an invite for hop1a
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
-      // hop1b tries to use the signature meant for hop1a
+      // Caller passes outsider.address as inviter — ECDSA recovery yields seed1,
+      // which doesn't match outsider, so SignatureChecker fails
       await expect(
         crowdfund
-          .connect(hop1b)
-          .commitWithInvite(seed1.address, 0, nonce, deadline, signature, USDC(1_000))
+          .connect(hop1a)
+          .commitWithInvite(outsider.address, 0, nonce, deadline, signature, USDC(1_000))
       ).to.be.revertedWith("ArmadaCrowdfund: invalid invite signature");
+    });
+
+    it("bearer invite can be redeemed by any address", async function () {
+      // seed1 signs one bearer invite (no invitee in signature)
+      await setupWithSeeds([seed1]);
+      const deadline = await futureDeadline();
+      const nonce = 1;
+
+      const signature = await signInvite(seed1, 0, nonce, deadline);
+
+      // hop1a redeems the bearer credential
+      const commitAmount = USDC(1_000);
+      const tx = await crowdfund
+        .connect(hop1a)
+        .commitWithInvite(seed1.address, 0, nonce, deadline, signature, commitAmount);
+
+      await expect(tx)
+        .to.emit(crowdfund, "Invited")
+        .withArgs(seed1.address, hop1a.address, 1, nonce);
+
+      expect(await crowdfund.isWhitelisted(hop1a.address, 1)).to.be.true;
     });
 
     it("should revert when inviter budget is exhausted", async function () {
@@ -305,14 +323,14 @@ describe("Crowdfund EIP-712 Invites", function () {
       // Use all 3 invite slots via signed invites
       for (let i = 0; i < 3; i++) {
         const invitee = [hop1a, hop1b, hop1c][i];
-        const sig = await signInvite(seed1, invitee.address, 0, i + 1, deadline);
+        const sig = await signInvite(seed1, 0, i + 1, deadline);
         await crowdfund
           .connect(invitee)
           .commitWithInvite(seed1.address, 0, i + 1, deadline, sig, USDC(1_000));
       }
 
       // 4th invite should fail
-      const sig4 = await signInvite(seed1, hop1d.address, 0, 4, deadline);
+      const sig4 = await signInvite(seed1, 0, 4, deadline);
       await expect(
         crowdfund
           .connect(hop1d)
@@ -326,7 +344,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       const deadline = (await time.latest()) + 30 * ONE_DAY;
       const nonce = 1;
 
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
       // Advance past window end
       const THREE_WEEKS = 21 * ONE_DAY;
@@ -347,7 +365,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       // hop1a (hop-1) signs EIP-712 invite for hop1b to join at hop-2
       const deadline = await futureDeadline();
       const nonce = 1;
-      const signature = await signInvite(hop1a, hop1b.address, 1, nonce, deadline);
+      const signature = await signInvite(hop1a, 1, nonce, deadline);
 
       const commitAmount = USDC(500);
       await crowdfund
@@ -368,7 +386,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       // hop1b (hop-2) signs invite with fromHop=2
       const deadline = await futureDeadline();
       const nonce = 1;
-      const signature = await signInvite(hop1b, hop1c.address, 2, nonce, deadline);
+      const signature = await signInvite(hop1b, 2, nonce, deadline);
 
       // Contract checks fromHop < NUM_HOPS - 1 (i.e., fromHop < 2)
       await expect(
@@ -383,7 +401,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       await setupWithSeeds([seed1]);
       const deadline = await futureDeadline();
       const nonce = 1;
-      const signature = await signInvite(seed1, deployer.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
       await fundAndApprove(deployer, USDC(1_000));
 
@@ -410,7 +428,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       // 11th seed signs EIP-712 invite for alice
       const deadline = await futureDeadline();
       const nonce = 1;
-      const signature = await signInvite(seeds[10], alice.address, 0, nonce, deadline);
+      const signature = await signInvite(seeds[10], 0, nonce, deadline);
 
       await fundAndApprove(alice, USDC(1_000));
 
@@ -453,7 +471,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       const deadline = await futureDeadline();
       const nonce = 5;
 
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
       await crowdfund
         .connect(hop1a)
         .commitWithInvite(seed1.address, 0, nonce, deadline, signature, USDC(1_000));
@@ -485,7 +503,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       const deadline = await futureDeadline();
       const nonce = 100;
 
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
       await expect(
         crowdfund.connect(hop1a).commitWithInvite(
@@ -499,7 +517,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       const deadline = await futureDeadline();
       const nonce = 101;
 
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
       // $9.999999 (one wei below MIN_COMMIT)
       await expect(
@@ -514,7 +532,7 @@ describe("Crowdfund EIP-712 Invites", function () {
       const deadline = await futureDeadline();
       const nonce = 102;
 
-      const signature = await signInvite(seed1, hop1a.address, 0, nonce, deadline);
+      const signature = await signInvite(seed1, 0, nonce, deadline);
 
       await crowdfund.connect(hop1a).commitWithInvite(
         seed1.address, 0, nonce, deadline, signature, USDC(10)

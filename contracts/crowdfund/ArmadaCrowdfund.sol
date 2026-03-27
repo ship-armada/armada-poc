@@ -44,7 +44,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     // EIP-712 typehash for off-chain invite signatures
     bytes32 public constant INVITE_TYPEHASH = keccak256(
-        "Invite(address invitee,uint8 fromHop,uint256 nonce,uint256 deadline)"
+        "Invite(address inviter,uint8 fromHop,uint256 nonce,uint256 deadline)"
     );
 
     // ============ Immutable ============
@@ -379,7 +379,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Verify EIP-712 signature
         bytes32 structHash = keccak256(abi.encode(
             INVITE_TYPEHASH,
-            msg.sender,     // invitee
+            inviter,        // bearer credential: inviter signs their own address
             fromHop,
             nonce,
             deadline

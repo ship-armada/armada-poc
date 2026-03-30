@@ -506,6 +506,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // can sum to slightly less than totalAllocatedUsdc, making the aggregate
         // refund slightly larger. Buffer = participantNodes.length * NUM_HOPS
         // (max 1 USDC unit per participant per hop). Residual dust stays in contract.
+        //
+        // Invariant note: the spec requires netProceeds + sum(refunds) == totalCommitted
+        // as a settlement-completion identity. The rounding buffer means the treasury
+        // receives slightly less than totalAllocatedUsdc, with the difference (at most
+        // participantNodes.length * NUM_HOPS USDC units) stranded in the contract as
+        // unrecoverable dust. The identity still holds at the contract level:
+        // treasuryReceived + contractDust + sum(refunds) == totalCommitted.
         uint256 roundingBuffer = participantNodes.length * NUM_HOPS;
         uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
             ? totalAllocUsdc_ - roundingBuffer

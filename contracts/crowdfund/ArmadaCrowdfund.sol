@@ -551,12 +551,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             totalAllocArm += allocArm;
             totalRefundUsdc += hopRefund;
 
-            emit AllocatedHop(msg.sender, h, allocUsdc);
+            if (allocUsdc > 0) emit AllocatedHop(msg.sender, h, allocUsdc);
         }
 
         // ARM: only transfer if within claim deadline
         uint256 armTransferred = 0;
         if (block.timestamp <= claimDeadline && totalAllocArm > 0) {
+            require(delegate != address(0), "ArmadaCrowdfund: delegate required");
             armTransferred = totalAllocArm;
             totalArmTransferred += armTransferred;
             armToken.safeTransfer(msg.sender, armTransferred);
@@ -570,7 +571,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             usdc.safeTransfer(msg.sender, totalRefundUsdc);
         }
 
-        emit Allocated(msg.sender, armTransferred, totalRefundUsdc, delegate);
+        emit Allocated(msg.sender, armTransferred, totalRefundUsdc, armTransferred > 0 ? delegate : address(0));
     }
 
     /// @notice Claim USDC refund — failure paths only. Three eligibility paths:

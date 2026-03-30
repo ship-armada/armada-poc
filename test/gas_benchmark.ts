@@ -234,8 +234,10 @@ describe("Gas Benchmarks", function () {
         openTimestamp3    // openTimestamp
       );
 
-      await armToken.addToWhitelist(await crowdfund.getAddress());
-      await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+      const cfAddr = await crowdfund.getAddress();
+      await armToken.addToWhitelist(cfAddr);
+      await armToken.initAuthorizedDelegators([cfAddr]);
+      await armToken.transfer(cfAddr, ARM(1_800_000));
       await crowdfund.loadArm();
 
       const count = 100;
@@ -255,15 +257,15 @@ describe("Gas Benchmarks", function () {
       // Measure gas for first, middle, and last claims
       const claimGas: { position: string; gas: bigint }[] = [];
 
-      const firstTx = await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      const firstTx = await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       const firstReceipt = await firstTx.wait();
       claimGas.push({ position: "first", gas: firstReceipt!.gasUsed });
 
-      const midTx = await crowdfund.connect(seeds[49]).claim(ethers.ZeroAddress);
+      const midTx = await crowdfund.connect(seeds[49]).claim(seeds[49].address);
       const midReceipt = await midTx.wait();
       claimGas.push({ position: "middle (50th)", gas: midReceipt!.gasUsed });
 
-      const lastTx = await crowdfund.connect(seeds[99]).claim(ethers.ZeroAddress);
+      const lastTx = await crowdfund.connect(seeds[99]).claim(seeds[99].address);
       const lastReceipt = await lastTx.wait();
       claimGas.push({ position: "last (100th)", gas: lastReceipt!.gasUsed });
 

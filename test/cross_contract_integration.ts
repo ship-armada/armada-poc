@@ -126,7 +126,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await treasuryGov.waitForDeployment();
 
     // Whitelist contracts that transfer ARM tokens
-    await armToken.addToWhitelist(await crowdfund.getAddress());
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Send most ARM to treasury address to make quorum reachable.
     // Keep DEPLOYER_KEEP for governance testing.
@@ -168,7 +170,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // 6. Seeds claim their ARM
       const claimedSeeds = seeds.slice(0, 5); // claim first 5 for governance testing
       for (const seed of claimedSeeds) {
-        await crowdfund.connect(seed).claim(ethers.ZeroAddress);
+        await crowdfund.connect(seed).claim(seed.address);
       }
 
       // Verify seeds received ARM
@@ -263,7 +265,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Claim all
       for (const seed of seeds) {
-        await crowdfund.connect(seed).claim(ethers.ZeroAddress);
+        await crowdfund.connect(seed).claim(seed.address);
       }
 
       // Skip past 7-day governance quiet period
@@ -370,7 +372,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Claim first 10 seeds
       for (let i = 0; i < 10; i++) {
-        await crowdfund.connect(seeds[i]).claim(ethers.ZeroAddress);
+        await crowdfund.connect(seeds[i]).claim(seeds[i].address);
       }
 
       // Skip past 7-day governance quiet period
@@ -470,17 +472,16 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("voting power reflects delegation state at proposal snapshot, not current state", async function () {
       await setupCrowdfundAndGovernance();
 
+      // Alice claimed during setup (first 10 seeds) — has voting power
       const alice = seeds[0];
-      const bob = seeds[1];
 
-      // Alice delegates to activate ERC20Votes voting power
-      await armToken.connect(alice).delegate(alice.address);
+      // Bob has NOT claimed yet (seeds[10] was not claimed in setup)
+      const bob = seeds[10];
 
-      // Bob does NOT delegate yet
       await mine(2);
 
       // Create proposal — snapshot is block.number - 1
-      // At snapshot: Alice has voting power, Bob does not
+      // At snapshot: Alice has voting power, Bob does not (hasn't claimed)
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("distribute", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
@@ -491,8 +492,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       );
       const proposalId = 1;
 
-      // NOW bob delegates (after proposal creation)
-      await armToken.connect(bob).delegate(bob.address);
+      // NOW bob claims (after proposal creation) — gets ARM + delegation atomically
+      await crowdfund.connect(bob).claim(bob.address);
 
       // Fast-forward to voting
       await time.increase(TWO_DAYS + 1);
@@ -501,7 +502,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       expect(await governor.hasVoted(proposalId, alice.address)).to.be.true;
 
-      // Bob cannot vote (delegated AFTER snapshot)
+      // Bob cannot vote (claimed and delegated AFTER snapshot)
       await expect(
         governor.connect(bob).castVote(proposalId, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
@@ -514,7 +515,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Alice tries to claim again — should revert
       await expect(
-        crowdfund.connect(alice).claim(ethers.ZeroAddress)
+        crowdfund.connect(alice).claim(alice.address)
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
 
       // Alice delegates and votes
@@ -666,7 +667,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.waitForDeployment();
 
       // Whitelist contracts that transfer ARM tokens
-      await localArmToken.addToWhitelist(await localCrowdfund.getAddress());
+      const localCfAddr = await localCrowdfund.getAddress();
+      await localArmToken.addToWhitelist(localCfAddr);
+      await localArmToken.initAuthorizedDelegators([localCfAddr]);
 
       // Step 5: Fund crowdfund from deployer remainder
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);
@@ -760,7 +763,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Now all seeds claim their ARM — ARM leaves the crowdfund contract
       for (const seed of localSeeds) {
-        await localCrowdfund.connect(seed).claim(ethers.ZeroAddress);
+        await localCrowdfund.connect(seed).claim(seed.address);
       }
 
       const crowdfundArmAfter = await localArmToken.balanceOf(await localCrowdfund.getAddress());
@@ -799,7 +802,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // All seeds claim
       for (const seed of localSeeds) {
-        await localCrowdfund.connect(seed).claim(ethers.ZeroAddress);
+        await localCrowdfund.connect(seed).claim(seed.address);
       }
 
       const treasuryAddress = await localTreasury.getAddress();
@@ -855,7 +858,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // 5 seeds claim
       const claimedSeeds = localSeeds.slice(0, 5);
       for (const seed of claimedSeeds) {
-        await localCrowdfund.connect(seed).claim(ethers.ZeroAddress);
+        await localCrowdfund.connect(seed).claim(seed.address);
       }
 
       // Skip past 7-day governance quiet period

@@ -248,10 +248,10 @@ describe("Crowdfund Adversarial", function () {
 
       // All participants claim ARM + USDC refund via claim() (seeds + hop-1)
       for (const s of seeds) {
-        await crowdfund.connect(s).claim(ethers.ZeroAddress);
+        await crowdfund.connect(s).claim(s.address);
       }
       for (let i = 0; i < 51; i++) {
-        await crowdfund.connect(hop1Pool[i]).claim(ethers.ZeroAddress);
+        await crowdfund.connect(hop1Pool[i]).claim(hop1Pool[i].address);
       }
 
       // Proceeds already pushed to treasury at finalization.
@@ -668,7 +668,7 @@ describe("Crowdfund Adversarial", function () {
 
       // Instead, claim() handles both ARM + refund
       const usdcBefore = await usdc.balanceOf(seeds[0].address);
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       const usdcAfter = await usdc.balanceOf(seeds[0].address);
 
       // Seeds at oversubscribed hop-0 should get a USDC refund (allocation < committed)
@@ -752,7 +752,7 @@ describe("Crowdfund Adversarial", function () {
       for (let i = 0; i < 5; i++) {
         const [, refundUsdc] = await crowdfund.computeAllocation(seeds[i].address);
         const usdcBefore = await usdc.balanceOf(seeds[i].address);
-        await crowdfund.connect(seeds[i]).claim(ethers.ZeroAddress);
+        await crowdfund.connect(seeds[i]).claim(seeds[i].address);
         const usdcAfter = await usdc.balanceOf(seeds[i].address);
         expect(usdcAfter - usdcBefore).to.equal(refundUsdc);
       }
@@ -1223,12 +1223,12 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
 
       // Verify claim works normally (proving nonReentrant doesn't block legitimate calls)
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       expect(await crowdfund.claimed(seeds[0].address)).to.be.true;
 
       // Double claim should fail
       await expect(
-        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+        crowdfund.connect(seeds[0]).claim(seeds[0].address)
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
 

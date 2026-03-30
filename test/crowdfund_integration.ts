@@ -877,7 +877,7 @@ describe("Crowdfund Integration", function () {
       const armBefore = await armToken.balanceOf(seeds[0].address);
       const usdcBefore = await usdc.balanceOf(seeds[0].address);
 
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
 
       const armAfter = await armToken.balanceOf(seeds[0].address);
       const usdcAfter = await usdc.balanceOf(seeds[0].address);
@@ -900,9 +900,9 @@ describe("Crowdfund Integration", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       await expect(
-        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+        crowdfund.connect(seeds[0]).claim(seeds[0].address)
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
 
@@ -1016,7 +1016,7 @@ describe("Crowdfund Integration", function () {
       const armBefore = await armToken.balanceOf(seeds[0].address);
       const usdcBefore = await usdc.balanceOf(seeds[0].address);
 
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
 
       // Hop-0 is oversubscribed → both ARM allocated and USDC refunded
       expect(await armToken.balanceOf(seeds[0].address)).to.be.gt(armBefore);
@@ -1084,19 +1084,19 @@ describe("Crowdfund Integration", function () {
 
     it("double claim() reverts", async function () {
       const seeds = await setupOversubscribed();
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
 
       await expect(
-        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+        crowdfund.connect(seeds[0]).claim(seeds[0].address)
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
 
     it("claim() after claim() reverts (shared claimed flag)", async function () {
       const seeds = await setupOversubscribed();
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
 
       await expect(
-        crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
+        crowdfund.connect(seeds[0]).claim(seeds[0].address)
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
 
@@ -1104,8 +1104,42 @@ describe("Crowdfund Integration", function () {
       const seeds = await setupOversubscribed();
       const delegate = allSigners[199].address;
 
+      const [expectedArm, expectedRefund] = await crowdfund.computeAllocation(seeds[0].address);
       await expect(crowdfund.connect(seeds[0]).claim(delegate))
-        .to.emit(crowdfund, "Allocated");
+        .to.emit(crowdfund, "Allocated")
+        .withArgs(seeds[0].address, expectedArm, expectedRefund, delegate);
+    });
+
+    it("AllocatedHop only emitted for hops with non-zero allocation", async function () {
+      const seeds = await setupOversubscribed();
+
+      // seeds[0] committed only on hop 0 — should emit exactly one AllocatedHop
+      const tx = await crowdfund.connect(seeds[0]).claim(seeds[0].address);
+      const receipt = await tx.wait();
+
+      // Parse AllocatedHop events from the claim receipt
+      const hopEvents = receipt.logs
+        .map((l: any) => { try { return crowdfund.interface.parseLog(l); } catch { return null; } })
+        .filter((e: any) => e?.name === "AllocatedHop");
+
+      // Participant committed on hop-0 only, so exactly one AllocatedHop expected
+      expect(hopEvents.length).to.equal(1);
+      expect(hopEvents[0].args.participant).to.equal(seeds[0].address);
+      expect(hopEvents[0].args.hop).to.equal(0);
+      expect(hopEvents[0].args.acceptedUsdc).to.be.gt(0n);
+    });
+
+    it("Allocated event emits delegate=address(0) on post-deadline claim", async function () {
+      const seeds = await setupOversubscribed();
+
+      const deadline = await crowdfund.claimDeadline();
+      await time.increaseTo(deadline + 1n);
+
+      // Post-deadline: ARM forfeited, delegate should be address(0) in event
+      const [, expectedRefund] = await crowdfund.computeAllocation(seeds[0].address);
+      await expect(crowdfund.connect(seeds[0]).claim(seeds[0].address))
+        .to.emit(crowdfund, "Allocated")
+        .withArgs(seeds[0].address, 0n, expectedRefund, ethers.ZeroAddress);
     });
 
     it("claim() after deadline still transfers refund (refunds never expire)", async function () {
@@ -1116,7 +1150,7 @@ describe("Crowdfund Integration", function () {
 
       // Post-deadline: ARM forfeited, but refund still transfers
       const usdcBefore = await usdc.balanceOf(seeds[0].address);
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       const usdcAfter = await usdc.balanceOf(seeds[0].address);
       expect(usdcAfter - usdcBefore).to.be.gt(0n);
 
@@ -1220,7 +1254,7 @@ describe("Crowdfund Integration", function () {
 
       // Claim first seed
       const armBefore = await armToken.balanceOf(seeds[0].address);
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       const armAfter = await armToken.balanceOf(seeds[0].address);
 
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
@@ -1280,7 +1314,7 @@ describe("Crowdfund Integration", function () {
       await crowdfund.finalize();
 
       // Claim ARM
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       const armBalance = await armToken.balanceOf(seeds[0].address);
       expect(armBalance).to.be.gt(0);
 

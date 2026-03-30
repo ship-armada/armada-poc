@@ -143,6 +143,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         address _securityCouncil,
         uint256 _openTimestamp
     ) EIP712("ArmadaCrowdfund", "1") {
+        require(_usdc != address(0), "ArmadaCrowdfund: zero usdc");
+        require(_armToken != address(0), "ArmadaCrowdfund: zero armToken");
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
         require(_securityCouncil != address(0), "ArmadaCrowdfund: zero securityCouncil");

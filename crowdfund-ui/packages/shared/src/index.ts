@@ -78,3 +78,9 @@ export type { SearchBarProps } from './components/SearchBar.js'
 
 export { NodeDetail } from './components/NodeDetail.js'
 export type { NodeDetailProps } from './components/NodeDetail.js'
+
+export { TreeView } from './components/TreeView.js'
+export type { TreeViewProps } from './components/TreeView.js'
+
+export type { TreeNode } from './lib/treeLayout.js'
+export { graphToTree, filterTree } from './lib/treeLayout.js'

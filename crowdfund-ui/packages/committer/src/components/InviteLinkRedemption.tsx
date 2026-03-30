@@ -13,9 +13,10 @@ import {
   hopLabel,
   formatCountdown,
   CROWDFUND_CONSTANTS,
+  HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
 import { decodeInviteUrl } from '@/lib/inviteLinks'
-import { getHubRpcUrl } from '@/config/network'
+import { getHubRpcUrl, getExplorerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
@@ -103,17 +104,28 @@ export function InviteLinkRedemption() {
 
   const parsedAmount = useMemo(() => parseUsdcInput(amountInput), [amountInput])
   const targetHop = inviteData ? inviteData.fromHop + 1 : 0
+  const hopCap = targetHop <= 2 ? HOP_CONFIGS[targetHop as 0 | 1 | 2].capUsdc : 0n
   const expired = inviteData ? inviteData.deadline < blockTimestamp : true
   const needsApproval = parsedAmount > allowance
+
+  const handleMax = useCallback(() => {
+    if (hopCap === 0n) return
+    // Cap is in 6-decimal USDC units, convert to display string
+    const maxDisplay = Number(hopCap / (10n ** 6n))
+    setAmountInput(String(maxDisplay))
+  }, [hopCap])
 
   const errors = useMemo(() => {
     const errs: string[] = []
     if (parsedAmount > 0n && parsedAmount < CROWDFUND_CONSTANTS.MIN_COMMIT) {
       errs.push(`Minimum commitment is ${formatUsdc(CROWDFUND_CONSTANTS.MIN_COMMIT)}`)
     }
+    if (parsedAmount > 0n && hopCap > 0n && parsedAmount > hopCap) {
+      errs.push(`Exceeds ${hopLabel(targetHop)} cap of ${formatUsdc(hopCap)}`)
+    }
     if (parsedAmount > balance) errs.push('Insufficient USDC balance')
     return errs
-  }, [parsedAmount, balance])
+  }, [parsedAmount, balance, hopCap, targetHop])
 
   const handleSubmit = useCallback(async () => {
     if (!inviteData || !deployment || parsedAmount === 0n) return
@@ -208,7 +220,17 @@ export function InviteLinkRedemption() {
             </div>
 
             <div>
-              <label className="text-xs text-muted-foreground">Commitment Amount (USDC)</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">Commitment Amount (USDC)</label>
+                {hopCap > 0n && (
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={handleMax}
+                  >
+                    MAX: {formatUsdc(hopCap)}
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 inputMode="decimal"
@@ -217,6 +239,11 @@ export function InviteLinkRedemption() {
                 onChange={(e) => setAmountInput(e.target.value)}
                 className="w-full rounded border border-input bg-background px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-1 focus:ring-ring"
               />
+              {hopCap > 0n && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  {hopLabel(targetHop)} cap: {formatUsdc(hopCap)} per invite slot
+                </div>
+              )}
             </div>
 
             {errors.length > 0 && (
@@ -237,6 +264,7 @@ export function InviteLinkRedemption() {
               state={approvalTx.state.status !== 'idle' ? approvalTx.state : commitTx.state}
               onReset={() => { approvalTx.reset(); commitTx.reset() }}
               successMessage="Welcome to the Armada crowdfund! Redirecting..."
+              explorerUrl={getExplorerUrl()}
             />
           </div>
         )}

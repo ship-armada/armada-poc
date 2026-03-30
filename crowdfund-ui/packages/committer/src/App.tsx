@@ -11,6 +11,7 @@ import {
   StatsBar,
   TableView,
   SearchBar,
+  TreeView,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrl, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -55,7 +56,7 @@ export function App() {
     contractAddress: crowdfundAddress,
     pollIntervalMs: pollInterval,
   })
-  const { summaries, nodes } = useGraphState()
+  const { graph, summaries, nodes } = useGraphState()
   const contractState = useContractState(provider, crowdfundAddress, pollInterval)
   const { selectedAddress, selectAddress, searchQuery, setSearchQuery } = useSelection()
 
@@ -71,6 +72,12 @@ export function App() {
   const eligibility = useEligibility(wallet.address, nodes)
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, provider)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
+
+  // Compute the user's personal committed amount (not the global total)
+  const userTotalCommitted = useMemo(
+    () => eligibility.positions.reduce((sum, p) => sum + p.committed, 0n),
+    [eligibility.positions],
+  )
 
   // Is the commitment window open?
   const windowOpen =
@@ -163,6 +170,14 @@ export function App() {
           {/* Observer panel (left ~60%) */}
           <div className="lg:col-span-3 space-y-3">
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
+            <TreeView
+              graph={graph}
+              selectedAddress={selectedAddress ?? wallet.address}
+              onSelectAddress={selectAddress}
+              searchQuery={searchQuery}
+              phase={contractState.phase}
+              resolveENS={resolveENS}
+            />
             <TableView
               summaries={summaryArray}
               nodes={nodes}
@@ -249,7 +264,11 @@ export function App() {
                       refundMode={contractState.refundMode}
                       blockTimestamp={contractState.blockTimestamp}
                       claimDeadline={contractState.claimDeadline}
-                      totalCommitted={contractState.totalCommitted}
+                      totalCommitted={userTotalCommitted}
+                      windowEnd={contractState.windowEnd}
+                      cappedDemand={contractState.cappedDemand}
+                      saleSize={contractState.saleSize}
+                      graph={graph}
                     />
                   )}
                 </div>

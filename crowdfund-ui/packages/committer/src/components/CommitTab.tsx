@@ -18,6 +18,7 @@ import { useProRataEstimate } from '@/hooks/useProRataEstimate'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 import { ProRataEstimate } from './ProRataEstimate'
 import { TransactionFlow } from './TransactionFlow'
+import { getExplorerUrl } from '@/config/network'
 
 export interface CommitTabProps {
   positions: HopPosition[]
@@ -282,6 +283,7 @@ export function CommitTab(props: CommitTabProps) {
             state={approvalTx.state.status !== 'idle' ? approvalTx.state : commitTx.state}
             onReset={() => { approvalTx.reset(); commitTx.reset() }}
             successMessage="Commitment confirmed!"
+            explorerUrl={getExplorerUrl()}
           />
         </div>
       )}

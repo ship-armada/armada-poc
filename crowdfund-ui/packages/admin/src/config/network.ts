@@ -29,3 +29,9 @@ export function getDeploymentFileName(): string {
 export function getPollIntervalMs(): number {
   return isLocalMode() ? 5_000 : 15_000
 }
+
+/** Block explorer base URL. Returns undefined for local mode (no explorer). */
+export function getExplorerUrl(): string | undefined {
+  if (isLocalMode()) return undefined
+  return 'https://sepolia.etherscan.io'
+}

@@ -12,6 +12,7 @@ import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 import { TransactionFlow } from './TransactionFlow'
+import { getExplorerUrl } from '@/config/network'
 import { InviteLinkSection } from './InviteLinkSection'
 
 export interface InviteTabProps {
@@ -199,6 +200,7 @@ export function InviteTab(props: InviteTabProps) {
         state={tx.state}
         onReset={tx.reset}
         successMessage="Invite sent!"
+        explorerUrl={getExplorerUrl()}
       />
 
       <InviteLinkSection

@@ -1,12 +1,13 @@
 // ABOUTME: Invite link management UI — create, copy, and revoke EIP-712 signed invite links.
 // ABOUTME: Renders below the direct invite form in the Invite tab.
 
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { formatCountdown, hopLabel } from '@armada/crowdfund-shared'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
 import { TransactionFlow } from './TransactionFlow'
+import { getExplorerUrl } from '@/config/network'
 
 export interface InviteLinkSectionProps {
   inviteLinks: UseInviteLinksResult
@@ -23,9 +24,11 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
   const invitePositions = positions.filter((p) => p.invitesAvailable > 0)
 
   // Auto-select first available hop
-  if (selectedHop === null && invitePositions.length > 0) {
-    setSelectedHop(invitePositions[0].hop)
-  }
+  useEffect(() => {
+    if (selectedHop === null && invitePositions.length > 0) {
+      setSelectedHop(invitePositions[0].hop)
+    }
+  }, [selectedHop, invitePositions])
 
   const handleCreateLink = useCallback(async () => {
     if (selectedHop === null) return
@@ -179,6 +182,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
         state={revokeTx.state}
         onReset={revokeTx.reset}
         successMessage="Link revoked!"
+        explorerUrl={getExplorerUrl()}
       />
     </div>
   )

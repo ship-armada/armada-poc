@@ -7,10 +7,11 @@ export interface TransactionFlowProps {
   state: TxState
   onReset: () => void
   successMessage?: string
+  explorerUrl?: string
 }
 
 export function TransactionFlow(props: TransactionFlowProps) {
-  const { state, onReset, successMessage = 'Transaction confirmed!' } = props
+  const { state, onReset, successMessage = 'Transaction confirmed!', explorerUrl } = props
 
   if (state.status === 'idle') return null
 
@@ -28,9 +29,20 @@ export function TransactionFlow(props: TransactionFlowProps) {
           <span className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
           <span className="text-sm">Transaction submitted. Waiting for confirmation...</span>
           {state.txHash && (
-            <span className="text-xs text-muted-foreground font-mono">
-              {state.txHash.slice(0, 10)}...
-            </span>
+            explorerUrl ? (
+              <a
+                href={`${explorerUrl}/tx/${state.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline font-mono"
+              >
+                {state.txHash.slice(0, 10)}...
+              </a>
+            ) : (
+              <span className="text-xs text-muted-foreground font-mono">
+                {state.txHash.slice(0, 10)}...
+              </span>
+            )
           )}
         </div>
       )}
@@ -40,6 +52,16 @@ export function TransactionFlow(props: TransactionFlowProps) {
           <div className="flex items-center gap-2 text-success">
             <span className="text-sm font-medium">{successMessage}</span>
           </div>
+          {state.txHash && explorerUrl && (
+            <a
+              href={`${explorerUrl}/tx/${state.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline font-mono"
+            >
+              View on explorer
+            </a>
+          )}
           <button
             className="text-xs text-primary hover:underline"
             onClick={onReset}

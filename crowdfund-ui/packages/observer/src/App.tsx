@@ -11,6 +11,7 @@ import {
   StatsBar,
   TableView,
   SearchBar,
+  TreeView,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrl, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -45,7 +46,7 @@ export function App() {
     pollIntervalMs: pollInterval,
   })
 
-  const { summaries, nodes } = useGraphState()
+  const { graph, summaries, nodes } = useGraphState()
 
   // Aggregate contract state
   const contractState = useContractState(provider, contractAddress, pollInterval)
@@ -165,8 +166,16 @@ export function App() {
         {/* Search */}
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
-        {/* Main content: table (tree is Agent C's task) */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* Main content: tree + table */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <TreeView
+            graph={graph}
+            selectedAddress={selectedAddress}
+            onSelectAddress={selectAddress}
+            searchQuery={searchQuery}
+            phase={contractState.phase}
+            resolveENS={resolveENS}
+          />
           <TableView
             summaries={summaryArray}
             nodes={nodes}

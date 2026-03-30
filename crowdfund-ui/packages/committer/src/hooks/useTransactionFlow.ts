@@ -32,6 +32,13 @@ function friendlyError(err: unknown): string {
   if (msg.includes('not whitelisted')) return 'Address is not invited at this hop level'
   if (msg.includes('no invites remaining')) return 'No invite slots remaining at this hop'
   if (msg.includes('already claimed')) return 'Already claimed'
+  if (msg.includes('deadline passed')) return 'The commitment deadline has passed'
+  if (msg.includes('cancelled')) return 'The crowdfund has been cancelled'
+  if (msg.includes('already finalized')) return 'The crowdfund has already been finalized'
+  if (msg.includes('claim expired')) return 'The claim deadline has passed'
+  if (msg.includes('invalid signature')) return 'Invalid invite link signature'
+  if (msg.includes('nonce consumed')) return 'This invite link has already been used'
+  if (msg.includes('nonce revoked')) return 'This invite link has been revoked'
   if (msg.includes('nonce')) return 'Invite nonce is invalid or already used'
 
   // Truncate long error messages

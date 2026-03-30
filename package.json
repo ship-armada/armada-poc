@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "usdc-v2-frontend",
-    "crowdfund-frontend"
+    "crowdfund-frontend",
+    "crowdfund-ui/packages/*"
   ],
   "scripts": {
     "compile": "hardhat compile",
@@ -50,6 +51,9 @@
     "governance-ui": "npm run --prefix governance-ui dev",
     "demo": "cd usdc-v2-frontend && npm run dev",
     "crowdfund-ui": "cd crowdfund-frontend && npm run dev",
+    "crowdfund:observer": "npm run dev --workspace=@armada/crowdfund-observer",
+    "crowdfund:committer": "npm run dev --workspace=@armada/crowdfund-committer",
+    "crowdfund:admin": "npm run dev --workspace=@armada/crowdfund-admin",
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
     "demo:build": "cd usdc-v2-frontend && npm run build",
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",

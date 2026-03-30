@@ -176,6 +176,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     uint256 public constant CIRCUIT_BREAKER_THRESHOLD = 5;
     uint256 public constant CIRCUIT_BREAKER_PARTICIPATION_BPS = 3000; // 30%
 
+    /// @notice Ordered list of steward proposal IDs for auto-resolution tracking.
+    uint256[] private _stewardProposalIds;
+
+    /// @notice Cursor into _stewardProposalIds; all entries before this index are resolved.
+    uint256 private _stewardResolveIndex;
+
     // ============ Events ============
 
     event ProposalCreated(
@@ -628,6 +634,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             ITreasurySteward(stewardContract).isStewardActive(),
             "ArmadaGovernor: steward not active"
         );
+
+        // Auto-resolve all prior steward proposals whose voting has ended.
+        // Must run before the pause check: resolution may trigger the circuit breaker.
+        _autoResolveStewardProposals();
+
         require(!stewardChannelPaused, "ArmadaGovernor: steward channel paused");
         require(tokens.length > 0, "ArmadaGovernor: empty proposal");
         require(
@@ -673,6 +684,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // No bond required for steward proposals — the steward is an elected role
         // operating within budget limits. Bonds are for standard/extended proposals only.
 
+        // Track for auto-resolution on next proposeStewardSpend() call
+        _stewardProposalIds.push(proposalId);
+
         emit ProposalCreated(
             proposalId, msg.sender, ProposalType.Steward,
             p.voteStart, p.voteEnd, description
@@ -691,6 +705,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         require(p.proposalType == ProposalType.Steward, "ArmadaGovernor: not steward proposal");
         require(block.timestamp > p.voteEnd, "ArmadaGovernor: voting not ended");
         require(!stewardProposalResolved[proposalId], "ArmadaGovernor: already resolved");
+        _resolveStewardProposal(proposalId);
+    }
+
+    /// @dev Core resolution logic for a steward proposal. Idempotent — skips already-resolved
+    /// proposals. Returns false if voting hasn't ended yet (caller should stop iterating).
+    function _resolveStewardProposal(uint256 proposalId) internal returns (bool) {
+        Proposal storage p = _proposals[proposalId];
+        if (stewardProposalResolved[proposalId]) return true;
+        if (block.timestamp <= p.voteEnd) return false;
 
         stewardProposalResolved[proposalId] = true;
 
@@ -709,6 +732,21 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         } else {
             consecutiveLowParticipationCount = 0;
         }
+        return true;
+    }
+
+    /// @dev Auto-resolve all prior steward proposals whose voting period has ended.
+    /// Walks from the cursor forward. Because steward proposals are created sequentially
+    /// with the same voting period, voteEnd times are monotonically increasing — we can
+    /// stop as soon as one hasn't ended yet.
+    function _autoResolveStewardProposals() internal {
+        uint256 len = _stewardProposalIds.length;
+        uint256 i = _stewardResolveIndex;
+        while (i < len) {
+            if (!_resolveStewardProposal(_stewardProposalIds[i])) break;
+            i++;
+        }
+        _stewardResolveIndex = i;
     }
 
     /// @notice Resume the steward channel after a circuit breaker pause.
@@ -1245,6 +1283,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // ============ Storage Gap ============
 
-    /// @dev Reserved storage for future upgrades. 23 state slots + 27 gap = 50 total.
-    uint256[27] private __gap;
+    /// @dev Reserved storage for future upgrades. 25 state slots + 25 gap = 50 total.
+    uint256[25] private __gap;
 }

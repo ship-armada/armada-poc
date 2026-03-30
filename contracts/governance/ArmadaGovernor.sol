@@ -1050,12 +1050,17 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 unlockTime = 0;
             }
         } else if (currentState == ProposalState.Defeated) {
-            // Determine defeat reason: quorum not met vs majority against
+            // Determine defeat reason to set appropriate bond lock period
             bool quorumMet = _quorumReached(proposalId);
-            if (!quorumMet) {
+            bool votePassed = _voteSucceeded(proposalId);
+            if (quorumMet && votePassed) {
+                // Vote passed but proposal expired (grace period elapsed without queuing).
+                // Proposer did nothing wrong — treat like a passed proposal.
+                unlockTime = 0;
+            } else if (!quorumMet) {
                 unlockTime = p.voteEnd + BOND_LOCK_QUORUM_FAIL;
             } else {
-                // Quorum met but majority against (or expired grace period)
+                // Quorum met but majority voted against
                 unlockTime = p.voteEnd + BOND_LOCK_VOTE_FAIL;
             }
         } else {

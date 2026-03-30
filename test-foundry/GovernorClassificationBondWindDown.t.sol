@@ -647,4 +647,36 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaGovernor: no bond");
         governor.claimBond(proposalId);
     }
+
+    function test_bond_immediateClaimOnGracePeriodExpiry() public {
+        _enableTransfersAndApproveBond(alice);
+
+        uint256 proposalId = _proposeStandard(alice);
+
+        // Fast-forward past voting delay
+        vm.warp(block.timestamp + TWO_DAYS + 1);
+
+        // Vote FOR with enough to reach quorum
+        vm.prank(alice);
+        governor.castVote(proposalId, 1); // FOR
+        vm.prank(bob);
+        governor.castVote(proposalId, 1); // FOR
+
+        // Fast-forward past voting period
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        // Proposal succeeded — do NOT queue it
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
+
+        // Fast-forward past 14-day queue grace period
+        vm.warp(block.timestamp + FOURTEEN_DAYS + 1);
+
+        // Now Defeated due to grace period expiry
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Defeated));
+
+        // Bond should be immediately claimable — proposer did nothing wrong
+        uint256 aliceBalBefore = armToken.balanceOf(alice);
+        governor.claimBond(proposalId);
+        assertEq(armToken.balanceOf(alice) - aliceBalBefore, BOND_AMOUNT);
+    }
 }

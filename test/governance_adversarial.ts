@@ -738,6 +738,37 @@ describe("Governance Adversarial", function () {
       ).to.be.revertedWith("ArmadaGovernor: not succeeded");
     });
 
+    it("expired-succeeded proposal bond is immediately claimable", async function () {
+      // Enable transfers and approve bond
+      await armToken.setWindDownContract(dave.address);
+      await armToken.connect(dave).setTransferable(true);
+      const bondAmount = ethers.parseUnits("1000", ARM_DECIMALS);
+      await armToken.connect(alice).approve(await governor.getAddress(), bondAmount);
+
+      const balanceBefore = await armToken.balanceOf(alice.address);
+      const proposalId = await createProposal(alice);
+
+      // Bond was taken
+      expect(await armToken.balanceOf(alice.address)).to.equal(balanceBefore - bondAmount);
+
+      // Vote it through
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(proposalId, Vote.For);
+      await governor.connect(bob).castVote(proposalId, Vote.For);
+
+      // Wait for voting to end — Succeeded
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
+
+      // Wait past the 14-day grace period without queuing — now Defeated
+      await time.increase(FOURTEEN_DAYS + 1);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+
+      // Bond should be immediately claimable — proposer did nothing wrong
+      await governor.claimBond(proposalId);
+      expect(await armToken.balanceOf(alice.address)).to.equal(balanceBefore);
+    });
+
     it("queued proposal is unaffected by grace period expiry", async function () {
       const proposalId = await createProposal(alice);
 

@@ -7,6 +7,19 @@ Scenarios marked with issue numbers (e.g., #19) reference known bugs filed on Co
 
 ---
 
+## Proposal Type Timing Reference
+
+| Type | Voting Delay | Voting Period | Execution Delay | Total Lifecycle | Quorum | Notes |
+|------|-------------|---------------|-----------------|-----------------|--------|-------|
+| Standard | 2d | 7d | 2d | **11d** | 20% | Default for most proposals |
+| Extended | 2d | 14d | 7d | **23d** | 30% | Auto-classified for high-impact selectors |
+| VetoRatification | 0 | 7d | 0 | **7d** | 20% | Auto-created by veto mechanism only |
+| Steward | 0 | 7d | 2d | **9d** | 20% | Pass-by-default; auto-created by `proposeStewardSpend()` only. The 2d execution delay provides a veto buffer — without it, a pass-by-default proposal that attracted no votes would be executable immediately after the voting window closes. |
+
+All timing is set in the `ArmadaGovernor` constructor and is immutable for VetoRatification and Steward types (their params bypass `setProposalTypeParams()` bounds). Standard and Extended timing can be adjusted via governance within the configured bounds.
+
+---
+
 ## A. ArmadaToken — ERC20Votes Delegation/Checkpoints
 
 | # | Scenario | Expected Behavior |

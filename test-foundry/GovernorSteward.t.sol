@@ -615,7 +615,8 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         treasury.stewardSpend(address(usdc), alice, spendAmount);
 
         assertEq(usdc.balanceOf(alice), spendAmount);
-        assertEq(treasury.stewardBudgetSpent(address(usdc)), spendAmount);
+        (, uint256 spent,) = treasury.getStewardBudget(address(usdc));
+        assertEq(spent, spendAmount);
     }
 
     function test_stewardSpend_exceedsBudget() public {
@@ -633,7 +634,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         treasury.stewardSpend(address(usdc), alice, 100);
     }
 
-    function test_stewardSpend_budgetWindowResets() public {
+    function test_stewardSpend_budgetRollingWindow() public {
         vm.prank(address(timelock));
         treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
 
@@ -646,14 +647,40 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaTreasuryGov: exceeds steward budget");
         treasury.stewardSpend(address(usdc), alice, 1);
 
-        // Warp past window
+        // Warp past window — original spend falls out of trailing window
         vm.warp(block.timestamp + BUDGET_WINDOW + 1);
 
-        // Can spend again after window reset
+        // Can spend again after original spend exits the rolling window
         vm.prank(address(timelock));
         treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
 
         assertEq(usdc.balanceOf(alice), BUDGET_LIMIT * 2);
+    }
+
+    function test_stewardSpend_rollingWindowPreventsBoundaryGaming() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Spend full budget at T=0
+        vm.prank(address(timelock));
+        treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
+
+        // Advance to just before the spend would fall out of the rolling window.
+        // With a fixed window this would reset and allow another full spend.
+        // With a rolling window the original spend is still within the trailing 30 days.
+        vm.warp(block.timestamp + BUDGET_WINDOW - 1);
+
+        // Rolling window: original spend is still within the trailing window, so this must revert
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaTreasuryGov: exceeds steward budget");
+        treasury.stewardSpend(address(usdc), alice, 1);
+
+        // Advance 2 more seconds — now the original spend is outside the trailing window
+        vm.warp(block.timestamp + 2);
+
+        // Now the budget is available again
+        vm.prank(address(timelock));
+        treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
     }
 
     function test_stewardSpend_multipleSpendsSameWindow() public {
@@ -672,7 +699,8 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         vm.prank(address(timelock));
         treasury.stewardSpend(address(usdc), alice, spend3);
 
-        assertEq(treasury.stewardBudgetSpent(address(usdc)), spend1 + spend2 + spend3);
+        (, uint256 spent,) = treasury.getStewardBudget(address(usdc));
+        assertEq(spent, spend1 + spend2 + spend3);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -778,12 +806,10 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
             treasury.stewardSpend(address(usdc), alice, spend2);
 
             // Verify: spent + remaining = limit
-            uint256 spent = treasury.stewardBudgetSpent(address(usdc));
-            assertEq(spent, spend1 + spend2);
-            (uint256 budget, uint256 viewSpent, uint256 remaining) = treasury.getStewardBudget(address(usdc));
+            (uint256 budget, uint256 spent, uint256 remaining) = treasury.getStewardBudget(address(usdc));
             assertEq(budget, limit);
-            assertEq(viewSpent, spent);
-            assertEq(remaining, limit - spent);
+            assertEq(spent, spend1 + spend2);
+            assertEq(remaining, limit - (spend1 + spend2));
         }
     }
 }

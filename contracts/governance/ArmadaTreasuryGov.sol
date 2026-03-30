@@ -47,8 +47,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     }
 
     mapping(address => StewardBudget) public stewardBudgets;
-    mapping(address => uint256) public stewardBudgetSpent;
-    mapping(address => uint256) public stewardBudgetWindowStart;
+    mapping(address => OutflowRecord[]) internal _stewardSpendHistory;
 
     // Aggregate outflow rate limits (per token)
     //
@@ -117,22 +116,23 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         StewardBudget storage budget = stewardBudgets[token];
         require(budget.authorized, "ArmadaTreasuryGov: token not authorized for steward");
 
-        // Reset window if expired
-        if (block.timestamp >= stewardBudgetWindowStart[token] + budget.window) {
-            stewardBudgetSpent[token] = 0;
-            stewardBudgetWindowStart[token] = block.timestamp;
-        }
-
+        // Rolling window: sum all steward spends within the trailing window
+        uint256 recentSpend = _sumRecentStewardSpends(token, budget.window);
         require(
-            stewardBudgetSpent[token] + amount <= budget.limit,
+            recentSpend + amount <= budget.limit,
             "ArmadaTreasuryGov: exceeds steward budget"
         );
 
-        stewardBudgetSpent[token] += amount;
+        // Record this spend for rolling window tracking
+        _stewardSpendHistory[token].push(OutflowRecord({
+            amount: amount,
+            timestamp: block.timestamp
+        }));
+
         _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
 
-        uint256 remaining = budget.limit - stewardBudgetSpent[token];
+        uint256 remaining = budget.limit - (recentSpend + amount);
         emit StewardSpent(token, recipient, amount, remaining);
     }
 
@@ -177,8 +177,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
 
         delete stewardBudgets[token];
-        stewardBudgetSpent[token] = 0;
-        stewardBudgetWindowStart[token] = 0;
+        delete _stewardSpendHistory[token];
 
         emit StewardBudgetTokenRemoved(token);
     }
@@ -287,6 +286,22 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         }
     }
 
+    /// @dev Sum steward spend amounts within the rolling window, iterating backwards from most recent.
+    function _sumRecentStewardSpends(address token, uint256 windowDuration) internal view returns (uint256 total) {
+        OutflowRecord[] storage records = _stewardSpendHistory[token];
+        uint256 len = records.length;
+        if (len == 0) return 0;
+
+        uint256 cutoff = block.timestamp > windowDuration ? block.timestamp - windowDuration : 0;
+
+        // Iterate backwards — most recent records are at the end
+        for (uint256 i = len; i > 0; i--) {
+            OutflowRecord storage r = records[i - 1];
+            if (r.timestamp < cutoff) break; // older entries are further back, stop early
+            total += r.amount;
+        }
+    }
+
     // ============ Wind-Down Sweep Authority ============
 
     /// @notice Set the wind-down contract address. One-time setter, timelock-only.
@@ -332,12 +347,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         if (!b.authorized) return (0, 0, 0);
 
         budget = b.limit;
-        if (block.timestamp >= stewardBudgetWindowStart[token] + b.window) {
-            // Window expired — full budget available
-            spent = 0;
-        } else {
-            spent = stewardBudgetSpent[token];
-        }
+        spent = _sumRecentStewardSpends(token, b.window);
         remaining = budget > spent ? budget - spent : 0;
     }
 

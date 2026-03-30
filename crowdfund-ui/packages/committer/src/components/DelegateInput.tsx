@@ -46,7 +46,7 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
         <div>
           <input
             type="text"
-            placeholder="0x... or ENS name"
+            placeholder="0x..."
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className="w-full rounded border border-input bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"

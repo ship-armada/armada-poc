@@ -234,8 +234,10 @@ describe("Gas Benchmarks", function () {
         openTimestamp3    // openTimestamp
       );
 
-      await armToken.addToWhitelist(await crowdfund.getAddress());
-      await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+      const cfAddr = await crowdfund.getAddress();
+      await armToken.addToWhitelist(cfAddr);
+      await armToken.initAuthorizedDelegators([cfAddr]);
+      await armToken.transfer(cfAddr, ARM(1_800_000));
       await crowdfund.loadArm();
 
       const count = 100;

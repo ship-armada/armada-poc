@@ -126,7 +126,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await treasuryGov.waitForDeployment();
 
     // Whitelist contracts that transfer ARM tokens
-    await armToken.addToWhitelist(await crowdfund.getAddress());
+    const cfAddr = await crowdfund.getAddress();
+    await armToken.addToWhitelist(cfAddr);
+    await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Send most ARM to treasury address to make quorum reachable.
     // Keep DEPLOYER_KEEP for governance testing.
@@ -470,17 +472,16 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("voting power reflects delegation state at proposal snapshot, not current state", async function () {
       await setupCrowdfundAndGovernance();
 
+      // Alice claimed during setup (first 10 seeds) — has voting power
       const alice = seeds[0];
-      const bob = seeds[1];
 
-      // Alice delegates to activate ERC20Votes voting power
-      await armToken.connect(alice).delegate(alice.address);
+      // Bob has NOT claimed yet (seeds[10] was not claimed in setup)
+      const bob = seeds[10];
 
-      // Bob does NOT delegate yet
       await mine(2);
 
       // Create proposal — snapshot is block.number - 1
-      // At snapshot: Alice has voting power, Bob does not
+      // At snapshot: Alice has voting power, Bob does not (hasn't claimed)
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("distribute", [await usdc.getAddress(), deployer.address, 1]);
       await governor.propose(
         ProposalType.Standard,
@@ -491,8 +492,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       );
       const proposalId = 1;
 
-      // NOW bob delegates (after proposal creation)
-      await armToken.connect(bob).delegate(bob.address);
+      // NOW bob claims (after proposal creation) — gets ARM + delegation atomically
+      await crowdfund.connect(bob).claim(bob.address);
 
       // Fast-forward to voting
       await time.increase(TWO_DAYS + 1);
@@ -501,7 +502,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       expect(await governor.hasVoted(proposalId, alice.address)).to.be.true;
 
-      // Bob cannot vote (delegated AFTER snapshot)
+      // Bob cannot vote (claimed and delegated AFTER snapshot)
       await expect(
         governor.connect(bob).castVote(proposalId, Vote.For)
       ).to.be.revertedWith("ArmadaGovernor: no voting power");
@@ -666,7 +667,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.waitForDeployment();
 
       // Whitelist contracts that transfer ARM tokens
-      await localArmToken.addToWhitelist(await localCrowdfund.getAddress());
+      const localCfAddr = await localCrowdfund.getAddress();
+      await localArmToken.addToWhitelist(localCfAddr);
+      await localArmToken.initAuthorizedDelegators([localCfAddr]);
 
       // Step 5: Fund crowdfund from deployer remainder
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);

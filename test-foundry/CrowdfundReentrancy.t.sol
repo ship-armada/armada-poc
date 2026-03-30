@@ -44,6 +44,9 @@ contract MaliciousERC20 is ERC20 {
         _mint(to, amount);
     }
 
+    /// @notice Stub for IArmadaTokenCrowdfund — claim() calls delegateOnBehalf after transfer.
+    function delegateOnBehalf(address, address) external {}
+
     /// @notice Arm the attack. On the next transfer, the contract will call
     ///         attackTarget with attackCalldata. The attackFired flag is set
     ///         BEFORE the callback to prevent infinite recursion.
@@ -98,6 +101,9 @@ contract MaliciousERC20Propagating is ERC20 {
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
+
+    /// @notice Stub for IArmadaTokenCrowdfund — claim() calls delegateOnBehalf after transfer.
+    function delegateOnBehalf(address, address) external {}
 
     function setAttack(address target, bytes calldata data) external {
         attackTarget = target;

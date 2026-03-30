@@ -373,6 +373,120 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
     // Fuzz: participation boundary
     // ══════════════════════════════════════════════════════════════════════
 
+    // ══════════════════════════════════════════════════════════════════════
+    // Auto-resolve: proposeStewardSpend resolves prior proposals automatically
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_autoResolve_resolvesPriorProposals() public {
+        // Create a proposal, warp past voting, then create another.
+        // The first should be auto-resolved by the second call.
+        uint256 firstId = _createStewardProposal();
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        assertFalse(governor.stewardProposalResolved(firstId), "should not be resolved yet");
+
+        // Creating a new proposal auto-resolves the first
+        _createStewardProposal();
+
+        assertTrue(governor.stewardProposalResolved(firstId), "should be auto-resolved");
+        assertEq(governor.consecutiveLowParticipationCount(), 1, "low participation counted");
+    }
+
+    function test_autoResolve_triggersCircuitBreaker() public {
+        // Create 5 low-participation proposals without warping between them
+        // (so none get auto-resolved during creation). Then warp past all voting,
+        // and the 6th attempt should auto-resolve all 5 and revert.
+        uint256[] memory ids = new uint256[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            ids[i] = _createStewardProposal();
+        }
+
+        // Warp past all voting periods at once
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        // None resolved yet
+        for (uint256 i = 0; i < 5; i++) {
+            assertFalse(governor.stewardProposalResolved(ids[i]));
+        }
+        assertFalse(governor.stewardChannelPaused());
+
+        // 6th proposal attempt should auto-resolve all 5 and then revert
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1);
+        recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 1e6;
+
+        vm.prank(stewardPerson);
+        vm.expectRevert("ArmadaGovernor: steward channel paused");
+        governor.proposeStewardSpend(tokens, recipients, amounts, "should fail");
+    }
+
+    function test_autoResolve_stopsAtActiveVoting() public {
+        // Create proposal #1, warp past voting. Create #2 (still in voting).
+        // Creating #3 should only auto-resolve #1, not #2.
+        uint256 firstId = _createStewardProposal();
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        uint256 secondId = _createStewardProposal();
+        // Only a small warp — second proposal's voting is still active
+        vm.warp(block.timestamp + 1 days);
+
+        uint256 thirdId = _createStewardProposal();
+
+        assertTrue(governor.stewardProposalResolved(firstId), "first should be resolved");
+        assertFalse(governor.stewardProposalResolved(secondId), "second still in voting");
+        assertFalse(governor.stewardProposalResolved(thirdId), "third just created");
+        // Only first was low-participation
+        assertEq(governor.consecutiveLowParticipationCount(), 1);
+    }
+
+    function test_autoResolve_skipsAlreadyResolved() public {
+        // Create proposal, warp, manually resolve it, then create another.
+        // Auto-resolve should skip the already-resolved one without error.
+        uint256 firstId = _createStewardProposal();
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        // Manually resolve
+        governor.resolveStewardProposal(firstId);
+        assertEq(governor.consecutiveLowParticipationCount(), 1);
+
+        // Creating a new proposal should succeed without double-resolution issues
+        uint256 secondId = _createStewardProposal();
+        assertTrue(secondId > firstId);
+        // Counter should still be 1 (not incremented again)
+        assertEq(governor.consecutiveLowParticipationCount(), 1);
+    }
+
+    function test_autoResolve_highParticipationResetsCounter() public {
+        // Create 3 low-participation proposals and 1 high-participation proposal
+        // without warping between them (so none auto-resolve during creation).
+        // Then warp and create a 5th — auto-resolve should process all 4,
+        // with the high-participation one resetting the counter.
+        for (uint256 i = 0; i < 3; i++) {
+            _createStewardProposal();
+        }
+
+        // 4th proposal: alice votes (40% of eligible > 30% threshold)
+        uint256 highPartId = _createStewardProposal();
+        vm.prank(alice);
+        governor.castVote(highPartId, 1); // FOR
+
+        // Warp past all voting periods at once
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        // None resolved yet
+        assertEq(governor.consecutiveLowParticipationCount(), 0);
+
+        // 5th proposal auto-resolves all 4 prior proposals
+        _createStewardProposal();
+
+        // 3 low → counter=3, then 1 high → counter=0
+        assertEq(governor.consecutiveLowParticipationCount(), 0);
+        assertFalse(governor.stewardChannelPaused());
+    }
+
     function testFuzz_participationThreshold(uint256 aliceVote, uint256 bobVote) public {
         // 0 = no vote, 1 = FOR, 2 = AGAINST, 3 = ABSTAIN
         aliceVote = bound(aliceVote, 0, 3);

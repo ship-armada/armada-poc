@@ -9,8 +9,10 @@ import {
   CROWDFUND_ABI_FRAGMENTS,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
+import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 import { TransactionFlow } from './TransactionFlow'
+import { InviteLinkSection } from './InviteLinkSection'
 
 export interface InviteTabProps {
   positions: HopPosition[]
@@ -19,6 +21,8 @@ export interface InviteTabProps {
   crowdfundAddress: string
   phase: number
   windowOpen: boolean
+  inviteLinks: UseInviteLinksResult
+  blockTimestamp: number
 }
 
 export function InviteTab(props: InviteTabProps) {
@@ -29,6 +33,8 @@ export function InviteTab(props: InviteTabProps) {
     crowdfundAddress,
     phase,
     windowOpen,
+    inviteLinks,
+    blockTimestamp,
   } = props
 
   const [inviteeAddress, setInviteeAddress] = useState('')
@@ -193,6 +199,12 @@ export function InviteTab(props: InviteTabProps) {
         state={tx.state}
         onReset={tx.reset}
         successMessage="Invite sent!"
+      />
+
+      <InviteLinkSection
+        inviteLinks={inviteLinks}
+        positions={positions}
+        blockTimestamp={blockTimestamp}
       />
     </div>
   )

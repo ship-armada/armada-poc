@@ -19,10 +19,12 @@ import { useWallet } from '@/hooks/useWallet'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useContractState } from '@/hooks/useContractState'
+import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { CommitTab } from '@/components/CommitTab'
 import { InviteTab } from '@/components/InviteTab'
+import { ClaimTab } from '@/components/ClaimTab'
 
-type ActionTab = 'commit' | 'invite'
+type ActionTab = 'commit' | 'invite' | 'claim'
 
 export function App() {
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
@@ -68,6 +70,7 @@ export function App() {
   // Wallet-specific hooks
   const eligibility = useEligibility(wallet.address, nodes)
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, provider)
+  const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
 
   // Is the commitment window open?
   const windowOpen =
@@ -191,7 +194,7 @@ export function App() {
               <div className="rounded-lg border border-border bg-card">
                 {/* Tab header */}
                 <div className="flex border-b border-border">
-                  {(['commit', 'invite'] as const).map((tab) => (
+                  {(['commit', 'invite', 'claim'] as const).map((tab) => (
                     <button
                       key={tab}
                       className={`flex-1 px-4 py-2 text-sm font-medium capitalize ${
@@ -232,6 +235,21 @@ export function App() {
                       crowdfundAddress={crowdfundAddress!}
                       phase={contractState.phase}
                       windowOpen={windowOpen}
+                      inviteLinks={inviteLinks}
+                      blockTimestamp={contractState.blockTimestamp}
+                    />
+                  )}
+                  {activeTab === 'claim' && wallet.address && (
+                    <ClaimTab
+                      address={wallet.address}
+                      signer={wallet.signer}
+                      provider={provider}
+                      crowdfundAddress={crowdfundAddress!}
+                      phase={contractState.phase}
+                      refundMode={contractState.refundMode}
+                      blockTimestamp={contractState.blockTimestamp}
+                      claimDeadline={contractState.claimDeadline}
+                      totalCommitted={contractState.totalCommitted}
                     />
                   )}
                 </div>

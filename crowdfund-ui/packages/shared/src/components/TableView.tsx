@@ -1,7 +1,21 @@
-// ABOUTME: Sortable, searchable, filterable participant table.
+// ABOUTME: Sortable, searchable, filterable participant table using @tanstack/react-table.
 // ABOUTME: Displays address summaries with per-hop breakdown and allocation status.
 
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, Fragment } from 'react'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  getExpandedRowModel,
+  flexRender,
+  createColumnHelper,
+  type SortingState,
+  type ExpandedState,
+  type ColumnFiltersState,
+  type ColumnDef,
+  type Row,
+} from '@tanstack/react-table'
 import { formatUsdc, formatArm, hopLabel, truncateAddress } from '../lib/format.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
 import { NodeDetail } from './NodeDetail.js'
@@ -16,14 +30,13 @@ export interface TableViewProps {
   resolveENS?: (addr: string) => string | null
 }
 
-type SortField = 'address' | 'hops' | 'committed' | 'inviter' | 'allocated'
-type SortDir = 'asc' | 'desc'
-
 function displayAddress(addr: string, resolve?: (a: string) => string | null): string {
   if (addr === 'armada') return 'Armada'
   const ens = resolve?.(addr)
   return ens ?? truncateAddress(addr)
 }
+
+const columnHelper = createColumnHelper<AddressSummary>()
 
 export function TableView(props: TableViewProps) {
   const {
@@ -36,94 +49,134 @@ export function TableView(props: TableViewProps) {
     resolveENS,
   } = props
 
-  const [sortField, setSortField] = useState<SortField>('committed')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [expandedAddr, setExpandedAddr] = useState<string | null>(null)
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'committed', desc: true }])
+  const [expanded, setExpanded] = useState<ExpandedState>({})
   const [hopFilter, setHopFilter] = useState<number | null>(null)
 
-  const handleSort = useCallback(
-    (field: SortField) => {
-      if (sortField === field) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-      } else {
-        setSortField(field)
-        setSortDir('desc')
-      }
+  // Pre-filter by hop before handing to the table
+  const filteredSummaries = useMemo(() => {
+    if (hopFilter === null) return summaries
+    return summaries.filter((s) => s.hops.includes(hopFilter))
+  }, [summaries, hopFilter])
+
+  const columns = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cols: ColumnDef<AddressSummary, any>[] = [
+      columnHelper.accessor('address', {
+        header: 'Address',
+        cell: (info) => (
+          <span className="font-mono text-xs">
+            {displayAddress(info.getValue(), resolveENS)}
+          </span>
+        ),
+        sortingFn: 'alphanumeric',
+        filterFn: (row, _columnId, filterValue: string) => {
+          const addr = row.original.address
+          const q = filterValue.toLowerCase()
+          if (addr.toLowerCase().includes(q)) return true
+          const ens = resolveENS?.(addr)
+          if (ens && ens.toLowerCase().includes(q)) return true
+          return false
+        },
+      }),
+      columnHelper.accessor('hops', {
+        header: 'Hop(s)',
+        cell: (info) => (
+          <span className="text-xs">
+            {info.getValue().map((h: number) => hopLabel(h)).join(', ')}
+          </span>
+        ),
+        sortingFn: (rowA, rowB) =>
+          rowA.original.hops.length - rowB.original.hops.length,
+      }),
+      columnHelper.accessor('totalCommitted', {
+        header: 'Committed',
+        cell: (info) => (
+          <span className="font-medium">{formatUsdc(info.getValue())}</span>
+        ),
+        sortingFn: (rowA, rowB) => {
+          const a = rowA.original.totalCommitted
+          const b = rowB.original.totalCommitted
+          return a > b ? 1 : a < b ? -1 : 0
+        },
+      }),
+      columnHelper.accessor('displayInviter', {
+        header: 'Invited by',
+        cell: (info) => (
+          <span className="text-xs text-muted-foreground">
+            {displayAddress(info.getValue(), resolveENS)}
+          </span>
+        ),
+        sortingFn: 'alphanumeric',
+      }),
+    ]
+
+    if (phase === 1) {
+      cols.push(
+        columnHelper.accessor('allocatedArm', {
+          header: 'Allocated',
+          cell: (info) => {
+            const val = info.getValue()
+            return val !== null ? formatArm(val) : '—'
+          },
+          sortingFn: (rowA, rowB) => {
+            const a = rowA.original.allocatedArm ?? 0n
+            const b = rowB.original.allocatedArm ?? 0n
+            return a > b ? 1 : a < b ? -1 : 0
+          },
+        }),
+        columnHelper.display({
+          id: 'claimed',
+          header: 'Claimed',
+          cell: (info) => {
+            const s = info.row.original
+            return (
+              <span className="text-xs">
+                {s.armClaimed && <span className="text-success">ARM</span>}
+                {s.armClaimed && s.refundClaimed && ' + '}
+                {s.refundClaimed && <span className="text-success">Refund</span>}
+                {!s.armClaimed && !s.refundClaimed && '—'}
+              </span>
+            )
+          },
+        }),
+      )
+    }
+
+    return cols
+  }, [phase, resolveENS])
+
+  // Apply search query as a column filter on the address column
+  const columnFilters = useMemo<ColumnFiltersState>(() => {
+    if (!searchQuery) return []
+    return [{ id: 'address', value: searchQuery }]
+  }, [searchQuery])
+
+  const table = useReactTable({
+    data: filteredSummaries,
+    columns,
+    state: {
+      sorting,
+      expanded,
+      columnFilters,
     },
-    [sortField],
-  )
+    onSortingChange: setSorting,
+    onExpandedChange: setExpanded,
+    getRowCanExpand: () => true,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+  })
 
-  // Filter and sort
-  const rows = useMemo(() => {
-    let filtered = summaries
+  const colCount = phase === 1 ? 6 : 4
 
-    // Search filter
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      filtered = filtered.filter((s) => {
-        if (s.address.toLowerCase().includes(q)) return true
-        const ens = resolveENS?.(s.address)
-        if (ens && ens.toLowerCase().includes(q)) return true
-        return false
-      })
-    }
-
-    // Hop filter
-    if (hopFilter !== null) {
-      filtered = filtered.filter((s) => s.hops.includes(hopFilter))
-    }
-
-    // Sort
-    const sorted = [...filtered]
-    sorted.sort((a, b) => {
-      let cmp = 0
-      switch (sortField) {
-        case 'address':
-          cmp = a.address.localeCompare(b.address)
-          break
-        case 'hops':
-          cmp = a.hops.length - b.hops.length
-          break
-        case 'committed':
-          cmp = a.totalCommitted > b.totalCommitted ? 1 : a.totalCommitted < b.totalCommitted ? -1 : 0
-          break
-        case 'inviter':
-          cmp = a.displayInviter.localeCompare(b.displayInviter)
-          break
-        case 'allocated':
-          cmp =
-            (a.allocatedArm ?? 0n) > (b.allocatedArm ?? 0n)
-              ? 1
-              : (a.allocatedArm ?? 0n) < (b.allocatedArm ?? 0n)
-                ? -1
-                : 0
-          break
-      }
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-
-    return sorted
-  }, [summaries, searchQuery, hopFilter, sortField, sortDir, resolveENS])
-
-  const SortHeader = ({
-    field,
-    children,
-  }: {
-    field: SortField
-    children: React.ReactNode
-  }) => (
-    <th
-      className="px-3 py-2 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground"
-      onClick={() => handleSort(field)}
-    >
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {sortField === field && (
-          <span className="text-foreground">{sortDir === 'asc' ? '↑' : '↓'}</span>
-        )}
-      </span>
-    </th>
-  )
+  function handleRowClick(row: Row<AddressSummary>) {
+    const addr = row.original.address
+    const isSelected = selectedAddress === addr
+    onSelectAddress(isSelected ? null : addr)
+    row.toggleExpanded()
+  }
 
   return (
     <div className="space-y-2">
@@ -150,70 +203,56 @@ export function TableView(props: TableViewProps) {
       <div className="rounded-lg border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
-            <tr>
-              <SortHeader field="address">Address</SortHeader>
-              <SortHeader field="hops">Hop(s)</SortHeader>
-              <SortHeader field="committed">Committed</SortHeader>
-              <SortHeader field="inviter">Invited by</SortHeader>
-              {phase === 1 && <SortHeader field="allocated">Allocated</SortHeader>}
-              {phase === 1 && <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Claimed</th>}
-            </tr>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className={`px-3 py-2 text-left text-xs font-medium text-muted-foreground ${
+                      header.column.getCanSort()
+                        ? 'cursor-pointer select-none hover:text-foreground'
+                        : ''
+                    }`}
+                    onClick={header.column.getToggleSortingHandler()}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {{
+                        asc: <span className="text-foreground">↑</span>,
+                        desc: <span className="text-foreground">↓</span>,
+                      }[header.column.getIsSorted() as string] ?? null}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            ))}
           </thead>
           <tbody>
-            {rows.map((summary) => {
-              const isSelected = selectedAddress === summary.address
-              const isExpanded = expandedAddr === summary.address
-              const hopNodes = summary.hops
-                .map((hop) => nodes.get(`${summary.address}-${hop}`))
+            {table.getRowModel().rows.map((row) => {
+              const isSelected = selectedAddress === row.original.address
+              const hopNodes = row.original.hops
+                .map((hop) => nodes.get(`${row.original.address}-${hop}`))
                 .filter((n): n is GraphNode => n !== undefined)
 
               return (
-                <tbody key={summary.address}>
+                <Fragment key={row.id}>
                   <tr
                     className={`border-t border-border cursor-pointer transition-colors ${
                       isSelected ? 'bg-primary/10' : 'hover:bg-muted/30'
                     }`}
-                    onClick={() => {
-                      onSelectAddress(isSelected ? null : summary.address)
-                      setExpandedAddr(isExpanded ? null : summary.address)
-                    }}
+                    onClick={() => handleRowClick(row)}
                   >
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {displayAddress(summary.address, resolveENS)}
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      {summary.hops.map((h) => hopLabel(h)).join(', ')}
-                    </td>
-                    <td className="px-3 py-2 font-medium">
-                      {formatUsdc(summary.totalCommitted)}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {displayAddress(summary.displayInviter, resolveENS)}
-                    </td>
-                    {phase === 1 && (
-                      <td className="px-3 py-2">
-                        {summary.allocatedArm !== null
-                          ? formatArm(summary.allocatedArm)
-                          : '—'}
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-3 py-2">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
-                    )}
-                    {phase === 1 && (
-                      <td className="px-3 py-2 text-xs">
-                        {summary.armClaimed && <span className="text-success">ARM</span>}
-                        {summary.armClaimed && summary.refundClaimed && ' + '}
-                        {summary.refundClaimed && <span className="text-success">Refund</span>}
-                        {!summary.armClaimed && !summary.refundClaimed && '—'}
-                      </td>
-                    )}
+                    ))}
                   </tr>
-                  {isExpanded && (
+                  {row.getIsExpanded() && (
                     <tr>
-                      <td
-                        colSpan={phase === 1 ? 6 : 4}
-                        className="px-3 py-3 bg-muted/20"
-                      >
+                      <td colSpan={colCount} className="px-3 py-3 bg-muted/20">
                         <NodeDetail
-                          summary={summary}
+                          summary={row.original}
                           hopNodes={hopNodes}
                           resolveENS={resolveENS}
                           phase={phase}
@@ -221,13 +260,13 @@ export function TableView(props: TableViewProps) {
                       </td>
                     </tr>
                   )}
-                </tbody>
+                </Fragment>
               )
             })}
-            {rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={phase === 1 ? 6 : 4}
+                  colSpan={colCount}
                   className="px-3 py-8 text-center text-muted-foreground"
                 >
                   {searchQuery ? 'No matching participants' : 'No participants yet'}
@@ -240,7 +279,8 @@ export function TableView(props: TableViewProps) {
 
       {/* Row count */}
       <div className="text-xs text-muted-foreground">
-        {rows.length} participant{rows.length !== 1 ? 's' : ''}
+        {table.getFilteredRowModel().rows.length} participant
+        {table.getFilteredRowModel().rows.length !== 1 ? 's' : ''}
         {searchQuery && ` matching "${searchQuery}"`}
       </div>
     </div>

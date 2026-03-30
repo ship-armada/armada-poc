@@ -11,11 +11,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
     "ethers": "^6.15.0",
     "idb": "^8.0.3",
     "jotai": "^2.15.1"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.15.0",
     "fake-indexeddb": "^6.2.5",
     "typescript": "~5.9.3",

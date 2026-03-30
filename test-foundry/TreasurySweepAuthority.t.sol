@@ -131,6 +131,16 @@ contract TreasurySweepAuthorityTest is Test {
         treasury.distribute(address(usdc), recipient, 100e6);
     }
 
+    function test_stewardSpend_revertsWithoutOutflowConfig() public {
+        // Authorize USDC for steward spending but do NOT initialize outflow config
+        vm.prank(timelockAddr);
+        treasury.addStewardBudgetToken(address(usdc), 500_000e6, 30 days);
+
+        vm.prank(timelockAddr);
+        vm.expectRevert("ArmadaTreasuryGov: outflow config required");
+        treasury.stewardSpend(address(usdc), recipient, 100e6);
+    }
+
     function test_transferTo_worksWithoutOutflowConfig() public {
         _setupWindDown();
         // No initOutflowConfig — transferTo should still work (bypasses outflow entirely)

@@ -308,11 +308,12 @@ describe("Treasury Outflow Rate Limits", function () {
       ).to.be.revertedWith("ArmadaTreasuryGov: outflow limit exceeded");
     });
 
-    it("should skip outflow check if no config initialized for token", async function () {
+    it("should revert if no outflow config initialized for token", async function () {
       await fundTreasury(USDC(1_000_000));
-      // No initOutflowConfig called — distribute should work without limits
-      await treasury.distribute(await usdc.getAddress(), recipient.address, USDC(1_000_000));
-      expect(await usdc.balanceOf(recipient.address)).to.equal(USDC(1_000_000));
+      // No initOutflowConfig called — distribute should revert
+      await expect(
+        treasury.distribute(await usdc.getAddress(), recipient.address, USDC(1_000_000))
+      ).to.be.revertedWith("ArmadaTreasuryGov: outflow config required");
     });
   });
 

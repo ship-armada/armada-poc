@@ -164,21 +164,50 @@ describe("Governance Integration", function () {
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
 
-    // 8. Renounce deployer admin
-    await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
-
-    // 9. Deploy mock USDC for treasury tests
+    // 8. Deploy mock USDC (needed before outflow config)
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
     await usdc.waitForDeployment();
 
-    // 10. Distribute ARM tokens
+    // 9. Distribute ARM tokens and mint USDC to treasury
     await armToken.transfer(await treasury.getAddress(), TREASURY_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
-
-    // 11. Mint USDC to treasury for payout tests
     await usdc.mint(await treasury.getAddress(), ethers.parseUnits("100000", USDC_DECIMALS));
+
+    // 10. Initialize outflow configs via timelock (deployer still has admin role)
+    //     Grant deployer temporary proposer+executor to schedule outflow config calls.
+    await timelockController.grantRole(PROPOSER_ROLE, deployer.address);
+    await timelockController.grantRole(EXECUTOR_ROLE, deployer.address);
+
+    const treasuryAddr = await treasury.getAddress();
+    const usdcAddr = await usdc.getAddress();
+    const armAddr = await armToken.getAddress();
+    const iface = treasury.interface;
+
+    // Schedule outflow configs for both USDC and ARM tokens
+    const targets = [treasuryAddr, treasuryAddr];
+    const values = [0n, 0n];
+    const calldatas = [
+      iface.encodeFunctionData("initOutflowConfig", [
+        usdcAddr, THIRTY_DAYS, 5000, ethers.parseUnits("100000", USDC_DECIMALS), ethers.parseUnits("1000", USDC_DECIMALS),
+      ]),
+      iface.encodeFunctionData("initOutflowConfig", [
+        armAddr, THIRTY_DAYS, 5000, TREASURY_AMOUNT, ethers.parseUnits("1000", ARM_DECIMALS),
+      ]),
+    ];
+    const salt = ethers.id("outflow-config-setup");
+
+    await timelockController.scheduleBatch(targets, values, calldatas, ethers.ZeroHash, salt, TWO_DAYS);
+    await time.increase(TWO_DAYS + 1);
+    await timelockController.executeBatch(targets, values, calldatas, ethers.ZeroHash, salt);
+
+    // Revoke deployer's temporary roles
+    await timelockController.revokeRole(PROPOSER_ROLE, deployer.address);
+    await timelockController.revokeRole(EXECUTOR_ROLE, deployer.address);
+
+    // 11. Renounce deployer admin
+    await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // 12. Alice and Bob self-delegate to activate voting power
     await armToken.connect(alice).delegate(alice.address);

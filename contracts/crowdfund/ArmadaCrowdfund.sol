@@ -551,7 +551,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             totalAllocArm += allocArm;
             totalRefundUsdc += hopRefund;
 
-            emit AllocatedHop(msg.sender, h, allocUsdc);
+            if (allocUsdc > 0) emit AllocatedHop(msg.sender, h, allocUsdc);
         }
 
         // ARM: only transfer if within claim deadline
@@ -570,7 +570,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             usdc.safeTransfer(msg.sender, totalRefundUsdc);
         }
 
-        emit Allocated(msg.sender, armTransferred, totalRefundUsdc, delegate);
+        emit Allocated(msg.sender, armTransferred, totalRefundUsdc, armTransferred > 0 ? delegate : address(0));
     }
 
     /// @notice Claim USDC refund — failure paths only. Three eligibility paths:

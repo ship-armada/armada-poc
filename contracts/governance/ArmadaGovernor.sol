@@ -1204,9 +1204,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @dev Block proposals during the quiet period after crowdfund finalization.
     ///      Reads finalizedAt from the crowdfund contract. Skips gracefully if no
-    ///      crowdfund is registered, quiet period is zero, or crowdfund isn't finalized.
+    ///      crowdfund is registered or crowdfund isn't finalized.
     function _checkQuietPeriod() internal view {
-        if (crowdfundAddress == address(0) || QUIET_PERIOD_DURATION == 0) return;
+        if (crowdfundAddress == address(0)) return;
 
         uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
         if (_finalizedAt == 0) return;

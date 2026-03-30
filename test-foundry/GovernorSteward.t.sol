@@ -103,9 +103,12 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         // Advance block for checkpoint availability
         vm.roll(block.number + 1);
 
-        // Deploy mock USDC and fund treasury
+        // Deploy mock USDC, fund treasury, and initialize outflow config
         usdc = new MockToken();
         usdc.mint(address(treasury), 1_000_000 * 1e6);
+
+        vm.prank(address(timelock));
+        treasury.initOutflowConfig(address(usdc), 30 days, 5000, 1_000_000 * 1e6, 1000 * 1e6);
 
         // Grant timelock roles to governor
         timelock.grantRole(timelock.PROPOSER_ROLE(), address(governor));

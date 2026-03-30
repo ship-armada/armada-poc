@@ -243,10 +243,10 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     // ============ Internal: Outflow Enforcement ============
 
     /// @dev Check that a proposed outflow does not exceed the rolling-window limit,
-    ///      and record the outflow if it passes. Skips if no config is initialized.
+    ///      and record the outflow if it passes. Reverts if no outflow config is initialized for the token.
     function _checkAndRecordOutflow(address token, uint256 amount) internal {
         OutflowConfig storage config = _outflowConfigs[token];
-        if (!config.initialized) return; // no limit configured — allow
+        require(config.initialized, "ArmadaTreasuryGov: outflow config required");
 
         // Calculate effective limit: max(pct of current balance, absolute), then max(result, floor)
         uint256 treasuryBalance = IERC20(token).balanceOf(address(this));

@@ -777,8 +777,11 @@ describe("Governance Adversarial", function () {
       budgetTreasury = await ArmadaTreasuryGov.deploy(deployer.address);
       await budgetTreasury.waitForDeployment();
 
-      // Fund with USDC and authorize token for steward spending
+      // Fund with USDC, initialize outflow config, and authorize token for steward spending
       await usdc.mint(await budgetTreasury.getAddress(), TREASURY_USDC);
+      await budgetTreasury.initOutflowConfig(
+        await usdc.getAddress(), STEWARD_WINDOW, 1000, TREASURY_USDC, STEWARD_LIMIT
+      ); // 10% or $1M absolute, floor=$10K — permissive enough for steward tests
       await budgetTreasury.addStewardBudgetToken(await usdc.getAddress(), STEWARD_LIMIT, STEWARD_WINDOW);
     }
 

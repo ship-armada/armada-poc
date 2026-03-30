@@ -125,6 +125,24 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     treasuryGov = await ArmadaTreasuryGov.deploy(timelockAddr);
     await treasuryGov.waitForDeployment();
 
+    // Initialize USDC outflow config on treasury (via timelock, deployer has proposer+executor)
+    const outflowTargets = [await treasuryGov.getAddress()];
+    const outflowValues = [0n];
+    const outflowCalldatas = [
+      treasuryGov.interface.encodeFunctionData("initOutflowConfig", [
+        await usdc.getAddress(), 30 * ONE_DAY, 5000,
+        ethers.parseUnits("100000", 6), ethers.parseUnits("1", 6),
+      ]),
+    ];
+    const outflowSalt = ethers.id("outflow-config-usdc");
+    await timelockController.scheduleBatch(
+      outflowTargets, outflowValues, outflowCalldatas, ethers.ZeroHash, outflowSalt, ONE_DAY
+    );
+    await time.increase(ONE_DAY + 1);
+    await timelockController.executeBatch(
+      outflowTargets, outflowValues, outflowCalldatas, ethers.ZeroHash, outflowSalt
+    );
+
     // Whitelist contracts that transfer ARM tokens
     const cfAddr = await crowdfund.getAddress();
     await armToken.addToWhitelist(cfAddr);
@@ -649,11 +667,30 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Step 3: Send treasury allocation
       await localArmToken.transfer(await localTreasury.getAddress(), TREASURY_ALLOCATION);
 
-      // Step 4: Deploy crowdfund with shared ARM + treasury
+      // Step 4: Deploy USDC and initialize outflow config via timelock
       const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
       localUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
       await localUsdc.waitForDeployment();
 
+      // Initialize USDC outflow config on treasury (via timelock, deployer has proposer+executor)
+      const outflowTargets = [await localTreasury.getAddress()];
+      const outflowValues = [0n];
+      const outflowCalldatas = [
+        localTreasury.interface.encodeFunctionData("initOutflowConfig", [
+          await localUsdc.getAddress(), 30 * ONE_DAY, 5000,
+          ethers.parseUnits("100000", 6), ethers.parseUnits("1", 6),
+        ]),
+      ];
+      const outflowSalt = ethers.id("outflow-config-usdc");
+      await localTimelockController.scheduleBatch(
+        outflowTargets, outflowValues, outflowCalldatas, ethers.ZeroHash, outflowSalt, ONE_DAY
+      );
+      await time.increase(ONE_DAY + 1);
+      await localTimelockController.executeBatch(
+        outflowTargets, outflowValues, outflowCalldatas, ethers.ZeroHash, outflowSalt
+      );
+
+      // Step 5: Deploy crowdfund with shared ARM + treasury
       const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
       const localOpenTimestamp = (await time.latest()) + 300;
       localCrowdfund = await ArmadaCrowdfund.deploy(
@@ -671,11 +708,11 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localArmToken.addToWhitelist(localCfAddr);
       await localArmToken.initAuthorizedDelegators([localCfAddr]);
 
-      // Step 5: Fund crowdfund from deployer remainder
+      // Step 6: Fund crowdfund from deployer remainder
       await localArmToken.transfer(await localCrowdfund.getAddress(), CROWDFUND_ALLOCATION);
       await localCrowdfund.loadArm();
 
-      // Step 6: Register crowdfund in quorum exclusion and quiet period
+      // Step 7: Register crowdfund in quorum exclusion and quiet period
       await localGovernor.setExcludedAddresses([await localCrowdfund.getAddress()]);
       await localGovernor.setCrowdfundAddress(await localCrowdfund.getAddress());
     });

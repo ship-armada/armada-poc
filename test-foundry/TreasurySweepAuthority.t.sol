@@ -122,6 +122,24 @@ contract TreasurySweepAuthorityTest is Test {
         assertEq(usdc.balanceOf(recipient), fullBalance);
     }
 
+    // ======== Unconfigured token outflow (Issue #178) ========
+
+    function test_distribute_revertsWithoutOutflowConfig() public {
+        // Treasury has USDC but no outflow config initialized
+        vm.prank(timelockAddr);
+        vm.expectRevert("ArmadaTreasuryGov: outflow config required");
+        treasury.distribute(address(usdc), recipient, 100e6);
+    }
+
+    function test_transferTo_worksWithoutOutflowConfig() public {
+        _setupWindDown();
+        // No initOutflowConfig — transferTo should still work (bypasses outflow entirely)
+        uint256 fullBalance = usdc.balanceOf(address(treasury));
+        vm.prank(windDown);
+        treasury.transferTo(address(usdc), recipient, fullBalance);
+        assertEq(usdc.balanceOf(recipient), fullBalance);
+    }
+
     // ======== transferETHTo ========
 
     function test_transferETHTo_windDownOnly() public {

@@ -143,6 +143,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         address _securityCouncil,
         uint256 _openTimestamp
     ) EIP712("ArmadaCrowdfund", "1") {
+        require(_usdc != address(0), "ArmadaCrowdfund: zero usdc");
+        require(_armToken != address(0), "ArmadaCrowdfund: zero armToken");
         require(_treasury != address(0), "ArmadaCrowdfund: zero treasury");
         require(_launchTeam != address(0), "ArmadaCrowdfund: zero launchTeam");
         require(_securityCouncil != address(0), "ArmadaCrowdfund: zero securityCouncil");
@@ -504,6 +506,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // can sum to slightly less than totalAllocatedUsdc, making the aggregate
         // refund slightly larger. Buffer = participantNodes.length * NUM_HOPS
         // (max 1 USDC unit per participant per hop). Residual dust stays in contract.
+        //
+        // Invariant note: the spec requires netProceeds + sum(refunds) == totalCommitted
+        // as a settlement-completion identity. The rounding buffer means the treasury
+        // receives slightly less than totalAllocatedUsdc, with the difference (at most
+        // participantNodes.length * NUM_HOPS USDC units) stranded in the contract as
+        // unrecoverable dust. The identity still holds at the contract level:
+        // treasuryReceived + contractDust + sum(refunds) == totalCommitted.
         uint256 roundingBuffer = participantNodes.length * NUM_HOPS;
         uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
             ? totalAllocUsdc_ - roundingBuffer

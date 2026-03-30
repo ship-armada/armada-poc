@@ -557,6 +557,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // ARM: only transfer if within claim deadline
         uint256 armTransferred = 0;
         if (block.timestamp <= claimDeadline && totalAllocArm > 0) {
+            require(delegate != address(0), "ArmadaCrowdfund: delegate required");
             armTransferred = totalAllocArm;
             totalArmTransferred += armTransferred;
             armToken.safeTransfer(msg.sender, armTransferred);

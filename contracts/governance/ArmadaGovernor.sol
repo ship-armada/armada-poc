@@ -101,11 +101,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     uint256 public constant QUORUM_FLOOR = 100_000 * 1e18;
 
     // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
-    // One-time bootstrapping measure; governable (can be shortened or removed).
+    // One-time bootstrapping constant; not governable.
     address public crowdfundAddress;
     bool public crowdfundAddressLocked;
-    uint256 public quietPeriodDuration;
-    uint256 public constant MAX_QUIET_PERIOD = 30 days;
+    uint256 public constant QUIET_PERIOD_DURATION = 7 days;
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.
@@ -199,7 +198,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event ProposalCanceled(uint256 indexed proposalId);
     event ProposalTypeParamsUpdated(ProposalType indexed proposalType, ProposalParams params);
     event CrowdfundAddressSet(address indexed crowdfund);
-    event QuietPeriodUpdated(uint256 newDuration);
+
     event WindDownContractSet(address indexed windDownContract);
     event WindDownActivated();
     event ExtendedSelectorAdded(bytes4 indexed selector);
@@ -285,9 +284,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 2000
         });
 
-        // Governance quiet period: 7 days post-crowdfund-finalization before proposals allowed
-        quietPeriodDuration = 7 days;
-
         // Register function selectors that force Extended classification.
         // Any proposal containing a call to one of these selectors is automatically Extended
         // regardless of what the proposer declared.
@@ -308,8 +304,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("setYieldFeeBps(uint256)"))] = true;
 
         // Governance parameter changes (on governor, via timelock)
-        extendedSelectors[bytes4(keccak256("setQuietPeriodDuration(uint256)"))] = true;
-
         // Security Council management
         extendedSelectors[this.setSecurityCouncil.selector] = true;
 
@@ -426,17 +420,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         proposalTypeParams[proposalType] = params;
         emit ProposalTypeParamsUpdated(proposalType, params);
-    }
-
-    /// @notice Update the governance quiet period duration.
-    /// @dev Only callable by the timelock (requires a governance vote).
-    ///      Setting to 0 removes the quiet period entirely.
-    function setQuietPeriodDuration(uint256 _duration) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(_duration <= MAX_QUIET_PERIOD, "ArmadaGovernor: exceeds max");
-
-        quietPeriodDuration = _duration;
-        emit QuietPeriodUpdated(_duration);
     }
 
     // ============ Extended Selector Management ============
@@ -1259,15 +1242,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @dev Block proposals during the quiet period after crowdfund finalization.
     ///      Reads finalizedAt from the crowdfund contract. Skips gracefully if no
-    ///      crowdfund is registered, quiet period is zero, or crowdfund isn't finalized.
+    ///      crowdfund is registered or crowdfund isn't finalized.
     function _checkQuietPeriod() internal view {
-        if (crowdfundAddress == address(0) || quietPeriodDuration == 0) return;
+        if (crowdfundAddress == address(0)) return;
 
         uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
         if (_finalizedAt == 0) return;
 
         require(
-            block.timestamp >= _finalizedAt + quietPeriodDuration,
+            block.timestamp >= _finalizedAt + QUIET_PERIOD_DURATION,
             "ArmadaGovernor: quiet period active"
         );
     }

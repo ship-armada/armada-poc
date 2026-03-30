@@ -1,12 +1,11 @@
-// ABOUTME: Tests the 7-day governance quiet period after crowdfund finalization.
-// ABOUTME: Covers proposal blocking, boundary conditions, governable duration, and access control.
+// ABOUTME: Tests the immutable 7-day governance quiet period after crowdfund finalization.
+// ABOUTME: Covers proposal blocking, boundary conditions, edge cases, and access control.
 
 /**
  * Governance Quiet Period Tests (T6.1)
  *
- * After crowdfund finalization, a 7-day quiet period blocks all governance proposals.
+ * After crowdfund finalization, an immutable 7-day quiet period blocks all governance proposals.
  * This gives participants time to claim ARM and delegate before governance begins.
- * The quiet period is governable — governance can shorten, extend, or remove it.
  */
 
 import { expect } from "chai";
@@ -123,16 +122,6 @@ describe("Governance Quiet Period (T6.1)", function () {
     );
   }
 
-  // Helper: call setQuietPeriodDuration through the timelock (the only authorized caller)
-  async function setQuietPeriodViaTImelock(duration: number) {
-    const calldata = governor.interface.encodeFunctionData("setQuietPeriodDuration", [duration]);
-    const governorAddr = await governor.getAddress();
-    const salt = ethers.id(`set-quiet-period-${duration}`);
-    await timelockController.schedule(governorAddr, 0, calldata, ethers.ZeroHash, salt, ONE_DAY);
-    await time.increase(ONE_DAY + 1);
-    await timelockController.execute(governorAddr, 0, calldata, ethers.ZeroHash, salt);
-  }
-
   // Helper: run crowdfund to finalization (normal path — above MIN_SALE)
   async function finalizeCrowdfund() {
     { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
@@ -219,67 +208,9 @@ describe("Governance Quiet Period (T6.1)", function () {
     });
   });
 
-  // ============ Governable quiet period duration ============
-
-  describe("Governable quiet period duration", function () {
-    it("governance can set quietPeriodDuration to 0 to remove it", async function () {
-      await governor.setCrowdfundAddress(await crowdfund.getAddress());
-      await finalizeCrowdfund();
-      await lockArmForProposal();
-
-      // Quiet period active — proposal should revert
-      await expect(propose("before removal")).to.be.revertedWith("ArmadaGovernor: quiet period active");
-
-      // Governance (timelock) sets quiet period to 0
-      await setQuietPeriodViaTImelock(0);
-
-      // Now proposal succeeds during what would have been the quiet period
-      await expect(propose("after removal")).to.not.be.reverted;
-    });
-
-    it("governance can extend quiet period — propose at day 8 reverts if extended to 14 days", async function () {
-      await governor.setCrowdfundAddress(await crowdfund.getAddress());
-
-      // Extend quiet period to 14 days via timelock BEFORE finalization
-      // (so we don't have to time-travel through the quiet period to execute the timelock op)
-      await setQuietPeriodViaTImelock(14 * ONE_DAY);
-
-      await finalizeCrowdfund();
-      await lockArmForProposal();
-
-      // Day 8 — would succeed with 7-day period, but now reverts with 14-day
-      await time.increase(8 * ONE_DAY);
-      await expect(propose()).to.be.revertedWith("ArmadaGovernor: quiet period active");
-
-      // Day 15 (from finalization) — succeeds after extended period
-      await time.increase(7 * ONE_DAY);
-      await expect(propose()).to.not.be.reverted;
-    });
-  });
-
   // ============ Access control ============
 
   describe("Access control", function () {
-    it("setQuietPeriodDuration by non-timelock reverts", async function () {
-      await expect(
-        governor.connect(nonDeployer).setQuietPeriodDuration(0)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
-    });
-
-    it("setQuietPeriodDuration above MAX_QUIET_PERIOD reverts", async function () {
-      const MAX_QUIET_PERIOD = 30 * ONE_DAY;
-      const calldata = governor.interface.encodeFunctionData(
-        "setQuietPeriodDuration", [MAX_QUIET_PERIOD + 1]
-      );
-      const governorAddr = await governor.getAddress();
-      const salt = ethers.id("exceeds-max-quiet");
-      await timelockController.schedule(governorAddr, 0, calldata, ethers.ZeroHash, salt, ONE_DAY);
-      await time.increase(ONE_DAY + 1);
-      await expect(
-        timelockController.execute(governorAddr, 0, calldata, ethers.ZeroHash, salt)
-      ).to.be.revertedWith("TimelockController: underlying transaction reverted");
-    });
-
     it("setCrowdfundAddress is one-time only (second call reverts)", async function () {
       await governor.setCrowdfundAddress(await crowdfund.getAddress());
 

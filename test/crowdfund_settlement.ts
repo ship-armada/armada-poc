@@ -259,7 +259,7 @@ describe("Crowdfund Settlement Rework", function () {
 
       // All seeds claim ARM + refund in one call
       for (const s of seeds) {
-        await crowdfund.connect(s).claim(ethers.ZeroAddress);
+        await crowdfund.connect(s).claim(s.address);
       }
 
       // Contract should have minimal USDC left (dust from rounding)
@@ -356,14 +356,14 @@ describe("Crowdfund Settlement Rework", function () {
       // So increaseTo(deadline - 1n) → claim tx executes at block.timestamp == deadline
       await time.increaseTo(deadline - 1n);
       const armBefore = await armToken.balanceOf(seeds[0].address);
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
       const armAfter = await armToken.balanceOf(seeds[0].address);
       expect(armAfter - armBefore).to.be.gt(0n); // ARM transferred
 
       // Now block.timestamp == deadline. Next tx at deadline+1 → no ARM, refund only.
       const armBefore1 = await armToken.balanceOf(seeds[1].address);
       const usdcBefore1 = await usdc.balanceOf(seeds[1].address);
-      await crowdfund.connect(seeds[1]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[1]).claim(seeds[1].address);
       const armAfter1 = await armToken.balanceOf(seeds[1].address);
       const usdcAfter1 = await usdc.balanceOf(seeds[1].address);
       expect(armAfter1 - armBefore1).to.equal(0n); // no ARM after deadline
@@ -443,7 +443,7 @@ describe("Crowdfund Settlement Rework", function () {
       const allParticipants = [...seeds, ...hop1Invitees];
       for (const p of allParticipants) {
         const before = await usdc.balanceOf(p.address);
-        await crowdfund.connect(p).claim(ethers.ZeroAddress);
+        await crowdfund.connect(p).claim(p.address);
         const after = await usdc.balanceOf(p.address);
         sumRefundsPaid += (after - before);
       }
@@ -552,7 +552,7 @@ describe("Crowdfund Settlement Rework", function () {
 
       // Half the seeds claim — reduces armStillOwed
       for (let i = 0; i < 34; i++) {
-        await crowdfund.connect(seeds[i]).claim(ethers.ZeroAddress);
+        await crowdfund.connect(seeds[i]).claim(seeds[i].address);
       }
 
       // armStillOwed decreased, but no new unsold ARM. Balance = totalAlloc - claimed.
@@ -570,7 +570,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
 
       // Only 1 of 68 seeds claims
-      await crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seeds[0]).claim(seeds[0].address);
 
       // Before deadline: can't sweep unclaimed
       await expect(

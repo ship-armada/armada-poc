@@ -220,12 +220,12 @@ contract CrowdfundReentrancyTest is Test {
         // Arm: on ARM transfer, try to call claim() again
         maliciousArm.setAttack(
             address(cf),
-            abi.encodeWithSelector(ArmadaCrowdfund.claim.selector, address(0))
+            abi.encodeWithSelector(ArmadaCrowdfund.claim.selector, seeds[0])
         );
 
         uint256 armBefore = maliciousArm.balanceOf(seeds[0]);
         vm.prank(seeds[0]);
-        cf.claim(address(0));
+        cf.claim(seeds[0]);
 
         // Reentry was attempted and blocked by nonReentrant specifically
         assertTrue(maliciousArm.attackFired(), "Attack callback must have fired");
@@ -244,7 +244,7 @@ contract CrowdfundReentrancyTest is Test {
         // Second claim must revert (already claimed)
         vm.prank(seeds[0]);
         vm.expectRevert("ArmadaCrowdfund: already claimed");
-        cf.claim(address(0));
+        cf.claim(seeds[0]);
     }
 
     // ============ Test: claim() reentry blocked (propagating revert) ============
@@ -288,14 +288,14 @@ contract CrowdfundReentrancyTest is Test {
 
         maliciousArm.setAttack(
             address(cf),
-            abi.encodeWithSelector(ArmadaCrowdfund.claim.selector, address(0))
+            abi.encodeWithSelector(ArmadaCrowdfund.claim.selector, seeds[0])
         );
 
         // Outer call reverts because reentry revert propagates through the token transfer.
         // The propagated revert reason must be the nonReentrant guard.
         vm.prank(seeds[0]);
         vm.expectRevert("ReentrancyGuard: reentrant call");
-        cf.claim(address(0));
+        cf.claim(seeds[0]);
 
         // Attacker received nothing
         assertEq(maliciousArm.balanceOf(seeds[0]), 0, "Attacker must receive nothing");
@@ -303,7 +303,7 @@ contract CrowdfundReentrancyTest is Test {
         // Disable attack — legitimate claim works
         maliciousArm.disableAttack();
         vm.prank(seeds[0]);
-        cf.claim(address(0));
+        cf.claim(seeds[0]);
         assertTrue(maliciousArm.balanceOf(seeds[0]) > 0, "Legitimate claim must succeed");
     }
 

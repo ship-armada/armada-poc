@@ -126,16 +126,13 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
     expect(await armToken.getVotes(claimant.address)).to.be.gt(0n);
   });
 
-  it("claim(address(0)) skips delegation", async function () {
+  it("claim(address(0)) reverts — delegation is mandatory", async function () {
     const crowdfund = await deployCrowdfund();
     const { seeds } = await setupAndFinalize(crowdfund);
 
     const claimant = seeds[2];
-    await crowdfund.connect(claimant).claim(ethers.ZeroAddress);
-
-    // ARM transferred but no delegation set
-    const balance = await armToken.balanceOf(claimant.address);
-    expect(balance).to.be.gt(0n);
-    expect(await armToken.delegates(claimant.address)).to.equal(ethers.ZeroAddress);
+    await expect(
+      crowdfund.connect(claimant).claim(ethers.ZeroAddress)
+    ).to.be.revertedWith("ArmadaCrowdfund: delegate required");
   });
 });

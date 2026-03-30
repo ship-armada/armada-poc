@@ -271,7 +271,7 @@ describe("Crowdfund Multi-Node", function () {
 
       // Alice claims ARM — stacking → commit → settlement → claim end-to-end
       const armBefore = await armToken.balanceOf(alice.address);
-      await crowdfund.connect(alice).claim(ethers.ZeroAddress);
+      await crowdfund.connect(alice).claim(alice.address);
       const armAfter = await armToken.balanceOf(alice.address);
       expect(armAfter - armBefore).to.be.gt(0);
     });
@@ -555,7 +555,7 @@ describe("Crowdfund Multi-Node", function () {
       expect(allocBefore).to.be.gt(0);
 
       const armBefore = await armToken.balanceOf(seed1.address);
-      await crowdfund.connect(seed1).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seed1).claim(seed1.address);
       const armAfter = await armToken.balanceOf(seed1.address);
 
       expect(armAfter - armBefore).to.equal(allocBefore);
@@ -564,10 +564,10 @@ describe("Crowdfund Multi-Node", function () {
     it("should revert double-claim", async function () {
       await setupAndFinalize();
 
-      await crowdfund.connect(seed1).claim(ethers.ZeroAddress);
+      await crowdfund.connect(seed1).claim(seed1.address);
 
       await expect(
-        crowdfund.connect(seed1).claim(ethers.ZeroAddress)
+        crowdfund.connect(seed1).claim(seed1.address)
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
   });

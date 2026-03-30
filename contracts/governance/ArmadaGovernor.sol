@@ -265,7 +265,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         });
 
         // Steward: immediate voting, 7d review window, 2d timelock, 20% quorum.
+        // Total lifecycle: 9 days (0d delay + 7d vote + 2d timelock).
         // Pass-by-default: passes unless quorum met AND majority votes AGAINST.
+        // The 2d execution delay is intentional: it provides a veto buffer after the
+        // pass-by-default voting window, giving tokenholders time to queue a
+        // VetoRatification proposal before the steward spend executes.
         // These params bypass setProposalTypeParams() bounds, making Steward timing
         // effectively immutable via governance. Only proposeStewardSpend() creates these.
         proposalTypeParams[ProposalType.Steward] = ProposalParams({

@@ -8,6 +8,7 @@ import {
   useGraphState,
   useSelection,
   useENS,
+  useAllocations,
   StatsBar,
   TableView,
   SearchBar,
@@ -22,6 +23,7 @@ export function App() {
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
+  const [activeTab, setActiveTab] = useState<'tree' | 'table'>('tree')
 
   const pollInterval = getPollIntervalMs()
 
@@ -51,8 +53,15 @@ export function App() {
   // Aggregate contract state
   const contractState = useContractState(provider, contractAddress, pollInterval)
 
-  // Selection state
-  const { selectedAddress, selectAddress, searchQuery, setSearchQuery } = useSelection()
+  // Selection state (includes hover)
+  const {
+    selectedAddress,
+    selectAddress,
+    searchQuery,
+    setSearchQuery,
+    hoveredAddress,
+    setHoveredAddress,
+  } = useSelection()
 
   // ENS resolution
   const addresses = useMemo(
@@ -61,11 +70,28 @@ export function App() {
   )
   const { resolve: resolveENS } = useENS({ provider, addresses })
 
-  // Summaries as array for TableView
-  const summaryArray = useMemo(
-    () => [...summaries.values()],
-    [summaries],
-  )
+  // Prefetch allocations for unclaimed participants post-finalization
+  const prefetchedAllocations = useAllocations({
+    provider,
+    contractAddress,
+    phase: contractState.phase,
+    refundMode: contractState.refundMode,
+    summaries,
+  })
+
+  // Summaries as array for TableView, with prefetched allocations merged in
+  const summaryArray = useMemo(() => {
+    const arr = [...summaries.values()]
+    if (prefetchedAllocations.size === 0) return arr
+
+    // Merge prefetched allocations into summaries where event data is absent
+    return arr.map((s) => {
+      if (s.allocatedArm !== null) return s // Event data takes precedence
+      const prefetched = prefetchedAllocations.get(s.address)
+      if (!prefetched) return s
+      return { ...s, allocatedArm: prefetched.armAmount, refundUsdc: prefetched.refundUsdc }
+    })
+  }, [summaries, prefetchedAllocations])
 
   // Loading state
   if (deployError) {
@@ -117,6 +143,69 @@ export function App() {
     )
   }
 
+  // Empty state: ARM loaded but no seeds yet
+  if (contractState.armLoaded && contractState.seedCount === 0 && contractState.phase === 0) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="container mx-auto p-4 space-y-4">
+          <Header />
+          <StatsBar
+            hopStats={contractState.hopStats}
+            totalCommitted={contractState.totalCommitted}
+            cappedDemand={contractState.cappedDemand}
+            saleSize={contractState.saleSize}
+            phase={contractState.phase}
+            armLoaded={contractState.armLoaded}
+            seedCount={contractState.seedCount}
+            participantCount={contractState.participantCount}
+            windowEnd={contractState.windowEnd}
+            blockTimestamp={contractState.blockTimestamp}
+          />
+          <div className="rounded-lg border border-border bg-card p-8 text-center">
+            <TreeView
+              graph={graph}
+              selectedAddress={selectedAddress}
+              onSelectAddress={selectAddress}
+              searchQuery=""
+              phase={contractState.phase}
+              resolveENS={resolveENS}
+            />
+            <p className="text-sm text-muted-foreground mt-4">
+              Waiting for seeds to be added...
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const treeView = (
+    <TreeView
+      graph={graph}
+      selectedAddress={selectedAddress}
+      onSelectAddress={selectAddress}
+      onHoverAddress={setHoveredAddress}
+      searchQuery={searchQuery}
+      phase={contractState.phase}
+      resolveENS={resolveENS}
+    />
+  )
+
+  const tableView = (
+    <TableView
+      summaries={summaryArray}
+      nodes={nodes}
+      selectedAddress={selectedAddress}
+      onSelectAddress={selectAddress}
+      searchQuery={searchQuery}
+      phase={contractState.phase}
+      resolveENS={resolveENS}
+      hoveredAddress={hoveredAddress}
+      hopStats={contractState.hopStats}
+      saleSize={contractState.saleSize}
+    />
+  )
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto p-4 space-y-4">
@@ -166,25 +255,39 @@ export function App() {
         {/* Search */}
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
-        {/* Main content: tree + table */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <TreeView
-            graph={graph}
-            selectedAddress={selectedAddress}
-            onSelectAddress={selectAddress}
-            searchQuery={searchQuery}
-            phase={contractState.phase}
-            resolveENS={resolveENS}
-          />
-          <TableView
-            summaries={summaryArray}
-            nodes={nodes}
-            selectedAddress={selectedAddress}
-            onSelectAddress={selectAddress}
-            searchQuery={searchQuery}
-            phase={contractState.phase}
-            resolveENS={resolveENS}
-          />
+        {/* Mobile tab bar — visible below lg breakpoint */}
+        <div className="flex gap-1 lg:hidden">
+          <button
+            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+              activeTab === 'tree'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTab('tree')}
+          >
+            Tree
+          </button>
+          <button
+            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+              activeTab === 'table'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTab('table')}
+          >
+            Table
+          </button>
+        </div>
+
+        {/* Desktop: side by side */}
+        <div className="hidden lg:grid lg:grid-cols-2 gap-4">
+          {treeView}
+          {tableView}
+        </div>
+
+        {/* Mobile: active tab only */}
+        <div className="lg:hidden">
+          {activeTab === 'tree' ? treeView : tableView}
         </div>
 
         {/* Event count footer */}

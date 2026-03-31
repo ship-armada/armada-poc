@@ -20,86 +20,107 @@ function displayAddress(addr: string, resolve?: (a: string) => string | null): s
 
 export function NodeDetail(props: NodeDetailProps) {
   const { summary, hopNodes, resolveENS, phase } = props
+  const ensName = resolveENS?.(summary.address)
+
+  // Compute total invites used / available across all hops
+  let totalInvitesUsed = 0
+  let totalInvitesAvailable = 0
+  for (const node of hopNodes) {
+    totalInvitesUsed += node.invitesUsed
+    totalInvitesAvailable += node.invitesUsed + node.invitesAvailable
+  }
+
+  // Build per-hop inviter chain for multi-hop addresses
+  const inviterChain = hopNodes.map((node) => {
+    const inviter = node.invitedBy.length > 0 ? node.invitedBy[0] : null
+    const isSelfInvite = inviter === summary.address
+    const isSeed = node.hop === 0
+    return {
+      hop: node.hop,
+      inviter,
+      label: isSeed
+        ? 'Armada (seed)'
+        : isSelfInvite
+          ? 'self-invited'
+          : inviter
+            ? displayAddress(inviter, resolveENS)
+            : 'unknown',
+    }
+  })
 
   return (
-    <div className="space-y-3 text-sm">
-      {/* Address header */}
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs text-muted-foreground">{summary.address}</span>
-        {resolveENS?.(summary.address) && (
-          <span className="text-xs text-foreground">{resolveENS(summary.address)}</span>
+    <div className="space-y-2 text-sm">
+      {/* Address header: ENS name (truncated address) */}
+      <div className="font-medium">
+        {ensName ? (
+          <span>
+            {ensName}{' '}
+            <span className="font-mono text-xs text-muted-foreground">
+              ({truncateAddress(summary.address)})
+            </span>
+          </span>
+        ) : (
+          <span className="font-mono text-xs">{summary.address}</span>
         )}
       </div>
 
-      {/* Invited by */}
+      {/* Per-hop breakdown: compact inline format */}
+      {hopNodes.map((node) => {
+        const cap = node.hop < HOP_CONFIGS.length ? HOP_CONFIGS[node.hop].capUsdc : 0n
+        const slotCount = node.invitesReceived
+        return (
+          <div key={`${node.address}-${node.hop}`} className="text-xs">
+            <span className="text-muted-foreground">{hopLabel(node.hop)}: </span>
+            <span>{formatUsdc(node.committed)} committed</span>
+            {slotCount > 1 && (
+              <span className="text-muted-foreground"> ({slotCount} slots)</span>
+            )}
+            {slotCount === 1 && node.hop > 0 && (
+              <span className="text-muted-foreground"> (1 slot)</span>
+            )}
+            {node.rawDeposited > node.committed && (
+              <span className="text-amber-500">
+                {' '}(over-cap by {formatUsdc(node.rawDeposited - node.committed)})
+              </span>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Total (only shown for multi-hop) */}
+      {hopNodes.length > 1 && (
+        <div className="text-xs font-medium">
+          Total: {formatUsdc(summary.totalCommitted)}
+        </div>
+      )}
+
+      {/* Invited by: per-hop inviter chain */}
       <div className="text-xs text-muted-foreground">
-        Invited by: {displayAddress(summary.displayInviter, resolveENS)}
+        Invited by:{' '}
+        {inviterChain.map((entry, idx) => (
+          <span key={entry.hop}>
+            {idx > 0 && ' · '}
+            {hopNodes.length > 1 && <span>{hopLabel(entry.hop)}: </span>}
+            {entry.label}
+          </span>
+        ))}
       </div>
 
-      {/* Total committed */}
-      <div>
-        <span className="text-muted-foreground">Total committed: </span>
-        <span className="font-medium">{formatUsdc(summary.totalCommitted)}</span>
+      {/* Invite usage summary */}
+      <div className="text-xs text-muted-foreground">
+        Invites: {totalInvitesUsed}/{totalInvitesAvailable} used
       </div>
 
-      {/* Per-hop breakdown */}
-      <div className="space-y-2">
-        {hopNodes.map((node) => {
-          const cap = node.hop < HOP_CONFIGS.length ? HOP_CONFIGS[node.hop].capUsdc : 0n
-          const maxCommit = BigInt(node.invitesReceived) * cap
-
-          return (
-            <div
-              key={`${node.address}-${node.hop}`}
-              className="rounded border border-border p-2"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-xs">{hopLabel(node.hop)}</span>
-                <span className="text-xs text-muted-foreground">
-                  {node.invitesReceived} invite{node.invitesReceived !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <div>
-                  <span className="text-muted-foreground">Committed: </span>
-                  <span>{formatUsdc(node.committed)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Cap: </span>
-                  <span>{formatUsdc(maxCommit)}</span>
-                </div>
-                {node.rawDeposited > node.committed && (
-                  <div className="col-span-2 text-amber-500">
-                    Over-cap by {formatUsdc(node.rawDeposited - node.committed)}
-                  </div>
-                )}
-                <div>
-                  <span className="text-muted-foreground">Invites used: </span>
-                  <span>{node.invitesUsed}/{node.invitesUsed + node.invitesAvailable}</span>
-                </div>
-                {/* Post-finalization allocation */}
-                {phase === 1 && node.acceptedUsdc !== null && (
-                  <div>
-                    <span className="text-muted-foreground">Accepted: </span>
-                    <span>{formatUsdc(node.acceptedUsdc)}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Post-finalization: aggregate allocation */}
+      {/* Post-finalization: allocation and claim status */}
       {phase === 1 && summary.allocatedArm !== null && (
-        <div className="rounded border border-success/30 bg-success/5 p-2 space-y-1">
+        <div className="pt-1 border-t border-border space-y-1">
           <div className="text-xs">
-            <span className="text-muted-foreground">ARM allocated: </span>
+            <span className="text-muted-foreground">Allocated: </span>
             <span className="font-medium text-success">{formatArm(summary.allocatedArm)}</span>
           </div>
           {summary.refundUsdc !== null && summary.refundUsdc > 0n && (
             <div className="text-xs">
-              <span className="text-muted-foreground">USDC refund: </span>
+              <span className="text-muted-foreground">Refund: </span>
               <span>{formatUsdc(summary.refundUsdc)}</span>
             </div>
           )}
@@ -109,13 +130,12 @@ export function NodeDetail(props: NodeDetailProps) {
               <span>{displayAddress(summary.delegate, resolveENS)}</span>
             </div>
           )}
-          <div className="flex gap-3 text-xs">
-            {summary.armClaimed && (
-              <span className="text-success">ARM claimed</span>
-            )}
-            {summary.refundClaimed && (
-              <span className="text-success">Refund claimed</span>
-            )}
+          <div className="text-xs">
+            <span className="text-muted-foreground">ARM claimed: </span>
+            <span>{summary.armClaimed ? '\u2713' : '\u2717'}</span>
+            <span className="mx-2 text-border">|</span>
+            <span className="text-muted-foreground">Refund claimed: </span>
+            <span>{summary.refundClaimed ? '\u2713' : '\u2717'}</span>
           </div>
         </div>
       )}

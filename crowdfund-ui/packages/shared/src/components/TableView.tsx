@@ -1,7 +1,7 @@
 // ABOUTME: Sortable, searchable, filterable participant table using @tanstack/react-table.
 // ABOUTME: Displays address summaries with per-hop breakdown and allocation status.
 
-import { useMemo, useState, Fragment } from 'react'
+import { useMemo, useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -17,7 +17,9 @@ import {
   type Row,
 } from '@tanstack/react-table'
 import { formatUsdc, formatArm, hopLabel, truncateAddress } from '../lib/format.js'
+import { HOP_CONFIGS } from '../lib/constants.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
+import type { HopStatsData } from './StatsBar.js'
 import { NodeDetail } from './NodeDetail.js'
 
 export interface TableViewProps {
@@ -28,12 +30,28 @@ export interface TableViewProps {
   searchQuery: string
   phase: number
   resolveENS?: (addr: string) => string | null
+  hoveredAddress?: string | null
+  hopStats?: HopStatsData[]
+  saleSize?: bigint
 }
 
 function displayAddress(addr: string, resolve?: (a: string) => string | null): string {
   if (addr === 'armada') return 'Armada'
   const ens = resolve?.(addr)
   return ens ?? truncateAddress(addr)
+}
+
+/** Compute which hop indices are oversubscribed (demand > ceiling allocation) */
+function getOversubscribedHops(hopStats?: HopStatsData[], saleSize?: bigint): Set<number> {
+  const result = new Set<number>()
+  if (!hopStats || !saleSize || saleSize === 0n) return result
+  for (let i = 0; i < hopStats.length; i++) {
+    const ceiling = (saleSize * BigInt(HOP_CONFIGS[i].ceilingBps)) / 10000n
+    if (ceiling > 0n && hopStats[i].cappedCommitted > ceiling) {
+      result.add(i)
+    }
+  }
+  return result
 }
 
 const columnHelper = createColumnHelper<AddressSummary>()
@@ -47,17 +65,57 @@ export function TableView(props: TableViewProps) {
     searchQuery,
     phase,
     resolveENS,
+    hoveredAddress,
+    hopStats,
+    saleSize,
   } = props
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'committed', desc: true }])
   const [expanded, setExpanded] = useState<ExpandedState>({})
   const [hopFilter, setHopFilter] = useState<number | null>(null)
+  const [multiHopOnly, setMultiHopOnly] = useState(false)
+  const [oversubOnly, setOversubOnly] = useState(false)
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
 
-  // Pre-filter by hop before handing to the table
+  const oversubscribedHops = useMemo(
+    () => getOversubscribedHops(hopStats, saleSize),
+    [hopStats, saleSize],
+  )
+
+  // Pre-filter by hop, multi-hop, and oversubscribed toggles
   const filteredSummaries = useMemo(() => {
-    if (hopFilter === null) return summaries
-    return summaries.filter((s) => s.hops.includes(hopFilter))
-  }, [summaries, hopFilter])
+    let filtered = summaries
+    if (hopFilter !== null) {
+      filtered = filtered.filter((s) => s.hops.includes(hopFilter))
+    }
+    if (multiHopOnly) {
+      filtered = filtered.filter((s) => s.hops.length > 1)
+    }
+    if (oversubOnly && oversubscribedHops.size > 0) {
+      filtered = filtered.filter((s) =>
+        s.hops.some((h) => oversubscribedHops.has(h)),
+      )
+    }
+    return filtered
+  }, [summaries, hopFilter, multiHopOnly, oversubOnly, oversubscribedHops])
+
+  // Scroll to selected row when selection changes
+  useEffect(() => {
+    if (!selectedAddress) return
+    const el = rowRefs.current.get(selectedAddress)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [selectedAddress])
+
+  const handleInviterClick = useCallback(
+    (e: React.MouseEvent, inviterAddr: string) => {
+      e.stopPropagation()
+      if (inviterAddr === 'armada') return
+      onSelectAddress(inviterAddr)
+    },
+    [onSelectAddress],
+  )
 
   const columns = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,12 +160,51 @@ export function TableView(props: TableViewProps) {
       }),
       columnHelper.accessor('displayInviter', {
         header: 'Invited by',
-        cell: (info) => (
-          <span className="text-xs text-muted-foreground">
-            {displayAddress(info.getValue(), resolveENS)}
-          </span>
-        ),
+        cell: (info) => {
+          const inviter = info.getValue()
+          const label = displayAddress(inviter, resolveENS)
+          if (inviter === 'armada') {
+            return <span className="text-xs text-muted-foreground">{label}</span>
+          }
+          return (
+            <button
+              className="text-xs text-muted-foreground underline decoration-dotted hover:text-foreground cursor-pointer"
+              onClick={(e) => handleInviterClick(e, inviter)}
+            >
+              {label}
+            </button>
+          )
+        },
         sortingFn: 'alphanumeric',
+      }),
+      // Invites column: used / total across all hops
+      columnHelper.display({
+        id: 'invites',
+        header: 'Invites',
+        cell: (info) => {
+          const addr = info.row.original.address
+          let used = 0
+          let total = 0
+          for (const hop of info.row.original.hops) {
+            const node = nodes.get(`${addr}-${hop}`)
+            if (node) {
+              used += node.invitesUsed
+              total += node.invitesUsed + node.invitesAvailable
+            }
+          }
+          return <span className="text-xs">{used}/{total}</span>
+        },
+        sortingFn: (rowA, rowB) => {
+          const getUsed = (row: Row<AddressSummary>) => {
+            let used = 0
+            for (const hop of row.original.hops) {
+              const node = nodes.get(`${row.original.address}-${hop}`)
+              if (node) used += node.invitesUsed
+            }
+            return used
+          }
+          return getUsed(rowA) - getUsed(rowB)
+        },
       }),
     ]
 
@@ -144,7 +241,7 @@ export function TableView(props: TableViewProps) {
     }
 
     return cols
-  }, [phase, resolveENS])
+  }, [phase, resolveENS, nodes, handleInviterClick])
 
   // Apply search query as a column filter on the address column
   const columnFilters = useMemo<ColumnFiltersState>(() => {
@@ -169,7 +266,7 @@ export function TableView(props: TableViewProps) {
     getExpandedRowModel: getExpandedRowModel(),
   })
 
-  const colCount = phase === 1 ? 6 : 4
+  const colCount = phase === 1 ? 7 : 5
 
   function handleRowClick(row: Row<AddressSummary>) {
     const addr = row.original.address
@@ -180,8 +277,8 @@ export function TableView(props: TableViewProps) {
 
   return (
     <div className="space-y-2">
-      {/* Hop filter tabs */}
-      <div className="flex gap-1 text-xs">
+      {/* Hop filter tabs + toggle filters */}
+      <div className="flex flex-wrap items-center gap-1 text-xs">
         <button
           className={`px-2 py-1 rounded ${hopFilter === null ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
           onClick={() => setHopFilter(null)}
@@ -197,6 +294,21 @@ export function TableView(props: TableViewProps) {
             {hopLabel(hop)}
           </button>
         ))}
+        <span className="mx-1 text-border">|</span>
+        <button
+          className={`px-2 py-1 rounded ${multiHopOnly ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setMultiHopOnly(!multiHopOnly)}
+        >
+          Multi-hop
+        </button>
+        {oversubscribedHops.size > 0 && (
+          <button
+            className={`px-2 py-1 rounded ${oversubOnly ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setOversubOnly(!oversubOnly)}
+          >
+            Oversubscribed
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -229,16 +341,26 @@ export function TableView(props: TableViewProps) {
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => {
-              const isSelected = selectedAddress === row.original.address
+              const addr = row.original.address
+              const isSelected = selectedAddress === addr
+              const isHovered = hoveredAddress === addr
               const hopNodes = row.original.hops
-                .map((hop) => nodes.get(`${row.original.address}-${hop}`))
+                .map((hop) => nodes.get(`${addr}-${hop}`))
                 .filter((n): n is GraphNode => n !== undefined)
 
               return (
                 <Fragment key={row.id}>
                   <tr
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(addr, el)
+                      else rowRefs.current.delete(addr)
+                    }}
                     className={`border-t border-border cursor-pointer transition-colors ${
-                      isSelected ? 'bg-primary/10' : 'hover:bg-muted/30'
+                      isSelected
+                        ? 'bg-primary/10'
+                        : isHovered
+                          ? 'bg-muted/15'
+                          : 'hover:bg-muted/30'
                     }`}
                     onClick={() => handleRowClick(row)}
                   >

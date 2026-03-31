@@ -59,12 +59,16 @@ export type { UseGraphStateResult } from './hooks/useGraphState.js'
 export {
   selectedAddressAtom,
   searchQueryAtom,
+  hoveredAddressAtom,
   useSelection,
 } from './hooks/useSelection.js'
 export type { UseSelectionResult } from './hooks/useSelection.js'
 
 export { ensMapAtom, useENS } from './hooks/useENS.js'
 export type { UseENSConfig, UseENSResult } from './hooks/useENS.js'
+
+export { useAllocations } from './hooks/useAllocations.js'
+export type { PrefetchedAllocation, UseAllocationsConfig } from './hooks/useAllocations.js'
 
 // Components
 export { StatsBar } from './components/StatsBar.js'

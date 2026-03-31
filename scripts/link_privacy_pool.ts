@@ -325,7 +325,11 @@ async function main() {
         to: registryAddr,
         data: calldata,
       }]);
-      await ethers.provider.waitForTransaction(txHash);
+      // Poll for receipt since HardhatEthersProvider.waitForTransaction is not implemented
+      let receipt = null;
+      while (!receipt) {
+        receipt = await jsonRpc("eth_getTransactionReceipt", [txHash]);
+      }
       await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
       console.log(`  Adapter authorized in adapter registry`);
     }

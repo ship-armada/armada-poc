@@ -1,7 +1,7 @@
 // ABOUTME: DAG visualization of the crowdfund invite tree using d3-hierarchy.
 // ABOUTME: Renders ROOT → hop-0 → hop-1 → hop-2 with pan/zoom, selection, and tooltips.
 
-import { useRef, useEffect, useState, useMemo, useCallback } from 'react'
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import * as d3Hierarchy from 'd3-hierarchy'
 import * as d3Zoom from 'd3-zoom'
 import * as d3Scale from 'd3-scale'
@@ -34,18 +34,253 @@ interface TooltipState {
   address: string
 }
 
-/** Tracks which multi-hop nodes are expanded */
-type ExpandedSet = Set<string>
-
 /** Collapsed subtree indicator */
 const COLLAPSE_THRESHOLD = 20
+
+/** CSS transition for smooth enter/position changes */
+const NODE_TRANSITION = 'transform 500ms ease, opacity 300ms ease'
+const EDGE_TRANSITION = 'opacity 300ms ease'
+
+/** Memoized node component to avoid re-rendering all nodes on selection changes */
+const TreeNodeEl = React.memo(function TreeNodeEl(props: {
+  node: TreeNode & { x: number; y: number }
+  radius: number
+  isRoot: boolean
+  isSelected: boolean
+  isSearchMatch: boolean
+  searchActive: boolean
+  isExpanded: boolean
+  isCollapsed: boolean
+  childCount: number
+  onClick: (address: string, e: React.MouseEvent) => void
+  onBadgeClick: (address: string, e: React.MouseEvent) => void
+  onSubtreeToggle: (nodeId: string, e: React.MouseEvent) => void
+  onMouseEnter: (address: string, e: React.MouseEvent) => void
+  onMouseLeave: () => void
+}) {
+  const {
+    node, radius, isRoot, isSelected, isSearchMatch, searchActive,
+    isExpanded, isCollapsed, childCount,
+    onClick, onBadgeClick, onSubtreeToggle, onMouseEnter, onMouseLeave,
+  } = props
+
+  const nodeOpacity = searchActive && !isSearchMatch ? 0.2 : 1
+  const hasChildren = childCount > 0
+
+  return (
+    <g
+      transform={`translate(${node.x}, ${node.y})`}
+      opacity={nodeOpacity}
+      className="cursor-pointer"
+      style={{ transition: NODE_TRANSITION }}
+      onClick={(e) => onClick(node.address, e)}
+      onMouseEnter={(e) => onMouseEnter(node.address, e)}
+      onMouseLeave={onMouseLeave}
+    >
+      {isRoot ? (
+        <text
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="fill-foreground text-xs font-medium"
+        >
+          Armada
+        </text>
+      ) : (
+        <>
+          {node.isMultiHop ? (
+            <>
+              <circle
+                r={radius}
+                fill="none"
+                stroke={isSelected ? '#ffffff' : hopColor(node.hop)}
+                strokeWidth={isSelected ? 2.5 : 1.5}
+              />
+              {node.hops.map((h: number, idx: number) => {
+                const angle = (idx / node.hops.length) * Math.PI * 2 - Math.PI / 2
+                const nextAngle = ((idx + 1) / node.hops.length) * Math.PI * 2 - Math.PI / 2
+                const largeArc = nextAngle - angle > Math.PI ? 1 : 0
+                const x1 = Math.cos(angle) * radius
+                const y1 = Math.sin(angle) * radius
+                const x2 = Math.cos(nextAngle) * radius
+                const y2 = Math.sin(nextAngle) * radius
+                return (
+                  <path
+                    key={h}
+                    d={`M 0 0 L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                    fill={hopColor(h)}
+                    fillOpacity={0.6}
+                  />
+                )
+              })}
+            </>
+          ) : (
+            <circle
+              r={radius}
+              fill={node.committed > 0n ? hopColor(node.hop) : 'none'}
+              fillOpacity={node.committed > 0n ? 0.6 : 0}
+              stroke={isSelected ? '#ffffff' : hopColor(node.hop)}
+              strokeWidth={isSelected ? 2.5 : 1.5}
+            />
+          )}
+
+          {/* Multi-hop badge — click to expand/collapse per-hop detail */}
+          {node.isMultiHop && (
+            <g
+              transform={`translate(${radius + 2}, ${-radius - 2})`}
+              onClick={(e) => onBadgeClick(node.address, e)}
+              className="cursor-pointer"
+            >
+              <rect
+                x={-8}
+                y={-7}
+                width={16}
+                height={14}
+                rx={3}
+                fill={isExpanded ? '#334155' : '#1e293b'}
+                stroke={isExpanded ? '#94a3b8' : '#475569'}
+                strokeWidth={0.5}
+              />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                className="fill-foreground"
+                fontSize={9}
+              >
+                {isExpanded ? '−' : `×${node.hops.length}`}
+              </text>
+            </g>
+          )}
+
+          {/* Collapse/expand indicator for large subtrees */}
+          {hasChildren && childCount > COLLAPSE_THRESHOLD && (
+            <g
+              transform={`translate(${radius + 2}, ${radius + 2})`}
+              onClick={(e) => onSubtreeToggle(node.id, e)}
+              className="cursor-pointer"
+            >
+              <rect
+                x={-10}
+                y={-6}
+                width={20}
+                height={12}
+                rx={2}
+                fill="#1e293b"
+                stroke="#475569"
+                strokeWidth={0.5}
+              />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                className="fill-muted-foreground"
+                fontSize={8}
+              >
+                {isCollapsed ? `+${childCount}` : '−'}
+              </text>
+            </g>
+          )}
+
+          {/* Selection ring */}
+          {isSelected && (
+            <circle
+              r={radius + 4}
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth={1}
+              strokeOpacity={0.5}
+            />
+          )}
+
+          {/* Label for larger nodes */}
+          {radius > 12 && (
+            <text
+              y={radius + 14}
+              textAnchor="middle"
+              className="fill-muted-foreground"
+              fontSize={9}
+            >
+              {node.label}
+            </text>
+          )}
+
+          {/* Expanded per-hop breakdown labels */}
+          {isExpanded && node.isMultiHop && (
+            <g transform={`translate(${radius + 20}, -${(node.hops.length - 1) * 7})`}>
+              {node.hops.map((h: number, idx: number) => {
+                const amount = node.perHop.get(h) ?? 0n
+                const display = Number(amount / (10n ** 6n))
+                return (
+                  <text
+                    key={h}
+                    y={idx * 14}
+                    className="fill-muted-foreground"
+                    fontSize={8}
+                  >
+                    <tspan fill={hopColor(h)}>●</tspan> hop-{h}: ${display.toLocaleString()}
+                  </text>
+                )
+              })}
+            </g>
+          )}
+        </>
+      )}
+    </g>
+  )
+})
+
+/** Memoized edge component */
+const TreeEdge = React.memo(function TreeEdge(props: {
+  edge: { source: { x: number; y: number }; target: { x: number; y: number }; fromHop: number; toHop: number; isSelfInvite: boolean }
+  dimmed: boolean
+}) {
+  const { edge, dimmed } = props
+  const edgeOpacity = dimmed ? 0.1 : 0.4
+
+  // Self-invite: render curved loop
+  if (edge.isSelfInvite) {
+    const cx = (edge.source.x + edge.target.x) / 2
+    const cy = (edge.source.y + edge.target.y) / 2
+    const dx = edge.target.x - edge.source.x
+    const dy = edge.target.y - edge.source.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    const offset = Math.max(30, dist * 0.5)
+    // Curve perpendicular to the line between source and target
+    const nx = -dy / (dist || 1) * offset
+    const ny = dx / (dist || 1) * offset
+
+    return (
+      <path
+        d={`M ${edge.source.x} ${edge.source.y} Q ${cx + nx} ${cy + ny} ${edge.target.x} ${edge.target.y}`}
+        fill="none"
+        stroke={hopColor(edge.toHop)}
+        strokeWidth={1.5}
+        strokeOpacity={edgeOpacity}
+        strokeDasharray="2 2"
+        style={{ transition: EDGE_TRANSITION }}
+      />
+    )
+  }
+
+  return (
+    <line
+      x1={edge.source.x}
+      y1={edge.source.y}
+      x2={edge.target.x}
+      y2={edge.target.y}
+      stroke={hopColor(edge.toHop)}
+      strokeWidth={1.5}
+      strokeOpacity={edgeOpacity}
+      strokeDasharray={edge.fromHop === -1 ? '4 2' : undefined}
+      style={{ transition: EDGE_TRANSITION }}
+    />
+  )
+})
 
 export function TreeView(props: TreeViewProps) {
   const { graph, selectedAddress, onSelectAddress, searchQuery, phase, resolveENS } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
-  const [, setExpanded] = useState<ExpandedSet>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsedSubtrees, setCollapsedSubtrees] = useState<Set<string>>(new Set())
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
@@ -252,176 +487,42 @@ export function TreeView(props: TreeViewProps) {
         <g className="tree-content">
           {/* Edges */}
           {flatEdges.map((edge, i) => {
-            const dimmed = matchedAddresses !== null // search is active
-            const edgeOpacity = dimmed ? 0.1 : 0.4
+            // Selective edge dimming: dim only edges where neither endpoint matches search
+            const edgeDimmed = matchedAddresses !== null &&
+              !flatNodes.some((n) =>
+                matchedAddresses.has(n.address) &&
+                ((Math.abs(n.x - edge.source.x) < 1 && Math.abs(n.y - edge.source.y) < 1) ||
+                 (Math.abs(n.x - edge.target.x) < 1 && Math.abs(n.y - edge.target.y) < 1))
+              )
 
             return (
-              <line
-                key={`edge-${i}`}
-                x1={edge.source.x}
-                y1={edge.source.y}
-                x2={edge.target.x}
-                y2={edge.target.y}
-                stroke={hopColor(edge.toHop)}
-                strokeWidth={1.5}
-                strokeOpacity={edgeOpacity}
-                strokeDasharray={edge.fromHop === -1 ? '4 2' : undefined}
-              />
+              <TreeEdge key={`edge-${i}`} edge={edge} dimmed={edgeDimmed} />
             )
           })}
 
           {/* Nodes */}
           {flatNodes.map((node) => {
             const isRoot = node.id === 'armada'
-            const isSelected = selectedAddress === node.address
-            const isSearchMatch = matchedAddresses === null || matchedAddresses.has(node.address)
-            const nodeOpacity = matchedAddresses !== null && !isSearchMatch ? 0.2 : 1
             const radius = isRoot ? 0 : sizeScale(Number(node.committed))
-            const hasChildren = node.children.length > 0
-            const isCollapsed = collapsedSubtrees.has(node.id)
-            const childCount = node.children.length
 
             return (
-              <g
+              <TreeNodeEl
                 key={node.id}
-                transform={`translate(${node.x}, ${node.y})`}
-                opacity={nodeOpacity}
-                className="cursor-pointer"
-                onClick={(e) => handleNodeClick(node.address, e)}
-                onMouseEnter={(e) => handleNodeHover(node.address, e)}
+                node={node}
+                radius={radius}
+                isRoot={isRoot}
+                isSelected={selectedAddress === node.address}
+                isSearchMatch={matchedAddresses === null || matchedAddresses.has(node.address)}
+                searchActive={matchedAddresses !== null}
+                isExpanded={expanded.has(node.address)}
+                isCollapsed={collapsedSubtrees.has(node.id)}
+                childCount={node.children.length}
+                onClick={handleNodeClick}
+                onBadgeClick={handleBadgeClick}
+                onSubtreeToggle={handleSubtreeToggle}
+                onMouseEnter={handleNodeHover}
                 onMouseLeave={handleNodeLeave}
-              >
-                {isRoot ? (
-                  // Root node — text label
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    className="fill-foreground text-xs font-medium"
-                  >
-                    Armada
-                  </text>
-                ) : (
-                  <>
-                    {/* Node circle */}
-                    {node.isMultiHop ? (
-                      // Multi-hop: segmented fill
-                      <>
-                        <circle
-                          r={radius}
-                          fill="none"
-                          stroke={isSelected ? '#ffffff' : hopColor(node.hop)}
-                          strokeWidth={isSelected ? 2.5 : 1.5}
-                        />
-                        {node.hops.map((h: number, idx: number) => {
-                          const angle = (idx / node.hops.length) * Math.PI * 2 - Math.PI / 2
-                          const nextAngle = ((idx + 1) / node.hops.length) * Math.PI * 2 - Math.PI / 2
-                          const largeArc = nextAngle - angle > Math.PI ? 1 : 0
-                          const x1 = Math.cos(angle) * radius
-                          const y1 = Math.sin(angle) * radius
-                          const x2 = Math.cos(nextAngle) * radius
-                          const y2 = Math.sin(nextAngle) * radius
-                          return (
-                            <path
-                              key={h}
-                              d={`M 0 0 L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
-                              fill={hopColor(h)}
-                              fillOpacity={0.6}
-                            />
-                          )
-                        })}
-                      </>
-                    ) : (
-                      // Single hop
-                      <circle
-                        r={radius}
-                        fill={node.committed > 0n ? hopColor(node.hop) : 'none'}
-                        fillOpacity={node.committed > 0n ? 0.6 : 0}
-                        stroke={isSelected ? '#ffffff' : hopColor(node.hop)}
-                        strokeWidth={isSelected ? 2.5 : 1.5}
-                      />
-                    )}
-
-                    {/* Multi-hop badge */}
-                    {node.isMultiHop && (
-                      <g
-                        transform={`translate(${radius + 2}, ${-radius - 2})`}
-                        onClick={(e) => handleBadgeClick(node.address, e)}
-                        className="cursor-pointer"
-                      >
-                        <rect
-                          x={-8}
-                          y={-7}
-                          width={16}
-                          height={14}
-                          rx={3}
-                          fill="#1e293b"
-                          stroke="#475569"
-                          strokeWidth={0.5}
-                        />
-                        <text
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          className="fill-foreground"
-                          fontSize={9}
-                        >
-                          ×{node.hops.length}
-                        </text>
-                      </g>
-                    )}
-
-                    {/* Collapse/expand indicator for large subtrees */}
-                    {hasChildren && childCount > COLLAPSE_THRESHOLD && (
-                      <g
-                        transform={`translate(${radius + 2}, ${radius + 2})`}
-                        onClick={(e) => handleSubtreeToggle(node.id, e)}
-                        className="cursor-pointer"
-                      >
-                        <rect
-                          x={-10}
-                          y={-6}
-                          width={20}
-                          height={12}
-                          rx={2}
-                          fill="#1e293b"
-                          stroke="#475569"
-                          strokeWidth={0.5}
-                        />
-                        <text
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          className="fill-muted-foreground"
-                          fontSize={8}
-                        >
-                          {isCollapsed ? `+${childCount}` : '−'}
-                        </text>
-                      </g>
-                    )}
-
-                    {/* Selection ring */}
-                    {isSelected && (
-                      <circle
-                        r={radius + 4}
-                        fill="none"
-                        stroke="#ffffff"
-                        strokeWidth={1}
-                        strokeOpacity={0.5}
-                      />
-                    )}
-
-                    {/* Label for larger nodes */}
-                    {radius > 12 && (
-                      <text
-                        y={radius + 14}
-                        textAnchor="middle"
-                        className="fill-muted-foreground"
-                        fontSize={9}
-                      >
-                        {node.label}
-                      </text>
-                    )}
-                  </>
-                )}
-              </g>
+              />
             )
           })}
         </g>

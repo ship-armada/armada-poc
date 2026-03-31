@@ -267,7 +267,6 @@ export function App() {
                       totalCommitted={userTotalCommitted}
                       windowEnd={contractState.windowEnd}
                       cappedDemand={contractState.cappedDemand}
-                      saleSize={contractState.saleSize}
                       graph={graph}
                     />
                   )}

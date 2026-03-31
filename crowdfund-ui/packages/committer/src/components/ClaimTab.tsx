@@ -30,7 +30,6 @@ export interface ClaimTabProps {
   totalCommitted: bigint
   windowEnd: number
   cappedDemand: bigint
-  saleSize: bigint
   graph: CrowdfundGraph
 }
 

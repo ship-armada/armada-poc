@@ -297,20 +297,35 @@ async function main() {
       const registryAddr = govDeployment.contracts.adapterRegistry;
 
       // Impersonate timelock to call authorizeAdapter directly (local/Anvil only).
-      // We use raw anvil_impersonateAccount + eth_sendTransaction because Hardhat's
-      // signer helpers don't work with external Anvil nodes.
+      // Hardhat's provider middleware intercepts eth_sendTransaction and tries to
+      // sign locally, so we bypass it entirely with raw JSON-RPC fetch to Anvil.
+      const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
+      const jsonRpc = async (method: string, params: any[] = []) => {
+        const res = await fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        });
+        const json = await res.json();
+        if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
+        return json.result;
+      };
+
+      // Fund the timelock so it can pay gas
       const [deployer] = await ethers.getSigners();
       await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
-      await ethers.provider.send("anvil_impersonateAccount", [timelockAddr]);
+
       const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
       const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddress]);
-      const txHash = await ethers.provider.send("eth_sendTransaction", [{
+
+      await jsonRpc("anvil_impersonateAccount", [timelockAddr]);
+      const txHash = await jsonRpc("eth_sendTransaction", [{
         from: timelockAddr,
         to: registryAddr,
         data: calldata,
       }]);
       await ethers.provider.waitForTransaction(txHash);
-      await ethers.provider.send("anvil_stopImpersonatingAccount", [timelockAddr]);
+      await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
       console.log(`  Adapter authorized in adapter registry`);
     }
   }

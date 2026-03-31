@@ -23,6 +23,20 @@ vi.mock('@/config/network', () => ({
   getExplorerUrl: () => '',
 }))
 
+// Mock wagmi hooks
+vi.mock('wagmi', () => ({
+  useAccount: () => ({ address: null, isConnected: false, isConnecting: false }),
+  useWalletClient: () => ({ data: null }),
+  useChainId: () => 31337,
+  useDisconnect: () => ({ disconnect: vi.fn() }),
+  useConnect: () => ({ connect: vi.fn() }),
+}))
+
+// Mock RainbowKit
+vi.mock('@rainbow-me/rainbowkit', () => ({
+  useConnectModal: () => ({ openConnectModal: vi.fn() }),
+}))
+
 // Mock ethers JsonRpcProvider
 vi.mock('ethers', async () => {
   const actual = await vi.importActual('ethers')

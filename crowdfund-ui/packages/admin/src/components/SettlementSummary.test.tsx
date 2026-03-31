@@ -56,6 +56,26 @@ describe('SettlementSummary', () => {
     expect(armTexts.length).toBeGreaterThanOrEqual(2)
   })
 
+  it('shows governance quiet period countdown when still active', () => {
+    // finalizedAt=150_000, quiet period=7d=604800, so quietEnd=754_800
+    // blockTimestamp=160_000 → 594_800 seconds remaining
+    render(<SettlementSummary state={makeState()} events={[]} />)
+    expect(screen.getByText(/Governance quiet period/)).toBeInTheDocument()
+    expect(screen.getByText(/ends in/)).toBeInTheDocument()
+  })
+
+  it('shows governance quiet period as ended when past', () => {
+    // finalizedAt=150_000, quietEnd=754_800, blockTimestamp=800_000 → ended
+    render(
+      <SettlementSummary
+        state={makeState({ blockTimestamp: 800_000 })}
+        events={[]}
+      />,
+    )
+    expect(screen.getByText(/Governance quiet period/)).toBeInTheDocument()
+    expect(screen.getByText(/^ended/)).toBeInTheDocument()
+  })
+
   it('extracts net proceeds from Finalized event', () => {
     const events: CrowdfundEvent[] = [
       {

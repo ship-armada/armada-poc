@@ -15,6 +15,7 @@ export const CROWDFUND_CONSTANTS = {
   WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days in seconds
   LAUNCH_TEAM_INVITE_PERIOD: 7 * 24 * 60 * 60, // 7 days in seconds
   CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years in seconds
+  GOVERNANCE_QUIET_PERIOD: 7 * 24 * 60 * 60, // 7 days in seconds (matches ArmadaGovernor.QUIET_PERIOD_DURATION)
   HOP2_FLOOR_BPS: 500, // 5%
 } as const
 

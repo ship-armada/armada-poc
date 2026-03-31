@@ -2,6 +2,7 @@
 // ABOUTME: Shows finalizedAt, sale size, refund mode, ARM claims, net proceeds, and refunds.
 
 import {
+  CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
   formatCountdown,
@@ -86,7 +87,21 @@ export function SettlementSummary({ state, events }: SettlementSummaryProps) {
           <span className="text-muted-foreground">Claim deadline: </span>
           <span className="font-medium">{claimTimeLeft > 0 ? formatCountdown(claimTimeLeft) : 'expired'}</span>
         </div>
-        {/* TODO: governance quiet period — value not available from contract */}
+        {state.finalizedAt > 0 && (() => {
+          const quietEnd = state.finalizedAt + CROWDFUND_CONSTANTS.GOVERNANCE_QUIET_PERIOD
+          const quietRemaining = quietEnd - state.blockTimestamp
+          return (
+            <div>
+              <span className="text-muted-foreground">Governance quiet period: </span>
+              <span className="font-medium">
+                {quietRemaining > 0
+                  ? `ends in ${formatCountdown(quietRemaining)} — ${new Date(quietEnd * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : `ended ${new Date(quietEnd * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                }
+              </span>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

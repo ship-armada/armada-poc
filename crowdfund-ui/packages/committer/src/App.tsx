@@ -32,7 +32,7 @@ import { ClaimTab } from '@/components/ClaimTab'
 type ActionTab = 'commit' | 'invite' | 'claim'
 type MobileTab = 'network' | 'participate'
 
-/** (#17) Determine tab enabled state and disabled message */
+/** Determine tab enabled state and disabled message based on contract phase */
 function getTabState(
   tab: ActionTab,
   phase: number,
@@ -142,7 +142,7 @@ export function App() {
     contractState.blockTimestamp >= contractState.windowStart &&
     contractState.blockTimestamp <= contractState.windowEnd
 
-  // (#16) Connected summary for StatsBar
+  // Connected user summary for StatsBar
   const connectedSummary = useMemo((): ConnectedSummary | undefined => {
     if (!wallet.address || eligibility.positions.length === 0) return undefined
     return {
@@ -151,7 +151,7 @@ export function App() {
     }
   }, [wallet.address, eligibility.positions, userTotalCommitted])
 
-  // (#17) Tab states
+  // Tab enabled/disabled states
   const hasInviteSlots = eligibility.positions.some((p) => p.invitesAvailable > 0)
   const tabStates = useMemo(() => ({
     commit: getTabState('commit', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, contractState.cappedDemand, hasInviteSlots),
@@ -167,7 +167,7 @@ export function App() {
     }
   }, [tabStates, activeTab])
 
-  // (#21) Wallet header ENS name
+  // Wallet header ENS name
   const walletENS = wallet.address ? resolveENS(wallet.address) : null
 
   // Error states
@@ -198,7 +198,7 @@ export function App() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="container mx-auto p-4 space-y-4">
-        {/* Header (#21 — enhanced with ENS + balance) */}
+        {/* Header with ENS name and balance */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">Armada Crowdfund</h1>
           <div className="flex items-center gap-3">
@@ -239,7 +239,7 @@ export function App() {
           </div>
         )}
 
-        {/* Stats bar (#16 — with connected summary) */}
+        {/* Stats bar with connected user summary */}
         <StatsBar
           hopStats={contractState.hopStats}
           totalCommitted={contractState.totalCommitted}
@@ -254,7 +254,7 @@ export function App() {
           connectedSummary={connectedSummary}
         />
 
-        {/* (#19) Mobile tab bar — visible below lg breakpoint */}
+        {/* Mobile tab bar — visible below lg breakpoint */}
         <div className="flex lg:hidden border-b border-border">
           {(['network', 'participate'] as const).map((tab) => (
             <button
@@ -273,7 +273,7 @@ export function App() {
 
         {/* Two-panel layout */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          {/* Observer panel (left ~60%) — (#19) hidden on mobile when participate tab active */}
+          {/* Observer panel (left ~60%) — hidden on mobile when participate tab active */}
           <div className={`lg:col-span-3 space-y-3 ${mobileTab === 'participate' ? 'hidden lg:block' : ''}`}>
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
             <TreeView
@@ -302,7 +302,7 @@ export function App() {
             </div>
           </div>
 
-          {/* Action panel (right ~40%) — (#19) hidden on mobile when network tab active */}
+          {/* Action panel (right ~40%) — hidden on mobile when network tab active */}
           <div className={`lg:col-span-2 ${mobileTab === 'network' ? 'hidden lg:block' : ''}`}>
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card p-6 text-center space-y-3">
@@ -317,7 +317,7 @@ export function App() {
               </div>
             ) : (
               <div className="rounded-lg border border-border bg-card">
-                {/* (#17) Tab header — always visible, disabled tabs show message */}
+                {/* Tab header — always visible, disabled tabs show message */}
                 <div className="flex border-b border-border">
                   {(['commit', 'invite', 'claim'] as const).map((tab) => {
                     const state = tabStates[tab]
@@ -341,7 +341,7 @@ export function App() {
 
                 {/* Tab content */}
                 <div className="p-4">
-                  {/* (#17) Show disabled message for inactive tabs */}
+                  {/* Show disabled message for inactive tabs */}
                   {!tabStates[activeTab].enabled ? (
                     <div className="p-4 text-center text-muted-foreground text-sm">
                       {tabStates[activeTab].message}

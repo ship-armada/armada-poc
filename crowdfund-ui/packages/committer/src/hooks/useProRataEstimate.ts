@@ -54,8 +54,8 @@ export function useProRataEstimate(
         hopAllocation = (saleSize * BigInt(ceilingBps)) / 10_000n
       }
 
-      // Pro-rata within this hop
-      const totalDemand = stats.cappedCommitted + commitAmount
+      // Pro-rata within this hop — use totalCommitted (live running total during Active phase)
+      const totalDemand = stats.totalCommitted + commitAmount
       let estimatedAccepted: bigint
       if (totalDemand <= hopAllocation) {
         estimatedAccepted = commitAmount

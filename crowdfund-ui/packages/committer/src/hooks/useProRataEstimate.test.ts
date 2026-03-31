@@ -50,7 +50,7 @@ describe('useProRataEstimate', () => {
   it('applies pro-rata when oversubscribed at hop-0', () => {
     const commitAmounts = new Map([[0, 100_000n * USDC]])
     // Hop-0 ceiling: 840,000. Existing demand: 800,000. Adding 100,000 → total 900,000 > 840,000
-    const stats = makeHopStats([{ cappedCommitted: 800_000n * USDC }])
+    const stats = makeHopStats([{ totalCommitted: 800_000n * USDC }])
     const { result } = renderHook(() =>
       useProRataEstimate(commitAmounts, stats, SALE_SIZE),
     )

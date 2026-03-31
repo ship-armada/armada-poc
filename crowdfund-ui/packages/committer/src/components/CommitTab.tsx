@@ -139,7 +139,7 @@ export function CommitTab(props: CommitTabProps) {
   // Pro-rata estimate
   const estimate = useProRataEstimate(parsedAmounts, hopStats, saleSize)
 
-  // (#4) Balance check is a warning, not a blocking error
+  // Balance check is a warning, not a blocking error
   const balanceInsufficient = totalAmount > 0n && totalAmount > balance
 
   // Validation errors (excludes balance — that's a non-blocking warning)
@@ -197,7 +197,7 @@ export function CommitTab(props: CommitTabProps) {
       if (!success) return
     }
 
-    // (#5) Show post-commitment summary
+    // Show post-commitment summary
     setCommitSuccess(true)
     setAmounts(new Map())
     setStep('input')
@@ -235,7 +235,7 @@ export function CommitTab(props: CommitTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* (#5) Post-commitment summary */}
+      {/* Post-commitment summary */}
       {commitSuccess && (
         <div className="rounded border border-success/50 bg-success/10 p-3 text-sm">
           {positions.every((p) => p.remaining === 0n) ? (
@@ -258,7 +258,7 @@ export function CommitTab(props: CommitTabProps) {
 
       {step === 'input' && (
         <>
-          {/* (#2) Eligibility display with inviter attribution */}
+          {/* Eligibility display with inviter attribution */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">Your positions:</div>
             {positions.map((pos) => (
@@ -288,7 +288,7 @@ export function CommitTab(props: CommitTabProps) {
                     Committed: {formatUsdc(pos.committed)} / {formatUsdc(pos.effectiveCap)}
                   </span>
                 </div>
-                {/* (#1) Per-hop demand context */}
+                {/* Per-hop demand context */}
                 {demand && (
                   <div className="text-xs text-muted-foreground">
                     <span>Current hop demand: {demand.demand} ({demand.pct}% of {pos.hop <= 1 ? 'ceiling' : 'floor'})</span>
@@ -329,7 +329,7 @@ export function CommitTab(props: CommitTabProps) {
             />
           )}
 
-          {/* (#3) Multi-hop total summary */}
+          {/* Multi-hop total summary */}
           {totalAmount > 0n && (
             <div className="rounded border border-border p-3 space-y-1 text-sm">
               <div>
@@ -342,7 +342,7 @@ export function CommitTab(props: CommitTabProps) {
             </div>
           )}
 
-          {/* (#4) Balance warning (non-blocking) */}
+          {/* Balance warning (non-blocking) */}
           {balanceInsufficient && (
             <div className="text-xs text-amber-500">
               Total exceeds your USDC balance. The transaction will revert if balance is insufficient.
@@ -358,7 +358,7 @@ export function CommitTab(props: CommitTabProps) {
             </div>
           )}
 
-          {/* Review button — (#4) balance does NOT block submission */}
+          {/* Review button — balance does NOT block submission */}
           <button
             className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             disabled={totalAmount === 0n || errors.length > 0}
@@ -385,7 +385,7 @@ export function CommitTab(props: CommitTabProps) {
             </div>
           </div>
 
-          {/* (#15) Approve exact vs unlimited option */}
+          {/* Approve exact vs unlimited option */}
           {needsApproval(totalAmount) && (
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">

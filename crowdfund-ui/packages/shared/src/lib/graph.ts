@@ -46,6 +46,8 @@ export interface CrowdfundGraph {
   nodes: Map<string, GraphNode>
   edges: GraphEdge[]
   summaries: Map<string, AddressSummary>
+  /** All events used to build this graph — retained for incremental merges */
+  events: CrowdfundEvent[]
 }
 
 /** Sentinel address representing the Armada root in the invite tree */
@@ -304,7 +306,7 @@ export function buildGraph(events: CrowdfundEvent[]): CrowdfundGraph {
   const summaries = buildSummaries(nodes)
   applySummaryEvents(summaries, events)
 
-  return { nodes, edges, summaries }
+  return { nodes, edges, summaries, events }
 }
 
 /** Merge new events into an existing graph, returning a new graph */
@@ -323,10 +325,10 @@ export function mergeEvents(
     applyEvent(nodes, edges, event)
   }
 
+  const allEvents = [...graph.events, ...newEvents]
   const summaries = buildSummaries(nodes)
-  // Re-apply all summary events (we don't track which are old vs new)
-  // This is simple and correct; for large event sets, we could optimize
-  applySummaryEvents(summaries, newEvents)
+  // Re-apply all summary events from the full event history
+  applySummaryEvents(summaries, allEvents)
 
-  return { nodes, edges, summaries }
+  return { nodes, edges, summaries, events: allEvents }
 }

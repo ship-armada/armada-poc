@@ -234,6 +234,36 @@ describe('mergeEvents', () => {
     expect(node.rawDeposited).toBe(3_000n * 10n ** 6n)
     expect(node.committed).toBe(3_000n * 10n ** 6n)
   })
+
+  it('preserves summary-level data from old events after merge', () => {
+    const oldEvents = [
+      mkEvent('SeedAdded', { seed: ADDR.seed1 }, 1),
+      mkEvent('Committed', { participant: ADDR.seed1, hop: 0n, amount: 5_000n * 10n ** 6n }, 2),
+      mkEvent('Allocated', {
+        participant: ADDR.seed1,
+        armTransferred: 4_000n * 10n ** 18n,
+        refundUsdc: 1_000n * 10n ** 6n,
+        delegate: ADDR.delegate,
+      }, 3),
+    ]
+    const initial = buildGraph(oldEvents)
+
+    // Verify initial state
+    expect(initial.summaries.get(ADDR.seed1)!.armClaimed).toBe(true)
+    expect(initial.summaries.get(ADDR.seed1)!.delegate).toBe(ADDR.delegate)
+
+    // Merge with a new, unrelated event
+    const merged = mergeEvents(initial, [
+      mkEvent('SeedAdded', { seed: ADDR.seed2 }, 4),
+    ])
+
+    // Summary-level data from old Allocated event must be preserved
+    const summary = merged.summaries.get(ADDR.seed1)!
+    expect(summary.armClaimed).toBe(true)
+    expect(summary.allocatedArm).toBe(4_000n * 10n ** 18n)
+    expect(summary.refundUsdc).toBe(1_000n * 10n ** 6n)
+    expect(summary.delegate).toBe(ADDR.delegate)
+  })
 })
 
 describe('full lifecycle', () => {

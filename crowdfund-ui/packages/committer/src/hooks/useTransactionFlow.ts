@@ -52,11 +52,13 @@ export function useTransactionFlow(signer: Signer | null): UseTransactionFlowRes
 
       setState({ status: 'pending', txHash: null, receipt: null, error: null })
 
+      let txHash: string | null = null
       try {
         const tx = await fn(signer)
+        txHash = tx.hash
         setState({
           status: 'submitted',
-          txHash: tx.hash,
+          txHash,
           receipt: null,
           error: null,
         })
@@ -65,7 +67,7 @@ export function useTransactionFlow(signer: Signer | null): UseTransactionFlowRes
         if (!receipt || receipt.status === 0) {
           setState({
             status: 'error',
-            txHash: tx.hash,
+            txHash,
             receipt,
             error: 'Transaction reverted',
           })
@@ -74,7 +76,7 @@ export function useTransactionFlow(signer: Signer | null): UseTransactionFlowRes
 
         setState({
           status: 'confirmed',
-          txHash: tx.hash,
+          txHash,
           receipt,
           error: null,
         })
@@ -82,14 +84,14 @@ export function useTransactionFlow(signer: Signer | null): UseTransactionFlowRes
       } catch (err) {
         setState({
           status: 'error',
-          txHash: state.txHash,
+          txHash,
           receipt: null,
           error: mapRevertToMessage(err),
         })
         return false
       }
     },
-    [signer, state.txHash],
+    [signer],
   )
 
   return { state, execute, reset }

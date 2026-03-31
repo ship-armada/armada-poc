@@ -138,7 +138,7 @@ export function ClaimTab(props: ClaimTabProps) {
     const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
     const belowMinimum = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
 
-    // (#14) Pre-finalization below-minimum distinct state with refund button
+    // Pre-finalization below-minimum state — show refund button
     if (windowEnded && belowMinimum) {
       return (
         <div className="space-y-4 p-4">
@@ -254,7 +254,7 @@ export function ClaimTab(props: ClaimTabProps) {
     )
   }
 
-  // (#13) Post-3yr expiry state — ARM forfeited, refund only
+  // Post-3yr expiry state — ARM forfeited, refund only
   const armClaimExpired = claimDeadline > 0 && blockTimestamp > claimDeadline
 
   // Post-finalization (success) — ARM claim + refund
@@ -262,7 +262,7 @@ export function ClaimTab(props: ClaimTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* (#13) Claim expiry warning */}
+      {/* Claim expiry warning */}
       {armClaimExpired ? (
         <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-500">
           The 3-year ARM claim deadline has passed. You can still claim your USDC refund, but any unclaimed ARM has been forfeited.
@@ -323,7 +323,7 @@ export function ClaimTab(props: ClaimTabProps) {
         </div>
       )}
 
-      {/* ARM claim with delegation — (#13) hidden when expired */}
+      {/* ARM claim with delegation — hidden when expired */}
       {armAmount > 0n && !hasClaimed && !armClaimExpired && (
         <div className="space-y-3">
           <DelegateInput
@@ -331,7 +331,7 @@ export function ClaimTab(props: ClaimTabProps) {
             value={delegate}
             onChange={setDelegate}
           />
-          {/* (#12) Delegation explanation */}
+          {/* Delegation explanation */}
           <div className="text-xs text-muted-foreground">
             Delegation is required for governance voting. You can change your delegate at any time after claiming.
           </div>

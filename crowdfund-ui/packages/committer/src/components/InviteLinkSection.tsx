@@ -101,7 +101,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
             ))}
           </div>
 
-          {/* (#22) Creation prompt with contextual details */}
+          {/* Creation prompt with contextual details */}
           {selectedHop !== null && (() => {
             const targetHop = selectedHop + 1
             const targetConfig = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop] : null

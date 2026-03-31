@@ -84,7 +84,7 @@ export function InviteLinkRedemption() {
     return () => clearInterval(id)
   }, [provider])
 
-  // (#10) Pre-redemption nonce validation — checks nonce consumed/revoked, slots, and deadline
+  // Pre-redemption nonce validation — checks nonce consumed/revoked, slots, and deadline
   useEffect(() => {
     if (!provider || !deployment || !inviteData) return
 
@@ -194,11 +194,11 @@ export function InviteLinkRedemption() {
     if (parsedAmount > 0n && hopCap > 0n && parsedAmount > hopCap) {
       errs.push(`Exceeds ${hopLabel(targetHop)} cap of ${formatUsdc(hopCap)}`)
     }
-    // (#4/#9) Balance check is a warning, not a blocker
+    // Balance check is a warning, not a blocker
     return errs
   }, [parsedAmount, hopCap, targetHop])
 
-  // (#9) Balance warning (non-blocking)
+  // Balance warning (non-blocking)
   const balanceInsufficient = parsedAmount > 0n && parsedAmount > balance
 
   const handleSubmit = useCallback(async () => {
@@ -247,7 +247,7 @@ export function InviteLinkRedemption() {
 
   const timeLeft = inviteData.deadline - blockTimestamp
 
-  // (#11) Invite details — target hop config
+  // Invite details — target hop config
   const targetConfig = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop as 0 | 1 | 2] : null
 
   return (
@@ -255,7 +255,7 @@ export function InviteLinkRedemption() {
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
         <h1 className="text-xl font-bold">Armada Crowdfund Invite</h1>
 
-        {/* Invite details (#11 — enhanced) */}
+        {/* Invite details — target hop config */}
         <div className="rounded border border-border p-3 space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">From</span>
@@ -285,7 +285,7 @@ export function InviteLinkRedemption() {
           </div>
         </div>
 
-        {/* (#10) Pre-check errors */}
+        {/* Pre-check errors */}
         {preCheckLoading && (
           <div className="text-xs text-muted-foreground">Validating invite link...</div>
         )}
@@ -346,7 +346,7 @@ export function InviteLinkRedemption() {
               )}
             </div>
 
-            {/* (#9) Balance warning (non-blocking) */}
+            {/* Balance warning (non-blocking) */}
             {balanceInsufficient && (
               <div className="text-xs text-amber-500">
                 Your USDC balance is insufficient. The transaction will revert if balance is too low.

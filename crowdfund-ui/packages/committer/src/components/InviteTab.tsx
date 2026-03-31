@@ -58,13 +58,13 @@ export function InviteTab(props: InviteTabProps) {
   )
 
   // Auto-select first available hop
-  useMemo(() => {
+  useEffect(() => {
     if (selectedHop === null && invitePositions.length > 0) {
       setSelectedHop(invitePositions[0].hop)
     }
   }, [invitePositions, selectedHop])
 
-  // (#8) ENS resolution — resolve names containing '.'
+  // ENS resolution — resolve names containing '.'
   useEffect(() => {
     if (!provider || !inviteeAddress.includes('.')) {
       setResolvedAddress(null)
@@ -94,7 +94,7 @@ export function InviteTab(props: InviteTabProps) {
   const effectiveAddress = resolvedAddress ?? inviteeAddress
   const targetHop = selectedHop !== null ? selectedHop + 1 : 0
 
-  // (#7) Duplicate invite warning
+  // Duplicate invite warning
   const duplicateWarning = useMemo(() => {
     if (!effectiveAddress || !isAddress(effectiveAddress) || selectedHop === null) return null
     const nodeKey = `${effectiveAddress.toLowerCase()}-${targetHop}`
@@ -125,12 +125,12 @@ export function InviteTab(props: InviteTabProps) {
   const handleInvite = useCallback(async () => {
     if (!canInvite || selectedHop === null) return
 
-    await tx.execute(async (s) => {
+    const success = await tx.execute(async (s) => {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
       return crowdfund.invite(effectiveAddress, selectedHop)
     })
 
-    if (tx.state.status !== 'error') {
+    if (success) {
       setInviteeAddress('')
       setResolvedAddress(null)
     }
@@ -229,7 +229,7 @@ export function InviteTab(props: InviteTabProps) {
             onChange={(e) => setInviteeAddress(e.target.value)}
             className="w-full rounded border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          {/* (#8) ENS resolution display */}
+          {/* ENS resolution display */}
           {resolving && (
             <div className="text-xs text-muted-foreground mt-1">Resolving ENS name...</div>
           )}
@@ -243,7 +243,7 @@ export function InviteTab(props: InviteTabProps) {
           )}
         </div>
 
-        {/* (#7) Duplicate invite warning */}
+        {/* Duplicate invite warning */}
         {duplicateWarning && (
           <div className="text-xs text-amber-500 rounded border border-amber-500/30 bg-amber-500/5 p-2">
             {duplicateWarning}

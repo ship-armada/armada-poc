@@ -116,8 +116,17 @@ async function main() {
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
   // 4. Deploy ArmadaGovernor (UUPS proxy)
-  console.log("4. Deploying ArmadaGovernor (UUPS proxy)...");
-  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+  console.log("4. Deploying GovernorStringLib (external library)...");
+  const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+  const governorLib = await GovernorStringLib.deploy(nm.override());
+  await governorLib.deploymentTransaction()!.wait();
+  const governorLibAddress = await governorLib.getAddress();
+  console.log(`   GovernorStringLib: ${governorLibAddress}`);
+
+  console.log("   Deploying ArmadaGovernor (UUPS proxy)...");
+  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
+    libraries: { GovernorStringLib: governorLibAddress },
+  });
   const governorImpl = await ArmadaGovernor.deploy(nm.override());
   await governorImpl.deploymentTransaction()!.wait();
   const governorImplAddress = await governorImpl.getAddress();
@@ -134,6 +143,25 @@ async function main() {
   const governorAddress = await governorProxy.getAddress();
   const governor = ArmadaGovernor.attach(governorAddress) as typeof governorImpl;
   console.log(`   ArmadaGovernor (proxy): ${governorAddress}`);
+
+  // 4b. Register initial extended selectors
+  const extSelectors = [
+    governor.interface.getFunction("addExtendedSelector")!.selector,
+    governor.interface.getFunction("removeExtendedSelector")!.selector,
+    governor.interface.getFunction("setSecurityCouncil")!.selector,
+    governor.interface.getFunction("setProposalTypeParams")!.selector,
+    ethers.id("upgradeTo(address)").slice(0, 10),
+    ethers.id("upgradeToAndCall(address,bytes)").slice(0, 10),
+    // Yield adapter selectors that require extended governance
+    ethers.id("setBaseArmadaTake(uint256)").slice(0, 10),
+    ethers.id("addTier(uint256,uint256)").slice(0, 10),
+    ethers.id("setTier(uint256,uint256,uint256)").slice(0, 10),
+    ethers.id("removeTier(uint256)").slice(0, 10),
+    ethers.id("setYieldFee(uint256)").slice(0, 10),
+    ethers.id("setIntegratorTerms(address,uint256,uint256,bool)").slice(0, 10),
+  ];
+  await (await governor.initExtendedSelectors(extSelectors, nm.override())).wait();
+  console.log(`   Governor: initExtendedSelectors (${extSelectors.length} selectors)`);
 
   // 5. Deploy TreasurySteward (identity management only — proposals flow through governor)
   console.log("5. Deploying TreasurySteward...");

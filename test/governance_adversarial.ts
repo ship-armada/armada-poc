@@ -457,7 +457,12 @@ describe("Governance Adversarial", function () {
 
   describe("Constructor Zero-Address Validation", function () {
     it("ArmadaGovernor rejects zero armToken", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+      const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+      const lib = await GovernorStringLib.deploy();
+      await lib.waitForDeployment();
+      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
+        libraries: { GovernorStringLib: await lib.getAddress() },
+      });
       const impl = await ArmadaGovernor.deploy();
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
@@ -472,7 +477,12 @@ describe("Governance Adversarial", function () {
     });
 
     it("ArmadaGovernor rejects zero timelock", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+      const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+      const lib = await GovernorStringLib.deploy();
+      await lib.waitForDeployment();
+      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
+        libraries: { GovernorStringLib: await lib.getAddress() },
+      });
       const impl = await ArmadaGovernor.deploy();
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
@@ -487,7 +497,12 @@ describe("Governance Adversarial", function () {
     });
 
     it("ArmadaGovernor rejects zero treasury", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+      const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+      const lib = await GovernorStringLib.deploy();
+      await lib.waitForDeployment();
+      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
+        libraries: { GovernorStringLib: await lib.getAddress() },
+      });
       const impl = await ArmadaGovernor.deploy();
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [

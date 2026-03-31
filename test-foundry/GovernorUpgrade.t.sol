@@ -176,21 +176,6 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         assertEq(quorum, 2000);
     }
 
-    function test_upgrade_adapterRegistryPersists() public {
-        // Authorize an adapter
-        vm.prank(address(timelock));
-        governor.authorizeAdapter(address(0xADA));
-        assertTrue(governor.authorizedAdapters(address(0xADA)));
-
-        // Upgrade
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
-        vm.prank(address(timelock));
-        governor.upgradeTo(address(v2Impl));
-
-        // Verify adapter state persists
-        assertTrue(governor.authorizedAdapters(address(0xADA)));
-    }
-
     // ============ Initialization Guards ============
 
     function test_initialize_cannotReinitialize() public {

@@ -84,7 +84,7 @@ export function InviteLinkRedemption() {
     return () => clearInterval(id)
   }, [provider])
 
-  // (#10) Pre-redemption nonce validation
+  // (#10) Pre-redemption nonce validation — checks nonce consumed/revoked, slots, and deadline
   useEffect(() => {
     if (!provider || !deployment || !inviteData) return
 
@@ -92,6 +92,18 @@ export function InviteLinkRedemption() {
       setPreCheckLoading(true)
       try {
         const contract = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, provider)
+
+        // Check nonce status first — if used, link is dead
+        const nonceUsed = await contract.usedNonces(inviteData.inviter, inviteData.nonce) as boolean
+        if (nonceUsed) {
+          // Distinguish consumed (used by someone) vs revoked (inviter cancelled)
+          // Check InviteNonceRevoked events for this specific inviter+nonce
+          const revokedFilter = contract.filters.InviteNonceRevoked(inviteData.inviter, inviteData.nonce)
+          const revokedLogs = await contract.queryFilter(revokedFilter)
+          setPreCheckError(revokedLogs.length > 0 ? 'nonce_revoked' : 'nonce_consumed')
+          setPreCheckLoading(false)
+          return
+        }
 
         // Check inviter's remaining slots
         const remaining = await contract.getInvitesRemaining(

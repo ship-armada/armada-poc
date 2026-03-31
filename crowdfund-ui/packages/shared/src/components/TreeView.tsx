@@ -244,9 +244,10 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
 const TreeEdge = React.memo(function TreeEdge(props: {
   edge: { source: { x: number; y: number }; target: { x: number; y: number }; fromHop: number; toHop: number; isSelfInvite: boolean }
   dimmed: boolean
+  isInviterChain: boolean
 }) {
-  const { edge, dimmed } = props
-  const edgeOpacity = dimmed ? 0.1 : 0.4
+  const { edge, dimmed, isInviterChain } = props
+  const edgeOpacity = dimmed ? 0.1 : isInviterChain ? 0.8 : 0.4
 
   // Self-invite: render curved loop
   if (edge.isSelfInvite) {
@@ -264,8 +265,8 @@ const TreeEdge = React.memo(function TreeEdge(props: {
       <path
         d={`M ${edge.source.x} ${edge.source.y} Q ${cx + nx} ${cy + ny} ${edge.target.x} ${edge.target.y}`}
         fill="none"
-        stroke={hopColor(edge.toHop)}
-        strokeWidth={1.5}
+        stroke={isInviterChain ? '#22d3ee' : hopColor(edge.toHop)}
+        strokeWidth={isInviterChain ? 2 : 1.5}
         strokeOpacity={edgeOpacity}
         strokeDasharray="2 2"
         style={{ transition: EDGE_TRANSITION }}
@@ -279,8 +280,8 @@ const TreeEdge = React.memo(function TreeEdge(props: {
       y1={edge.source.y}
       x2={edge.target.x}
       y2={edge.target.y}
-      stroke={hopColor(edge.toHop)}
-      strokeWidth={1.5}
+      stroke={isInviterChain ? '#22d3ee' : hopColor(edge.toHop)}
+      strokeWidth={isInviterChain ? 2 : 1.5}
       strokeOpacity={edgeOpacity}
       strokeDasharray={edge.fromHop === -1 ? '4 2' : undefined}
       style={{ transition: EDGE_TRANSITION }}
@@ -343,7 +344,7 @@ export function TreeView(props: TreeViewProps) {
   // Flatten tree for rendering, respecting collapse state
   const { flatNodes, flatEdges } = useMemo(() => {
     const nodes: Array<TreeNode & { x: number; y: number; depth: number }> = []
-    const edges: Array<{ source: { x: number; y: number }; target: { x: number; y: number }; fromHop: number; toHop: number; isSelfInvite: boolean }> = []
+    const edges: Array<{ source: { x: number; y: number }; target: { x: number; y: number }; fromHop: number; toHop: number; isSelfInvite: boolean; sourceAddr: string; targetAddr: string }> = []
 
     if (tree.children.length === 0) {
       // Empty state — just the root
@@ -383,12 +384,39 @@ export function TreeView(props: TreeViewProps) {
           fromHop: d.parent.data.hop,
           toHop: d.data.hop,
           isSelfInvite: d.parent.data.address === d.data.address,
+          sourceAddr: d.parent.data.address,
+          targetAddr: d.data.address,
         })
       }
     })
 
     return { flatNodes: nodes, flatEdges: edges }
   }, [tree, dimensions, collapsedSubtrees])
+
+  // Compute inviter chain: set of (sourceAddr, targetAddr) pairs on path from connected address to ROOT
+  const inviterChainEdges = useMemo(() => {
+    const chainEdges = new Set<string>()
+    if (!connectedAddress) return chainEdges
+
+    const connAddr = connectedAddress.toLowerCase()
+    // Build child→parent lookup from edges
+    const parentOf = new Map<string, string>()
+    for (const edge of flatEdges) {
+      if (!edge.isSelfInvite) {
+        parentOf.set(edge.targetAddr, edge.sourceAddr)
+      }
+    }
+
+    // Walk from connected address up to root, marking each edge
+    let current = connAddr
+    while (current && current !== 'armada') {
+      const parent = parentOf.get(current)
+      if (!parent) break
+      chainEdges.add(`${parent}->${current}`)
+      current = parent
+    }
+    return chainEdges
+  }, [connectedAddress, flatEdges])
 
   // Set up zoom behavior
   useEffect(() => {
@@ -511,7 +539,7 @@ export function TreeView(props: TreeViewProps) {
               )
 
             return (
-              <TreeEdge key={`edge-${i}`} edge={edge} dimmed={edgeDimmed} />
+              <TreeEdge key={`edge-${i}`} edge={edge} dimmed={edgeDimmed} isInviterChain={inviterChainEdges.has(`${edge.sourceAddr}->${edge.targetAddr}`)} />
             )
           })}
 

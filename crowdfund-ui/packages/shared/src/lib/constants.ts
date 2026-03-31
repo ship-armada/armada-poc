@@ -69,6 +69,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'function claimed(address) view returns (bool)',
   'function getEffectiveCap(address addr, uint8 hop) view returns (uint256)',
   'function getInvitesRemaining(address addr, uint8 hop) view returns (uint16)',
+  'function usedNonces(address inviter, uint256 nonce) view returns (bool)',
   // Write functions (used by committer and admin)
   'function commit(uint8 hop, uint256 amount) external',
   'function invite(address invitee, uint8 inviterHop) external',

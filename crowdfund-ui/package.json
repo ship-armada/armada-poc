@@ -1,0 +1,15 @@
+{
+  "name": "@armada/crowdfund-ui",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1"
+  },
+  "devDependencies": {
+    "jsdom": "^29.0.1"
+  }
+}

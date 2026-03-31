@@ -311,9 +311,10 @@ async function main() {
         return json.result;
       };
 
-      // Fund the timelock so it can pay gas
+      // Fund the timelock so it can pay gas (must wait for mining before impersonated tx)
       const [deployer] = await ethers.getSigners();
-      await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+      const fundTx = await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+      await fundTx.wait();
 
       const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
       const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddress]);

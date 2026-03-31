@@ -296,12 +296,21 @@ async function main() {
       const timelockAddr = govDeployment.contracts.timelockController;
       const registryAddr = govDeployment.contracts.adapterRegistry;
 
-      // Impersonate timelock to call authorizeAdapter directly (local/Anvil only)
+      // Impersonate timelock to call authorizeAdapter directly (local/Anvil only).
+      // We use raw anvil_impersonateAccount + eth_sendTransaction because Hardhat's
+      // signer helpers don't work with external Anvil nodes.
       const [deployer] = await ethers.getSigners();
       await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
-      const timelockSigner = await ethers.getImpersonatedSigner(timelockAddr);
+      await ethers.provider.send("anvil_impersonateAccount", [timelockAddr]);
       const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
-      await (await registry.connect(timelockSigner).authorizeAdapter(adapterAddress)).wait();
+      const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddress]);
+      const txHash = await ethers.provider.send("eth_sendTransaction", [{
+        from: timelockAddr,
+        to: registryAddr,
+        data: calldata,
+      }]);
+      await ethers.provider.waitForTransaction(txHash);
+      await ethers.provider.send("anvil_stopImpersonatingAccount", [timelockAddr]);
       console.log(`  Adapter authorized in adapter registry`);
     }
   }

@@ -100,13 +100,13 @@ contract AdapterRegistryTest is Test, GovernorDeployHelper {
 
     function test_authorizeAdapter_revertsIfNotTimelock() public {
         vm.prank(nobody);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.authorizeAdapter(adapter1);
     }
 
     function test_authorizeAdapter_revertsIfZeroAddress() public {
         vm.prank(address(timelock));
-        vm.expectRevert("ArmadaGovernor: zero address");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_ZeroAddress.selector));
         governor.authorizeAdapter(address(0));
     }
 
@@ -154,7 +154,7 @@ contract AdapterRegistryTest is Test, GovernorDeployHelper {
         governor.authorizeAdapter(adapter1);
 
         vm.prank(nobody);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.deauthorizeAdapter(adapter1);
     }
 
@@ -208,7 +208,7 @@ contract AdapterRegistryTest is Test, GovernorDeployHelper {
         governor.deauthorizeAdapter(adapter1);
 
         vm.prank(nobody);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.fullDeauthorizeAdapter(adapter1);
     }
 

@@ -174,7 +174,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.connect(alice).castVote(proposalId, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: voting ended");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingEnded");
     });
 
     it("cast vote before voteStart reverts", async function () {
@@ -187,7 +187,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.connect(alice).castVote(proposalId, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: voting not started");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingNotStarted");
     });
 
     it("tied vote (forVotes == againstVotes) results in Defeated", async function () {
@@ -272,7 +272,7 @@ describe("Governance Adversarial", function () {
       // carol has no locked tokens
       await expect(
         createProposal(carol)
-      ).to.be.revertedWith("ArmadaGovernor: below proposal threshold");
+      ).to.be.revertedWithCustomError(governor, "Gov_BelowProposalThreshold");
     });
 
     it("invalid vote type (>2) reverts", async function () {
@@ -281,7 +281,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.connect(alice).castVote(proposalId, 3)
-      ).to.be.revertedWith("ArmadaGovernor: invalid vote type");
+      ).to.be.revertedWithCustomError(governor, "Gov_InvalidVoteType");
     });
   });
 
@@ -304,7 +304,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.queue(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not succeeded");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotSucceeded");
     });
 
     it("execute a proposal that was never queued reverts", async function () {
@@ -322,7 +322,7 @@ describe("Governance Adversarial", function () {
       // Try to execute without queuing
       await expect(
         governor.execute(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not queued");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotQueued");
     });
 
     it("cancel a proposal that is Active (voting started) reverts", async function () {
@@ -335,7 +335,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.connect(alice).cancel(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not pending");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotPending");
     });
 
     it("cancel by non-proposer reverts", async function () {
@@ -346,7 +346,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.connect(bob).cancel(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not proposer");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotProposer");
     });
 
     it("vote on unknown proposal reverts", async function () {
@@ -354,7 +354,7 @@ describe("Governance Adversarial", function () {
 
       await expect(
         governor.connect(alice).castVote(999, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: unknown proposal");
+      ).to.be.revertedWithCustomError(governor, "Gov_UnknownProposal");
     });
 
     it("queue an already-queued proposal reverts at timelock level", async function () {
@@ -370,7 +370,7 @@ describe("Governance Adversarial", function () {
       // Second queue attempt — state is now Queued, not Succeeded
       await expect(
         governor.queue(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not succeeded");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotSucceeded");
     });
 
     it("vote without delegated tokens reverts", async function () {
@@ -381,7 +381,7 @@ describe("Governance Adversarial", function () {
       // carol has no delegated tokens
       await expect(
         governor.connect(carol).castVote(proposalId, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: no voting power");
+      ).to.be.revertedWithCustomError(governor, "Gov_NoVotingPower");
     });
   });
 
@@ -468,7 +468,7 @@ describe("Governance Adversarial", function () {
       const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
       await expect(
         ERC1967Proxy.deploy(await impl.getAddress(), initData)
-      ).to.be.revertedWith("ArmadaGovernor: zero armToken");
+      ).to.be.revertedWithCustomError(governor, "Gov_ZeroArmToken");
     });
 
     it("ArmadaGovernor rejects zero timelock", async function () {
@@ -483,7 +483,7 @@ describe("Governance Adversarial", function () {
       const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
       await expect(
         ERC1967Proxy.deploy(await impl.getAddress(), initData)
-      ).to.be.revertedWith("ArmadaGovernor: zero timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_ZeroTimelock");
     });
 
     it("ArmadaGovernor rejects zero treasury", async function () {
@@ -498,7 +498,7 @@ describe("Governance Adversarial", function () {
       const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
       await expect(
         ERC1967Proxy.deploy(await impl.getAddress(), initData)
-      ).to.be.revertedWith("ArmadaGovernor: zero treasury");
+      ).to.be.revertedWithCustomError(governor, "Gov_ZeroTreasury");
     });
 
     it("TreasurySteward rejects zero timelock", async function () {
@@ -735,7 +735,7 @@ describe("Governance Adversarial", function () {
       // Queue now reverts
       await expect(
         governor.queue(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not succeeded");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotSucceeded");
     });
 
     it("expired-succeeded proposal bond is immediately claimable", async function () {

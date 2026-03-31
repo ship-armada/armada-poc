@@ -272,7 +272,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         uint256 proposalId = _createAndQueueProposal(alice);
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not security council");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotSecurityCouncil.selector));
         governor.veto(proposalId, keccak256("rationale"));
     }
 
@@ -284,7 +284,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.setSecurityCouncil(address(0));
 
         vm.prank(address(0));
-        vm.expectRevert("ArmadaGovernor: SC ejected");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_SCEjected.selector));
         governor.veto(proposalId, keccak256("rationale"));
     }
 
@@ -301,13 +301,13 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
         // Still Pending
         vm.prank(sc);
-        vm.expectRevert("ArmadaGovernor: not queued");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotQueued.selector));
         governor.veto(proposalId, keccak256("rationale"));
 
         // Advance to Active
         vm.warp(block.timestamp + TWO_DAYS + 1);
         vm.prank(sc);
-        vm.expectRevert("ArmadaGovernor: not queued");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotQueued.selector));
         governor.veto(proposalId, keccak256("rationale"));
     }
 
@@ -475,14 +475,14 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         uint256 ratId = governor.proposalCount();
 
         // Try to resolve immediately (voting still active)
-        vm.expectRevert("ArmadaGovernor: voting not ended");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_VotingNotEnded.selector));
         governor.resolveRatification(ratId);
     }
 
     function test_resolve_revertsIfNotRatification() public {
         uint256 proposalId = _createAndQueueProposal(alice);
 
-        vm.expectRevert("ArmadaGovernor: not a ratification proposal");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotARatificationProposal.selector));
         governor.resolveRatification(proposalId);
     }
 
@@ -501,7 +501,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.resolveRatification(ratId);
 
         // Try again
-        vm.expectRevert("ArmadaGovernor: already resolved");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_AlreadyResolved.selector));
         governor.resolveRatification(ratId);
     }
 
@@ -538,7 +538,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
         // New SC tries to veto — should revert
         vm.prank(newSC);
-        vm.expectRevert("ArmadaGovernor: community overrode, no double veto");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_CommunityOverrodeNoDoubleVeto.selector));
         governor.veto(proposalId2, keccak256("rationale2"));
     }
 
@@ -596,7 +596,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.warp(block.timestamp + SEVEN_DAYS + 1);
 
         // Try to queue — should revert
-        vm.expectRevert("ArmadaGovernor: use resolveRatification");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_UseResolveRatification.selector));
         governor.queue(ratId);
     }
 
@@ -625,7 +625,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
         // Ejected SC tries to veto
         vm.prank(sc);
-        vm.expectRevert("ArmadaGovernor: not security council");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotSecurityCouncil.selector));
         governor.veto(proposalId2, keccak256("rationale"));
     }
 
@@ -659,7 +659,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         ratId = governor.proposalCount();
 
         // Try to claim bond while ratification in progress — should revert
-        vm.expectRevert("ArmadaGovernor: ratification not resolved");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_RatificationNotResolved.selector));
         governor.claimBond(proposalId);
 
         // Vote FOR (uphold veto) and resolve

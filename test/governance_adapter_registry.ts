@@ -240,19 +240,19 @@ describe("Governance Adapter Registry", function () {
     it("should revert authorizeAdapter when called directly (not via timelock)", async function () {
       await expect(
         governor.connect(alice).authorizeAdapter(adapterAddr)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
 
     it("should revert deauthorizeAdapter when called directly", async function () {
       await expect(
         governor.connect(alice).deauthorizeAdapter(adapterAddr)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
 
     it("should revert fullDeauthorizeAdapter when called directly", async function () {
       await expect(
         governor.connect(alice).fullDeauthorizeAdapter(adapterAddr)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
   });
 });

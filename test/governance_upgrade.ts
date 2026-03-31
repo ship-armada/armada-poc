@@ -91,7 +91,7 @@ describe("Governance UUPS Upgrade", function () {
 
       await expect(
         governor.connect(attacker).upgradeTo(await v2Impl.getAddress())
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
 
     it("upgrade from deployer reverts", async function () {
@@ -101,7 +101,7 @@ describe("Governance UUPS Upgrade", function () {
 
       await expect(
         governor.connect(deployer).upgradeTo(await v2Impl.getAddress())
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
   });
 

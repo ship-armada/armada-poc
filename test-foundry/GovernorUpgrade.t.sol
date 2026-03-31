@@ -104,7 +104,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
 
         vm.prank(attacker);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.upgradeTo(address(v2Impl));
     }
 
@@ -112,7 +112,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
 
         vm.prank(deployer);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.upgradeTo(address(v2Impl));
     }
 

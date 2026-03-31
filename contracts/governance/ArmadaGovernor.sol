@@ -11,12 +11,74 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
+import "./GovernorStringLib.sol";
 
 /// @title ArmadaGovernor — UUPS-upgradeable governance with typed proposals and ERC20Votes delegation
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
 ///         voting via delegated ARM tokens, and timelock execution. Upgradeable via UUPS,
 ///         gated by the timelock (requires extended governance proposal).
 contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+
+    // ============ Custom Errors ============
+
+    error Gov_NotDeployer();
+    error Gov_ZeroAddress();
+    error Gov_ZeroArmToken();
+    error Gov_ZeroTimelock();
+    error Gov_ZeroTreasury();
+    error Gov_AlreadyInitialized();
+    error Gov_AlreadyLocked();
+    error Gov_AlreadyResolved();
+    error Gov_AutoCreatedOnly();
+    error Gov_BelowProposalThreshold();
+    error Gov_BondAlreadyClaimed();
+    error Gov_BondReturnFailed();
+    error Gov_BondStillLocked();
+    error Gov_BondTransferFailed();
+    error Gov_CommunityOverrodeNoDoubleVeto();
+    error Gov_EmptyProposal();
+    error Gov_ExecutionDelayOutOfBounds();
+    error Gov_GovernanceEnded();
+    error Gov_ImmutableProposalType();
+    error Gov_InvalidVoteType();
+    error Gov_LengthMismatch();
+    error Gov_NoBond();
+    error Gov_NoVotingPower();
+    error Gov_NotARatificationProposal();
+    error Gov_NotCurrentSteward();
+    error Gov_NotPaused();
+    error Gov_NotPendingOrActive();
+    error Gov_NotPending();
+    error Gov_NotProposer();
+    error Gov_NotQueued();
+    error Gov_NotSecurityCouncil();
+    error Gov_NotStewardProposal();
+    error Gov_NotSucceeded();
+    error Gov_NotTimelock();
+    error Gov_NotWindDownContract();
+    error Gov_ProposalNotInTerminalState();
+    error Gov_QuietPeriodActive();
+    error Gov_QuorumBpsOutOfBounds();
+    error Gov_RatificationNotResolved();
+    error Gov_SameVote();
+    error Gov_SelectorAlreadyExtended();
+    error Gov_SelectorNotExtended();
+    error Gov_SelfPaymentNotAllowed();
+    error Gov_StewardCalldataClassifiedAsExtended();
+    error Gov_StewardChannelPaused();
+    error Gov_StewardContractNotSet();
+    error Gov_StewardNotActive();
+    error Gov_UnknownProposal();
+    error Gov_UseResolveRatification();
+    error Gov_VotingEnded();
+    error Gov_VotingNotEnded();
+    error Gov_VotingNotStarted();
+    error Gov_VotingDelayOutOfBounds();
+    error Gov_VotingPeriodOutOfBounds();
+    error Gov_WindDownAlreadyActive();
+    error Gov_WindDownContractAlreadySet();
+    error Gov_WindDownContractNotSet();
+    error Gov_SCEjected();
 
     // ============ Types ============
 
@@ -120,6 +182,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Extended proposal classification: function selectors that force Extended type regardless
     // of what the proposer declared. Governance can add/remove selectors via extended proposal.
     mapping(bytes4 => bool) public extendedSelectors;
+    bool public extendedSelectorsInitialized;
 
     // Treasury >5% threshold for automatic extended classification of distribute() calls.
     // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
@@ -140,13 +203,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
     mapping(uint256 => BondInfo) public proposalBonds;
 
-    // ============ Adapter Registry ============
 
-    /// @notice Fully authorized adapters can perform all operations (deposit + withdraw).
-    mapping(address => bool) public authorizedAdapters;
-
-    /// @notice Deauthorized adapters in withdraw-only mode (users can exit positions).
-    mapping(address => bool) public withdrawOnlyAdapters;
 
     // ============ Veto & Ratification ============
 
@@ -209,9 +266,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
-    event AdapterAuthorized(address indexed adapter);
-    event AdapterDeauthorized(address indexed adapter);
-    event AdapterFullyDeauthorized(address indexed adapter);
     event StewardChannelPaused(uint256 indexed triggeringProposalId);
     event StewardChannelResumed();
 
@@ -234,9 +288,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
 
-        require(_armToken != address(0), "ArmadaGovernor: zero armToken");
-        require(_timelock != address(0), "ArmadaGovernor: zero timelock");
-        require(_treasuryAddress != address(0), "ArmadaGovernor: zero treasury");
+        if (_armToken == address(0)) revert Gov_ZeroArmToken();
+        if (_timelock == address(0)) revert Gov_ZeroTimelock();
+        if (_treasuryAddress == address(0)) revert Gov_ZeroTreasury();
         armToken = ArmadaToken(_armToken);
         timelock = TimelockController(_timelock);
         treasuryAddress = _treasuryAddress;
@@ -284,60 +338,20 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 2000
         });
 
-        // Register function selectors that force Extended classification.
-        // Any proposal containing a call to one of these selectors is automatically Extended
-        // regardless of what the proposer declared.
-        _registerExtendedSelectors();
     }
 
-    /// @dev Register initial extended selectors. Separated from constructor for readability.
-    function _registerExtendedSelectors() internal {
-        // Governance parameter changes
-        extendedSelectors[this.setProposalTypeParams.selector] = true;
-        extendedSelectors[this.setWindDownContract.selector] = true;
-        extendedSelectors[this.addExtendedSelector.selector] = true;
-        extendedSelectors[this.removeExtendedSelector.selector] = true;
-
-        // Fee parameters (on privacy pool and yield vault)
-        extendedSelectors[bytes4(keccak256("setShieldFee(uint120)"))] = true;
-        extendedSelectors[bytes4(keccak256("setUnshieldFee(uint120)"))] = true;
-        extendedSelectors[bytes4(keccak256("setYieldFeeBps(uint256)"))] = true;
-
-        // Governance parameter changes (on governor, via timelock)
-        // Security Council management
-        extendedSelectors[this.setSecurityCouncil.selector] = true;
-
-        // Steward election/removal (on TreasurySteward)
-        extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
-        extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
-
-        // Steward budget management (on ArmadaTreasuryGov)
-        extendedSelectors[bytes4(keccak256("addStewardBudgetToken(address,uint256,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("updateStewardBudgetToken(address,uint256,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
-
-        // ARM token transfer whitelist
-        extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
-
-        // Revenue definition expansion (on RevenueCounter)
-        extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
-
-        // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
-        extendedSelectors[bytes4(keccak256("setBaseArmadaTake(uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("addTier(uint256,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("setTier(uint256,uint256,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("removeTier(uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("setYieldFee(uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)"))] = true;
-
-        // Treasury outflow limit parameters
-        extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("setOutflowLimitAbsolute(address,uint256)"))] = true;
-
-        // UUPS upgrade selectors
-        extendedSelectors[bytes4(keccak256("upgradeTo(address)"))] = true;
-        extendedSelectors[bytes4(keccak256("upgradeToAndCall(address,bytes)"))] = true;
+    /// @notice One-time setter: register function selectors that force Extended proposal
+    /// classification. Any proposal containing a call to one of these selectors is
+    /// automatically Extended regardless of what the proposer declared.
+    /// Deployer-only; locks permanently after the first call.
+    /// @param selectors Array of function selectors to register as extended
+    function initExtendedSelectors(bytes4[] calldata selectors) external {
+        if (msg.sender != deployer) revert Gov_NotDeployer();
+        if (extendedSelectorsInitialized) revert Gov_AlreadyInitialized();
+        extendedSelectorsInitialized = true;
+        for (uint256 i = 0; i < selectors.length; i++) {
+            extendedSelectors[selectors[i]] = true;
+        }
     }
 
     // ============ Quorum Exclusion ============
@@ -346,12 +360,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Deployer-only; locks permanently after the first call.
     /// Intended for contracts holding non-voteable ARM (e.g. crowdfund).
     function setExcludedAddresses(address[] calldata addrs) external {
-        require(msg.sender == deployer, "ArmadaGovernor: not deployer");
-        require(!excludedAddressesLocked, "ArmadaGovernor: already locked");
+        if (msg.sender != deployer) revert Gov_NotDeployer();
+        if (excludedAddressesLocked) revert Gov_AlreadyLocked();
 
         excludedAddressesLocked = true;
         for (uint256 i = 0; i < addrs.length; i++) {
-            require(addrs[i] != address(0), "ArmadaGovernor: zero address");
+            if (addrs[i] == address(0)) revert Gov_ZeroAddress();
             _excludedFromQuorum.push(addrs[i]);
         }
     }
@@ -364,9 +378,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice One-time setter: register the crowdfund contract for quiet period checks.
     /// Deployer-only; locks permanently after the first call.
     function setCrowdfundAddress(address _crowdfund) external {
-        require(msg.sender == deployer, "ArmadaGovernor: not deployer");
-        require(!crowdfundAddressLocked, "ArmadaGovernor: already locked");
-        require(_crowdfund != address(0), "ArmadaGovernor: zero address");
+        if (msg.sender != deployer) revert Gov_NotDeployer();
+        if (crowdfundAddressLocked) revert Gov_AlreadyLocked();
+        if (_crowdfund == address(0)) revert Gov_ZeroAddress();
 
         crowdfundAddressLocked = true;
         crowdfundAddress = _crowdfund;
@@ -377,9 +391,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice One-time setter: register the TreasurySteward contract.
     /// Deployer-only; locks permanently after the first call.
     function setStewardContract(address _steward) external {
-        require(msg.sender == deployer, "ArmadaGovernor: not deployer");
-        require(!stewardContractLocked, "ArmadaGovernor: already locked");
-        require(_steward != address(0), "ArmadaGovernor: zero address");
+        if (msg.sender != deployer) revert Gov_NotDeployer();
+        if (stewardContractLocked) revert Gov_AlreadyLocked();
+        if (_steward == address(0)) revert Gov_ZeroAddress();
 
         stewardContractLocked = true;
         stewardContract = _steward;
@@ -396,27 +410,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         ProposalType proposalType,
         ProposalParams calldata params
     ) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(
-            proposalType != ProposalType.VetoRatification && proposalType != ProposalType.Steward,
-            "ArmadaGovernor: immutable proposal type"
-        );
-        require(
-            params.votingDelay >= MIN_VOTING_DELAY && params.votingDelay <= MAX_VOTING_DELAY,
-            "ArmadaGovernor: votingDelay out of bounds"
-        );
-        require(
-            params.votingPeriod >= MIN_VOTING_PERIOD && params.votingPeriod <= MAX_VOTING_PERIOD,
-            "ArmadaGovernor: votingPeriod out of bounds"
-        );
-        require(
-            params.executionDelay >= MIN_EXECUTION_DELAY && params.executionDelay <= MAX_EXECUTION_DELAY,
-            "ArmadaGovernor: executionDelay out of bounds"
-        );
-        require(
-            params.quorumBps >= MIN_QUORUM_BPS && params.quorumBps <= MAX_QUORUM_BPS,
-            "ArmadaGovernor: quorumBps out of bounds"
-        );
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward) revert Gov_ImmutableProposalType();
+        if (params.votingDelay < MIN_VOTING_DELAY || params.votingDelay > MAX_VOTING_DELAY) revert Gov_VotingDelayOutOfBounds();
+        if (params.votingPeriod < MIN_VOTING_PERIOD || params.votingPeriod > MAX_VOTING_PERIOD) revert Gov_VotingPeriodOutOfBounds();
+        if (params.executionDelay < MIN_EXECUTION_DELAY || params.executionDelay > MAX_EXECUTION_DELAY) revert Gov_ExecutionDelayOutOfBounds();
+        if (params.quorumBps < MIN_QUORUM_BPS || params.quorumBps > MAX_QUORUM_BPS) revert Gov_QuorumBpsOutOfBounds();
 
         proposalTypeParams[proposalType] = params;
         emit ProposalTypeParamsUpdated(proposalType, params);
@@ -428,8 +427,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @dev Only callable by the timelock (requires an extended governance vote, since
     ///      this selector is itself registered as extended).
     function addExtendedSelector(bytes4 selector) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(!extendedSelectors[selector], "ArmadaGovernor: selector already extended");
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        if (extendedSelectors[selector]) revert Gov_SelectorAlreadyExtended();
 
         extendedSelectors[selector] = true;
         emit ExtendedSelectorAdded(selector);
@@ -438,8 +437,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Remove a function selector from the extended classification registry.
     /// @dev Only callable by the timelock (requires an extended governance vote).
     function removeExtendedSelector(bytes4 selector) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(extendedSelectors[selector], "ArmadaGovernor: selector not extended");
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        if (!extendedSelectors[selector]) revert Gov_SelectorNotExtended();
 
         extendedSelectors[selector] = false;
         emit ExtendedSelectorRemoved(selector);
@@ -455,7 +454,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Set or replace the Security Council address. Governance-only (timelock).
     /// Setting to address(0) disables all SC powers (ejection state).
     function setSecurityCouncil(address newSC) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
         emit SecurityCouncilUpdated(securityCouncil, newSC);
         securityCouncil = newSC;
     }
@@ -466,13 +465,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param proposalId The queued proposal to veto
     /// @param rationaleHash Off-chain rationale hash for verifiability
     function veto(uint256 proposalId, bytes32 rationaleHash) external {
-        require(msg.sender == securityCouncil, "ArmadaGovernor: not security council");
-        require(securityCouncil != address(0), "ArmadaGovernor: SC ejected");
-        require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
+        if (msg.sender != securityCouncil) revert Gov_NotSecurityCouncil();
+        if (securityCouncil == address(0)) revert Gov_SCEjected();
+        if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         // Double-veto prevention: community denied a veto on identical calldata
         bytes32 calldataHash = _proposalCalldataHash(proposalId);
-        require(!vetoDeniedHashes[calldataHash], "ArmadaGovernor: community overrode, no double veto");
+        if (vetoDeniedHashes[calldataHash]) revert Gov_CommunityOverrodeNoDoubleVeto();
 
         Proposal storage p = _proposals[proposalId];
 
@@ -496,11 +495,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param ratificationId The ratification proposal to resolve
     function resolveRatification(uint256 ratificationId) external {
         uint256 vetoedId = ratificationOf[ratificationId];
-        require(vetoedId != 0, "ArmadaGovernor: not a ratification proposal");
+        if (vetoedId == 0) revert Gov_NotARatificationProposal();
 
         Proposal storage p = _proposals[ratificationId];
-        require(block.timestamp > p.voteEnd, "ArmadaGovernor: voting not ended");
-        require(!p.executed, "ArmadaGovernor: already resolved");
+        if (block.timestamp <= p.voteEnd) revert Gov_VotingNotEnded();
+        if (p.executed) revert Gov_AlreadyResolved();
 
         p.executed = true;
 
@@ -534,9 +533,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Build description for on-chain verifiability
         string memory desc = string(abi.encodePacked(
             "Veto ratification for proposal #",
-            _uint2str(vetoedProposalId),
+            GovernorStringLib.uint2str(vetoedProposalId),
             " | rationale: ",
-            _bytes32ToHex(rationaleHash)
+            GovernorStringLib.bytes32ToHex(rationaleHash)
         ));
 
         _initProposal(ratId, ProposalType.VetoRatification, desc);
@@ -563,33 +562,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         return keccak256(abi.encode(p.targets, p.values, p.calldatas));
     }
 
-    /// @dev Convert uint to decimal string for ratification description.
-    function _uint2str(uint256 value) internal pure returns (string memory) {
-        if (value == 0) return "0";
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) { digits++; temp /= 10; }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits--;
-            buffer[digits] = bytes1(uint8(48 + value % 10));
-            value /= 10;
-        }
-        return string(buffer);
-    }
-
-    /// @dev Convert bytes32 to hex string (0x-prefixed) for ratification description.
-    function _bytes32ToHex(bytes32 value) internal pure returns (string memory) {
-        bytes memory hexChars = "0123456789abcdef";
-        bytes memory str = new bytes(66); // "0x" + 64 hex chars
-        str[0] = "0";
-        str[1] = "x";
-        for (uint256 i = 0; i < 32; i++) {
-            str[2 + i * 2] = hexChars[uint8(value[i] >> 4)];
-            str[3 + i * 2] = hexChars[uint8(value[i] & 0x0f)];
-        }
-        return string(str);
-    }
 
     // ============ Steward Proposals ============
 
@@ -607,32 +579,23 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256[] memory amounts,
         string memory description
     ) external returns (uint256) {
-        require(!windDownActive, "ArmadaGovernor: governance ended");
-        require(stewardContract != address(0), "ArmadaGovernor: steward contract not set");
-        require(
-            msg.sender == ITreasurySteward(stewardContract).currentSteward(),
-            "ArmadaGovernor: not current steward"
-        );
-        require(
-            ITreasurySteward(stewardContract).isStewardActive(),
-            "ArmadaGovernor: steward not active"
-        );
+        if (windDownActive) revert Gov_GovernanceEnded();
+        if (stewardContract == address(0)) revert Gov_StewardContractNotSet();
+        if (msg.sender != ITreasurySteward(stewardContract).currentSteward()) revert Gov_NotCurrentSteward();
+        if (!ITreasurySteward(stewardContract).isStewardActive()) revert Gov_StewardNotActive();
 
         // Auto-resolve all prior steward proposals whose voting has ended.
         // Must run before the pause check: resolution may trigger the circuit breaker.
         _autoResolveStewardProposals();
 
-        require(!stewardChannelPaused, "ArmadaGovernor: steward channel paused");
-        require(tokens.length > 0, "ArmadaGovernor: empty proposal");
-        require(
-            tokens.length == recipients.length && tokens.length == amounts.length,
-            "ArmadaGovernor: length mismatch"
-        );
+        if (stewardChannelPaused) revert Gov_StewardChannelPaused();
+        if (tokens.length == 0) revert Gov_EmptyProposal();
+        if (tokens.length != recipients.length || tokens.length != amounts.length) revert Gov_LengthMismatch();
         _checkQuietPeriod();
 
         // Self-payment check: steward cannot be a recipient in any spend
         for (uint256 i = 0; i < recipients.length; i++) {
-            require(recipients[i] != msg.sender, "ArmadaGovernor: self-payment not allowed");
+            if (recipients[i] == msg.sender) revert Gov_SelfPaymentNotAllowed();
         }
 
         // Governor constructs the calldata — steward only provides structured spend params
@@ -651,10 +614,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Currently safe because stewardSpend is not an extended selector, but this
         // guard protects against future selector additions that could allow sensitive
         // operations to bypass Extended classification via the pass-by-default path.
-        require(
-            _classifyProposal(ProposalType.Standard, targets, calldatas) != ProposalType.Extended,
-            "ArmadaGovernor: steward calldata classified as extended"
-        );
+        if (_classifyProposal(ProposalType.Standard, targets, calldatas) == ProposalType.Extended) revert Gov_StewardCalldataClassifiedAsExtended();
 
         uint256 proposalId = ++proposalCount;
         _initProposal(proposalId, ProposalType.Steward, description);
@@ -684,10 +644,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param proposalId The steward proposal to resolve
     function resolveStewardProposal(uint256 proposalId) external {
         Proposal storage p = _proposals[proposalId];
-        require(p.id != 0, "ArmadaGovernor: unknown proposal");
-        require(p.proposalType == ProposalType.Steward, "ArmadaGovernor: not steward proposal");
-        require(block.timestamp > p.voteEnd, "ArmadaGovernor: voting not ended");
-        require(!stewardProposalResolved[proposalId], "ArmadaGovernor: already resolved");
+        if (!(p.id != 0)) revert Gov_UnknownProposal();
+        if (!(p.proposalType == ProposalType.Steward)) revert Gov_NotStewardProposal();
+        if (!(block.timestamp > p.voteEnd)) revert Gov_VotingNotEnded();
+        if (!(!stewardProposalResolved[proposalId])) revert Gov_AlreadyResolved();
         _resolveStewardProposal(proposalId);
     }
 
@@ -735,8 +695,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Resume the steward channel after a circuit breaker pause.
     /// Standard proposal (20% quorum, 7-day voting) per governance spec §Circuit breaker.
     function resumeStewardChannel() external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(stewardChannelPaused, "ArmadaGovernor: not paused");
+        if (!(msg.sender == address(timelock))) revert Gov_NotTimelock();
+        if (!(stewardChannelPaused)) revert Gov_NotPaused();
 
         stewardChannelPaused = false;
         consecutiveLowParticipationCount = 0;
@@ -750,9 +710,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Callable by timelock (governance) since the wind-down contract may be deployed
     /// after the governor and needs a governance-approved registration.
     function setWindDownContract(address _windDownContract) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(!windDownContractSet, "ArmadaGovernor: wind-down contract already set");
-        require(_windDownContract != address(0), "ArmadaGovernor: zero address");
+        if (!(msg.sender == address(timelock))) revert Gov_NotTimelock();
+        if (!(!windDownContractSet)) revert Gov_WindDownContractAlreadySet();
+        if (!(_windDownContract != address(0))) revert Gov_ZeroAddress();
 
         windDownContractSet = true;
         windDownContract = _windDownContract;
@@ -764,9 +724,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Once active, no new proposals can be created. Existing proposals in flight
     /// (Active, Succeeded, Queued) can still complete their lifecycle.
     function setWindDownActive() external {
-        require(msg.sender == windDownContract, "ArmadaGovernor: not wind-down contract");
-        require(windDownContract != address(0), "ArmadaGovernor: wind-down contract not set");
-        require(!windDownActive, "ArmadaGovernor: wind-down already active");
+        if (!(msg.sender == windDownContract)) revert Gov_NotWindDownContract();
+        if (!(windDownContract != address(0))) revert Gov_WindDownContractNotSet();
+        if (!(!windDownActive)) revert Gov_WindDownAlreadyActive();
 
         windDownActive = true;
 
@@ -774,42 +734,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     // ============ Adapter Registry Management ============
-
-    /// @notice Authorize an adapter to interact with the protocol.
-    /// Adapters are deployed independently and authorized via standard governance proposal.
-    function authorizeAdapter(address adapter) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(adapter != address(0), "ArmadaGovernor: zero address");
-        require(!authorizedAdapters[adapter], "ArmadaGovernor: already authorized");
-
-        authorizedAdapters[adapter] = true;
-        withdrawOnlyAdapters[adapter] = false; // Clear withdraw-only in case of re-authorization
-
-        emit AdapterAuthorized(adapter);
-    }
-
-    /// @notice Deauthorize an adapter, setting it to withdraw-only mode.
-    /// Users can still exit positions through a withdraw-only adapter.
-    function deauthorizeAdapter(address adapter) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(authorizedAdapters[adapter], "ArmadaGovernor: not authorized");
-
-        authorizedAdapters[adapter] = false;
-        withdrawOnlyAdapters[adapter] = true;
-
-        emit AdapterDeauthorized(adapter);
-    }
-
-    /// @notice Fully remove an adapter after the withdraw-only transition period.
-    /// After this, the adapter has no protocol access.
-    function fullDeauthorizeAdapter(address adapter) external {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
-        require(withdrawOnlyAdapters[adapter], "ArmadaGovernor: not withdraw-only");
-
-        withdrawOnlyAdapters[adapter] = false;
-
-        emit AdapterFullyDeauthorized(adapter);
-    }
 
     // ============ Proposal Lifecycle ============
 
@@ -826,16 +750,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         bytes[] memory calldatas,
         string memory description
     ) external returns (uint256) {
-        require(!windDownActive, "ArmadaGovernor: governance ended");
-        require(targets.length > 0, "ArmadaGovernor: empty proposal");
-        require(
-            targets.length == values.length && targets.length == calldatas.length,
-            "ArmadaGovernor: length mismatch"
-        );
-        require(
-            proposalType != ProposalType.VetoRatification && proposalType != ProposalType.Steward,
-            "ArmadaGovernor: auto-created only"
-        );
+        if (!(!windDownActive)) revert Gov_GovernanceEnded();
+        if (!(targets.length > 0)) revert Gov_EmptyProposal();
+        if (!(targets.length == values.length && targets.length == calldatas.length)) revert Gov_LengthMismatch();
+        if (!(proposalType != ProposalType.VetoRatification && proposalType != ProposalType.Steward)) revert Gov_AutoCreatedOnly();
         _checkQuietPeriod();
         _checkProposalThreshold(msg.sender);
 
@@ -856,10 +774,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Pre-transfer-unlock, bonds are economically meaningless and technically impossible
         // for non-whitelisted holders, so governance operates on threshold only.
         if (armToken.transferable()) {
-            require(
-                armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND),
-                "ArmadaGovernor: bond transfer failed"
-            );
+            if (!(armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND))) revert Gov_BondTransferFailed();
             proposalBonds[proposalId] = BondInfo({
                 depositor: msg.sender,
                 amount: PROPOSAL_BOND,
@@ -880,7 +795,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function _checkProposalThreshold(address proposer) internal view {
         uint256 proposerVotes = armToken.getPastVotes(proposer, block.number - 1);
         uint256 threshold = (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
-        require(proposerVotes >= threshold, "ArmadaGovernor: below proposal threshold");
+        if (!(proposerVotes >= threshold)) revert Gov_BelowProposalThreshold();
     }
 
     /// @dev Initialize proposal scalar fields
@@ -933,18 +848,18 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param support 0=Against, 1=For, 2=Abstain
     function castVote(uint256 proposalId, uint8 support) external {
         Proposal storage p = _proposals[proposalId];
-        require(p.id != 0, "ArmadaGovernor: unknown proposal");
-        require(block.timestamp >= p.voteStart, "ArmadaGovernor: voting not started");
-        require(block.timestamp <= p.voteEnd, "ArmadaGovernor: voting ended");
-        require(support <= 2, "ArmadaGovernor: invalid vote type");
+        if (!(p.id != 0)) revert Gov_UnknownProposal();
+        if (!(block.timestamp >= p.voteStart)) revert Gov_VotingNotStarted();
+        if (!(block.timestamp <= p.voteEnd)) revert Gov_VotingEnded();
+        if (!(support <= 2)) revert Gov_InvalidVoteType();
 
         uint256 weight = armToken.getPastVotes(msg.sender, p.snapshotBlock);
-        require(weight > 0, "ArmadaGovernor: no voting power");
+        if (!(weight > 0)) revert Gov_NoVotingPower();
 
         if (hasVoted[proposalId][msg.sender]) {
             // Vote change: subtract from old bucket, add to new bucket
             uint8 oldSupport = voteChoice[proposalId][msg.sender];
-            require(oldSupport != support, "ArmadaGovernor: same vote");
+            if (!(oldSupport != support)) revert Gov_SameVote();
 
             if (oldSupport == 0) {
                 p.againstVotes -= weight;
@@ -983,10 +898,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Queue a succeeded proposal to the timelock
     function queue(uint256 proposalId) external {
-        require(state(proposalId) == ProposalState.Succeeded, "ArmadaGovernor: not succeeded");
+        if (!(state(proposalId) == ProposalState.Succeeded)) revert Gov_NotSucceeded();
 
         Proposal storage p = _proposals[proposalId];
-        require(p.proposalType != ProposalType.VetoRatification, "ArmadaGovernor: use resolveRatification");
+        if (!(p.proposalType != ProposalType.VetoRatification)) revert Gov_UseResolveRatification();
         p.queued = true;
 
         bytes32 timelockId = timelock.hashOperationBatch(
@@ -1005,10 +920,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Execute a queued proposal after timelock delay
     function execute(uint256 proposalId) external payable nonReentrant {
-        require(state(proposalId) == ProposalState.Queued, "ArmadaGovernor: not queued");
+        if (!(state(proposalId) == ProposalState.Queued)) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];
-        require(p.proposalType != ProposalType.VetoRatification, "ArmadaGovernor: use resolveRatification");
+        if (!(p.proposalType != ProposalType.VetoRatification)) revert Gov_UseResolveRatification();
         p.executed = true;
 
         timelock.executeBatch{value: msg.value}(
@@ -1025,17 +940,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// skip Pending due to zero voting delay, so Active is the earliest cancellable state).
     function cancel(uint256 proposalId) external {
         Proposal storage p = _proposals[proposalId];
-        require(p.id != 0, "ArmadaGovernor: unknown proposal");
-        require(msg.sender == p.proposer, "ArmadaGovernor: not proposer");
+        if (!(p.id != 0)) revert Gov_UnknownProposal();
+        if (!(msg.sender == p.proposer)) revert Gov_NotProposer();
 
         ProposalState currentState = state(proposalId);
         if (p.proposalType == ProposalType.Steward) {
-            require(
-                currentState == ProposalState.Pending || currentState == ProposalState.Active,
-                "ArmadaGovernor: not pending or active"
-            );
+            if (!(currentState == ProposalState.Pending || currentState == ProposalState.Active)) revert Gov_NotPendingOrActive();
         } else {
-            require(currentState == ProposalState.Pending, "ArmadaGovernor: not pending");
+            if (!(currentState == ProposalState.Pending)) revert Gov_NotPending();
         }
 
         p.canceled = true;
@@ -1047,8 +959,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Bond is always returned — lock periods vary by defeat reason.
     function claimBond(uint256 proposalId) external nonReentrant {
         BondInfo storage bond = proposalBonds[proposalId];
-        require(bond.amount > 0, "ArmadaGovernor: no bond");
-        require(!bond.claimed, "ArmadaGovernor: bond already claimed");
+        if (!(bond.amount > 0)) revert Gov_NoBond();
+        if (!(!bond.claimed)) revert Gov_BondAlreadyClaimed();
 
         ProposalState currentState = state(proposalId);
         Proposal storage p = _proposals[proposalId];
@@ -1064,7 +976,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 // Vetoed proposal: bond deferred until ratification resolves.
                 // Proposer did nothing wrong — proposal passed on merit — so no penalty.
                 Proposal storage rat = _proposals[ratId];
-                require(rat.executed, "ArmadaGovernor: ratification not resolved");
+                if (!(rat.executed)) revert Gov_RatificationNotResolved();
                 unlockTime = 0;
             } else {
                 // Proposer self-cancelled during Pending: immediately claimable
@@ -1085,16 +997,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 unlockTime = p.voteEnd + BOND_LOCK_VOTE_FAIL;
             }
         } else {
-            revert("ArmadaGovernor: proposal not in terminal state");
+            revert Gov_ProposalNotInTerminalState();
         }
 
-        require(block.timestamp >= unlockTime, "ArmadaGovernor: bond still locked");
+        if (!(block.timestamp >= unlockTime)) revert Gov_BondStillLocked();
 
         bond.claimed = true;
-        require(
-            armToken.transfer(bond.depositor, bond.amount),
-            "ArmadaGovernor: bond return failed"
-        );
+        if (!(armToken.transfer(bond.depositor, bond.amount))) revert Gov_BondReturnFailed();
 
         emit BondClaimed(proposalId, bond.depositor, bond.amount);
     }
@@ -1104,7 +1013,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Get current state of a proposal
     function state(uint256 proposalId) public view returns (ProposalState) {
         Proposal storage p = _proposals[proposalId];
-        require(p.id != 0, "ArmadaGovernor: unknown proposal");
+        if (!(p.id != 0)) revert Gov_UnknownProposal();
 
         if (p.canceled) return ProposalState.Canceled;
         if (p.executed) return ProposalState.Executed;
@@ -1254,10 +1163,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
         if (_finalizedAt == 0) return;
 
-        require(
-            block.timestamp >= _finalizedAt + QUIET_PERIOD_DURATION,
-            "ArmadaGovernor: quiet period active"
-        );
+        if (!(block.timestamp >= _finalizedAt + QUIET_PERIOD_DURATION)) revert Gov_QuietPeriodActive();
     }
 
     // ============ UUPS ============
@@ -1266,7 +1172,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      The upgradeTo/upgradeToAndCall selectors are registered as extended selectors,
     ///      so upgrade proposals automatically require Extended-type quorum and timing.
     function _authorizeUpgrade(address) internal override {
-        require(msg.sender == address(timelock), "ArmadaGovernor: not timelock");
+        if (!(msg.sender == address(timelock))) revert Gov_NotTimelock();
     }
 
     // ============ Storage Gap ============

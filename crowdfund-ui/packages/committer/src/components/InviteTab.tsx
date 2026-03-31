@@ -1,12 +1,15 @@
 // ABOUTME: Direct invite UI (Path B) — invite by address, inviter pays gas.
 // ABOUTME: Shows invite slots per hop, address input, validation, and self-invite shortcut.
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'
-import type { Signer } from 'ethers'
+import type { Signer, JsonRpcProvider } from 'ethers'
 import {
   hopLabel,
+  formatUsdc,
   CROWDFUND_ABI_FRAGMENTS,
+  HOP_CONFIGS,
+  type GraphNode,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
@@ -24,6 +27,8 @@ export interface InviteTabProps {
   windowOpen: boolean
   inviteLinks: UseInviteLinksResult
   blockTimestamp: number
+  nodes: Map<string, GraphNode>
+  provider: JsonRpcProvider | null
 }
 
 export function InviteTab(props: InviteTabProps) {
@@ -36,9 +41,13 @@ export function InviteTab(props: InviteTabProps) {
     windowOpen,
     inviteLinks,
     blockTimestamp,
+    nodes,
+    provider,
   } = props
 
   const [inviteeAddress, setInviteeAddress] = useState('')
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null)
+  const [resolving, setResolving] = useState(false)
   const [selectedHop, setSelectedHop] = useState<number | null>(null)
   const tx = useTransactionFlow(signer)
 
@@ -55,16 +64,59 @@ export function InviteTab(props: InviteTabProps) {
     }
   }, [invitePositions, selectedHop])
 
+  // (#8) ENS resolution — resolve names containing '.'
+  useEffect(() => {
+    if (!provider || !inviteeAddress.includes('.')) {
+      setResolvedAddress(null)
+      return
+    }
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setResolving(true)
+      try {
+        const addr = await provider.resolveName(inviteeAddress)
+        if (!cancelled) setResolvedAddress(addr)
+      } catch {
+        if (!cancelled) setResolvedAddress(null)
+      } finally {
+        if (!cancelled) setResolving(false)
+      }
+    }, 500) // debounce
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [provider, inviteeAddress])
+
+  // The effective address to invite (resolved ENS or direct input)
+  const effectiveAddress = resolvedAddress ?? inviteeAddress
+  const targetHop = selectedHop !== null ? selectedHop + 1 : 0
+
+  // (#7) Duplicate invite warning
+  const duplicateWarning = useMemo(() => {
+    if (!effectiveAddress || !isAddress(effectiveAddress) || selectedHop === null) return null
+    const nodeKey = `${effectiveAddress.toLowerCase()}-${targetHop}`
+    const existing = nodes.get(nodeKey)
+    if (!existing || existing.invitesReceived === 0) return null
+    const capUsdc = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop].capUsdc : 0n
+    return `This address already has ${existing.invitesReceived} slot${existing.invitesReceived > 1 ? 's' : ''} at ${hopLabel(targetHop)}. Your invite will add another slot, increasing their cap by ${formatUsdc(capUsdc)}.`
+  }, [effectiveAddress, selectedHop, targetHop, nodes])
+
   // Validation
   const validationError = useMemo(() => {
     if (!inviteeAddress) return null
+    if (resolvedAddress) return null // ENS resolved successfully
+    if (inviteeAddress.includes('.') && !resolving) return 'ENS name not found'
+    if (inviteeAddress.includes('.') && resolving) return null // Still resolving
     if (!isAddress(inviteeAddress)) return 'Invalid Ethereum address'
-    if (inviteeAddress.toLowerCase() === address?.toLowerCase()) return null // Self-invite is valid
     return null
-  }, [inviteeAddress, address])
+  }, [inviteeAddress, resolvedAddress, resolving])
 
   const canInvite =
-    inviteeAddress &&
+    effectiveAddress &&
+    isAddress(effectiveAddress) &&
     !validationError &&
     selectedHop !== null &&
     phase === 0 &&
@@ -75,13 +127,14 @@ export function InviteTab(props: InviteTabProps) {
 
     await tx.execute(async (s) => {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.invite(inviteeAddress, selectedHop)
+      return crowdfund.invite(effectiveAddress, selectedHop)
     })
 
     if (tx.state.status !== 'error') {
       setInviteeAddress('')
+      setResolvedAddress(null)
     }
-  }, [canInvite, selectedHop, inviteeAddress, crowdfundAddress, tx])
+  }, [canInvite, selectedHop, effectiveAddress, crowdfundAddress, tx])
 
   const handleSelfInvite = useCallback(async (hop: number) => {
     if (!address) return
@@ -176,10 +229,26 @@ export function InviteTab(props: InviteTabProps) {
             onChange={(e) => setInviteeAddress(e.target.value)}
             className="w-full rounded border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
+          {/* (#8) ENS resolution display */}
+          {resolving && (
+            <div className="text-xs text-muted-foreground mt-1">Resolving ENS name...</div>
+          )}
+          {resolvedAddress && (
+            <div className="text-xs text-success mt-1">
+              {inviteeAddress} → <span className="font-mono">{resolvedAddress.slice(0, 6)}...{resolvedAddress.slice(-4)}</span>
+            </div>
+          )}
           {validationError && (
             <div className="text-xs text-destructive mt-1">{validationError}</div>
           )}
         </div>
+
+        {/* (#7) Duplicate invite warning */}
+        {duplicateWarning && (
+          <div className="text-xs text-amber-500 rounded border border-amber-500/30 bg-amber-500/5 p-2">
+            {duplicateWarning}
+          </div>
+        )}
 
         {/* Invite button */}
         <button

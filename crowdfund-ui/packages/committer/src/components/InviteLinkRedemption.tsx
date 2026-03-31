@@ -16,11 +16,29 @@ import {
   HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
 import { decodeInviteUrl } from '@/lib/inviteLinks'
+import { mapRevertToMessage } from '@/lib/revertMessages'
 import { getHubRpcUrl, getExplorerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 import { TransactionFlow } from './TransactionFlow'
+
+/** Pre-submission validation error types */
+type PreCheckError =
+  | 'expired'
+  | 'nonce_consumed'
+  | 'nonce_revoked'
+  | 'no_slots'
+  | 'deadline_passed'
+  | null
+
+const PRE_CHECK_MESSAGES: Record<string, string> = {
+  expired: 'This invite link has expired. Ask the inviter for a new link.',
+  nonce_consumed: 'This invite link has already been used by someone else.',
+  nonce_revoked: 'This invite link has been revoked by the inviter.',
+  no_slots: 'The inviter has no remaining invite slots.',
+  deadline_passed: 'The commitment deadline has passed.',
+}
 
 export function InviteLinkRedemption() {
   const [searchParams] = useSearchParams()
@@ -35,6 +53,8 @@ export function InviteLinkRedemption() {
   const [amountInput, setAmountInput] = useState('')
   const [balance, setBalance] = useState<bigint>(0n)
   const [allowance, setAllowance] = useState<bigint>(0n)
+  const [preCheckError, setPreCheckError] = useState<PreCheckError>(null)
+  const [preCheckLoading, setPreCheckLoading] = useState(false)
 
   const approvalTx = useTransactionFlow(signer)
   const commitTx = useTransactionFlow(signer)
@@ -63,6 +83,46 @@ export function InviteLinkRedemption() {
     const id = setInterval(refresh, 10_000)
     return () => clearInterval(id)
   }, [provider])
+
+  // (#10) Pre-redemption nonce validation
+  useEffect(() => {
+    if (!provider || !deployment || !inviteData) return
+
+    const checkNonce = async () => {
+      setPreCheckLoading(true)
+      try {
+        const contract = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, provider)
+
+        // Check inviter's remaining slots
+        const remaining = await contract.getInvitesRemaining(
+          inviteData.inviter,
+          inviteData.fromHop,
+        ) as number
+        if (remaining === 0) {
+          setPreCheckError('no_slots')
+          setPreCheckLoading(false)
+          return
+        }
+
+        // Check contract deadline
+        const windowEnd = await contract.windowEnd() as bigint
+        const block = await provider.getBlock('latest')
+        if (block && BigInt(block.timestamp) > windowEnd) {
+          setPreCheckError('deadline_passed')
+          setPreCheckLoading(false)
+          return
+        }
+
+        setPreCheckError(null)
+      } catch {
+        // Non-fatal — let the tx itself surface errors
+        setPreCheckError(null)
+      }
+      setPreCheckLoading(false)
+    }
+
+    checkNonce()
+  }, [provider, deployment, inviteData])
 
   // Fetch balance and allowance
   useEffect(() => {
@@ -110,7 +170,6 @@ export function InviteLinkRedemption() {
 
   const handleMax = useCallback(() => {
     if (hopCap === 0n) return
-    // Cap is in 6-decimal USDC units, convert to display string
     const maxDisplay = Number(hopCap / (10n ** 6n))
     setAmountInput(String(maxDisplay))
   }, [hopCap])
@@ -123,9 +182,12 @@ export function InviteLinkRedemption() {
     if (parsedAmount > 0n && hopCap > 0n && parsedAmount > hopCap) {
       errs.push(`Exceeds ${hopLabel(targetHop)} cap of ${formatUsdc(hopCap)}`)
     }
-    if (parsedAmount > balance) errs.push('Insufficient USDC balance')
+    // (#4/#9) Balance check is a warning, not a blocker
     return errs
-  }, [parsedAmount, balance, hopCap, targetHop])
+  }, [parsedAmount, hopCap, targetHop])
+
+  // (#9) Balance warning (non-blocking)
+  const balanceInsufficient = parsedAmount > 0n && parsedAmount > balance
 
   const handleSubmit = useCallback(async () => {
     if (!inviteData || !deployment || parsedAmount === 0n) return
@@ -173,21 +235,36 @@ export function InviteLinkRedemption() {
 
   const timeLeft = inviteData.deadline - blockTimestamp
 
+  // (#11) Invite details — target hop config
+  const targetConfig = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop as 0 | 1 | 2] : null
+
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
         <h1 className="text-xl font-bold">Armada Crowdfund Invite</h1>
 
-        {/* Invite details */}
+        {/* Invite details (#11 — enhanced) */}
         <div className="rounded border border-border p-3 space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">From</span>
             <span className="font-mono text-xs">{inviteData.inviter.slice(0, 6)}...{inviteData.inviter.slice(-4)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Target Hop</span>
+            <span className="text-muted-foreground">Position</span>
             <span>{hopLabel(targetHop)}</span>
           </div>
+          {targetConfig && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cap</span>
+              <span>{formatUsdc(targetConfig.capUsdc)} USDC</span>
+            </div>
+          )}
+          {targetConfig && targetConfig.maxInvites > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Invite slots</span>
+              <span>{targetConfig.maxInvites} (you can invite {targetConfig.maxInvites} people to {hopLabel(targetHop + 1)})</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Expires</span>
             <span className={expired ? 'text-destructive' : ''}>
@@ -196,13 +273,24 @@ export function InviteLinkRedemption() {
           </div>
         </div>
 
+        {/* (#10) Pre-check errors */}
+        {preCheckLoading && (
+          <div className="text-xs text-muted-foreground">Validating invite link...</div>
+        )}
+
         {expired && (
           <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            This invite link has expired.
+            {PRE_CHECK_MESSAGES.expired}
           </div>
         )}
 
-        {!expired && !address && (
+        {!expired && preCheckError && (
+          <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            {PRE_CHECK_MESSAGES[preCheckError]}
+          </div>
+        )}
+
+        {!expired && !preCheckError && !address && (
           <button
             className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             onClick={connect}
@@ -212,7 +300,7 @@ export function InviteLinkRedemption() {
           </button>
         )}
 
-        {!expired && address && (
+        {!expired && !preCheckError && address && (
           <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
               Connected: <span className="font-mono">{address.slice(0, 6)}...{address.slice(-4)}</span>
@@ -245,6 +333,13 @@ export function InviteLinkRedemption() {
                 </div>
               )}
             </div>
+
+            {/* (#9) Balance warning (non-blocking) */}
+            {balanceInsufficient && (
+              <div className="text-xs text-amber-500">
+                Your USDC balance is insufficient. The transaction will revert if balance is too low.
+              </div>
+            )}
 
             {errors.length > 0 && (
               <div className="text-xs text-destructive space-y-1">

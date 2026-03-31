@@ -40,5 +40,14 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Committer tests require jsdom, shared does not — let each package's
+    // vitest.config.ts handle its own environment via vitest --project or
+    // by running from the package directory. The workspace root only picks up
+    // shared tests (which work in the default node environment).
+    exclude: [
+      '**/node_modules/**',
+      '**/packages/committer/**',
+      '**/packages/admin/**',
+    ],
   },
 })

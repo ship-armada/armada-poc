@@ -72,7 +72,7 @@ export type { PrefetchedAllocation, UseAllocationsConfig } from './hooks/useAllo
 
 // Components
 export { StatsBar } from './components/StatsBar.js'
-export type { StatsBarProps, HopStatsData } from './components/StatsBar.js'
+export type { StatsBarProps, HopStatsData, ConnectedSummary } from './components/StatsBar.js'
 
 export { TableView } from './components/TableView.js'
 export type { TableViewProps } from './components/TableView.js'

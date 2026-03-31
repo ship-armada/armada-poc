@@ -18,6 +18,7 @@ export interface TreeViewProps {
   searchQuery: string
   phase: number
   resolveENS: (addr: string) => string | null
+  connectedAddress?: string | null
 }
 
 /** Color palette for hop levels */
@@ -48,6 +49,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
   radius: number
   isRoot: boolean
   isSelected: boolean
+  isConnected: boolean
   isSearchMatch: boolean
   searchActive: boolean
   isExpanded: boolean
@@ -60,7 +62,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
   onMouseLeave: () => void
 }) {
   const {
-    node, radius, isRoot, isSelected, isSearchMatch, searchActive,
+    node, radius, isRoot, isSelected, isConnected, isSearchMatch, searchActive,
     isExpanded, isCollapsed, childCount,
     onClick, onBadgeClick, onSubtreeToggle, onMouseEnter, onMouseLeave,
   } = props
@@ -88,6 +90,16 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
         </text>
       ) : (
         <>
+          {/* Connected address glow ring */}
+          {isConnected && (
+            <circle
+              r={radius + 4}
+              fill="none"
+              stroke="#22d3ee"
+              strokeWidth={2}
+              strokeOpacity={0.6}
+            />
+          )}
           {node.isMultiHop ? (
             <>
               <circle
@@ -277,7 +289,7 @@ const TreeEdge = React.memo(function TreeEdge(props: {
 })
 
 export function TreeView(props: TreeViewProps) {
-  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS } = props
+  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
@@ -515,6 +527,7 @@ export function TreeView(props: TreeViewProps) {
                 radius={radius}
                 isRoot={isRoot}
                 isSelected={selectedAddress === node.address}
+                isConnected={!!connectedAddress && node.address === connectedAddress.toLowerCase()}
                 isSearchMatch={matchedAddresses === null || matchedAddresses.has(node.address)}
                 searchActive={matchedAddresses !== null}
                 isExpanded={expanded.has(node.address)}

@@ -33,6 +33,7 @@ export interface TableViewProps {
   hoveredAddress?: string | null
   hopStats?: HopStatsData[]
   saleSize?: bigint
+  connectedAddress?: string | null
 }
 
 function displayAddress(addr: string, resolve?: (a: string) => string | null): string {
@@ -68,6 +69,7 @@ export function TableView(props: TableViewProps) {
     hoveredAddress,
     hopStats,
     saleSize,
+    connectedAddress,
   } = props
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'committed', desc: true }])
@@ -82,9 +84,20 @@ export function TableView(props: TableViewProps) {
     [hopStats, saleSize],
   )
 
+  // Sort connected address to top, then apply other filters
+  const sortedSummaries = useMemo(() => {
+    if (!connectedAddress) return summaries
+    const connected = connectedAddress.toLowerCase()
+    return [...summaries].sort((a, b) => {
+      const aConn = a.address === connected ? -1 : 0
+      const bConn = b.address === connected ? -1 : 0
+      return aConn - bConn
+    })
+  }, [summaries, connectedAddress])
+
   // Pre-filter by hop, multi-hop, and oversubscribed toggles
   const filteredSummaries = useMemo(() => {
-    let filtered = summaries
+    let filtered = sortedSummaries
     if (hopFilter !== null) {
       filtered = filtered.filter((s) => s.hops.includes(hopFilter))
     }
@@ -344,6 +357,7 @@ export function TableView(props: TableViewProps) {
               const addr = row.original.address
               const isSelected = selectedAddress === addr
               const isHovered = hoveredAddress === addr
+              const isConnected = !!connectedAddress && addr === connectedAddress.toLowerCase()
               const hopNodes = row.original.hops
                 .map((hop) => nodes.get(`${addr}-${hop}`))
                 .filter((n): n is GraphNode => n !== undefined)
@@ -358,9 +372,11 @@ export function TableView(props: TableViewProps) {
                     className={`border-t border-border cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-primary/10'
-                        : isHovered
-                          ? 'bg-muted/15'
-                          : 'hover:bg-muted/30'
+                        : isConnected
+                          ? 'bg-cyan-500/10 border-l-2 border-l-cyan-500'
+                          : isHovered
+                            ? 'bg-muted/15'
+                            : 'hover:bg-muted/30'
                     }`}
                     onClick={() => handleRowClick(row)}
                   >

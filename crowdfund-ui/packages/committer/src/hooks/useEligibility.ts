@@ -15,6 +15,7 @@ export interface HopPosition {
   remaining: bigint
   invitesUsed: number
   invitesAvailable: number
+  invitedBy: string[]
 }
 
 export interface UseEligibilityResult {
@@ -55,6 +56,7 @@ export function useEligibility(
         remaining,
         invitesUsed: node.invitesUsed,
         invitesAvailable: node.invitesAvailable,
+        invitedBy: node.invitedBy,
       })
 
       totalCommitted += node.committed

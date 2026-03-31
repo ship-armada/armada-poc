@@ -18,6 +18,11 @@ export interface HopStatsData {
   uniqueCommitters: number
 }
 
+export interface ConnectedSummary {
+  totalCommitted: bigint
+  hopCount: number
+}
+
 export interface StatsBarProps {
   hopStats: HopStatsData[]
   totalCommitted: bigint
@@ -29,6 +34,7 @@ export interface StatsBarProps {
   participantCount: number
   windowEnd: number
   blockTimestamp: number
+  connectedSummary?: ConnectedSummary
 }
 
 /** Compute oversubscription percentage for a hop */
@@ -136,6 +142,14 @@ export function StatsBar(props: StatsBarProps) {
         <span className="text-muted-foreground">
           Total committed: <span className="text-foreground font-medium">{formatUsdc(totalCommitted)}</span>
         </span>
+        {props.connectedSummary && props.connectedSummary.totalCommitted > 0n && (
+          <span className="text-muted-foreground">
+            You: <span className="text-foreground font-medium">{formatUsdc(props.connectedSummary.totalCommitted)}</span>
+            {props.connectedSummary.hopCount > 0 && (
+              <span> across {props.connectedSummary.hopCount} hop{props.connectedSummary.hopCount !== 1 ? 's' : ''}</span>
+            )}
+          </span>
+        )}
         <span className="text-muted-foreground">
           Capped demand: <span className="text-foreground font-medium">{formatUsdc(cappedDemand)}</span>
         </span>

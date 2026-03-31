@@ -135,22 +135,33 @@ export function ClaimTab(props: ClaimTabProps) {
       ? windowEnd - blockTimestamp
       : 0
 
-    // P1.5: Check if window has ended and capped demand is below minimum
     const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
     const belowMinimum = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
 
+    // (#14) Pre-finalization below-minimum distinct state with refund button
     if (windowEnded && belowMinimum) {
       return (
-        <div className="p-4 text-center space-y-2">
-          <div className="text-amber-500 font-medium">Commitment Window Ended</div>
-          <div className="text-xs text-muted-foreground">
-            Net proceeds are below the {formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum.
-            Refund will be available after finalization.
+        <div className="space-y-4 p-4">
+          <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+            <div className="text-amber-500 font-medium">Below Minimum Raise</div>
+            <div className="text-muted-foreground mt-1">
+              The commitment deadline has passed and capped demand ({formatUsdc(cappedDemand)}) is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). You may withdraw your full deposit.
+            </div>
           </div>
           {totalCommitted > 0n && (
-            <div className="text-xs text-muted-foreground">
-              Your committed: {formatUsdc(totalCommitted)}
-            </div>
+            <>
+              <div className="text-sm">
+                Your deposit: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
+              </div>
+              <button
+                className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
+                onClick={handleClaimRefund}
+              >
+                Claim Refund
+              </button>
+              <TransactionFlow state={claimRefundTx.state} onReset={claimRefundTx.reset} successMessage="Refund claimed!" explorerUrl={getExplorerUrl()} />
+            </>
           )}
         </div>
       )
@@ -180,7 +191,7 @@ export function ClaimTab(props: ClaimTabProps) {
     return <div className="p-4 text-center text-muted-foreground">Loading allocation...</div>
   }
 
-  // P1.2: Already claimed — show amounts
+  // Already claimed — show amounts
   if (hasClaimed && hasRefundClaimed) {
     return (
       <div className="p-4 text-center space-y-2">
@@ -243,20 +254,31 @@ export function ClaimTab(props: ClaimTabProps) {
     )
   }
 
+  // (#13) Post-3yr expiry state — ARM forfeited, refund only
+  const armClaimExpired = claimDeadline > 0 && blockTimestamp > claimDeadline
+
   // Post-finalization (success) — ARM claim + refund
   const claimTimeLeft = claimDeadline - blockTimestamp
 
   return (
     <div className="space-y-4">
-      {/* P1.3: Claim deadline with expiry distinction */}
-      <div className="text-xs text-muted-foreground">
-        Claim deadline: {claimTimeLeft > 0 ? formatCountdown(claimTimeLeft) : 'expired'}
-      </div>
-      <div className="text-xs text-muted-foreground italic">
-        ARM claim expires at this deadline. USDC refund does not expire.
-      </div>
+      {/* (#13) Claim expiry warning */}
+      {armClaimExpired ? (
+        <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-500">
+          The 3-year ARM claim deadline has passed. You can still claim your USDC refund, but any unclaimed ARM has been forfeited.
+        </div>
+      ) : (
+        <>
+          <div className="text-xs text-muted-foreground">
+            Claim deadline: {claimTimeLeft > 0 ? formatCountdown(claimTimeLeft) : 'expired'}
+          </div>
+          <div className="text-xs text-muted-foreground italic">
+            ARM claim expires at this deadline. USDC refund does not expire.
+          </div>
+        </>
+      )}
 
-      {/* P1.1: Per-hop allocation breakdown */}
+      {/* Per-hop allocation breakdown */}
       {hopAllocations.length > 0 && (
         <div className="rounded border border-border p-3 space-y-2 text-xs">
           <div className="text-muted-foreground font-medium text-sm">Settlement Breakdown</div>
@@ -301,14 +323,18 @@ export function ClaimTab(props: ClaimTabProps) {
         </div>
       )}
 
-      {/* ARM claim with delegation */}
-      {armAmount > 0n && !hasClaimed && (
+      {/* ARM claim with delegation — (#13) hidden when expired */}
+      {armAmount > 0n && !hasClaimed && !armClaimExpired && (
         <div className="space-y-3">
           <DelegateInput
             connectedAddress={address}
             value={delegate}
             onChange={setDelegate}
           />
+          {/* (#12) Delegation explanation */}
+          <div className="text-xs text-muted-foreground">
+            Delegation is required for governance voting. You can change your delegate at any time after claiming.
+          </div>
           <button
             className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             disabled={!isAddress(delegate) || claimArmTx.state.status === 'pending' || claimArmTx.state.status === 'submitted'}
@@ -320,7 +346,7 @@ export function ClaimTab(props: ClaimTabProps) {
         </div>
       )}
 
-      {/* P1.2: Show claimed status for ARM if already claimed but refund not yet */}
+      {/* Show claimed status for ARM if already claimed but refund not yet */}
       {hasClaimed && armAmount > 0n && (
         <div className="text-xs text-success">ARM: {formatArm(armAmount)} claimed</div>
       )}
@@ -339,7 +365,7 @@ export function ClaimTab(props: ClaimTabProps) {
         </div>
       )}
 
-      {/* P1.2: Show refund claimed status */}
+      {/* Show refund claimed status */}
       {hasRefundClaimed && refundAmount > 0n && (
         <div className="text-xs text-success">USDC: {formatUsdc(refundAmount)} refund claimed</div>
       )}

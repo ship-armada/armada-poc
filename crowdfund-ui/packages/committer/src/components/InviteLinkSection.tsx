@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { formatCountdown, hopLabel } from '@armada/crowdfund-shared'
+import { formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
 import { TransactionFlow } from './TransactionFlow'
@@ -100,6 +100,32 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
               </button>
             ))}
           </div>
+
+          {/* (#22) Creation prompt with contextual details */}
+          {selectedHop !== null && (() => {
+            const targetHop = selectedHop + 1
+            const targetConfig = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop] : null
+            const selectedPos = invitePositions.find((p) => p.hop === selectedHop)
+            return (
+              <div className="rounded border border-border p-2 space-y-1 text-xs text-muted-foreground">
+                <div>From: your {hopLabel(selectedHop)} position</div>
+                <div>
+                  Inviting to: {hopLabel(targetHop)}
+                  {targetConfig && <span> ({formatUsdc(targetConfig.capUsdc)} cap, {targetConfig.maxInvites} invite slots)</span>}
+                </div>
+                {selectedPos && (
+                  <div>Available slots: {selectedPos.invitesAvailable} of {selectedPos.invitesUsed + selectedPos.invitesAvailable} remaining</div>
+                )}
+                <div className="mt-1">
+                  This creates a one-time link. The first person to use it joins the network at {hopLabel(targetHop)} and commits USDC in one step.
+                </div>
+                <div>Link expires: 5 days from now</div>
+                <div className="text-amber-500 mt-1">
+                  This is a bearer link — anyone with it can use it. Share it privately.
+                </div>
+              </div>
+            )
+          })()}
 
           <div className="flex gap-2">
             <button

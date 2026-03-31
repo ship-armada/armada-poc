@@ -52,8 +52,10 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
         )}
       </div>
 
-      <div className="text-[10px] text-muted-foreground">
-        Estimates based on current demand. Final allocation depends on total commitments at window close.
+      <div className="text-[10px] text-muted-foreground space-y-0.5">
+        <div>Estimate only — demand changes between now and deadline.</div>
+        <div>Commitments are final — no withdrawals before deadline.</div>
+        <div>3-week maximum lock — USDC locked until finalization + refund claim.</div>
       </div>
     </div>
   )

@@ -46,7 +46,7 @@ globalThis.ResizeObserver = class ResizeObserver {
 
 // Mock modules
 vi.mock('@/config/network', () => ({
-  getHubRpcUrl: () => 'http://localhost:8545',
+  getHubRpcUrls: () => ['http://localhost:8545'],
   getPollIntervalMs: () => 30000,
   getNetworkMode: () => 'local',
 }))
@@ -93,6 +93,7 @@ vi.mock('@armada/crowdfund-shared', async () => {
     }),
     useENS: () => ({ resolve: () => null }),
     useAllocations: () => new Map(),
+    createProvider: () => ({}),
   }
 })
 

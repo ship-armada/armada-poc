@@ -18,6 +18,14 @@ export function getHubRpcUrl(): string {
   return (import.meta.env.VITE_SEPOLIA_RPC as string) || 'https://ethereum-sepolia-rpc.publicnode.com'
 }
 
+/** Ordered list of RPC URLs for fallback. Primary URL first. */
+export function getHubRpcUrls(): string[] {
+  if (isLocalMode()) return ['http://localhost:8545']
+  const primary = (import.meta.env.VITE_SEPOLIA_RPC as string) || 'https://ethereum-sepolia-rpc.publicnode.com'
+  const fallback = (import.meta.env.VITE_SEPOLIA_RPC_FALLBACK as string) || undefined
+  return fallback ? [primary, fallback] : [primary]
+}
+
 export function getHubChainId(): number {
   return isLocalMode() ? 31337 : 11155111
 }

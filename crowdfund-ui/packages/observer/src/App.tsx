@@ -2,8 +2,9 @@
 // ABOUTME: Read-only visualization of on-chain invite graph and commitment data.
 
 import { useState, useEffect, useMemo } from 'react'
-import { JsonRpcProvider } from 'ethers'
+import { type JsonRpcProvider } from 'ethers'
 import {
+  createProvider,
   useContractEvents,
   useGraphState,
   useSelection,
@@ -14,7 +15,7 @@ import {
   SearchBar,
   TreeView,
 } from '@armada/crowdfund-shared'
-import { getHubRpcUrl, getPollIntervalMs, getNetworkMode } from '@/config/network'
+import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useContractState } from '@/hooks/useContractState'
@@ -32,7 +33,7 @@ export function App() {
     loadDeployment()
       .then((d) => {
         setDeployment(d)
-        setProvider(new JsonRpcProvider(getHubRpcUrl()))
+        setProvider(createProvider(getHubRpcUrls()))
       })
       .catch((err) => {
         setDeployError(err instanceof Error ? err.message : 'Failed to load deployment')

@@ -2,8 +2,9 @@
 // ABOUTME: Launch team and security council operations dashboard.
 
 import { useState, useEffect, useCallback } from 'react'
-import { JsonRpcProvider } from 'ethers'
-import { getHubRpcUrl, getPollIntervalMs, getNetworkMode, isLocalMode } from '@/config/network'
+import { type JsonRpcProvider } from 'ethers'
+import { createProvider } from '@armada/crowdfund-shared'
+import { getHubRpcUrls, getPollIntervalMs, getNetworkMode, isLocalMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -32,7 +33,7 @@ export function App() {
     loadDeployment()
       .then((d) => {
         setDeployment(d)
-        setProvider(new JsonRpcProvider(getHubRpcUrl()))
+        setProvider(createProvider(getHubRpcUrls()))
       })
       .catch((err) => {
         setDeployError(err instanceof Error ? err.message : 'Failed to load deployment')

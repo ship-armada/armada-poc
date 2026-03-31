@@ -1,16 +1,40 @@
 // ABOUTME: Root vitest configuration for the crowdfund-ui monorepo.
-// ABOUTME: Includes path aliases needed by all packages' test files.
+// ABOUTME: Resolves @ path alias per-package so each app's tests find their own src/.
 
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type Plugin } from 'vitest/config'
 import path from 'path'
 
-export default defineConfig({
-  resolve: {
-    alias: {
-      // Observer package uses @ alias for src/
-      '@': path.resolve(__dirname, 'packages/observer/src'),
+/**
+ * Vite plugin that resolves `@/...` imports to the correct package's `src/`
+ * directory based on which file is doing the importing. This replaces the
+ * deprecated `customResolver` option in resolve.alias.
+ */
+function perPackageAliasPlugin(): Plugin {
+  const packages = ['observer', 'committer', 'admin']
+  const pkgSrcDirs = packages.map((pkg) => ({
+    pkg,
+    src: path.resolve(__dirname, `packages/${pkg}/src`),
+  }))
+
+  return {
+    name: 'per-package-at-alias',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (!source.startsWith('@/') || !importer) return null
+      const relPath = source.slice(2) // strip '@/'
+      for (const { src } of pkgSrcDirs) {
+        if (importer.startsWith(src)) {
+          return path.resolve(src, relPath)
+        }
+      }
+      // Fallback to observer for backward compatibility
+      return path.resolve(__dirname, 'packages/observer/src', relPath)
     },
-  },
+  }
+}
+
+export default defineConfig({
+  plugins: [perPackageAliasPlugin()],
   define: {
     'import.meta.env.VITE_NETWORK': '"local"',
   },

@@ -2,8 +2,9 @@
 // ABOUTME: Embeds observer as left panel, adds wallet-connected action panel on right.
 
 import { useState, useEffect, useMemo } from 'react'
-import { JsonRpcProvider } from 'ethers'
+import { type JsonRpcProvider } from 'ethers'
 import {
+  createProvider,
   useContractEvents,
   useGraphState,
   useSelection,
@@ -13,7 +14,7 @@ import {
   SearchBar,
   TreeView,
 } from '@armada/crowdfund-shared'
-import { getHubRpcUrl, getPollIntervalMs, getNetworkMode } from '@/config/network'
+import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -40,7 +41,7 @@ export function App() {
     loadDeployment()
       .then((d) => {
         setDeployment(d)
-        setProvider(new JsonRpcProvider(getHubRpcUrl()))
+        setProvider(createProvider(getHubRpcUrls()))
       })
       .catch((err) => {
         setDeployError(err instanceof Error ? err.message : 'Failed to load deployment')
@@ -186,6 +187,8 @@ export function App() {
               searchQuery={searchQuery}
               phase={contractState.phase}
               resolveENS={resolveENS}
+              hopStats={contractState.hopStats}
+              saleSize={contractState.saleSize}
             />
             <div className="text-xs text-muted-foreground text-center">
               {events.length} events loaded {eventsLoading && '(syncing...)'}

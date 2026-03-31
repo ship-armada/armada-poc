@@ -1,9 +1,12 @@
-// ABOUTME: Wallet connection state using ethers v6 BrowserProvider.
-// ABOUTME: Connects to window.ethereum (MetaMask etc.) and provides signer.
+// ABOUTME: Wallet connection state wrapping wagmi hooks.
+// ABOUTME: Provides ethers Signer via adapter for backwards compatibility.
 
-import { useState, useEffect, useCallback } from 'react'
-import { BrowserProvider, JsonRpcSigner } from 'ethers'
+import { useMemo } from 'react'
+import { useAccount, useChainId, useWalletClient, useDisconnect } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { getHubChainId } from '@/config/network'
+import type { JsonRpcSigner } from 'ethers'
 
 export interface UseWalletResult {
   address: string | null
@@ -12,91 +15,37 @@ export interface UseWalletResult {
   connected: boolean
   connecting: boolean
   error: string | null
-  connect: () => Promise<void>
+  connect: () => void
   disconnect: () => void
 }
 
 export function useWallet(): UseWalletResult {
-  const [address, setAddress] = useState<string | null>(null)
-  const [signer, setSigner] = useState<JsonRpcSigner | null>(null)
-  const [chainId, setChainId] = useState<number | null>(null)
-  const [connecting, setConnecting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const connect = useCallback(async () => {
-    const ethereum = (window as any).ethereum
-    if (!ethereum) {
-      setError('No wallet detected. Install MetaMask or another Ethereum wallet.')
-      return
-    }
-
-    setConnecting(true)
-    setError(null)
-
-    try {
-      const provider = new BrowserProvider(ethereum)
-      await provider.send('eth_requestAccounts', [])
-      const s = await provider.getSigner()
-      const addr = await s.getAddress()
-      const network = await provider.getNetwork()
-
-      setAddress(addr.toLowerCase())
-      setSigner(s)
-      setChainId(Number(network.chainId))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect wallet')
-    } finally {
-      setConnecting(false)
-    }
-  }, [])
-
-  const disconnect = useCallback(() => {
-    setAddress(null)
-    setSigner(null)
-    setChainId(null)
-    setError(null)
-  }, [])
-
-  // Listen for account and chain changes
-  useEffect(() => {
-    const ethereum = (window as any).ethereum
-    if (!ethereum) return
-
-    const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length === 0) {
-        disconnect()
-      } else {
-        setAddress(accounts[0].toLowerCase())
-        // Re-create signer
-        const provider = new BrowserProvider(ethereum)
-        provider.getSigner().then(setSigner).catch(() => disconnect())
-      }
-    }
-
-    const handleChainChanged = (chainIdHex: string) => {
-      setChainId(parseInt(chainIdHex, 16))
-    }
-
-    ethereum.on('accountsChanged', handleAccountsChanged)
-    ethereum.on('chainChanged', handleChainChanged)
-
-    return () => {
-      ethereum.removeListener('accountsChanged', handleAccountsChanged)
-      ethereum.removeListener('chainChanged', handleChainChanged)
-    }
-  }, [disconnect])
+  const { address: rawAddress, isConnected, isConnecting } = useAccount()
+  const chainId = useChainId()
+  const { data: walletClient } = useWalletClient()
+  const { openConnectModal } = useConnectModal()
+  const { disconnect: wagmiDisconnect } = useDisconnect()
 
   const expectedChainId = getHubChainId()
-  const wrongChain = chainId !== null && chainId !== expectedChainId
+  const wrongChain = isConnected && chainId !== expectedChainId
+
+  const signer = useMemo(() => {
+    if (!walletClient || wrongChain) return null
+    try {
+      return walletClientToSigner(walletClient)
+    } catch {
+      return null
+    }
+  }, [walletClient, wrongChain])
 
   return {
-    address,
+    address: rawAddress ? rawAddress.toLowerCase() : null,
     signer,
-    chainId,
-    connected: address !== null && !wrongChain,
-    connecting,
-    error: wrongChain ? `Wrong network. Please switch to chain ${expectedChainId}.` : error,
-    connect,
-    disconnect,
+    chainId: chainId ?? null,
+    connected: isConnected && !wrongChain,
+    connecting: isConnecting,
+    error: wrongChain ? `Wrong network. Please switch to chain ${expectedChainId}.` : null,
+    connect: () => openConnectModal?.(),
+    disconnect: () => wagmiDisconnect(),
   }
 }

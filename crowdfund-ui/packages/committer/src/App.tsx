@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 import {
   createProvider,
   useContractEvents,
@@ -205,30 +206,16 @@ export function App() {
             <span className="text-xs text-muted-foreground">
               {getNetworkMode().toUpperCase()}
             </span>
-            {wallet.connected ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {formatUsdc(allowance.balance)}
-                </span>
-                <span className="text-xs font-mono text-foreground">
-                  {walletENS ?? `${wallet.address?.slice(0, 6)}...${wallet.address?.slice(-4)}`}
-                </span>
-                <button
-                  className="text-xs text-destructive hover:underline"
-                  onClick={wallet.disconnect}
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <button
-                className="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                onClick={wallet.connect}
-                disabled={wallet.connecting}
-              >
-                {wallet.connecting ? 'Connecting...' : 'Connect Wallet'}
-              </button>
+            {wallet.connected && (
+              <span className="text-xs text-muted-foreground">
+                {formatUsdc(allowance.balance)}
+              </span>
             )}
+            <ConnectButton
+              showBalance={false}
+              chainStatus="icon"
+              accountStatus="address"
+            />
           </div>
         </div>
 
@@ -307,13 +294,7 @@ export function App() {
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card p-6 text-center space-y-3">
                 <div className="text-muted-foreground">Connect your wallet to participate</div>
-                <button
-                  className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                  onClick={wallet.connect}
-                  disabled={wallet.connecting}
-                >
-                  {wallet.connecting ? 'Connecting...' : 'Connect Wallet'}
-                </button>
+                <ConnectButton />
               </div>
             ) : (
               <div className="rounded-lg border border-border bg-card">

@@ -3,8 +3,10 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { JsonRpcProvider, Contract, BrowserProvider } from 'ethers'
-import type { JsonRpcSigner } from 'ethers'
+import { JsonRpcProvider, Contract } from 'ethers'
+import { useAccount, useWalletClient } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import {
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
@@ -44,11 +46,18 @@ export function InviteLinkRedemption() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
+  const { address: rawAddress, isConnected } = useAccount()
+  const { data: walletClient } = useWalletClient()
+  const { openConnectModal } = useConnectModal()
+
+  const address = rawAddress?.toLowerCase() ?? null
+  const signer = useMemo(() => {
+    if (!walletClient) return null
+    try { return walletClientToSigner(walletClient) } catch { return null }
+  }, [walletClient])
+
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
-  const [signer, setSigner] = useState<JsonRpcSigner | null>(null)
-  const [address, setAddress] = useState<string | null>(null)
-  const [connecting, setConnecting] = useState(false)
   const [blockTimestamp, setBlockTimestamp] = useState(0)
   const [amountInput, setAmountInput] = useState('')
   const [balance, setBalance] = useState<bigint>(0n)
@@ -155,24 +164,9 @@ export function InviteLinkRedemption() {
     refresh()
   }, [provider, address, deployment])
 
-  const connect = useCallback(async () => {
-    const ethereum = (window as any).ethereum
-    if (!ethereum) return
-
-    setConnecting(true)
-    try {
-      const bp = new BrowserProvider(ethereum)
-      await bp.send('eth_requestAccounts', [])
-      const s = await bp.getSigner()
-      const addr = await s.getAddress()
-      setSigner(s)
-      setAddress(addr.toLowerCase())
-    } catch {
-      // User rejected
-    } finally {
-      setConnecting(false)
-    }
-  }, [])
+  const connect = useCallback(() => {
+    openConnectModal?.()
+  }, [openConnectModal])
 
   const parsedAmount = useMemo(() => parseUsdcInput(amountInput), [amountInput])
   const targetHop = inviteData ? inviteData.fromHop + 1 : 0
@@ -304,11 +298,10 @@ export function InviteLinkRedemption() {
 
         {!expired && !preCheckError && !address && (
           <button
-            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             onClick={connect}
-            disabled={connecting}
           >
-            {connecting ? 'Connecting...' : 'Connect Wallet'}
+            Connect Wallet
           </button>
         )}
 

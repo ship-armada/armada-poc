@@ -5,8 +5,32 @@ import { useState, useMemo } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer } from 'ethers'
 import { CROWDFUND_ABI_FRAGMENTS, CROWDFUND_CONSTANTS } from '@armada/crowdfund-shared'
+import { isLocalMode } from '@/config/network'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 import { TransactionFlow } from './TransactionFlow'
+
+// Anvil default accounts (indices 2-19) from mnemonic "test test test test test test test test test test test junk"
+// Indices 0-1 are deployer/LT and security council — excluded from seeds
+const ANVIL_SEED_ADDRESSES = [
+  '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+  '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+  '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+  '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+  '0x976EA74026E726554dB657fA54763abd0C3a0aa9',
+  '0x14dC79964da2C08dda4c1086fB713d60497AF2E6',
+  '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f',
+  '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
+  '0xBcd4042DE499D14e55001CcbB24a551F3b954096',
+  '0x71bE63f3384f5fb98995898A86B02Fb2426c5788',
+  '0xFABB0ac9d68B0B445fB7357272Ff202C5651694a',
+  '0x1CBd3b2770909D4e10f157cABC84C7264073C9Ec',
+  '0xdF3e18d64BC6A983f673Ab319CCaE4f1a57C7097',
+  '0xcd3B766CCDd6AE721141F452C550Ca635964ce71',
+  '0x2546BcD3c84621e976D8185a91A922aE77ECEc30',
+  '0xbDA5747bFD65F08deb54cb465eB87D40e51B197E',
+  '0xdD2FD4581271e230360230F9337D5c0430Bf44C0',
+  '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199',
+]
 
 export interface SeedManagerProps {
   signer: Signer | null
@@ -61,6 +85,14 @@ export function SeedManager({ signer, crowdfundAddress, seedCount }: SeedManager
           {seedCount} / {CROWDFUND_CONSTANTS.MAX_SEEDS}
         </div>
       </div>
+      {isLocalMode() && (
+        <button
+          className="w-full rounded border border-dashed border-muted-foreground/50 px-3 py-1.5 text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+          onClick={() => setInput(ANVIL_SEED_ADDRESSES.join('\n'))}
+        >
+          Fill Anvil Seeds ({ANVIL_SEED_ADDRESSES.length} accounts)
+        </button>
+      )}
       <textarea
         placeholder="Paste addresses (one per line, comma, or semicolon separated)"
         value={input}

@@ -9,6 +9,7 @@ import {
   phaseColor,
   hopLabel,
   CROWDFUND_CONSTANTS,
+  HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
 import type { AdminState } from '@/hooks/useAdminState'
 import type { AdminRole } from '@/hooks/useRole'
@@ -34,6 +35,8 @@ function TimelineRow(props: { label: string; isOpen: boolean; endTimestamp: numb
       </div>
       <div className="text-[10px] text-muted-foreground">
         {remaining > 0 ? formatCountdown(remaining) : 'ended'}
+        {' — '}
+        {new Date(endTimestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
       </div>
     </div>
   )
@@ -146,22 +149,47 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
               <th className="py-1 pr-4">Hop</th>
+              <th className="py-1 pr-4">Ceiling</th>
+              <th className="py-1 pr-4">Cap/Slot</th>
               <th className="py-1 pr-4">Whitelist</th>
               <th className="py-1 pr-4">Committers</th>
-              <th className="py-1 pr-4">Total Committed</th>
-              <th className="py-1 pr-4">Capped Committed</th>
+              <th className="py-1 pr-4">Committed</th>
+              <th className="py-1 pr-4">Capped</th>
+              <th className="py-1 pr-4">Over/Under</th>
             </tr>
           </thead>
           <tbody>
-            {state.hopStats.map((stats, hop) => (
-              <tr key={hop} className="border-b border-border/50">
-                <td className="py-1 pr-4 font-medium">{hopLabel(hop)}</td>
-                <td className="py-1 pr-4">{stats.whitelistCount}</td>
-                <td className="py-1 pr-4">{stats.uniqueCommitters}</td>
-                <td className="py-1 pr-4">{formatUsdc(stats.totalCommitted)}</td>
-                <td className="py-1 pr-4">{formatUsdc(stats.cappedCommitted)}</td>
-              </tr>
-            ))}
+            {state.hopStats.map((stats, hop) => {
+              const hopConfig = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop] : null
+              const isFloorHop = hop === 2
+              const ceilingBps = isFloorHop ? CROWDFUND_CONSTANTS.HOP2_FLOOR_BPS : (hopConfig?.ceilingBps ?? 0)
+              const effectiveCeiling = state.saleSize * BigInt(ceilingBps) / 10000n
+              const overUnderPct = effectiveCeiling > 0n
+                ? Number(stats.cappedCommitted * 10000n / effectiveCeiling) / 100
+                : 0
+              const overUnderColor = overUnderPct <= 100
+                ? 'text-success'
+                : overUnderPct <= 120 ? 'text-amber-500' : 'text-destructive'
+
+              return (
+                <tr key={hop} className="border-b border-border/50">
+                  <td className="py-1 pr-4 font-medium">{hopLabel(hop)}</td>
+                  <td className="py-1 pr-4">
+                    {isFloorHop ? 'Floor' : `${(hopConfig?.ceilingBps ?? 0) / 100}%`}
+                  </td>
+                  <td className="py-1 pr-4">{hopConfig ? formatUsdc(hopConfig.capUsdc) : '-'}</td>
+                  <td className="py-1 pr-4">
+                    {hop === 0 ? `${stats.whitelistCount}/${CROWDFUND_CONSTANTS.MAX_SEEDS}` : stats.whitelistCount}
+                  </td>
+                  <td className="py-1 pr-4">{stats.uniqueCommitters}</td>
+                  <td className="py-1 pr-4">{formatUsdc(stats.totalCommitted)}</td>
+                  <td className="py-1 pr-4">{formatUsdc(stats.cappedCommitted)}</td>
+                  <td className={`py-1 pr-4 font-medium ${overUnderColor}`}>
+                    {overUnderPct.toFixed(1)}%
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

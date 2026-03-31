@@ -46,7 +46,7 @@ export function App() {
 
   // Core hooks
   const wallet = useWallet()
-  const { role, treasuryAddress, loading: roleLoading } = useRole(provider, crowdfundAddress, wallet.address)
+  const { role, launchTeamAddress, treasuryAddress, loading: roleLoading } = useRole(provider, crowdfundAddress, wallet.address)
   const adminState = useAdminState(provider, crowdfundAddress, pollInterval)
   const { events, loading: eventsLoading } = useAdminEvents(provider, crowdfundAddress)
   const treasury = useTreasuryBalances(provider, crowdfundAddress, treasuryAddress, usdcAddress, armTokenAddress)
@@ -121,12 +121,16 @@ export function App() {
             signer={wallet.signer}
             crowdfundAddress={crowdfundAddress!}
             treasury={treasury}
+            events={events}
+            provider={provider}
+            armTokenAddress={armTokenAddress}
+            treasuryAddress={treasuryAddress}
           />
           <EventLog events={events} loading={eventsLoading} />
         </div>
 
         {/* Participant Table */}
-        <ParticipantTable participants={participants} phase={adminState.phase} />
+        <ParticipantTable participants={participants} phase={adminState.phase} launchTeamAddress={launchTeamAddress} />
 
         {/* Local Dev Controls */}
         {isLocalMode() && (

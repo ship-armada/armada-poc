@@ -9,6 +9,7 @@ import {
   type CrowdfundEvent,
   type CrowdfundEventType,
 } from '@armada/crowdfund-shared'
+import { getExplorerUrl } from '@/config/network'
 
 export interface EventLogProps {
   events: CrowdfundEvent[]
@@ -64,6 +65,8 @@ function formatEventData(event: CrowdfundEvent): string {
 export function EventLog({ events, loading }: EventLogProps) {
   const [typeFilter, setTypeFilter] = useState<Set<CrowdfundEventType>>(new Set(ALL_EVENT_TYPES))
   const [addressSearch, setAddressSearch] = useState('')
+  const [visibleCount, setVisibleCount] = useState(200)
+  const explorerUrl = getExplorerUrl()
 
   const filtered = useMemo(() => {
     return events.filter((e) => {
@@ -124,18 +127,37 @@ export function EventLog({ events, loading }: EventLogProps) {
         {filtered.length === 0 ? (
           <div className="text-xs text-muted-foreground text-center py-4">No events</div>
         ) : (
-          filtered.map((event, i) => (
+          filtered.slice(0, visibleCount).map((event, i) => (
             <div key={`${event.transactionHash}-${event.logIndex}-${i}`} className="flex items-center gap-2 text-xs py-1 border-b border-border/30">
               <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${EVENT_COLORS[event.type]}`}>
                 {event.type}
               </span>
               <span className="text-muted-foreground font-mono">{event.blockNumber}</span>
               <span className="flex-1 truncate">{formatEventData(event)}</span>
-              <span className="text-muted-foreground font-mono text-[10px]">
-                {event.transactionHash.slice(0, 8)}...
-              </span>
+              {explorerUrl ? (
+                <a
+                  href={`${explorerUrl}/tx/${event.transactionHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground font-mono text-[10px] underline"
+                >
+                  {event.transactionHash.slice(0, 8)}...
+                </a>
+              ) : (
+                <span className="text-muted-foreground font-mono text-[10px]">
+                  {event.transactionHash.slice(0, 8)}...
+                </span>
+              )}
             </div>
           ))
+        )}
+        {filtered.length > visibleCount && (
+          <button
+            className="w-full py-1.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setVisibleCount((prev) => prev + 200)}
+          >
+            Load more ({filtered.length - visibleCount} remaining)
+          </button>
         )}
       </div>
     </div>

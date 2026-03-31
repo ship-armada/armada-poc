@@ -19,7 +19,8 @@ export interface ParticipantRow {
   invitesTotal: number
   allocatedArm: bigint | null
   refundUsdc: bigint | null
-  claimed: boolean | null
+  armClaimed: boolean
+  refundClaimed: boolean
 }
 
 export function useParticipants(events: CrowdfundEvent[]): ParticipantRow[] {
@@ -31,7 +32,7 @@ export function useParticipants(events: CrowdfundEvent[]): ParticipantRow[] {
 
     // Track allocations from events
     const allocations = new Map<string, { arm: bigint; refund: bigint }>()
-    const claims = new Set<string>()
+    const refundClaims = new Set<string>()
 
     for (const event of events) {
       if (event.type === 'Allocated') {
@@ -42,7 +43,7 @@ export function useParticipants(events: CrowdfundEvent[]): ParticipantRow[] {
         })
       }
       if (event.type === 'RefundClaimed') {
-        claims.add((event.args.participant as string).toLowerCase())
+        refundClaims.add((event.args.participant as string).toLowerCase())
       }
     }
 
@@ -63,7 +64,8 @@ export function useParticipants(events: CrowdfundEvent[]): ParticipantRow[] {
         invitesTotal: maxInvites,
         allocatedArm: alloc?.arm ?? null,
         refundUsdc: alloc?.refund ?? null,
-        claimed: alloc ? claims.has(node.address) : null,
+        armClaimed: allocations.has(node.address),
+        refundClaimed: refundClaims.has(node.address),
       })
     }
 

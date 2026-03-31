@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      '@armada/crowdfund-shared': path.resolve(__dirname, '../shared/src'),
     },
   },
   define: {
@@ -14,5 +15,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.ts'],
   },
 })

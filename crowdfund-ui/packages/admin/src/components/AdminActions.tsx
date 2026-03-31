@@ -1,7 +1,8 @@
 // ABOUTME: Container that renders the correct action panels based on phase and role.
 // ABOUTME: Gates write operations by connected wallet role and current contract phase.
 
-import type { Signer } from 'ethers'
+import type { Signer, JsonRpcProvider } from 'ethers'
+import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 import type { AdminRole } from '@/hooks/useRole'
 import type { AdminState } from '@/hooks/useAdminState'
 import type { TreasuryBalances } from '@/hooks/useTreasuryBalances'
@@ -20,9 +21,13 @@ export interface AdminActionsProps {
   signer: Signer | null
   crowdfundAddress: string
   treasury: TreasuryBalances
+  events: CrowdfundEvent[]
+  provider: JsonRpcProvider | null
+  armTokenAddress: string | null
+  treasuryAddress: string | null
 }
 
-export function AdminActions({ state, role, signer, crowdfundAddress, treasury }: AdminActionsProps) {
+export function AdminActions({ state, role, signer, crowdfundAddress, treasury, events, provider, armTokenAddress, treasuryAddress }: AdminActionsProps) {
   const isActive = state.phase === 0
   const isFinalized = state.phase === 1
   const isCanceled = state.phase === 2
@@ -39,7 +44,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury }
         <div className="space-y-3">
           {/* ARM loading — permissionless */}
           {!state.armLoaded && (
-            <ArmLoadPanel signer={signer} crowdfundAddress={crowdfundAddress} />
+            <ArmLoadPanel signer={signer} crowdfundAddress={crowdfundAddress} provider={provider} armTokenAddress={armTokenAddress} />
           )}
 
           {/* Seed management — LT only */}
@@ -60,6 +65,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury }
               hop2Remaining={state.ltBudgetHop2Remaining}
               blockTimestamp={state.blockTimestamp}
               launchTeamInviteEnd={state.launchTeamInviteEnd}
+              provider={provider}
             />
           )}
 
@@ -70,6 +76,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury }
               crowdfundAddress={crowdfundAddress}
               totalCommitted={state.totalCommitted}
               saleSize={state.saleSize}
+              cappedDemand={state.cappedDemand}
             />
           )}
         </div>
@@ -78,14 +85,18 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury }
       {/* Post-finalization */}
       {isFinalized && (
         <div className="space-y-3">
-          <SettlementSummary state={state} />
-          <TreasuryMonitor treasury={treasury} />
+          <SettlementSummary state={state} events={events} />
+          <TreasuryMonitor treasury={treasury} treasuryAddress={treasuryAddress} />
           <ArmSweepPanel
             signer={signer}
             crowdfundAddress={crowdfundAddress}
             contractArmBalance={treasury.contractArmBalance}
             totalAllocatedArm={state.totalAllocatedArm}
             totalArmTransferred={state.totalArmTransferred}
+            phase={state.phase}
+            refundMode={state.refundMode}
+            claimDeadline={state.claimDeadline}
+            blockTimestamp={state.blockTimestamp}
           />
         </div>
       )}
@@ -96,13 +107,17 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury }
           <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
             Crowdfund has been canceled. All commitments are refundable.
           </div>
-          <TreasuryMonitor treasury={treasury} />
+          <TreasuryMonitor treasury={treasury} treasuryAddress={treasuryAddress} />
           <ArmSweepPanel
             signer={signer}
             crowdfundAddress={crowdfundAddress}
             contractArmBalance={treasury.contractArmBalance}
             totalAllocatedArm={0n}
             totalArmTransferred={0n}
+            phase={state.phase}
+            refundMode={state.refundMode}
+            claimDeadline={state.claimDeadline}
+            blockTimestamp={state.blockTimestamp}
           />
         </div>
       )}

@@ -25,7 +25,7 @@ abstract contract GovernorDeployHelper {
         ArmadaGovernor governor = ArmadaGovernor(address(proxy));
 
         // Register the initial set of extended selectors (mirrors production deploy)
-        bytes4[] memory extSelectors = new bytes4[](12);
+        bytes4[] memory extSelectors = new bytes4[](15);
         extSelectors[0] = ArmadaGovernor.addExtendedSelector.selector;
         extSelectors[1] = ArmadaGovernor.removeExtendedSelector.selector;
         extSelectors[2] = ArmadaGovernor.setSecurityCouncil.selector;
@@ -39,6 +39,10 @@ abstract contract GovernorDeployHelper {
         extSelectors[9] = bytes4(keccak256("removeTier(uint256)"));
         extSelectors[10] = bytes4(keccak256("setYieldFee(uint256)"));
         extSelectors[11] = bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)"));
+        // Steward budget token management selectors
+        extSelectors[12] = bytes4(keccak256("addStewardBudgetToken(address,uint256,uint256)"));
+        extSelectors[13] = bytes4(keccak256("updateStewardBudgetToken(address,uint256,uint256)"));
+        extSelectors[14] = bytes4(keccak256("removeStewardBudgetToken(address)"));
         governor.initExtendedSelectors(extSelectors);
 
         return governor;

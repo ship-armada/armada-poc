@@ -9,6 +9,7 @@ import { deployGovernorProxy } from "./helpers/deploy-governor";
 describe("Governance UUPS Upgrade", function () {
   let deployer: any, alice: any, bob: any, attacker: any;
   let armToken: any, timelock: any, treasury: any, governor: any;
+  let linkedGovernorFactory: any;
 
   const TOTAL_SUPPLY = ethers.parseUnits("12000000", 18);
   const TWO_DAYS = 2 * 24 * 60 * 60;
@@ -57,12 +58,19 @@ describe("Governance UUPS Upgrade", function () {
     // Delegate
     await armToken.connect(alice).delegate(alice.address);
     await armToken.connect(bob).delegate(bob.address);
+
+    // Create linked factory for deploying new governor implementations
+    const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+    const lib = await GovernorStringLib.deploy();
+    await lib.waitForDeployment();
+    linkedGovernorFactory = await ethers.getContractFactory("ArmadaGovernor", {
+      libraries: { GovernorStringLib: await lib.getAddress() },
+    });
   });
 
   describe("Upgrade Authorization", function () {
     it("upgrade via timelock succeeds", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const v2Impl = await ArmadaGovernor.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy();
       await v2Impl.waitForDeployment();
 
       // Execute upgrade via timelock
@@ -85,8 +93,7 @@ describe("Governance UUPS Upgrade", function () {
     });
 
     it("upgrade from non-timelock reverts", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const v2Impl = await ArmadaGovernor.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy();
       await v2Impl.waitForDeployment();
 
       await expect(
@@ -95,8 +102,7 @@ describe("Governance UUPS Upgrade", function () {
     });
 
     it("upgrade from deployer reverts", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const v2Impl = await ArmadaGovernor.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy();
       await v2Impl.waitForDeployment();
 
       await expect(
@@ -114,8 +120,7 @@ describe("Governance UUPS Upgrade", function () {
       const deployerAddr = await governor.deployer();
 
       // Deploy V2 and upgrade via timelock
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const v2Impl = await ArmadaGovernor.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy();
       await v2Impl.waitForDeployment();
 
       const upgradeCalldata = governor.interface.encodeFunctionData(
@@ -148,8 +153,7 @@ describe("Governance UUPS Upgrade", function () {
       expect(quorum).to.equal(2000);
 
       // Upgrade
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const v2Impl = await ArmadaGovernor.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy();
       await v2Impl.waitForDeployment();
 
       const upgradeCalldata = governor.interface.encodeFunctionData(
@@ -187,8 +191,7 @@ describe("Governance UUPS Upgrade", function () {
     });
 
     it("implementation cannot be initialized directly", async function () {
-      const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await linkedGovernorFactory.deploy();
       await impl.waitForDeployment();
 
       await expect(

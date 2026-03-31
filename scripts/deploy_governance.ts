@@ -159,6 +159,10 @@ async function main() {
     ethers.id("removeTier(uint256)").slice(0, 10),
     ethers.id("setYieldFee(uint256)").slice(0, 10),
     ethers.id("setIntegratorTerms(address,uint256,uint256,bool)").slice(0, 10),
+    // Steward budget token management selectors
+    ethers.id("addStewardBudgetToken(address,uint256,uint256)").slice(0, 10),
+    ethers.id("updateStewardBudgetToken(address,uint256,uint256)").slice(0, 10),
+    ethers.id("removeStewardBudgetToken(address)").slice(0, 10),
   ];
   await (await governor.initExtendedSelectors(extSelectors, nm.override())).wait();
   console.log(`   Governor: initExtendedSelectors (${extSelectors.length} selectors)`);

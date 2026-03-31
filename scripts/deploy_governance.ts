@@ -50,6 +50,7 @@ interface GovernanceDeployment {
     governor: string;
     governorImpl: string;
     steward: string;
+    adapterRegistry: string;
     revenueCounter: string;
     revenueCounterImpl: string;
     revenueLock: string;
@@ -180,6 +181,14 @@ async function main() {
   // 5b. Register steward contract on governor (one-time setter)
   await (await governor.setStewardContract(stewardAddress, nm.override())).wait();
   console.log(`   Governor: setStewardContract(${stewardAddress})`);
+
+  // 5c. Deploy AdapterRegistry (standalone, owned by timelock)
+  console.log("   Deploying AdapterRegistry...");
+  const AdapterRegistry = await ethers.getContractFactory("AdapterRegistry");
+  const adapterRegistry = await AdapterRegistry.deploy(timelockAddress, nm.override());
+  await adapterRegistry.deploymentTransaction()!.wait();
+  const adapterRegistryAddress = await adapterRegistry.getAddress();
+  console.log(`   AdapterRegistry: ${adapterRegistryAddress}`);
 
   // 6. Deploy RevenueCounter (UUPS proxy)
   console.log("6. Deploying RevenueCounter (UUPS proxy)...");
@@ -361,6 +370,7 @@ async function main() {
       governor: governorAddress,
       governorImpl: governorImplAddress,
       steward: stewardAddress,
+      adapterRegistry: adapterRegistryAddress,
       revenueCounter: revenueCounterAddress,
       revenueCounterImpl: revenueCounterImplAddress,
       revenueLock: revenueLockAddress,

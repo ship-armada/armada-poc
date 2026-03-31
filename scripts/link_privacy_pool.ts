@@ -292,19 +292,19 @@ async function main() {
     // Authorize adapter in governance adapter registry (via timelock impersonation on local)
     const govFilename = getGovernanceDeploymentFile();
     const govDeployment = loadDeployment(govFilename);
-    if (govDeployment?.contracts?.governor && govDeployment?.contracts?.timelockController) {
+    if (govDeployment?.contracts?.adapterRegistry && govDeployment?.contracts?.timelockController) {
       const timelockAddr = govDeployment.contracts.timelockController;
-      const governorAddr = govDeployment.contracts.governor;
+      const registryAddr = govDeployment.contracts.adapterRegistry;
 
       // Impersonate timelock to call authorizeAdapter directly (local/Anvil only)
       await ethers.provider.send("hardhat_impersonateAccount", [timelockAddr]);
       const [deployer] = await ethers.getSigners();
       await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
       const timelockSigner = await ethers.getSigner(timelockAddr);
-      const governor = await ethers.getContractAt("ArmadaGovernor", governorAddr);
-      await (await governor.connect(timelockSigner).authorizeAdapter(adapterAddress)).wait();
+      const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
+      await (await registry.connect(timelockSigner).authorizeAdapter(adapterAddress)).wait();
       await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
-      console.log(`  Adapter authorized in governance registry`);
+      console.log(`  Adapter authorized in adapter registry`);
     }
   }
 

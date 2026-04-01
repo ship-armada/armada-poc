@@ -90,15 +90,15 @@ async function main() {
   console.log(`Using MockAaveSpoke at: ${mockAaveSpokeAddress}`);
   console.log(`Using reserve ID: ${reserveId}`);
 
-  // Load Governance deployment for governor address (adapter registry)
+  // Load Governance deployment for adapter registry address
   const govFilename = getGovernanceDeploymentFile();
   const govDeployment = loadDeployment(govFilename);
   if (!govDeployment) {
     console.error(`Governance deployment not found: ${govFilename}. Deploy governance first.`);
     process.exit(1);
   }
-  const governorAddress = govDeployment.contracts.governor;
-  console.log(`Using Governor at: ${governorAddress}`);
+  const adapterRegistryAddress = govDeployment.contracts.adapterRegistry;
+  console.log(`Using AdapterRegistry at: ${adapterRegistryAddress}`);
 
   // 1. Deploy ArmadaTreasury
   console.log("\n1. Deploying ArmadaTreasury...");
@@ -123,13 +123,13 @@ async function main() {
   const armadaYieldVaultAddress = await armadaYieldVault.getAddress();
   console.log(`   ArmadaYieldVault: ${armadaYieldVaultAddress}`);
 
-  // 3. Deploy ArmadaYieldAdapter (with governor for adapter registry checks)
+  // 3. Deploy ArmadaYieldAdapter (with adapter registry for authorization checks)
   console.log("\n3. Deploying ArmadaYieldAdapter...");
   const ArmadaYieldAdapter = await ethers.getContractFactory("ArmadaYieldAdapter");
   const armadaYieldAdapter = await ArmadaYieldAdapter.deploy(
     usdcAddress,
     armadaYieldVaultAddress,
-    governorAddress,
+    adapterRegistryAddress,
     nm.override()
   );
   await armadaYieldAdapter.deploymentTransaction()!.wait();

@@ -186,7 +186,7 @@ describe("Governance Parameter Updates", function () {
       };
       await expect(
         governor.connect(alice).setProposalTypeParams(ProposalType.Standard, newParams)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
 
     it("deployer cannot update proposal params", async function () {
@@ -198,7 +198,7 @@ describe("Governance Parameter Updates", function () {
       };
       await expect(
         governor.connect(deployer).setProposalTypeParams(ProposalType.Standard, newParams)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
     });
   });
 
@@ -266,7 +266,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, votingDelay: ONE_DAY - 1,
         })
-      ).to.be.revertedWith("ArmadaGovernor: votingDelay out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingDelayOutOfBounds");
     });
 
     it("rejects votingDelay above maximum", async function () {
@@ -274,7 +274,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, votingDelay: 14 * ONE_DAY + 1,
         })
-      ).to.be.revertedWith("ArmadaGovernor: votingDelay out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingDelayOutOfBounds");
     });
 
     it("rejects votingPeriod below minimum", async function () {
@@ -282,7 +282,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, votingPeriod: ONE_DAY - 1,
         })
-      ).to.be.revertedWith("ArmadaGovernor: votingPeriod out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingPeriodOutOfBounds");
     });
 
     it("rejects votingPeriod above maximum", async function () {
@@ -290,7 +290,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, votingPeriod: 30 * ONE_DAY + 1,
         })
-      ).to.be.revertedWith("ArmadaGovernor: votingPeriod out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingPeriodOutOfBounds");
     });
 
     it("rejects executionDelay below minimum", async function () {
@@ -298,7 +298,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, executionDelay: ONE_DAY - 1,
         })
-      ).to.be.revertedWith("ArmadaGovernor: executionDelay out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_ExecutionDelayOutOfBounds");
     });
 
     it("rejects executionDelay above maximum", async function () {
@@ -306,7 +306,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, executionDelay: 14 * ONE_DAY + 1,
         })
-      ).to.be.revertedWith("ArmadaGovernor: executionDelay out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_ExecutionDelayOutOfBounds");
     });
 
     it("rejects quorumBps below minimum", async function () {
@@ -314,7 +314,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, quorumBps: 499,
         })
-      ).to.be.revertedWith("ArmadaGovernor: quorumBps out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_QuorumBpsOutOfBounds");
     });
 
     it("rejects quorumBps above maximum", async function () {
@@ -322,7 +322,7 @@ describe("Governance Parameter Updates", function () {
         standaloneGovernor.setProposalTypeParams(ProposalType.Standard, {
           ...validParams, quorumBps: 5001,
         })
-      ).to.be.revertedWith("ArmadaGovernor: quorumBps out of bounds");
+      ).to.be.revertedWithCustomError(governor, "Gov_QuorumBpsOutOfBounds");
     });
 
     it("emits ProposalTypeParamsUpdated event", async function () {

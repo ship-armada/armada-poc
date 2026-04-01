@@ -12,7 +12,14 @@ export async function deployGovernorProxy(
   timelockAddress: string,
   treasuryAddress: string,
 ) {
-  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+  // Deploy the external library first, then link it to the governor
+  const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+  const lib = await GovernorStringLib.deploy();
+  await lib.waitForDeployment();
+
+  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
+    libraries: { GovernorStringLib: await lib.getAddress() },
+  });
   const impl = await ArmadaGovernor.deploy();
   await impl.waitForDeployment();
 
@@ -27,5 +34,8 @@ export async function deployGovernorProxy(
   await proxy.waitForDeployment();
 
   const governor = ArmadaGovernor.attach(await proxy.getAddress());
+
+  // Extended selectors are hardcoded in initialize() — no setup step needed.
+
   return governor;
 }

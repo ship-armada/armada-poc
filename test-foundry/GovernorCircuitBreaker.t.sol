@@ -200,7 +200,7 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
         amounts[0] = 100 * 1e6;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: steward channel paused");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardChannelPaused.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "blocked");
     }
 
@@ -266,13 +266,13 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
         }
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.resumeStewardChannel();
     }
 
     function test_resumeStewardChannel_rejectsWhenNotPaused() public {
         vm.prank(address(timelock));
-        vm.expectRevert("ArmadaGovernor: not paused");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotPaused.selector));
         governor.resumeStewardChannel();
     }
 
@@ -295,7 +295,7 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
 
         vm.warp(block.timestamp + TWO_DAYS + SEVEN_DAYS + 1);
 
-        vm.expectRevert("ArmadaGovernor: not steward proposal");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotStewardProposal.selector));
         governor.resolveStewardProposal(proposalId);
     }
 
@@ -303,7 +303,7 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
         uint256 proposalId = _createStewardProposal();
 
         // Voting hasn't ended yet
-        vm.expectRevert("ArmadaGovernor: voting not ended");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_VotingNotEnded.selector));
         governor.resolveStewardProposal(proposalId);
     }
 
@@ -313,12 +313,12 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
 
         governor.resolveStewardProposal(proposalId);
 
-        vm.expectRevert("ArmadaGovernor: already resolved");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_AlreadyResolved.selector));
         governor.resolveStewardProposal(proposalId);
     }
 
     function test_resolve_rejectsUnknownProposal() public {
-        vm.expectRevert("ArmadaGovernor: unknown proposal");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_UnknownProposal.selector));
         governor.resolveStewardProposal(999);
     }
 
@@ -419,7 +419,7 @@ contract GovernorCircuitBreakerTest is Test, GovernorDeployHelper {
         amounts[0] = 100 * 1e6;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: steward channel paused");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardChannelPaused.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "should fail");
     }
 

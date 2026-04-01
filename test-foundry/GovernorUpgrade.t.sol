@@ -104,7 +104,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
 
         vm.prank(attacker);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.upgradeTo(address(v2Impl));
     }
 
@@ -112,7 +112,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
 
         vm.prank(deployer);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.upgradeTo(address(v2Impl));
     }
 
@@ -174,21 +174,6 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         assertEq(period, 7 days);
         assertEq(execDelay, 2 days);
         assertEq(quorum, 2000);
-    }
-
-    function test_upgrade_adapterRegistryPersists() public {
-        // Authorize an adapter
-        vm.prank(address(timelock));
-        governor.authorizeAdapter(address(0xADA));
-        assertTrue(governor.authorizedAdapters(address(0xADA)));
-
-        // Upgrade
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
-        vm.prank(address(timelock));
-        governor.upgradeTo(address(v2Impl));
-
-        // Verify adapter state persists
-        assertTrue(governor.authorizedAdapters(address(0xADA)));
     }
 
     // ============ Initialization Guards ============

@@ -273,7 +273,7 @@ describe("Governance Veto", function () {
         governor.connect(alice).veto(
           proposalId, ethers.keccak256(ethers.toUtf8Bytes("rationale"))
         )
-      ).to.be.revertedWith("ArmadaGovernor: not security council");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotSecurityCouncil");
     });
 
     it("should revert if SC has been ejected", async function () {
@@ -288,7 +288,7 @@ describe("Governance Veto", function () {
         governor.connect(carol).veto(
           proposalId, ethers.keccak256(ethers.toUtf8Bytes("rationale"))
         )
-      ).to.be.revertedWith("ArmadaGovernor: not security council");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotSecurityCouncil");
     });
 
     it("should revert if proposal is not Queued", async function () {
@@ -307,7 +307,7 @@ describe("Governance Veto", function () {
         governor.connect(carol).veto(
           proposalId, ethers.keccak256(ethers.toUtf8Bytes("rationale"))
         )
-      ).to.be.revertedWith("ArmadaGovernor: not queued");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotQueued");
 
       // Advance to Active
       await time.increase(TWO_DAYS + 1);
@@ -315,7 +315,7 @@ describe("Governance Veto", function () {
         governor.connect(carol).veto(
           proposalId, ethers.keccak256(ethers.toUtf8Bytes("rationale"))
         )
-      ).to.be.revertedWith("ArmadaGovernor: not queued");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotQueued");
     });
   });
 
@@ -410,7 +410,7 @@ describe("Governance Veto", function () {
 
       await expect(
         governor.resolveRatification(ratId)
-      ).to.be.revertedWith("ArmadaGovernor: voting not ended");
+      ).to.be.revertedWithCustomError(governor, "Gov_VotingNotEnded");
     });
 
     it("should revert if not a ratification proposal", async function () {
@@ -418,7 +418,7 @@ describe("Governance Veto", function () {
 
       await expect(
         governor.resolveRatification(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: not a ratification proposal");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotARatificationProposal");
     });
 
     it("should revert if already resolved", async function () {
@@ -431,7 +431,7 @@ describe("Governance Veto", function () {
 
       await expect(
         governor.resolveRatification(ratId)
-      ).to.be.revertedWith("ArmadaGovernor: already resolved");
+      ).to.be.revertedWithCustomError(governor, "Gov_AlreadyResolved");
     });
   });
 
@@ -467,7 +467,7 @@ describe("Governance Veto", function () {
         governor.connect(dave).veto(
           proposalId2, ethers.keccak256(ethers.toUtf8Bytes("rationale2"))
         )
-      ).to.be.revertedWith("ArmadaGovernor: community overrode, no double veto");
+      ).to.be.revertedWithCustomError(governor, "Gov_CommunityOverrodeNoDoubleVeto");
     });
 
     it("should allow veto on modified calldata", async function () {
@@ -517,7 +517,7 @@ describe("Governance Veto", function () {
 
       await expect(
         governor.queue(ratId)
-      ).to.be.revertedWith("ArmadaGovernor: use resolveRatification");
+      ).to.be.revertedWithCustomError(governor, "Gov_UseResolveRatification");
     });
 
     it("should revert execute() for ratification proposals", async function () {
@@ -533,7 +533,7 @@ describe("Governance Veto", function () {
       // so execute() reverts at the Queued state check before reaching the type guard.
       await expect(
         governor.execute(ratId)
-      ).to.be.revertedWith("ArmadaGovernor: not queued");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotQueued");
     });
   });
 
@@ -560,7 +560,7 @@ describe("Governance Veto", function () {
         governor.connect(carol).veto(
           proposalId2, ethers.keccak256(ethers.toUtf8Bytes("rationale"))
         )
-      ).to.be.revertedWith("ArmadaGovernor: not security council");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotSecurityCouncil");
     });
 
     it("should allow governance to set a new SC after ejection", async function () {
@@ -601,7 +601,7 @@ describe("Governance Veto", function () {
       // Try to claim bond while ratification in progress — should revert
       await expect(
         governor.claimBond(proposalId)
-      ).to.be.revertedWith("ArmadaGovernor: ratification not resolved");
+      ).to.be.revertedWithCustomError(governor, "Gov_RatificationNotResolved");
 
       // Vote FOR (uphold veto) and resolve
       await governor.connect(alice).castVote(ratId, Vote.For);

@@ -50,6 +50,7 @@ interface GovernanceDeployment {
     governor: string;
     governorImpl: string;
     steward: string;
+    adapterRegistry: string;
     revenueCounter: string;
     revenueCounterImpl: string;
     revenueLock: string;
@@ -116,8 +117,17 @@ async function main() {
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
   // 4. Deploy ArmadaGovernor (UUPS proxy)
-  console.log("4. Deploying ArmadaGovernor (UUPS proxy)...");
-  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
+  console.log("4. Deploying GovernorStringLib (external library)...");
+  const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
+  const governorLib = await GovernorStringLib.deploy(nm.override());
+  await governorLib.deploymentTransaction()!.wait();
+  const governorLibAddress = await governorLib.getAddress();
+  console.log(`   GovernorStringLib: ${governorLibAddress}`);
+
+  console.log("   Deploying ArmadaGovernor (UUPS proxy)...");
+  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
+    libraries: { GovernorStringLib: governorLibAddress },
+  });
   const governorImpl = await ArmadaGovernor.deploy(nm.override());
   await governorImpl.deploymentTransaction()!.wait();
   const governorImplAddress = await governorImpl.getAddress();
@@ -135,6 +145,8 @@ async function main() {
   const governor = ArmadaGovernor.attach(governorAddress) as typeof governorImpl;
   console.log(`   ArmadaGovernor (proxy): ${governorAddress}`);
 
+  // Extended selectors are hardcoded in initialize() — no deployment step needed.
+
   // 5. Deploy TreasurySteward (identity management only — proposals flow through governor)
   console.log("5. Deploying TreasurySteward...");
   const TreasurySteward = await ethers.getContractFactory("TreasurySteward");
@@ -148,6 +160,14 @@ async function main() {
   // 5b. Register steward contract on governor (one-time setter)
   await (await governor.setStewardContract(stewardAddress, nm.override())).wait();
   console.log(`   Governor: setStewardContract(${stewardAddress})`);
+
+  // 5c. Deploy AdapterRegistry (standalone, owned by timelock)
+  console.log("   Deploying AdapterRegistry...");
+  const AdapterRegistry = await ethers.getContractFactory("AdapterRegistry");
+  const adapterRegistry = await AdapterRegistry.deploy(timelockAddress, nm.override());
+  await adapterRegistry.deploymentTransaction()!.wait();
+  const adapterRegistryAddress = await adapterRegistry.getAddress();
+  console.log(`   AdapterRegistry: ${adapterRegistryAddress}`);
 
   // 6. Deploy RevenueCounter (UUPS proxy)
   console.log("6. Deploying RevenueCounter (UUPS proxy)...");
@@ -329,6 +349,7 @@ async function main() {
       governor: governorAddress,
       governorImpl: governorImplAddress,
       steward: stewardAddress,
+      adapterRegistry: adapterRegistryAddress,
       revenueCounter: revenueCounterAddress,
       revenueCounterImpl: revenueCounterImplAddress,
       revenueLock: revenueLockAddress,

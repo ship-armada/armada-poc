@@ -147,7 +147,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         assertTrue(governor.windDownActive());
 
         // Proposing should revert
-        vm.expectRevert("ArmadaGovernor: governance ended");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_GovernanceEnded.selector));
         _proposeStandard(alice);
     }
 
@@ -156,14 +156,14 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         governor.setWindDownContract(windDown);
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not wind-down contract");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotWindDownContract.selector));
         governor.setWindDownActive();
     }
 
     function test_windDown_cannotActivateBeforeSet() public {
         // windDownContract is address(0); random caller should fail
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not wind-down contract");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotWindDownContract.selector));
         governor.setWindDownActive();
     }
 
@@ -172,13 +172,13 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         governor.setWindDownContract(windDown);
 
         vm.prank(address(timelock));
-        vm.expectRevert("ArmadaGovernor: wind-down contract already set");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_WindDownContractAlreadySet.selector));
         governor.setWindDownContract(address(0x999));
     }
 
     function test_windDown_onlyTimelockCanSetContract() public {
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.setWindDownContract(windDown);
     }
 
@@ -190,7 +190,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         governor.setWindDownActive();
 
         vm.prank(windDown);
-        vm.expectRevert("ArmadaGovernor: wind-down already active");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_WindDownAlreadyActive.selector));
         governor.setWindDownActive();
     }
 
@@ -327,13 +327,13 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
     function test_classify_onlyTimelockCanAddSelector() public {
         bytes4 selector = bytes4(keccak256("test()"));
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.addExtendedSelector(selector);
     }
 
     function test_classify_onlyTimelockCanRemoveSelector() public {
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.removeExtendedSelector(governor.setProposalTypeParams.selector);
     }
 
@@ -467,7 +467,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
 
     function test_securityCouncil_onlyTimelockCanSet() public {
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not timelock");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
         governor.setSecurityCouncil(securityCouncil);
     }
 
@@ -580,7 +580,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Defeated));
 
         // Try to claim immediately → should revert (locked 15 days)
-        vm.expectRevert("ArmadaGovernor: bond still locked");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_BondStillLocked.selector));
         governor.claimBond(proposalId);
 
         // Fast-forward 15 days → now claimable
@@ -608,7 +608,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Defeated));
 
         // Try to claim immediately → locked 45 days
-        vm.expectRevert("ArmadaGovernor: bond still locked");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_BondStillLocked.selector));
         governor.claimBond(proposalId);
 
         // Fast-forward 45 days → now claimable
@@ -626,7 +626,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
 
         governor.claimBond(proposalId);
 
-        vm.expectRevert("ArmadaGovernor: bond already claimed");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_BondAlreadyClaimed.selector));
         governor.claimBond(proposalId);
     }
 
@@ -636,7 +636,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         uint256 proposalId = _proposeStandard(alice);
 
         // Still Pending — not terminal
-        vm.expectRevert("ArmadaGovernor: proposal not in terminal state");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_ProposalNotInTerminalState.selector));
         governor.claimBond(proposalId);
     }
 
@@ -644,7 +644,7 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         // Propose without bond (non-transferable)
         uint256 proposalId = _proposeStandard(alice);
 
-        vm.expectRevert("ArmadaGovernor: no bond");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NoBond.selector));
         governor.claimBond(proposalId);
     }
 

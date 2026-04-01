@@ -271,7 +271,7 @@ describe("Governance Integration", function () {
         governor.connect(carol).propose(
           ProposalType.Standard, targets, values, calldatas, "Should fail"
         )
-      ).to.be.revertedWith("ArmadaGovernor: below proposal threshold");
+      ).to.be.revertedWithCustomError(governor, "Gov_BelowProposalThreshold");
     });
 
     it("should transition Pending → Active → Succeeded", async function () {
@@ -669,7 +669,7 @@ describe("Governance Integration", function () {
           [ethers.parseUnits("10", USDC_DECIMALS)],
           "Late steward spend"
         )
-      ).to.be.revertedWith("ArmadaGovernor: steward not active");
+      ).to.be.revertedWithCustomError(governor, "Gov_StewardNotActive");
     });
 
     it("should reject non-steward from calling proposeStewardSpend", async function () {
@@ -682,7 +682,7 @@ describe("Governance Integration", function () {
           [ethers.parseUnits("10", USDC_DECIMALS)],
           "Unauthorized steward spend"
         )
-      ).to.be.revertedWith("ArmadaGovernor: not current steward");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotCurrentSteward");
     });
 
     it("should pass steward proposal by default with no votes", async function () {
@@ -740,7 +740,7 @@ describe("Governance Integration", function () {
           [ethers.parseUnits("100", USDC_DECIMALS)],
           "Pay myself"
         )
-      ).to.be.revertedWith("ArmadaGovernor: self-payment not allowed");
+      ).to.be.revertedWithCustomError(governor, "Gov_SelfPaymentNotAllowed");
     });
   });
 
@@ -791,7 +791,7 @@ describe("Governance Integration", function () {
       // Carol has no delegated tokens
       await expect(
         governor.connect(carol).castVote(1, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: no voting power");
+      ).to.be.revertedWithCustomError(governor, "Gov_NoVotingPower");
     });
 
     it("should allow vote switching from For to Against", async function () {
@@ -855,7 +855,7 @@ describe("Governance Integration", function () {
 
       await expect(
         governor.connect(alice).castVote(1, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: same vote");
+      ).to.be.revertedWithCustomError(governor, "Gov_SameVote");
     });
 
     it("should preserve quorum total when vote is switched", async function () {
@@ -958,7 +958,7 @@ describe("Governance Integration", function () {
 
       await expect(
         governor.connect(bob).cancel(1)
-      ).to.be.revertedWith("ArmadaGovernor: not proposer");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotProposer");
     });
   });
 
@@ -1003,7 +1003,7 @@ describe("Governance Integration", function () {
         governor.connect(alice).propose(
           ProposalType.VetoRatification, targets, values, calldatas, "Manual veto test"
         )
-      ).to.be.revertedWith("ArmadaGovernor: auto-created only");
+      ).to.be.revertedWithCustomError(governor, "Gov_AutoCreatedOnly");
     });
 
     it("should reject governance updates to VetoRatification params", async function () {
@@ -1022,7 +1022,7 @@ describe("Governance Integration", function () {
           ProposalType.VetoRatification,
           { votingDelay: 0, votingPeriod: SEVEN_DAYS, executionDelay: 0, quorumBps: 2000 }
         )
-      ).to.be.revertedWith("ArmadaGovernor: immutable proposal type");
+      ).to.be.revertedWithCustomError(governor, "Gov_ImmutableProposalType");
 
       await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
     });

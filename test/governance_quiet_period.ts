@@ -153,7 +153,7 @@ describe("Governance Quiet Period (T6.1)", function () {
       // Day 3 — well within 7-day quiet period
       await time.increase(3 * ONE_DAY);
 
-      await expect(propose()).to.be.revertedWith("ArmadaGovernor: quiet period active");
+      await expect(propose()).to.be.revertedWithCustomError(governor, "Gov_QuietPeriodActive");
     });
 
     it("propose succeeds after quiet period (day 8+)", async function () {
@@ -216,19 +216,19 @@ describe("Governance Quiet Period (T6.1)", function () {
 
       await expect(
         governor.setCrowdfundAddress(await crowdfund.getAddress())
-      ).to.be.revertedWith("ArmadaGovernor: already locked");
+      ).to.be.revertedWithCustomError(governor, "Gov_AlreadyLocked");
     });
 
     it("setCrowdfundAddress by non-deployer reverts", async function () {
       await expect(
         governor.connect(nonDeployer).setCrowdfundAddress(await crowdfund.getAddress())
-      ).to.be.revertedWith("ArmadaGovernor: not deployer");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotDeployer");
     });
 
     it("setCrowdfundAddress with zero address reverts", async function () {
       await expect(
         governor.setCrowdfundAddress(ethers.ZeroAddress)
-      ).to.be.revertedWith("ArmadaGovernor: zero address");
+      ).to.be.revertedWithCustomError(governor, "Gov_ZeroAddress");
     });
   });
 
@@ -265,7 +265,7 @@ describe("Governance Quiet Period (T6.1)", function () {
 
       // Quiet period should be active even in refundMode
       await time.increase(3 * ONE_DAY);
-      await expect(propose()).to.be.revertedWith("ArmadaGovernor: quiet period active");
+      await expect(propose()).to.be.revertedWithCustomError(governor, "Gov_QuietPeriodActive");
 
       // After quiet period, proposal succeeds
       await time.increase(5 * ONE_DAY);

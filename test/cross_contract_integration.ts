@@ -435,7 +435,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Recipient tries to vote — should fail (no voting power at snapshot block)
       await expect(
         governor.connect(recipient).castVote(proposalId, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: no voting power");
+      ).to.be.revertedWithCustomError(governor, "Gov_NoVotingPower");
 
       // Alice had voting power at snapshot (delegated before proposal), so she CAN still vote
       // even though she transferred her tokens after proposal creation.
@@ -523,7 +523,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Bob cannot vote (claimed and delegated AFTER snapshot)
       await expect(
         governor.connect(bob).castVote(proposalId, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: no voting power");
+      ).to.be.revertedWithCustomError(governor, "Gov_NoVotingPower");
     });
 
     it("double-claim prevention across crowdfund claim and governance vote", async function () {
@@ -555,7 +555,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Alice tries to cast the same vote again — should revert
       await expect(
         governor.connect(alice).castVote(1, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: same vote");
+      ).to.be.revertedWithCustomError(governor, "Gov_SameVote");
     });
 
     it("unclaimed crowdfund participant cannot vote (no ARM, no delegation, no voting power)", async function () {
@@ -596,7 +596,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Unclaimed seed tries to vote — no ARM, no delegation, no voting power
       await expect(
         governor.connect(seeds[0]).castVote(1, Vote.For)
-      ).to.be.revertedWith("ArmadaGovernor: no voting power");
+      ).to.be.revertedWithCustomError(governor, "Gov_NoVotingPower");
     });
   });
 
@@ -945,7 +945,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // The beforeEach already called setExcludedAddresses once
       await expect(
         localGovernor.setExcludedAddresses([localDeployer.address])
-      ).to.be.revertedWith("ArmadaGovernor: already locked");
+      ).to.be.revertedWithCustomError(governor, "Gov_AlreadyLocked");
     });
 
     it("getExcludedFromQuorum returns registered addresses", async function () {
@@ -966,7 +966,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       const nonDeployer = localSeeds[0];
       await expect(
         freshGovernor.connect(nonDeployer).setExcludedAddresses([localDeployer.address])
-      ).to.be.revertedWith("ArmadaGovernor: not deployer");
+      ).to.be.revertedWithCustomError(governor, "Gov_NotDeployer");
     });
   });
 });

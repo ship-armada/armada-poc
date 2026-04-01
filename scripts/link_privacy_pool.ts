@@ -292,19 +292,46 @@ async function main() {
     // Authorize adapter in governance adapter registry (via timelock impersonation on local)
     const govFilename = getGovernanceDeploymentFile();
     const govDeployment = loadDeployment(govFilename);
-    if (govDeployment?.contracts?.governor && govDeployment?.contracts?.timelockController) {
+    if (govDeployment?.contracts?.adapterRegistry && govDeployment?.contracts?.timelockController) {
       const timelockAddr = govDeployment.contracts.timelockController;
-      const governorAddr = govDeployment.contracts.governor;
+      const registryAddr = govDeployment.contracts.adapterRegistry;
 
-      // Impersonate timelock to call authorizeAdapter directly (local/Anvil only)
-      await ethers.provider.send("hardhat_impersonateAccount", [timelockAddr]);
+      // Impersonate timelock to call authorizeAdapter directly (local/Anvil only).
+      // Hardhat's provider middleware intercepts eth_sendTransaction and tries to
+      // sign locally, so we bypass it entirely with raw JSON-RPC fetch to Anvil.
+      const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
+      const jsonRpc = async (method: string, params: any[] = []) => {
+        const res = await fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        });
+        const json = await res.json();
+        if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
+        return json.result;
+      };
+
+      // Fund the timelock so it can pay gas (must wait for mining before impersonated tx)
       const [deployer] = await ethers.getSigners();
-      await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
-      const timelockSigner = await ethers.getSigner(timelockAddr);
-      const governor = await ethers.getContractAt("ArmadaGovernor", governorAddr);
-      await (await governor.connect(timelockSigner).authorizeAdapter(adapterAddress)).wait();
-      await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
-      console.log(`  Adapter authorized in governance registry`);
+      const fundTx = await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+      await fundTx.wait();
+
+      const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
+      const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddress]);
+
+      await jsonRpc("anvil_impersonateAccount", [timelockAddr]);
+      const txHash = await jsonRpc("eth_sendTransaction", [{
+        from: timelockAddr,
+        to: registryAddr,
+        data: calldata,
+      }]);
+      // Poll for receipt since HardhatEthersProvider.waitForTransaction is not implemented
+      let receipt = null;
+      while (!receipt) {
+        receipt = await jsonRpc("eth_getTransactionReceipt", [txHash]);
+      }
+      await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
+      console.log(`  Adapter authorized in adapter registry`);
     }
   }
 

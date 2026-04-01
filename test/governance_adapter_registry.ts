@@ -1,4 +1,4 @@
-// ABOUTME: Hardhat integration tests for the adapter registry in ArmadaGovernor.
+// ABOUTME: Hardhat integration tests for the standalone AdapterRegistry contract.
 // ABOUTME: Covers full governance proposal lifecycle for authorizing, deauthorizing, and fully removing adapters.
 
 import { expect } from "chai";
@@ -28,6 +28,7 @@ describe("Governance Adapter Registry", function () {
   let timelockController: any;
   let governor: any;
   let treasury: any;
+  let registry: any;
 
   // Signers
   let deployer: SignerWithAddress;
@@ -47,18 +48,6 @@ describe("Governance Adapter Registry", function () {
 
   async function mineBlock() {
     await mine(1);
-  }
-
-  async function asTimelock(): Promise<SignerWithAddress> {
-    const timelockAddr = await timelockController.getAddress();
-    await ethers.provider.send("hardhat_impersonateAccount", [timelockAddr]);
-    await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
-    return await ethers.getSigner(timelockAddr) as unknown as SignerWithAddress;
-  }
-
-  async function stopImpersonatingTimelock() {
-    const timelockAddr = await timelockController.getAddress();
-    await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
   }
 
   /// Create a Standard proposal, vote it through, queue, wait execution delay, then execute.
@@ -130,18 +119,23 @@ describe("Governance Adapter Registry", function () {
       await treasury.getAddress(),
     );
 
-    // 5. Configure timelock roles
+    // 5. Deploy standalone AdapterRegistry (owned by timelock)
+    const AdapterRegistry = await ethers.getContractFactory("AdapterRegistry");
+    registry = await AdapterRegistry.deploy(timelockAddr);
+    await registry.waitForDeployment();
+
+    // 6. Configure timelock roles
     const govAddr = await governor.getAddress();
     await timelockController.grantRole(await timelockController.PROPOSER_ROLE(), govAddr);
     await timelockController.grantRole(await timelockController.EXECUTOR_ROLE(), govAddr);
     await timelockController.grantRole(await timelockController.CANCELLER_ROLE(), govAddr);
 
-    // 6. Renounce deployer admin role on timelock
+    // 7. Renounce deployer admin role on timelock
     await timelockController.renounceRole(
       await timelockController.TIMELOCK_ADMIN_ROLE(), deployer.address
     );
 
-    // 7. Configure ARM token
+    // 8. Configure ARM token
     await armToken.setNoDelegation(await treasury.getAddress());
     await armToken.initWhitelist([
       deployer.address,
@@ -151,12 +145,12 @@ describe("Governance Adapter Registry", function () {
       govAddr,
     ]);
 
-    // 8. Distribute ARM tokens
+    // 9. Distribute ARM tokens
     await armToken.transfer(await treasury.getAddress(), TREASURY_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
 
-    // 9. Delegate tokens for voting power
+    // 10. Delegate tokens for voting power
     await armToken.connect(alice).delegate(alice.address);
     await armToken.connect(bob).delegate(bob.address);
 
@@ -167,27 +161,13 @@ describe("Governance Adapter Registry", function () {
 
   describe("Authorize Adapter", function () {
     it("should authorize adapter via governance proposal", async function () {
-      const govAddr = await governor.getAddress();
-      const calldata = governor.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
+      const registryAddr = await registry.getAddress();
+      const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
 
-      await proposeVoteQueueExecute([govAddr], [calldata], "Authorize adapter");
+      await proposeVoteQueueExecute([registryAddr], [calldata], "Authorize adapter");
 
-      expect(await governor.authorizedAdapters(adapterAddr)).to.equal(true);
-      expect(await governor.withdrawOnlyAdapters(adapterAddr)).to.equal(false);
-    });
-
-    it("should classify authorizeAdapter as Standard (not Extended)", async function () {
-      const govAddr = await governor.getAddress();
-      const calldata = governor.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
-
-      await governor.connect(alice).propose(
-        ProposalType.Standard, [govAddr], [0n], [calldata], "Authorize adapter"
-      );
-      const proposalId = Number(await governor.proposalCount());
-      const proposal = await governor.getProposal(proposalId);
-
-      // ProposalType.Standard = 0
-      expect(proposal.proposalType).to.equal(ProposalType.Standard);
+      expect(await registry.authorizedAdapters(adapterAddr)).to.equal(true);
+      expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(false);
     });
   });
 
@@ -195,19 +175,19 @@ describe("Governance Adapter Registry", function () {
 
   describe("Deauthorize Adapter", function () {
     it("should deauthorize adapter to withdraw-only via governance", async function () {
-      const govAddr = await governor.getAddress();
+      const registryAddr = await registry.getAddress();
 
       // First: authorize
-      const authCalldata = governor.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([govAddr], [authCalldata], "Authorize adapter");
-      expect(await governor.authorizedAdapters(adapterAddr)).to.equal(true);
+      const authCalldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
+      await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter");
+      expect(await registry.authorizedAdapters(adapterAddr)).to.equal(true);
 
       // Then: deauthorize
-      const deauthCalldata = governor.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([govAddr], [deauthCalldata], "Deauthorize adapter");
+      const deauthCalldata = registry.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
+      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter");
 
-      expect(await governor.authorizedAdapters(adapterAddr)).to.equal(false);
-      expect(await governor.withdrawOnlyAdapters(adapterAddr)).to.equal(true);
+      expect(await registry.authorizedAdapters(adapterAddr)).to.equal(false);
+      expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(true);
     });
   });
 
@@ -215,22 +195,22 @@ describe("Governance Adapter Registry", function () {
 
   describe("Full Deauthorize Adapter", function () {
     it("should fully remove adapter after withdraw-only period via governance", async function () {
-      const govAddr = await governor.getAddress();
+      const registryAddr = await registry.getAddress();
 
       // Authorize
-      const authCalldata = governor.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([govAddr], [authCalldata], "Authorize adapter");
+      const authCalldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
+      await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter");
 
       // Deauthorize (withdraw-only)
-      const deauthCalldata = governor.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([govAddr], [deauthCalldata], "Deauthorize adapter");
+      const deauthCalldata = registry.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
+      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter");
 
       // Full deauthorize
-      const fullDeauthCalldata = governor.interface.encodeFunctionData("fullDeauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([govAddr], [fullDeauthCalldata], "Fully remove adapter");
+      const fullDeauthCalldata = registry.interface.encodeFunctionData("fullDeauthorizeAdapter", [adapterAddr]);
+      await proposeVoteQueueExecute([registryAddr], [fullDeauthCalldata], "Fully remove adapter");
 
-      expect(await governor.authorizedAdapters(adapterAddr)).to.equal(false);
-      expect(await governor.withdrawOnlyAdapters(adapterAddr)).to.equal(false);
+      expect(await registry.authorizedAdapters(adapterAddr)).to.equal(false);
+      expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(false);
     });
   });
 
@@ -239,20 +219,20 @@ describe("Governance Adapter Registry", function () {
   describe("Access Control", function () {
     it("should revert authorizeAdapter when called directly (not via timelock)", async function () {
       await expect(
-        governor.connect(alice).authorizeAdapter(adapterAddr)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+        registry.connect(alice).authorizeAdapter(adapterAddr)
+      ).to.be.revertedWith("AdapterRegistry: not timelock");
     });
 
     it("should revert deauthorizeAdapter when called directly", async function () {
       await expect(
-        governor.connect(alice).deauthorizeAdapter(adapterAddr)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+        registry.connect(alice).deauthorizeAdapter(adapterAddr)
+      ).to.be.revertedWith("AdapterRegistry: not timelock");
     });
 
     it("should revert fullDeauthorizeAdapter when called directly", async function () {
       await expect(
-        governor.connect(alice).fullDeauthorizeAdapter(adapterAddr)
-      ).to.be.revertedWith("ArmadaGovernor: not timelock");
+        registry.connect(alice).fullDeauthorizeAdapter(adapterAddr)
+      ).to.be.revertedWith("AdapterRegistry: not timelock");
     });
   });
 });

@@ -239,7 +239,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100;
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not current steward");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotCurrentSteward.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
@@ -255,7 +255,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: steward not active");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardNotActive.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
@@ -271,7 +271,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: not current steward");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotCurrentSteward.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
@@ -287,7 +287,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         calldatas[0] = abi.encodeWithSignature("proposalCount()");
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: auto-created only");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_AutoCreatedOnly.selector));
         governor.propose(ProposalType.Steward, targets, values, calldatas, "sneak steward");
     }
 
@@ -300,7 +300,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         });
 
         vm.prank(address(timelock));
-        vm.expectRevert("ArmadaGovernor: immutable proposal type");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_ImmutableProposalType.selector));
         governor.setProposalTypeParams(ProposalType.Steward, params);
     }
 
@@ -317,7 +317,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: self-payment not allowed");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_SelfPaymentNotAllowed.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "self pay");
     }
 
@@ -337,7 +337,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[2] = 300;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: self-payment not allowed");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_SelfPaymentNotAllowed.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "batch self pay");
     }
 
@@ -369,7 +369,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
 
         // Non-proposer should not be able to cancel
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not proposer");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotProposer.selector));
         governor.cancel(proposalId);
     }
 
@@ -402,7 +402,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
 
         // Cancel should fail — standard proposals can't cancel during Active
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not pending");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotPending.selector));
         governor.cancel(proposalId);
     }
 
@@ -425,7 +425,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: governance ended");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_GovernanceEnded.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 
@@ -455,7 +455,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
 
         // No bond was posted, so claimBond should revert
-        vm.expectRevert("ArmadaGovernor: no bond");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NoBond.selector));
         governor.claimBond(proposalId);
     }
 
@@ -465,7 +465,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
 
     function test_setStewardContract_locksAfterFirstCall() public {
         // Already called in setUp, so second call should revert
-        vm.expectRevert("ArmadaGovernor: already locked");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_AlreadyLocked.selector));
         governor.setStewardContract(address(0xBEEF));
     }
 
@@ -478,7 +478,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         );
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaGovernor: not deployer");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotDeployer.selector));
         freshGovernor.setStewardContract(address(stewardContract));
     }
 
@@ -509,7 +509,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         uint256[] memory amounts = new uint256[](0);
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: empty proposal");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_EmptyProposal.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "empty");
     }
 
@@ -524,7 +524,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[1] = 200;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: length mismatch");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_LengthMismatch.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "mismatch");
     }
 
@@ -547,7 +547,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100 * 1e6;
 
         vm.prank(stewardPerson);
-        vm.expectRevert("ArmadaGovernor: steward calldata classified as extended");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardCalldataClassifiedAsExtended.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "should fail");
     }
 
@@ -775,7 +775,7 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         amounts[0] = 100;
 
         vm.prank(caller);
-        vm.expectRevert("ArmadaGovernor: not current steward");
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotCurrentSteward.selector));
         governor.proposeStewardSpend(tokens, recipients, amounts, "test");
     }
 

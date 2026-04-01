@@ -22,6 +22,10 @@ abstract contract GovernorDeployHelper {
             _treasury
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
-        return ArmadaGovernor(address(proxy));
+        ArmadaGovernor governor = ArmadaGovernor(address(proxy));
+
+        // Extended selectors are hardcoded in initialize() — no setup step needed.
+
+        return governor;
     }
 }

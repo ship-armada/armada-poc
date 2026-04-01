@@ -40,6 +40,11 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
     function transact(Transaction[] calldata _transactions) external override onlyDelegatecall {
         require(_transactions.length > 0, "TransactModule: No transactions");
 
+        // Post-wind-down SC emergency pause: block ALL operations including unshields.
+        // This is the only scenario where unshields can be paused — a single 24h
+        // non-renewable window to protect users from adapter issues after wind-down.
+        _requireNotEmergencyPaused();
+
         // In withdraw-only mode (post-wind-down), block pure private transfers.
         // Unshield transactions are allowed — users must always be able to exit.
         _requireNotWithdrawOnly(_transactions);
@@ -116,6 +121,9 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         bytes32 destinationCaller,
         uint256 maxFee
     ) external override onlyDelegatecall returns (uint64 nonce) {
+        // Post-wind-down SC emergency pause: block ALL operations including unshields.
+        _requireNotEmergencyPaused();
+
         // Validate inputs
         _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient);
 
@@ -429,6 +437,20 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             return bytes32(uint256(uint160(_tokenData.tokenAddress)));
         }
         return bytes32(uint256(keccak256(abi.encode(_tokenData))) % SNARK_SCALAR_FIELD);
+    }
+
+    /**
+     * @notice Reverts during the post-wind-down SC emergency pause (24h, non-renewable).
+     *         This is the only scenario where unshields can be paused — protecting users
+     *         from adapter issues discovered after wind-down.
+     *         No-op if no pause contract is set or if emergency pause is not active.
+     */
+    function _requireNotEmergencyPaused() internal view {
+        if (shieldPauseContract == address(0)) return;
+        require(
+            !IShieldPauseController(shieldPauseContract).emergencyPaused(),
+            "TransactModule: emergency paused"
+        );
     }
 
     /**

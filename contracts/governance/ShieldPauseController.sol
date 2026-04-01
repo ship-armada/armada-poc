@@ -90,6 +90,15 @@ contract ShieldPauseController is IShieldPauseController {
         return windDownActive;
     }
 
+    /// @notice Returns true during the post-wind-down SC emergency pause.
+    ///         This is the only scenario where unshields can be paused: a single 24h
+    ///         non-renewable window to protect users from adapter issues after wind-down.
+    ///         Pre-wind-down this always returns false — unshields are never affected by
+    ///         normal SC pauses.
+    function emergencyPaused() external view override returns (bool) {
+        return windDownActive && _isPaused();
+    }
+
     // ============ Security Council Functions ============
 
     /// @notice SC triggers shield pause. Auto-expires after 24 hours.

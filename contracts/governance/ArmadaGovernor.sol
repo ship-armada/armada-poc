@@ -26,7 +26,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_ZeroArmToken();
     error Gov_ZeroTimelock();
     error Gov_ZeroTreasury();
-    error Gov_AlreadyInitialized();
     error Gov_AlreadyLocked();
     error Gov_AlreadyResolved();
     error Gov_AutoCreatedOnly();
@@ -182,8 +181,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Extended proposal classification: function selectors that force Extended type regardless
     // of what the proposer declared. Governance can add/remove selectors via extended proposal.
+    // Initial set is hardcoded in initialize(); governance can modify via addExtendedSelector/removeExtendedSelector.
     mapping(bytes4 => bool) public extendedSelectors;
-    bool public extendedSelectorsInitialized;
 
     // Treasury >5% threshold for automatic extended classification of distribute() calls.
     // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
@@ -339,20 +338,45 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 2000
         });
 
-    }
+        // Hardcoded extended selectors per governance spec §Scope table.
+        // These cannot be misconfigured at deployment. Governance can still
+        // add/remove selectors post-launch via addExtendedSelector/removeExtendedSelector.
 
-    /// @notice One-time setter: register function selectors that force Extended proposal
-    /// classification. Any proposal containing a call to one of these selectors is
-    /// automatically Extended regardless of what the proposer declared.
-    /// Deployer-only; locks permanently after the first call.
-    /// @param selectors Array of function selectors to register as extended
-    function initExtendedSelectors(bytes4[] calldata selectors) external {
-        if (msg.sender != deployer) revert Gov_NotDeployer();
-        if (extendedSelectorsInitialized) revert Gov_AlreadyInitialized();
-        extendedSelectorsInitialized = true;
-        for (uint256 i = 0; i < selectors.length; i++) {
-            extendedSelectors[selectors[i]] = true;
-        }
+        // Governance parameter changes (on ArmadaGovernor)
+        extendedSelectors[this.addExtendedSelector.selector] = true;
+        extendedSelectors[this.removeExtendedSelector.selector] = true;
+        extendedSelectors[this.setSecurityCouncil.selector] = true;
+        extendedSelectors[this.setProposalTypeParams.selector] = true;
+        extendedSelectors[this.setWindDownContract.selector] = true;
+        // UUPS upgrade selectors
+        extendedSelectors[bytes4(keccak256("upgradeTo(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("upgradeToAndCall(address,bytes)"))] = true;
+        // Fee parameters (on privacy pool and yield vault)
+        extendedSelectors[bytes4(keccak256("setShieldFee(uint120)"))] = true;
+        extendedSelectors[bytes4(keccak256("setUnshieldFee(uint120)"))] = true;
+        extendedSelectors[bytes4(keccak256("setYieldFeeBps(uint256)"))] = true;
+        // Steward election/removal (on TreasurySteward)
+        extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
+        // ARM token transfer whitelist
+        extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
+        // Revenue definition expansion (on RevenueCounter)
+        extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
+        // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
+        extendedSelectors[bytes4(keccak256("setBaseArmadaTake(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("addTier(uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setTier(uint256,uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("removeTier(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setYieldFee(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)"))] = true;
+        // Steward budget token management (on ArmadaTreasuryGov)
+        extendedSelectors[bytes4(keccak256("addStewardBudgetToken(address,uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("updateStewardBudgetToken(address,uint256,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
+        // Treasury outflow limit parameters
+        extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setOutflowLimitAbsolute(address,uint256)"))] = true;
     }
 
     // ============ Quorum Exclusion ============

@@ -145,46 +145,7 @@ async function main() {
   const governor = ArmadaGovernor.attach(governorAddress) as typeof governorImpl;
   console.log(`   ArmadaGovernor (proxy): ${governorAddress}`);
 
-  // 4b. Register initial extended selectors
-  const extSelectors = [
-    // Governance parameter changes
-    governor.interface.getFunction("addExtendedSelector")!.selector,
-    governor.interface.getFunction("removeExtendedSelector")!.selector,
-    governor.interface.getFunction("setSecurityCouncil")!.selector,
-    governor.interface.getFunction("setProposalTypeParams")!.selector,
-    governor.interface.getFunction("setWindDownContract")!.selector,
-    // UUPS upgrade selectors
-    ethers.id("upgradeTo(address)").slice(0, 10),
-    ethers.id("upgradeToAndCall(address,bytes)").slice(0, 10),
-    // Fee parameters (on privacy pool and yield vault)
-    ethers.id("setShieldFee(uint120)").slice(0, 10),
-    ethers.id("setUnshieldFee(uint120)").slice(0, 10),
-    ethers.id("setYieldFeeBps(uint256)").slice(0, 10),
-    // Steward election/removal (on TreasurySteward)
-    ethers.id("electSteward(address)").slice(0, 10),
-    ethers.id("removeSteward()").slice(0, 10),
-    // ARM token transfer whitelist
-    ethers.id("addToWhitelist(address)").slice(0, 10),
-    // Revenue definition expansion (on RevenueCounter)
-    ethers.id("setFeeCollector(address)").slice(0, 10),
-    // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
-    ethers.id("setBaseArmadaTake(uint256)").slice(0, 10),
-    ethers.id("addTier(uint256,uint256)").slice(0, 10),
-    ethers.id("setTier(uint256,uint256,uint256)").slice(0, 10),
-    ethers.id("removeTier(uint256)").slice(0, 10),
-    ethers.id("setYieldFee(uint256)").slice(0, 10),
-    ethers.id("setIntegratorTerms(address,uint256,uint256,bool)").slice(0, 10),
-    // Steward budget token management (on ArmadaTreasuryGov)
-    ethers.id("addStewardBudgetToken(address,uint256,uint256)").slice(0, 10),
-    ethers.id("updateStewardBudgetToken(address,uint256,uint256)").slice(0, 10),
-    ethers.id("removeStewardBudgetToken(address)").slice(0, 10),
-    // Treasury outflow limit parameters
-    ethers.id("setOutflowWindow(address,uint256)").slice(0, 10),
-    ethers.id("setOutflowLimitBps(address,uint256)").slice(0, 10),
-    ethers.id("setOutflowLimitAbsolute(address,uint256)").slice(0, 10),
-  ];
-  await (await governor.initExtendedSelectors(extSelectors, nm.override())).wait();
-  console.log(`   Governor: initExtendedSelectors (${extSelectors.length} selectors)`);
+  // Extended selectors are hardcoded in initialize() — no deployment step needed.
 
   // 5. Deploy TreasurySteward (identity management only — proposals flow through governor)
   console.log("5. Deploying TreasurySteward...");

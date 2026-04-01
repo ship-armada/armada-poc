@@ -79,6 +79,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_WindDownContractAlreadySet();
     error Gov_WindDownContractNotSet();
     error Gov_SCEjected();
+    error Gov_TreasuryAlreadyExcluded();
 
     // ============ Types ============
 
@@ -366,6 +367,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         excludedAddressesLocked = true;
         for (uint256 i = 0; i < addrs.length; i++) {
             if (addrs[i] == address(0)) revert Gov_ZeroAddress();
+            if (addrs[i] == treasuryAddress) revert Gov_TreasuryAlreadyExcluded();
             _excludedFromQuorum.push(addrs[i]);
         }
     }

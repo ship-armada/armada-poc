@@ -160,8 +160,8 @@ describe("Crowdfund Full Lifecycle", function () {
       for (const invitee of ltHop1) {
         const tx = await crowdfund.launchTeamInvite(invitee.address, 0);
         await expect(tx)
-          .to.emit(crowdfund, "Invited")
-          .withArgs(deployer.address, invitee.address, 1, 0);
+          .to.emit(crowdfund, "LaunchTeamInvited")
+          .withArgs(invitee.address, 1);
       }
 
       // 2 hop-2 invites from launch team
@@ -170,8 +170,8 @@ describe("Crowdfund Full Lifecycle", function () {
       {
         const tx = await crowdfund.launchTeamInvite(ltHop2[0].address, 1);
         await expect(tx)
-          .to.emit(crowdfund, "Invited")
-          .withArgs(deployer.address, ltHop2[0].address, 2, 0);
+          .to.emit(crowdfund, "LaunchTeamInvited")
+          .withArgs(ltHop2[0].address, 2);
       }
 
       // Verify budget tracking

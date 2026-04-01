@@ -115,6 +115,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     event SeedAdded(address indexed seed);
     event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce);
+    event LaunchTeamInvited(address indexed invitee, uint8 hop);
     event Committed(address indexed participant, uint8 hop, uint256 amount);
     event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode);
     event Cancelled();
@@ -295,7 +296,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             inviteeNode.invitesReceived++;
         }
 
-        emit Invited(msg.sender, invitee, inviteeHop, 0);
+        emit LaunchTeamInvited(invitee, inviteeHop);
     }
 
     // ============ Commitment Phase ============

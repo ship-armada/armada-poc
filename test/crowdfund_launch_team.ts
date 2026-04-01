@@ -420,11 +420,11 @@ describe("Launch Team & Seed Cap", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
     });
 
-    it("emits Invited on re-invite", async function () {
+    it("emits LaunchTeamInvited on re-invite", async function () {
       await crowdfund.launchTeamInvite(invitee.address, 0);
       await expect(crowdfund.launchTeamInvite(invitee.address, 0))
-        .to.emit(crowdfund, "Invited")
-        .withArgs(deployer.address, invitee.address, 1, 0);
+        .to.emit(crowdfund, "LaunchTeamInvited")
+        .withArgs(invitee.address, 1);
     });
   });
 

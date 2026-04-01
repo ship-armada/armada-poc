@@ -72,7 +72,7 @@ export function TableView(props: TableViewProps) {
     connectedAddress,
   } = props
 
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'committed', desc: true }])
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'totalCommitted', desc: true }])
   const [expanded, setExpanded] = useState<ExpandedState>({})
   const [hopFilter, setHopFilter] = useState<number | null>(null)
   const [multiHopOnly, setMultiHopOnly] = useState(false)

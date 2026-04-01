@@ -1,5 +1,5 @@
 // ABOUTME: Crowdfund event type definitions and parsing utilities.
-// ABOUTME: Converts raw ethers log entries into typed CrowdfundEvent objects.
+// ABOUTME: Converts raw ethers log entries into typed CrowdfundEvent objects (12 event types).
 
 import { Interface } from 'ethers'
 import { CROWDFUND_ABI_FRAGMENTS } from './constants.js'
@@ -9,6 +9,7 @@ export type CrowdfundEventType =
   | 'ArmLoaded'
   | 'SeedAdded'
   | 'Invited'
+  | 'LaunchTeamInvited'
   | 'Committed'
   | 'Finalized'
   | 'Cancelled'
@@ -40,6 +41,7 @@ const VALID_EVENT_TYPES = new Set<string>([
   'ArmLoaded',
   'SeedAdded',
   'Invited',
+  'LaunchTeamInvited',
   'Committed',
   'Finalized',
   'Cancelled',

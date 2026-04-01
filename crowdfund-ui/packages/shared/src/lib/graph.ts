@@ -230,6 +230,23 @@ function applyEvent(
       break
     }
 
+    case 'LaunchTeamInvited': {
+      const invitee = (event.args.invitee as string).toLowerCase()
+      const hop = Number(event.args.hop)
+      const inviteeNode = getOrCreateNode(nodes, invitee, hop)
+      inviteeNode.invitesReceived += 1
+      inviteeNode.invitedBy.push(ROOT_ADDRESS)
+      recomputeCommitted(inviteeNode)
+
+      edges.push({
+        fromAddress: ROOT_ADDRESS,
+        fromHop: -1,
+        toAddress: invitee,
+        toHop: hop,
+      })
+      break
+    }
+
     case 'Committed': {
       const participant = (event.args.participant as string).toLowerCase()
       const hop = Number(event.args.hop)

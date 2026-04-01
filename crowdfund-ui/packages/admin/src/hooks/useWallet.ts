@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserProvider, JsonRpcSigner } from 'ethers'
-import { getHubChainId } from '@/config/network'
+import { getHubChainId, isLocalMode, getHubRpcUrl } from '@/config/network'
 
 export interface UseWalletResult {
   address: string | null
@@ -14,6 +14,33 @@ export interface UseWalletResult {
   error: string | null
   connect: () => Promise<void>
   disconnect: () => void
+}
+
+/** Ask the wallet to switch to the expected chain, adding it if unknown. */
+async function ensureCorrectChain(ethereum: any, expectedChainId: number): Promise<void> {
+  const hexChainId = '0x' + expectedChainId.toString(16)
+  try {
+    await ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: hexChainId }],
+    })
+  } catch (err: any) {
+    // Error 4902: chain not yet added to wallet — add it then retry
+    if (err?.code === 4902) {
+      await ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: hexChainId,
+          chainName: isLocalMode() ? 'Anvil (Local)' : 'Sepolia',
+          nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+          rpcUrls: [getHubRpcUrl()],
+          ...(isLocalMode() ? {} : { blockExplorerUrls: ['https://sepolia.etherscan.io'] }),
+        }],
+      })
+    } else {
+      throw err
+    }
+  }
 }
 
 export function useWallet(): UseWalletResult {
@@ -36,13 +63,23 @@ export function useWallet(): UseWalletResult {
     try {
       const provider = new BrowserProvider(ethereum)
       await provider.send('eth_requestAccounts', [])
-      const s = await provider.getSigner()
-      const addr = await s.getAddress()
+
+      // Switch to the expected chain if the wallet is on a different one
       const network = await provider.getNetwork()
+      const expectedChainId = getHubChainId()
+      if (Number(network.chainId) !== expectedChainId) {
+        await ensureCorrectChain(ethereum, expectedChainId)
+      }
+
+      // Re-create provider after potential chain switch
+      const finalProvider = new BrowserProvider(ethereum)
+      const s = await finalProvider.getSigner()
+      const addr = await s.getAddress()
+      const finalNetwork = await finalProvider.getNetwork()
 
       setAddress(addr.toLowerCase())
       setSigner(s)
-      setChainId(Number(network.chainId))
+      setChainId(Number(finalNetwork.chainId))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to connect wallet')
     } finally {
@@ -72,7 +109,11 @@ export function useWallet(): UseWalletResult {
     }
 
     const handleChainChanged = (chainIdHex: string) => {
-      setChainId(parseInt(chainIdHex, 16))
+      const newChainId = parseInt(chainIdHex, 16)
+      setChainId(newChainId)
+      // Re-acquire signer after chain switch so it targets the new chain
+      const provider = new BrowserProvider(ethereum)
+      provider.getSigner().then(setSigner).catch(() => disconnect())
     }
 
     ethereum.on('accountsChanged', handleAccountsChanged)

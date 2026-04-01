@@ -47,6 +47,16 @@ function allocatedHopEvent(participant: string, hop: number, acceptedUsdc: bigin
   }
 }
 
+function launchTeamInviteEvent(invitee: string, hop: number, blockNumber = 2): CrowdfundEvent {
+  return {
+    type: 'LaunchTeamInvited',
+    args: { invitee, hop: BigInt(hop) },
+    blockNumber,
+    logIndex: 0,
+    transactionHash: '0xbbb',
+  }
+}
+
 const noResolve = () => null
 
 describe('graphToTree', () => {
@@ -173,6 +183,40 @@ describe('graphToTree', () => {
     // Charlie should appear once, under whichever parent was at the lowest hop (both are hop-0)
     const charlieNodes = findAll(tree, (n) => n.address === '0xcharlie')
     expect(charlieNodes).toHaveLength(1)
+  })
+
+  it('places launch team invitees under root', () => {
+    // Launch team invites 0xDave at hop-1 via LaunchTeamInvited event
+    const events = [
+      seedEvent('0xAlice'),
+      launchTeamInviteEvent('0xDave', 1),
+    ]
+    const graph = buildGraph(events)
+    const tree = graphToTree(graph, noResolve)
+
+    // Dave should appear in the tree as a direct child of root
+    const daveNodes = findAll(tree, (n) => n.address === '0xdave')
+    expect(daveNodes).toHaveLength(1)
+    expect(daveNodes[0].hop).toBe(1)
+
+    const rootChildAddrs = tree.children.map((c) => c.address)
+    expect(rootChildAddrs).toContain('0xdave')
+  })
+
+  it('launch team invitee subtree is placed correctly', () => {
+    // Launch team invites hop-1, who then invites hop-2 via peer invite
+    const events = [
+      launchTeamInviteEvent('0xHop1', 1),
+      inviteEvent('0xHop1', '0xHop2', 2),
+    ]
+    const graph = buildGraph(events)
+    const tree = graphToTree(graph, noResolve)
+
+    // Hop1 should be under root, Hop2 should be under Hop1
+    const hop1Nodes = findAll(tree, (n) => n.address === '0xhop1')
+    expect(hop1Nodes).toHaveLength(1)
+    expect(hop1Nodes[0].children).toHaveLength(1)
+    expect(hop1Nodes[0].children[0].address).toBe('0xhop2')
   })
 
   it('includes allocation data when available', () => {

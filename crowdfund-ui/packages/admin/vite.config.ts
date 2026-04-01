@@ -26,7 +26,7 @@ function serveDeployments() {
         '/api/deployments',
         (req: any, res: any, _next: any) => {
           const filename = req.url?.replace(/^\//, '') || ''
-          const deploymentsDir = path.resolve(__dirname, '../../../../deployments')
+          const deploymentsDir = path.resolve(__dirname, '../../../deployments')
           const filepath = path.resolve(deploymentsDir, filename)
 
           // Prevent path traversal — resolved path must stay within deployments/
@@ -122,7 +122,7 @@ export default defineConfig({
   server: {
     port: 5175,
     fs: {
-      allow: ['../../../..'],
+      allow: ['../../..'],
     },
   },
 })

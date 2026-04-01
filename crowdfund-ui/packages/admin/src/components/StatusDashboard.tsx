@@ -27,16 +27,23 @@ function TimelineRow(props: { label: string; isOpen: boolean; endTimestamp: numb
     <div className="rounded border border-border p-2 space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground">{label}</span>
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-          isOpen ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'
-        }`}>
-          {isOpen ? 'OPEN' : 'CLOSED'}
-        </span>
+        {endTimestamp > 0 && (
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+            isOpen ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'
+          }`}>
+            {isOpen ? 'OPEN' : 'CLOSED'}
+          </span>
+        )}
       </div>
       <div className="text-[10px] text-muted-foreground">
-        {remaining > 0 ? formatCountdown(remaining) : 'ended'}
-        {' — '}
-        {new Date(endTimestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        {endTimestamp === 0
+          ? 'Not yet set'
+          : <>
+              {remaining > 0 ? formatCountdown(remaining) : 'ended'}
+              {' — '}
+              {new Date(endTimestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </>
+        }
       </div>
     </div>
   )
@@ -82,16 +89,10 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
       </div>
 
       {/* Timeline */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
         <TimelineRow
-          label="Seed Loading"
-          isOpen={state.phase === 0 && localTimestamp < state.windowStart}
-          endTimestamp={state.windowStart}
-          now={localTimestamp}
-        />
-        <TimelineRow
-          label="LT Invite Window"
-          isOpen={state.phase === 0 && localTimestamp >= state.windowStart && localTimestamp <= state.launchTeamInviteEnd}
+          label="Week 1 (Seeds + LT Invites)"
+          isOpen={state.phase === 0 && localTimestamp >= state.windowStart && localTimestamp < state.launchTeamInviteEnd}
           endTimestamp={state.launchTeamInviteEnd}
           now={localTimestamp}
         />

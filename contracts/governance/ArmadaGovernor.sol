@@ -339,8 +339,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         });
 
         // Hardcoded extended selectors per governance spec §Scope table.
-        // These cannot be misconfigured at deployment. Governance can still
-        // add/remove selectors post-launch via addExtendedSelector/removeExtendedSelector.
+        // These cannot be misconfigured at deployment. Governance can expand or
+        // shrink this set at any time via addExtendedSelector/removeExtendedSelector.
 
         // Governance parameter changes (on ArmadaGovernor)
         extendedSelectors[this.addExtendedSelector.selector] = true;

@@ -644,10 +644,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param proposalId The steward proposal to resolve
     function resolveStewardProposal(uint256 proposalId) external {
         Proposal storage p = _proposals[proposalId];
-        if (!(p.id != 0)) revert Gov_UnknownProposal();
-        if (!(p.proposalType == ProposalType.Steward)) revert Gov_NotStewardProposal();
-        if (!(block.timestamp > p.voteEnd)) revert Gov_VotingNotEnded();
-        if (!(!stewardProposalResolved[proposalId])) revert Gov_AlreadyResolved();
+        if (p.id == 0) revert Gov_UnknownProposal();
+        if (p.proposalType != ProposalType.Steward) revert Gov_NotStewardProposal();
+        if (block.timestamp <= p.voteEnd) revert Gov_VotingNotEnded();
+        if (stewardProposalResolved[proposalId]) revert Gov_AlreadyResolved();
         _resolveStewardProposal(proposalId);
     }
 
@@ -695,8 +695,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Resume the steward channel after a circuit breaker pause.
     /// Standard proposal (20% quorum, 7-day voting) per governance spec §Circuit breaker.
     function resumeStewardChannel() external {
-        if (!(msg.sender == address(timelock))) revert Gov_NotTimelock();
-        if (!(stewardChannelPaused)) revert Gov_NotPaused();
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        if (!stewardChannelPaused) revert Gov_NotPaused();
 
         stewardChannelPaused = false;
         consecutiveLowParticipationCount = 0;
@@ -710,9 +710,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Callable by timelock (governance) since the wind-down contract may be deployed
     /// after the governor and needs a governance-approved registration.
     function setWindDownContract(address _windDownContract) external {
-        if (!(msg.sender == address(timelock))) revert Gov_NotTimelock();
-        if (!(!windDownContractSet)) revert Gov_WindDownContractAlreadySet();
-        if (!(_windDownContract != address(0))) revert Gov_ZeroAddress();
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        if (windDownContractSet) revert Gov_WindDownContractAlreadySet();
+        if (_windDownContract == address(0)) revert Gov_ZeroAddress();
 
         windDownContractSet = true;
         windDownContract = _windDownContract;
@@ -724,16 +724,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Once active, no new proposals can be created. Existing proposals in flight
     /// (Active, Succeeded, Queued) can still complete their lifecycle.
     function setWindDownActive() external {
-        if (!(msg.sender == windDownContract)) revert Gov_NotWindDownContract();
-        if (!(windDownContract != address(0))) revert Gov_WindDownContractNotSet();
-        if (!(!windDownActive)) revert Gov_WindDownAlreadyActive();
+        if (msg.sender != windDownContract) revert Gov_NotWindDownContract();
+        if (windDownContract == address(0)) revert Gov_WindDownContractNotSet();
+        if (windDownActive) revert Gov_WindDownAlreadyActive();
 
         windDownActive = true;
 
         emit WindDownActivated();
     }
-
-    // ============ Adapter Registry Management ============
 
     // ============ Proposal Lifecycle ============
 
@@ -750,10 +748,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         bytes[] memory calldatas,
         string memory description
     ) external returns (uint256) {
-        if (!(!windDownActive)) revert Gov_GovernanceEnded();
-        if (!(targets.length > 0)) revert Gov_EmptyProposal();
-        if (!(targets.length == values.length && targets.length == calldatas.length)) revert Gov_LengthMismatch();
-        if (!(proposalType != ProposalType.VetoRatification && proposalType != ProposalType.Steward)) revert Gov_AutoCreatedOnly();
+        if (windDownActive) revert Gov_GovernanceEnded();
+        if (targets.length == 0) revert Gov_EmptyProposal();
+        if (targets.length != values.length || targets.length != calldatas.length) revert Gov_LengthMismatch();
+        if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward) revert Gov_AutoCreatedOnly();
         _checkQuietPeriod();
         _checkProposalThreshold(msg.sender);
 
@@ -774,7 +772,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Pre-transfer-unlock, bonds are economically meaningless and technically impossible
         // for non-whitelisted holders, so governance operates on threshold only.
         if (armToken.transferable()) {
-            if (!(armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND))) revert Gov_BondTransferFailed();
+            if (!armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND)) revert Gov_BondTransferFailed();
             proposalBonds[proposalId] = BondInfo({
                 depositor: msg.sender,
                 amount: PROPOSAL_BOND,
@@ -795,7 +793,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function _checkProposalThreshold(address proposer) internal view {
         uint256 proposerVotes = armToken.getPastVotes(proposer, block.number - 1);
         uint256 threshold = (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
-        if (!(proposerVotes >= threshold)) revert Gov_BelowProposalThreshold();
+        if (proposerVotes < threshold) revert Gov_BelowProposalThreshold();
     }
 
     /// @dev Initialize proposal scalar fields
@@ -848,18 +846,18 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param support 0=Against, 1=For, 2=Abstain
     function castVote(uint256 proposalId, uint8 support) external {
         Proposal storage p = _proposals[proposalId];
-        if (!(p.id != 0)) revert Gov_UnknownProposal();
-        if (!(block.timestamp >= p.voteStart)) revert Gov_VotingNotStarted();
-        if (!(block.timestamp <= p.voteEnd)) revert Gov_VotingEnded();
-        if (!(support <= 2)) revert Gov_InvalidVoteType();
+        if (p.id == 0) revert Gov_UnknownProposal();
+        if (block.timestamp < p.voteStart) revert Gov_VotingNotStarted();
+        if (block.timestamp > p.voteEnd) revert Gov_VotingEnded();
+        if (support > 2) revert Gov_InvalidVoteType();
 
         uint256 weight = armToken.getPastVotes(msg.sender, p.snapshotBlock);
-        if (!(weight > 0)) revert Gov_NoVotingPower();
+        if (weight == 0) revert Gov_NoVotingPower();
 
         if (hasVoted[proposalId][msg.sender]) {
             // Vote change: subtract from old bucket, add to new bucket
             uint8 oldSupport = voteChoice[proposalId][msg.sender];
-            if (!(oldSupport != support)) revert Gov_SameVote();
+            if (oldSupport == support) revert Gov_SameVote();
 
             if (oldSupport == 0) {
                 p.againstVotes -= weight;
@@ -898,10 +896,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Queue a succeeded proposal to the timelock
     function queue(uint256 proposalId) external {
-        if (!(state(proposalId) == ProposalState.Succeeded)) revert Gov_NotSucceeded();
+        if (state(proposalId) != ProposalState.Succeeded) revert Gov_NotSucceeded();
 
         Proposal storage p = _proposals[proposalId];
-        if (!(p.proposalType != ProposalType.VetoRatification)) revert Gov_UseResolveRatification();
+        if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
         p.queued = true;
 
         bytes32 timelockId = timelock.hashOperationBatch(
@@ -920,10 +918,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Execute a queued proposal after timelock delay
     function execute(uint256 proposalId) external payable nonReentrant {
-        if (!(state(proposalId) == ProposalState.Queued)) revert Gov_NotQueued();
+        if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];
-        if (!(p.proposalType != ProposalType.VetoRatification)) revert Gov_UseResolveRatification();
+        if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
         p.executed = true;
 
         timelock.executeBatch{value: msg.value}(
@@ -940,14 +938,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// skip Pending due to zero voting delay, so Active is the earliest cancellable state).
     function cancel(uint256 proposalId) external {
         Proposal storage p = _proposals[proposalId];
-        if (!(p.id != 0)) revert Gov_UnknownProposal();
-        if (!(msg.sender == p.proposer)) revert Gov_NotProposer();
+        if (p.id == 0) revert Gov_UnknownProposal();
+        if (msg.sender != p.proposer) revert Gov_NotProposer();
 
         ProposalState currentState = state(proposalId);
         if (p.proposalType == ProposalType.Steward) {
-            if (!(currentState == ProposalState.Pending || currentState == ProposalState.Active)) revert Gov_NotPendingOrActive();
+            if (currentState != ProposalState.Pending && currentState != ProposalState.Active) revert Gov_NotPendingOrActive();
         } else {
-            if (!(currentState == ProposalState.Pending)) revert Gov_NotPending();
+            if (currentState != ProposalState.Pending) revert Gov_NotPending();
         }
 
         p.canceled = true;
@@ -959,8 +957,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Bond is always returned — lock periods vary by defeat reason.
     function claimBond(uint256 proposalId) external nonReentrant {
         BondInfo storage bond = proposalBonds[proposalId];
-        if (!(bond.amount > 0)) revert Gov_NoBond();
-        if (!(!bond.claimed)) revert Gov_BondAlreadyClaimed();
+        if (bond.amount == 0) revert Gov_NoBond();
+        if (bond.claimed) revert Gov_BondAlreadyClaimed();
 
         ProposalState currentState = state(proposalId);
         Proposal storage p = _proposals[proposalId];
@@ -976,7 +974,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 // Vetoed proposal: bond deferred until ratification resolves.
                 // Proposer did nothing wrong — proposal passed on merit — so no penalty.
                 Proposal storage rat = _proposals[ratId];
-                if (!(rat.executed)) revert Gov_RatificationNotResolved();
+                if (!rat.executed) revert Gov_RatificationNotResolved();
                 unlockTime = 0;
             } else {
                 // Proposer self-cancelled during Pending: immediately claimable
@@ -1000,10 +998,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             revert Gov_ProposalNotInTerminalState();
         }
 
-        if (!(block.timestamp >= unlockTime)) revert Gov_BondStillLocked();
+        if (block.timestamp < unlockTime) revert Gov_BondStillLocked();
 
         bond.claimed = true;
-        if (!(armToken.transfer(bond.depositor, bond.amount))) revert Gov_BondReturnFailed();
+        if (!armToken.transfer(bond.depositor, bond.amount)) revert Gov_BondReturnFailed();
 
         emit BondClaimed(proposalId, bond.depositor, bond.amount);
     }
@@ -1013,7 +1011,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Get current state of a proposal
     function state(uint256 proposalId) public view returns (ProposalState) {
         Proposal storage p = _proposals[proposalId];
-        if (!(p.id != 0)) revert Gov_UnknownProposal();
+        if (p.id == 0) revert Gov_UnknownProposal();
 
         if (p.canceled) return ProposalState.Canceled;
         if (p.executed) return ProposalState.Executed;
@@ -1163,7 +1161,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
         if (_finalizedAt == 0) return;
 
-        if (!(block.timestamp >= _finalizedAt + QUIET_PERIOD_DURATION)) revert Gov_QuietPeriodActive();
+        if (block.timestamp < _finalizedAt + QUIET_PERIOD_DURATION) revert Gov_QuietPeriodActive();
     }
 
     // ============ UUPS ============
@@ -1172,7 +1170,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      The upgradeTo/upgradeToAndCall selectors are registered as extended selectors,
     ///      so upgrade proposals automatically require Extended-type quorum and timing.
     function _authorizeUpgrade(address) internal override {
-        if (!(msg.sender == address(timelock))) revert Gov_NotTimelock();
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
     }
 
     // ============ Storage Gap ============

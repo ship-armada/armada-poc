@@ -351,22 +351,15 @@ export function ClaimTab(props: ClaimTabProps) {
         <div className="text-xs text-success">ARM: {formatArm(armAmount)} claimed</div>
       )}
 
-      {/* USDC refund */}
-      {refundAmount > 0n && !hasRefundClaimed && (
-        <div className="space-y-3 border-t border-border pt-3">
-          <button
-            className="w-full rounded border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
-            disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
-            onClick={handleClaimRefund}
-          >
-            Claim USDC Refund ({formatUsdc(refundAmount)})
-          </button>
-          <TransactionFlow state={claimRefundTx.state} onReset={claimRefundTx.reset} successMessage="Refund claimed!" explorerUrl={getExplorerUrl()} />
+      {/* USDC refund info — in a successful sale, the refund is included in claim(delegate) */}
+      {refundAmount > 0n && !hasClaimed && (
+        <div className="text-xs text-muted-foreground border-t border-border pt-2">
+          Your USDC refund ({formatUsdc(refundAmount)}) will be included when you claim ARM above.
         </div>
       )}
 
       {/* Show refund claimed status */}
-      {hasRefundClaimed && refundAmount > 0n && (
+      {hasClaimed && refundAmount > 0n && (
         <div className="text-xs text-success">USDC: {formatUsdc(refundAmount)} refund claimed</div>
       )}
 

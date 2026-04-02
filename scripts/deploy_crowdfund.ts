@@ -134,13 +134,18 @@ async function main() {
   await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
   console.log(`   Crowdfund excluded from quorum denominator`);
 
-  // 6. Authorize delegateOnBehalf callers (one-shot — must include all delegators)
-  console.log("6. Authorizing delegateOnBehalf delegators...");
+  // 6. Set transfer whitelist (one-shot — per ARM token spec §5: crowdfund, treasury, revenueLock)
+  console.log("6. Setting ARM transfer whitelist...");
+  await (await armToken.initWhitelist([crowdfundAddress, treasuryAddress, revenueLockAddress], nm.override())).wait();
+  console.log(`   initWhitelist: [crowdfund, treasury, revenueLock]`);
+
+  // 7. Authorize delegateOnBehalf callers (one-shot — must include all delegators)
+  console.log("7. Authorizing delegateOnBehalf delegators...");
   await (await armToken.initAuthorizedDelegators([revenueLockAddress, crowdfundAddress], nm.override())).wait();
   console.log(`   initAuthorizedDelegators: [${revenueLockAddress}, ${crowdfundAddress}] (RevenueLock + Crowdfund)`);
 
-  // 7. Register crowdfund address for governance quiet period
-  console.log("7. Registering crowdfund in governor for quiet period...");
+  // 8. Register crowdfund address for governance quiet period
+  console.log("8. Registering crowdfund in governor for quiet period...");
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
 

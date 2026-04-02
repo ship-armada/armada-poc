@@ -280,10 +280,9 @@ async function main() {
   await (await armToken.setNoDelegation(treasuryAddress, nm.override())).wait();
   console.log(`   setNoDelegation: ${treasuryAddress} (treasury)`);
 
-  // Whitelist: deployer, treasury, revenueLock (for release transfers)
-  const whitelistAddresses = [deployer.address, treasuryAddress, revenueLockAddress];
-  await (await armToken.initWhitelist(whitelistAddresses, nm.override())).wait();
-  console.log(`   initWhitelist: ${whitelistAddresses.length} addresses`);
+  // initWhitelist is one-shot and must include the crowdfund address (per ARM token spec §5).
+  // Deferred to deploy_crowdfund.ts which runs after governance and has the crowdfund address.
+  console.log("   initWhitelist: DEFERRED (called by deploy_crowdfund with crowdfund address)");
 
   // initAuthorizedDelegators is one-shot and must include all delegators (RevenueLock + Crowdfund).
   // Deferred to deploy_crowdfund.ts which runs after governance and has both addresses available.

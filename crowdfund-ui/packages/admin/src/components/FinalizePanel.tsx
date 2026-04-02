@@ -74,21 +74,26 @@ export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, saleSi
         </div>
       )}
 
-      {/* Below-min warning */}
+      {/* Below-min: no finalization needed, participants claim refunds directly */}
       {belowMin && (
-        <div className="rounded bg-destructive/10 border border-destructive/30 p-2 text-xs text-destructive">
-          Below minimum sale ({formatUsdc(MIN_SALE)}). Finalization will trigger <strong>refund mode</strong> — all commitments become fully refundable, no ARM is distributed.
+        <div className="rounded bg-destructive/10 border border-destructive/30 p-2 text-xs text-destructive space-y-1">
+          <div>Capped demand is below the minimum raise ({formatUsdc(MIN_SALE)}). The crowdfund cannot be finalized.</div>
+          <div>No admin action is required. Participants can claim full USDC refunds directly via <strong>claimRefund()</strong> in the committer app.</div>
         </div>
       )}
 
-      <button
-        className="w-full rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        disabled={tx.state.status === 'pending' || tx.state.status === 'submitted'}
-        onClick={handleFinalize}
-      >
-        Finalize
-      </button>
-      <TransactionFlow state={tx.state} onReset={tx.reset} successMessage="Crowdfund finalized!" />
+      {!belowMin && (
+        <>
+          <button
+            className="w-full rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            disabled={tx.state.status === 'pending' || tx.state.status === 'submitted'}
+            onClick={handleFinalize}
+          >
+            Finalize
+          </button>
+          <TransactionFlow state={tx.state} onReset={tx.reset} successMessage="Crowdfund finalized!" />
+        </>
+      )}
     </div>
   )
 }

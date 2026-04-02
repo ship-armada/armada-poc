@@ -10,6 +10,7 @@ import {
   hopLabel,
   CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
+  estimateAllocation,
 } from '@armada/crowdfund-shared'
 import type { AdminState } from '@/hooks/useAdminState'
 import type { AdminRole } from '@/hooks/useRole'
@@ -65,6 +66,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
   }, [])
 
   const { MAX_SALE, MIN_SALE, ELASTIC_TRIGGER } = CROWDFUND_CONSTANTS
+  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize)
   const progressPct = MAX_SALE > 0n ? Number((state.totalCommitted * 100n) / MAX_SALE) : 0
   const minPct = MAX_SALE > 0n ? Number((MIN_SALE * 100n) / MAX_SALE) : 0
   const elasticPct = MAX_SALE > 0n ? Number((ELASTIC_TRIGGER * 100n) / MAX_SALE) : 0
@@ -144,6 +146,45 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
         </div>
       </div>
 
+      {/* Demand & allocation summary */}
+      {(() => {
+        const committedDiffers = state.totalCommitted !== state.cappedDemand
+        const allocationDiffers = estimate.totalAllocUsdc < state.cappedDemand
+        const belowMin = estimate.totalAllocUsdc < CROWDFUND_CONSTANTS.MIN_SALE && state.cappedDemand > 0n
+
+        return (
+          <div className="rounded border border-border p-3 space-y-1 text-xs">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <span className="text-muted-foreground">Total committed</span>
+                <div className="font-medium">{formatUsdc(state.totalCommitted)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Effective demand</span>
+                <div className="font-medium">{formatUsdc(state.cappedDemand)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Est. allocation</span>
+                <div className={`font-medium ${belowMin ? 'text-destructive' : ''}`}>{formatUsdc(estimate.totalAllocUsdc)}</div>
+              </div>
+            </div>
+            {(committedDiffers || allocationDiffers) && (
+              <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1">
+                {committedDiffers && (
+                  <div>Effective demand differs from total committed — some participants committed above their per-slot cap.</div>
+                )}
+                {allocationDiffers && (
+                  <div>Est. allocation is lower than effective demand — hop ceilings limit how much each hop can absorb.</div>
+                )}
+                {belowMin && (
+                  <div className="text-destructive">Estimated allocation is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale would enter refund mode if finalized now.</div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* Per-hop stats table */}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -156,6 +197,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
               <th className="py-1 pr-4">Committers</th>
               <th className="py-1 pr-4">Committed</th>
               <th className="py-1 pr-4">Capped</th>
+              <th className="py-1 pr-4">Est. Alloc</th>
               <th className="py-1 pr-4">Over/Under</th>
             </tr>
           </thead>
@@ -185,6 +227,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
                   <td className="py-1 pr-4">{stats.uniqueCommitters}</td>
                   <td className="py-1 pr-4">{formatUsdc(stats.totalCommitted)}</td>
                   <td className="py-1 pr-4">{formatUsdc(stats.cappedCommitted)}</td>
+                  <td className="py-1 pr-4">{formatUsdc(estimate.perHopAlloc[hop])}</td>
                   <td className={`py-1 pr-4 font-medium ${overUnderColor}`}>
                     {overUnderPct.toFixed(1)}%
                   </td>

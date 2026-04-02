@@ -51,6 +51,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'function armLoaded() view returns (bool)',
   'function totalCommitted() view returns (uint256)',
   'function cappedDemand() view returns (uint256)',
+  'function getEstimatedCappedDemand() view returns (uint256 globalCapped, uint256[3] perHopCapped)',
   'function saleSize() view returns (uint256)',
   'function windowStart() view returns (uint256)',
   'function windowEnd() view returns (uint256)',

@@ -9,6 +9,7 @@ import { ERC20_ABI_FRAGMENTS } from '@armada/crowdfund-shared'
 export interface UseAllowanceResult {
   allowance: bigint
   balance: bigint
+  armBalance: bigint
   loading: boolean
   needsApproval: (amount: bigint) => boolean
   refresh: () => Promise<void>
@@ -18,10 +19,12 @@ export function useAllowance(
   address: string | null,
   usdcAddress: string | null,
   crowdfundAddress: string | null,
+  armTokenAddress: string | null,
   provider: JsonRpcProvider | null,
 ): UseAllowanceResult {
   const [allowance, setAllowance] = useState<bigint>(0n)
   const [balance, setBalance] = useState<bigint>(0n)
+  const [armBalance, setArmBalance] = useState<bigint>(0n)
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
@@ -32,18 +35,24 @@ export function useAllowance(
 
     try {
       const usdc = new Contract(usdcAddress, ERC20_ABI_FRAGMENTS, provider)
-      const [allowanceResult, balanceResult] = await Promise.all([
+      const queries: Promise<bigint>[] = [
         usdc.allowance(address, crowdfundAddress) as Promise<bigint>,
         usdc.balanceOf(address) as Promise<bigint>,
-      ])
-      setAllowance(allowanceResult)
-      setBalance(balanceResult)
+      ]
+      if (armTokenAddress) {
+        const arm = new Contract(armTokenAddress, ERC20_ABI_FRAGMENTS, provider)
+        queries.push(arm.balanceOf(address) as Promise<bigint>)
+      }
+      const results = await Promise.all(queries)
+      setAllowance(results[0])
+      setBalance(results[1])
+      if (results[2] !== undefined) setArmBalance(results[2])
     } catch {
       // Non-fatal — will retry on next poll
     } finally {
       setLoading(false)
     }
-  }, [address, usdcAddress, crowdfundAddress, provider])
+  }, [address, usdcAddress, crowdfundAddress, armTokenAddress, provider])
 
   useEffect(() => {
     refresh()
@@ -56,5 +65,5 @@ export function useAllowance(
     [allowance],
   )
 
-  return { allowance, balance, loading, needsApproval, refresh }
+  return { allowance, balance, armBalance, loading, needsApproval, refresh }
 }

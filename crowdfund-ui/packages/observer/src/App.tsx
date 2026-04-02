@@ -234,7 +234,7 @@ export function App() {
           <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-center">
             <h2 className="text-lg font-medium text-amber-500 mb-1">Refund Mode</h2>
             <p className="text-sm text-muted-foreground">
-              Capped demand did not meet the minimum sale size. All participants can claim a full USDC refund.
+              Total allocation after hop ceilings did not meet the minimum raise. All participants can claim a full USDC refund.
             </p>
           </div>
         )}

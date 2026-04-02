@@ -688,6 +688,26 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         return (totalCommitted, phase, windowStart, windowEnd);
     }
 
+    /// @notice Compute capped demand on the fly without modifying state.
+    ///         Pre-finalization this gives a live estimate; post-finalization it
+    ///         matches the stored cappedDemand value.
+    function getEstimatedCappedDemand() external view returns (
+        uint256 globalCapped,
+        uint256[3] memory perHopCapped
+    ) {
+        uint256 len = participantNodes.length;
+        for (uint256 i = 0; i < len; i++) {
+            ParticipantNode storage node = participantNodes[i];
+            Participant storage p = participants[node.addr][node.hop];
+            if (p.committed == 0) continue;
+
+            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[node.hop].capUsdc;
+            uint256 capped = p.committed < effectiveCap ? p.committed : effectiveCap;
+            perHopCapped[node.hop] += capped;
+            globalCapped += capped;
+        }
+    }
+
     /// @notice Check if an address is whitelisted at a specific hop
     function isWhitelisted(address addr, uint8 hop) external view returns (bool) {
         return participants[addr][hop].isWhitelisted;

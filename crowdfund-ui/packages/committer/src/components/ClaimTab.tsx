@@ -237,7 +237,7 @@ export function ClaimTab(props: ClaimTabProps) {
     return (
       <div className="space-y-4">
         <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-500">
-          Sale did not meet minimum. Claim your full refund below.
+          Total allocation after hop ceilings did not meet the minimum raise. Claim your full refund below.
         </div>
         <div className="text-sm">
           Refund: <span className="font-medium">{formatUsdc(totalCommitted)}</span>

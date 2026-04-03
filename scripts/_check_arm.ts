@@ -1,3 +1,5 @@
+// ABOUTME: Debug script to verify ARM token transfer restrictions against the whitelist.
+// ABOUTME: Tests staticCall transfers to whitelisted and non-whitelisted addresses on local Anvil.
 import { ethers } from 'hardhat';
 
 async function main() {

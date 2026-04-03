@@ -1,3 +1,5 @@
+// ABOUTME: Debug script to inspect crowdfund contract state on local Anvil.
+// ABOUTME: Prints capped demand estimates, per-hop stats, and final ceilings/demands.
 import { ethers } from 'hardhat';
 import d from '../deployments/crowdfund-hub.json';
 

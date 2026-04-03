@@ -102,8 +102,13 @@ async function main() {
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const latestBlock = await ethers.provider.getBlock('latest');
   const openTimestamp = latestBlock!.timestamp + 60; // 1 minute after latest block
+  // Security council uses a separate account from launch team (Anvil signer[10])
+  const signers = await ethers.getSigners();
+  const securityCouncil = signers[10];
+  console.log(`   Launch team: ${deployer.address}`);
+  console.log(`   Security council: ${securityCouncil.address}`);
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, deployer.address, openTimestamp, nm.override()
+    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncil.address, openTimestamp, nm.override()
   );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();

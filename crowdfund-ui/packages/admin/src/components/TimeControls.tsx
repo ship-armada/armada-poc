@@ -13,7 +13,7 @@ export interface TimeControlsProps {
 
 const ANVIL_ACCOUNTS = [
   { label: 'Deployer / LT', address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' },
-  { label: 'Security Council', address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' },
+  { label: 'Security Council', address: '0xBcd4042DE499D14e55001CcbB24a551F3b954096' },
   { label: 'Treasury', address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' },
   { label: 'User 1', address: '0x90F79bf6EB2c4f870365E785982E1f101E93b906' },
   { label: 'User 2', address: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65' },
@@ -62,12 +62,15 @@ export function TimeControls({ timeControls, state, onMintUsdc }: TimeControlsPr
   const [customSeconds, setCustomSeconds] = useState('')
   const [mintRecipient, setMintRecipient] = useState(ANVIL_ACCOUNTS[3].address)
   const [mintAmount, setMintAmount] = useState('100000')
+  const [ethRecipient, setEthRecipient] = useState(ANVIL_ACCOUNTS[1].address)
+  const [ethAmount, setEthAmount] = useState('100')
 
   const week1 = useActionStatus()
   const windowEnd = useActionStatus()
   const claimDeadline = useActionStatus()
   const customAdvance = useActionStatus()
   const mint = useActionStatus()
+  const mintEth = useActionStatus()
 
   const handleCustomAdvance = async () => {
     const seconds = parseInt(customSeconds, 10)
@@ -82,6 +85,12 @@ export function TimeControls({ timeControls, state, onMintUsdc }: TimeControlsPr
   const handleMint = async () => {
     if (onMintUsdc && mintRecipient && mintAmount) {
       await mint.run(() => onMintUsdc(mintRecipient, mintAmount))
+    }
+  }
+
+  const handleMintEth = async () => {
+    if (ethRecipient && ethAmount) {
+      await mintEth.run(() => timeControls.setBalance(ethRecipient, ethAmount))
     }
   }
 
@@ -191,6 +200,48 @@ export function TimeControls({ timeControls, state, onMintUsdc }: TimeControlsPr
           </div>
         </div>
       )}
+
+      {/* ETH Balance */}
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Set ETH Balance</div>
+        <div className="flex gap-2">
+          <div className="flex-1 flex gap-1">
+            <select
+              className="rounded border border-input bg-background px-2 py-1 text-xs"
+              value={ANVIL_ACCOUNTS.find((a) => a.address.toLowerCase() === ethRecipient.toLowerCase())?.address ?? ''}
+              onChange={(e) => setEthRecipient(e.target.value)}
+            >
+              <option value="" disabled>Presets...</option>
+              {ANVIL_ACCOUNTS.map((acc) => (
+                <option key={acc.address} value={acc.address}>
+                  {acc.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="0x... recipient address"
+              value={ethRecipient}
+              onChange={(e) => setEthRecipient(e.target.value)}
+              className="flex-1 rounded border border-input bg-background px-2 py-1 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <input
+            type="text"
+            placeholder="ETH"
+            value={ethAmount}
+            onChange={(e) => setEthAmount(e.target.value)}
+            className="w-24 rounded border border-input bg-background px-2 py-1 text-xs font-mono"
+          />
+          <button
+            className={`px-3 py-1 rounded bg-muted text-xs hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${statusClass(mintEth.status)}`}
+            onClick={handleMintEth}
+            disabled={mintEth.status === 'busy' || !ethRecipient}
+          >
+            {statusLabel(mintEth.status, 'Set')}
+          </button>
+        </div>
+      </div>
 
       {/* Account switcher */}
       <div className="space-y-1">

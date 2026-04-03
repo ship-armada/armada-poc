@@ -10,6 +10,7 @@ import {
   formatCountdown,
 } from '../lib/format.js'
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from '../lib/constants.js'
+import { estimateAllocation } from '../lib/allocation.js'
 
 export interface HopStatsData {
   totalCommitted: bigint
@@ -37,11 +38,13 @@ export interface StatsBarProps {
   connectedSummary?: ConnectedSummary
 }
 
-/** Compute oversubscription percentage for a hop */
+/** Compute oversubscription percentage for a hop.
+ *  Pre-finalization saleSize is 0; fall back to BASE_SALE for ceiling estimates. */
 function oversubPct(cappedCommitted: bigint, hop: number, saleSize: bigint): string {
   const ceilingBps = HOP_CONFIGS[hop]?.ceilingBps ?? 0
   if (ceilingBps === 0) return '—'
-  const ceiling = (saleSize * BigInt(ceilingBps)) / 10_000n
+  const effectiveSaleSize = saleSize > 0n ? saleSize : CROWDFUND_CONSTANTS.BASE_SALE
+  const ceiling = (effectiveSaleSize * BigInt(ceilingBps)) / 10_000n
   if (ceiling === 0n) return '—'
   const pct = Number((cappedCommitted * 100n) / ceiling)
   return `${pct}%`
@@ -138,22 +141,50 @@ export function StatsBar(props: StatsBarProps) {
       </div>
 
       {/* Aggregate totals */}
-      <div className="mt-3 flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">
-          Total committed: <span className="text-foreground font-medium">{formatUsdc(totalCommitted)}</span>
-        </span>
-        {props.connectedSummary && props.connectedSummary.totalCommitted > 0n && (
-          <span className="text-muted-foreground">
-            You: <span className="text-foreground font-medium">{formatUsdc(props.connectedSummary.totalCommitted)}</span>
-            {props.connectedSummary.hopCount > 0 && (
-              <span> across {props.connectedSummary.hopCount} hop{props.connectedSummary.hopCount !== 1 ? 's' : ''}</span>
+      {(() => {
+        const estimate = estimateAllocation(hopStats, cappedDemand, saleSize)
+        const committedDiffers = totalCommitted !== cappedDemand
+        const allocationDiffers = estimate.totalAllocUsdc < cappedDemand
+        const belowMin = estimate.totalAllocUsdc < CROWDFUND_CONSTANTS.MIN_SALE && cappedDemand > 0n
+
+        return (
+          <div className="mt-3 space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                Total committed: <span className="text-foreground font-medium">{formatUsdc(totalCommitted)}</span>
+              </span>
+              {props.connectedSummary && props.connectedSummary.totalCommitted > 0n && (
+                <span className="text-muted-foreground">
+                  You: <span className="text-foreground font-medium">{formatUsdc(props.connectedSummary.totalCommitted)}</span>
+                  {props.connectedSummary.hopCount > 0 && (
+                    <span> across {props.connectedSummary.hopCount} hop{props.connectedSummary.hopCount !== 1 ? 's' : ''}</span>
+                  )}
+                </span>
+              )}
+              <span className="text-muted-foreground">
+                Effective demand: <span className="text-foreground font-medium">{formatUsdc(cappedDemand)}</span>
+              </span>
+              <span className="text-muted-foreground">
+                Est. allocation: <span className={`font-medium ${belowMin ? 'text-destructive' : 'text-foreground'}`}>{formatUsdc(estimate.totalAllocUsdc)}</span>
+              </span>
+            </div>
+            {/* Explanatory notes when values diverge */}
+            {(committedDiffers || allocationDiffers) && (
+              <div className="text-[10px] text-muted-foreground space-y-0.5">
+                {committedDiffers && (
+                  <div>Effective demand differs from total committed because some participants committed above their per-slot cap.</div>
+                )}
+                {allocationDiffers && (
+                  <div>Est. allocation is lower than effective demand because hop ceilings limit how much each hop can absorb.</div>
+                )}
+                {belowMin && (
+                  <div className="text-destructive">Estimated allocation is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale would enter refund mode if finalized now.</div>
+                )}
+              </div>
             )}
-          </span>
-        )}
-        <span className="text-muted-foreground">
-          Capped demand: <span className="text-foreground font-medium">{formatUsdc(cappedDemand)}</span>
-        </span>
-      </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

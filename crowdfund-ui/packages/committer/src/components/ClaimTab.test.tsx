@@ -72,7 +72,7 @@ describe('ClaimTab', () => {
   describe('refund mode (phase 1, refundMode true)', () => {
     it('shows refund-only message', () => {
       renderClaimTab({ phase: 1, refundMode: true })
-      expect(screen.getByText(/Sale did not meet minimum/)).toBeInTheDocument()
+      expect(screen.getByText(/did not meet the minimum raise/)).toBeInTheDocument()
       expect(screen.getByText('Claim Refund')).toBeInTheDocument()
     })
   })

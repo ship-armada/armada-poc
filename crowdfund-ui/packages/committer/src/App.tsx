@@ -16,6 +16,7 @@ import {
   TreeView,
   CROWDFUND_CONSTANTS,
   formatUsdc,
+  formatArm,
   type ConnectedSummary,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
@@ -107,6 +108,7 @@ export function App() {
 
   const crowdfundAddress = deployment?.contracts.crowdfund ?? null
   const usdcAddress = deployment?.contracts.usdc ?? null
+  const armTokenAddress = deployment?.contracts.armToken ?? null
 
   // Shared data layer
   const { events, loading: eventsLoading } = useContractEvents({
@@ -128,7 +130,7 @@ export function App() {
 
   // Wallet-specific hooks
   const eligibility = useEligibility(wallet.address, nodes)
-  const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, provider)
+  const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
 
   // Compute the user's personal committed amount (not the global total)
@@ -209,6 +211,9 @@ export function App() {
             {wallet.connected && (
               <span className="text-xs text-muted-foreground">
                 {formatUsdc(allowance.balance)}
+                {allowance.armBalance > 0n && (
+                  <> · {formatArm(allowance.armBalance)} ARM</>
+                )}
               </span>
             )}
             <ConnectButton

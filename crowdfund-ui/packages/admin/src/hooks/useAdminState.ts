@@ -86,7 +86,7 @@ export function useAdminState(
         phase,
         armLoaded,
         totalCommitted,
-        cappedDemand,
+        estimatedCapped,
         saleSize,
         windowStart,
         windowEnd,
@@ -106,7 +106,7 @@ export function useAdminState(
         contract.phase() as Promise<bigint>,
         contract.armLoaded() as Promise<boolean>,
         contract.totalCommitted() as Promise<bigint>,
-        contract.cappedDemand() as Promise<bigint>,
+        contract.getEstimatedCappedDemand() as Promise<[bigint, bigint[]]>,
         contract.saleSize() as Promise<bigint>,
         contract.windowStart() as Promise<bigint>,
         contract.windowEnd() as Promise<bigint>,
@@ -124,9 +124,12 @@ export function useAdminState(
         provider.getBlock('latest'),
       ])
 
-      const parseHopStats = (raw: [bigint, bigint, bigint, bigint]): HopStatsData => ({
+      const estimated = estimatedCapped as [bigint, bigint[]]
+      const perHopCapped = estimated[1]
+
+      const parseHopStats = (raw: [bigint, bigint, bigint, bigint], hop: number): HopStatsData => ({
         totalCommitted: raw[0],
-        cappedCommitted: raw[1],
+        cappedCommitted: perHopCapped[hop] ?? raw[1],
         uniqueCommitters: Number(raw[2]),
         whitelistCount: Number(raw[3]),
       })
@@ -137,7 +140,7 @@ export function useAdminState(
         phase: Number(phase),
         armLoaded,
         totalCommitted,
-        cappedDemand,
+        cappedDemand: estimated[0],
         saleSize,
         windowStart: Number(windowStart),
         windowEnd: Number(windowEnd),
@@ -146,7 +149,7 @@ export function useAdminState(
         claimDeadline: Number(claimDeadline),
         refundMode,
         blockTimestamp: block?.timestamp ?? 0,
-        hopStats: [parseHopStats(hopStats0), parseHopStats(hopStats1), parseHopStats(hopStats2)],
+        hopStats: [parseHopStats(hopStats0, 0), parseHopStats(hopStats1, 1), parseHopStats(hopStats2, 2)],
         participantCount: Number(participantCount),
         seedCount,
         ltBudgetHop1Remaining: Number(ltBudget[0]),

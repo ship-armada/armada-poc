@@ -140,6 +140,25 @@ export function graphToTree(
     }
   }
 
+  // Re-parent orphaned subtrees: if a node was never attached to the tree
+  // (e.g., launch team address is not a seed but created invite edges),
+  // move its children directly under root so they aren't lost.
+  const reachable = new Set<string>()
+  function markReachable(n: TreeNode) {
+    reachable.add(n.address)
+    for (const child of n.children) markReachable(child)
+  }
+  markReachable(root)
+
+  for (const [addr, node] of addressToNode) {
+    if (!reachable.has(addr) && node.children.length > 0) {
+      // This node is unreachable but has children — re-parent them under root
+      for (const child of node.children) {
+        root.children.push(child)
+      }
+    }
+  }
+
   // Sort children by committed amount (descending) for visual stability
   sortChildren(root)
 

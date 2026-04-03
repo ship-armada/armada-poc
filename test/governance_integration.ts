@@ -238,6 +238,44 @@ describe("Governance Integration", function () {
       expect(await armToken.getVotes(alice.address)).to.equal(ALICE_AMOUNT);
       expect(await armToken.getVotes(bob.address)).to.equal(BOB_AMOUNT);
     });
+
+    it("should enable transfers via governance proposal", async function () {
+      // Transfers are restricted before the proposal
+      expect(await armToken.transferable()).to.equal(false);
+
+      // Carol is not whitelisted. Give carol some ARM via alice (whitelisted sender).
+      // Then verify carol (non-whitelisted sender) cannot transfer to dave (non-whitelisted receiver).
+      await armToken.connect(alice).transfer(carol.address, ethers.parseUnits("1000", ARM_DECIMALS));
+      await expect(
+        armToken.connect(carol).transfer(dave.address, ethers.parseUnits("100", ARM_DECIMALS))
+      ).to.be.revertedWith("ArmadaToken: transfers restricted");
+
+      // Create a governance proposal to call setTransferable(true) on the ARM token
+      const armTokenAddr = await armToken.getAddress();
+      const calldata = armToken.interface.encodeFunctionData("setTransferable", [true]);
+
+      // Wind-down contract must be set for setTransferable to work
+      const [, , , , , windDown] = await ethers.getSigners();
+      await armToken.setWindDownContract(windDown.address);
+
+      await passProposal(
+        alice,
+        [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
+        ProposalType.Standard,
+        [armTokenAddr],
+        [0n],
+        [calldata],
+        "Enable ARM token transfers"
+      );
+
+      // Transfers are now enabled
+      expect(await armToken.transferable()).to.equal(true);
+
+      // Non-whitelisted sender to non-whitelisted receiver now succeeds
+      await expect(
+        armToken.connect(carol).transfer(dave.address, ethers.parseUnits("100", ARM_DECIMALS))
+      ).to.not.be.reverted;
+    });
   });
 
   // ============================================================

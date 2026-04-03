@@ -9,6 +9,7 @@ export interface UseTimeControlsResult {
   skipToWeek1End: (launchTeamInviteEnd: number, blockTimestamp: number) => Promise<void>
   skipToWindowEnd: (windowEnd: number, blockTimestamp: number) => Promise<void>
   skipToClaimDeadline: (claimDeadline: number, blockTimestamp: number) => Promise<void>
+  setBalance: (address: string, ethAmount: string) => Promise<void>
 }
 
 export function useTimeControls(provider: JsonRpcProvider | null): UseTimeControlsResult {
@@ -36,5 +37,11 @@ export function useTimeControls(provider: JsonRpcProvider | null): UseTimeContro
     await advanceTime(delta)
   }, [provider, advanceTime])
 
-  return { advanceTime, skipToWeek1End, skipToWindowEnd, skipToClaimDeadline }
+  const setBalance = useCallback(async (address: string, ethAmount: string) => {
+    if (!provider) return
+    const wei = BigInt(Math.floor(parseFloat(ethAmount) * 1e18))
+    await provider.send('anvil_setBalance', [address, '0x' + wei.toString(16)])
+  }, [provider])
+
+  return { advanceTime, skipToWeek1End, skipToWindowEnd, skipToClaimDeadline, setBalance }
 }

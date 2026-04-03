@@ -1,5 +1,5 @@
 // ABOUTME: Unit tests for crowdfund event parsing.
-// ABOUTME: Verifies parseCrowdfundEvent handles all 11 event types and edge cases.
+// ABOUTME: Verifies parseCrowdfundEvent handles all 12 event types and edge cases.
 
 import { describe, it, expect } from 'vitest'
 import { Interface } from 'ethers'
@@ -56,6 +56,16 @@ describe('parseCrowdfundEvent', () => {
     expect(result!.args.invitee).toBe(invitee.toLowerCase())
     expect(result!.args.hop).toBe(1n)
     expect(result!.args.nonce).toBe(42n)
+  })
+
+  it('parses LaunchTeamInvited event', () => {
+    const invitee = '0x' + '33'.repeat(20)
+    const log = encodeLog('LaunchTeamInvited', [invitee, 1])
+    const result = parseCrowdfundEvent(log)
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe('LaunchTeamInvited')
+    expect(result!.args.invitee).toBe(invitee.toLowerCase())
+    expect(result!.args.hop).toBe(1n)
   })
 
   it('parses Committed event', () => {

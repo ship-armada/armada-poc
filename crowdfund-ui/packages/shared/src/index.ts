@@ -24,6 +24,9 @@ export {
   phaseColor,
 } from './lib/format.js'
 
+export { estimateAllocation } from './lib/allocation.js'
+export type { AllocationEstimate } from './lib/allocation.js'
+
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 
 export type {

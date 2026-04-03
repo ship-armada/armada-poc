@@ -2,7 +2,7 @@
 // ABOUTME: Calculates estimated ARM allocation based on current demand if finalized now.
 
 import { useMemo } from 'react'
-import { HOP_CONFIGS, type HopStatsData } from '@armada/crowdfund-shared'
+import { estimateAllocation, type HopStatsData } from '@armada/crowdfund-shared'
 
 export interface HopEstimate {
   hop: number
@@ -21,7 +21,8 @@ export interface UseProRataEstimateResult {
 
 /**
  * Estimate pro-rata allocation for given commit amounts per hop.
- * Pure client-side calculation matching the contract's finalize logic.
+ * Uses the shared estimateAllocation() which mirrors the contract's
+ * _computeHopAllocations logic including hop-2 floor reservation.
  */
 export function useProRataEstimate(
   commitAmounts: Map<number, bigint>,
@@ -33,26 +34,16 @@ export function useProRataEstimate(
     let totalEstimatedArm = 0n
     let totalEstimatedRefund = 0n
 
+    // estimateAllocation handles saleSize === 0 (Active phase) by using
+    // BASE_SALE or MAX_SALE based on current capped demand.
+    const cappedDemand = hopStats.reduce((sum, s) => sum + s.cappedCommitted, 0n)
+    const { perHopCeiling } = estimateAllocation(hopStats, cappedDemand, saleSize)
+
     for (const [hop, commitAmount] of commitAmounts) {
       if (commitAmount <= 0n || hop >= hopStats.length) continue
 
       const stats = hopStats[hop]
-      const ceilingBps = HOP_CONFIGS[hop]?.ceilingBps ?? 0
-
-      // For hop-2 (ceilingBps=0), allocation is the residual after hop-0 and hop-1
-      // This is a simplified estimate — the actual contract logic is more complex
-      let hopAllocation: bigint
-      if (ceilingBps === 0) {
-        // Hop-2 gets the remainder
-        const hop0Ceiling = (saleSize * BigInt(HOP_CONFIGS[0].ceilingBps)) / 10_000n
-        const hop1Ceiling = (saleSize * BigInt(HOP_CONFIGS[1].ceilingBps)) / 10_000n
-        const hop0Used = hopStats[0]?.cappedCommitted > hop0Ceiling ? hop0Ceiling : hopStats[0]?.cappedCommitted ?? 0n
-        const hop1Used = hopStats[1]?.cappedCommitted > hop1Ceiling ? hop1Ceiling : hopStats[1]?.cappedCommitted ?? 0n
-        hopAllocation = saleSize - hop0Used - hop1Used
-        if (hopAllocation < 0n) hopAllocation = 0n
-      } else {
-        hopAllocation = (saleSize * BigInt(ceilingBps)) / 10_000n
-      }
+      const hopAllocation = perHopCeiling[hop] ?? 0n
 
       // Pro-rata within this hop — use totalCommitted (live running total during Active phase)
       const totalDemand = stats.totalCommitted + commitAmount

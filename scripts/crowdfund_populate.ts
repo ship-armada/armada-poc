@@ -126,12 +126,14 @@ async function main() {
   let hop2Count = 0;
 
   if (includeHops) {
-    // With hops: allocate some capacity to each level
-    // Each seed can invite 3 hop-1, each hop-1 can invite 2 hop-2
-    // Use 3 seeds for invitations, rest as seeds for volume
-    const inviteSeeds = 3;
-    hop1Count = inviteSeeds * 3; // 9 hop-1
-    hop2Count = hop1Count * 2;   // 18 hop-2
+    // With hops: allocate enough hop-1/hop-2 so that total allocation
+    // (after hop ceilings) exceeds MIN_SALE. The hop-0 ceiling at BASE_SALE
+    // is $798K, so hop-1/hop-2 must contribute at least $202K to clear $1M.
+    // Each seed can invite 3 hop-1, each hop-1 can invite 2 hop-2.
+    // Kept modest to stay within Hardhat's 200 signer limit.
+    const inviteSeeds = 18; // 18 seeds × 3 invites = 54 hop-1
+    hop1Count = inviteSeeds * 3; // 54 hop-1 × $4K = $216K
+    hop2Count = inviteSeeds * 3; // 54 hop-2 × $1K = $54K (subset of available slots)
 
     const hop1Total = hop1Count * HOP1_CAP;
     const hop2Total = hop2Count * HOP2_CAP;
@@ -241,17 +243,18 @@ async function main() {
     console.log("-".repeat(70));
     log("INVITE", "Sending invitations...");
 
-    // UI seeds (signers[1-3]) each invite 3 hop-1 addresses.
-    // This ensures the UI hop-1 dropdown accounts are real participants.
+    // UI seeds (signers[1-3]) invite first, then generated seeds.
+    // Each seed can invite up to 3 hop-1 addresses.
+    const inviterSeeds = [...uiSeeds, ...seedSigners];
     let h1idx = 0;
-    for (let i = 0; i < uiSeeds.length; i++) {
+    for (let i = 0; i < inviterSeeds.length && h1idx < hop1Signers.length; i++) {
       for (let j = 0; j < 3 && h1idx < hop1Signers.length; j++) {
-        const tx = await crowdfund.connect(uiSeeds[i]).invite(hop1Signers[h1idx].address, 0);
+        const tx = await crowdfund.connect(inviterSeeds[i]).invite(hop1Signers[h1idx].address, 0);
         await tx.wait();
         h1idx++;
       }
     }
-    log("INVITE", `${h1idx} hop-1 addresses invited (by UI seeds)`);
+    log("INVITE", `${h1idx} hop-1 addresses invited (by ${Math.min(Math.ceil(h1idx / 3), inviterSeeds.length)} seeds)`);
 
     // Each hop-1 invites 2 hop-2 addresses
     let h2idx = 0;

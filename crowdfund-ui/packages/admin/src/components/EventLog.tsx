@@ -20,6 +20,7 @@ const EVENT_COLORS: Record<CrowdfundEventType, string> = {
   ArmLoaded: 'bg-success/20 text-success',
   SeedAdded: 'bg-info/20 text-info',
   Invited: 'bg-info/20 text-info',
+  LaunchTeamInvited: 'bg-info/20 text-info',
   Committed: 'bg-primary/20 text-primary',
   Finalized: 'bg-success/20 text-success',
   Cancelled: 'bg-destructive/20 text-destructive',
@@ -31,7 +32,7 @@ const EVENT_COLORS: Record<CrowdfundEventType, string> = {
 }
 
 const ALL_EVENT_TYPES: CrowdfundEventType[] = [
-  'ArmLoaded', 'SeedAdded', 'Invited', 'Committed', 'Finalized',
+  'ArmLoaded', 'SeedAdded', 'Invited', 'LaunchTeamInvited', 'Committed', 'Finalized',
   'Cancelled', 'Allocated', 'AllocatedHop', 'RefundClaimed',
   'InviteNonceRevoked', 'UnallocatedArmWithdrawn',
 ]
@@ -43,6 +44,8 @@ function formatEventData(event: CrowdfundEvent): string {
       return truncateAddress(args.seed as string)
     case 'Invited':
       return `${truncateAddress(args.inviter as string)} -> ${truncateAddress(args.invitee as string)} hop-${args.hop}`
+    case 'LaunchTeamInvited':
+      return `LT -> ${truncateAddress(args.invitee as string)} hop-${args.hop}`
     case 'Committed':
       return `${truncateAddress(args.participant as string)} ${formatUsdc(args.amount as bigint)} hop-${args.hop}`
     case 'Finalized':

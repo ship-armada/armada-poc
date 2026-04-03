@@ -73,6 +73,44 @@ describe('buildGraph', () => {
     expect(inviteEdge.toHop).toBe(1)
   })
 
+  it('creates LaunchTeamInvited invitee under ROOT without inviter node', () => {
+    const events = [
+      mkEvent('LaunchTeamInvited', { invitee: ADDR.hop1a, hop: 1n }, 1),
+    ]
+    const graph = buildGraph(events)
+
+    // Invitee node exists at hop 1
+    const inviteeNode = graph.nodes.get(`${ADDR.hop1a}-1`)!
+    expect(inviteeNode.invitesReceived).toBe(1)
+    expect(inviteeNode.invitedBy).toEqual(['armada'])
+
+    // No inviter node created — only the invitee
+    expect(graph.nodes.size).toBe(1)
+
+    // Edge from ROOT to invitee
+    expect(graph.edges).toHaveLength(1)
+    expect(graph.edges[0].fromAddress).toBe('armada')
+    expect(graph.edges[0].fromHop).toBe(-1)
+    expect(graph.edges[0].toAddress).toBe(ADDR.hop1a)
+    expect(graph.edges[0].toHop).toBe(1)
+  })
+
+  it('launch team address does not appear in summaries for LaunchTeamInvited', () => {
+    const events = [
+      mkEvent('LaunchTeamInvited', { invitee: ADDR.hop1a, hop: 1n }, 1),
+      mkEvent('Committed', { participant: ADDR.hop1a, hop: 1n, amount: 2_000n * 10n ** 6n }, 2),
+    ]
+    const graph = buildGraph(events)
+
+    // Only the invitee should appear in summaries
+    expect(graph.summaries.size).toBe(1)
+    expect(graph.summaries.has(ADDR.hop1a)).toBe(true)
+
+    // Display inviter should be ROOT
+    const summary = graph.summaries.get(ADDR.hop1a)!
+    expect(summary.displayInviter).toBe('armada')
+  })
+
   it('tracks committed amounts with cap enforcement', () => {
     const events = [
       mkEvent('SeedAdded', { seed: ADDR.seed1 }, 1),

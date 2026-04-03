@@ -13,7 +13,7 @@ const mockContract = {
   phase: vi.fn().mockResolvedValue(0n),
   armLoaded: vi.fn().mockResolvedValue(false),
   totalCommitted: vi.fn().mockResolvedValue(0n),
-  cappedDemand: vi.fn().mockResolvedValue(0n),
+  getEstimatedCappedDemand: vi.fn().mockResolvedValue([0n, [0n, 0n, 0n]]),
   saleSize: vi.fn().mockResolvedValue(1_200_000n * 10n ** 6n),
   windowStart: vi.fn().mockResolvedValue(0n),
   windowEnd: vi.fn().mockResolvedValue(0n),
@@ -48,7 +48,7 @@ describe('useContractState', () => {
     mockContract.phase.mockReset().mockResolvedValue(0n)
     mockContract.armLoaded.mockReset().mockResolvedValue(false)
     mockContract.totalCommitted.mockReset().mockResolvedValue(0n)
-    mockContract.cappedDemand.mockReset().mockResolvedValue(0n)
+    mockContract.getEstimatedCappedDemand.mockReset().mockResolvedValue([0n, [0n, 0n, 0n]])
     mockContract.saleSize.mockReset().mockResolvedValue(1_200_000n * 10n ** 6n)
     mockContract.windowStart.mockReset().mockResolvedValue(0n)
     mockContract.windowEnd.mockReset().mockResolvedValue(0n)
@@ -74,7 +74,7 @@ describe('useContractState', () => {
     mockContract.phase.mockResolvedValue(0n)
     mockContract.armLoaded.mockResolvedValue(true)
     mockContract.totalCommitted.mockResolvedValue(500_000n * 10n ** 6n)
-    mockContract.cappedDemand.mockResolvedValue(450_000n * 10n ** 6n)
+    mockContract.getEstimatedCappedDemand.mockResolvedValue([450_000n * 10n ** 6n, [280_000n * 10n ** 6n, 140_000n * 10n ** 6n, 30_000n * 10n ** 6n]])
     mockContract.getHopStats.mockImplementation((hop: number) => {
       if (hop === 0) return Promise.resolve([300_000n * 10n ** 6n, 280_000n * 10n ** 6n, 100n, 42n])
       if (hop === 1) return Promise.resolve([150_000n * 10n ** 6n, 140_000n * 10n ** 6n, 80n, 200n])

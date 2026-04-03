@@ -26,7 +26,7 @@ npm run crowdfund:observer    # Starts on port 5173
 npm run dev
 ```
 
-Requires deployed contracts. Run `npm run setup` from the project root first (starts Anvil chains + deploys contracts). The Vite dev server serves deployment manifests from `../../../../deployments/` via the `serveDeployments()` plugin.
+Requires deployed contracts. Run `npm run setup` from the project root first (starts Anvil chains + deploys contracts). The Vite dev server serves deployment manifests from `../../../deployments/` via the `serveDeployments()` plugin.
 
 ## Dependencies
 

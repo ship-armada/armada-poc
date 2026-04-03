@@ -247,14 +247,33 @@ describe("ArmadaToken — ERC20Votes", function () {
       ).to.not.be.reverted;
     });
 
-    it("should only allow wind-down contract to call setTransferable", async function () {
+    it("should only allow wind-down contract or timelock to call setTransferable", async function () {
       await expect(
         armToken.connect(alice).setTransferable(true)
-      ).to.be.revertedWith("ArmadaToken: not wind-down contract");
+      ).to.be.revertedWith("ArmadaToken: not authorized");
 
       await expect(
         armToken.connect(deployer).setTransferable(true)
-      ).to.be.revertedWith("ArmadaToken: not wind-down contract");
+      ).to.be.revertedWith("ArmadaToken: not authorized");
+    });
+
+    it("should allow timelock to call setTransferable", async function () {
+      // The timelock address can enable transfers (governance proposal path)
+      const timelockAddr = await timelockController.getAddress();
+      const timelockSigner = await ethers.getImpersonatedSigner(timelockAddr);
+
+      // Fund the timelock with ETH for gas
+      await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
+
+      await armToken.connect(timelockSigner).setTransferable(true);
+      expect(await armToken.transferable()).to.equal(true);
+
+      // Verify non-whitelisted can now transfer
+      await armToken.connect(alice).transfer(carol.address, ethers.parseUnits("1000", 18));
+      const [, , , , , , , someone] = await ethers.getSigners();
+      await expect(
+        armToken.connect(carol).transfer(someone.address, ethers.parseUnits("500", 18))
+      ).to.not.be.reverted;
     });
 
     it("should reject setTransferable(false) — one-way only", async function () {

@@ -55,6 +55,14 @@ export function ParticipantTable({ participants, phase, launchTeamAddress }: Par
   const [search, setSearch] = useState('')
   const [viewMode, setViewMode] = useState<'per-hop' | 'per-address'>('per-hop')
 
+  // Reset sorting to the correct column ID when switching view modes,
+  // since per-hop uses 'committed' and per-address uses 'totalCommitted'.
+  const setViewModeWithSort = (mode: 'per-hop' | 'per-address') => {
+    setViewMode(mode)
+    const commitCol = mode === 'per-hop' ? 'committed' : 'totalCommitted'
+    setSorting([{ id: commitCol, desc: true }])
+  }
+
   // Per-hop columns (default view)
   const perHopColumns: ColumnDef<ParticipantRow, any>[] = useMemo(() => {
     const cols: ColumnDef<ParticipantRow, any>[] = [
@@ -71,10 +79,9 @@ export function ParticipantTable({ participants, phase, launchTeamAddress }: Par
       perHopColumnHelper.accessor('invitedBy', {
         header: 'Invited By',
         cell: (info) => {
-          const row = info.row.original
           const val = info.getValue()
           if (val.length === 0) return '-'
-          if (row.hop === 0) return <span className="text-info">Armada</span>
+          if (val[0] === 'armada') return <span className="text-info">Armada</span>
           if (launchTeamAddress && val[0].toLowerCase() === launchTeamAddress.toLowerCase()) {
             return <span className="text-success">Launch Team</span>
           }
@@ -293,13 +300,13 @@ export function ParticipantTable({ participants, phase, launchTeamAddress }: Par
         <div className="flex rounded border border-input overflow-hidden">
           <button
             className={`px-2 py-1 text-[10px] ${viewMode === 'per-hop' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}
-            onClick={() => setViewMode('per-hop')}
+            onClick={() => setViewModeWithSort('per-hop')}
           >
             Per-Hop
           </button>
           <button
             className={`px-2 py-1 text-[10px] ${viewMode === 'per-address' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}
-            onClick={() => setViewMode('per-address')}
+            onClick={() => setViewModeWithSort('per-address')}
           >
             Per-Address
           </button>

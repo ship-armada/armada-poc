@@ -280,10 +280,9 @@ async function main() {
   await (await armToken.setNoDelegation(treasuryAddress, nm.override())).wait();
   console.log(`   setNoDelegation: ${treasuryAddress} (treasury)`);
 
-  // Whitelist: deployer, treasury, revenueLock (for release transfers)
-  const whitelistAddresses = [deployer.address, treasuryAddress, revenueLockAddress];
-  await (await armToken.initWhitelist(whitelistAddresses, nm.override())).wait();
-  console.log(`   initWhitelist: ${whitelistAddresses.length} addresses`);
+  // initWhitelist is one-shot and must include the crowdfund address (per ARM token spec §5).
+  // Deferred to deploy_crowdfund.ts which runs after governance and has the crowdfund address.
+  console.log("   initWhitelist: DEFERRED (called by deploy_crowdfund with crowdfund address)");
 
   // initAuthorizedDelegators is one-shot and must include all delegators (RevenueLock + Crowdfund).
   // Deferred to deploy_crowdfund.ts which runs after governance and has both addresses available.
@@ -297,13 +296,10 @@ async function main() {
     console.log("   setWindDownContract: DEFERRED (wind-down not deployed)");
   }
 
-  // 13. Distribute ARM tokens
-  const treasuryAllocation = ethers.parseUnits(config.armDistribution.treasury, 18);
-  console.log("13. Distributing ARM tokens...");
-  await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
-  console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
-  await (await armToken.transfer(revenueLockAddress, revenueLockAllocation, nm.override())).wait();
-  console.log(`   Sent ${config.armDistribution.revenueLock} ARM to RevenueLock`);
+  // 13. ARM distribution
+  // All ARM transfers are deferred to deploy_crowdfund.ts which calls initWhitelist first.
+  // The whitelist must be set before any transfer (including to treasury/revenueLock).
+  console.log("13. ARM distribution: DEFERRED (called by deploy_crowdfund after initWhitelist)");
 
   // 14. Initialize treasury outflow limits
   // TODO: These defaults should be moved to config/networks.ts when finalized

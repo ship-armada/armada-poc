@@ -8,7 +8,7 @@ import { useAdminState } from './useAdminState'
 const mockPhase = vi.fn()
 const mockArmLoaded = vi.fn()
 const mockTotalCommitted = vi.fn()
-const mockCappedDemand = vi.fn()
+const mockGetEstimatedCappedDemand = vi.fn()
 const mockSaleSize = vi.fn()
 const mockWindowStart = vi.fn()
 const mockWindowEnd = vi.fn()
@@ -33,7 +33,7 @@ vi.mock('ethers', async (importOriginal) => {
           phase: mockPhase,
           armLoaded: mockArmLoaded,
           totalCommitted: mockTotalCommitted,
-          cappedDemand: mockCappedDemand,
+          getEstimatedCappedDemand: mockGetEstimatedCappedDemand,
           saleSize: mockSaleSize,
           windowStart: mockWindowStart,
           windowEnd: mockWindowEnd,
@@ -56,7 +56,7 @@ function setupMocks() {
   mockPhase.mockResolvedValue(0n)
   mockArmLoaded.mockResolvedValue(true)
   mockTotalCommitted.mockResolvedValue(500_000n * 10n ** 6n)
-  mockCappedDemand.mockResolvedValue(500_000n * 10n ** 6n)
+  mockGetEstimatedCappedDemand.mockResolvedValue([500_000n * 10n ** 6n, [180_000n * 10n ** 6n, 190_000n * 10n ** 6n, 95_000n * 10n ** 6n]])
   mockSaleSize.mockResolvedValue(1_200_000n * 10n ** 6n)
   mockWindowStart.mockResolvedValue(1000n)
   mockWindowEnd.mockResolvedValue(100_000n)

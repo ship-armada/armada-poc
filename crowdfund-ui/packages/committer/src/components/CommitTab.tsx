@@ -8,6 +8,7 @@ import {
   formatUsdc,
   parseUsdcInput,
   hopLabel,
+  estimateAllocation,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
@@ -65,21 +66,25 @@ function hopDemandDisplay(
   const stats = hopStats[hop]
   const demand = formatUsdc(stats.cappedCommitted)
 
+  // Use estimateAllocation to get accurate per-hop allocation ceilings,
+  // including the hop-2 floor reservation and hop-0→hop-1 rollover.
+  // Handles saleSize === 0 (Active phase) internally.
+  const cappedDemand = hopStats.reduce((sum, s) => sum + s.cappedCommitted, 0n)
+  const { perHopAlloc } = estimateAllocation(hopStats, cappedDemand, saleSize)
+  const hopAlloc = perHopAlloc[hop] ?? 0n
+
+  if (hopAlloc === 0n && stats.cappedCommitted === 0n) return null
+
   if (hop <= 1) {
-    const ceilingBps = HOP_CONFIGS[hop].ceilingBps
-    const ceiling = (saleSize * BigInt(ceilingBps)) / 10_000n
-    if (ceiling === 0n) return null
-    const pct = Number((stats.cappedCommitted * 100n) / ceiling)
+    const pct = hopAlloc > 0n ? Number((stats.cappedCommitted * 100n) / hopAlloc) : 0
     const warning = pct > 100
       ? `This hop is oversubscribed — pro-rata scaling applies`
       : null
     return { demand, pct, warning }
   }
 
-  // Hop-2: floor-based
-  const floor = (saleSize * BigInt(CROWDFUND_CONSTANTS.HOP2_FLOOR_BPS)) / 10_000n
-  if (floor === 0n) return null
-  const pct = Number((stats.cappedCommitted * 100n) / floor)
+  // Hop-2: show against floor allocation
+  const pct = hopAlloc > 0n ? Number((stats.cappedCommitted * 100n) / hopAlloc) : 0
   const warning = pct < 100
     ? 'Floor not yet filled — full allocation likely'
     : null

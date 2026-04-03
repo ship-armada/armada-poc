@@ -109,35 +109,45 @@ async function main() {
   const crowdfundAddress = await crowdfund.getAddress();
   console.log(`   ArmadaCrowdfund: ${crowdfundAddress}`);
 
-  // 4. Fund ARM to crowdfund from deployer's remaining balance
-  const armFundAmount = ethers.parseUnits(config.armDistribution.crowdfund, 18);
+  // 4. Set transfer whitelist (one-shot — must happen before any ARM transfers)
+  // Per ARM token spec §5: crowdfund, treasury, revenueLock.
+  // Deployer is included because it needs to distribute ARM in step 5.
+  console.log("4. Setting ARM transfer whitelist...");
+  await (await armToken.initWhitelist([crowdfundAddress, treasuryAddress, revenueLockAddress, deployer.address], nm.override())).wait();
+  console.log(`   initWhitelist: [crowdfund, treasury, revenueLock, deployer]`);
+
+  // 5. Distribute ARM tokens (all distribution deferred from deploy_governance)
+  console.log("5. Distributing ARM tokens...");
   const deployerArmBalance = await armToken.balanceOf(deployer.address);
-  console.log(`4. Funding ARM to crowdfund...`);
   console.log(`   Deployer ARM balance: ${ethers.formatUnits(deployerArmBalance, 18)}`);
-  if (deployerArmBalance < armFundAmount) {
+
+  const treasuryAllocation = ethers.parseUnits(config.armDistribution.treasury, 18);
+  const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
+  const crowdfundAllocation = ethers.parseUnits(config.armDistribution.crowdfund, 18);
+  const totalNeeded = treasuryAllocation + revenueLockAllocation + crowdfundAllocation;
+  if (deployerArmBalance < totalNeeded) {
     throw new Error(
-      `Insufficient ARM balance. Need ${config.armDistribution.crowdfund}, ` +
+      `Insufficient ARM balance. Need ${ethers.formatUnits(totalNeeded, 18)}, ` +
       `have ${ethers.formatUnits(deployerArmBalance, 18)}`
     );
   }
-  await (await armToken.transfer(crowdfundAddress, armFundAmount, nm.override())).wait();
+  await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
+  console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
+  await (await armToken.transfer(revenueLockAddress, revenueLockAllocation, nm.override())).wait();
+  console.log(`   Sent ${config.armDistribution.revenueLock} ARM to RevenueLock`);
+  await (await armToken.transfer(crowdfundAddress, crowdfundAllocation, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.crowdfund} ARM to crowdfund contract`);
 
-  // 4b. Verify ARM pre-load
+  // 5b. Verify ARM pre-load
   console.log("   Verifying ARM pre-load...");
   await (await crowdfund.loadArm(nm.override())).wait();
   console.log("   ARM pre-load verified (loadArm() succeeded)");
 
-  // 5. Register crowdfund as excluded from quorum denominator
-  console.log("5. Registering crowdfund in governor quorum exclusion...");
+  // 6. Register crowdfund as excluded from quorum denominator
+  console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);
   await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
   console.log(`   Crowdfund excluded from quorum denominator`);
-
-  // 6. Set transfer whitelist (one-shot — per ARM token spec §5: crowdfund, treasury, revenueLock)
-  console.log("6. Setting ARM transfer whitelist...");
-  await (await armToken.initWhitelist([crowdfundAddress, treasuryAddress, revenueLockAddress], nm.override())).wait();
-  console.log(`   initWhitelist: [crowdfund, treasury, revenueLock]`);
 
   // 7. Authorize delegateOnBehalf callers (one-shot — must include all delegators)
   console.log("7. Authorizing delegateOnBehalf delegators...");
@@ -177,8 +187,9 @@ async function main() {
   // Summary
   const deployerRemaining = await armToken.balanceOf(deployer.address);
   console.log("\n=== ARM Distribution Summary ===");
-  console.log(`  Treasury:  ${config.armDistribution.treasury} ARM`);
-  console.log(`  Crowdfund: ${config.armDistribution.crowdfund} ARM`);
+  console.log(`  Treasury:    ${config.armDistribution.treasury} ARM`);
+  console.log(`  RevenueLock: ${config.armDistribution.revenueLock} ARM`);
+  console.log(`  Crowdfund:   ${config.armDistribution.crowdfund} ARM`);
   console.log(`  Deployer:  ${ethers.formatUnits(deployerRemaining, 18)} ARM (remainder — production allocation TBD)`);
   console.log("\n=== Crowdfund deployment complete ===");
 }

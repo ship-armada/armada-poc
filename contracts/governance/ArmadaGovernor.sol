@@ -884,38 +884,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             // Vote change: subtract from old bucket, add to new bucket
             uint8 oldSupport = voteChoice[proposalId][msg.sender];
             if (oldSupport == support) revert Gov_SameVote();
-
-            if (oldSupport == 0) {
-                p.againstVotes -= weight;
-            } else if (oldSupport == 1) {
-                p.forVotes -= weight;
-            } else {
-                p.abstainVotes -= weight;
-            }
-
-            if (support == 0) {
-                p.againstVotes += weight;
-            } else if (support == 1) {
-                p.forVotes += weight;
-            } else {
-                p.abstainVotes += weight;
-            }
-
+            _removeVoteBucket(p, oldSupport, weight);
+            _addVoteBucket(p, support, weight);
             voteChoice[proposalId][msg.sender] = support;
             emit VoteChanged(msg.sender, proposalId, oldSupport, support, weight);
         } else {
-            // First vote
             hasVoted[proposalId][msg.sender] = true;
             voteChoice[proposalId][msg.sender] = support;
-
-            if (support == 0) {
-                p.againstVotes += weight;
-            } else if (support == 1) {
-                p.forVotes += weight;
-            } else {
-                p.abstainVotes += weight;
-            }
-
+            _addVoteBucket(p, support, weight);
             emit VoteCast(msg.sender, proposalId, support, weight);
         }
     }
@@ -1118,6 +1094,28 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         Proposal storage p = _proposals[proposalId];
         // Quorum measures total participation — all vote types count
         return (p.forVotes + p.againstVotes + p.abstainVotes) >= quorum(proposalId);
+    }
+
+    /// @dev Add voting weight to the appropriate tally bucket.
+    function _addVoteBucket(Proposal storage p, uint8 support, uint256 weight) internal {
+        if (support == 0) {
+            p.againstVotes += weight;
+        } else if (support == 1) {
+            p.forVotes += weight;
+        } else {
+            p.abstainVotes += weight;
+        }
+    }
+
+    /// @dev Remove voting weight from the appropriate tally bucket.
+    function _removeVoteBucket(Proposal storage p, uint8 support, uint256 weight) internal {
+        if (support == 0) {
+            p.againstVotes -= weight;
+        } else if (support == 1) {
+            p.forVotes -= weight;
+        } else {
+            p.abstainVotes -= weight;
+        }
     }
 
     function _voteSucceeded(uint256 proposalId) internal view returns (bool) {

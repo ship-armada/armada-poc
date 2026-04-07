@@ -117,7 +117,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(budget.authorized, "ArmadaTreasuryGov: token not authorized for steward");
 
         // Rolling window: sum all steward spends within the trailing window
-        uint256 recentSpend = _sumRecentStewardSpends(token, budget.window);
+        uint256 recentSpend = _sumRecentRecords(_stewardSpendHistory[token], budget.window);
         require(
             recentSpend + amount <= budget.limit,
             "ArmadaTreasuryGov: exceeds steward budget"
@@ -247,16 +247,11 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         OutflowConfig storage config = _outflowConfigs[token];
         require(config.initialized, "ArmadaTreasuryGov: outflow config required");
 
-        // Calculate effective limit: max(pct of current balance, absolute), then max(result, floor)
         uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
-        uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
-        uint256 effectiveLimit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
-        if (effectiveLimit < config.floorAbsolute) {
-            effectiveLimit = config.floorAbsolute;
-        }
+        uint256 effectiveLimit = _effectiveLimit(config, treasuryBalance);
 
         // Sum recent outflows within the rolling window
-        uint256 recentOutflow = _sumRecentOutflows(token, config.windowDuration);
+        uint256 recentOutflow = _sumRecentRecords(_outflowHistory[token], config.windowDuration);
 
         require(
             recentOutflow + amount <= effectiveLimit,
@@ -270,9 +265,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         }));
     }
 
-    /// @dev Sum outflow amounts within the rolling window, iterating backwards from most recent.
-    function _sumRecentOutflows(address token, uint256 windowDuration) internal view returns (uint256 total) {
-        OutflowRecord[] storage records = _outflowHistory[token];
+    /// @dev Sum amounts within a rolling window, iterating backwards from most recent.
+    function _sumRecentRecords(OutflowRecord[] storage records, uint256 windowDuration) internal view returns (uint256 total) {
         uint256 len = records.length;
         if (len == 0) return 0;
 
@@ -286,20 +280,11 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         }
     }
 
-    /// @dev Sum steward spend amounts within the rolling window, iterating backwards from most recent.
-    function _sumRecentStewardSpends(address token, uint256 windowDuration) internal view returns (uint256 total) {
-        OutflowRecord[] storage records = _stewardSpendHistory[token];
-        uint256 len = records.length;
-        if (len == 0) return 0;
-
-        uint256 cutoff = block.timestamp > windowDuration ? block.timestamp - windowDuration : 0;
-
-        // Iterate backwards — most recent records are at the end
-        for (uint256 i = len; i > 0; i--) {
-            OutflowRecord storage r = records[i - 1];
-            if (r.timestamp < cutoff) break; // older entries are further back, stop early
-            total += r.amount;
-        }
+    /// @dev Calculate effective outflow limit: max(pct of balance, absolute), then max(result, floor).
+    function _effectiveLimit(OutflowConfig storage config, uint256 treasuryBalance) internal view returns (uint256) {
+        uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
+        uint256 limit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
+        return limit > config.floorAbsolute ? limit : config.floorAbsolute;
     }
 
     // ============ Wind-Down Sweep Authority ============
@@ -347,7 +332,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         if (!b.authorized) return (0, 0, 0);
 
         budget = b.limit;
-        spent = _sumRecentStewardSpends(token, b.window);
+        spent = _sumRecentRecords(_stewardSpendHistory[token], b.window);
         remaining = budget > spent ? budget - spent : 0;
     }
 
@@ -372,13 +357,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         if (!config.initialized) return (0, 0, 0);
 
         uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
-        uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
-        effectiveLimit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
-        if (effectiveLimit < config.floorAbsolute) {
-            effectiveLimit = config.floorAbsolute;
-        }
-
-        recentOutflow = _sumRecentOutflows(token, config.windowDuration);
+        effectiveLimit = _effectiveLimit(config, treasuryBalance);
+        recentOutflow = _sumRecentRecords(_outflowHistory[token], config.windowDuration);
         available = effectiveLimit > recentOutflow ? effectiveLimit - recentOutflow : 0;
     }
 }

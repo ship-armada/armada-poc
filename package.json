@@ -72,7 +72,9 @@
     "deploy:crowdfund:sepolia": "hardhat run scripts/deploy_crowdfund.ts --network sepoliaHub",
     "link:sepolia": "hardhat run scripts/link_privacy_pool.ts --network sepoliaHub",
     "relayer:sepolia": "npx ts-node relayer/armada-relayer.ts",
-    "test:sepolia": "npx ts-node scripts/test_sepolia.ts"
+    "test:sepolia": "npx ts-node scripts/test_sepolia.ts",
+    "verify:snark": "hardhat run scripts/verify_snark_mode.ts --network hub",
+    "verify:snark:sepolia": "hardhat run scripts/verify_snark_mode.ts --network sepoliaHub"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

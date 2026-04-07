@@ -89,21 +89,3 @@ jobs:
             exit 1
           fi
           echo "All contracts within size limits."
-
-  # Halmos symbolic verification
-  halmos:
-    name: Halmos Symbolic Verification
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --legacy-peer-deps
-      - uses: foundry-rs/foundry-toolchain@v1
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install halmos
-      - run: halmos

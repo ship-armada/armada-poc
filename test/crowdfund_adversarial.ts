@@ -331,7 +331,10 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.refundMode()).to.equal(false);
     });
 
-    it("totalCommitted 1 below MIN_SALE causes finalize to revert", async function () {
+    // WHY: When totalCommitted is 1 wei below MIN_SALE, finalize() must enter refundMode
+    // instead of reverting, ensuring the phase transitions to Finalized so ARM tokens
+    // can be recovered via withdrawUnallocatedArm().
+    it("totalCommitted 1 below MIN_SALE causes finalize to enter refundMode", async function () {
       // 66 seeds at $15K = $990K. 1 seed at $9,999.999999 = $999,999.999999 < $1M
       const seeds = allSigners.slice(1, 68);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -350,12 +353,11 @@ describe("Crowdfund Adversarial", function () {
       expect(total).to.be.lt(USDC(1_000_000));
 
       await time.increase(THREE_WEEKS + 1);
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      await crowdfund.finalize();
 
-      // Phase stays Active — participants use claimRefund() via deadline fallback
-      expect(await crowdfund.phase()).to.equal(Phase.Active);
+      // Phase transitions to Finalized with refundMode — participants use claimRefund()
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.be.true;
     });
 
     it("totalCommitted exactly at ELASTIC_TRIGGER expands to MAX_SALE", async function () {
@@ -462,18 +464,19 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000));
     });
 
-    it("finalize with all whitelisted but 0 committers reverts", async function () {
+    // WHY: Zero committers means cappedDemand = 0 < MIN_SALE. finalize() must
+    // enter refundMode and transition to Phase.Finalized (not revert).
+    it("finalize with all whitelisted but 0 committers enters refundMode", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
 
       // Nobody commits — just fast-forward through the active window
       await time.increase(THREE_WEEKS + 1);
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      await crowdfund.finalize();
 
-      expect(await crowdfund.phase()).to.equal(Phase.Active);
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.be.true;
     });
 
     it("commit below MIN_COMMIT ($10 USDC) reverts", async function () {
@@ -621,7 +624,9 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
 
-    it("claim reverts when below minimum (should use claimRefund)", async function () {
+    // WHY: When demand is below MIN_SALE, finalize() enters refundMode. claim() must
+    // revert in refundMode (no ARM to distribute), and claimRefund() must work.
+    it("claim reverts in refundMode (should use claimRefund)", async function () {
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
@@ -630,17 +635,16 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.connect(seeds[0]).commit(0, USDC(15_000));
 
       await time.increase(THREE_WEEKS + 1);
-      // finalize reverts (below MIN_SALE), phase stays Active
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      // finalize enters refundMode (below MIN_SALE)
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
 
-      // claim() reverts because phase is Active, not Finalized
+      // claim() reverts because sale is in refund mode
       await expect(
         crowdfund.connect(seeds[0]).claim(ethers.ZeroAddress)
-      ).to.be.revertedWith("ArmadaCrowdfund: not finalized");
+      ).to.be.revertedWith("ArmadaCrowdfund: sale in refund mode");
 
-      // claimRefund() works via deadline fallback
+      // claimRefund() works after finalize-to-refundMode
       await crowdfund.connect(seeds[0]).claimRefund();
     });
 
@@ -1130,11 +1134,14 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
-  // 5. Deadline Fallback Refund (Path 4)
+  // 5. Below-Minimum Finalization Refund
   // ============================================================
 
-  describe("Deadline Fallback Refund (Path 4)", function () {
-    it("full refund when window expired, not finalized, cappedDemand < MIN_SALE", async function () {
+  describe("Below-Minimum Finalization Refund", function () {
+    // WHY: When cappedDemand < MIN_SALE, finalize() enters refundMode and transitions
+    // to Phase.Finalized. Participants then claim full USDC refunds via claimRefund().
+    // ARM tokens are recoverable via withdrawUnallocatedArm() once phase is Finalized.
+    it("full refund after below-minimum finalize", async function () {
       // 3 seeds commit $15K each = $45K (well below MIN_SALE $1M)
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -1144,8 +1151,10 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Advance past windowEnd — do NOT call finalize
       await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
       const usdcBefore = await usdc.balanceOf(seeds[0].address);
       await crowdfund.connect(seeds[0]).claimRefund();
@@ -1154,7 +1163,9 @@ describe("Crowdfund Adversarial", function () {
       expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
     });
 
-    it("deadline fallback reverts when cappedDemand >= MIN_SALE (sale should finalize)", async function () {
+    // WHY: After successful finalization (cappedDemand >= MIN_SALE, not refundMode),
+    // claimRefund() must revert. Participants use claim() for ARM + pro-rata refunds.
+    it("claimRefund reverts after successful finalize (not refundMode)", async function () {
       // 70 seeds commit $15K = $1.05M, plus 51 hop-1 at $4K → cappedDemand > MIN_SALE
       const seeds = allSigners.slice(1, 71);
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -1166,17 +1177,18 @@ describe("Crowdfund Adversarial", function () {
 
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
-      // Advance past windowEnd — do NOT call finalize
       await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
 
-      // Path 4 correctly rejects when the sale could succeed
       await expect(
         crowdfund.connect(seeds[0]).claimRefund()
       ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
     });
 
-    it("deadline fallback computes cappedDemand lazily and caches it", async function () {
-      // 3 seeds commit small amounts, advance past windowEnd
+    // WHY: Multiple participants must all be able to claim refunds after a below-minimum
+    // finalize. Verifies the refundMode state works for sequential claimRefund() calls.
+    it("multiple participants claim refund after below-minimum finalize", async function () {
+      // 3 seeds commit small amounts
       const seeds = allSigners.slice(1, 4);
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
@@ -1186,17 +1198,16 @@ describe("Crowdfund Adversarial", function () {
       }
 
       await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
 
-      // First claimRefund triggers _computeCappedDemand()
-      await crowdfund.connect(seeds[0]).claimRefund();
-      const cappedDemandAfter = await crowdfund.cappedDemand();
-      expect(cappedDemandAfter).to.be.gt(0);
-
-      // Second claimRefund also succeeds (uses cached value)
-      const usdcBefore = await usdc.balanceOf(seeds[1].address);
-      await crowdfund.connect(seeds[1]).claimRefund();
-      const usdcAfter = await usdc.balanceOf(seeds[1].address);
-      expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
+      // All 3 participants can claim full refunds
+      for (const s of seeds) {
+        const usdcBefore = await usdc.balanceOf(s.address);
+        await crowdfund.connect(s).claimRefund();
+        const usdcAfter = await usdc.balanceOf(s.address);
+        expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
+      }
     });
   });
 
@@ -1241,7 +1252,8 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.connect(seeds[0]).commit(0, USDC(15_000));
 
       await time.increase(THREE_WEEKS + 1);
-      // finalize reverts (below MIN_SALE) — use deadline fallback
+      // Finalize enters refundMode (below MIN_SALE)
+      await crowdfund.finalize();
 
       // claimRefund works
       await crowdfund.connect(seeds[0]).claimRefund();

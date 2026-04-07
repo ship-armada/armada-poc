@@ -1,5 +1,5 @@
-// ABOUTME: Tests for ARM token recovery after crowdfund cancellation (issue #69).
-// ABOUTME: Verifies withdrawUnallocatedArm() works in Canceled phase and edge cases.
+// ABOUTME: Tests for ARM token recovery after crowdfund cancellation or below-minimum finalization.
+// ABOUTME: Verifies withdrawUnallocatedArm() works in Canceled and refundMode phases.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -53,8 +53,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
     /// @notice Helper: cancel via security council
     function _cancelViaSecurityCouncil() internal {
         // Security council (admin in test setup) cancels the crowdfund.
-        // finalize() reverts when totalCommitted < MIN_SALE; the cancel path
-        // is handled by security council cancel() or claimRefund() directly.
         crowdfund.cancel();
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Canceled));
     }
@@ -160,5 +158,33 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         uint256 recovered = armToken.balanceOf(treasury) - treasuryBefore;
 
         assertEq(recovered, funding, "should recover exact funding amount");
+    }
+
+    // ============ ARM recovery via below-minimum finalization ============
+
+    /// @notice WHY: cappedDemand < MIN_SALE must cause finalize() to enter refundMode and
+    ///         transition to Phase.Finalized, which unlocks withdrawUnallocatedArm().
+    ///         If finalize() reverted instead, ARM would be permanently locked.
+    function test_withdrawUnallocatedArm_belowMinFinalize() public {
+        // Seed commits small amount — below MIN_SALE
+        uint256 amount = 15_000 * 1e6;
+        usdc.mint(address(0xA), amount);
+        vm.startPrank(address(0xA));
+        usdc.approve(address(crowdfund), amount);
+        crowdfund.commit(0, amount);
+        vm.stopPrank();
+
+        vm.warp(crowdfund.windowEnd() + 1);
+        crowdfund.finalize();
+
+        assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
+        assertTrue(crowdfund.refundMode());
+
+        uint256 treasuryBefore = armToken.balanceOf(treasury);
+        crowdfund.withdrawUnallocatedArm();
+        uint256 treasuryAfter = armToken.balanceOf(treasury);
+
+        assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "treasury should receive all ARM");
+        assertEq(armToken.balanceOf(address(crowdfund)), 0, "crowdfund should have zero ARM");
     }
 }

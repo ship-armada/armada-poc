@@ -138,30 +138,20 @@ export function ClaimTab(props: ClaimTabProps) {
     const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
     const belowMinimum = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
 
-    // Pre-finalization below-minimum state — show refund button
+    // Pre-finalization below-minimum state — finalization is needed before refunds
     if (windowEnded && belowMinimum) {
       return (
         <div className="space-y-4 p-4">
           <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
             <div className="text-amber-500 font-medium">Below Minimum Raise</div>
             <div className="text-muted-foreground mt-1">
-              The commitment deadline has passed and capped demand ({formatUsdc(cappedDemand)}) is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). You may withdraw your full deposit.
+              The commitment deadline has passed and capped demand ({formatUsdc(cappedDemand)}) is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale must be finalized before refunds are available. Anyone can call finalize().
             </div>
           </div>
           {totalCommitted > 0n && (
-            <>
-              <div className="text-sm">
-                Your deposit: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
-              </div>
-              <button
-                className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
-                onClick={handleClaimRefund}
-              >
-                Claim Refund
-              </button>
-              <TransactionFlow state={claimRefundTx.state} onReset={claimRefundTx.reset} successMessage="Refund claimed!" explorerUrl={getExplorerUrl()} />
-            </>
+            <div className="text-sm">
+              Your deposit: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
+            </div>
           )}
         </div>
       )

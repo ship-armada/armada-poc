@@ -815,17 +815,17 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: already finalized");
     });
 
-    it("should revert finalize when below minimum raise", async function () {
+    // WHY: Below-minimum demand causes finalize() to enter refundMode (not revert).
+    // The phase must transition to Finalized so ARM is recoverable via withdrawUnallocatedArm().
+    it("should enter refundMode when finalized below minimum raise", async function () {
       await setupActive([seed1]);
       await crowdfund.connect(seed1).commit(0, USDC(15_000)); // way below $1M min
 
       await time.increase(THREE_WEEKS + 1);
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      await crowdfund.finalize();
 
-      // Phase stays Active — participants use claimRefund() directly
-      expect(await crowdfund.phase()).to.equal(Phase.Active);
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.be.true;
     });
 
     it("should require ARM pre-load before seeds can be added", async function () {
@@ -906,13 +906,18 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: already claimed");
     });
 
-    it("should allow full refund via deadline fallback (below min, no finalize)", async function () {
+    // WHY: When demand is below MIN_SALE, finalize() enters refundMode. Participants
+    // then claim full USDC refunds via claimRefund().
+    it("should allow full refund after below-minimum finalize", async function () {
       await setupActive([seed1]);
       await crowdfund.connect(seed1).commit(0, USDC(10_000));
 
-      const usdcBefore = await usdc.balanceOf(seed1.address);
       await time.increase(THREE_WEEKS + 1);
-      // No finalize or cancel — deadline fallback path in claimRefund()
+      // finalize enters refundMode (below MIN_SALE)
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
+
+      const usdcBefore = await usdc.balanceOf(seed1.address);
       await crowdfund.connect(seed1).claimRefund();
       const usdcAfter = await usdc.balanceOf(seed1.address);
       expect(usdcAfter - usdcBefore).to.equal(USDC(10_000));
@@ -1079,7 +1084,6 @@ describe("Crowdfund Integration", function () {
       }
 
       // Path 3: Canceled — tested in settlement tests
-      // Path 4: Deadline fallback — tested in integration tests (deadline fallback test)
     });
 
     it("double claim() reverts", async function () {
@@ -1270,19 +1274,20 @@ describe("Crowdfund Integration", function () {
       this.skip(); // Requires more than 20 Hardhat default signers
     });
 
-    it("cancellation (below minimum) — claimRefund via deadline fallback", async function () {
+    // WHY: Below-minimum demand triggers refundMode on finalize(). Both participants
+    // must be able to claim full USDC refunds afterward.
+    it("below-minimum finalize → claimRefund for all participants", async function () {
       await setupActive([seed1, seed2]);
       await crowdfund.connect(seed1).commit(0, USDC(15_000));
       await crowdfund.connect(seed2).commit(0, USDC(10_000));
       // Total: $25K << $1M minimum
 
       await time.increase(THREE_WEEKS + 1);
-      // finalize() reverts (below MIN_SALE) — participants use claimRefund() directly
-      await expect(
-        crowdfund.finalize()
-      ).to.be.revertedWith("ArmadaCrowdfund: below minimum raise");
+      // finalize enters refundMode (below MIN_SALE)
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
 
-      // Both can claimRefund via deadline fallback path
+      // Both can claimRefund after refundMode finalization
       const usdcBefore1 = await usdc.balanceOf(seed1.address);
       await crowdfund.connect(seed1).claimRefund();
       expect(await usdc.balanceOf(seed1.address) - usdcBefore1).to.equal(USDC(15_000));

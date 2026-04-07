@@ -1,5 +1,5 @@
-// ABOUTME: Tests for refundMode — the post-allocation minimum raise check.
-// ABOUTME: Verifies behavior when finalize() succeeds but net proceeds < MIN_SALE.
+// ABOUTME: Tests for refundMode — entered when capped demand or net proceeds fall below MIN_SALE.
+// ABOUTME: Verifies refund eligibility, claimRefund() behavior, and phase transitions.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -265,8 +265,10 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
     }
 
-    /// @notice finalize() reverts when totalCommitted < MIN_SALE
-    function test_finalize_revertsBelowMinSale() public {
+    /// @notice WHY: When cappedDemand < MIN_SALE, finalize() must enter refundMode instead
+    ///         of reverting. If phase stays Active, ARM tokens are locked permanently
+    ///         because withdrawUnallocatedArm() requires Phase.Finalized or Phase.Canceled.
+    function test_finalize_belowMinSale_entersRefundMode() public {
         // Only 1 seed commits $15K — way below MIN_SALE
         uint256 amount = 15_000 * 1e6;
         usdc.mint(seeds[0], amount);
@@ -277,14 +279,16 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
         vm.warp(crowdfund.windowEnd() + 1);
 
-        vm.expectRevert("ArmadaCrowdfund: below minimum raise");
         crowdfund.finalize();
+        assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
+        assertTrue(crowdfund.refundMode());
     }
 
-    // ============ Deadline fallback claimRefund path ============
+    // ============ claimRefund after below-minimum finalization ============
 
-    /// @notice claimRefund works via deadline fallback (no finalize/cancel needed)
-    function test_claimRefund_deadlineFallback() public {
+    /// @notice WHY: After finalize() enters refundMode due to below-minimum demand,
+    ///         participants must be able to claim full USDC refunds via claimRefund().
+    function test_claimRefund_afterBelowMinFinalize() public {
         // Commit below MIN_SALE
         uint256 amount = 15_000 * 1e6;
         usdc.mint(seeds[0], amount);
@@ -293,18 +297,18 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         crowdfund.commit(0, amount);
         vm.stopPrank();
 
-        // Window expires, nobody calls finalize or cancel
+        // Window expires, finalize enters refundMode
         vm.warp(crowdfund.windowEnd() + 1);
+        crowdfund.finalize();
 
-        // Participant can self-serve refund
+        // Participant can claim full refund
         uint256 balBefore = usdc.balanceOf(seeds[0]);
         vm.prank(seeds[0]);
         crowdfund.claimRefund();
         uint256 balAfter = usdc.balanceOf(seeds[0]);
 
-        assertEq(balAfter - balBefore, amount, "Should refund full amount via deadline fallback");
-        // Phase stays Active — this is the "zombie Active" state
-        assertEq(uint256(crowdfund.phase()), uint256(Phase.Active));
+        assertEq(balAfter - balBefore, amount, "Should refund full amount after below-min finalize");
+        assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
     }
 
     /// @notice claimRefund reverts during active window

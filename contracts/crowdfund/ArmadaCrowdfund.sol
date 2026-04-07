@@ -448,9 +448,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         emit Cancelled();
     }
 
-    /// @notice Finalize the crowdfund: compute allocations.
-    ///         Permissionless — anyone may call once the window has ended and
-    ///         totalCommitted meets the minimum raise.
+    /// @notice Finalize the crowdfund: compute allocations or enter refund mode.
+    ///         Permissionless — anyone may call once the window has ended.
+    ///         If capped demand is below MIN_SALE, sets refundMode and returns.
     function finalize() external nonReentrant {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");
@@ -459,7 +459,16 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // deposits are accepted during commit() but only capped amounts count
         // toward minimum raise, expansion trigger, and hop-level allocation.
         _computeCappedDemand();
-        require(cappedDemand >= MIN_SALE, "ArmadaCrowdfund: below minimum raise");
+
+        // If capped demand is below minimum raise, enter refund mode immediately.
+        // No allocations to compute — all participants get full USDC refunds.
+        if (cappedDemand < MIN_SALE) {
+            refundMode = true;
+            phase = Phase.Finalized;
+            finalizedAt = block.timestamp;
+            emit Finalized(0, 0, 0, true);
+            return;
+        }
 
         // Step 1: Elastic expansion (based on capped demand)
         if (cappedDemand >= ELASTIC_TRIGGER) {
@@ -584,29 +593,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         emit Allocated(msg.sender, armTransferred, totalRefundUsdc, armTransferred > 0 ? delegate : address(0));
     }
 
-    /// @notice Claim USDC refund — failure paths only. Three eligibility paths:
+    /// @notice Claim USDC refund — failure paths only. Two eligibility paths:
     ///         1. RefundMode — full deposit refund (finalized + refundMode)
     ///         2. Phase.Canceled — full deposit refund (security council cancel)
-    ///         3. Deadline fallback — full deposit refund (window expired, not finalized, below MIN_SALE)
     ///         Success-path refunds (pro-rata excess) are handled by claim().
     function claimRefund() external nonReentrant {
-        bool fullRefund = false;
-
-        if (refundMode || phase == Phase.Canceled) {
-            // Paths 1 & 2: Full deposit refund (no deadline — participants must always recover USDC)
-            fullRefund = true;
-        } else if (block.timestamp > windowEnd && phase != Phase.Finalized) {
-            // Path 3: Deadline fallback — window expired without finalization.
-            // Compute capped demand once; subsequent calls reuse the cached value.
-            if (cappedDemand == 0) {
-                _computeCappedDemand();
-            }
-            if (cappedDemand < MIN_SALE) {
-                fullRefund = true;
-            }
-        }
-
-        require(fullRefund, "ArmadaCrowdfund: refund not available");
+        require(
+            refundMode || phase == Phase.Canceled,
+            "ArmadaCrowdfund: refund not available"
+        );
         require(!claimed[msg.sender], "ArmadaCrowdfund: already claimed");
 
         // Verify sender has a commitment

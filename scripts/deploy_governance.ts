@@ -38,7 +38,7 @@ import {
   getChainRole,
   getGovernanceDeploymentFile,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses } from "./deploy-utils";
 
 interface GovernanceDeployment {
   chainId: number;
@@ -188,19 +188,23 @@ async function main() {
 
   // 7. Deploy RevenueLock (immutable — holds team + airdrop ARM)
   console.log("7. Deploying RevenueLock...");
-  // TODO: Replace placeholder beneficiaries with finalized mainnet list (see issue #144)
   const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
-  // Local dev: use Anvil default accounts as placeholder beneficiaries
-  const revenueLockBeneficiaries = [
-    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", // Anvil account #1
-    "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", // Anvil account #2
-    "0x90F79bf6EB2c4f870365E785982E1f101E93b906", // Anvil account #3
-  ];
-  const revenueLockAmounts = [
-    ethers.parseUnits("1200000", 18), // team member 1
-    ethers.parseUnits("800000", 18),  // team member 2 / Knowable Safe placeholder
-    ethers.parseUnits("400000", 18),  // airdrop placeholder
-  ];
+
+  // Beneficiaries come from network config (Anvil placeholders for local, env var for non-local)
+  const beneficiaryConfig = config.revenueLockBeneficiaries;
+  const revenueLockBeneficiaries = beneficiaryConfig.map(b => b.address);
+  const revenueLockAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
+
+  // Guard: reject Anvil default addresses on non-local environments
+  rejectAnvilAddresses(revenueLockBeneficiaries, "RevenueLock beneficiaries");
+  if (config.treasuryAddress) {
+    rejectAnvilAddresses([config.treasuryAddress], "Treasury address");
+  }
+
+  for (const b of beneficiaryConfig) {
+    console.log(`   Beneficiary: ${b.address} — ${b.amount} ARM (${b.label})`);
+  }
+
   const RevenueLock = await ethers.getContractFactory("RevenueLock");
   const revenueLockContract = await RevenueLock.deploy(
     armTokenAddress, revenueCounterAddress,
@@ -209,6 +213,33 @@ async function main() {
   await revenueLockContract.deploymentTransaction()!.wait();
   const revenueLockAddress = await revenueLockContract.getAddress();
   console.log(`   RevenueLock: ${revenueLockAddress}`);
+
+  // Post-deploy read-back verification: confirm on-chain state matches intent
+  console.log("   Verifying RevenueLock beneficiary allocations...");
+  for (let i = 0; i < beneficiaryConfig.length; i++) {
+    const expectedAddr = beneficiaryConfig[i].address;
+    const expectedAmount = ethers.parseUnits(beneficiaryConfig[i].amount, 18);
+    const onChainAllocation = await revenueLockContract.allocation(expectedAddr);
+    if (onChainAllocation !== expectedAmount) {
+      throw new Error(
+        `RevenueLock read-back MISMATCH for ${expectedAddr} (${beneficiaryConfig[i].label}):\n` +
+        `  Expected: ${ethers.formatUnits(expectedAmount, 18)} ARM\n` +
+        `  On-chain: ${ethers.formatUnits(onChainAllocation, 18)} ARM\n` +
+        `  ABORTING — the deployed RevenueLock state does not match the intended config.`
+      );
+    }
+  }
+  const onChainTotal = await revenueLockContract.totalAllocation();
+  const expectedTotal = revenueLockAmounts.reduce((sum, a) => sum + a, 0n);
+  if (onChainTotal !== expectedTotal) {
+    throw new Error(
+      `RevenueLock total allocation MISMATCH:\n` +
+      `  Expected: ${ethers.formatUnits(expectedTotal, 18)} ARM\n` +
+      `  On-chain: ${ethers.formatUnits(onChainTotal, 18)} ARM\n` +
+      `  ABORTING — possible extra beneficiaries or amount corruption.`
+    );
+  }
+  console.log(`   ✓ All ${beneficiaryConfig.length} beneficiaries verified, total: ${ethers.formatUnits(onChainTotal, 18)} ARM`);
 
   // 8. Deploy ShieldPauseController
   console.log("8. Deploying ShieldPauseController...");

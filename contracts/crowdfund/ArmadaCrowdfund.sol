@@ -601,17 +601,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         uint256 globalCapped,
         uint256[3] memory perHopCapped
     ) {
-        uint256 len = participantNodes.length;
-        for (uint256 i = 0; i < len; i++) {
-            ParticipantNode storage node = participantNodes[i];
-            Participant storage p = participants[node.addr][node.hop];
-            if (p.committed == 0) continue;
-
-            uint256 cap = _effectiveCap(p, node.hop);
-            uint256 capped = p.committed < cap ? p.committed : cap;
-            perHopCapped[node.hop] += capped;
-            globalCapped += capped;
-        }
+        return _iterateCappedDemand();
     }
 
     /// @notice Check if an address is whitelisted at a specific hop
@@ -828,16 +818,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         refundUsdc = committed - allocUsdc;
     }
 
-    /// @dev Iterate all participant nodes and compute capped demand per hop and globally.
-    ///      Sets hopStats[h].cappedCommitted and cappedDemand. Matches spec finalization
-    ///      pseudocode step 1-2: cap each (address, hop) at invitesReceived * capUsdc.
-    function _computeCappedDemand() internal {
-        uint256 globalCapped = 0;
-        // Reset per-hop capped totals
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            hopStats[h].cappedCommitted = 0;
-        }
-
+    /// @dev Pure iteration: compute capped demand per hop and globally without writing state.
+    function _iterateCappedDemand() internal view returns (
+        uint256 globalCapped,
+        uint256[3] memory perHopCapped
+    ) {
         uint256 len = participantNodes.length;
         for (uint256 i = 0; i < len; i++) {
             ParticipantNode storage node = participantNodes[i];
@@ -846,10 +831,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
             uint256 cap = _effectiveCap(p, node.hop);
             uint256 capped = p.committed < cap ? p.committed : cap;
-            hopStats[node.hop].cappedCommitted += capped;
+            perHopCapped[node.hop] += capped;
             globalCapped += capped;
         }
+    }
 
+    /// @dev Compute capped demand and write results to hopStats and cappedDemand.
+    ///      Matches spec finalization pseudocode step 1-2.
+    function _computeCappedDemand() internal {
+        (uint256 globalCapped, uint256[3] memory perHopCapped) = _iterateCappedDemand();
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            hopStats[h].cappedCommitted = perHopCapped[h];
+        }
         cappedDemand = globalCapped;
     }
 

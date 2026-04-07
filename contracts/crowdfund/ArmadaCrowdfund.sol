@@ -448,9 +448,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         emit Cancelled();
     }
 
-    /// @notice Finalize the crowdfund: compute allocations.
-    ///         Permissionless — anyone may call once the window has ended and
-    ///         totalCommitted meets the minimum raise.
+    /// @notice Finalize the crowdfund: compute allocations or enter refund mode.
+    ///         Permissionless — anyone may call once the window has ended.
+    ///         If capped demand is below MIN_SALE, sets refundMode and returns.
     function finalize() external nonReentrant {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");

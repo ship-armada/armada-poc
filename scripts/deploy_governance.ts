@@ -190,6 +190,7 @@ async function main() {
   console.log("7. Deploying RevenueLock...");
   const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
 
+  // TODO: Set REVENUE_LOCK_BENEFICIARIES_JSON with finalized mainnet list (see issue #144)
   // Beneficiaries come from network config (Anvil placeholders for local, env var for non-local)
   const beneficiaryConfig = config.revenueLockBeneficiaries;
   const revenueLockBeneficiaries = beneficiaryConfig.map(b => b.address);

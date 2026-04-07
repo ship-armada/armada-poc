@@ -416,10 +416,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Hop-2 has no BPS ceiling — its effective ceiling is floor + hop-1 leftover.
         // Rollover is unconditional: leftover always flows to the next hop.
 
-        // _computeHopAllocations sets finalCeilings/finalDemands needed by _computeAllocation.
-        // The hop-level USDC estimate is used for the refundMode pre-check below.
-        // The hop-level ARM total is unused — the exact per-address sum replaces it.
-        (uint256 totalAllocUsdc_, ) = _computeHopAllocations(saleSize);
+        // _computeHopAllocations sets finalCeilings/finalDemands needed by _computeAllocation
+        // and returns the hop-level USDC estimate for the refundMode pre-check below.
+        uint256 totalAllocUsdc_ = _computeHopAllocations(saleSize);
 
         // Post-allocation minimum raise check: if net proceeds (allocated USDC) fall
         // below MIN_SALE, enter refundMode. Participants get full USDC refunds via
@@ -763,10 +762,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @dev Compute hop-level allocations and store results in finalCeilings/finalDemands.
     ///      Extracted from finalize() to avoid stack-too-deep.
-    function _computeHopAllocations(uint256 saleSize_) internal returns (
-        uint256 totalAllocUsdc_,
-        uint256 totalAllocArm_
-    ) {
+    function _computeHopAllocations(uint256 saleSize_) internal returns (uint256 totalAllocUsdc_) {
         uint256 hop2Floor = (saleSize_ * HOP2_FLOOR_BPS) / 10000;
         uint256 available = saleSize_ - hop2Floor;
 
@@ -784,7 +780,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         finalCeilings[0] = hop0Ceiling;
         finalDemands[0] = demand;
         totalAllocUsdc_ = alloc;
-        totalAllocArm_ = (alloc * 1e18) / ARM_PRICE;
 
         // --- Hop-1: allocate from remaining available, ceiling boosted by hop-0 leftover ---
         demand = hopStats[1].cappedCommitted;
@@ -798,7 +793,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         finalCeilings[1] = hop1EffCeiling;
         finalDemands[1] = demand;
         totalAllocUsdc_ += alloc;
-        totalAllocArm_ += (alloc * 1e18) / ARM_PRICE;
 
         // --- Hop-2: allocate from floor + hop-1 leftover (no BPS ceiling) ---
         demand = hopStats[2].cappedCommitted;
@@ -808,7 +802,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         finalCeilings[2] = hop2EffCeiling;
         finalDemands[2] = demand;
         totalAllocUsdc_ += alloc;
-        totalAllocArm_ += (alloc * 1e18) / ARM_PRICE;
     }
 
     /// @dev Compute allocation for a participant from stored hop-level ceilings/demands.

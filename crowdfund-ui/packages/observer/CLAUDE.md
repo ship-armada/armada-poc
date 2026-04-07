@@ -43,7 +43,7 @@ Current dependencies are the scaffold baseline. When implementing, add:
 - **Tailwind v4** with shadcn/ui (New York style) for UI primitives
 - **`@` path alias** maps to `src/`
 - All source files must start with two-line ABOUTME comments
-- Style theme matches `../../crowdfund-frontend/` — dark mode, oklch colors, Inter font
+- Style theme uses dark mode, oklch colors, Inter font (derived from the original crowdfund-frontend, now in `_legacy/`)
 
 ## Shared Package Usage
 

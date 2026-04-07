@@ -107,7 +107,7 @@ async function main() {
   const signers = await ethers.getSigners();
   const deployer = signers[0];
 
-  // Signer allocation mirrors the UI's dropdown (crowdfund-frontend/src/config/accounts.ts):
+  // Signer allocation mirrors the UI's dropdown (crowdfund-ui/packages/committer):
   //   signers[0]   = Admin / Deployer
   //   signers[1-3] = Seed A/B/C (hop-0)   — UI accounts
   //   signers[4-6] = Hop-1 A/B/C          — UI accounts

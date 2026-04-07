@@ -42,7 +42,9 @@ npm run test:governance     # Governance lifecycle + adversarial tests
 npm run test:crowdfund      # Crowdfund lifecycle + adversarial tests
 
 # Crowdfund testing tools
-npm run crowdfund-ui        # Start crowdfund frontend (port 5174)
+npm run crowdfund:observer  # Start crowdfund observer UI (port 5173)
+npm run crowdfund:committer # Start crowdfund committer UI (port 5174)
+npm run crowdfund:admin     # Start crowdfund admin UI (port 5175)
 npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
 
 # Sepolia testnet
@@ -91,7 +93,7 @@ When writing new code, follow production security practices even though these le
 | `scripts/` | Hardhat deployment and utility scripts |
 | `relayer/` | Node.js relayer service |
 | `usdc-v2-frontend/` | Temporary React frontend |
-| `crowdfund-frontend/` | Crowdfund testing UI (React, Vite, Jotai) |
+| `crowdfund-ui/` | Crowdfund UIs — observer, committer, admin (React, Vite, Jotai) |
 | `lib/` | Foundry deps (forge-std, halmos) + Railgun SDK helpers |
 | `config/` | Environment configs (local.env, sepolia.env, networks.ts) |
 | `deployments/` | Generated deployment manifests (Sepolia ones are committed) |

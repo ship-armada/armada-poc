@@ -43,7 +43,7 @@ Each app loads deployment manifests (contract addresses, ABIs) from `../../deplo
 
 ## Style Reference
 
-All three apps share the same visual theme — dark mode, oklch color tokens, Inter font. The theme CSS is copied from `../../crowdfund-frontend/src/index.css`. shadcn/ui (New York style) provides base UI primitives. Each app has its own shadcn installation (`components.json` + `src/components/ui/`).
+All three apps share the same visual theme — dark mode, oklch color tokens, Inter font. The theme CSS was derived from the original crowdfund-frontend (now archived in `_legacy/`). shadcn/ui (New York style) provides base UI primitives. Each app has its own shadcn installation (`components.json` + `src/components/ui/`).
 
 ## Conventions
 

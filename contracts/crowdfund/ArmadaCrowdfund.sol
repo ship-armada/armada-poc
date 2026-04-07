@@ -233,23 +233,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(invitee != address(0), "ArmadaCrowdfund: zero address");
 
         uint8 inviteeHop = inviterHop + 1;
-        Participant storage inviteeNode = participants[invitee][inviteeHop];
-
-        if (!inviteeNode.isWhitelisted) {
-            // First invite to this (address, hop) — whitelist the node
-            inviteeNode.isWhitelisted = true;
-            inviteeNode.invitesReceived = 1;
-            inviteeNode.invitedBy = msg.sender;
-            participantNodes.push(ParticipantNode(invitee, inviteeHop));
-            hopStats[inviteeHop].whitelistCount++;
-        } else {
-            // Subsequent invite — increment counter (scales cap + outgoing budget)
-            require(
-                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
-                "ArmadaCrowdfund: max invites received"
-            );
-            inviteeNode.invitesReceived++;
-        }
+        _registerOrStackInvite(invitee, inviteeHop, msg.sender);
 
         inviter.invitesSent++;
         emit Invited(msg.sender, invitee, inviteeHop, 0);
@@ -280,21 +264,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             launchTeamHop2Used++;
         }
 
-        Participant storage inviteeNode = participants[invitee][inviteeHop];
-
-        if (!inviteeNode.isWhitelisted) {
-            inviteeNode.isWhitelisted = true;
-            inviteeNode.invitesReceived = 1;
-            inviteeNode.invitedBy = msg.sender;
-            participantNodes.push(ParticipantNode(invitee, inviteeHop));
-            hopStats[inviteeHop].whitelistCount++;
-        } else {
-            require(
-                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
-                "ArmadaCrowdfund: max invites received"
-            );
-            inviteeNode.invitesReceived++;
-        }
+        _registerOrStackInvite(invitee, inviteeHop, msg.sender);
 
         emit LaunchTeamInvited(invitee, inviteeHop);
     }
@@ -372,21 +342,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(inviterNode.invitesSent < maxBudget, "ArmadaCrowdfund: invite limit reached");
 
         uint8 inviteeHop = fromHop + 1;
+        _registerOrStackInvite(msg.sender, inviteeHop, inviter);
         Participant storage inviteeNode = participants[msg.sender][inviteeHop];
-
-        if (!inviteeNode.isWhitelisted) {
-            inviteeNode.isWhitelisted = true;
-            inviteeNode.invitesReceived = 1;
-            inviteeNode.invitedBy = inviter;
-            participantNodes.push(ParticipantNode(msg.sender, inviteeHop));
-            hopStats[inviteeHop].whitelistCount++;
-        } else {
-            require(
-                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
-                "ArmadaCrowdfund: max invites received"
-            );
-            inviteeNode.invitesReceived++;
-        }
         inviterNode.invitesSent++;
         emit Invited(inviter, msg.sender, inviteeHop, nonce);
 
@@ -756,6 +713,24 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         totalCommitted += amount;
         if (firstCommit) {
             hopStats[hop].uniqueCommitters++;
+        }
+    }
+
+    /// @dev Whitelist a new (invitee, hop) node or stack an additional invite on it.
+    function _registerOrStackInvite(address invitee, uint8 inviteeHop, address inviter_) internal {
+        Participant storage inviteeNode = participants[invitee][inviteeHop];
+        if (!inviteeNode.isWhitelisted) {
+            inviteeNode.isWhitelisted = true;
+            inviteeNode.invitesReceived = 1;
+            inviteeNode.invitedBy = inviter_;
+            participantNodes.push(ParticipantNode(invitee, inviteeHop));
+            hopStats[inviteeHop].whitelistCount++;
+        } else {
+            require(
+                inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,
+                "ArmadaCrowdfund: max invites received"
+            );
+            inviteeNode.invitesReceived++;
         }
     }
 

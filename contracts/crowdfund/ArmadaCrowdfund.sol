@@ -316,16 +316,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Over-cap deposits are accepted. Excess beyond effective cap is refunded
         // at settlement. Capped demand is computed at finalization time.
 
-        bool firstCommit = (p.committed == 0);
-
         // CEI: update state before external call
-        p.committed += amount;
-        hopStats[hop].totalCommitted += amount;
-        totalCommitted += amount;
-
-        if (firstCommit) {
-            hopStats[hop].uniqueCommitters++;
-        }
+        _escrowCommit(p, hop, amount);
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -402,15 +394,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(msg.sender != launchTeam, "ArmadaCrowdfund: launch team cannot commit");
         require(amount >= MIN_COMMIT, "ArmadaCrowdfund: below minimum commitment");
 
-        bool firstCommit = (inviteeNode.committed == 0);
-
-        inviteeNode.committed += amount;
-        hopStats[inviteeHop].totalCommitted += amount;
-        totalCommitted += amount;
-
-        if (firstCommit) {
-            hopStats[inviteeHop].uniqueCommitters++;
-        }
+        _escrowCommit(inviteeNode, inviteeHop, amount);
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -762,6 +746,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
             "ArmadaCrowdfund: outside week-1 window"
         );
+    }
+
+    /// @dev Record a USDC commitment: update participant, hop stats, and global total.
+    function _escrowCommit(Participant storage p, uint8 hop, uint256 amount) internal {
+        bool firstCommit = (p.committed == 0);
+        p.committed += amount;
+        hopStats[hop].totalCommitted += amount;
+        totalCommitted += amount;
+        if (firstCommit) {
+            hopStats[hop].uniqueCommitters++;
+        }
     }
 
     /// @dev Compute the effective commitment cap for a participant at a given hop.

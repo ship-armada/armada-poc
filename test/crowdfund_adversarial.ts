@@ -332,8 +332,8 @@ describe("Crowdfund Adversarial", function () {
     });
 
     // WHY: When totalCommitted is 1 wei below MIN_SALE, finalize() must enter refundMode
-    // instead of reverting. This is the fix for issue #192 — ensures the phase transitions
-    // to Finalized so ARM tokens can be recovered via withdrawUnallocatedArm().
+    // instead of reverting, ensuring the phase transitions to Finalized so ARM tokens
+    // can be recovered via withdrawUnallocatedArm().
     it("totalCommitted 1 below MIN_SALE causes finalize to enter refundMode", async function () {
       // 66 seeds at $15K = $990K. 1 seed at $9,999.999999 = $999,999.999999 < $1M
       const seeds = allSigners.slice(1, 68);
@@ -1134,13 +1134,13 @@ describe("Crowdfund Adversarial", function () {
   });
 
   // ============================================================
-  // 5. Below-Minimum Finalization Refund (Issue #192 fix)
+  // 5. Below-Minimum Finalization Refund
   // ============================================================
 
   describe("Below-Minimum Finalization Refund", function () {
     // WHY: When cappedDemand < MIN_SALE, finalize() enters refundMode and transitions
     // to Phase.Finalized. Participants then claim full USDC refunds via claimRefund().
-    // This replaces the old "deadline fallback" path and ensures ARM tokens are recoverable.
+    // ARM tokens are recoverable via withdrawUnallocatedArm() once phase is Finalized.
     it("full refund after below-minimum finalize", async function () {
       // 3 seeds commit $15K each = $45K (well below MIN_SALE $1M)
       const seeds = allSigners.slice(1, 4);

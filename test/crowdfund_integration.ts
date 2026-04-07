@@ -816,7 +816,7 @@ describe("Crowdfund Integration", function () {
     });
 
     // WHY: Below-minimum demand causes finalize() to enter refundMode (not revert).
-    // This ensures the phase transitions to Finalized so ARM is recoverable (issue #192).
+    // The phase must transition to Finalized so ARM is recoverable via withdrawUnallocatedArm().
     it("should enter refundMode when finalized below minimum raise", async function () {
       await setupActive([seed1]);
       await crowdfund.connect(seed1).commit(0, USDC(15_000)); // way below $1M min
@@ -907,8 +907,7 @@ describe("Crowdfund Integration", function () {
     });
 
     // WHY: When demand is below MIN_SALE, finalize() enters refundMode. Participants
-    // then claim full USDC refunds via claimRefund(). This replaced the old deadline
-    // fallback path (issue #192 fix).
+    // then claim full USDC refunds via claimRefund().
     it("should allow full refund after below-minimum finalize", async function () {
       await setupActive([seed1]);
       await crowdfund.connect(seed1).commit(0, USDC(10_000));
@@ -1276,7 +1275,7 @@ describe("Crowdfund Integration", function () {
     });
 
     // WHY: Below-minimum demand triggers refundMode on finalize(). Both participants
-    // must be able to claim full USDC refunds afterward. (Issue #192 fix)
+    // must be able to claim full USDC refunds afterward.
     it("below-minimum finalize → claimRefund for all participants", async function () {
       await setupActive([seed1, seed2]);
       await crowdfund.connect(seed1).commit(0, USDC(15_000));

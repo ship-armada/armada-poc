@@ -702,13 +702,12 @@ describe("Crowdfund Full Lifecycle", function () {
   });
 
   // ================================================================
-  // Path 5: Below-Minimum Finalization (Issue #192 fix)
+  // Path 5: Below-Minimum Finalization
   // ================================================================
 
   describe("Path 5: Below-Minimum Finalization", function () {
-    // WHY: This is the exact scenario from issue #192. When demand is below MIN_SALE,
-    // finalize() enters refundMode, participants claim USDC refunds, and ARM is
-    // recoverable via withdrawUnallocatedArm(). Without this fix, ARM was permanently locked.
+    // WHY: When demand is below MIN_SALE, finalize() must enter refundMode so participants
+    // can claim USDC refunds and ARM is recoverable via withdrawUnallocatedArm().
     it("below-minimum finalize → refund → ARM recovery", async function () {
       const crowdfund = await deployCrowdfund();
 

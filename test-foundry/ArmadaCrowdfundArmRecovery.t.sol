@@ -1,5 +1,5 @@
-// ABOUTME: Tests for ARM token recovery after crowdfund cancellation (issue #69).
-// ABOUTME: Verifies withdrawUnallocatedArm() works in Canceled phase and edge cases.
+// ABOUTME: Tests for ARM token recovery after crowdfund cancellation or below-minimum finalization.
+// ABOUTME: Verifies withdrawUnallocatedArm() works in Canceled and refundMode phases.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -160,12 +160,11 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         assertEq(recovered, funding, "should recover exact funding amount");
     }
 
-    // ============ Issue #192: ARM recovery via below-minimum finalization ============
+    // ============ ARM recovery via below-minimum finalization ============
 
-    /// @notice WHY: This is the exact scenario from issue #192. When cappedDemand < MIN_SALE,
-    ///         finalize() enters refundMode and transitions to Phase.Finalized, which unlocks
-    ///         withdrawUnallocatedArm(). Without the fix, finalize() reverted and ARM was
-    ///         permanently locked in the contract.
+    /// @notice WHY: cappedDemand < MIN_SALE must cause finalize() to enter refundMode and
+    ///         transition to Phase.Finalized, which unlocks withdrawUnallocatedArm().
+    ///         If finalize() reverted instead, ARM would be permanently locked.
     function test_withdrawUnallocatedArm_belowMinFinalize() public {
         // Seed commits small amount — below MIN_SALE
         uint256 amount = 15_000 * 1e6;

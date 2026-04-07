@@ -1,5 +1,5 @@
-// ABOUTME: Tests for refundMode — the post-allocation minimum raise check.
-// ABOUTME: Verifies behavior when finalize() succeeds but net proceeds < MIN_SALE.
+// ABOUTME: Tests for refundMode — entered when capped demand or net proceeds fall below MIN_SALE.
+// ABOUTME: Verifies refund eligibility, claimRefund() behavior, and phase transitions.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -266,9 +266,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     }
 
     /// @notice WHY: When cappedDemand < MIN_SALE, finalize() must enter refundMode instead
-    ///         of reverting. This is the fix for issue #192 — without it, ARM tokens are
-    ///         locked permanently because phase stays Active and withdrawUnallocatedArm()
-    ///         requires Phase.Finalized or Phase.Canceled.
+    ///         of reverting. If phase stays Active, ARM tokens are locked permanently
+    ///         because withdrawUnallocatedArm() requires Phase.Finalized or Phase.Canceled.
     function test_finalize_belowMinSale_entersRefundMode() public {
         // Only 1 seed commits $15K — way below MIN_SALE
         uint256 amount = 15_000 * 1e6;
@@ -288,8 +287,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     // ============ claimRefund after below-minimum finalization ============
 
     /// @notice WHY: After finalize() enters refundMode due to below-minimum demand,
-    ///         participants must be able to claim full USDC refunds. This replaces the
-    ///         old "deadline fallback" path with the unified finalize-first flow.
+    ///         participants must be able to claim full USDC refunds via claimRefund().
     function test_claimRefund_afterBelowMinFinalize() public {
         // Commit below MIN_SALE
         uint256 amount = 15_000 * 1e6;

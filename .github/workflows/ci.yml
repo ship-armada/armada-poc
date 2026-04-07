@@ -9,6 +9,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  anvil-address-check:
+    name: Anvil Address Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-anvil-addresses.sh
+
   hardhat:
     name: Hardhat Compile & Test
     runs-on: ubuntu-latest

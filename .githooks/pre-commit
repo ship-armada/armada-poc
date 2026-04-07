@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ABOUTME: Pre-commit hook that checks staged files for Anvil default addresses.
+# ABOUTME: Installed via `npm install` (package.json "prepare" script sets core.hooksPath).
+
+set -euo pipefail
+
+# Get list of staged files (added/modified, not deleted)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [[ -z "$STAGED_FILES" ]]; then
+  exit 0
+fi
+
+# Pass staged files to the shared check script
+# shellcheck disable=SC2086
+exec ./scripts/check-anvil-addresses.sh $STAGED_FILES

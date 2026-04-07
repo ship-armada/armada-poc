@@ -53,8 +53,6 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
     /// @notice Helper: cancel via security council
     function _cancelViaSecurityCouncil() internal {
         // Security council (admin in test setup) cancels the crowdfund.
-        // finalize() reverts when totalCommitted < MIN_SALE; the cancel path
-        // is handled by security council cancel() or claimRefund() directly.
         crowdfund.cancel();
         assertEq(uint256(crowdfund.phase()), uint256(Phase.Canceled));
     }
@@ -160,5 +158,34 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
         uint256 recovered = armToken.balanceOf(treasury) - treasuryBefore;
 
         assertEq(recovered, funding, "should recover exact funding amount");
+    }
+
+    // ============ Issue #192: ARM recovery via below-minimum finalization ============
+
+    /// @notice WHY: This is the exact scenario from issue #192. When cappedDemand < MIN_SALE,
+    ///         finalize() enters refundMode and transitions to Phase.Finalized, which unlocks
+    ///         withdrawUnallocatedArm(). Without the fix, finalize() reverted and ARM was
+    ///         permanently locked in the contract.
+    function test_withdrawUnallocatedArm_belowMinFinalize() public {
+        // Seed commits small amount — below MIN_SALE
+        uint256 amount = 15_000 * 1e6;
+        usdc.mint(address(0xA), amount);
+        vm.startPrank(address(0xA));
+        usdc.approve(address(crowdfund), amount);
+        crowdfund.commit(0, amount);
+        vm.stopPrank();
+
+        vm.warp(crowdfund.windowEnd() + 1);
+        crowdfund.finalize();
+
+        assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
+        assertTrue(crowdfund.refundMode());
+
+        uint256 treasuryBefore = armToken.balanceOf(treasury);
+        crowdfund.withdrawUnallocatedArm();
+        uint256 treasuryAfter = armToken.balanceOf(treasury);
+
+        assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "treasury should receive all ARM");
+        assertEq(armToken.balanceOf(address(crowdfund)), 0, "crowdfund should have zero ARM");
     }
 }

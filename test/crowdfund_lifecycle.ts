@@ -702,11 +702,14 @@ describe("Crowdfund Full Lifecycle", function () {
   });
 
   // ================================================================
-  // Path 5: Deadline Fallback
+  // Path 5: Below-Minimum Finalization (Issue #192 fix)
   // ================================================================
 
-  describe("Path 5: Deadline Fallback", function () {
-    it("below-minimum deadline fallback refund", async function () {
+  describe("Path 5: Below-Minimum Finalization", function () {
+    // WHY: This is the exact scenario from issue #192. When demand is below MIN_SALE,
+    // finalize() enters refundMode, participants claim USDC refunds, and ARM is
+    // recoverable via withdrawUnallocatedArm(). Without this fix, ARM was permanently locked.
+    it("below-minimum finalize → refund → ARM recovery", async function () {
       const crowdfund = await deployCrowdfund();
 
       // Small commitments well below MIN_SALE
@@ -723,15 +726,13 @@ describe("Crowdfund Full Lifecycle", function () {
       // Window expires
       await time.increase(THREE_WEEKS + 1);
 
-      // finalize() reverts
-      await expect(crowdfund.finalize()).to.be.revertedWith(
-        "ArmadaCrowdfund: below minimum raise"
-      );
+      // finalize() enters refundMode (below MIN_SALE)
+      const finalizeTx = await crowdfund.finalize();
+      await expect(finalizeTx).to.emit(crowdfund, "Finalized").withArgs(0, 0, 0, true);
+      expect(await crowdfund.phase()).to.equal(Phase.Finalized);
+      expect(await crowdfund.refundMode()).to.be.true;
 
-      // No Finalized event — phase is still Active
-      expect(await crowdfund.phase()).to.equal(Phase.Active);
-
-      // claimRefund() works via deadline fallback path (path 4)
+      // All participants claim full USDC refunds
       for (const s of seeds) {
         const before = await usdc.balanceOf(s.address);
         const tx = await crowdfund.connect(s).claimRefund();
@@ -739,6 +740,12 @@ describe("Crowdfund Full Lifecycle", function () {
         const after = await usdc.balanceOf(s.address);
         expect(after - before).to.equal(USDC(15_000));
       }
+
+      // ARM recovery: withdrawUnallocatedArm() sweeps all ARM to treasury
+      const treasuryArmBefore = await armToken.balanceOf(treasury.address);
+      await crowdfund.withdrawUnallocatedArm();
+      const treasuryArmAfter = await armToken.balanceOf(treasury.address);
+      expect(treasuryArmAfter - treasuryArmBefore).to.equal(MAX_SALE_ARM);
     });
   });
 

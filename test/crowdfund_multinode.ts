@@ -577,15 +577,19 @@ describe("Crowdfund Multi-Node", function () {
   // ============================================================
 
   describe("Aggregate Refund", function () {
-    it("should aggregate refund across hops via deadline fallback", async function () {
+    // WHY: When demand is below MIN_SALE, finalize() enters refundMode.
+    // claimRefund() must aggregate the full committed amount across all hops.
+    it("should aggregate refund across hops after below-minimum finalize", async function () {
       await setupWithSeeds([seed1]);
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
       await crowdfund.connect(seed1).commit(0, USDC(15_000));
       await crowdfund.connect(seed1).commit(1, USDC(4_000));
 
-      // Not enough total → finalize reverts, use claimRefund deadline fallback
+      // Not enough total → finalize enters refundMode
       await time.increase(THREE_WEEKS + 1);
+      await crowdfund.finalize();
+      expect(await crowdfund.refundMode()).to.be.true;
 
       const usdcBefore = await usdc.balanceOf(seed1.address);
       await crowdfund.connect(seed1).claimRefund();

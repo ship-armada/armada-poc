@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ABOUTME: Pre-commit hook that checks staged files for Anvil default addresses.
+# ABOUTME: Pre-commit hook running safety checks on staged files.
 # ABOUTME: Installed via `npm install` (package.json "prepare" script sets core.hooksPath).
 
 set -euo pipefail
@@ -11,6 +11,52 @@ if [[ -z "$STAGED_FILES" ]]; then
   exit 0
 fi
 
-# Pass staged files to the shared check script
+FAILED=false
+
+# --- Check 1: Anvil default addresses in deploy scripts ---
 # shellcheck disable=SC2086
-exec ./scripts/check-anvil-addresses.sh $STAGED_FILES
+if ! ./scripts/check-anvil-addresses.sh $STAGED_FILES; then
+  FAILED=true
+fi
+
+# --- Check 2: Secrets detection ---
+# shellcheck disable=SC2086
+if ! ./scripts/check-secrets.sh $STAGED_FILES; then
+  FAILED=true
+fi
+
+# --- Check 3: .env file leak prevention ---
+# Only config/local.env and config/sepolia.env are committed intentionally.
+# All other .env files should be gitignored, but check as a safety net.
+ALLOWED_ENV_FILES="config/local.env config/sepolia.env"
+ENV_VIOLATIONS=""
+for f in $STAGED_FILES; do
+  if [[ "$f" == *.env || "$f" == *.env.* ]]; then
+    is_allowed=false
+    for allowed in $ALLOWED_ENV_FILES; do
+      if [[ "$f" == "$allowed" ]]; then
+        is_allowed=true
+        break
+      fi
+    done
+    if [[ "$is_allowed" == false ]]; then
+      ENV_VIOLATIONS="${ENV_VIOLATIONS}  $f\n"
+    fi
+  fi
+done
+
+if [[ -n "$ENV_VIOLATIONS" ]]; then
+  echo "ERROR: .env file(s) staged for commit!"
+  echo ""
+  echo "These files likely contain secrets and should be in .gitignore:"
+  echo -e "$ENV_VIOLATIONS"
+  echo "Allowed .env files: $ALLOWED_ENV_FILES"
+  echo "If this is intentional, add the file to ALLOWED_ENV_FILES in .githooks/pre-commit."
+  FAILED=true
+fi
+
+if [[ "$FAILED" == true ]]; then
+  echo ""
+  echo "Pre-commit checks FAILED. Fix the issues above or use --no-verify to bypass (not recommended)."
+  exit 1
+fi

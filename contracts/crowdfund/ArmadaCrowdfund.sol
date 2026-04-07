@@ -536,15 +536,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         require(!claimed[msg.sender], "ArmadaCrowdfund: already claimed");
 
-        // Verify sender has a commitment
-        bool hasCommitment = false;
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            if (participants[msg.sender][h].committed > 0) {
-                hasCommitment = true;
-                break;
-            }
-        }
-        require(hasCommitment, "ArmadaCrowdfund: no commitment");
+        _requireHasCommitment();
 
         claimed[msg.sender] = true;
 
@@ -592,15 +584,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         );
         require(!claimed[msg.sender], "ArmadaCrowdfund: already claimed");
 
-        // Verify sender has a commitment
-        bool hasCommitment = false;
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            if (participants[msg.sender][h].committed > 0) {
-                hasCommitment = true;
-                break;
-            }
-        }
-        require(hasCommitment, "ArmadaCrowdfund: no commitment");
+        _requireHasCommitment();
 
         claimed[msg.sender] = true;
 
@@ -781,6 +765,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
             "ArmadaCrowdfund: outside week-1 window"
         );
+    }
+
+    /// @dev Reverts if msg.sender has zero committed USDC across all hops.
+    function _requireHasCommitment() internal view {
+        bool hasCommitment = false;
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            if (participants[msg.sender][h].committed > 0) {
+                hasCommitment = true;
+                break;
+            }
+        }
+        require(hasCommitment, "ArmadaCrowdfund: no commitment");
     }
 
     /// @dev Enforces the active commit window (phase, ARM loaded, within 3-week window).

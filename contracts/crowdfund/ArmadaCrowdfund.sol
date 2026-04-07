@@ -305,12 +305,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     /// @param hop Which of the caller's (address, hop) nodes to commit to
     /// @param amount USDC amount to commit (6 decimals)
     function commit(uint8 hop, uint256 amount) external nonReentrant {
-        require(phase == Phase.Active, "ArmadaCrowdfund: not active");
-        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
-        require(
-            block.timestamp >= windowStart && block.timestamp <= windowEnd,
-            "ArmadaCrowdfund: not active window"
-        );
+        _requireActiveCommitWindow();
 
         require(msg.sender != launchTeam, "ArmadaCrowdfund: launch team cannot commit");
         require(hop < NUM_HOPS, "ArmadaCrowdfund: invalid hop");
@@ -354,12 +349,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         bytes calldata signature,
         uint256 amount
     ) external nonReentrant {
-        require(phase == Phase.Active, "ArmadaCrowdfund: not active");
-        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
-        require(
-            block.timestamp >= windowStart && block.timestamp <= windowEnd,
-            "ArmadaCrowdfund: not active window"
-        );
+        _requireActiveCommitWindow();
         require(nonce > 0, "ArmadaCrowdfund: zero nonce");
         require(block.timestamp <= deadline, "ArmadaCrowdfund: invite expired");
         require(!usedNonces[inviter][nonce], "ArmadaCrowdfund: nonce already used");
@@ -580,9 +570,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             armTransferred = totalAllocArm;
             totalArmTransferred += armTransferred;
             armToken.safeTransfer(msg.sender, armTransferred);
-            if (delegate != address(0)) {
-                IArmadaTokenCrowdfund(address(armToken)).delegateOnBehalf(msg.sender, delegate);
-            }
+            IArmadaTokenCrowdfund(address(armToken)).delegateOnBehalf(msg.sender, delegate);
         }
 
         // Refund: always transfer (no expiry)
@@ -792,6 +780,16 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
             "ArmadaCrowdfund: outside week-1 window"
+        );
+    }
+
+    /// @dev Enforces the active commit window (phase, ARM loaded, within 3-week window).
+    function _requireActiveCommitWindow() internal view {
+        require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
+        require(
+            block.timestamp >= windowStart && block.timestamp <= windowEnd,
+            "ArmadaCrowdfund: not active window"
         );
     }
 

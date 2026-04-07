@@ -547,8 +547,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             Participant storage p = participants[msg.sender][h];
             if (p.committed == 0) continue;
 
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
-            (uint256 allocArm, uint256 allocUsdc, uint256 hopRefund) = _computeAllocation(p.committed, h, effectiveCap);
+            (uint256 allocArm, uint256 allocUsdc, uint256 hopRefund) = _computeAllocation(p.committed, h, _effectiveCap(p, h));
             totalAllocArm += allocArm;
             totalRefundUsdc += hopRefund;
 
@@ -668,8 +667,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             Participant storage p = participants[node.addr][node.hop];
             if (p.committed == 0) continue;
 
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[node.hop].capUsdc;
-            uint256 capped = p.committed < effectiveCap ? p.committed : effectiveCap;
+            uint256 cap = _effectiveCap(p, node.hop);
+            uint256 capped = p.committed < cap ? p.committed : cap;
             perHopCapped[node.hop] += capped;
             globalCapped += capped;
         }
@@ -712,8 +711,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             Participant storage p = participants[addr][h];
             if (p.committed == 0) continue;
 
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[h].capUsdc;
-            (uint256 allocArm, , uint256 hopRefund) = _computeAllocation(p.committed, h, effectiveCap);
+            (uint256 allocArm, , uint256 hopRefund) = _computeAllocation(p.committed, h, _effectiveCap(p, h));
             armAmount += allocArm;
             refundUsdc += hopRefund;
         }
@@ -728,15 +726,14 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         Participant storage p = participants[addr][hop];
 
-        uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
-        (armAmount, , refundUsdc) = _computeAllocation(p.committed, hop, effectiveCap);
+        (armAmount, , refundUsdc) = _computeAllocation(p.committed, hop, _effectiveCap(p, hop));
     }
 
     /// @notice Get effective cap for an address at a hop (invitesReceived * per-slot cap)
     function getEffectiveCap(address addr, uint8 hop) external view returns (uint256) {
         Participant storage p = participants[addr][hop];
         if (!p.isWhitelisted) return 0;
-        return uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
+        return _effectiveCap(p, hop);
     }
 
     /// @notice Get number of invites received at a specific hop
@@ -765,6 +762,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
             "ArmadaCrowdfund: outside week-1 window"
         );
+    }
+
+    /// @dev Compute the effective commitment cap for a participant at a given hop.
+    function _effectiveCap(Participant storage p, uint8 hop) internal view returns (uint256) {
+        return uint256(p.invitesReceived) * hopConfigs[hop].capUsdc;
     }
 
     /// @dev Reverts if msg.sender has zero committed USDC across all hops.
@@ -879,8 +881,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             Participant storage p = participants[node.addr][node.hop];
             if (p.committed == 0) continue;
 
-            uint256 effectiveCap = uint256(p.invitesReceived) * hopConfigs[node.hop].capUsdc;
-            uint256 capped = p.committed < effectiveCap ? p.committed : effectiveCap;
+            uint256 cap = _effectiveCap(p, node.hop);
+            uint256 capped = p.committed < cap ? p.committed : cap;
             hopStats[node.hop].cappedCommitted += capped;
             globalCapped += capped;
         }

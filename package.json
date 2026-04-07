@@ -4,7 +4,6 @@
   "private": true,
   "workspaces": [
     "usdc-v2-frontend",
-    "crowdfund-frontend",
     "crowdfund-ui/packages/*"
   ],
   "scripts": {
@@ -50,7 +49,6 @@
     "clean:all": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
     "governance-ui": "npm run --prefix governance-ui dev",
     "demo": "cd usdc-v2-frontend && npm run dev",
-    "crowdfund-ui": "cd crowdfund-frontend && npm run dev",
     "crowdfund:observer": "npm run dev --workspace=@armada/crowdfund-observer",
     "crowdfund:committer": "npm run dev --workspace=@armada/crowdfund-committer",
     "crowdfund:admin": "npm run dev --workspace=@armada/crowdfund-admin",

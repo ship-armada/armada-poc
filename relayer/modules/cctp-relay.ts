@@ -5,7 +5,7 @@
  * destination chains by calling receiveMessage(). Simulates Circle's
  * attestation service for local testing.
  *
- * Extracted from relay-v2.ts for integration into the unified armada-relayer.
+ * Local/mock CCTP relay for the unified armada-relayer.
  */
 
 import { ethers } from "ethers";

@@ -176,22 +176,4 @@ contract ArmadaToken is ERC20Votes {
         require(!noDelegation[delegator], "ArmadaToken: delegation blocked");
         super._delegate(delegator, delegatee);
     }
-
-    // ============ Required ERC20Votes Overrides ============
-
-    function _afterTokenTransfer(
-        address from,
-        address to,
-        uint256 amount
-    ) internal override {
-        super._afterTokenTransfer(from, to, amount);
-    }
-
-    function _mint(address to, uint256 amount) internal override {
-        super._mint(to, amount);
-    }
-
-    function _burn(address account, uint256 amount) internal override {
-        super._burn(account, amount);
-    }
 }

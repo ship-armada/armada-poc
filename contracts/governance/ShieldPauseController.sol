@@ -146,7 +146,6 @@ contract ShieldPauseController is IShieldPauseController {
     ///         Shields are permanently disabled; unshields remain available indefinitely.
     function setWindDownActive() external {
         require(msg.sender == windDownContract, "ShieldPauseController: not wind-down contract");
-        require(windDownContract != address(0), "ShieldPauseController: wind-down not set");
         require(!windDownActive, "ShieldPauseController: wind-down already active");
         windDownActive = true;
         emit WindDownActivated();

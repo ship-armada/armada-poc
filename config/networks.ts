@@ -38,6 +38,12 @@ export interface CCTPAddresses {
   usdc: string;
 }
 
+export interface RevenueLockBeneficiary {
+  address: string;
+  amount: string;  // whole-token count (no decimals)
+  label: string;   // human-readable label for deploy logs
+}
+
 export interface NetworkConfig {
   env: DeployEnv;
   cctpMode: CCTPMode;
@@ -76,6 +82,12 @@ export interface NetworkConfig {
     crowdfund: string;
     revenueLock: string;
   };
+  /**
+   * RevenueLock beneficiary list. Network-namespaced with no default for non-local
+   * environments — the deploy will fail if these are not explicitly configured.
+   * For local dev, Anvil default accounts are used as placeholders.
+   */
+  revenueLockBeneficiaries: RevenueLockBeneficiary[];
   /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
   cctpFinalityMode: "fast" | "standard";
 }
@@ -99,6 +111,52 @@ function optionalEnv(key: string, defaultValue: string): string {
 function numEnv(key: string, defaultValue: number): number {
   const value = process.env[key];
   return value ? parseInt(value, 10) : defaultValue;
+}
+
+// ============================================================================
+// RevenueLock Beneficiary Builder
+// ============================================================================
+
+/**
+ * Build the RevenueLock beneficiary list from environment variables.
+ * Local dev uses Anvil default accounts as placeholders.
+ * Non-local environments require explicit REVENUE_LOCK_BENEFICIARIES_JSON.
+ *
+ * JSON format: [{"address":"0x...","amount":"1200000","label":"team member 1"}, ...]
+ */
+function buildRevenueLockBeneficiaries(env: DeployEnv): RevenueLockBeneficiary[] {
+  const jsonStr = process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+
+  if (jsonStr) {
+    // Explicit config provided — use it on any environment
+    const parsed = JSON.parse(jsonStr) as RevenueLockBeneficiary[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new Error("REVENUE_LOCK_BENEFICIARIES_JSON must be a non-empty array");
+    }
+    for (const b of parsed) {
+      if (!b.address || !b.amount || !b.label) {
+        throw new Error(
+          "Each beneficiary must have address, amount, and label fields"
+        );
+      }
+    }
+    return parsed;
+  }
+
+  if (env === "local") {
+    // Anvil placeholder beneficiaries for local dev only
+    return [
+      { address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "1200000", label: "team member 1 (Anvil #1)" },
+      { address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", amount: "800000", label: "team member 2 (Anvil #2)" },
+      { address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906", amount: "400000", label: "airdrop (Anvil #3)" },
+    ];
+  }
+
+  // Non-local with no explicit config — fail loud
+  throw new Error(
+    "REVENUE_LOCK_BENEFICIARIES_JSON is required for non-local environments. " +
+    "Set it to a JSON array of {address, amount, label} objects."
+  );
 }
 
 // ============================================================================
@@ -179,6 +237,9 @@ export function getNetworkConfig(): NetworkConfig {
     },
   };
 
+  // RevenueLock beneficiaries: local uses Anvil defaults, non-local requires explicit config
+  const revenueLockBeneficiaries = buildRevenueLockBeneficiaries(env);
+
   _cachedConfig = {
     env,
     cctpMode,
@@ -202,6 +263,7 @@ export function getNetworkConfig(): NetworkConfig {
       crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),
       revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
+    revenueLockBeneficiaries,
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
   };
 

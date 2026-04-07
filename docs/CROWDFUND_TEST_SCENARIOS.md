@@ -199,7 +199,7 @@ Commitments happen concurrently with invitations during the 3-week active window
 | 6.2 | finalize() before windowEnd | Revert | `crowdfund_adversarial.ts` |
 | 6.3 | Double finalization | Revert: already finalized | `crowdfund_integration.ts` |
 | 6.4 | finalize() after cancellation | Revert | `crowdfund_settlement.ts` |
-| 6.5 | finalize() with cappedDemand < MIN_SALE ($1M) | Revert (stays Active) | `crowdfund_adversarial.ts`, `ArmadaCrowdfundRefundMode.t.sol` |
+| 6.5 | finalize() with cappedDemand < MIN_SALE ($1M) | Sets refundMode = true, transitions to Finalized | `crowdfund_adversarial.ts`, `ArmadaCrowdfundRefundMode.t.sol` |
 | 6.6 | finalize() with 0 committers | Revert | `crowdfund_adversarial.ts` |
 | 6.7 | Any address (non-launchTeam, non-securityCouncil) can call finalize() | Succeeds | `crowdfund_adversarial.ts` |
 
@@ -310,9 +310,9 @@ Allocation is computed per-node (address, hop) using `_computeAllocation()`. Eac
 
 ---
 
-## 9. Refunds (Canceled + Deadline Fallback Paths)
+## 9. Refunds (Canceled + RefundMode Paths)
 
-`claimRefund()` supports four eligibility paths. Refunds do not expire.
+`claimRefund()` supports three eligibility paths. Refunds do not expire.
 
 ### Path 1 — Normal post-finalization pro-rata refund
 
@@ -342,20 +342,14 @@ Allocation is computed per-node (address, hop) using `_computeAllocation()`. Eac
 | 9.12 | After cancel: finalize reverts | Correct | `crowdfund_settlement.ts` |
 | 9.13 | Emits `Cancelled` event | Correct | `crowdfund_settlement.ts` |
 
-### Path 4 — Deadline fallback (window ended, never finalized, cappedDemand < MIN_SALE)
-
-| # | Scenario | Expected Outcome | Coverage |
-|---|----------|-----------------|----------|
-| 9.14 | claimRefund() when window ended + cappedDemand < MIN_SALE + not finalized | Full deposit refund | `ArmadaCrowdfundRefundMode.t.sol` |
-| 9.15 | claimRefund() during active window | Revert | `ArmadaCrowdfundRefundMode.t.sol` |
-
 ### Refund Guards
 
 | # | Scenario | Expected Outcome | Coverage |
 |---|----------|-----------------|----------|
-| 9.16 | Double refund | Revert | `ArmadaCrowdfundRefundMode.t.sol`, `crowdfund_adversarial.ts` |
-| 9.17 | Refund by non-participant (0 committed) | Revert | `crowdfund_settlement.ts` |
-| 9.18 | Whitelisted but 0 committed attempts refund | Revert | `crowdfund_settlement.ts` |
+| 9.14 | claimRefund() during active window | Revert | `ArmadaCrowdfundRefundMode.t.sol` |
+| 9.15 | Double refund | Revert | `ArmadaCrowdfundRefundMode.t.sol`, `crowdfund_adversarial.ts` |
+| 9.16 | Refund by non-participant (0 committed) | Revert | `crowdfund_settlement.ts` |
+| 9.17 | Whitelisted but 0 committed attempts refund | Revert | `crowdfund_settlement.ts` |
 
 ---
 
@@ -634,7 +628,7 @@ Finalization supports two modes: single-TX (default) and phased (for gas-constra
 | 20.2 | Elastic expansion: enough demand triggers MAX_SALE | saleSize = $1.8M | `crowdfund_lifecycle.ts` (Path 2) |
 | 20.3 | RefundMode: post-allocation below MIN_SALE | All USDC refundable, no ARM | `crowdfund_lifecycle.ts` (Path 3) |
 | 20.4 | Security Council cancel → full refunds | All USDC back, ARM recoverable | `crowdfund_lifecycle.ts` (Path 4) |
-| 20.5 | Deadline fallback: window ends, MIN_SALE not met, no finalize | claimRefund works | `crowdfund_lifecycle.ts` (Path 5) |
+| 20.5 | Below-minimum finalization: window ends, MIN_SALE not met, finalize sets refundMode | claimRefund works after finalize | `crowdfund_lifecycle.ts` (Path 5) |
 | 20.6 | Phased settlement: large participant set | Batched event emission | `crowdfund_lifecycle.ts` (Path 6) |
 | 20.7 | Mixed hops: seeds + hop-1 + hop-2 all commit, finalize, claim | Each hop allocated per ceiling/demand | `crowdfund_adversarial.ts` |
 | 20.8 | Over-subscribed: every participant gets allocUsdc + refundUsdc == committed | Sum-of-parts verified | `crowdfund_adversarial.ts` |
@@ -710,5 +704,5 @@ Finalization supports two modes: single-TX (default) and phased (for gas-constra
 - `CrowdfundReentrancy.t.sol` — Reentrancy tests for claim, claimRefund, commit
 - `CrowdfundDonation.t.sol` — Direct token transfers do not affect accounting
 - `CrowdfundElasticFuzz.t.sol` — Elastic expansion boundary and fuzz tests
-- `ArmadaCrowdfundRefundMode.t.sol` — RefundMode triggers, claims, sweeps, deadline fallback
+- `ArmadaCrowdfundRefundMode.t.sol` — RefundMode triggers, claims, sweeps
 - `ArmadaCrowdfundArmRecovery.t.sol` — ARM recovery after cancel, fuzz

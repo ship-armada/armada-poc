@@ -57,6 +57,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_StewardCalldataClassifiedAsExtended();
     error Gov_StewardContractNotSet();
     error Gov_StewardNotActive();
+    error Gov_StewardProposerNoLongerActive();
     error Gov_UnknownProposal();
     error Gov_UseResolveRatification();
     error Gov_VotingEnded();
@@ -755,6 +756,18 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         Proposal storage p = _proposals[proposalId];
         if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+
+        // Steward proposals must not be queueable after steward removal or term expiry.
+        // Creation-time checks in proposeStewardSpend() verify steward status at proposal
+        // time, but a steward can be removed while their proposal is still in voting.
+        if (p.proposalType == ProposalType.Steward) {
+            if (stewardContract == address(0)
+                || p.proposer != ITreasurySteward(stewardContract).currentSteward()
+                || !ITreasurySteward(stewardContract).isStewardActive()) {
+                revert Gov_StewardProposerNoLongerActive();
+            }
+        }
+
         p.queued = true;
 
         bytes32 timelockId = timelock.hashOperationBatch(

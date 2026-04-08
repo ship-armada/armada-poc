@@ -407,6 +407,82 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // M-10: Pending steward proposals blocked after steward removal
+    // ══════════════════════════════════════════════════════════════════════
+
+    // WHY: A removed steward's pending proposals should not be queueable.
+    // Without this check, a steward could create a spend proposal, get removed
+    // by governance, and the proposal would still pass by default and execute.
+    function test_queue_revertsForRemovedSteward() public {
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // Remove steward while proposal is active
+        vm.prank(address(timelock));
+        stewardContract.removeSteward();
+
+        // Pass voting period — proposal succeeds by default (no votes)
+        _passVotingPeriod(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
+
+        // Queue should revert — steward no longer active
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardProposerNoLongerActive.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Same scenario but with term expiry instead of explicit removal.
+    // A steward whose term expires mid-voting should not have their proposal queued.
+    // Setup: warp to near term end, create proposal, then warp past voting period
+    // so the term expires but the proposal is still within its queue grace period.
+    function test_queue_revertsForExpiredStewardTerm() public {
+        // Warp to 2 days before term expires (term = 180 days)
+        vm.warp(block.timestamp + 178 days);
+        vm.roll(block.number + 1);
+
+        // Create proposal while steward is still active
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // Warp past voting period (7 days) — steward term also expires during this window
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
+        assertFalse(stewardContract.isStewardActive(), "steward term should be expired");
+
+        // Queue should revert — steward term expired
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardProposerNoLongerActive.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: If a new steward is elected, the old steward's pending proposals should
+    // still be blocked — the proposer no longer matches currentSteward().
+    function test_queue_revertsWhenDifferentStewardElected() public {
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        // Elect a different steward
+        address newSteward = address(0xBEEF);
+        vm.prank(address(timelock));
+        stewardContract.electSteward(newSteward);
+
+        _passVotingPeriod(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
+
+        // Queue should revert — proposer != currentSteward
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardProposerNoLongerActive.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Verify that a still-active steward's proposals can still be queued normally.
+    // Regression guard — the new check must not break the happy path.
+    function test_queue_succeedsForActiveSteward() public {
+        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
+
+        _passVotingPeriod(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
+
+        // Queue should succeed — steward is still active
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // Wind-down blocks steward proposals
     // ══════════════════════════════════════════════════════════════════════
 

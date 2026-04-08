@@ -17,15 +17,16 @@ The crowdfund contract stores the treasury address as an immutable — it cannot
 
 ## ARM Token Distribution
 
-A single `ArmadaToken` is deployed with a fixed 100M supply. No mint or burn. Distribution:
+A single `ArmadaToken` is deployed with a fixed 12M supply (`INITIAL_SUPPLY = 12_000_000e18`). No mint or burn. Distribution:
 
 | Destination | Amount | Purpose |
 |-------------|--------|---------|
-| Treasury | 65M (configurable) | Protocol reserves, governed by proposals |
+| Treasury | 7.8M (configurable) | Protocol reserves, governed by proposals |
 | Crowdfund contract | 1.8M (configurable) | Backs MAX_SALE at $1/ARM |
-| Deployer remainder | 33.2M | Production allocation TBD (team vesting, future rounds, ecosystem fund, etc.) |
+| RevenueLock | 2.4M (configurable) | Revenue-gated release to beneficiaries |
+| Deployer remainder | 0 | All ARM allocated at deployment |
 
-These values are configured in `config/networks.ts` under `armDistribution` and can be overridden via environment variables (`ARM_TREASURY_ALLOCATION`, `ARM_CROWDFUND_ALLOCATION`). The deployer retains whatever ARM remains after the treasury and crowdfund allocations.
+These values are configured in `config/networks.ts` under `armDistribution` and can be overridden via environment variables (`ARM_TREASURY_ALLOCATION`, `ARM_CROWDFUND_ALLOCATION`). The deployer retains whatever ARM remains after the treasury, crowdfund, and RevenueLock allocations.
 
 **Production numbers are TBD.** The POC defaults are chosen to exercise the system mechanics, not to represent final tokenomics.
 
@@ -36,7 +37,7 @@ Contracts must deploy in this order. Each step depends on artifacts from previou
 ```
 1. Governance stack
    └─ TimelockController
-   └─ ArmadaToken (canonical, 100M supply, ERC20Votes)
+   └─ ArmadaToken (canonical, 12M supply, ERC20Votes)
    └─ ArmadaTreasuryGov
    └─ ArmadaGovernor
    └─ Transfer treasury ARM allocation from deployer
@@ -91,20 +92,20 @@ As participants claim ARM from the crowdfund and delegate it, the quorum denomin
 - **Quorum thresholds:** Each proposal type has its own quorum BPS (e.g., 20% for standard proposals). The quorum is calculated against eligible supply at the proposal's snapshot block.
 
 Example with POC defaults:
-- Total supply: 100M ARM
-- Treasury: 65M (excluded from quorum via `treasuryAddress`)
+- Total supply: 12M ARM
+- Treasury: 7.8M (excluded from quorum via `treasuryAddress`)
 - Crowdfund: 1.8M (excluded via `setExcludedAddresses`)
-- Deployer remainder: 33.2M
-- Eligible supply: 33.2M (deployer) + whatever ARM has been claimed and is in circulation
-- If deployer delegates 33.2M ARM, quorum for a 20% proposal = 6.64M ARM
+- RevenueLock: 2.4M (excluded via `setExcludedAddresses`)
+- Eligible supply: whatever ARM has been claimed from crowdfund and is in circulation
+- If 1.8M ARM is fully claimed and delegated, quorum for a 20% proposal = 360K ARM
 
 ## Key Constraints
 
 - **Immutable admin:** The crowdfund's `admin` is set at deployment and cannot be changed. For production, an admin transfer function should be added so governance (timelock) can take over post-sale duties. Tracked as a Codeberg issue.
 - **Immutable treasury:** The crowdfund's treasury destination cannot be redirected after deployment. This is intentional — it prevents admin from diverting funds.
 - **One-time quorum exclusion:** The governor's excluded addresses list locks after the first `setExcludedAddresses` call. Future crowdfund rounds would need to be included in the initial call or require a governance proposal to add a new exclusion mechanism.
-- **Fixed ARM supply:** 100M total, no mint/burn. All distribution decisions are final once tokens are transferred.
-- **Proposal threshold:** 0.1% of total supply = 100K ARM. This is absolute (not based on eligible supply), ensuring a minimum skin-in-the-game regardless of distribution.
+- **Fixed ARM supply:** 12M total, no mint/burn. All distribution decisions are final once tokens are transferred.
+- **Proposal threshold:** 0.1% of total supply = 12,000 ARM. This is absolute (not based on eligible supply), ensuring a minimum skin-in-the-game regardless of distribution.
 
 ## Future: Protocol Fee Capture
 

@@ -44,7 +44,7 @@ All timing is set in the `ArmadaGovernor` constructor and is immutable for VetoR
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| B1 | Propose with exactly threshold amount delegated (0.1% of supply = 100K ARM) | Should succeed |
+| B1 | Propose with exactly threshold amount delegated (0.1% of supply = 12K ARM) | Should succeed |
 | B2 | Propose with 1 wei below threshold | Revert: "below proposal threshold" |
 | B3 | Propose with tokens delegated in same block (snapshot is block-1) | Revert: "below proposal threshold" (power is 0 at snapshot) |
 | B4 | Propose with empty targets array | Revert: "empty proposal" |
@@ -66,8 +66,8 @@ All timing is set in the `ArmadaGovernor` constructor and is immutable for VetoR
 | C6 | Vote with support = 3 | Revert: "invalid vote type" |
 | C7 | Vote twice on same proposal | Revert: "already voted" |
 | C8 | Vote twice with different support values (e.g., For then Against) | Revert: "already voted" |
-| C9 | Account with 0 locked tokens at snapshot tries to vote | Revert: "no voting power" |
-| C10 | Lock tokens **after** proposal created, try to vote | Revert: "no voting power" (0 at snapshot) |
+| C9 | Account with 0 delegated voting power at snapshot tries to vote | Revert: "no voting power" |
+| C10 | Delegate voting power **after** proposal created, try to vote | Revert: "no voting power" (0 at snapshot) |
 | C11 | Vote on non-existent proposal ID | Revert: "unknown proposal" |
 | C12 | Vote on a canceled proposal during its original voting window | **Potential bug**: `castVote` checks timestamps not state — may allow voting on canceled proposals. See section N. |
 | C13 | Many voters with tiny amounts | All votes should count; tallies accumulate correctly |
@@ -95,7 +95,8 @@ All timing is set in the `ArmadaGovernor` constructor and is immutable for VetoR
 | E1 | Check state at each lifecycle stage: Pending → Active → Succeeded → Queued → Executed | Each transition happens at correct timestamp |
 | E2 | Proposal passes, sits in Succeeded state for months, then queue | Currently succeeds (no expiry — bug #22) |
 | E3 | Cancel while Pending | State → Canceled |
-| E4 | Cancel while Active | Revert: "not pending" |
+| E4 | Cancel while Active (Standard/Extended) | Revert: "not pending or active" |
+| E4a | Cancel Steward proposal while Active | State → Canceled (Steward proposals skip Pending due to zero voting delay, so Active is the earliest cancellable state) |
 | E5 | Cancel while Succeeded/Queued/Executed | Revert: "not pending" |
 | E6 | Non-proposer tries to cancel | Revert: "not proposer" |
 | E7 | Queue a Defeated proposal | Revert: "not succeeded" |
@@ -121,21 +122,27 @@ All timing is set in the `ArmadaGovernor` constructor and is immutable for VetoR
 
 ## G. ArmadaTreasuryGov — Steward Budget
 
+Steward spending uses governance-configurable absolute per-token budgets with rolling windows
+(via `StewardBudget` struct). Each token has an independent budget (`limit`) and window duration.
+Steward spending is proposed through `ArmadaGovernor.proposeStewardSpend()` as pass-by-default
+governance proposals. Both steward spend and governance distributions count against the same
+aggregate outflow rate limit.
+
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
 | H1 | Steward spends within budget | Succeeds |
-| H2 | Steward spends exactly 1% of current balance | Succeeds |
-| H3 | Steward spends 1% + 1 wei | Revert: "exceeds monthly budget" |
-| H4 | Multiple spends in same period, totaling under 1% | All succeed |
-| H5 | Multiple spends totaling over 1% | Last one reverts |
-| H6 | Budget period expires → steward gets fresh budget | Succeeds; budgetSpent resets to 0 |
-| H7 | Treasury receives large deposit mid-period | Budget increases on next spend (bug #24) |
-| H8 | Governance distributes from treasury mid-period, balance drops below already-spent | getStewardBudget shows 0 remaining but no revert (already spent) |
+| H2 | Steward spends exactly the configured limit within the rolling window | Succeeds |
+| H3 | Steward spends limit + 1 wei within the rolling window | Revert: "exceeds steward budget" |
+| H4 | Multiple spends in same window, totaling under limit | All succeed |
+| H5 | Multiple spends totaling over limit | Last one reverts |
+| H6 | Window elapses → steward gets fresh budget | Succeeds; rolling window sum resets |
+| H7 | Governance changes steward budget limit mid-window | New limit applies to next spend check |
+| H8 | Governance distributes from treasury, aggregate outflow limit hit | Steward spend reverts even if steward budget allows it |
 | H9 | Steward spends on token A, then token B | Independent budgets per token |
 | H10 | Steward spends 0 amount | Revert: "zero amount" |
 | H11 | Steward spends to zero address | Revert: "zero address" |
-| H12 | Non-steward calls stewardSpend | Revert: "not steward" |
-| H13 | First spend in new period — verify `lastBudgetReset` sets to current timestamp (sliding window) | Period starts from first spend, not fixed schedule (bug #24) |
+| H12 | Non-steward calls proposeStewardSpend | Revert: "not steward" |
+| H13 | Steward budget token not authorized | Revert: "token not authorized for steward" |
 
 ## I. TreasurySteward — Election & Term
 
@@ -149,71 +156,72 @@ All timing is set in the `ArmadaGovernor` constructor and is immutable for VetoR
 | I6 | Elect steward with address(0) | Revert: "zero address" |
 | I7 | Non-timelock calls electSteward | Revert: "not timelock" |
 
-## J. TreasurySteward — Action Queue
+## J. Steward Spending via Governor (Pass-by-Default)
+
+The steward action queue has been removed. Steward spending now flows through
+`ArmadaGovernor.proposeStewardSpend()`, which creates pass-by-default governance proposals
+(Steward type: 0 voting delay, 7d voting period, 2d execution delay). The 2d execution delay
+provides a veto buffer. TreasurySteward is minimal identity management only (election, term, removal).
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| J1 | Propose action → wait delay → execute | Succeeds |
-| J2 | Propose action → execute before delay | Revert: "delay not elapsed" |
-| J3 | Propose action → governance vetoes → try execute | Revert: "vetoed" |
-| J4 | Execute already-executed action | Revert: "already executed" |
-| J5 | Execute non-existent action ID | Revert: "unknown action" |
-| J6 | Non-steward proposes action | Revert: "not steward" |
-| J7 | Non-steward executes action | Revert: "not steward" |
-| J8 | Steward A proposes action → Steward B elected → B executes A's action | Succeeds (new steward can execute old actions — related to #28) |
-| J9 | Steward proposes action targeting arbitrary contract (not treasury) | Succeeds (bug #16) |
-| J10 | Steward proposes stewardSpend over budget → execute | Execute reverts with garbled error (bug #29) |
-| J11 | Multiple actions proposed, execute out of order | Should work (no ordering dependency) |
-| J12 | actionDelay set to 0 via governance | Steward can propose and execute in same block (bug #17) |
+| J1 | Steward proposes spend → 7d voting window passes with no votes → queue → execute | Succeeds (pass-by-default) |
+| J2 | Steward proposes spend → community votes Against with quorum → proposal defeated | Defeated |
+| J3 | Steward proposes spend → Security Council vetoes | Proposal canceled, veto ratification created |
+| J4 | Steward proposes spend exceeding steward budget | Proposal passes governance but `stewardSpend()` execution reverts |
+| J5 | Steward proposes spend exceeding aggregate outflow limit | Proposal passes governance but execution reverts |
+| J6 | Steward removed mid-voting → proposal still active | Proposal remains but queueing reverts (steward check) |
+| J7 | Steward term expires mid-voting → proposal still active | Queueing reverts (expired steward) |
+| J8 | Non-steward calls proposeStewardSpend | Revert: "not current steward" |
+| J9 | Steward proposes calldata classified as Extended | Revert: defense-in-depth check prevents Extended ops via pass-by-default path |
 
-## K. TreasurySteward — Veto
+## K. Steward Veto (via Security Council)
+
+Steward proposals are vetoed through the same Security Council veto mechanism as any other proposal.
+The 2d execution delay on Steward proposals ensures the SC has time to intervene.
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| K1 | Veto before action delay elapses | Action un-executable |
-| K2 | Veto already-executed action | Revert: "already executed" |
-| K3 | Veto already-vetoed action | Revert: "already vetoed" |
-| K4 | Veto non-existent action | Revert: "unknown action" |
-| K5 | Non-timelock calls veto | Revert: "not timelock" |
-| K6 | Race: action delay elapses during veto governance cycle | Steward can execute before veto finalizes — veto window shorter than governance cycle |
+| K1 | SC vetoes steward proposal during voting window | Proposal canceled, ratification proposal created |
+| K2 | SC vetoes steward proposal during execution delay | Proposal canceled (if still queued) |
+| K3 | Community overrides veto via ratification vote | Veto denied, proposal re-queued |
 
 ## L. Cross-System / End-to-End
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| L1 | Full lifecycle: lock → propose → vote → queue → execute treasury distribution | Recipient receives tokens |
-| L2 | Full steward lifecycle: elect → propose action → wait delay → execute → verify treasury spend | Spend succeeds within budget |
-| L3 | Steward election → steward acts → governance vetoes | Veto prevents execution |
+| L1 | Full lifecycle: delegate → propose → vote → queue → execute treasury distribution | Recipient receives tokens |
+| L2 | Full steward lifecycle: elect → proposeStewardSpend → 7d pass-by-default → queue → execute | Spend succeeds within budget |
+| L3 | Steward election → steward proposes → SC vetoes | Veto prevents execution |
 | L4 | Two concurrent proposals, one distributes from treasury affecting quorum of the other | Quorum shifts (bug #19) — document behavior |
-| L5 | Proposal to `transferOwnership(attacker)` on treasury | Succeeds — attacker gains permanent control (bug #18) |
-| L6 | Proposal to `setSteward(address(0))` on treasury | Effectively removes steward |
-| L7 | Proposal to `setActionDelay(0)` on steward | Removes veto window (bug #17) |
+| L5 | Proposal to `transferOwnership(attacker)` on treasury | Requires Extended proposal (high-impact selector); SC can veto |
+| L6 | Proposal to `removeSteward()` on TreasurySteward | Removes steward via governance |
+| L7 | Proposal to change steward budget limits | Succeeds via timelock |
 | L8 | Claim created → steward spends aggressively → claim exercise fails due to low balance | Race between claims and steward budget |
-| L9 | Lock tokens across multiple blocks, create proposal → verify snapshot uses `block.number - 1` at creation time | Only tokens locked before that block count |
+| L9 | Delegate tokens across multiple blocks, create proposal → verify snapshot uses `block.number - 1` at creation time | Only tokens delegated before that block count |
 | L10 | Elect steward → steward spends budget → re-elect same steward (new term) → budget resets | Fresh budget period for new term's first spend |
 
 ## M. Adversarial / Social Attack Scenarios
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| M1 | **Vote-and-dump**: lock → vote → unlock → sell before proposal executes | Works — no lock on tokens after voting (#4) |
-| M2 | **Flash-lock governance**: lock massive amount at block N, propose at block N+1 | Proposal succeeds since snapshot = N, where tokens were locked |
+| M1 | **Vote-and-dump**: delegate → vote → transfer → sell before proposal executes | Works — no lock on tokens after voting |
+| M2 | **Flash-delegation governance**: delegate massive amount at block N, propose at block N+1 | Proposal succeeds since snapshot = N, where tokens were delegated |
 | M3 | **Quorum manipulation**: pass treasury distribution to shift quorum for concurrent proposals | Quorum changes live (#19) |
-| M4 | **Budget front-run**: steward waits for large treasury deposit, immediately spends 1% of inflated balance | Works — budget is current balance (#24) |
+| M4 | **Budget front-run**: steward waits for large treasury deposit, proposes spend | Mitigated — budget is now absolute per-token with rolling window, not percentage-based |
 | M5 | **Proposal spam**: lock minimum threshold, create many junk proposals | All succeed; wastes voter attention but costs gas |
-| M6 | **Steward arbitrary call**: propose action targeting `treasury.transferOwnership(steward)` | Executes if not vetoed in time (#16) |
+| M6 | **Steward arbitrary call**: propose spend targeting sensitive function | Mitigated — proposeStewardSpend only allows stewardSpend calls; defense-in-depth rejects Extended-classified calldata |
 | M7 | **Griefing via claim**: create claim for attacker, attacker drains treasury via exercise at worst time | Claim is governance-approved, but timing of exercise is uncontrolled |
 | M8 | **Zombie proposal**: pass a proposal, wait 6 months, queue and execute | Works — no expiry (#22) |
 | M9 | **Cancel as censorship**: proposer creates proposal to gain support, then cancels before voting starts | Proposer-only cancel during Pending enables this |
 | M10 | **Quorum grief via treasury donation**: donate ARM to treasury to shrink eligible supply and raise effective quorum for all proposals | Works — anyone can transfer ARM to treasury |
 
-## N. Potential Bug — Voting on Canceled Proposals
+## N. Voting on Canceled Proposals (Fixed)
 
-`castVote()` checks `voteStart`/`voteEnd` timestamps but does **not** check `state()`. This means:
+`castVote()` now checks `p.canceled` before accepting votes. Attempting to vote on a canceled
+proposal reverts with `Gov_ProposalCanceled()`. Tested in `GovernorVeto.t.sol`.
 
 | # | Scenario | Expected Behavior |
 |---|----------|-------------------|
-| N1 | Create proposal, cancel while Pending, fast-forward to voting window, try to vote | **Needs investigation**: `castVote` only checks timestamps, not `canceled` flag. May allow votes on canceled proposals. |
-| N2 | If N1 allows voting: votes accumulate on canceled proposal but `state()` always returns Canceled | Wasted gas, no security impact, but confusing behavior |
-
-If confirmed, this should be filed as a separate bug — `castVote` should check `!p.canceled` before accepting votes.
+| N1 | Create proposal, cancel while Pending, fast-forward to voting window, try to vote | Revert: `Gov_ProposalCanceled` |
+| N2 | Vote on non-canceled proposal during voting window | Succeeds (regression check) |

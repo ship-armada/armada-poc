@@ -61,10 +61,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // ============ State ============
     Phase public phase;
 
-    // Timing
-    uint256 public windowStart;
-    uint256 public windowEnd;
-    uint256 public launchTeamInviteEnd;
+    // Timing (set once in constructor, never modified)
+    uint256 public immutable windowStart;
+    uint256 public immutable windowEnd;
+    uint256 public immutable launchTeamInviteEnd;
 
     // Hop configuration (set in constructor)
     HopConfig[3] public hopConfigs;
@@ -820,6 +820,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @dev Pure iteration: compute capped demand per hop and globally without writing state.
+    ///      DESIGN NOTE: This iterates the full participantNodes array — O(n) where n is total
+    ///      participants across all hops. The array is bounded by invite chain limits:
+    ///      MAX_SEEDS (150) at hop-0, with invitesPerPerson limits at each subsequent hop.
+    ///      Practical maximum is ~1,500 nodes, costing ~6.3M gas (well within 30M block limit).
+    ///      An incremental tracking approach was considered but rejected pre-audit to avoid
+    ///      changing the accounting flow. If invite limits are ever significantly increased,
+    ///      this should be revisited.
     function _iterateCappedDemand() internal view returns (
         uint256 globalCapped,
         uint256[3] memory perHopCapped

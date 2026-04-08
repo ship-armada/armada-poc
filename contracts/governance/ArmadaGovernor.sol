@@ -48,6 +48,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_NotSucceeded();
     error Gov_NotTimelock();
     error Gov_NotWindDownContract();
+    error Gov_ProposalCanceled();
     error Gov_QuietPeriodActive();
     error Gov_QuorumBpsOutOfBounds();
     error Gov_SameVote();
@@ -706,7 +707,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.snapshotQuorumBps = params.quorumBps;
         uint256 totalSupply = armToken.getPastTotalSupply(p.snapshotBlock);
         uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
-        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+        uint256 excludedLen = _excludedFromQuorum.length;
+        for (uint256 i = 0; i < excludedLen; i++) {
             excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
         }
         // Cap excludedBalance to prevent underflow if tokens moved into excluded
@@ -727,6 +729,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function castVote(uint256 proposalId, uint8 support) external {
         Proposal storage p = _proposals[proposalId];
         if (p.id == 0) revert Gov_UnknownProposal();
+        if (p.canceled) revert Gov_ProposalCanceled();
         if (block.timestamp < p.voteStart) revert Gov_VotingNotStarted();
         if (block.timestamp > p.voteEnd) revert Gov_VotingEnded();
         if (support > 2) revert Gov_InvalidVoteType();
@@ -961,7 +964,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             // Check registered extended selectors
             if (extendedSelectors[selector]) return ProposalType.Extended;
 
-            // Special case: distribute() calls exceeding 5% of treasury balance
+            // Special case: distribute() calls exceeding 5% of treasury balance.
+            // DESIGN NOTE: This uses a spot balanceOf() check. An attacker could inflate the
+            // treasury balance (by donating tokens) to make a large distribution appear to be
+            // below the 5% threshold. This is accepted because: (1) donated tokens are lost to
+            // the attacker, making the attack economically irrational, (2) USDC lacks
+            // checkpointing so snapshot-based alternatives are not available, and (3) the
+            // Security Council can veto any suspicious proposal regardless of classification.
             if (selector == DISTRIBUTE_SELECTOR && calldatas[i].length >= 100) {
                 // Decode: distribute(address token, address recipient, uint256 amount)
                 // Skip the 4-byte selector by slicing from index 4 onward

@@ -22,9 +22,6 @@ contract RevenueLock {
 
     // ============ Constants ============
 
-    /// @notice Number of milestones in the unlock schedule
-    uint256 private constant NUM_MILESTONES = 6;
-
     /// @notice Maximum basis points (100%)
     uint256 private constant BPS_100 = 10000;
 

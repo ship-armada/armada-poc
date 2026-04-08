@@ -695,4 +695,56 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         bytes32 calldataHash = keccak256(abi.encode(targets, values, calldatas));
         assertTrue(governor.vetoDeniedHashes(calldataHash));
     }
+
+    // ======== Voting on Canceled Proposals ========
+
+    /// @dev WHY: castVote() must reject votes on canceled proposals. Without this
+    ///      guard, voters waste gas on proposals that can never pass. This also
+    ///      prevents misleading vote tallies on canceled proposals.
+    function test_castVote_revertsOnCanceledProposal() public {
+        // 1. Create a standard proposal
+        address[] memory targets = new address[](1);
+        targets[0] = address(governor);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature("proposalCount()");
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "cancel-vote test");
+
+        // 2. Proposer cancels during Pending state
+        vm.prank(alice);
+        governor.cancel(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Canceled));
+
+        // 3. Advance past voting delay into what would be the voting window
+        vm.warp(block.timestamp + TWO_DAYS + 1);
+
+        // 4. Attempt to vote — should revert with Gov_ProposalCanceled
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_ProposalCanceled.selector));
+        governor.castVote(proposalId, 1);
+    }
+
+    /// @dev WHY: Regression check — castVote() must still work on non-canceled
+    ///      proposals after adding the canceled guard.
+    function test_castVote_succeedsOnNonCanceledProposal() public {
+        // 1. Create a standard proposal
+        address[] memory targets = new address[](1);
+        targets[0] = address(governor);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature("proposalCount()");
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "no-cancel test");
+
+        // 2. Advance past voting delay
+        vm.warp(block.timestamp + TWO_DAYS + 1);
+
+        // 3. Vote succeeds
+        vm.prank(bob);
+        governor.castVote(proposalId, 1);
+        assertTrue(governor.hasVoted(proposalId, bob));
+    }
 }

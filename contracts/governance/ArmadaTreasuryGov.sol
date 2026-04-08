@@ -123,7 +123,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
             "ArmadaTreasuryGov: exceeds steward budget"
         );
 
-        // Record this spend for rolling window tracking
+        // Record this spend for rolling window tracking.
+        // NOTE: Same append-only pattern as _outflowHistory — see design note on _checkAndRecordOutflow.
         _stewardSpendHistory[token].push(OutflowRecord({
             amount: amount,
             timestamp: block.timestamp
@@ -243,6 +244,14 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     /// @dev Check that a proposed outflow does not exceed the rolling-window limit,
     ///      and record the outflow if it passes. Reverts if no outflow config is initialized for the token.
+    ///
+    ///      DESIGN NOTE: _outflowHistory[token] is append-only and never pruned. Storage grows
+    ///      monotonically with the number of outflows. This is acceptable because:
+    ///      (1) _sumRecentRecords iterates backwards with early-break, so read cost is bounded
+    ///          by the number of records within the rolling window, not total array length.
+    ///      (2) Realistic usage (~1 distribution/week) produces ~260 records/year per token.
+    ///      (3) Steward spends (~daily) produce ~365 records/year — still manageable.
+    ///      If usage patterns change significantly, a pruning mechanism could be added.
     function _checkAndRecordOutflow(address token, uint256 amount) internal {
         OutflowConfig storage config = _outflowConfigs[token];
         require(config.initialized, "ArmadaTreasuryGov: outflow config required");
@@ -266,6 +275,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     }
 
     /// @dev Sum amounts within a rolling window, iterating backwards from most recent.
+    ///      DESIGN NOTE: The underlying arrays (_outflowHistory, _stewardSpendHistory) are
+    ///      append-only and never pruned. Storage grows monotonically, but gas cost of this
+    ///      function is proportional to records WITHIN the window only (not total array length),
+    ///      thanks to the backwards iteration with early-break. At realistic usage rates
+    ///      (~1 distribution/week ≈ 260 records/year), growth is bounded and manageable.
+    ///      If usage patterns change significantly, consider adding a pruning mechanism.
     function _sumRecentRecords(OutflowRecord[] storage records, uint256 windowDuration) internal view returns (uint256 total) {
         uint256 len = records.length;
         if (len == 0) return 0;

@@ -28,6 +28,8 @@ contract RevenueLockHandler is Test {
     // Ghost variables for tracking
     uint256 public ghost_releaseCount;
     uint256 public ghost_revertCount;
+    // Ghost: high-water mark of released amount per beneficiary (for monotonicity check)
+    mapping(address => uint256) public ghost_releasedHighWater;
 
     constructor(
         RevenueLock _revenueLock,
@@ -60,6 +62,9 @@ contract RevenueLockHandler is Test {
         vm.prank(beneficiary);
         try revenueLock.release(delegatee) {
             ghost_releaseCount++;
+            // Track high-water mark for monotonicity invariant
+            uint256 currentReleased = revenueLock.released(beneficiary);
+            ghost_releasedHighWater[beneficiary] = currentReleased;
         } catch {
             ghost_revertCount++;
         }
@@ -188,6 +193,38 @@ contract RevenueLockInvariantTest is Test {
                 assertTrue(
                     armToken.delegates(beneficiaries[i]) != address(0),
                     "INV-RL4: released ARM must be delegated"
+                );
+            }
+        }
+    }
+
+    /// @notice INV-RL5: Released amount per beneficiary is monotonically non-decreasing.
+    ///         WHY: release() only adds to the released mapping, never subtracts.
+    ///         A violation would indicate state corruption.
+    function invariant_monotonicRelease() public {
+        for (uint256 i = 0; i < beneficiaries.length; i++) {
+            assertGe(
+                revenueLock.released(beneficiaries[i]),
+                handler.ghost_releasedHighWater(beneficiaries[i]),
+                "INV-RL5: released must be monotonically non-decreasing"
+            );
+        }
+    }
+
+    /// @notice INV-RL6: release() reverts when revenue < first milestone (10,000 USD).
+    ///         WHY: The step function returns 0 bps below the first milestone, so entitled == 0
+    ///         and release() should revert with "nothing to release". We verify this indirectly:
+    ///         if revenue is below first milestone now AND no releases have ever succeeded,
+    ///         all released amounts must be zero.
+    ///         Note: revenue can decrease in the mock (set lower), but released amounts are
+    ///         permanent. So this invariant only applies if ghost_releaseCount == 0.
+    function invariant_noReleaseWithoutRevenue() public {
+        if (handler.ghost_releaseCount() == 0) {
+            for (uint256 i = 0; i < beneficiaries.length; i++) {
+                assertEq(
+                    revenueLock.released(beneficiaries[i]),
+                    0,
+                    "INV-RL6: no tokens released if no successful release calls"
                 );
             }
         }

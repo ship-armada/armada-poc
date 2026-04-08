@@ -249,7 +249,7 @@ export function useGovernanceData(
         }
       }
 
-      // Steward data (identity only — spending flows through governor now)
+      // Steward data (identity only — spending proposals flow through the governor)
       let currentSteward = ''
       let isStewardActive = false
       let termEnd = 0n

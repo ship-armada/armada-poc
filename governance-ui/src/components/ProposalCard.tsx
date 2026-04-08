@@ -273,6 +273,9 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
         <div className="mt-3 border-t border-neutral-800 pt-3 text-xs">
           <p className="text-neutral-500">Snapshot block: {p.snapshotBlock.toString()}</p>
           <p className="text-neutral-500">
+            Eligible supply at snapshot: {formatVotes(p.snapshotEligibleSupply)} ARM
+          </p>
+          <p className="text-neutral-500">
             Quorum required: {ethers.formatUnits(p.quorumRequired, 18)} ARM
           </p>
         </div>

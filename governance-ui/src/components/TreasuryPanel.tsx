@@ -45,7 +45,6 @@ export function TreasuryPanel({ contracts, wallet, govData }: TreasuryPanelProps
           <StatCard label="ARM" value={`${fmtArm(govData.treasuryArmBalance)} ARM`} />
           <StatCard label="USDC" value={`${fmtUsdc(govData.treasuryUsdcBalance)} USDC`} />
           <StatCard label="Owner (Timelock)" value={truncAddr(govData.treasuryOwner)} />
-          <StatCard label="Steward" value={truncAddr(govData.treasurySteward)} />
         </div>
       </div>
 
@@ -56,18 +55,6 @@ export function TreasuryPanel({ contracts, wallet, govData }: TreasuryPanelProps
           wallet={wallet}
           onFunded={govData.refresh}
         />
-      )}
-
-      {/* Steward Budget */}
-      {govData.stewardBudget && (
-        <div>
-          <h3 className="mb-3 text-sm font-medium text-neutral-300">Steward Monthly Budget (USDC)</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <StatCard label="Budget" value={fmtUsdc(govData.stewardBudget.budget)} />
-            <StatCard label="Spent" value={fmtUsdc(govData.stewardBudget.spent)} />
-            <StatCard label="Remaining" value={fmtUsdc(govData.stewardBudget.remaining)} />
-          </div>
-        </div>
       )}
 
     </div>

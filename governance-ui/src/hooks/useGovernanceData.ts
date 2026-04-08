@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ethers } from 'ethers'
 import type { GovernanceContracts } from './useGovernanceContracts'
-import type { ProposalData, StewardActionData } from '../governance-types'
+import type { ProposalData } from '../governance-types'
 import { ProposalState, ProposalType } from '../governance-types'
 
 const POLL_INTERVAL_MS = 10_000
@@ -26,16 +26,12 @@ export interface GovernanceData {
   treasuryArmBalance: bigint
   treasuryUsdcBalance: bigint
   treasuryOwner: string
-  treasurySteward: string
   stewardBudget: { budget: bigint; spent: bigint; remaining: bigint } | null
 
   // Steward
   currentSteward: string
   isStewardActive: boolean
   termEnd: bigint
-  actionDelay: bigint
-  stewardActionCount: number
-  stewardActions: StewardActionData[]
 
   // Block info
   blockTimestamp: bigint
@@ -59,14 +55,10 @@ const EMPTY_DATA: GovernanceData = {
   treasuryArmBalance: 0n,
   treasuryUsdcBalance: 0n,
   treasuryOwner: '',
-  treasurySteward: '',
   stewardBudget: null,
   currentSteward: '',
   isStewardActive: false,
   termEnd: 0n,
-  actionDelay: 0n,
-  stewardActionCount: 0,
-  stewardActions: [],
   blockTimestamp: 0n,
   blockNumber: 0n,
   isLoading: true,
@@ -171,14 +163,12 @@ export function useGovernanceData(
       let treasuryArmBalance = 0n
       let treasuryUsdcBalance = 0n
       let treasuryOwner = ''
-      let treasurySteward = ''
       let stewardBudget: { budget: bigint; spent: bigint; remaining: bigint } | null = null
 
       try {
-        ;[treasuryArmBalance, treasuryOwner, treasurySteward] = await Promise.all([
+        ;[treasuryArmBalance, treasuryOwner] = await Promise.all([
           treasury.getBalance(deployment.contracts.armToken),
           treasury.owner(),
-          treasury.steward(),
         ])
 
         if (usdc) {
@@ -194,51 +184,26 @@ export function useGovernanceData(
               remaining: budgetResult[2] as bigint,
             }
           } catch {
-            // May fail if no steward set
+            // May fail if no steward budget configured
           }
         }
       } catch {
         // Treasury queries may fail
       }
 
-      // Steward data
+      // Steward data (identity only — spending flows through governor now)
       let currentSteward = ''
       let isStewardActive = false
       let termEnd = 0n
-      let actionDelay = 0n
-      let stewardActionCount = 0
 
       try {
-        ;[currentSteward, isStewardActive, termEnd, actionDelay] = await Promise.all([
+        ;[currentSteward, isStewardActive, termEnd] = await Promise.all([
           steward.currentSteward(),
           steward.isStewardActive().catch(() => false),
           steward.termEnd().catch(() => 0n),
-          steward.actionDelay(),
         ])
-
-        const actionCountRaw = await steward.actionCount()
-        stewardActionCount = Number(actionCountRaw)
       } catch {
         // Steward queries may fail
-      }
-
-      // Fetch steward actions
-      const stewardActions: StewardActionData[] = []
-      for (let i = 1; i <= stewardActionCount; i++) {
-        try {
-          const action = await steward.getAction(i)
-          stewardActions.push({
-            id: i,
-            target: action[0] as string,
-            value: action[1] as bigint,
-            timestamp: action[2] as bigint,
-            executed: action[3] as boolean,
-            vetoed: action[4] as boolean,
-            executeAfter: action[5] as bigint,
-          })
-        } catch {
-          // Action may not exist
-        }
       }
 
       setData((prev) => ({
@@ -254,14 +219,10 @@ export function useGovernanceData(
         treasuryArmBalance,
         treasuryUsdcBalance,
         treasuryOwner,
-        treasurySteward,
         stewardBudget,
         currentSteward,
         isStewardActive,
         termEnd,
-        actionDelay,
-        stewardActionCount,
-        stewardActions,
         blockTimestamp,
         blockNumber,
         isLoading: false,
@@ -327,6 +288,7 @@ async function fetchProposal(
     againstVotes: proposalData[5] as bigint,
     abstainVotes: proposalData[6] as bigint,
     snapshotBlock: proposalData[7] as bigint,
+    snapshotEligibleSupply: proposalData[8] as bigint,
     quorumRequired,
     description: '', // Filled in via events
     hasVoted,

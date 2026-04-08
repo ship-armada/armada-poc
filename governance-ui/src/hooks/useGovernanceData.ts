@@ -1,10 +1,10 @@
 // ABOUTME: Polls all governance state on a 10-second interval and exposes it via React state.
-// ABOUTME: Reads proposals, token balances, treasury info, and steward data from contracts.
+// ABOUTME: Reads proposals, token balances, treasury info, steward, veto, wind-down, and outflow data.
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ethers } from 'ethers'
 import type { GovernanceContracts } from './useGovernanceContracts'
-import type { ProposalData } from '../governance-types'
+import type { ProposalData, OutflowConfig } from '../governance-types'
 import { ProposalState, ProposalType } from '../governance-types'
 
 const POLL_INTERVAL_MS = 10_000
@@ -28,10 +28,26 @@ export interface GovernanceData {
   treasuryOwner: string
   stewardBudget: { budget: bigint; spent: bigint; remaining: bigint } | null
 
+  // Outflow config
+  outflowConfigArm: OutflowConfig | null
+  outflowConfigUsdc: OutflowConfig | null
+
   // Steward
   currentSteward: string
   isStewardActive: boolean
   termEnd: bigint
+
+  // Security Council
+  securityCouncil: string
+  isSecurityCouncilEjected: boolean
+
+  // Wind-down
+  windDownTriggered: boolean
+  windDownDeadline: bigint
+  revenueThreshold: bigint
+  recognizedRevenue: bigint
+  windDownActive: boolean
+  circulatingSupply: bigint
 
   // Block info
   blockTimestamp: bigint
@@ -56,9 +72,19 @@ const EMPTY_DATA: GovernanceData = {
   treasuryUsdcBalance: 0n,
   treasuryOwner: '',
   stewardBudget: null,
+  outflowConfigArm: null,
+  outflowConfigUsdc: null,
   currentSteward: '',
   isStewardActive: false,
   termEnd: 0n,
+  securityCouncil: '',
+  isSecurityCouncilEjected: false,
+  windDownTriggered: false,
+  windDownDeadline: 0n,
+  revenueThreshold: 0n,
+  recognizedRevenue: 0n,
+  windDownActive: false,
+  circulatingSupply: 0n,
   blockTimestamp: 0n,
   blockNumber: 0n,
   isLoading: true,
@@ -191,6 +217,38 @@ export function useGovernanceData(
         // Treasury queries may fail
       }
 
+      // Outflow config
+      let outflowConfigArm: OutflowConfig | null = null
+      let outflowConfigUsdc: OutflowConfig | null = null
+      try {
+        const armResult = await treasury.getOutflowConfig(deployment.contracts.armToken)
+        if (armResult[0] > 0n) {
+          outflowConfigArm = {
+            windowDuration: armResult[0] as bigint,
+            limitBps: armResult[1] as bigint,
+            limitAbsolute: armResult[2] as bigint,
+            floorAbsolute: armResult[3] as bigint,
+          }
+        }
+      } catch {
+        // Outflow config may not be initialized
+      }
+      if (contracts.usdcAddress) {
+        try {
+          const usdcResult = await treasury.getOutflowConfig(contracts.usdcAddress)
+          if (usdcResult[0] > 0n) {
+            outflowConfigUsdc = {
+              windowDuration: usdcResult[0] as bigint,
+              limitBps: usdcResult[1] as bigint,
+              limitAbsolute: usdcResult[2] as bigint,
+              floorAbsolute: usdcResult[3] as bigint,
+            }
+          }
+        } catch {
+          // Outflow config may not be initialized
+        }
+      }
+
       // Steward data (identity only — spending flows through governor now)
       let currentSteward = ''
       let isStewardActive = false
@@ -204,6 +262,48 @@ export function useGovernanceData(
         ])
       } catch {
         // Steward queries may fail
+      }
+
+      // Security Council
+      let securityCouncil = ''
+      let isSecurityCouncilEjected = false
+      try {
+        securityCouncil = await governor.securityCouncil()
+        isSecurityCouncilEjected = securityCouncil === ethers.ZeroAddress
+      } catch {
+        // SC query may fail
+      }
+
+      // Wind-down data (optional contracts — may not be deployed)
+      let windDownTriggered = false
+      let windDownDeadline = 0n
+      let revenueThreshold = 0n
+      let recognizedRevenue = 0n
+      let windDownActive = false
+      let circulatingSupply = 0n
+
+      try {
+        windDownActive = await governor.windDownActive()
+      } catch {}
+
+      if (contracts.windDown) {
+        try {
+          ;[windDownTriggered, windDownDeadline, revenueThreshold] = await Promise.all([
+            contracts.windDown.triggered(),
+            contracts.windDown.windDownDeadline(),
+            contracts.windDown.revenueThreshold(),
+          ])
+        } catch {}
+      }
+      if (contracts.revenueCounter) {
+        try {
+          recognizedRevenue = await contracts.revenueCounter.recognizedRevenueUsd()
+        } catch {}
+      }
+      if (contracts.redemption) {
+        try {
+          circulatingSupply = await contracts.redemption.circulatingSupply()
+        } catch {}
       }
 
       setData((prev) => ({
@@ -220,9 +320,19 @@ export function useGovernanceData(
         treasuryUsdcBalance,
         treasuryOwner,
         stewardBudget,
+        outflowConfigArm,
+        outflowConfigUsdc,
         currentSteward,
         isStewardActive,
         termEnd,
+        securityCouncil,
+        isSecurityCouncilEjected,
+        windDownTriggered,
+        windDownDeadline,
+        revenueThreshold,
+        recognizedRevenue,
+        windDownActive,
+        circulatingSupply,
         blockTimestamp,
         blockNumber,
         isLoading: false,
@@ -277,11 +387,31 @@ async function fetchProposal(
     }
   }
 
+  const proposalType = Number(proposalData[1]) as ProposalType
+  const state = Number(stateRaw) as ProposalState
+
+  // Veto linkage: fetch bidirectional lookup for relevant proposal types
+  let vetoedProposalId: number | undefined
+  let ratificationId: number | undefined
+
+  if (proposalType === ProposalType.VetoRatification) {
+    try {
+      const vetoedId = await governor.ratificationOf(id)
+      if (Number(vetoedId) > 0) vetoedProposalId = Number(vetoedId)
+    } catch {}
+  }
+  if (state === ProposalState.Canceled) {
+    try {
+      const ratId = await governor.vetoRatificationId(id)
+      if (Number(ratId) > 0) ratificationId = Number(ratId)
+    } catch {}
+  }
+
   return {
     id,
     proposer: proposalData[0] as string,
-    proposalType: Number(proposalData[1]) as ProposalType,
-    state: Number(stateRaw) as ProposalState,
+    proposalType,
+    state,
     voteStart: proposalData[2] as bigint,
     voteEnd: proposalData[3] as bigint,
     forVotes: proposalData[4] as bigint,
@@ -293,5 +423,7 @@ async function fetchProposal(
     description: '', // Filled in via events
     hasVoted,
     userVoteChoice,
+    vetoedProposalId,
+    ratificationId,
   }
 }

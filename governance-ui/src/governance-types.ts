@@ -45,6 +45,17 @@ export interface ProposalData {
   // Whether the connected user has already voted
   hasVoted: boolean
   userVoteChoice: number | null
+  // Veto linkage (populated for relevant proposal types)
+  vetoedProposalId?: number // set on VetoRatification proposals
+  ratificationId?: number  // set on proposals that have been vetoed
+}
+
+/** Treasury outflow rate-limit configuration for a single token */
+export interface OutflowConfig {
+  windowDuration: bigint
+  limitBps: bigint
+  limitAbsolute: bigint
+  floorAbsolute: bigint
 }
 
 /** Labels for proposal types */

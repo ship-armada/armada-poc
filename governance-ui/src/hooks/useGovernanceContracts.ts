@@ -18,6 +18,9 @@ import {
   TREASURY_ABI,
   STEWARD_ABI,
   ERC20_ABI,
+  WIND_DOWN_ABI,
+  REDEMPTION_ABI,
+  REVENUE_COUNTER_ABI,
 } from '../governance-abis'
 
 export interface GovernanceContracts {
@@ -30,6 +33,10 @@ export interface GovernanceContracts {
   steward: ethers.Contract | null
   /** USDC contract for treasury balance queries */
   usdc: ethers.Contract | null
+  /** Wind-down, redemption, and revenue counter contracts (optional — may not be deployed) */
+  windDown: ethers.Contract | null
+  redemption: ethers.Contract | null
+  revenueCounter: ethers.Contract | null
   /** Raw deployment data */
   deployment: GovernanceDeployment | null
   /** USDC token address */
@@ -49,6 +56,9 @@ export function useGovernanceContracts(): GovernanceContracts {
     treasury: null,
     steward: null,
     usdc: null,
+    windDown: null,
+    redemption: null,
+    revenueCounter: null,
     deployment: null,
     usdcAddress: null,
     faucetAddress: null,
@@ -80,6 +90,15 @@ export function useGovernanceContracts(): GovernanceContracts {
           steward: new ethers.Contract(contracts.steward, STEWARD_ABI, provider),
           usdc: usdcAddress
             ? new ethers.Contract(usdcAddress, ERC20_ABI, provider)
+            : null,
+          windDown: contracts.windDown
+            ? new ethers.Contract(contracts.windDown, WIND_DOWN_ABI, provider)
+            : null,
+          redemption: contracts.redemption
+            ? new ethers.Contract(contracts.redemption, REDEMPTION_ABI, provider)
+            : null,
+          revenueCounter: contracts.revenueCounter
+            ? new ethers.Contract(contracts.revenueCounter, REVENUE_COUNTER_ABI, provider)
             : null,
           deployment,
           usdcAddress,

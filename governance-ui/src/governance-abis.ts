@@ -29,6 +29,8 @@ export const GOVERNOR_ABI = [
   'function execute(uint256 proposalId) payable',
   'function cancel(uint256 proposalId)',
   'function proposeStewardSpend(address[] tokens, address[] recipients, uint256[] amounts, string description) returns (uint256)',
+  'function veto(uint256 proposalId, bytes32 rationaleHash)',
+  'function resolveRatification(uint256 ratificationId)',
   // Read functions
   'function proposalCount() view returns (uint256)',
   'function state(uint256 proposalId) view returns (uint8)',
@@ -44,6 +46,8 @@ export const GOVERNOR_ABI = [
   'function stewardContract() view returns (address)',
   'function securityCouncil() view returns (address)',
   'function windDownActive() view returns (bool)',
+  'function ratificationOf(uint256 ratificationId) view returns (uint256)',
+  'function vetoRatificationId(uint256 vetoedProposalId) view returns (uint256)',
   // Events
   'event ProposalCreated(uint256 indexed proposalId, address indexed proposer, uint8 proposalType, uint256 voteStart, uint256 voteEnd, string description)',
   'event VoteCast(address indexed voter, uint256 indexed proposalId, uint8 support, uint256 weight)',
@@ -51,6 +55,10 @@ export const GOVERNOR_ABI = [
   'event ProposalQueued(uint256 indexed proposalId, bytes32 timelockId)',
   'event ProposalExecuted(uint256 indexed proposalId)',
   'event ProposalCanceled(uint256 indexed proposalId)',
+  'event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId)',
+  'event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld)',
+  'event SecurityCouncilEjected(uint256 indexed ratificationId)',
+  'event SecurityCouncilUpdated(address indexed oldSC, address indexed newSC)',
 ]
 
 export const TREASURY_ABI = [
@@ -61,6 +69,7 @@ export const TREASURY_ABI = [
   'function getBalance(address token) view returns (uint256)',
   'function getStewardBudget(address token) view returns (uint256 budget, uint256 spent, uint256 remaining)',
   'function owner() view returns (address)',
+  'function getOutflowConfig(address token) view returns (uint256 windowDuration, uint256 limitBps, uint256 limitAbsolute, uint256 floorAbsolute)',
   // Events
   'event DirectDistribution(address indexed token, address indexed recipient, uint256 amount)',
   'event StewardSpent(address indexed token, address indexed recipient, uint256 amount, uint256 budgetRemaining)',
@@ -86,4 +95,22 @@ export const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function symbol() view returns (string)',
   'function decimals() view returns (uint8)',
+]
+
+export const WIND_DOWN_ABI = [
+  'function triggered() view returns (bool)',
+  'function windDownDeadline() view returns (uint256)',
+  'function revenueThreshold() view returns (uint256)',
+  'function triggerWindDown()',
+  'function sweepToken(address token)',
+  'function sweepETH()',
+]
+
+export const REDEMPTION_ABI = [
+  'function circulatingSupply() view returns (uint256)',
+  'function redeem(uint256 armAmount, address[] tokens, bool includeETH)',
+]
+
+export const REVENUE_COUNTER_ABI = [
+  'function recognizedRevenueUsd() view returns (uint256)',
 ]

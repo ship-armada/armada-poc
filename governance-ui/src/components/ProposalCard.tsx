@@ -6,6 +6,7 @@ import { ethers } from 'ethers'
 import type { ProposalData } from '../governance-types'
 import {
   ProposalState,
+  ProposalType,
   VoteSupport,
   PROPOSAL_TYPE_LABELS,
   PROPOSAL_STATE_LABELS,
@@ -21,9 +22,10 @@ interface ProposalCardProps {
   wallet: WalletState
   onAction: () => Promise<void>
   blockTimestamp: bigint
+  securityCouncil: string
 }
 
-export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimestamp }: ProposalCardProps) {
+export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimestamp, securityCouncil }: ProposalCardProps) {
   const [txStatus, setTxStatus] = useState<string | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -123,6 +125,34 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
     })
   }
 
+  const handleVeto = () => {
+    if (!contracts.deployment) return
+    sendTx('Vetoing', async (signer) => {
+      const gov = new ethers.Contract(
+        contracts.deployment!.contracts.governor,
+        ['function veto(uint256 proposalId, bytes32 rationaleHash)'],
+        signer,
+      )
+      return gov.veto(p.id, ethers.ZeroHash)
+    })
+  }
+
+  const handleResolveRatification = () => {
+    if (!contracts.deployment) return
+    sendTx('Resolving ratification', async (signer) => {
+      const gov = new ethers.Contract(
+        contracts.deployment!.contracts.governor,
+        ['function resolveRatification(uint256 ratificationId)'],
+        signer,
+      )
+      return gov.resolveRatification(p.id)
+    })
+  }
+
+  const isVetoRatification = p.proposalType === ProposalType.VetoRatification
+  const isSC = wallet.account?.toLowerCase() === securityCouncil.toLowerCase() &&
+    securityCouncil !== ethers.ZeroAddress
+
   return (
     <div className="rounded border border-neutral-800 bg-neutral-900 p-4">
       {/* Header */}
@@ -151,6 +181,21 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
           {expanded ? 'Collapse' : 'Details'}
         </button>
       </div>
+
+      {/* Veto Ratification Banner */}
+      {isVetoRatification && (
+        <div className="mt-2 rounded bg-orange-950/30 border border-orange-900 px-3 py-2 text-xs text-orange-300">
+          Veto Ratification: <strong>FOR</strong> = uphold the veto, <strong>AGAINST</strong> = eject Security Council permanently.
+          {p.vetoedProposalId && <span> (Vetoed proposal: #{p.vetoedProposalId})</span>}
+        </div>
+      )}
+
+      {/* Vetoed indicator on canceled proposals */}
+      {p.state === ProposalState.Canceled && p.ratificationId && (
+        <div className="mt-2 rounded bg-orange-950/30 border border-orange-900 px-3 py-2 text-xs text-orange-300">
+          This proposal was vetoed by the Security Council. See ratification vote: #{p.ratificationId}
+        </div>
+      )}
 
       {/* Timing */}
       <div className="mt-3 flex gap-4 text-xs text-neutral-500">
@@ -225,13 +270,13 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
               onClick={() => handleVote(VoteSupport.For)}
               className="rounded bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700"
             >
-              Vote For
+              {isVetoRatification ? 'Uphold Veto (For)' : 'Vote For'}
             </button>
             <button
               onClick={() => handleVote(VoteSupport.Against)}
               className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
             >
-              Vote Against
+              {isVetoRatification ? 'Eject SC (Against)' : 'Vote Against'}
             </button>
             <button
               onClick={() => handleVote(VoteSupport.Abstain)}
@@ -241,7 +286,7 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
             </button>
           </>
         )}
-        {p.state === ProposalState.Succeeded && (
+        {p.state === ProposalState.Succeeded && !isVetoRatification && (
           <button
             onClick={handleQueue}
             className="rounded bg-purple-800 px-3 py-1 text-xs text-purple-200 hover:bg-purple-700"
@@ -249,13 +294,32 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
             Queue to Timelock
           </button>
         )}
-        {p.state === ProposalState.Queued && (
+        {isVetoRatification &&
+          (p.state === ProposalState.Succeeded || p.state === ProposalState.Defeated) && (
           <button
-            onClick={handleExecute}
-            className="rounded bg-emerald-800 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-700"
+            onClick={handleResolveRatification}
+            className="rounded bg-orange-800 px-3 py-1 text-xs text-orange-200 hover:bg-orange-700"
           >
-            Execute
+            Resolve Ratification
           </button>
+        )}
+        {p.state === ProposalState.Queued && (
+          <>
+            <button
+              onClick={handleExecute}
+              className="rounded bg-emerald-800 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-700"
+            >
+              Execute
+            </button>
+            {isSC && (
+              <button
+                onClick={handleVeto}
+                className="rounded bg-orange-800 px-3 py-1 text-xs text-orange-200 hover:bg-orange-700"
+              >
+                Veto (as SC)
+              </button>
+            )}
+          </>
         )}
         {p.state === ProposalState.Pending &&
           wallet.account?.toLowerCase() === p.proposer.toLowerCase() && (

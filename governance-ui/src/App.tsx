@@ -40,6 +40,18 @@ export function App() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {/* Security Council Status */}
+            {govData.securityCouncil && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className={`inline-block h-2 w-2 rounded-full ${govData.isSecurityCouncilEjected ? 'bg-red-500' : 'bg-green-500'}`} />
+                <span className="text-neutral-500">SC:</span>
+                <span className="font-mono text-neutral-400">
+                  {govData.isSecurityCouncilEjected
+                    ? 'Ejected'
+                    : `${govData.securityCouncil.slice(0, 6)}...${govData.securityCouncil.slice(-4)}`}
+                </span>
+              </div>
+            )}
             {contracts.error && (
               <span className="text-xs text-red-400">{contracts.error}</span>
             )}

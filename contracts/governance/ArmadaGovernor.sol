@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
-import "./GovernorStringLib.sol";
+
 
 /// @title ArmadaGovernor — UUPS-upgradeable governance with typed proposals and ERC20Votes delegation
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
@@ -30,10 +30,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_AlreadyResolved();
     error Gov_AutoCreatedOnly();
     error Gov_BelowProposalThreshold();
-    error Gov_BondAlreadyClaimed();
-    error Gov_BondReturnFailed();
-    error Gov_BondStillLocked();
-    error Gov_BondTransferFailed();
     error Gov_CommunityOverrodeNoDoubleVeto();
     error Gov_EmptyProposal();
     error Gov_ExecutionDelayOutOfBounds();
@@ -41,30 +37,24 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_ImmutableProposalType();
     error Gov_InvalidVoteType();
     error Gov_LengthMismatch();
-    error Gov_NoBond();
     error Gov_NoVotingPower();
     error Gov_NotARatificationProposal();
     error Gov_NotCurrentSteward();
-    error Gov_NotPaused();
     error Gov_NotPendingOrActive();
     error Gov_NotPending();
     error Gov_NotProposer();
     error Gov_NotQueued();
     error Gov_NotSecurityCouncil();
-    error Gov_NotStewardProposal();
     error Gov_NotSucceeded();
     error Gov_NotTimelock();
     error Gov_NotWindDownContract();
-    error Gov_ProposalNotInTerminalState();
     error Gov_QuietPeriodActive();
     error Gov_QuorumBpsOutOfBounds();
-    error Gov_RatificationNotResolved();
     error Gov_SameVote();
     error Gov_SelectorAlreadyExtended();
     error Gov_SelectorNotExtended();
     error Gov_SelfPaymentNotAllowed();
     error Gov_StewardCalldataClassifiedAsExtended();
-    error Gov_StewardChannelPaused();
     error Gov_StewardContractNotSet();
     error Gov_StewardNotActive();
     error Gov_UnknownProposal();
@@ -189,22 +179,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
     uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
 
-    // Proposal bond: 1,000 ARM posted at proposal creation (only when ARM is transferable).
-    // Bond is always returned but with variable lock periods based on outcome.
-    uint256 public constant PROPOSAL_BOND = 1_000 * 1e18;
-    uint256 public constant BOND_LOCK_QUORUM_FAIL = 15 days;
-    uint256 public constant BOND_LOCK_VOTE_FAIL = 45 days;
-
-    struct BondInfo {
-        address depositor;
-        uint256 amount;
-        uint256 unlockTime; // 0 = immediately claimable or not yet determined
-        bool claimed;
-    }
-    mapping(uint256 => BondInfo) public proposalBonds;
-
-
-
     // ============ Veto & Ratification ============
 
     /// @notice Calldata hashes of proposals where community denied the SC's veto.
@@ -216,27 +190,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Maps vetoed proposalId → ratification proposalId (reverse lookup)
     mapping(uint256 => uint256) public vetoRatificationId;
-
-    // ============ Steward Circuit Breaker ============
-
-    /// @notice Number of consecutive steward proposals with participation below 30%.
-    /// When this reaches CIRCUIT_BREAKER_THRESHOLD, the steward channel pauses.
-    uint256 public consecutiveLowParticipationCount;
-
-    /// @notice Whether the steward channel is currently paused due to circuit breaker.
-    bool public stewardChannelPaused;
-
-    /// @notice Tracks whether a steward proposal's participation has been resolved.
-    mapping(uint256 => bool) public stewardProposalResolved;
-
-    uint256 public constant CIRCUIT_BREAKER_THRESHOLD = 5;
-    uint256 public constant CIRCUIT_BREAKER_PARTICIPATION_BPS = 3000; // 30%
-
-    /// @notice Ordered list of steward proposal IDs for auto-resolution tracking.
-    uint256[] private _stewardProposalIds;
-
-    /// @notice Cursor into _stewardProposalIds; all entries before this index are resolved.
-    uint256 private _stewardResolveIndex;
 
     // ============ Events ============
 
@@ -260,14 +213,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event WindDownActivated();
     event ExtendedSelectorAdded(bytes4 indexed selector);
     event ExtendedSelectorRemoved(bytes4 indexed selector);
-    event BondPosted(uint256 indexed proposalId, address indexed depositor, uint256 amount);
-    event BondClaimed(uint256 indexed proposalId, address indexed depositor, uint256 amount);
     event StewardContractSet(address indexed steward);
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
-    event StewardChannelPaused(uint256 indexed triggeringProposalId);
-    event StewardChannelResumed();
 
     // ============ Constructor & Initializer ============
 
@@ -556,13 +505,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ) internal returns (uint256) {
         uint256 ratId = ++proposalCount;
 
-        // Build description for on-chain verifiability
-        string memory desc = string(abi.encodePacked(
-            "Veto ratification for proposal #",
-            GovernorStringLib.uint2str(vetoedProposalId),
-            " | rationale: ",
-            GovernorStringLib.bytes32ToHex(rationaleHash)
-        ));
+        // Description is generic; vetoedProposalId and rationaleHash are queryable
+        // on-chain via ratificationOf() mapping and ProposalVetoed event.
+        string memory desc = "Veto ratification";
 
         _initProposal(ratId, ProposalType.VetoRatification, desc);
 
@@ -610,11 +555,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (msg.sender != ITreasurySteward(stewardContract).currentSteward()) revert Gov_NotCurrentSteward();
         if (!ITreasurySteward(stewardContract).isStewardActive()) revert Gov_StewardNotActive();
 
-        // Auto-resolve all prior steward proposals whose voting has ended.
-        // Must run before the pause check: resolution may trigger the circuit breaker.
-        _autoResolveStewardProposals();
-
-        if (stewardChannelPaused) revert Gov_StewardChannelPaused();
         if (tokens.length == 0) revert Gov_EmptyProposal();
         if (tokens.length != recipients.length || tokens.length != amounts.length) revert Gov_LengthMismatch();
         _checkQuietPeriod();
@@ -650,84 +590,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.values = values;
         p.calldatas = calldatas;
 
-        // No bond required for steward proposals — the steward is an elected role
-        // operating within budget limits. Bonds are for standard/extended proposals only.
-
-        // Track for auto-resolution on next proposeStewardSpend() call
-        _stewardProposalIds.push(proposalId);
-
         emit ProposalCreated(
             proposalId, msg.sender, ProposalType.Steward,
             p.voteStart, p.voteEnd, description
         );
         return proposalId;
-    }
-
-    /// @notice Resolve a steward proposal's participation for the circuit breaker.
-    /// Must be called after the steward proposal's voting period ends. Tracks whether
-    /// participation was below 30% and pauses the steward channel if 5 consecutive
-    /// proposals fail to meet the threshold.
-    /// @param proposalId The steward proposal to resolve
-    function resolveStewardProposal(uint256 proposalId) external {
-        Proposal storage p = _proposals[proposalId];
-        if (p.id == 0) revert Gov_UnknownProposal();
-        if (p.proposalType != ProposalType.Steward) revert Gov_NotStewardProposal();
-        if (block.timestamp <= p.voteEnd) revert Gov_VotingNotEnded();
-        if (stewardProposalResolved[proposalId]) revert Gov_AlreadyResolved();
-        _resolveStewardProposal(proposalId);
-    }
-
-    /// @dev Core resolution logic for a steward proposal. Idempotent — skips already-resolved
-    /// proposals. Returns false if voting hasn't ended yet (caller should stop iterating).
-    function _resolveStewardProposal(uint256 proposalId) internal returns (bool) {
-        Proposal storage p = _proposals[proposalId];
-        if (stewardProposalResolved[proposalId]) return true;
-        if (block.timestamp <= p.voteEnd) return false;
-
-        stewardProposalResolved[proposalId] = true;
-
-        // Participation = total votes cast / eligible supply at snapshot
-        uint256 totalVotesCast = p.forVotes + p.againstVotes + p.abstainVotes;
-        uint256 participationBps = p.snapshotEligibleSupply > 0
-            ? (totalVotesCast * 10000) / p.snapshotEligibleSupply
-            : 0;
-
-        if (participationBps < CIRCUIT_BREAKER_PARTICIPATION_BPS) {
-            consecutiveLowParticipationCount++;
-            if (consecutiveLowParticipationCount >= CIRCUIT_BREAKER_THRESHOLD) {
-                stewardChannelPaused = true;
-                emit StewardChannelPaused(proposalId);
-            }
-        } else {
-            consecutiveLowParticipationCount = 0;
-        }
-        return true;
-    }
-
-    /// @dev Auto-resolve all prior steward proposals whose voting period has ended.
-    /// Walks from the cursor forward. Because steward proposals are created sequentially
-    /// with the same voting period, voteEnd times are monotonically increasing — we can
-    /// stop as soon as one hasn't ended yet.
-    function _autoResolveStewardProposals() internal {
-        uint256 len = _stewardProposalIds.length;
-        uint256 i = _stewardResolveIndex;
-        while (i < len) {
-            if (!_resolveStewardProposal(_stewardProposalIds[i])) break;
-            i++;
-        }
-        _stewardResolveIndex = i;
-    }
-
-    /// @notice Resume the steward channel after a circuit breaker pause.
-    /// Standard proposal (20% quorum, 7-day voting) per governance spec §Circuit breaker.
-    function resumeStewardChannel() external {
-        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
-        if (!stewardChannelPaused) revert Gov_NotPaused();
-
-        stewardChannelPaused = false;
-        consecutiveLowParticipationCount = 0;
-
-        emit StewardChannelResumed();
     }
 
     // ============ Wind-Down ============
@@ -793,20 +660,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.targets = targets;
         p.values = values;
         p.calldatas = calldatas;
-
-        // Bond: required only when ARM is transferable (post-transfer-unlock).
-        // Pre-transfer-unlock, bonds are economically meaningless and technically impossible
-        // for non-whitelisted holders, so governance operates on threshold only.
-        if (armToken.transferable()) {
-            if (!armToken.transferFrom(msg.sender, address(this), PROPOSAL_BOND)) revert Gov_BondTransferFailed();
-            proposalBonds[proposalId] = BondInfo({
-                depositor: msg.sender,
-                amount: PROPOSAL_BOND,
-                unlockTime: 0,
-                claimed: false
-            });
-            emit BondPosted(proposalId, msg.sender, PROPOSAL_BOND);
-        }
 
         emit ProposalCreated(
             proposalId, msg.sender, effectiveType,
@@ -953,59 +806,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.canceled = true;
 
         emit ProposalCanceled(proposalId);
-    }
-
-    /// @notice Claim a proposal bond after the lock period has elapsed.
-    /// Bond is always returned — lock periods vary by defeat reason.
-    function claimBond(uint256 proposalId) external nonReentrant {
-        BondInfo storage bond = proposalBonds[proposalId];
-        if (bond.amount == 0) revert Gov_NoBond();
-        if (bond.claimed) revert Gov_BondAlreadyClaimed();
-
-        ProposalState currentState = state(proposalId);
-        Proposal storage p = _proposals[proposalId];
-
-        uint256 unlockTime;
-
-        if (currentState == ProposalState.Executed) {
-            // Passed and executed: immediately claimable
-            unlockTime = 0;
-        } else if (currentState == ProposalState.Canceled) {
-            uint256 ratId = vetoRatificationId[proposalId];
-            if (ratId != 0) {
-                // Vetoed proposal: bond deferred until ratification resolves.
-                // Proposer did nothing wrong — proposal passed on merit — so no penalty.
-                Proposal storage rat = _proposals[ratId];
-                if (!rat.executed) revert Gov_RatificationNotResolved();
-                unlockTime = 0;
-            } else {
-                // Proposer self-cancelled during Pending: immediately claimable
-                unlockTime = 0;
-            }
-        } else if (currentState == ProposalState.Defeated) {
-            // Determine defeat reason to set appropriate bond lock period
-            bool quorumMet = _quorumReached(proposalId);
-            bool votePassed = _voteSucceeded(proposalId);
-            if (quorumMet && votePassed) {
-                // Vote passed but proposal expired (grace period elapsed without queuing).
-                // Proposer did nothing wrong — treat like a passed proposal.
-                unlockTime = 0;
-            } else if (!quorumMet) {
-                unlockTime = p.voteEnd + BOND_LOCK_QUORUM_FAIL;
-            } else {
-                // Quorum met but majority voted against
-                unlockTime = p.voteEnd + BOND_LOCK_VOTE_FAIL;
-            }
-        } else {
-            revert Gov_ProposalNotInTerminalState();
-        }
-
-        if (block.timestamp < unlockTime) revert Gov_BondStillLocked();
-
-        bond.claimed = true;
-        if (!armToken.transfer(bond.depositor, bond.amount)) revert Gov_BondReturnFailed();
-
-        emit BondClaimed(proposalId, bond.depositor, bond.amount);
     }
 
     // ============ View Functions ============

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Foundry tests for governor extended classification, proposal bond, and wind-down features.
-// ABOUTME: Covers mechanical selector-based classification, ARM bond lifecycle, and wind-down governance shutdown.
+// ABOUTME: Foundry tests for governor extended classification and wind-down features.
+// ABOUTME: Covers mechanical selector-based classification and wind-down governance shutdown.
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
@@ -21,8 +21,8 @@ contract MockUSDC is ERC20 {
     }
 }
 
-/// @title GovernorClassificationBondWindDownTest — Tests for extended classification, bond mechanism, and wind-down
-contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
+/// @title GovernorClassificationWindDownTest — Tests for extended classification and wind-down
+contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
     // Mirror events from governor for expectEmit
     event WindDownActivated();
 
@@ -39,7 +39,6 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
     address public securityCouncil = address(0x5C5C);
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
-    uint256 constant BOND_AMOUNT = 1_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
     uint256 constant FOURTEEN_DAYS = 14 days;
@@ -93,16 +92,6 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
     }
 
     // ======== Helpers ========
-
-    /// @dev Enable ARM transfers and approve governor for bond on behalf of proposer
-    function _enableTransfersAndApproveBond(address proposer) internal {
-        armToken.setWindDownContract(windDown);
-        vm.prank(windDown);
-        armToken.setTransferable(true);
-
-        vm.prank(proposer);
-        armToken.approve(address(governor), BOND_AMOUNT);
-    }
 
     function _proposeStandard(address proposer) internal returns (uint256) {
         address[] memory targets = new address[](1);
@@ -284,12 +273,12 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Extended));
     }
 
-    function test_classify_resumeStewardChannelIsStandard() public {
-        // resumeStewardChannel is NOT registered as an extended selector,
-        // so proposals targeting it should be classified as Standard.
-        assertFalse(governor.extendedSelectors(governor.resumeStewardChannel.selector));
+    function test_classify_nonExtendedSelectorStaysStandard() public {
+        // WHY: setStewardContract is NOT registered as an extended selector,
+        // so proposals targeting it should stay classified as Standard.
+        assertFalse(governor.extendedSelectors(governor.setStewardContract.selector));
 
-        bytes memory data = abi.encodeWithSelector(governor.resumeStewardChannel.selector);
+        bytes memory data = abi.encodeWithSelector(governor.setStewardContract.selector, address(0x1234));
         uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
 
         (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
@@ -480,203 +469,5 @@ contract GovernorClassificationBondWindDownTest is Test, GovernorDeployHelper {
         assertEq(governor.securityCouncil(), address(0));
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // PROPOSAL BOND
-    // ═══════════════════════════════════════════════════════════════
-
-    function test_bond_notRequiredWhenNonTransferable() public {
-        // ARM is non-transferable by default — propose should work without bond
-        uint256 proposalId = _proposeStandard(alice);
-        assertGt(proposalId, 0);
-
-        // No bond recorded
-        (address depositor, uint256 amount,,) = governor.proposalBonds(proposalId);
-        assertEq(depositor, address(0));
-        assertEq(amount, 0);
-    }
-
-    function test_bond_requiredWhenTransferable() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 aliceBalBefore = armToken.balanceOf(alice);
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Bond was taken
-        uint256 aliceBalAfter = armToken.balanceOf(alice);
-        assertEq(aliceBalBefore - aliceBalAfter, BOND_AMOUNT);
-
-        // Bond info recorded
-        (address depositor, uint256 amount,,) = governor.proposalBonds(proposalId);
-        assertEq(depositor, alice);
-        assertEq(amount, BOND_AMOUNT);
-    }
-
-    function test_bond_revertsWithoutApproval() public {
-        armToken.setWindDownContract(windDown);
-        vm.prank(windDown);
-        armToken.setTransferable(true);
-
-        // Alice does NOT approve governor
-        vm.expectRevert(); // ERC20: insufficient allowance
-        _proposeStandard(alice);
-    }
-
-    function test_bond_claimAfterExecution() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Fast-forward through voting delay
-        vm.warp(block.timestamp + TWO_DAYS + 1);
-
-        // Vote FOR
-        vm.prank(alice);
-        governor.castVote(proposalId, 1);
-        vm.prank(bob);
-        governor.castVote(proposalId, 1);
-
-        // Fast-forward past voting period
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
-
-        // Queue
-        governor.queue(proposalId);
-
-        // Fast-forward past execution delay
-        vm.warp(block.timestamp + TWO_DAYS + 1);
-
-        // Execute
-        governor.execute(proposalId);
-
-        // Claim bond — should be immediately available
-        uint256 aliceBalBefore = armToken.balanceOf(alice);
-        governor.claimBond(proposalId);
-        uint256 aliceBalAfter = armToken.balanceOf(alice);
-        assertEq(aliceBalAfter - aliceBalBefore, BOND_AMOUNT);
-    }
-
-    function test_bond_claimAfterCancel() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Cancel during Pending
-        vm.prank(alice);
-        governor.cancel(proposalId);
-
-        // Claim bond — immediately available
-        uint256 aliceBalBefore = armToken.balanceOf(alice);
-        governor.claimBond(proposalId);
-        assertEq(armToken.balanceOf(alice) - aliceBalBefore, BOND_AMOUNT);
-    }
-
-    function test_bond_lockedOnQuorumFail() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Fast-forward past voting delay + voting period with NO votes → quorum not met
-        vm.warp(block.timestamp + TWO_DAYS + SEVEN_DAYS + 1);
-
-        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Defeated));
-
-        // Try to claim immediately → should revert (locked 15 days)
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_BondStillLocked.selector));
-        governor.claimBond(proposalId);
-
-        // Fast-forward 15 days → now claimable
-        vm.warp(block.timestamp + 15 days);
-        governor.claimBond(proposalId);
-    }
-
-    function test_bond_lockedOnVoteDown() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Fast-forward past voting delay
-        vm.warp(block.timestamp + TWO_DAYS + 1);
-
-        // Vote AGAINST with enough to reach quorum
-        vm.prank(alice);
-        governor.castVote(proposalId, 0); // AGAINST
-        vm.prank(bob);
-        governor.castVote(proposalId, 0); // AGAINST
-
-        // Fast-forward past voting period
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
-
-        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Defeated));
-
-        // Try to claim immediately → locked 45 days
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_BondStillLocked.selector));
-        governor.claimBond(proposalId);
-
-        // Fast-forward 45 days → now claimable
-        vm.warp(block.timestamp + 45 days);
-        governor.claimBond(proposalId);
-    }
-
-    function test_bond_cannotClaimTwice() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        vm.prank(alice);
-        governor.cancel(proposalId);
-
-        governor.claimBond(proposalId);
-
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_BondAlreadyClaimed.selector));
-        governor.claimBond(proposalId);
-    }
-
-    function test_bond_cannotClaimActiveProposal() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Still Pending — not terminal
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_ProposalNotInTerminalState.selector));
-        governor.claimBond(proposalId);
-    }
-
-    function test_bond_noBondReverts() public {
-        // Propose without bond (non-transferable)
-        uint256 proposalId = _proposeStandard(alice);
-
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NoBond.selector));
-        governor.claimBond(proposalId);
-    }
-
-    function test_bond_immediateClaimOnGracePeriodExpiry() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _proposeStandard(alice);
-
-        // Fast-forward past voting delay
-        vm.warp(block.timestamp + TWO_DAYS + 1);
-
-        // Vote FOR with enough to reach quorum
-        vm.prank(alice);
-        governor.castVote(proposalId, 1); // FOR
-        vm.prank(bob);
-        governor.castVote(proposalId, 1); // FOR
-
-        // Fast-forward past voting period
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
-
-        // Proposal succeeded — do NOT queue it
-        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Succeeded));
-
-        // Fast-forward past 14-day queue grace period
-        vm.warp(block.timestamp + FOURTEEN_DAYS + 1);
-
-        // Now Defeated due to grace period expiry
-        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Defeated));
-
-        // Bond should be immediately claimable — proposer did nothing wrong
-        uint256 aliceBalBefore = armToken.balanceOf(alice);
-        governor.claimBond(proposalId);
-        assertEq(armToken.balanceOf(alice) - aliceBalBefore, BOND_AMOUNT);
-    }
 }
+

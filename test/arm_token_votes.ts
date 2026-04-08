@@ -172,17 +172,18 @@ describe("ArmadaToken — ERC20Votes", function () {
       expect(await armToken.transferable()).to.equal(false);
     });
 
-    it("should block transfer between non-whitelisted addresses", async function () {
-      // Carol is not whitelisted. Try carol → dave (neither whitelisted)
+    it("should block transfer from non-whitelisted sender", async function () {
+      // WHY: Only whitelisted senders may transfer during the restricted phase.
+      // A non-whitelisted sender must be blocked regardless of receiver status.
       // First get some tokens to carol via whitelisted alice
       await armToken.connect(alice).transfer(carol.address, ethers.parseUnits("1000", 18));
 
-      // carol → dave should fail (neither is whitelisted)
+      // carol (non-whitelisted sender) → deployer (whitelisted) should fail
       await expect(
         armToken.connect(carol).transfer(deployer.address, ethers.parseUnits("500", 18))
-      ).to.not.be.reverted; // deployer IS whitelisted as receiver — bad test
+      ).to.be.revertedWith("ArmadaToken: transfers restricted");
 
-      // carol → someone not whitelisted
+      // carol (non-whitelisted sender) → someone else not whitelisted should also fail
       const [, , , , , , notWhitelisted] = await ethers.getSigners();
       await expect(
         armToken.connect(carol).transfer(notWhitelisted.address, ethers.parseUnits("500", 18))
@@ -196,14 +197,16 @@ describe("ArmadaToken — ERC20Votes", function () {
       ).to.not.be.reverted;
     });
 
-    it("should allow anyone to transfer to whitelisted receiver", async function () {
+    it("should block non-whitelisted sender even when receiver is whitelisted", async function () {
+      // WHY: The whitelist check is sender-only. A whitelisted receiver does NOT
+      // make the transfer valid — only the sender's whitelist status is checked.
       // Get tokens to carol (non-whitelisted) via whitelisted alice
       await armToken.connect(alice).transfer(carol.address, ethers.parseUnits("1000", 18));
 
-      // Carol (non-whitelisted) can send to alice (whitelisted)
+      // Carol (non-whitelisted) sending to alice (whitelisted) should still fail
       await expect(
         armToken.connect(carol).transfer(alice.address, ethers.parseUnits("500", 18))
-      ).to.not.be.reverted;
+      ).to.be.revertedWith("ArmadaToken: transfers restricted");
     });
 
     it("should allow minting regardless of transferable flag", async function () {

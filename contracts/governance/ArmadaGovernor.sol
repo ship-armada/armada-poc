@@ -1143,13 +1143,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         for (uint256 i = 0; i < calldatas.length; i++) {
             if (calldatas[i].length < 4) continue;
 
-            bytes4 selector;
-            // solhint-disable-next-line no-inline-assembly
-            assembly {
-                // calldatas[i] is a bytes memory; its data starts at offset 0x20
-                let dataPtr := mload(add(add(calldatas, 0x20), mul(i, 0x20)))
-                selector := mload(add(dataPtr, 0x20))
-            }
+            bytes4 selector = bytes4(calldatas[i]);
 
             // Check registered extended selectors
             if (extendedSelectors[selector]) return ProposalType.Extended;
@@ -1157,15 +1151,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             // Special case: distribute() calls exceeding 5% of treasury balance
             if (selector == DISTRIBUTE_SELECTOR && calldatas[i].length >= 100) {
                 // Decode: distribute(address token, address recipient, uint256 amount)
-                // token is at bytes 4..35, amount is at bytes 68..99
-                address token;
-                uint256 amount;
-                // solhint-disable-next-line no-inline-assembly
-                assembly {
-                    let dataPtr := mload(add(add(calldatas, 0x20), mul(i, 0x20)))
-                    token := mload(add(dataPtr, 0x24))  // skip 4-byte selector + 32 bytes but token is at offset 4
-                    amount := mload(add(dataPtr, 0x64)) // offset 4 + 32 + 32 = 68
+                // Skip the 4-byte selector by slicing from index 4 onward
+                bytes memory params = new bytes(calldatas[i].length - 4);
+                for (uint256 j = 0; j < params.length; j++) {
+                    params[j] = calldatas[i][j + 4];
                 }
+                (address token, , uint256 amount) = abi.decode(params, (address, address, uint256));
                 uint256 treasuryBalance = IERC20(token).balanceOf(treasuryAddress);
                 if (treasuryBalance > 0 && amount > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
                     return ProposalType.Extended;

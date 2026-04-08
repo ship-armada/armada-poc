@@ -19,7 +19,7 @@ contract ArmadaToken is ERC20Votes {
 
     // ============ Transfer Restriction State ============
 
-    /// @notice When false, only whitelisted senders/receivers can transfer. Starts false.
+    /// @notice When false, only whitelisted senders can transfer. Starts false.
     bool public transferable;
 
     /// @notice Addresses exempt from transfer restrictions (add-only, no removal).
@@ -150,7 +150,7 @@ contract ArmadaToken is ERC20Votes {
 
     // ============ Transfer Restriction ============
 
-    /// @dev Restrict transfers when transferable is false: only whitelisted senders/receivers
+    /// @dev Restrict transfers when transferable is false: only whitelisted senders
     ///      or mints (from == address(0)) are allowed.
     function _beforeTokenTransfer(
         address from,
@@ -161,8 +161,7 @@ contract ArmadaToken is ERC20Votes {
         if (!transferable) {
             require(
                 from == address(0) ||
-                transferWhitelist[from] ||
-                transferWhitelist[to],
+                transferWhitelist[from],
                 "ArmadaToken: transfers restricted"
             );
         }

@@ -199,7 +199,7 @@ describe("ArmadaToken — ERC20Votes", function () {
 
     it("should block non-whitelisted sender even when receiver is whitelisted", async function () {
       // WHY: The whitelist check is sender-only. A whitelisted receiver does NOT
-      // make the transfer valid — this was the spec-code mismatch fixed in this change.
+      // make the transfer valid — only the sender's whitelist status is checked.
       // Get tokens to carol (non-whitelisted) via whitelisted alice
       await armToken.connect(alice).transfer(carol.address, ethers.parseUnits("1000", 18));
 

@@ -17,6 +17,7 @@ export enum ProposalType {
   Standard = 0,
   Extended = 1,
   VetoRatification = 2,
+  Steward = 3,
 }
 
 /** Vote support values: 0=Against, 1=For, 2=Abstain */
@@ -38,22 +39,23 @@ export interface ProposalData {
   againstVotes: bigint
   abstainVotes: bigint
   snapshotBlock: bigint
+  snapshotEligibleSupply: bigint
   quorumRequired: bigint
   description: string
   // Whether the connected user has already voted
   hasVoted: boolean
   userVoteChoice: number | null
+  // Veto linkage (populated for relevant proposal types)
+  vetoedProposalId?: number // set on VetoRatification proposals
+  ratificationId?: number  // set on proposals that have been vetoed
 }
 
-/** Steward action data from TreasurySteward.getAction() */
-export interface StewardActionData {
-  id: number
-  target: string
-  value: bigint
-  timestamp: bigint
-  executed: boolean
-  vetoed: boolean
-  executeAfter: bigint
+/** Treasury outflow rate-limit configuration for a single token */
+export interface OutflowConfig {
+  windowDuration: bigint
+  limitBps: bigint
+  limitAbsolute: bigint
+  floorAbsolute: bigint
 }
 
 /** Labels for proposal types */
@@ -61,6 +63,7 @@ export const PROPOSAL_TYPE_LABELS: Record<ProposalType, string> = {
   [ProposalType.Standard]: 'Standard',
   [ProposalType.Extended]: 'Extended',
   [ProposalType.VetoRatification]: 'Veto Ratification',
+  [ProposalType.Steward]: 'Steward Spend',
 }
 
 /** Labels for proposal states */

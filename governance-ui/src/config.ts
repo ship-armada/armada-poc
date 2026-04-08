@@ -50,11 +50,19 @@ export interface GovernanceDeployment {
     timelockController: string
     treasury: string
     governor: string
+    governorImpl?: string
     steward: string
+    adapterRegistry?: string
+    revenueCounter?: string
+    revenueCounterImpl?: string
+    revenueLock?: string
+    shieldPauseController?: string
+    redemption?: string
+    windDown?: string
   }
   config: {
     timelockMinDelay: number
-    stewardActionDelay: number
+    stewardActionDelay?: number
     totalSupply: string
     treasuryAllocation: string
   }

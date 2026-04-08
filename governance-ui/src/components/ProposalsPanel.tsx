@@ -122,6 +122,7 @@ export function ProposalsPanel({ contracts, wallet, govData }: ProposalsPanelPro
               wallet={wallet}
               onAction={govData.refresh}
               blockTimestamp={govData.blockTimestamp}
+              securityCouncil={govData.securityCouncil}
             />
           ))}
         </div>

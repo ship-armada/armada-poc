@@ -65,20 +65,15 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       const stewardIface = new ethers.Interface([
         'function electSteward(address _steward)',
       ])
-      const treasuryIface = new ethers.Interface([
-        'function setSteward(address _steward)',
-      ])
 
-      // Two-target batch: elect person on steward contract + set steward CONTRACT
-      // as treasury's steward. The treasury must recognize the TreasurySteward contract
-      // (not the person) because executeAction() calls treasury.stewardSpend() from the
-      // contract's address.
+      // Elect the person as steward on the TreasurySteward contract.
+      // Steward spending is authorized separately via steward budget configuration
+      // on the treasury, and spending proposals flow through ArmadaGovernor.proposeStewardSpend().
       return {
-        targets: [deployment.contracts.steward, deployment.contracts.treasury],
-        values: [0n, 0n],
+        targets: [deployment.contracts.steward],
+        values: [0n],
         calldatas: [
           stewardIface.encodeFunctionData('electSteward', [stewardAddress]),
-          treasuryIface.encodeFunctionData('setSteward', [deployment.contracts.steward]),
         ],
       }
     }
@@ -236,7 +231,8 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
             className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
           />
           <p className="mt-1 text-xs text-neutral-500">
-            Encodes two actions: electSteward(person) on Steward contract + setSteward(stewardContract) on Treasury
+            Encodes electSteward(person) on the TreasurySteward contract. Steward spending proposals
+            are submitted separately via the governor.
           </p>
         </div>
       )}

@@ -59,13 +59,8 @@ describe("Governance UUPS Upgrade", function () {
     await armToken.connect(alice).delegate(alice.address);
     await armToken.connect(bob).delegate(bob.address);
 
-    // Create linked factory for deploying new governor implementations
-    const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
-    const lib = await GovernorStringLib.deploy();
-    await lib.waitForDeployment();
-    linkedGovernorFactory = await ethers.getContractFactory("ArmadaGovernor", {
-      libraries: { GovernorStringLib: await lib.getAddress() },
-    });
+    // Create factory for deploying new governor implementations
+    linkedGovernorFactory = await ethers.getContractFactory("ArmadaGovernor");
   });
 
   describe("Upgrade Authorization", function () {

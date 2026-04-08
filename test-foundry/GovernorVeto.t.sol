@@ -27,8 +27,6 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         string description
     );
     event ProposalCanceled(uint256 indexed proposalId);
-    event BondClaimed(uint256 indexed proposalId, address indexed depositor, uint256 amount);
-
     ArmadaGovernor public governor;
     ArmadaToken public armToken;
     TimelockController public timelock;
@@ -42,7 +40,6 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
     address public windDown = address(0xD00D);
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
-    uint256 constant BOND_AMOUNT = 1_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant SEVEN_DAYS = 7 days;
     uint256 constant FOURTEEN_DAYS = 14 days;
@@ -99,16 +96,6 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
     }
 
     // ======== Helpers ========
-
-    /// @dev Enable ARM transfers and approve governor for bond
-    function _enableTransfersAndApproveBond(address proposer) internal {
-        armToken.setWindDownContract(windDown);
-        vm.prank(windDown);
-        armToken.setTransferable(true);
-
-        vm.prank(proposer);
-        armToken.approve(address(governor), BOND_AMOUNT);
-    }
 
     /// @dev Create a standard proposal and advance it to Queued state
     function _createAndQueueProposal(address proposer) internal returns (uint256) {
@@ -642,62 +629,6 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.setSecurityCouncil(newSC);
 
         assertEq(governor.securityCouncil(), newSC);
-    }
-
-    // ======== Bond Integration ========
-
-    function test_bond_vetoedProposalDeferredUntilRatificationResolves() public {
-        _enableTransfersAndApproveBond(alice);
-        uint256 aliceBalanceBefore = armToken.balanceOf(alice);
-
-        // Create, queue, veto
-        uint256 proposalId = _createAndQueueProposal(alice);
-        uint256 ratId = governor.proposalCount() + 1; // will be next
-
-        vm.prank(sc);
-        governor.veto(proposalId, keccak256("rationale"));
-        ratId = governor.proposalCount();
-
-        // Try to claim bond while ratification in progress — should revert
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_RatificationNotResolved.selector));
-        governor.claimBond(proposalId);
-
-        // Vote FOR (uphold veto) and resolve
-        vm.prank(alice);
-        governor.castVote(ratId, 1);
-        vm.prank(bob);
-        governor.castVote(ratId, 1);
-
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
-        governor.resolveRatification(ratId);
-
-        // Now bond should be claimable
-        governor.claimBond(proposalId);
-
-        // Bond returned
-        assertEq(armToken.balanceOf(alice), aliceBalanceBefore);
-    }
-
-    function test_bond_vetoedProposalClaimableAfterAgainstResolution() public {
-        _enableTransfersAndApproveBond(alice);
-
-        uint256 proposalId = _createAndQueueProposal(alice);
-
-        vm.prank(sc);
-        governor.veto(proposalId, keccak256("rationale"));
-        uint256 ratId = governor.proposalCount();
-
-        // Vote AGAINST → SC ejected
-        vm.prank(alice);
-        governor.castVote(ratId, 0);
-        vm.prank(bob);
-        governor.castVote(ratId, 0);
-
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
-        governor.resolveRatification(ratId);
-
-        // Bond still claimable (proposer not penalized even if veto was denied)
-        governor.claimBond(proposalId);
     }
 
     // ======== Full Lifecycle Integration ========

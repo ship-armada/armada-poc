@@ -187,13 +187,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(hopStats[0].whitelistCount < MAX_SEEDS, "ArmadaCrowdfund: seed cap reached");
         require(!participants[seed][0].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
 
-        participants[seed][0].isWhitelisted = true;
-        participants[seed][0].invitesReceived = 1;
-        // invitedBy defaults to address(0) for seeds
-        participantNodes.push(ParticipantNode(seed, 0));
-        hopStats[0].whitelistCount++;
+        _initParticipant(seed, 0, address(0));
 
         emit SeedAdded(seed);
+    }
+
+    /// @dev Initialize a new participant node at the given hop.
+    function _initParticipant(address participant, uint8 hop, address inviter_) private {
+        participants[participant][hop].isWhitelisted = true;
+        participants[participant][hop].invitesReceived = 1;
+        participants[participant][hop].invitedBy = inviter_;
+        participantNodes.push(ParticipantNode(participant, hop));
+        hopStats[hop].whitelistCount++;
     }
 
     /// @notice Verify the contract holds sufficient ARM for the maximum possible sale.
@@ -709,11 +714,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     function _registerOrStackInvite(address invitee, uint8 inviteeHop, address inviter_) internal {
         Participant storage inviteeNode = participants[invitee][inviteeHop];
         if (!inviteeNode.isWhitelisted) {
-            inviteeNode.isWhitelisted = true;
-            inviteeNode.invitesReceived = 1;
-            inviteeNode.invitedBy = inviter_;
-            participantNodes.push(ParticipantNode(invitee, inviteeHop));
-            hopStats[inviteeHop].whitelistCount++;
+            _initParticipant(invitee, inviteeHop, inviter_);
         } else {
             require(
                 inviteeNode.invitesReceived < hopConfigs[inviteeHop].maxInvitesReceived,

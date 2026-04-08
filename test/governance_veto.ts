@@ -578,61 +578,6 @@ describe("Governance Veto", function () {
     });
   });
 
-  // ======== Bond Deferral ========
-
-  describe("Bond Deferral", function () {
-    // Helper: enable ARM transfers and approve bond for proposer
-    async function enableTransfersAndApproveBond(proposer: SignerWithAddress) {
-      // ARM token requires windDown contract to enable transfers
-      await armToken.setWindDownContract(dave.address);
-      await armToken.connect(dave).setTransferable(true);
-
-      const bondAmount = ethers.parseUnits("1000", ARM_DECIMALS);
-      await armToken.connect(proposer).approve(await governor.getAddress(), bondAmount);
-    }
-
-    it("should defer bond claim until ratification resolves", async function () {
-      await enableTransfersAndApproveBond(alice);
-      const balanceBefore = await armToken.balanceOf(alice.address);
-
-      const proposalId = await createAndQueueProposal(alice);
-      const ratId = await vetoProposal(proposalId);
-
-      // Try to claim bond while ratification in progress — should revert
-      await expect(
-        governor.claimBond(proposalId)
-      ).to.be.revertedWithCustomError(governor, "Gov_RatificationNotResolved");
-
-      // Vote FOR (uphold veto) and resolve
-      await governor.connect(alice).castVote(ratId, Vote.For);
-      await governor.connect(bob).castVote(ratId, Vote.For);
-      await time.increase(SEVEN_DAYS + 1);
-      await governor.resolveRatification(ratId);
-
-      // Now bond should be claimable
-      await governor.claimBond(proposalId);
-
-      // Bond returned — balance restored
-      expect(await armToken.balanceOf(alice.address)).to.equal(balanceBefore);
-    });
-
-    it("should allow bond claim after AGAINST resolution (no penalty to proposer)", async function () {
-      await enableTransfersAndApproveBond(alice);
-
-      const proposalId = await createAndQueueProposal(alice);
-      const ratId = await vetoProposal(proposalId);
-
-      // Vote AGAINST → SC ejected
-      await governor.connect(alice).castVote(ratId, Vote.Against);
-      await governor.connect(bob).castVote(ratId, Vote.Against);
-      await time.increase(SEVEN_DAYS + 1);
-      await governor.resolveRatification(ratId);
-
-      // Bond still claimable (proposer not penalized even if veto was denied)
-      await expect(governor.claimBond(proposalId)).to.not.be.reverted;
-    });
-  });
-
   // ======== Full Lifecycle Integration ========
 
   describe("Full Lifecycle", function () {

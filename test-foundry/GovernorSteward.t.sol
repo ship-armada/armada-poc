@@ -430,36 +430,6 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // No bond on steward proposals
-    // ══════════════════════════════════════════════════════════════════════
-
-    function test_proposeStewardSpend_noBondRequired() public {
-        // Enable ARM transfers so bonds would normally be required
-        armToken.setWindDownContract(windDown);
-        vm.prank(windDown);
-        armToken.setTransferable(true);
-
-        // Give steward some ARM so bond transfer would succeed if attempted
-        armToken.transfer(stewardPerson, 2_000 * 1e18);
-        uint256 stewardBalanceBefore = armToken.balanceOf(stewardPerson);
-
-        // Create proposal — no bond should be taken even with transferable ARM
-        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
-        assertTrue(proposalId > 0);
-
-        // Steward's ARM balance should be unchanged (no bond deducted)
-        assertEq(armToken.balanceOf(stewardPerson), stewardBalanceBefore);
-    }
-
-    function test_proposeStewardSpend_noBondClaimable() public {
-        uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
-
-        // No bond was posted, so claimBond should revert
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NoBond.selector));
-        governor.claimBond(proposalId);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
     // setStewardContract
     // ══════════════════════════════════════════════════════════════════════
 

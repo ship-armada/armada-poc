@@ -117,17 +117,8 @@ async function main() {
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
   // 4. Deploy ArmadaGovernor (UUPS proxy)
-  console.log("4. Deploying GovernorStringLib (external library)...");
-  const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
-  const governorLib = await GovernorStringLib.deploy(nm.override());
-  await governorLib.deploymentTransaction()!.wait();
-  const governorLibAddress = await governorLib.getAddress();
-  console.log(`   GovernorStringLib: ${governorLibAddress}`);
-
-  console.log("   Deploying ArmadaGovernor (UUPS proxy)...");
-  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
-    libraries: { GovernorStringLib: governorLibAddress },
-  });
+  console.log("4. Deploying ArmadaGovernor (UUPS proxy)...");
+  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const governorImpl = await ArmadaGovernor.deploy(nm.override());
   await governorImpl.deploymentTransaction()!.wait();
   const governorImplAddress = await governorImpl.getAddress();

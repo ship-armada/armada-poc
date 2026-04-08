@@ -12,14 +12,7 @@ export async function deployGovernorProxy(
   timelockAddress: string,
   treasuryAddress: string,
 ) {
-  // Deploy the external library first, then link it to the governor
-  const GovernorStringLib = await ethers.getContractFactory("GovernorStringLib");
-  const lib = await GovernorStringLib.deploy();
-  await lib.waitForDeployment();
-
-  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor", {
-    libraries: { GovernorStringLib: await lib.getAddress() },
-  });
+  const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
   const impl = await ArmadaGovernor.deploy();
   await impl.waitForDeployment();
 

@@ -793,6 +793,18 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         Proposal storage p = _proposals[proposalId];
         if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+
+        // Mirror the queue()-time steward check: a steward removed or expired during the
+        // execution delay must not have their proposal execute. Without this, the SC veto
+        // would be the only backstop for the term-expiry edge case.
+        if (p.proposalType == ProposalType.Steward) {
+            if (stewardContract == address(0)
+                || p.proposer != ITreasurySteward(stewardContract).currentSteward()
+                || !ITreasurySteward(stewardContract).isStewardActive()) {
+                revert Gov_StewardProposerNoLongerActive();
+            }
+        }
+
         p.executed = true;
 
         timelock.executeBatch{value: msg.value}(

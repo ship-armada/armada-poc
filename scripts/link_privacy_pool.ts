@@ -347,6 +347,20 @@ async function main() {
     }
   }
 
+  // Wire ShieldPauseController to Hub PrivacyPool (if governance is deployed)
+  const govFilenameForPause = getGovernanceDeploymentFile();
+  const govDeploymentForPause = loadDeployment(govFilenameForPause);
+  if (govDeploymentForPause?.contracts?.shieldPauseController) {
+    const shieldPauseAddress = govDeploymentForPause.contracts.shieldPauseController;
+    console.log("Setting ShieldPauseController on Hub PrivacyPool...");
+    await (await privacyPool.setShieldPauseContract(shieldPauseAddress, nm.override())).wait();
+    console.log(`  shieldPauseContract set to: ${shieldPauseAddress}`);
+    console.log("");
+  } else {
+    console.log("ShieldPauseController: governance not deployed, skipping");
+    console.log("");
+  }
+
   console.log("");
   console.log("=== Linking Complete ===");
   console.log("");

@@ -76,18 +76,21 @@ const config: HardhatUserConfig = {
       url: process.env.HUB_RPC || "https://ethereum-sepolia-rpc.publicnode.com",
       chainId: 11155111,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
     },
     // Client A: Base Sepolia
     sepoliaClientA: {
       url: process.env.CLIENT_A_RPC || "https://sepolia.base.org",
       chainId: 84532,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
     },
     // Client B: Arbitrum Sepolia
     sepoliaClientB: {
       url: process.env.CLIENT_B_RPC || "https://sepolia-rollup.arbitrum.io/rpc",
       chainId: 421614,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
     },
   },
   paths: {

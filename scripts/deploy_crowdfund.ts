@@ -105,7 +105,7 @@ async function main() {
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const latestBlock = await ethers.provider.getBlock('latest');
-  const openTimestamp = latestBlock!.timestamp + 60; // 1 minute after latest block
+  const openTimestamp = latestBlock!.timestamp + config.crowdfundOpenDelay;
   // Security council: config-driven for non-local, Anvil signer[10] fallback for local
   let securityCouncilAddress: string;
   if (config.securityCouncilAddress) {
@@ -191,8 +191,8 @@ async function main() {
 
   // 10. Deploy ArmadaWindDown (requires redemption address)
   console.log("10. Deploying ArmadaWindDown...");
-  const windDownDeadline = Math.floor(new Date("2026-12-31T00:00:00Z").getTime() / 1000);
-  const revenueThreshold = ethers.parseUnits("10000", 18); // $10k in 18-decimal USD
+  const windDownDeadline = Math.floor(new Date(config.windDownDeadline).getTime() / 1000);
+  const revenueThreshold = ethers.parseUnits(config.windDownRevenueThreshold, 18);
   const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
   const windDownContract = await ArmadaWindDown.deploy(
     armTokenAddress, treasuryAddress, governorAddress, redemptionAddress,

@@ -88,6 +88,8 @@ export interface NetworkConfig {
    * For local dev, Anvil default accounts are used as placeholders.
    */
   revenueLockBeneficiaries: RevenueLockBeneficiary[];
+  /** Security council address for crowdfund cancel authority. Required for non-local. */
+  securityCouncilAddress: string;
   /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
   cctpFinalityMode: "fast" | "standard";
 }
@@ -264,6 +266,7 @@ export function getNetworkConfig(): NetworkConfig {
       revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
     revenueLockBeneficiaries,
+    securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
   };
 

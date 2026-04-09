@@ -25,8 +25,9 @@ import {
   getCCTPDeploymentFile,
   getCrowdfundDeploymentFile,
   getGovernanceDeploymentFile,
+  isLocal,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses } from "./deploy-utils";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -102,13 +103,24 @@ async function main() {
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const latestBlock = await ethers.provider.getBlock('latest');
   const openTimestamp = latestBlock!.timestamp + 60; // 1 minute after latest block
-  // Security council uses a separate account from launch team (Anvil signer[10])
-  const signers = await ethers.getSigners();
-  const securityCouncil = signers[10];
+  // Security council: config-driven for non-local, Anvil signer[10] fallback for local
+  let securityCouncilAddress: string;
+  if (config.securityCouncilAddress) {
+    securityCouncilAddress = config.securityCouncilAddress;
+  } else if (isLocal()) {
+    const signers = await ethers.getSigners();
+    securityCouncilAddress = signers[10].address;
+  } else {
+    throw new Error("SECURITY_COUNCIL_ADDRESS is required for non-local deployments");
+  }
+  rejectAnvilAddresses([securityCouncilAddress], "Security council");
+  if (securityCouncilAddress.toLowerCase() === deployer.address.toLowerCase()) {
+    throw new Error("Security council address must differ from deployer address");
+  }
   console.log(`   Launch team: ${deployer.address}`);
-  console.log(`   Security council: ${securityCouncil.address}`);
+  console.log(`   Security council: ${securityCouncilAddress}`);
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncil.address, openTimestamp, nm.override()
+    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncilAddress, openTimestamp, nm.override()
   );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();

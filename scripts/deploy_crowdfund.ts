@@ -163,6 +163,11 @@ async function main() {
   await (await crowdfund.loadArm(nm.override())).wait();
   console.log("   ARM pre-load verified (loadArm() succeeded)");
 
+  // 5c. Remove deployer from transfer whitelist (deployer holds 0 ARM after distribution)
+  console.log("   Removing deployer from transfer whitelist...");
+  await (await armToken.removeDeployerFromWhitelist(nm.override())).wait();
+  console.log("   Deployer removed from transfer whitelist");
+
   // 6. Register crowdfund as excluded from quorum denominator
   console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);

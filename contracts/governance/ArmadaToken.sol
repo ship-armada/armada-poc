@@ -46,6 +46,7 @@ contract ArmadaToken is ERC20Votes {
     // ============ Events ============
 
     event WhitelistAdded(address indexed account);
+    event WhitelistRemoved(address indexed account);
     event WhitelistInitialized(address[] accounts);
     event TransferableSet(bool transferable);
     event WindDownContractSet(address indexed windDownContract);
@@ -123,6 +124,17 @@ contract ArmadaToken is ERC20Votes {
         require(account != address(0), "ArmadaToken: zero address");
         transferWhitelist[account] = true;
         emit WhitelistAdded(account);
+    }
+
+    /// @notice Remove the deployer from the transfer whitelist. Deployer-only, callable once.
+    ///         The deployer is whitelisted during deployment to distribute ARM tokens.
+    ///         After distribution completes and the deployer holds 0 ARM, this removes the
+    ///         residual whitelist entry to eliminate the deployer as a transfer-capable address.
+    function removeDeployerFromWhitelist() external {
+        require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
+        require(transferWhitelist[tokenDeployer], "ArmadaToken: deployer not whitelisted");
+        transferWhitelist[tokenDeployer] = false;
+        emit WhitelistRemoved(tokenDeployer);
     }
 
     /// @notice Enable unrestricted transfers. Callable by the wind-down contract

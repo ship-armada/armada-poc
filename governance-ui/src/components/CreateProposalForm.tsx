@@ -1,11 +1,28 @@
 // ABOUTME: Form for creating governance proposals with calldata template builders.
-// ABOUTME: Supports Standard (distribute), Extended (steward election), and manual calldata types.
+// ABOUTME: Supports treasury distribution, steward election, ARM transfer enablement, and manual calldata types.
 
 import { useState } from 'react'
 import { ethers } from 'ethers'
-import { ProposalType, PROPOSAL_TYPE_LABELS } from '../governance-types'
+import { ProposalType } from '../governance-types'
 import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
+
+/** UI template type — determines which form fields and calldata encoding to use */
+type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'manual'
+
+const TEMPLATE_LABELS: Record<TemplateType, string> = {
+  treasury: 'Treasury Distribution',
+  steward: 'Steward Election',
+  enableTransfers: 'Enable ARM Transfers',
+  manual: 'Manual Calldata',
+}
+
+/** Maps UI template to on-chain ProposalType */
+function templateToProposalType(template: TemplateType): ProposalType {
+  if (template === 'steward') return ProposalType.Extended
+  if (template === 'manual') return ProposalType.VetoRatification
+  return ProposalType.Standard
+}
 
 interface CreateProposalFormProps {
   contracts: GovernanceContracts
@@ -15,7 +32,7 @@ interface CreateProposalFormProps {
 
 export function CreateProposalForm({ contracts, wallet, onCreated }: CreateProposalFormProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [proposalType, setProposalType] = useState<ProposalType>(ProposalType.Standard)
+  const [template, setTemplate] = useState<TemplateType>('treasury')
   const [description, setDescription] = useState('')
   const [txStatus, setTxStatus] = useState<string | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
@@ -35,10 +52,12 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
 
   const deployment = contracts.deployment
 
+  const proposalType = templateToProposalType(template)
+
   const buildActions = (): { targets: string[]; values: bigint[]; calldatas: string[] } | null => {
     if (!deployment) return null
 
-    if (proposalType === ProposalType.Standard) {
+    if (template === 'treasury') {
       const tokenAddr = treasuryToken === 'arm'
         ? deployment.contracts.armToken
         : contracts.usdcAddress ?? ''
@@ -59,7 +78,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       }
     }
 
-    if (proposalType === ProposalType.Extended) {
+    if (template === 'steward') {
       if (!stewardAddress) return null
 
       const stewardIface = new ethers.Interface([
@@ -75,6 +94,18 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         calldatas: [
           stewardIface.encodeFunctionData('electSteward', [stewardAddress]),
         ],
+      }
+    }
+
+    if (template === 'enableTransfers') {
+      const iface = new ethers.Interface([
+        'function setTransferable(bool _transferable)',
+      ])
+
+      return {
+        targets: [deployment.contracts.armToken],
+        values: [0n],
+        calldatas: [iface.encodeFunctionData('setTransferable', [true])],
       }
     }
 
@@ -158,21 +189,21 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         </button>
       </div>
 
-      {/* Proposal Type */}
+      {/* Template Type */}
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
-        <div className="mt-1 flex gap-2">
-          {[ProposalType.Standard, ProposalType.Extended].map((t) => (
+        <div className="mt-1 flex flex-wrap gap-2">
+          {(['treasury', 'steward', 'enableTransfers'] as TemplateType[]).map((t) => (
             <button
               key={t}
-              onClick={() => setProposalType(t)}
+              onClick={() => setTemplate(t)}
               className={`rounded px-3 py-1 text-xs ${
-                proposalType === t
+                template === t
                   ? 'bg-blue-700 text-white'
                   : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
               }`}
             >
-              {PROPOSAL_TYPE_LABELS[t]}
+              {TEMPLATE_LABELS[t]}
             </button>
           ))}
         </div>
@@ -190,8 +221,8 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         />
       </div>
 
-      {/* Standard Template */}
-      {proposalType === ProposalType.Standard && (
+      {/* Treasury Distribution Template */}
+      {template === 'treasury' && (
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
             <select
@@ -220,8 +251,8 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         </div>
       )}
 
-      {/* Extended Template */}
-      {proposalType === ProposalType.Extended && (
+      {/* Steward Election Template */}
+      {template === 'steward' && (
         <div className="mt-3">
           <input
             type="text"
@@ -237,8 +268,22 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
         </div>
       )}
 
-      {/* VetoRatification Manual Calldata — not shown in selector, kept for completeness */}
-      {proposalType === ProposalType.VetoRatification && (
+      {/* Enable ARM Transfers Template */}
+      {template === 'enableTransfers' && (
+        <div className="mt-3 rounded bg-neutral-800 p-3">
+          <p className="text-sm text-neutral-300">
+            This proposal calls <code className="text-blue-400">setTransferable(true)</code> on the ARM token,
+            enabling unrestricted transfers for all holders.
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            This is a one-way action — transfers cannot be re-restricted once enabled.
+            Executed by the governance timelock.
+          </p>
+        </div>
+      )}
+
+      {/* Manual Calldata — not shown in selector, kept for completeness */}
+      {template === 'manual' && (
         <div className="mt-3 space-y-2">
           <input
             type="text"

@@ -46,7 +46,7 @@ Contracts must deploy in this order. Each step depends on artifacts from previou
    └─ Read governance manifest → get armToken, treasury, governor addresses
    └─ Deploy ArmadaCrowdfund(usdc, armToken, admin, treasury)
    └─ Transfer crowdfund ARM allocation from deployer
-   └─ governor.setExcludedAddresses([crowdfundAddress])
+   └─ governor.setExcludedAddresses([crowdfundAddress, revenueLockAddress])
 ```
 
 The `deploy_crowdfund.ts` script hard-fails if the governance deployment manifest is missing.
@@ -59,7 +59,7 @@ The governor's `quorum()` function calculates eligible supply as:
 eligibleSupply = totalSupply - treasuryBalance - sum(excludedBalances)
 ```
 
-Without excluding the crowdfund contract, its 1.8M ARM balance would count toward the quorum denominator even though no one can vote with those tokens (they're locked in the contract until claimed). This would inflate quorum requirements, making governance harder to activate.
+Without excluding the crowdfund and RevenueLock contracts, their combined 4.2M ARM balance would count toward the quorum denominator even though no one can vote with those tokens (crowdfund ARM is locked until claimed; RevenueLock ARM is locked until revenue milestones are met). This would inflate quorum requirements, making governance harder to activate.
 
 The `setExcludedAddresses` call is a **one-time** operation gated by the deployer address. Once called, the excluded list is locked and cannot be changed. This prevents the deployer from manipulating quorum calculations post-deployment.
 

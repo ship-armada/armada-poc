@@ -151,8 +151,8 @@ async function main() {
   // 6. Register crowdfund as excluded from quorum denominator
   console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);
-  await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
-  console.log(`   Crowdfund excluded from quorum denominator`);
+  await (await governor.setExcludedAddresses([crowdfundAddress, revenueLockAddress], nm.override())).wait();
+  console.log(`   Crowdfund + RevenueLock excluded from quorum denominator`);
 
   // 7. Authorize delegateOnBehalf callers (one-shot — must include all delegators)
   console.log("7. Authorizing delegateOnBehalf delegators...");

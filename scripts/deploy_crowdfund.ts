@@ -81,6 +81,9 @@ async function main() {
   const treasuryAddress = govDeployment.contracts.treasury;
   const governorAddress = govDeployment.contracts.governor;
   const revenueLockAddress = govDeployment.contracts.revenueLock;
+  const timelockAddress = govDeployment.contracts.timelockController;
+  const shieldPauseAddress = govDeployment.contracts.shieldPauseController;
+  const revenueCounterAddress = govDeployment.contracts.revenueCounter;
   console.log(`   ARM Token (shared): ${armTokenAddress}`);
   console.log(`   Treasury: ${treasuryAddress}`);
   console.log(`   Governor: ${governorAddress}`);
@@ -175,6 +178,105 @@ async function main() {
   console.log("8. Registering crowdfund in governor for quiet period...");
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
+
+  // 9. Deploy ArmadaRedemption (requires crowdfund address)
+  console.log("9. Deploying ArmadaRedemption...");
+  const ArmadaRedemption = await ethers.getContractFactory("ArmadaRedemption");
+  const redemption = await ArmadaRedemption.deploy(
+    armTokenAddress, treasuryAddress, revenueLockAddress, crowdfundAddress, nm.override()
+  );
+  await redemption.deploymentTransaction()!.wait();
+  const redemptionAddress = await redemption.getAddress();
+  console.log(`   ArmadaRedemption: ${redemptionAddress}`);
+
+  // 10. Deploy ArmadaWindDown (requires redemption address)
+  console.log("10. Deploying ArmadaWindDown...");
+  const windDownDeadline = Math.floor(new Date("2026-12-31T00:00:00Z").getTime() / 1000);
+  const revenueThreshold = ethers.parseUnits("10000", 18); // $10k in 18-decimal USD
+  const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
+  const windDownContract = await ArmadaWindDown.deploy(
+    armTokenAddress, treasuryAddress, governorAddress, redemptionAddress,
+    shieldPauseAddress, revenueCounterAddress, timelockAddress,
+    revenueThreshold, windDownDeadline, nm.override()
+  );
+  await windDownContract.deploymentTransaction()!.wait();
+  const windDownAddress = await windDownContract.getAddress();
+  console.log(`   ArmadaWindDown: ${windDownAddress}`);
+
+  // 11. Wire wind-down to ARM token (deployer-gated one-time setter — direct call)
+  console.log("11. Wiring wind-down to ARM token...");
+  await (await armToken.setWindDownContract(windDownAddress, nm.override())).wait();
+  console.log(`   armToken.setWindDownContract(${windDownAddress})`);
+
+  // 12. Wire wind-down to governor, treasury, and shieldPause via timelock schedule+execute.
+  // The deployer still has TIMELOCK_ADMIN_ROLE at this point (renounce is step 14).
+  // These are timelock-only calls, so we schedule+execute through the timelock.
+  console.log("12. Wiring wind-down to governor/treasury/shieldPause via timelock...");
+  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
+  const timelockDelay = await timelock.getMinDelay();
+
+  const governorContract = await ethers.getContractAt("ArmadaGovernor", governorAddress);
+  const treasury = await ethers.getContractAt("ArmadaTreasuryGov", treasuryAddress);
+  const shieldPause = await ethers.getContractAt("ShieldPauseController", shieldPauseAddress);
+
+  const windDownCalls = [
+    { target: governorAddress, calldata: governorContract.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "governor" },
+    { target: treasuryAddress, calldata: treasury.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "treasury" },
+    { target: shieldPauseAddress, calldata: shieldPause.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "shieldPause" },
+  ];
+
+  // Schedule all three calls
+  for (const call of windDownCalls) {
+    const salt = ethers.id(`winddown-wiring-${call.label}`);
+    await (await timelock.schedule(
+      call.target, 0, call.calldata, ethers.ZeroHash, salt, timelockDelay, nm.override()
+    )).wait();
+    console.log(`   Scheduled: ${call.label}.setWindDownContract()`);
+  }
+
+  // Wait for timelock delay to pass
+  if (timelockDelay > 0n) {
+    if (isLocal()) {
+      // Fast-forward Anvil past the timelock delay
+      const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
+      await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "evm_increaseTime", params: [Number(timelockDelay) + 1] }),
+      });
+      await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "evm_mine", params: [] }),
+      });
+      console.log(`   Fast-forwarded ${timelockDelay}s (Anvil evm_increaseTime)`);
+    } else {
+      console.log(`   Waiting ${timelockDelay}s for timelock delay...`);
+      await new Promise(resolve => setTimeout(resolve, Number(timelockDelay) * 1000 + 5000));
+    }
+  }
+
+  // Execute all three calls
+  for (const call of windDownCalls) {
+    const salt = ethers.id(`winddown-wiring-${call.label}`);
+    await (await timelock.execute(
+      call.target, 0, call.calldata, ethers.ZeroHash, salt, nm.override()
+    )).wait();
+    console.log(`   Executed: ${call.label}.setWindDownContract()`);
+  }
+
+  // 13. Update governance manifest with redemption/windDown addresses
+  console.log("13. Updating governance manifest...");
+  govDeployment.contracts.redemption = redemptionAddress;
+  govDeployment.contracts.windDown = windDownAddress;
+  saveDeployment(govFilename, govDeployment);
+  console.log(`   Updated ${govFilename} with redemption + windDown addresses`);
+
+  // 14. Renounce timelock admin (final action — all deployment wiring complete)
+  console.log("14. Renouncing timelock admin...");
+  const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
+  await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
+  console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
   // Save deployment
   const deployment: CrowdfundDeployment = {

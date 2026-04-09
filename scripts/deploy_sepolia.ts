@@ -6,8 +6,8 @@
  *
  * Phases:
  *   Phase 1: CCTP config + Privacy Pool (hub + clients)
- *   Phase 2: Mock Aave + Yield (hub only)
- *   Phase 3: Governance + Crowdfund (hub only)
+ *   Phase 2: Governance + Crowdfund (hub only)
+ *   Phase 3: Mock Aave + Yield (hub only) — must follow Phase 2 because Yield needs the governance manifest
  *   Phase 4: Cross-chain linking
  *
  * Prerequisites:
@@ -115,26 +115,10 @@ async function main() {
     }
   }
 
-  // ========== Phase 2: Yield Infrastructure ==========
+  // ========== Phase 2: Governance + Crowdfund ==========
   if (shouldRun(2)) {
     console.log("\n" + "#".repeat(60));
-    console.log("  PHASE 2: Yield Infrastructure (Hub Only)");
-    console.log("#".repeat(60));
-
-    run(
-      "npx hardhat run scripts/deploy_aave_mock.ts --network sepoliaHub",
-      "Deploying Mock Aave Spoke"
-    );
-    run(
-      "npx hardhat run scripts/deploy_yield.ts --network sepoliaHub",
-      "Deploying Yield Contracts"
-    );
-  }
-
-  // ========== Phase 3: Governance + Crowdfund ==========
-  if (shouldRun(3)) {
-    console.log("\n" + "#".repeat(60));
-    console.log("  PHASE 3: Governance + Crowdfund (Hub Only)");
+    console.log("  PHASE 2: Governance + Crowdfund (Hub Only)");
     console.log("#".repeat(60));
 
     run(
@@ -144,6 +128,24 @@ async function main() {
     run(
       "npx hardhat run scripts/deploy_crowdfund.ts --network sepoliaHub",
       "Deploying Crowdfund Contracts"
+    );
+  }
+
+  // ========== Phase 3: Yield Infrastructure ==========
+  // Must follow Phase 2: deploy_yield.ts requires the governance manifest
+  // (needs AdapterRegistry address from governance deployment)
+  if (shouldRun(3)) {
+    console.log("\n" + "#".repeat(60));
+    console.log("  PHASE 3: Yield Infrastructure (Hub Only)");
+    console.log("#".repeat(60));
+
+    run(
+      "npx hardhat run scripts/deploy_aave_mock.ts --network sepoliaHub",
+      "Deploying Mock Aave Spoke"
+    );
+    run(
+      "npx hardhat run scripts/deploy_yield.ts --network sepoliaHub",
+      "Deploying Yield Contracts"
     );
   }
 

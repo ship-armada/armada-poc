@@ -138,9 +138,9 @@ The `--legacy-peer-deps` flag is required. Do not remove it or switch to `--forc
 
 Contracts must be deployed in this order (the `npm run setup` script handles this):
 1. CCTP contracts (all chains)
-2. PrivacyPool modules (all chains)
-3. Aave mock (hub only)
-4. Governance (hub only) — must precede Yield because the adapter needs the governor address
+2. Aave mock (hub only)
+3. Governance (hub only) — must precede PrivacyPool (treasury address) and Yield (adapter registry)
+4. PrivacyPool modules (all chains)
 5. Yield contracts (hub only)
 6. Pool linking (hub — connects clients to hub, authorizes adapter in governance registry)
 7. Faucets (all chains)

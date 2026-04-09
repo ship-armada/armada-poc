@@ -19,8 +19,6 @@
  */
 
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
@@ -30,7 +28,7 @@ import {
   getYieldDeploymentFile,
   type ChainRole,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, loadDeployment, saveDeployment } from "./deploy-utils";
 
 interface YieldDeployment {
   chainId: number;
@@ -174,24 +172,6 @@ async function main() {
 
   console.log("\n=== Deployment Complete ===");
   console.log(`Saved to: deployments/${outputFile}`);
-}
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 main()

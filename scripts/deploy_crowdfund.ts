@@ -17,8 +17,6 @@
  */
 
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
@@ -27,7 +25,7 @@ import {
   getGovernanceDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment } from "./deploy-utils";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -321,24 +319,6 @@ async function main() {
   console.log(`  Crowdfund:   ${config.armDistribution.crowdfund} ARM`);
   console.log(`  Deployer:  ${ethers.formatUnits(deployerRemaining, 18)} ARM (remainder — production allocation TBD)`);
   console.log("\n=== Crowdfund deployment complete ===");
-}
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 main()

@@ -21,8 +21,6 @@
 
 import "dotenv/config";
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getNetworkConfig,
   getCCTPDeploymentFile,
@@ -33,7 +31,7 @@ import {
   isLocal,
   type ChainRole,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, loadDeployment } from "./deploy-utils";
 
 interface LinkConfig {
   role: ChainRole;
@@ -372,15 +370,6 @@ async function main() {
     const remotePool = await privacyPool.remotePools(clientConfig.domain);
     console.log(`  ${clientConfig.name} (Domain ${clientConfig.domain}): ${remotePool}`);
   }
-}
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
 }
 
 main()

@@ -31,14 +31,12 @@
  */
 
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
   getGovernanceDeploymentFile,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./deploy-utils";
 
 interface GovernanceDeployment {
   chainId: number;
@@ -341,15 +339,6 @@ async function main() {
   console.log("  - ArmadaRedemption + ArmadaWindDown deployment");
   console.log("  - Wind-down wiring to governor/treasury/shieldPause");
   console.log("  - Timelock admin renounce (final action)");
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 main()

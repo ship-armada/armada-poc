@@ -36,7 +36,7 @@ import {
   isLocal,
   type ChainRole,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, loadDeployment, saveDeployment } from "./deploy-utils";
 
 // Load Poseidon bytecode for library deployment
 const poseidonBytecode = JSON.parse(
@@ -379,24 +379,6 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   console.log(`Deployment saved to: deployments/${filename}`);
 
   return deployment;
-}
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 async function main() {

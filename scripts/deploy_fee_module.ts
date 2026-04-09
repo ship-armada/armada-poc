@@ -24,15 +24,13 @@
  */
 
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getGovernanceDeploymentFile,
   getPrivacyPoolDeploymentFile,
   getYieldDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, loadDeployment, saveDeployment } from "./deploy-utils";
 
 // Fee module governance selectors to register as Extended proposals
 const FEE_MODULE_EXTENDED_SELECTORS = [
@@ -43,24 +41,6 @@ const FEE_MODULE_EXTENDED_SELECTORS = [
   "setYieldFee(uint256)",
   "setIntegratorTerms(address,uint256,uint256,bool)",
 ];
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-}
 
 /**
  * Execute a call as the timelock via Anvil impersonation (local only).

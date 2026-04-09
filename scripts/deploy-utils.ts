@@ -2,7 +2,8 @@
  * Deployment Utilities
  *
  * Handles nonce management for reliable deployments on public testnets,
- * and provides safety guards against deploying with well-known test addresses.
+ * provides safety guards against deploying with well-known test addresses,
+ * and centralizes deployment manifest I/O with address validation.
  *
  * Public RPCs (especially L2s like Base Sepolia) use load-balanced backends
  * that can return stale nonce values, causing "replacement transaction underpriced"
@@ -12,6 +13,8 @@
  */
 
 import { isLocal } from "../config/networks";
+import * as fs from "fs";
+import * as path from "path";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 // Well-known Anvil/Hardhat default accounts (#0-9), derived from the standard mnemonic:
@@ -80,4 +83,62 @@ export async function createNonceManager(signer: HardhatEthersSigner): Promise<N
       return { nonce: current };
     },
   };
+}
+
+// ============================================================================
+// Deployment Manifest I/O
+// ============================================================================
+
+const DEPLOYMENTS_DIR = path.join(__dirname, "..", "deployments");
+
+/**
+ * Validate that address-like values in a deployment manifest are well-formed.
+ * Walks the object tree and checks any 0x-prefixed string that looks like an address.
+ * Warns on zero addresses, throws on malformed addresses.
+ */
+function validateManifestAddresses(data: any, filename: string, prefix = ""): void {
+  for (const [key, value] of Object.entries(data)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === "string" && value.startsWith("0x")) {
+      // Looks like an address or bytes32 — validate if 42 chars (address length)
+      if (value.length === 42) {
+        if (!/^0x[0-9a-fA-F]{40}$/.test(value)) {
+          throw new Error(
+            `Malformed address in ${filename} at ${path}: "${value}"`
+          );
+        }
+        if (value === "0x0000000000000000000000000000000000000000") {
+          console.warn(`  [manifest] WARNING: zero address in ${filename} at ${path}`);
+        }
+      }
+    } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      validateManifestAddresses(value, filename, path);
+    }
+  }
+}
+
+/**
+ * Load a deployment manifest from the deployments directory.
+ * Returns null if the file does not exist. Validates address fields on load.
+ */
+export function loadDeployment(filename: string): any | null {
+  const filePath = path.join(DEPLOYMENTS_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  validateManifestAddresses(data, filename);
+  return data;
+}
+
+/**
+ * Save a deployment manifest to the deployments directory.
+ * Creates the deployments directory if it does not exist.
+ */
+export function saveDeployment(filename: string, data: any): void {
+  if (!fs.existsSync(DEPLOYMENTS_DIR)) {
+    fs.mkdirSync(DEPLOYMENTS_DIR, { recursive: true });
+  }
+  const filePath = path.join(DEPLOYMENTS_DIR, filename);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }

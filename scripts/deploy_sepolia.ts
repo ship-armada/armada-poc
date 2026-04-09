@@ -155,6 +155,10 @@ async function main() {
       "npx hardhat run scripts/deploy_yield.ts --network sepoliaHub",
       "Deploying Yield Contracts"
     );
+    run(
+      "npx hardhat run scripts/deploy_fee_module.ts --network sepoliaHub",
+      "Deploying Fee Module"
+    );
   }
 
   // ========== Phase 5: Cross-Chain Linking ==========

@@ -143,8 +143,9 @@ Contracts must be deployed in this order (the `npm run setup` script handles thi
 4. PrivacyPool modules (all chains)
 5. Yield contracts (hub only)
 6. Pool linking (hub — connects clients to hub, authorizes adapter in governance registry)
-7. Faucets (all chains)
-8. Crowdfund (hub only)
+7. Fee module (hub only) — wires into PrivacyPool + YieldVault; timelock calls use Anvil impersonation locally
+8. Faucets (all chains)
+9. Crowdfund (hub only)
 
 If you need to redeploy a single component, understand its dependencies first.
 

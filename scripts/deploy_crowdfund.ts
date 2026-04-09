@@ -184,6 +184,11 @@ async function main() {
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
 
+  // 8b. Clear deployer privilege on governor (all deployer-gated one-time setters are done)
+  console.log("   Clearing deployer address on governor...");
+  await (await governor.clearDeployer(nm.override())).wait();
+  console.log("   Governor deployer cleared (no more deployer-gated calls possible)");
+
   // 9. Deploy ArmadaRedemption (requires crowdfund address)
   console.log("9. Deploying ArmadaRedemption...");
   const ArmadaRedemption = await ethers.getContractFactory("ArmadaRedemption");

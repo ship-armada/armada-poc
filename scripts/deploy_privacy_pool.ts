@@ -226,7 +226,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
 
   // 10b. Configure shield fee
   console.log("\n10b. Configuring shield fee...");
-  await (await privacyPool.setShieldFee(50)).wait();
+  await (await privacyPool.setShieldFee(50, nm.override())).wait();
   console.log("   Shield fee: 50 bps (0.50%)");
 
   const deployment: HubDeploymentInfo = {

@@ -30,8 +30,10 @@ import {
   getPrivacyPoolDeploymentFile,
   getYieldDeploymentFile,
   isCCTPReal,
+  isLocal,
   type ChainRole,
 } from "../config/networks";
+import { createNonceManager } from "./deploy-utils";
 
 interface LinkConfig {
   role: ChainRole;
@@ -42,6 +44,7 @@ interface LinkConfig {
 async function main() {
   const [signer] = await ethers.getSigners();
   const config = getNetworkConfig();
+  const nm = await createNonceManager(signer);
 
   const clientConfigs: LinkConfig[] = [
     {
@@ -104,7 +107,7 @@ async function main() {
 
     // Set remote pool on Hub
     console.log(`  Setting remote pool on Hub...`);
-    const setRemoteTx = await privacyPool.setRemotePool(clientConfig.domain, clientBytes32);
+    const setRemoteTx = await privacyPool.setRemotePool(clientConfig.domain, clientBytes32, nm.override());
     await setRemoteTx.wait();
     console.log(`  Remote pool set for domain ${clientConfig.domain}`);
 
@@ -126,7 +129,8 @@ async function main() {
         console.log(`  Setting remote TokenMessenger on Hub...`);
         await (await hubTokenMessenger.setRemoteTokenMessenger(
           clientConfig.domain,
-          clientTokenMessengerBytes32
+          clientTokenMessengerBytes32,
+          nm.override()
         )).wait();
         console.log(`  Remote TokenMessenger set for domain ${clientConfig.domain}`);
       }
@@ -139,7 +143,7 @@ async function main() {
   const hubHookRouterAddress = hubDeployment.contracts.hookRouter;
   if (hubHookRouterAddress) {
     console.log("Setting hookRouter on Hub PrivacyPool...");
-    await (await privacyPool.setHookRouter(hubHookRouterAddress)).wait();
+    await (await privacyPool.setHookRouter(hubHookRouterAddress, nm.override())).wait();
     console.log(`  hookRouter set to: ${hubHookRouterAddress}`);
     console.log("");
   }
@@ -177,7 +181,7 @@ async function main() {
         "MockMessageTransmitterV2",
         hubCctp.contracts.messageTransmitter
       );
-      await (await hubMessageTransmitter.setRelayer(hubHookRouterAddress)).wait();
+      await (await hubMessageTransmitter.setRelayer(hubHookRouterAddress, nm.override())).wait();
       console.log(`  Hub MessageTransmitter relayer set to hookRouter`);
     }
 
@@ -253,7 +257,7 @@ async function main() {
       "MockTokenMessengerV2",
       hubCctp.contracts.tokenMessenger
     );
-    await (await hubTokenMessenger.setRemoteTokenMessenger(config.hub.cctpDomain, hubTokenMessengerBytes32)).wait();
+    await (await hubTokenMessenger.setRemoteTokenMessenger(config.hub.cctpDomain, hubTokenMessengerBytes32, nm.override())).wait();
     console.log(`Hub TokenMessenger self-reference set`);
   } else {
     console.log("CCTP Mode: real — skipping TokenMessenger configuration (managed by Circle)");
@@ -267,7 +271,7 @@ async function main() {
     console.log("Configuring CCTP fast finality defaults for outbound unshields...");
 
     // Set default finality threshold to FAST (1000) on Hub (for outbound unshields)
-    await (await privacyPool.setDefaultFinalityThreshold(1000)).wait();
+    await (await privacyPool.setDefaultFinalityThreshold(1000, nm.override())).wait();
     console.log("  Hub PrivacyPool: defaultFinalityThreshold = FAST (1000)");
 
     console.log("");
@@ -284,54 +288,62 @@ async function main() {
     console.log("");
     console.log("Configuring ArmadaYieldAdapter...");
     const adapter = await ethers.getContractAt("ArmadaYieldAdapter", adapterAddress);
-    await (await adapter.setPrivacyPool(hubPoolAddress)).wait();
+    await (await adapter.setPrivacyPool(hubPoolAddress, nm.override())).wait();
     console.log(`  Adapter privacy pool set to: ${hubPoolAddress}`);
-    await (await privacyPool.setPrivilegedShieldCaller(adapterAddress, true)).wait();
+    await (await privacyPool.setPrivilegedShieldCaller(adapterAddress, true, nm.override())).wait();
     console.log(`  Adapter set as privileged shield caller (fee exemption)`);
 
-    // Authorize adapter in governance adapter registry (via timelock impersonation on local)
+    // Authorize adapter in governance adapter registry
     const govFilename = getGovernanceDeploymentFile();
     const govDeployment = loadDeployment(govFilename);
     if (govDeployment?.contracts?.adapterRegistry && govDeployment?.contracts?.timelockController) {
       const timelockAddr = govDeployment.contracts.timelockController;
       const registryAddr = govDeployment.contracts.adapterRegistry;
 
-      // Impersonate timelock to call authorizeAdapter directly (local/Anvil only).
-      // Hardhat's provider middleware intercepts eth_sendTransaction and tries to
-      // sign locally, so we bypass it entirely with raw JSON-RPC fetch to Anvil.
-      const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
-      const jsonRpc = async (method: string, params: any[] = []) => {
-        const res = await fetch(rpcUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        });
-        const json = await res.json();
-        if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
-        return json.result;
-      };
+      if (isLocal()) {
+        // Impersonate timelock to call authorizeAdapter directly (Anvil only).
+        // Hardhat's provider middleware intercepts eth_sendTransaction and tries to
+        // sign locally, so we bypass it entirely with raw JSON-RPC fetch to Anvil.
+        const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
+        const jsonRpc = async (method: string, params: any[] = []) => {
+          const res = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          });
+          const json = await res.json();
+          if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
+          return json.result;
+        };
 
-      // Fund the timelock so it can pay gas (must wait for mining before impersonated tx)
-      const [deployer] = await ethers.getSigners();
-      const fundTx = await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1") });
-      await fundTx.wait();
+        // Fund the timelock so it can pay gas (must wait for mining before impersonated tx)
+        const [deployer] = await ethers.getSigners();
+        const fundTx = await deployer.sendTransaction({ to: timelockAddr, value: ethers.parseEther("1"), ...nm.override() });
+        await fundTx.wait();
 
-      const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
-      const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddress]);
+        const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
+        const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddress]);
 
-      await jsonRpc("anvil_impersonateAccount", [timelockAddr]);
-      const txHash = await jsonRpc("eth_sendTransaction", [{
-        from: timelockAddr,
-        to: registryAddr,
-        data: calldata,
-      }]);
-      // Poll for receipt since HardhatEthersProvider.waitForTransaction is not implemented
-      let receipt = null;
-      while (!receipt) {
-        receipt = await jsonRpc("eth_getTransactionReceipt", [txHash]);
+        await jsonRpc("anvil_impersonateAccount", [timelockAddr]);
+        const txHash = await jsonRpc("eth_sendTransaction", [{
+          from: timelockAddr,
+          to: registryAddr,
+          data: calldata,
+        }]);
+        // Poll for receipt since HardhatEthersProvider.waitForTransaction is not implemented
+        let receipt = null;
+        while (!receipt) {
+          receipt = await jsonRpc("eth_getTransactionReceipt", [txHash]);
+        }
+        await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
+        console.log(`  Adapter authorized in adapter registry`);
+      } else {
+        console.log(`  WARNING: Adapter registry authorization requires a governance proposal on non-local networks.`);
+        console.log(`    Timelock: ${timelockAddr}`);
+        console.log(`    Registry: ${registryAddr}`);
+        console.log(`    Adapter:  ${adapterAddress}`);
+        console.log(`    Call: AdapterRegistry.authorizeAdapter(${adapterAddress})`);
       }
-      await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
-      console.log(`  Adapter authorized in adapter registry`);
     }
   }
 

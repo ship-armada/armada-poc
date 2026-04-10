@@ -88,6 +88,14 @@ export interface NetworkConfig {
    * For local dev, Anvil default accounts are used as placeholders.
    */
   revenueLockBeneficiaries: RevenueLockBeneficiary[];
+  /** Security council address for crowdfund cancel authority. Required for non-local. */
+  securityCouncilAddress: string;
+  /** Crowdfund open delay in seconds from deployment time. Default 60 for local. */
+  crowdfundOpenDelay: number;
+  /** Wind-down deadline as ISO 8601 date string. Default "2026-12-31T00:00:00Z". */
+  windDownDeadline: string;
+  /** Wind-down revenue threshold in whole USD (18-decimal). Default "10000". */
+  windDownRevenueThreshold: string;
   /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
   cctpFinalityMode: "fast" | "standard";
 }
@@ -253,6 +261,8 @@ export function getNetworkConfig(): NetworkConfig {
       pollIntervalMs: numEnv("IRIS_POLL_INTERVAL_MS", 10000),
       pollTimeoutMs: numEnv("IRIS_POLL_TIMEOUT_MS", 600000),
     },
+    // Default 5,000,000 bps (50,000% APY) is intentionally high for local fast-forward testing.
+    // Sepolia overrides to 50,000 bps (500%). Production must set an appropriate value.
     aaveYieldBps: numEnv("AAVE_YIELD_BPS", 5000000),
     timelockDelay: numEnv("TIMELOCK_DELAY", 172800),
     relayerPort: numEnv("RELAYER_PORT", 3001),
@@ -264,6 +274,10 @@ export function getNetworkConfig(): NetworkConfig {
       revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
     revenueLockBeneficiaries,
+    securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
+    crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 60),
+    windDownDeadline: optionalEnv("WINDDOWN_DEADLINE", "2026-12-31T00:00:00Z"),
+    windDownRevenueThreshold: optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
   };
 

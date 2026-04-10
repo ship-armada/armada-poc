@@ -16,8 +16,6 @@
  */
 
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
@@ -26,6 +24,7 @@ import {
   validateCCTPConfig,
   type ChainRole,
 } from "../config/networks";
+import { saveDeployment } from "./deploy-utils";
 
 interface DeploymentInfo {
   chainId: number;
@@ -122,15 +121,6 @@ async function configureCCTP(role: ChainRole): Promise<DeploymentInfo> {
   };
 
   return deployment;
-}
-
-function saveDeployment(filename: string, data: DeploymentInfo): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 async function main() {

@@ -378,6 +378,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         emit StewardContractSet(_steward);
     }
 
+    /// @notice Clear the deployer address after all one-time setters have been called.
+    /// Deployer-only. Eliminates the deployer as a privileged address in upgradeable storage,
+    /// preventing future UUPS upgrades from inheriting deployer-gated privileges.
+    function clearDeployer() external {
+        if (msg.sender != deployer) revert Gov_NotDeployer();
+        deployer = address(0);
+    }
+
     // ============ Governance-Updatable Parameters ============
 
     /// @notice Update proposal type parameters (timing and quorum).

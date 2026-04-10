@@ -106,8 +106,13 @@ async function deployFaucet(
 }
 
 async function main() {
+  // Faucets are local-only — hardcoded localhost URLs and Anvil private key
+  if (process.env.DEPLOY_ENV && process.env.DEPLOY_ENV !== "local") {
+    throw new Error("deploy_faucet.ts is local-only. Do not run on testnet/mainnet.");
+  }
+
   console.log("=".repeat(60));
-  console.log("Deploying Faucet contracts to all chains");
+  console.log("Deploying Faucet contracts to all chains (local only)");
   console.log("=".repeat(60));
 
   // Deploy to Hub (port 8545, chain ID 31337)

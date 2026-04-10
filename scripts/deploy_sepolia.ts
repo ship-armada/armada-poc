@@ -5,10 +5,11 @@
  * This is the single-command equivalent of `npm run setup` for local dev.
  *
  * Phases:
- *   Phase 1: CCTP config + Privacy Pool (hub + clients)
- *   Phase 2: Mock Aave + Yield (hub only)
- *   Phase 3: Governance + Crowdfund (hub only)
- *   Phase 4: Cross-chain linking
+ *   Phase 1: CCTP config (all chains)
+ *   Phase 2: Governance + Crowdfund (hub only)
+ *   Phase 3: Privacy Pool (hub + clients) — must follow Phase 2 (needs treasury address from governance)
+ *   Phase 4: Mock Aave + Yield (hub only) — must follow Phase 2 (needs adapter registry from governance)
+ *   Phase 5: Cross-chain linking
  *
  * Prerequisites:
  *   - source config/sepolia.env
@@ -19,7 +20,7 @@
  *   npx ts-node scripts/deploy_sepolia.ts [--phase N] [--hub-only]
  *
  * Options:
- *   --phase N     Run only phase N (1-4)
+ *   --phase N     Run only phase N (1-5)
  *   --hub-only    Skip client chain deployments (Phase 1 hub only)
  */
 
@@ -71,10 +72,10 @@ async function main() {
 
   const shouldRun = (phase: number) => targetPhase === 0 || targetPhase === phase;
 
-  // ========== Phase 1: CCTP Config + Privacy Pool ==========
+  // ========== Phase 1: CCTP Configuration ==========
   if (shouldRun(1)) {
     console.log("\n" + "#".repeat(60));
-    console.log("  PHASE 1: CCTP Configuration + Privacy Pool");
+    console.log("  PHASE 1: CCTP Configuration");
     console.log("#".repeat(60));
 
     // Compile first
@@ -96,8 +97,31 @@ async function main() {
         "Configuring CCTP for Client B (Arbitrum Sepolia)"
       );
     }
+  }
 
-    // Deploy Privacy Pool
+  // ========== Phase 2: Governance + Crowdfund ==========
+  if (shouldRun(2)) {
+    console.log("\n" + "#".repeat(60));
+    console.log("  PHASE 2: Governance + Crowdfund (Hub Only)");
+    console.log("#".repeat(60));
+
+    run(
+      "npx hardhat run scripts/deploy_governance.ts --network sepoliaHub",
+      "Deploying Governance Contracts"
+    );
+    run(
+      "npx hardhat run scripts/deploy_crowdfund.ts --network sepoliaHub",
+      "Deploying Crowdfund Contracts"
+    );
+  }
+
+  // ========== Phase 3: Privacy Pool ==========
+  // Must follow Phase 2: privacy pool needs treasury address from governance manifest
+  if (shouldRun(3)) {
+    console.log("\n" + "#".repeat(60));
+    console.log("  PHASE 3: Privacy Pool");
+    console.log("#".repeat(60));
+
     run(
       "npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaHub",
       "Deploying Privacy Pool to Hub"
@@ -115,10 +139,12 @@ async function main() {
     }
   }
 
-  // ========== Phase 2: Yield Infrastructure ==========
-  if (shouldRun(2)) {
+  // ========== Phase 4: Yield Infrastructure ==========
+  // Must follow Phase 2: deploy_yield.ts requires the governance manifest
+  // (needs AdapterRegistry address from governance deployment)
+  if (shouldRun(4)) {
     console.log("\n" + "#".repeat(60));
-    console.log("  PHASE 2: Yield Infrastructure (Hub Only)");
+    console.log("  PHASE 4: Yield Infrastructure (Hub Only)");
     console.log("#".repeat(60));
 
     run(
@@ -129,28 +155,16 @@ async function main() {
       "npx hardhat run scripts/deploy_yield.ts --network sepoliaHub",
       "Deploying Yield Contracts"
     );
-  }
-
-  // ========== Phase 3: Governance + Crowdfund ==========
-  if (shouldRun(3)) {
-    console.log("\n" + "#".repeat(60));
-    console.log("  PHASE 3: Governance + Crowdfund (Hub Only)");
-    console.log("#".repeat(60));
-
     run(
-      "npx hardhat run scripts/deploy_governance.ts --network sepoliaHub",
-      "Deploying Governance Contracts"
-    );
-    run(
-      "npx hardhat run scripts/deploy_crowdfund.ts --network sepoliaHub",
-      "Deploying Crowdfund Contracts"
+      "npx hardhat run scripts/deploy_fee_module.ts --network sepoliaHub",
+      "Deploying Fee Module"
     );
   }
 
-  // ========== Phase 4: Cross-Chain Linking ==========
-  if (shouldRun(4)) {
+  // ========== Phase 5: Cross-Chain Linking ==========
+  if (shouldRun(5)) {
     console.log("\n" + "#".repeat(60));
-    console.log("  PHASE 4: Cross-Chain Linking");
+    console.log("  PHASE 5: Cross-Chain Linking");
     console.log("#".repeat(60));
 
     run(

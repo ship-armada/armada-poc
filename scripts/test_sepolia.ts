@@ -23,9 +23,8 @@
  */
 
 import { ethers } from "ethers";
-import * as fs from "fs";
-import * as path from "path";
 import { getNetworkConfig } from "../config/networks";
+import { loadDeployment } from "./deploy-utils";
 
 // ============================================================================
 // Minimal ABIs (only what we need — avoids hardhat dependency)
@@ -65,12 +64,6 @@ const PRIVACY_POOL_CLIENT_ABI = [
 // ============================================================================
 
 const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-
-function loadDeployment(filename: string): any | null {
-  const filePath = path.join(__dirname, "..", "deployments", filename);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
 
 function formatUsdc(amount: bigint): string {
   const abs = amount < 0n ? -amount : amount;

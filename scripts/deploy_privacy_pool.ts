@@ -30,11 +30,13 @@ import {
   getNetworkConfig,
   getChainRole,
   getCCTPDeploymentFile,
+  getGovernanceDeploymentFile,
   getPrivacyPoolDeploymentFile,
   getYieldDeploymentFile,
+  isLocal,
   type ChainRole,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, loadDeployment, saveDeployment } from "./deploy-utils";
 
 // Load Poseidon bytecode for library deployment
 const poseidonBytecode = JSON.parse(
@@ -178,17 +180,28 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   console.log(`   PrivacyPool: ${privacyPoolAddress}`);
 
   // 7. Resolve treasury address and initialize PrivacyPool
+  // Priority: env var > governance manifest > yield manifest > deployer (local only)
   console.log("\n7. Initializing PrivacyPool...");
+  const govDeployment = loadDeployment(getGovernanceDeploymentFile());
   const yieldDeployment = loadDeployment(getYieldDeploymentFile());
-  let treasuryAddress = deployer.address;
+  let treasuryAddress: string;
   if (config.treasuryAddress) {
     treasuryAddress = config.treasuryAddress;
     console.log("   Using TREASURY_ADDRESS from env");
+  } else if (govDeployment?.contracts?.treasury) {
+    treasuryAddress = govDeployment.contracts.treasury;
+    console.log("   Using ArmadaTreasuryGov from governance deployment");
   } else if (yieldDeployment?.contracts?.armadaTreasury) {
     treasuryAddress = yieldDeployment.contracts.armadaTreasury;
     console.log("   Using ArmadaTreasury from yield deployment");
+  } else if (isLocal()) {
+    treasuryAddress = deployer.address;
+    console.log("   Warning: no treasury configured, using deployer as treasury (local only)");
   } else {
-    console.log("   Warning: no treasury configured, using deployer as treasury");
+    throw new Error(
+      "No treasury address available. Deploy governance first, or set TREASURY_ADDRESS in env. " +
+      "The privacy pool treasury is immutable after initialization."
+    );
   }
   console.log("   Treasury: " + treasuryAddress);
 
@@ -226,7 +239,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
 
   // 10b. Configure shield fee
   console.log("\n10b. Configuring shield fee...");
-  await (await privacyPool.setShieldFee(50)).wait();
+  await (await privacyPool.setShieldFee(50, nm.override())).wait();
   console.log("   Shield fee: 50 bps (0.50%)");
 
   const deployment: HubDeploymentInfo = {
@@ -366,24 +379,6 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   console.log(`Deployment saved to: deployments/${filename}`);
 
   return deployment;
-}
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 async function main() {

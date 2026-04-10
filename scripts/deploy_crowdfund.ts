@@ -17,16 +17,15 @@
  */
 
 import { ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
   getCCTPDeploymentFile,
   getCrowdfundDeploymentFile,
   getGovernanceDeploymentFile,
+  isLocal,
 } from "../config/networks";
-import { createNonceManager } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -80,6 +79,9 @@ async function main() {
   const treasuryAddress = govDeployment.contracts.treasury;
   const governorAddress = govDeployment.contracts.governor;
   const revenueLockAddress = govDeployment.contracts.revenueLock;
+  const timelockAddress = govDeployment.contracts.timelockController;
+  const shieldPauseAddress = govDeployment.contracts.shieldPauseController;
+  const revenueCounterAddress = govDeployment.contracts.revenueCounter;
   console.log(`   ARM Token (shared): ${armTokenAddress}`);
   console.log(`   Treasury: ${treasuryAddress}`);
   console.log(`   Governor: ${governorAddress}`);
@@ -101,14 +103,25 @@ async function main() {
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const latestBlock = await ethers.provider.getBlock('latest');
-  const openTimestamp = latestBlock!.timestamp + 60; // 1 minute after latest block
-  // Security council uses a separate account from launch team (Anvil signer[10])
-  const signers = await ethers.getSigners();
-  const securityCouncil = signers[10];
+  const openTimestamp = latestBlock!.timestamp + config.crowdfundOpenDelay;
+  // Security council: config-driven for non-local, Anvil signer[10] fallback for local
+  let securityCouncilAddress: string;
+  if (config.securityCouncilAddress) {
+    securityCouncilAddress = config.securityCouncilAddress;
+  } else if (isLocal()) {
+    const signers = await ethers.getSigners();
+    securityCouncilAddress = signers[10].address;
+  } else {
+    throw new Error("SECURITY_COUNCIL_ADDRESS is required for non-local deployments");
+  }
+  rejectAnvilAddresses([securityCouncilAddress], "Security council");
+  if (securityCouncilAddress.toLowerCase() === deployer.address.toLowerCase()) {
+    throw new Error("Security council address must differ from deployer address");
+  }
   console.log(`   Launch team: ${deployer.address}`);
-  console.log(`   Security council: ${securityCouncil.address}`);
+  console.log(`   Security council: ${securityCouncilAddress}`);
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncil.address, openTimestamp, nm.override()
+    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncilAddress, openTimestamp, nm.override()
   );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();
@@ -148,11 +161,16 @@ async function main() {
   await (await crowdfund.loadArm(nm.override())).wait();
   console.log("   ARM pre-load verified (loadArm() succeeded)");
 
+  // 5c. Remove deployer from transfer whitelist (deployer holds 0 ARM after distribution)
+  console.log("   Removing deployer from transfer whitelist...");
+  await (await armToken.removeDeployerFromWhitelist(nm.override())).wait();
+  console.log("   Deployer removed from transfer whitelist");
+
   // 6. Register crowdfund as excluded from quorum denominator
   console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);
-  await (await governor.setExcludedAddresses([crowdfundAddress], nm.override())).wait();
-  console.log(`   Crowdfund excluded from quorum denominator`);
+  await (await governor.setExcludedAddresses([crowdfundAddress, revenueLockAddress], nm.override())).wait();
+  console.log(`   Crowdfund + RevenueLock excluded from quorum denominator`);
 
   // 7. Authorize delegateOnBehalf callers (one-shot — must include all delegators)
   console.log("7. Authorizing delegateOnBehalf delegators...");
@@ -163,6 +181,73 @@ async function main() {
   console.log("8. Registering crowdfund in governor for quiet period...");
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
+
+  // 8b. Clear deployer privilege on governor (all deployer-gated one-time setters are done)
+  console.log("   Clearing deployer address on governor...");
+  await (await governor.clearDeployer(nm.override())).wait();
+  console.log("   Governor deployer cleared (no more deployer-gated calls possible)");
+
+  // 9. Deploy ArmadaRedemption (requires crowdfund address)
+  console.log("9. Deploying ArmadaRedemption...");
+  const ArmadaRedemption = await ethers.getContractFactory("ArmadaRedemption");
+  const redemption = await ArmadaRedemption.deploy(
+    armTokenAddress, treasuryAddress, revenueLockAddress, crowdfundAddress, nm.override()
+  );
+  await redemption.deploymentTransaction()!.wait();
+  const redemptionAddress = await redemption.getAddress();
+  console.log(`   ArmadaRedemption: ${redemptionAddress}`);
+
+  // 10. Deploy ArmadaWindDown (requires redemption address)
+  console.log("10. Deploying ArmadaWindDown...");
+  const windDownDeadline = Math.floor(new Date(config.windDownDeadline).getTime() / 1000);
+  const revenueThreshold = ethers.parseUnits(config.windDownRevenueThreshold, 18);
+  const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
+  const windDownContract = await ArmadaWindDown.deploy(
+    armTokenAddress, treasuryAddress, governorAddress, redemptionAddress,
+    shieldPauseAddress, revenueCounterAddress, timelockAddress,
+    revenueThreshold, windDownDeadline, nm.override()
+  );
+  await windDownContract.deploymentTransaction()!.wait();
+  const windDownAddress = await windDownContract.getAddress();
+  console.log(`   ArmadaWindDown: ${windDownAddress}`);
+
+  // 11. Wire wind-down to ARM token (deployer-gated one-time setter — direct call)
+  console.log("11. Wiring wind-down to ARM token...");
+  await (await armToken.setWindDownContract(windDownAddress, nm.override())).wait();
+  console.log(`   armToken.setWindDownContract(${windDownAddress})`);
+
+  // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
+  // On local: uses Anvil impersonation to execute as the timelock directly.
+  // On non-local: logs the governance proposals needed.
+  console.log("12. Wiring wind-down to governor/treasury/shieldPause (timelock-only)...");
+
+  const governorContract = await ethers.getContractAt("ArmadaGovernor", governorAddress);
+  const treasury = await ethers.getContractAt("ArmadaTreasuryGov", treasuryAddress);
+  const shieldPause = await ethers.getContractAt("ShieldPauseController", shieldPauseAddress);
+
+  const windDownCalls = [
+    { target: governorAddress, calldata: governorContract.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "governor" },
+    { target: treasuryAddress, calldata: treasury.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "treasury" },
+    { target: shieldPauseAddress, calldata: shieldPause.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "shieldPause" },
+  ];
+
+  for (const call of windDownCalls) {
+    await timelockCall(timelockAddress, call.target, call.calldata, `${call.label}.setWindDownContract()`, nm);
+  }
+
+  // 13. Update governance manifest with redemption/windDown addresses
+  console.log("13. Updating governance manifest...");
+  govDeployment.contracts.redemption = redemptionAddress;
+  govDeployment.contracts.windDown = windDownAddress;
+  saveDeployment(govFilename, govDeployment);
+  console.log(`   Updated ${govFilename} with redemption + windDown addresses`);
+
+  // 14. Renounce timelock admin (final action — all deployment wiring complete)
+  console.log("14. Renouncing timelock admin...");
+  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
+  const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
+  await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
+  console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
   // Save deployment
   const deployment: CrowdfundDeployment = {
@@ -197,24 +282,6 @@ async function main() {
   console.log(`  Crowdfund:   ${config.armDistribution.crowdfund} ARM`);
   console.log(`  Deployer:  ${ethers.formatUnits(deployerRemaining, 18)} ARM (remainder — production allocation TBD)`);
   console.log("\n=== Crowdfund deployment complete ===");
-}
-
-function loadDeployment(filename: string): any | null {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  const filePath = path.join(deploymentsDir, filename);
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-}
-
-function saveDeployment(filename: string, data: any): void {
-  const deploymentsDir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir, { recursive: true });
-  }
-  const filePath = path.join(deploymentsDir, filename);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
 main()

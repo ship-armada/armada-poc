@@ -13,6 +13,7 @@
  */
 
 import { isLocal } from "../config/networks";
+import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -141,4 +142,70 @@ export function saveDeployment(filename: string, data: any): void {
   }
   const filePath = path.join(DEPLOYMENTS_DIR, filename);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+// ============================================================================
+// Timelock Impersonation
+// ============================================================================
+
+/**
+ * Execute a call as the timelock via Anvil impersonation (local only).
+ * On non-local, logs the governance proposal needed instead.
+ * Checks receipt status and throws on revert.
+ */
+export async function timelockCall(
+  timelockAddr: string,
+  targetAddr: string,
+  calldata: string,
+  description: string,
+  nm: NonceManager,
+): Promise<boolean> {
+  if (isLocal()) {
+    const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
+    const jsonRpc = async (method: string, params: any[] = []) => {
+      const res = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
+      return json.result;
+    };
+
+    // Fund the timelock so it can pay gas
+    const [deployer] = await ethers.getSigners();
+    const balance = await ethers.provider.getBalance(timelockAddr);
+    if (balance < ethers.parseEther("0.1")) {
+      const fundTx = await deployer.sendTransaction({
+        to: timelockAddr,
+        value: ethers.parseEther("1"),
+        ...nm.override(),
+      });
+      await fundTx.wait();
+    }
+
+    await jsonRpc("anvil_impersonateAccount", [timelockAddr]);
+    const txHash = await jsonRpc("eth_sendTransaction", [{
+      from: timelockAddr,
+      to: targetAddr,
+      data: calldata,
+    }]);
+    let receipt = null;
+    while (!receipt) {
+      receipt = await jsonRpc("eth_getTransactionReceipt", [txHash]);
+    }
+    await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
+    if (receipt.status === "0x0") {
+      throw new Error(`Timelock call reverted: ${description} (tx: ${txHash})`);
+    }
+    console.log(`   ${description} done`);
+    return true;
+  } else {
+    console.log(`   WARNING: ${description} requires a governance proposal on non-local networks.`);
+    console.log(`     Timelock: ${timelockAddr}`);
+    console.log(`     Target:   ${targetAddr}`);
+    console.log(`     Calldata: ${calldata}`);
+    return false;
+  }
 }

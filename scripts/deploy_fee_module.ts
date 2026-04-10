@@ -1,5 +1,5 @@
 // ABOUTME: Deployment script for ArmadaFeeModule (UUPS proxy) and wiring to PrivacyPool, YieldVault, and RevenueCounter.
-// ABOUTME: Registers governance extended selectors for fee module setters on ArmadaGovernor.
+// ABOUTME: Registers governance extended selectors and transfers yield contract ownership to timelock.
 
 /**
  * Deploy ArmadaFeeModule
@@ -30,7 +30,7 @@ import {
   getYieldDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, loadDeployment, saveDeployment } from "./deploy-utils";
+import { createNonceManager, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 
 // Fee module governance selectors to register as Extended proposals
 const FEE_MODULE_EXTENDED_SELECTORS = [
@@ -41,64 +41,6 @@ const FEE_MODULE_EXTENDED_SELECTORS = [
   "setYieldFee(uint256)",
   "setIntegratorTerms(address,uint256,uint256,bool)",
 ];
-
-/**
- * Execute a call as the timelock via Anvil impersonation (local only).
- * On non-local, logs the governance proposal needed instead.
- */
-async function timelockCall(
-  timelockAddr: string,
-  targetAddr: string,
-  calldata: string,
-  description: string,
-  nm: { override: () => any },
-): Promise<boolean> {
-  if (isLocal()) {
-    const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
-    const jsonRpc = async (method: string, params: any[] = []) => {
-      const res = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      });
-      const json = await res.json();
-      if (json.error) throw new Error(`RPC ${method}: ${json.error.message}`);
-      return json.result;
-    };
-
-    // Fund the timelock so it can pay gas
-    const [deployer] = await ethers.getSigners();
-    const balance = await ethers.provider.getBalance(timelockAddr);
-    if (balance < ethers.parseEther("0.1")) {
-      const fundTx = await deployer.sendTransaction({
-        to: timelockAddr,
-        value: ethers.parseEther("1"),
-        ...nm.override(),
-      });
-      await fundTx.wait();
-    }
-
-    await jsonRpc("anvil_impersonateAccount", [timelockAddr]);
-    const txHash = await jsonRpc("eth_sendTransaction", [{
-      from: timelockAddr,
-      to: targetAddr,
-      data: calldata,
-    }]);
-    let receipt = null;
-    while (!receipt) {
-      receipt = await jsonRpc("eth_getTransactionReceipt", [txHash]);
-    }
-    await jsonRpc("anvil_stopImpersonatingAccount", [timelockAddr]);
-    console.log(`   ${description} done`);
-    return true;
-  } else {
-    console.log(`   WARNING: ${description} requires a governance proposal on non-local networks.`);
-    console.log(`     Timelock: ${timelockAddr}`);
-    console.log(`     Target:   ${targetAddr}`);
-    console.log(`     Calldata: ${calldata}`);
-    return false;
-  }
-}
 
 async function main() {
   const network = await ethers.provider.getNetwork();
@@ -205,7 +147,18 @@ async function main() {
     }
   }
 
-  // 7. Save to deployment manifest
+  // 7. Transfer yield contract ownership to timelock (all owner-gated config complete)
+  console.log("\n--- Transferring yield contract ownership to timelock ---");
+  const armadaTreasury = await ethers.getContractAt("Ownable", yieldDeployment.contracts.armadaTreasury);
+  const armadaYieldAdapter = await ethers.getContractAt("Ownable", yieldDeployment.contracts.armadaYieldAdapter);
+  await (await armadaTreasury.transferOwnership(timelockAddress, nm.override())).wait();
+  console.log(`   ArmadaTreasury owner → ${timelockAddress}`);
+  await (await yieldVault.transferOwnership(timelockAddress, nm.override())).wait();
+  console.log(`   ArmadaYieldVault owner → ${timelockAddress}`);
+  await (await armadaYieldAdapter.transferOwnership(timelockAddress, nm.override())).wait();
+  console.log(`   ArmadaYieldAdapter owner → ${timelockAddress}`);
+
+  // 8. Save to deployment manifest
   const suffix = isLocal() ? "" : `-${network.name}`;
   const feeFile = `fee-module-hub${suffix}.json`;
   const feeModuleDeployment = {

@@ -25,7 +25,7 @@ import {
   getGovernanceDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -216,12 +216,10 @@ async function main() {
   await (await armToken.setWindDownContract(windDownAddress, nm.override())).wait();
   console.log(`   armToken.setWindDownContract(${windDownAddress})`);
 
-  // 12. Wire wind-down to governor, treasury, and shieldPause via timelock schedule+execute.
-  // The deployer still has TIMELOCK_ADMIN_ROLE at this point (renounce is step 14).
-  // These are timelock-only calls, so we schedule+execute through the timelock.
-  console.log("12. Wiring wind-down to governor/treasury/shieldPause via timelock...");
-  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
-  const timelockDelay = await timelock.getMinDelay();
+  // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
+  // On local: uses Anvil impersonation to execute as the timelock directly.
+  // On non-local: logs the governance proposals needed.
+  console.log("12. Wiring wind-down to governor/treasury/shieldPause (timelock-only)...");
 
   const governorContract = await ethers.getContractAt("ArmadaGovernor", governorAddress);
   const treasury = await ethers.getContractAt("ArmadaTreasuryGov", treasuryAddress);
@@ -233,44 +231,8 @@ async function main() {
     { target: shieldPauseAddress, calldata: shieldPause.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "shieldPause" },
   ];
 
-  // Schedule all three calls
   for (const call of windDownCalls) {
-    const salt = ethers.id(`winddown-wiring-${call.label}`);
-    await (await timelock.schedule(
-      call.target, 0, call.calldata, ethers.ZeroHash, salt, timelockDelay, nm.override()
-    )).wait();
-    console.log(`   Scheduled: ${call.label}.setWindDownContract()`);
-  }
-
-  // Wait for timelock delay to pass
-  if (timelockDelay > 0n) {
-    if (isLocal()) {
-      // Fast-forward Anvil past the timelock delay
-      const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
-      await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "evm_increaseTime", params: [Number(timelockDelay) + 1] }),
-      });
-      await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "evm_mine", params: [] }),
-      });
-      console.log(`   Fast-forwarded ${timelockDelay}s (Anvil evm_increaseTime)`);
-    } else {
-      console.log(`   Waiting ${timelockDelay}s for timelock delay...`);
-      await new Promise(resolve => setTimeout(resolve, Number(timelockDelay) * 1000 + 5000));
-    }
-  }
-
-  // Execute all three calls
-  for (const call of windDownCalls) {
-    const salt = ethers.id(`winddown-wiring-${call.label}`);
-    await (await timelock.execute(
-      call.target, 0, call.calldata, ethers.ZeroHash, salt, nm.override()
-    )).wait();
-    console.log(`   Executed: ${call.label}.setWindDownContract()`);
+    await timelockCall(timelockAddress, call.target, call.calldata, `${call.label}.setWindDownContract()`, nm);
   }
 
   // 13. Update governance manifest with redemption/windDown addresses
@@ -282,6 +244,7 @@ async function main() {
 
   // 14. Renounce timelock admin (final action — all deployment wiring complete)
   console.log("14. Renouncing timelock admin...");
+  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
   const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
   await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");

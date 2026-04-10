@@ -139,15 +139,8 @@ async function main() {
   await (await armadaYieldVault.setAdapter(armadaYieldAdapterAddress, nm.override())).wait();
   console.log(`   Adapter set to: ${armadaYieldAdapterAddress}`);
 
-  // 5. Transfer ownership of yield contracts to timelock (governance control)
-  const timelockAddress = govDeployment.contracts.timelockController;
-  console.log("\n5. Transferring yield contract ownership to timelock...");
-  await (await armadaTreasury.transferOwnership(timelockAddress, nm.override())).wait();
-  console.log(`   ArmadaTreasury owner → ${timelockAddress}`);
-  await (await armadaYieldVault.transferOwnership(timelockAddress, nm.override())).wait();
-  console.log(`   ArmadaYieldVault owner → ${timelockAddress}`);
-  await (await armadaYieldAdapter.transferOwnership(timelockAddress, nm.override())).wait();
-  console.log(`   ArmadaYieldAdapter owner → ${timelockAddress}`);
+  // Yield contract ownership transfers to timelock are handled by deploy_fee_module.ts
+  // after all owner-gated configuration (link + fee module wiring) is complete.
 
   // Save deployment
   const deployment: YieldDeployment = {

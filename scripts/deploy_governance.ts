@@ -1,5 +1,5 @@
-// ABOUTME: Deployment script for Armada governance contracts (timelock, token, treasury, governor, steward, pause, wind-down, redemption).
-// ABOUTME: Handles role grants, steward contract registration, whitelist initialization, and wind-down wiring.
+// ABOUTME: Deployment script for Armada governance contracts (timelock, token, treasury, governor, steward, pause).
+// ABOUTME: Handles role grants, steward contract registration, and whitelist initialization. Redemption/wind-down deploy in deploy_crowdfund.ts.
 
 /**
  * Deploy Armada Governance Contracts

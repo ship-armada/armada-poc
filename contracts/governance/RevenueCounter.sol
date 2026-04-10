@@ -34,6 +34,13 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     event RevenueUpdated(uint256 cumulativeRevenue, uint256 previousRevenue);
     event FeeCollectorUpdated(address indexed oldCollector, address indexed newCollector);
 
+    // ============ Constructor ============
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     // ============ Initializer ============
 
     /// @param _owner The governance address (timelock) that owns this contract.

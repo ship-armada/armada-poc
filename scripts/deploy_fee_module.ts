@@ -1,5 +1,5 @@
 // ABOUTME: Deployment script for ArmadaFeeModule (UUPS proxy) and wiring to PrivacyPool, YieldVault, and RevenueCounter.
-// ABOUTME: Registers governance extended selectors and transfers yield contract ownership to timelock.
+// ABOUTME: Transfers yield contract ownership to timelock after all owner-gated configuration is complete.
 
 /**
  * Deploy ArmadaFeeModule
@@ -12,7 +12,9 @@
  * - PrivacyPool.setFeeModule(feeModuleProxy)
  * - ArmadaYieldVault.setFeeModule(feeModuleProxy)
  * - RevenueCounter.setFeeCollector(feeModuleProxy) — timelock-only, uses impersonation on local
- * - Register extended selectors on ArmadaGovernor — timelock-only, uses impersonation on local
+ * - Transfer yield contract ownership to timelock
+ *
+ * Fee module extended selectors are hardcoded in ArmadaGovernor.initialize().
  *
  * Prerequisites: Governance, PrivacyPool, and YieldVault must be deployed.
  *
@@ -31,16 +33,6 @@ import {
   isLocal,
 } from "../config/networks";
 import { createNonceManager, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
-
-// Fee module governance selectors to register as Extended proposals
-const FEE_MODULE_EXTENDED_SELECTORS = [
-  "setBaseArmadaTake(uint256)",
-  "addTier(uint256,uint256)",
-  "setTier(uint256,uint256,uint256)",
-  "removeTier(uint256)",
-  "setYieldFee(uint256)",
-  "setIntegratorTerms(address,uint256,uint256,bool)",
-];
 
 async function main() {
   const network = await ethers.provider.getNetwork();
@@ -126,28 +118,10 @@ async function main() {
     );
   }
 
-  // 6. Register extended selectors on governor (timelock-only)
-  if (governorAddress) {
-    console.log("--- Registering extended selectors on ArmadaGovernor ---");
-    const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);
-    for (const sig of FEE_MODULE_EXTENDED_SELECTORS) {
-      const selector = ethers.id(sig).slice(0, 10);
-      const addSelectorCalldata = governor.interface.encodeFunctionData(
-        "addExtendedSelector", [selector]
-      );
-      const success = await timelockCall(
-        timelockAddress, governorAddress, addSelectorCalldata,
-        `addExtendedSelector(${sig} → ${selector})`, nm
-      );
-      if (!success) {
-        // On non-local, log once and break — all selectors need the same governance proposal
-        console.log(`   Remaining selectors also require governance proposals.`);
-        break;
-      }
-    }
-  }
+  // Fee module extended selectors (setBaseArmadaTake, addTier, etc.) are hardcoded
+  // in ArmadaGovernor.initialize() — no runtime registration needed.
 
-  // 7. Transfer yield contract ownership to timelock (all owner-gated config complete)
+  // 6. Transfer yield contract ownership to timelock (all owner-gated config complete)
   console.log("\n--- Transferring yield contract ownership to timelock ---");
   const armadaTreasury = await ethers.getContractAt("Ownable", yieldDeployment.contracts.armadaTreasury);
   const armadaYieldAdapter = await ethers.getContractAt("Ownable", yieldDeployment.contracts.armadaYieldAdapter);
@@ -158,7 +132,7 @@ async function main() {
   await (await armadaYieldAdapter.transferOwnership(timelockAddress, nm.override())).wait();
   console.log(`   ArmadaYieldAdapter owner → ${timelockAddress}`);
 
-  // 8. Save to deployment manifest
+  // 7. Save to deployment manifest
   const suffix = isLocal() ? "" : `-${network.name}`;
   const feeFile = `fee-module-hub${suffix}.json`;
   const feeModuleDeployment = {

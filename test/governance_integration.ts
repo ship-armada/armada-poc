@@ -154,7 +154,7 @@ describe("Governance Integration", function () {
       alice.address,
       bob.address,
     ]);
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
 
     // 7. Configure timelock roles
     const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();

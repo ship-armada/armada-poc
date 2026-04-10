@@ -136,7 +136,7 @@ describe("Governance Adapter Registry", function () {
     );
 
     // 8. Configure ARM token
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
     await armToken.initWhitelist([
       deployer.address,
       await treasury.getAddress(),

@@ -115,7 +115,7 @@ describe("Governance Adversarial", function () {
     await usdc.waitForDeployment();
 
     // Configure ARM token post-deploy
-    await armToken.setNoDelegation(await treasuryContract.getAddress());
+    await armToken.initNoDelegation([await treasuryContract.getAddress()]);
     await armToken.initWhitelist([
       deployer.address,
       await treasuryContract.getAddress(),

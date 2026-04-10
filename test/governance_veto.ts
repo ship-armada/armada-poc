@@ -157,7 +157,7 @@ describe("Governance Veto", function () {
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // 8. Configure ARM token
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
     await armToken.initWhitelist([
       deployer.address,
       await treasury.getAddress(),

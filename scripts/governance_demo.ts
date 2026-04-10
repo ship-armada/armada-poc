@@ -101,7 +101,7 @@ async function main() {
   await usdc.waitForDeployment();
 
   // Configure ARM token
-  await armToken.setNoDelegation(await treasury.getAddress());
+  await armToken.initNoDelegation([await treasury.getAddress()]);
   await armToken.initWhitelist([deployer.address, await treasury.getAddress()]);
 
   // ARM distribution for demo: treasury gets 65%, remainder split between voters.

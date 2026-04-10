@@ -315,9 +315,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("setShieldFee(uint120)"))] = true;
         extendedSelectors[bytes4(keccak256("setUnshieldFee(uint120)"))] = true;
         extendedSelectors[bytes4(keccak256("setYieldFeeBps(uint256)"))] = true;
-        // Steward election/removal (on TreasurySteward)
+        // Steward election (on TreasurySteward) — removal is Standard (defensive/emergency action)
         extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
-        extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
         // ARM token transfer whitelist
         extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
         // Revenue definition expansion (on RevenueCounter)
@@ -341,6 +340,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("authorizeAdapter(address)"))] = true;
         extendedSelectors[bytes4(keccak256("deauthorizeAdapter(address)"))] = true;
         extendedSelectors[bytes4(keccak256("fullDeauthorizeAdapter(address)"))] = true;
+        // Wind-down parameter adjustments (on ArmadaWindDown) — high-impact, can extend protocol lifetime
+        extendedSelectors[bytes4(keccak256("setRevenueThreshold(uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("setWindDownDeadline(uint256)"))] = true;
 
         // Fail-closed default: selectors explicitly permitted at Standard classification.
         // Any selector NOT in extendedSelectors AND NOT in standardSelectors defaults to Extended.
@@ -350,6 +352,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         standardSelectors[bytes4(keccak256("transferETHTo(address,uint256)"))] = true;
         // ARM token transfer enable — one-way, irreversible, callable via governance or wind-down
         standardSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
+        // Steward removal — defensive/emergency action, lower bar per spec
+        standardSelectors[bytes4(keccak256("removeSteward()"))] = true;
     }
 
     // ============ Quorum Exclusion ============

@@ -55,13 +55,18 @@ describe("Governance Adversarial", function () {
     await mine(1);
   }
 
-  // Helper: create a simple proposal
+  // Helper: create a simple proposal.
+  // The dummy calldata uses proposalCount() which is not in standardSelectors
+  // or extendedSelectors, so fail-closed classification auto-upgrades it to Extended.
+  // All timing in tests using this helper must use Extended timing constants.
   async function createProposal(
     proposer: SignerWithAddress,
-    proposalType: number = ProposalType.Standard,
+    proposalType: number = ProposalType.Extended,
     description: string = "Test proposal"
   ): Promise<number> {
-    // Dummy target: call a view function (harmless)
+    // Dummy target: call a view function (harmless).
+    // proposalCount() is not a recognized selector, so the proposal is
+    // auto-classified as Extended regardless of the requested type.
     const tx = await governor.connect(proposer).propose(
       proposalType,
       [await governor.getAddress()],
@@ -211,8 +216,8 @@ describe("Governance Adversarial", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       await governor.connect(bob).castVote(proposalId, Vote.Against);
 
-      // Fast-forward past voting period
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      // Fast-forward past voting period (Extended: 14 days)
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
       // forVotes == againstVotes (both 15M) → Defeated because forVotes > againstVotes is false
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
@@ -227,15 +232,15 @@ describe("Governance Adversarial", function () {
       await governor.connect(alice).castVote(proposalId, Vote.Abstain);
       await governor.connect(bob).castVote(proposalId, Vote.Abstain);
 
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
-      // Total participation (35% of supply abstain) >= quorum (7% of supply) → quorum reached
+      // Total participation (35% of supply abstain) >= quorum (30% of eligible) → quorum reached
       // But forVotes (0) > againstVotes (0) is false → Defeated
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
     });
 
     it("against votes count toward quorum (participation model)", async function () {
-      // Eligible supply = 35% of total. Quorum = 20% of eligible = 7% of total.
+      // Eligible supply = 35% of total. Extended quorum = 30% of eligible = 10.5% of total.
       // Bob (15% of supply) votes Against → exceeds quorum on its own.
       // Proposal should be Defeated (quorum met, but forVotes=0).
       const proposalId = await createProposal(alice);
@@ -244,9 +249,9 @@ describe("Governance Adversarial", function () {
 
       await governor.connect(bob).castVote(proposalId, Vote.Against);
 
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
-      // Quorum reached via against votes alone (15% >= 7%)
+      // Quorum reached via against votes alone (15% >= 10.5%)
       // Defeated because forVotes (0) > againstVotes is false
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
 
@@ -298,7 +303,7 @@ describe("Governance Adversarial", function () {
       // Bob votes against (alone) — quorum reached but forVotes=0 → Defeated
       await governor.connect(bob).castVote(proposalId, Vote.Against);
 
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
 
@@ -315,7 +320,7 @@ describe("Governance Adversarial", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       await governor.connect(bob).castVote(proposalId, Vote.For);
 
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
 
@@ -363,7 +368,7 @@ describe("Governance Adversarial", function () {
       await time.increase(TWO_DAYS + 1);
       await governor.connect(alice).castVote(proposalId, Vote.For);
       await governor.connect(bob).castVote(proposalId, Vote.For);
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
       await governor.queue(proposalId);
 
@@ -535,8 +540,8 @@ describe("Governance Adversarial", function () {
       const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT;
       expect(snapshotEligibleSupply).to.equal(expectedEligible);
 
-      // Quorum = 20% of eligible supply
-      const expectedQuorum = (expectedEligible * 2000n) / 10000n;
+      // Quorum = 30% of eligible supply (Extended proposals use 30% quorum)
+      const expectedQuorum = (expectedEligible * 3000n) / 10000n;
       expect(quorumAtCreation).to.equal(expectedQuorum);
     });
 
@@ -553,20 +558,20 @@ describe("Governance Adversarial", function () {
       const quorumDuringVoting = await governor.quorum(proposalId);
       expect(quorumDuringVoting).to.equal(quorumAtCreation);
 
-      // End voting
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      // End voting (Extended: 14 days)
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
       // Quorum should still be the same after voting ends
       const quorumAfterVoting = await governor.quorum(proposalId);
       expect(quorumAfterVoting).to.equal(quorumAtCreation);
 
-      // Proposal should succeed (alice+bob = 35% of supply > 7% quorum)
+      // Proposal should succeed (alice+bob = 35% of supply > 10.5% quorum for Extended)
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
     });
 
     it("concurrent proposals have independent quorum snapshots", async function () {
-      // Create proposal 1
-      const proposalId1 = await createProposal(alice, ProposalType.Standard, "Proposal 1");
+      // Create proposal 1 (auto-classified as Extended due to unrecognized selector)
+      const proposalId1 = await createProposal(alice, ProposalType.Extended, "Proposal 1");
       const quorum1 = await governor.quorum(proposalId1);
 
       // Transfer 5% of supply worth of alice's ARM to treasury, changing the balance
@@ -575,16 +580,17 @@ describe("Governance Adversarial", function () {
       await mineBlock();
 
       // Create proposal 2 with different treasury balance
-      const proposalId2 = await createProposal(alice, ProposalType.Standard, "Proposal 2");
+      const proposalId2 = await createProposal(alice, ProposalType.Extended, "Proposal 2");
       const quorum2 = await governor.quorum(proposalId2);
 
       // Proposal 1 quorum should reflect original treasury balance (65% excluded)
+      // Extended quorum = 30% of eligible supply
       const eligible1 = TOTAL_SUPPLY - TREASURY_AMOUNT;
-      expect(quorum1).to.equal((eligible1 * 2000n) / 10000n);
+      expect(quorum1).to.equal((eligible1 * 3000n) / 10000n);
 
       // Proposal 2 quorum should reflect updated treasury balance (70% excluded)
       const eligible2 = TOTAL_SUPPLY - TREASURY_AMOUNT - transferAmount;
-      expect(quorum2).to.equal((eligible2 * 2000n) / 10000n);
+      expect(quorum2).to.equal((eligible2 * 3000n) / 10000n);
 
       // They should be different — independent snapshots
       expect(quorum1).to.not.equal(quorum2);
@@ -703,8 +709,8 @@ describe("Governance Adversarial", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       await governor.connect(bob).castVote(proposalId, Vote.For);
 
-      // Wait for voting to end
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      // Wait for voting to end (Extended: 14 days)
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
 
       // Wait 13 days (still within 14-day grace period)
@@ -724,8 +730,8 @@ describe("Governance Adversarial", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       await governor.connect(bob).castVote(proposalId, Vote.For);
 
-      // Wait for voting to end
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      // Wait for voting to end (Extended: 14 days)
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
 
       // Wait past the 14-day grace period
@@ -746,8 +752,8 @@ describe("Governance Adversarial", function () {
       await governor.connect(alice).castVote(proposalId, Vote.For);
       await governor.connect(bob).castVote(proposalId, Vote.For);
 
-      // Wait for voting to end and queue immediately
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      // Wait for voting to end and queue immediately (Extended: 14 days)
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
       await governor.queue(proposalId);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 

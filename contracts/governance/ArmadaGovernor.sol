@@ -181,6 +181,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
     uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
 
+    // Fail-closed classification: selectors not in extendedSelectors AND not in
+    // standardSelectors default to Extended. This prevents bypass via unclassified
+    // selectors (e.g. wrapper/forwarder contracts, newly added protocol functions).
+    mapping(bytes4 => bool) public standardSelectors;
+
     // ============ Veto & Ratification ============
 
     /// @notice Calldata hashes of proposals where community denied the SC's veto.
@@ -215,6 +220,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event WindDownActivated();
     event ExtendedSelectorAdded(bytes4 indexed selector);
     event ExtendedSelectorRemoved(bytes4 indexed selector);
+    event StandardSelectorAdded(bytes4 indexed selector);
+    event StandardSelectorRemoved(bytes4 indexed selector);
     event StewardContractSet(address indexed steward);
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
@@ -296,6 +303,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Governance parameter changes (on ArmadaGovernor)
         extendedSelectors[this.addExtendedSelector.selector] = true;
         extendedSelectors[this.removeExtendedSelector.selector] = true;
+        extendedSelectors[this.addStandardSelector.selector] = true;
+        extendedSelectors[this.removeStandardSelector.selector] = true;
         extendedSelectors[this.setSecurityCouncil.selector] = true;
         extendedSelectors[this.setProposalTypeParams.selector] = true;
         extendedSelectors[this.setWindDownContract.selector] = true;
@@ -309,8 +318,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Steward election/removal (on TreasurySteward)
         extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
         extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
-        // ARM token transfer whitelist
+        // ARM token transfer whitelist and transfer enable
         extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Revenue definition expansion (on RevenueCounter)
         extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
         // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
@@ -328,6 +338,17 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitAbsolute(address,uint256)"))] = true;
+        // Adapter lifecycle (on AdapterRegistry) — affects which contracts interact with shielded yield
+        extendedSelectors[bytes4(keccak256("authorizeAdapter(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("deauthorizeAdapter(address)"))] = true;
+        extendedSelectors[bytes4(keccak256("fullDeauthorizeAdapter(address)"))] = true;
+
+        // Fail-closed default: selectors explicitly permitted at Standard classification.
+        // Any selector NOT in extendedSelectors AND NOT in standardSelectors defaults to Extended.
+        standardSelectors[DISTRIBUTE_SELECTOR] = true;  // distribute() below the 5% threshold
+        standardSelectors[bytes4(keccak256("stewardSpend(address,address,uint256)"))] = true;
+        standardSelectors[bytes4(keccak256("transferTo(address,address,uint256)"))] = true;
+        standardSelectors[bytes4(keccak256("transferETHTo(address,uint256)"))] = true;
     }
 
     // ============ Quorum Exclusion ============
@@ -427,6 +448,23 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         extendedSelectors[selector] = false;
         emit ExtendedSelectorRemoved(selector);
+    }
+
+    /// @notice Add a function selector to the standard classification registry.
+    /// @dev Only callable by the timelock. Required when adding new protocol functions
+    ///      that should pass at Standard quorum. Without this, new selectors default to Extended.
+    function addStandardSelector(bytes4 selector) external {
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        standardSelectors[selector] = true;
+        emit StandardSelectorAdded(selector);
+    }
+
+    /// @notice Remove a function selector from the standard classification registry.
+    /// @dev Only callable by the timelock. After removal, the selector defaults to Extended.
+    function removeStandardSelector(bytes4 selector) external {
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        standardSelectors[selector] = false;
+        emit StandardSelectorRemoved(selector);
     }
 
     // ============ Security Council ============
@@ -964,10 +1002,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         return bytes32(proposalId);
     }
 
-    /// @dev Classify a proposal based on its calldata. If any action targets a function
-    ///      in the extended selector registry, force Extended. If a distribute() call would
-    ///      move >5% of the treasury's balance of that token, force Extended.
-    ///      The proposer's declared type is respected only if it's already Extended.
+    /// @dev Classify a proposal based on its calldata. Fail-closed: any selector not
+    ///      explicitly registered as Extended or Standard defaults to Extended.
+    ///      If any action targets an extended selector, the entire proposal is Extended.
+    ///      If a distribute() call would move >5% of treasury balance, force Extended.
     function _classifyProposal(
         ProposalType declaredType,
         address[] memory, /* targets — reserved for future target-specific checks */
@@ -1004,6 +1042,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                     return ProposalType.Extended;
                 }
             }
+
+            // Fail-closed: unrecognized selectors force Extended classification.
+            // This prevents bypass via wrapper/forwarder contracts or newly added
+            // protocol functions that haven't been classified yet.
+            if (!standardSelectors[selector]) return ProposalType.Extended;
         }
 
         return declaredType;

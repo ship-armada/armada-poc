@@ -258,10 +258,11 @@ describe("Governance Integration", function () {
       const [, , , , , windDown] = await ethers.getSigners();
       await armToken.setWindDownContract(windDown.address);
 
+      // setTransferable is Extended-classified (one-way permanent state change)
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard,
+        ProposalType.Extended,
         [armTokenAddr],
         [0n],
         [calldata],

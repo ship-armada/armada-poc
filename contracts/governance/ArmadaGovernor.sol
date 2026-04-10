@@ -318,9 +318,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Steward election/removal (on TreasurySteward)
         extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
         extendedSelectors[bytes4(keccak256("removeSteward()"))] = true;
-        // ARM token transfer whitelist and transfer enable
+        // ARM token transfer whitelist
         extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
-        extendedSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Revenue definition expansion (on RevenueCounter)
         extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
         // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
@@ -349,6 +348,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         standardSelectors[bytes4(keccak256("stewardSpend(address,address,uint256)"))] = true;
         standardSelectors[bytes4(keccak256("transferTo(address,address,uint256)"))] = true;
         standardSelectors[bytes4(keccak256("transferETHTo(address,uint256)"))] = true;
+        // ARM token transfer enable — one-way, irreversible, callable via governance or wind-down
+        standardSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
     }
 
     // ============ Quorum Exclusion ============

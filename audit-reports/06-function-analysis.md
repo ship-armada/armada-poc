@@ -204,8 +204,8 @@ Finalizes crowdfund after commitment window. Determines sale size (elastic expan
 
 ### 6.2 finalize Block-by-Block
 
-- L223: `require(block.timestamp > commitmentEnd)` — timing gate
-- L224-227: Phase guard — requires Invitation or Commitment (Commitment is unreachable dead code)
+- `require(block.timestamp > windowEnd)` — timing gate
+- Phase guard — requires Active (old Invitation/Commitment dead code was removed)
 - L230-234: If `totalCommitted < MIN_SALE` ($1M), cancels sale
 - L237-241: Elastic expansion — if `totalCommitted >= ELASTIC_TRIGGER` ($1.8M), saleSize = MAX_SALE
 - L244-248: ARM sufficiency check
@@ -226,13 +226,13 @@ Lazy per-participant allocation using stored hop-level data:
 - **INV-FZ-1**: `sum(reserveBps) == 10000`, so `sum(reserves) == saleSize`
 - **INV-FZ-2**: Post-rollover: `reserves + treasuryLeftover == saleSize`
 - **INV-CA-1**: `allocUsdc + refundUsdc == committed` exactly (no rounding leakage to user)
-- **INV-FZ-4**: Phase transitions are one-way (Invitation -> Finalized or Canceled)
+- **INV-FZ-4**: Phase transitions are one-way (Active -> Finalized or Canceled)
 
 ### 6.5 Observations
 
-- **Phase.Commitment dead code**: `commit()` at L187-L217 does NOT transition phase to Commitment. The guard at L225 checking `Phase.Commitment` is unreachable.
+- ~~**Phase.Commitment dead code**~~: [RESOLVED — dead phases removed; `finalize()` now checks `phase == Phase.Active`]
 - **Integer division dust**: In over-subscribed hops, per-participant `allocUsdc` rounds down. Sum of all allocations may be less than `finalReserves[hop]`. Dust remains in contract.
-- **No finalization deadline**: Admin can delay `finalize()` indefinitely after `commitmentEnd`, locking participant USDC.
+- **No finalization deadline**: Admin can delay `finalize()` indefinitely after `windowEnd`, locking participant USDC.
 - **ARM recovery after cancellation**: `withdrawUnallocatedArm()` requires `phase == Finalized`. If sale is canceled, ARM tokens are permanently locked.
 
 ---

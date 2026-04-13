@@ -53,9 +53,9 @@
 
 | Step | Test | File |
 |------|------|------|
-| Add seeds, start invitations | ✓ | `cross_contract_integration.ts` — "full lifecycle" |
+| Add seeds, invite hop-1 | ✓ | `cross_contract_integration.ts` — "full lifecycle" |
 | Seeds invite hop-1 | ✓ | Same |
-| Commitment phase (80 seeds × $15K) | ✓ | Same |
+| Commit (80 seeds × $15K) | ✓ | Same |
 | Finalize | ✓ | Same |
 | Claim ARM | ✓ | Same |
 | Lock in VotingLocker | ✓ | Same |

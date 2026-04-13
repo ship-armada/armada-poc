@@ -48,7 +48,7 @@
 | C-01 | **Allocation rounding** | Pro-rata creates dust or over-allocates | Integer division; allocUsdc + refund == committed | AllocationFuzz, adversarial |
 | C-02 | **Over-allocation** | sum(allocations) > totalAllocated | Hop-level upper bound; per-participant alloc <= reserve share | Invariant tests |
 | C-03 | **Double claim** | Participant claims twice | p.claimed check | Integration tests |
-| C-04 | **Phase violation** | commit during wrong phase | inPhase modifier; timestamp checks | Adversarial tests |
+| C-04 | **Phase violation** | commit during wrong phase | `require(phase == Phase.Active)` guards; timestamp checks | Adversarial tests |
 | C-05 | **Reentrancy** | claim/refund re-entered | ReentrancyGuard | ReentrancyAttacker tests |
 | C-06 | **Hop cap bypass** | Commit exceeds per-hop cap | capUsdc enforced in commit | Integration tests |
 | C-07 | **Invite graph cycles** | invitee invites inviter | Invite graph is tree; hop = inviter.hop + 1 | — |

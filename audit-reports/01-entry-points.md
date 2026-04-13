@@ -151,9 +151,9 @@ State-changing functions callable by anyone --- prioritize for attack surface an
 ### Crowdfund Admin
 | Function | File | Notes |
 |----------|------|-------|
-| `addSeeds(address[])` | `ArmadaCrowdfund.sol:113` | Add seed participants (Setup phase only) |
-| `addSeed(address)` | `ArmadaCrowdfund.sol:120` | Add single seed (Setup phase only) |
-| `startInvitations()` | `ArmadaCrowdfund.sol:138` | Transition to Invitation phase |
+| `addSeeds(address[])` | `ArmadaCrowdfund.sol:113` | Add seed participants (week-1 window only) |
+| `addSeed(address)` | `ArmadaCrowdfund.sol:120` | Add single seed (week-1 window only) |
+| ~~`startInvitations()`~~ | ~~`ArmadaCrowdfund.sol:138`~~ | ~~Removed — invites and commits happen concurrently during Active phase~~ |
 | `finalize()` | `ArmadaCrowdfund.sol:222` | Compute allocations or cancel. nonReentrant. |
 | `withdrawProceeds(address)` | `ArmadaCrowdfund.sol:356` | Withdraw USDC proceeds to treasury |
 | `withdrawUnallocatedArm(address)` | `ArmadaCrowdfund.sol:372` | Withdraw excess ARM tokens |
@@ -221,9 +221,10 @@ Functions with access control patterns that need manual verification.
 - **Risk**: `initialize()` has no deployer check --- can be front-run on deployment
 - **Impact**: Attacker could initialize with malicious parameters
 
-### LOW: Crowdfund phase transition has no `inPhase(Phase.Commitment)` gate
-- **Risk**: `finalize()` checks `phase == Invitation || phase == Phase.Commitment`
-- **Impact**: Could finalize directly from Invitation phase (mitigated by `block.timestamp > commitmentEnd` check)
+### ~~LOW: Crowdfund phase transition has no `inPhase(Phase.Commitment)` gate~~ [RESOLVED]
+- ~~**Risk**: `finalize()` checks `phase == Invitation || phase == Phase.Commitment`~~
+- ~~**Impact**: Could finalize directly from Invitation phase~~
+- **Resolution**: Phase model simplified to Active → Finalized/Canceled. Separate Invitation/Commitment phases removed; `finalize()` now checks `phase == Phase.Active`.
 
 ---
 

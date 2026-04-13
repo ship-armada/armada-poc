@@ -226,6 +226,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
+    event ExcludedAddressesSet(address[] addresses);
+    event DeployerCleared(address indexed previousDeployer);
 
     // ============ Constructor & Initializer ============
 
@@ -383,6 +385,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             if (addrs[i] == treasuryAddress) revert Gov_TreasuryAlreadyExcluded();
             _excludedFromQuorum.push(addrs[i]);
         }
+
+        emit ExcludedAddressesSet(addrs);
     }
 
     /// @notice View excluded addresses for transparency
@@ -421,7 +425,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// preventing future UUPS upgrades from inheriting deployer-gated privileges.
     function clearDeployer() external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
+        address previousDeployer = deployer;
         deployer = address(0);
+
+        emit DeployerCleared(previousDeployer);
     }
 
     // ============ Governance-Updatable Parameters ============

@@ -89,3 +89,20 @@ jobs:
             exit 1
           fi
           echo "All contracts within size limits."
+
+  # Slither static analysis (non-blocking until existing findings are triaged)
+  slither:
+    name: Slither Analysis
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --legacy-peer-deps
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          slither-config: slither.config.json
+          fail-on: none

@@ -1,0 +1,9 @@
+{
+  "filter_paths": [
+    "contracts/test/",
+    "contracts/railgun/",
+    "contracts/aave-mock/",
+    "contracts/cctp/"
+  ],
+  "exclude_informational": true
+}

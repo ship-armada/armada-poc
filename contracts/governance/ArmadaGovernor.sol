@@ -732,7 +732,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Signaling proposals are text-only: no targets, values, or calldatas allowed.
         // Executable proposals must have at least one target with matching arrays.
         if (proposalType == ProposalType.Signaling) {
-            if (targets.length != 0) revert Gov_SignalingMustBeEmpty();
+            if (targets.length != 0 || values.length != 0 || calldatas.length != 0) revert Gov_SignalingMustBeEmpty();
         } else {
             if (targets.length == 0) revert Gov_EmptyProposal();
             if (targets.length != values.length || targets.length != calldatas.length) revert Gov_LengthMismatch();

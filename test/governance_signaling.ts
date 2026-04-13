@@ -1,11 +1,5 @@
-/**
- * Governance Signaling Proposal Tests
- *
- * Tests the Signaling proposal type — non-executable, text-only proposals
- * for measuring token-holder preference. Signaling proposals follow the
- * standard lifecycle (submit → pending → active → outcome) but skip the
- * execution phase (no queue, no timelock, no execute).
- */
+// ABOUTME: Integration tests for the Signaling proposal type in ArmadaGovernor.
+// ABOUTME: Covers lifecycle, voting, revert guards, and non-executability constraints.
 
 import { expect } from "chai";
 import { ethers } from "hardhat";

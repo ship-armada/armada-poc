@@ -90,10 +90,22 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     }
 
     /// @notice Set the fee collector address. Governance-only (timelock).
-    /// @dev Resets lastSyncedCumulative to the new collector's current value so that
-    ///      syncStablecoinRevenue() computes correct deltas from the new baseline.
+    /// @dev Syncs any pending revenue from the old collector before switching, so that
+    ///      accumulated fees are not silently dropped. Then resets lastSyncedCumulative
+    ///      to the new collector's current value for correct delta computation.
     /// @param _feeCollector Address of a contract implementing IFeeCollector, or address(0) to clear.
     function setFeeCollector(address _feeCollector) external onlyOwner {
+        // Sync pending revenue from the old collector before switching
+        if (feeCollector != address(0)) {
+            uint256 currentCumulative = IFeeCollector(feeCollector).cumulativeFeesCollected();
+            uint256 delta = currentCumulative - lastSyncedCumulative;
+            if (delta > 0) {
+                uint256 previousRevenue = recognizedRevenueUsd;
+                recognizedRevenueUsd += delta * USDC_TO_USD_SCALE;
+                emit RevenueUpdated(recognizedRevenueUsd, previousRevenue);
+            }
+        }
+
         emit FeeCollectorUpdated(feeCollector, _feeCollector);
         feeCollector = _feeCollector;
         if (_feeCollector != address(0)) {

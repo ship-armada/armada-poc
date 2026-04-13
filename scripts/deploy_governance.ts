@@ -17,7 +17,7 @@
  * - ArmadaWindDown
  *
  * Post-deploy configuration:
- * - ARM token: setNoDelegation, initWhitelist, initAuthorizedDelegators, setWindDownContract
+ * - ARM token: initNoDelegation, initWhitelist, initAuthorizedDelegators, setWindDownContract
  * - Treasury: initOutflowConfig, setWindDownContract
  * - Governor: setWindDownContract
  * - ShieldPauseController: setWindDownContract
@@ -266,8 +266,8 @@ async function main() {
 
   // 12. Configure ARM token (one-time setters)
   console.log("12. Configuring ARM token...");
-  await (await armToken.setNoDelegation(treasuryAddress, nm.override())).wait();
-  console.log(`   setNoDelegation: ${treasuryAddress} (treasury)`);
+  await (await armToken.initNoDelegation([treasuryAddress], nm.override())).wait();
+  console.log(`   initNoDelegation: [${treasuryAddress}] (treasury)`);
 
   // initWhitelist is one-shot and must include the crowdfund address (per ARM token spec §5).
   // Deferred to deploy_crowdfund.ts which runs after governance and has the crowdfund address.

@@ -473,9 +473,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     ///         Computes allocation on the fly from hop-level data.
     ///         ARM portion transfers only if within the 3-year claim deadline;
     ///         refund portion always transfers (no expiry).
-    /// @param delegate Governance delegate preference. If non-zero and the claimant
-    ///        receives ARM, voting power is atomically delegated via delegateOnBehalf.
-    ///        Pass address(0) to skip delegation (claimant can delegate later manually).
+    /// @param delegate Governance delegate address (required when claiming ARM).
+    ///        Voting power is atomically delegated via delegateOnBehalf.
+    ///        Reverts if address(0) and claimant is receiving ARM within the claim deadline.
     function claim(address delegate) external nonReentrant {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
         require(!refundMode, "ArmadaCrowdfund: sale in refund mode");

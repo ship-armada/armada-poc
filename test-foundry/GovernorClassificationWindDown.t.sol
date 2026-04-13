@@ -234,13 +234,15 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Extended));
     }
 
-    function test_classify_unregisteredSelectorStaysStandard() public {
-        // proposalCount() is not registered as extended
+    function test_classify_unregisteredSelectorDefaultsToExtended() public {
+        // WHY: Fail-closed classification — proposalCount() is not in standardSelectors
+        // or extendedSelectors, so it defaults to Extended to prevent bypass via
+        // unclassified selectors.
         bytes memory data = abi.encodeWithSignature("proposalCount()");
         uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
 
         (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
-        assertEq(uint256(pType), uint256(ProposalType.Standard));
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
     }
 
     function test_classify_voluntaryExtendedPreserved() public {
@@ -273,16 +275,18 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Extended));
     }
 
-    function test_classify_nonExtendedSelectorStaysStandard() public {
-        // WHY: setStewardContract is NOT registered as an extended selector,
-        // so proposals targeting it should stay classified as Standard.
+    function test_classify_nonExtendedSelectorDefaultsToExtended() public {
+        // WHY: Fail-closed classification — setStewardContract is NOT in extendedSelectors
+        // AND NOT in standardSelectors, so it defaults to Extended. Only selectors
+        // explicitly registered in standardSelectors stay Standard.
         assertFalse(governor.extendedSelectors(governor.setStewardContract.selector));
+        assertFalse(governor.standardSelectors(governor.setStewardContract.selector));
 
         bytes memory data = abi.encodeWithSelector(governor.setStewardContract.selector, address(0x1234));
         uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(governor), data);
 
         (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
-        assertEq(uint256(pType), uint256(ProposalType.Standard));
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
     }
 
     function test_classify_addExtendedSelector() public {

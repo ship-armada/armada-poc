@@ -21,6 +21,7 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
+const FOURTEEN_DAYS = 14 * ONE_DAY;
 
 describe("Governance Adapter Registry", function () {
   // Contracts
@@ -50,37 +51,39 @@ describe("Governance Adapter Registry", function () {
     await mine(1);
   }
 
-  /// Create a Standard proposal, vote it through, queue, wait execution delay, then execute.
+  /// Create a proposal of the given type, vote it through, queue, wait execution delay, then execute.
   /// Returns the proposalId.
   async function proposeVoteQueueExecute(
     targets: string[],
     calldatas: string[],
     description: string,
+    proposalType: number = ProposalType.Standard,
   ): Promise<number> {
     const values = targets.map(() => 0n);
+    const isExtended = proposalType === ProposalType.Extended;
 
     await governor.connect(alice).propose(
-      ProposalType.Standard, targets, values, calldatas, description
+      proposalType, targets, values, calldatas, description
     );
     const proposalId = Number(await governor.proposalCount());
 
-    // Advance past voting delay (2 days)
+    // Advance past voting delay (2 days Standard, 2 days Extended)
     await time.increase(TWO_DAYS + 1);
 
-    // Vote FOR with alice and bob (40% combined, exceeds 20% quorum)
+    // Vote FOR with alice and bob (40% combined, exceeds 20%/30% quorum)
     await governor.connect(alice).castVote(proposalId, Vote.For);
     await governor.connect(bob).castVote(proposalId, Vote.For);
 
-    // Advance past voting period (7 days for Standard)
-    await time.increase(SEVEN_DAYS + 1);
+    // Advance past voting period (7 days Standard, 14 days Extended)
+    await time.increase((isExtended ? FOURTEEN_DAYS : SEVEN_DAYS) + 1);
     expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
 
     // Queue
     await governor.queue(proposalId);
     expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 
-    // Advance past execution delay (2 days for Standard)
-    await time.increase(TWO_DAYS + 1);
+    // Advance past execution delay (2 days Standard, 7 days Extended)
+    await time.increase((isExtended ? SEVEN_DAYS : TWO_DAYS) + 1);
 
     // Execute
     await governor.execute(proposalId);
@@ -136,7 +139,7 @@ describe("Governance Adapter Registry", function () {
     );
 
     // 8. Configure ARM token
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
     await armToken.initWhitelist([
       deployer.address,
       await treasury.getAddress(),
@@ -160,11 +163,13 @@ describe("Governance Adapter Registry", function () {
   // ======== Authorize via Governance ========
 
   describe("Authorize Adapter", function () {
-    it("should authorize adapter via governance proposal", async function () {
+    it("should authorize adapter via Extended governance proposal", async function () {
+      // WHY: Adapter lifecycle selectors are Extended-classified — authorizing an adapter
+      // affects the entire shielded yield integration surface and requires higher quorum.
       const registryAddr = await registry.getAddress();
       const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
 
-      await proposeVoteQueueExecute([registryAddr], [calldata], "Authorize adapter");
+      await proposeVoteQueueExecute([registryAddr], [calldata], "Authorize adapter", ProposalType.Extended);
 
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(true);
       expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(false);
@@ -179,12 +184,12 @@ describe("Governance Adapter Registry", function () {
 
       // First: authorize
       const authCalldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter");
+      await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter", ProposalType.Extended);
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(true);
 
       // Then: deauthorize
       const deauthCalldata = registry.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter");
+      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter", ProposalType.Extended);
 
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(false);
       expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(true);
@@ -199,15 +204,15 @@ describe("Governance Adapter Registry", function () {
 
       // Authorize
       const authCalldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter");
+      await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter", ProposalType.Extended);
 
       // Deauthorize (withdraw-only)
       const deauthCalldata = registry.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter");
+      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter", ProposalType.Extended);
 
       // Full deauthorize
       const fullDeauthCalldata = registry.interface.encodeFunctionData("fullDeauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [fullDeauthCalldata], "Fully remove adapter");
+      await proposeVoteQueueExecute([registryAddr], [fullDeauthCalldata], "Fully remove adapter", ProposalType.Extended);
 
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(false);
       expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(false);

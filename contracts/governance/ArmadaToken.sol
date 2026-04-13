@@ -50,7 +50,7 @@ contract ArmadaToken is ERC20Votes {
     event WhitelistInitialized(address[] accounts);
     event TransferableSet(bool transferable);
     event WindDownContractSet(address indexed windDownContract);
-    event NoDelegationSet(address indexed account);
+    event NoDelegationInitialized(address[] accounts);
     event AuthorizedDelegatorsInitialized(address[] delegators);
 
     // ============ Constructor ============
@@ -93,14 +93,17 @@ contract ArmadaToken is ERC20Votes {
         emit WindDownContractSet(_windDownContract);
     }
 
-    /// @notice Set the address blocked from delegation (treasury). Callable once by deployer.
-    function setNoDelegation(address account) external {
+    /// @notice Set addresses blocked from delegation (e.g. treasury). Callable once by deployer.
+    ///         Follows the same one-time array pattern as initWhitelist and initAuthorizedDelegators.
+    function initNoDelegation(address[] calldata accounts) external {
         require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
         require(!noDelegationSet, "ArmadaToken: noDelegation already set");
-        require(account != address(0), "ArmadaToken: zero address");
         noDelegationSet = true;
-        noDelegation[account] = true;
-        emit NoDelegationSet(account);
+        for (uint256 i = 0; i < accounts.length; i++) {
+            require(accounts[i] != address(0), "ArmadaToken: zero address");
+            noDelegation[accounts[i]] = true;
+        }
+        emit NoDelegationInitialized(accounts);
     }
 
     /// @notice Set contracts authorized to call delegateOnBehalf. Callable once by deployer.

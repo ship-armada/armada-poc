@@ -43,7 +43,9 @@ contract ArmadaTokenDelegateOnBehalfTest is Test {
         armToken.initWhitelist(whitelist);
 
         // Set treasury as noDelegation
-        armToken.setNoDelegation(treasuryAddr);
+        address[] memory noDelegationAddrs = new address[](1);
+        noDelegationAddrs[0] = treasuryAddr;
+        armToken.initNoDelegation(noDelegationAddrs);
 
         // Distribute tokens
         armToken.transfer(alice, 2_000_000 * 1e18);

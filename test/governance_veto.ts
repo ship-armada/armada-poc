@@ -66,7 +66,10 @@ describe("Governance Veto", function () {
     await ethers.provider.send("hardhat_stopImpersonatingAccount", [timelockAddr]);
   }
 
-  // Helper: create a Standard proposal, vote it through, and queue it
+  // Helper: create a proposal, vote it through, and queue it.
+  // Default calldata uses proposalCount() which is not in standardSelectors
+  // or extendedSelectors, so fail-closed classification auto-upgrades to Extended.
+  // All timing uses Extended constants (14d voting, 7d execution delay).
   async function createAndQueueProposal(
     proposer: SignerWithAddress,
     targets?: string[],
@@ -80,19 +83,19 @@ describe("Governance Veto", function () {
     const _description = description ?? "Test proposal";
 
     await governor.connect(proposer).propose(
-      ProposalType.Standard, _targets, _values, _calldatas, _description
+      ProposalType.Extended, _targets, _values, _calldatas, _description
     );
     const proposalId = Number(await governor.proposalCount());
 
     // Advance past voting delay (2 days)
     await time.increase(TWO_DAYS + 1);
 
-    // Vote FOR with alice and bob (35% combined, exceeds 20% quorum)
+    // Vote FOR with alice and bob (35% combined, exceeds 30% Extended quorum)
     await governor.connect(alice).castVote(proposalId, Vote.For);
     await governor.connect(bob).castVote(proposalId, Vote.For);
 
-    // Advance past voting period (7 days for Standard)
-    await time.increase(STANDARD_VOTING_PERIOD + 1);
+    // Advance past voting period (14 days for Extended)
+    await time.increase(FOURTEEN_DAYS + 1);
 
     // Queue
     await governor.queue(proposalId);
@@ -157,7 +160,7 @@ describe("Governance Veto", function () {
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // 8. Configure ARM token
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
     await armToken.initWhitelist([
       deployer.address,
       await treasury.getAddress(),

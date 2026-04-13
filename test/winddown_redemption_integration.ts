@@ -185,7 +185,7 @@ describe("Wind-Down & Redemption Integration", function () {
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // --- Configure ARM token and distribute ---
-    await armToken.setNoDelegation(await treasuryContract.getAddress());
+    await armToken.initNoDelegation([await treasuryContract.getAddress()]);
     await armToken.initWhitelist([
       deployer.address,
       await treasuryContract.getAddress(),

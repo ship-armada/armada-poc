@@ -97,7 +97,9 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
     // ======== Helpers ========
 
-    /// @dev Create a standard proposal and advance it to Queued state
+    /// @dev Create a proposal and advance it to Queued state.
+    ///      Uses proposalCount() as dummy calldata — an unrecognized selector that
+    ///      fail-closed classification auto-promotes to Extended (2d delay, 14d vote, 7d exec, 30% quorum).
     function _createAndQueueProposal(address proposer) internal returns (uint256) {
         address[] memory targets = new address[](1);
         targets[0] = address(governor);
@@ -106,19 +108,19 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         calldatas[0] = abi.encodeWithSignature("proposalCount()");
 
         vm.prank(proposer);
-        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "test proposal");
+        uint256 proposalId = governor.propose(ProposalType.Extended, targets, values, calldatas, "test proposal");
 
         // Advance past voting delay (2 days)
         vm.warp(block.timestamp + TWO_DAYS + 1);
 
-        // Vote FOR with alice and bob (35% of supply, exceeds 20% quorum)
+        // Vote FOR with alice and bob (35% of supply, exceeds 30% Extended quorum)
         vm.prank(alice);
         governor.castVote(proposalId, 1); // FOR
         vm.prank(bob);
         governor.castVote(proposalId, 1); // FOR
 
-        // Advance past voting period (7 days for Standard)
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        // Advance past voting period (14 days for Extended)
+        vm.warp(block.timestamp + FOURTEEN_DAYS + 1);
 
         // Queue
         governor.queue(proposalId);
@@ -127,7 +129,9 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         return proposalId;
     }
 
-    /// @dev Create a standard proposal with specific calldata and advance to Queued state
+    /// @dev Create a proposal with specific calldata and advance to Queued state.
+    ///      Unrecognized selectors are auto-promoted to Extended by fail-closed classification,
+    ///      so this uses Extended timing (14d voting period, 30% quorum).
     function _createAndQueueProposalWithCalldata(
         address proposer,
         address target,
@@ -141,7 +145,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         calldatas[0] = data;
 
         vm.prank(proposer);
-        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, desc);
+        uint256 proposalId = governor.propose(ProposalType.Extended, targets, values, calldatas, desc);
 
         vm.warp(block.timestamp + TWO_DAYS + 1);
 
@@ -150,7 +154,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(proposalId, 1);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + FOURTEEN_DAYS + 1);
 
         governor.queue(proposalId);
         return proposalId;
@@ -284,7 +288,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         calldatas[0] = abi.encodeWithSignature("proposalCount()");
 
         vm.prank(alice);
-        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "test");
+        uint256 proposalId = governor.propose(ProposalType.Extended, targets, values, calldatas, "test");
 
         // Still Pending
         vm.prank(sc);
@@ -702,7 +706,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
     ///      guard, voters waste gas on proposals that can never pass. This also
     ///      prevents misleading vote tallies on canceled proposals.
     function test_castVote_revertsOnCanceledProposal() public {
-        // 1. Create a standard proposal
+        // 1. Create a proposal (proposalCount() is unrecognized → auto-promoted to Extended)
         address[] memory targets = new address[](1);
         targets[0] = address(governor);
         uint256[] memory values = new uint256[](1);
@@ -710,7 +714,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         calldatas[0] = abi.encodeWithSignature("proposalCount()");
 
         vm.prank(alice);
-        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "cancel-vote test");
+        uint256 proposalId = governor.propose(ProposalType.Extended, targets, values, calldatas, "cancel-vote test");
 
         // 2. Proposer cancels during Pending state
         vm.prank(alice);
@@ -729,7 +733,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
     /// @dev WHY: Regression check — castVote() must still work on non-canceled
     ///      proposals after adding the canceled guard.
     function test_castVote_succeedsOnNonCanceledProposal() public {
-        // 1. Create a standard proposal
+        // 1. Create a proposal (proposalCount() is unrecognized → auto-promoted to Extended)
         address[] memory targets = new address[](1);
         targets[0] = address(governor);
         uint256[] memory values = new uint256[](1);
@@ -737,7 +741,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         calldatas[0] = abi.encodeWithSignature("proposalCount()");
 
         vm.prank(alice);
-        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "no-cancel test");
+        uint256 proposalId = governor.propose(ProposalType.Extended, targets, values, calldatas, "no-cancel test");
 
         // 2. Advance past voting delay
         vm.warp(block.timestamp + TWO_DAYS + 1);

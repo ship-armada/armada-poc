@@ -157,7 +157,7 @@ describe("Governance Parameter Updates", function () {
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // Configure token: mark treasury as no-delegation, whitelist all participants
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
     await armToken.initWhitelist([deployer.address, await treasury.getAddress(), alice.address, bob.address]);
 
     // Distribute ARM tokens

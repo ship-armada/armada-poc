@@ -154,7 +154,7 @@ describe("Governance Integration", function () {
       alice.address,
       bob.address,
     ]);
-    await armToken.setNoDelegation(await treasury.getAddress());
+    await armToken.initNoDelegation([await treasury.getAddress()]);
 
     // 7. Configure timelock roles
     const PROPOSER_ROLE = await timelockController.PROPOSER_ROLE();
@@ -258,6 +258,7 @@ describe("Governance Integration", function () {
       const [, , , , , windDown] = await ethers.getSigners();
       await armToken.setWindDownContract(windDown.address);
 
+      // setTransferable is Standard-classified (one-way irreversible action, higher bar doesn't add protection)
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],

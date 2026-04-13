@@ -41,7 +41,7 @@ describe("ArmadaToken — ERC20Votes", function () {
     await armToken.waitForDeployment();
 
     // Configure: set treasury as noDelegation, set wind-down contract
-    await armToken.setNoDelegation(treasuryWallet.address);
+    await armToken.initNoDelegation([treasuryWallet.address]);
     await armToken.setWindDownContract(windDownContract.address);
 
     // Whitelist deployer and treasury so we can distribute tokens
@@ -323,21 +323,23 @@ describe("ArmadaToken — ERC20Votes", function () {
       ).to.not.be.reverted;
     });
 
-    it("should allow setNoDelegation only once (deployer-only)", async function () {
+    it("should allow initNoDelegation only once (deployer-only)", async function () {
+      // WHY: One-shot setter must reject repeat calls to prevent re-initialization.
       // Already called in beforeEach
       await expect(
-        armToken.setNoDelegation(alice.address)
+        armToken.initNoDelegation([alice.address])
       ).to.be.revertedWith("ArmadaToken: noDelegation already set");
     });
 
-    it("should reject setNoDelegation from non-deployer", async function () {
-      // Deploy a fresh token to test deployer check
+    it("should reject initNoDelegation from non-deployer", async function () {
+      // WHY: Only the deployer can set the delegation blacklist — no other address should
+      // be able to call this, even before initialization.
       const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
       const freshToken = await ArmadaToken.deploy(deployer.address, await timelockController.getAddress());
       await freshToken.waitForDeployment();
 
       await expect(
-        freshToken.connect(alice).setNoDelegation(treasuryWallet.address)
+        freshToken.connect(alice).initNoDelegation([treasuryWallet.address])
       ).to.be.revertedWith("ArmadaToken: not deployer");
     });
 

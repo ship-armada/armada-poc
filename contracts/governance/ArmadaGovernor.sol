@@ -343,6 +343,16 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Wind-down parameter adjustments (on ArmadaWindDown) — high-impact, can extend protocol lifetime
         extendedSelectors[bytes4(keccak256("setRevenueThreshold(uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setWindDownDeadline(uint256)"))] = true;
+        // Wrapper/forwarder deny-list — force Extended for generic relay patterns that could
+        // wrap an Extended action inside a Standard-looking call. Defense-in-depth alongside
+        // the fail-closed default.
+        extendedSelectors[bytes4(keccak256("callContract(address,bytes,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("functionCall(address,bytes)"))] = true;
+        extendedSelectors[bytes4(keccak256("functionCallWithValue(address,bytes,uint256)"))] = true;
+        extendedSelectors[bytes4(keccak256("functionDelegateCall(address,bytes)"))] = true;
+        extendedSelectors[bytes4(keccak256("multicall(bytes[])"))] = true;
+        extendedSelectors[bytes4(keccak256("execute(bytes)"))] = true;
+        extendedSelectors[bytes4(keccak256("execute(address,bytes)"))] = true;
 
         // Fail-closed default: selectors explicitly permitted at Standard classification.
         // Any selector NOT in extendedSelectors AND NOT in standardSelectors defaults to Extended.

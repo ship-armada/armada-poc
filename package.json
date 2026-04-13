@@ -9,7 +9,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "chains": "./scripts/setup_chains.sh",
-    "setup": "npm run compile && npm run deploy:cctp && npm run deploy:aave && npm run deploy:governance && npm run deploy:privacy-pool && npm run deploy:yield && npm run link && npm run deploy:fee-module && npm run deploy:faucets && npm run deploy:crowdfund",
+    "setup": "npm run compile && npm run deploy:cctp && npm run deploy:aave && npm run deploy:governance && npm run deploy:privacy-pool && npm run deploy:yield && npm run link && npm run deploy:fee-module && npm run deploy:faucets && npm run deploy:crowdfund && npm run verify",
     "deploy:cctp:hub": "hardhat run scripts/deploy_cctp_v3.ts --network hub",
     "deploy:cctp:client": "hardhat run scripts/deploy_cctp_v3.ts --network client",
     "deploy:cctp:clientB": "hardhat run scripts/deploy_cctp_v3.ts --network clientB",
@@ -77,7 +77,10 @@
     "verify:snark": "hardhat run scripts/verify_snark_mode.ts --network hub",
     "verify:snark:sepolia": "hardhat run scripts/verify_snark_mode.ts --network sepoliaHub",
     "prepare": "git config core.hooksPath .githooks",
-    "check:anvil-addresses": "./scripts/check-anvil-addresses.sh"
+    "check:anvil-addresses": "./scripts/check-anvil-addresses.sh",
+    "slither": "slither . --config-file slither.config.json",
+    "verify": "hardhat run scripts/verify_deployment.ts --network hub",
+    "verify:sepolia": "hardhat run scripts/verify_deployment.ts --network sepoliaHub"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

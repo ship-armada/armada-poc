@@ -94,12 +94,12 @@ After finalization with 100+ participants across all hops:
 ### 2d. Access Control & State Machine
 
 **Phase transition violations (crowdfund):**
-- `commit()` during Invitation phase (before commitment window)
-- `invite()` during Commitment phase
-- `finalize()` before commitment ends
-- `addSeeds()` after Setup phase
+- `commit()` outside active window (before windowStart or after windowEnd)
+- `invite()` outside active window
+- `finalize()` before windowEnd
+- `addSeeds()` after week-1 window closes
 - `claim()` when phase is Canceled (should use `refund()`)
-- Non-admin calls `finalize()`, `addSeeds()`, `startInvitations()`, `withdrawProceeds()`
+- Non-admin calls `finalize()`, `addSeeds()`, `withdrawProceeds()`
 
 **Governor state machine:**
 - `queue()` a Defeated proposal — should revert

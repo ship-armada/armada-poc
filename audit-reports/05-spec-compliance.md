@@ -858,7 +858,12 @@ if (block.timestamp > commitmentEnd + FINALIZATION_DEADLINE && phase != Phase.Fi
 
 ---
 
-### FINDING-16: MEDIUM -- `Phase.Commitment` Dead State in Crowdfund
+### ~~FINDING-16: MEDIUM -- `Phase.Commitment` Dead State in Crowdfund~~ [RESOLVED]
+
+**Resolution**: Phase model simplified to `{Active, Finalized, Canceled}`. The dead `Setup`, `Invitation`, and `Commitment` enum values were removed. Invites and commits happen concurrently during the Active phase. `finalize()` now checks `phase == Phase.Active`.
+
+<details>
+<summary>Original finding (archived)</summary>
 
 **Spec claim** (DOC-7 Section 5):
 > "Phase.Commitment (value 2) exists in the enum but no code ever sets phase = Phase.Commitment"
@@ -884,11 +889,8 @@ require(
 
 The `Phase.Commitment` variant in the finalize check is dead code since no path ever sets `phase = Phase.Commitment`.
 
-**Evidence links**:
-- Code: `/Volumes/T7/railgun/poc/contracts/crowdfund/IArmadaCrowdfund.sol` L10
-- Code: `/Volumes/T7/railgun/poc/contracts/crowdfund/ArmadaCrowdfund.sol` L225-227
-
 **Severity justification**: MEDIUM. The state machine is incomplete. The `commit()` function at L187 does not transition phase from Invitation to Commitment. If the spec intended a distinct Commitment phase, it is unimplemented. If it was not intended, the enum value should be removed.
+</details>
 
 ---
 
@@ -1083,7 +1085,7 @@ This means user A pays LESS yield fee than they should (fee based on 1.05 cost b
 | ID | Spec Flow | Code Flow | Divergence |
 |----|-----------|-----------|------------|
 | FM-1 | Cross-chain shield with relayer fee: user sends amount, relayer gets fee from commitment | No relayer fee field; CCTP maxFee is protocol-level only | Relayer fee architecture missing (FINDING-02) |
-| FM-2 | Crowdfund: Setup -> Invitation -> Commitment -> Finalized | Setup -> Invitation -> Finalized (Commitment phase never entered) | Dead state (FINDING-16) |
+| ~~FM-2~~ | ~~Crowdfund: Setup -> Invitation -> Commitment -> Finalized~~ | ~~Setup -> Invitation -> Finalized (Commitment phase never entered)~~ | ~~Dead state (FINDING-16)~~ [RESOLVED — Phase model simplified to Active → Finalized/Canceled] |
 
 ---
 
@@ -1140,7 +1142,7 @@ This means user A pays LESS yield fee than they should (fee based on 1.05 cost b
 8. **FINDING-11**: Document the cost basis limitation of the adapter pattern.
 9. **FINDING-14**: Snapshot treasury balance at proposal creation for quorum calculation.
 10. **FINDING-15**: Add finalization deadline to crowdfund.
-11. **FINDING-16**: Either implement the Commitment phase transition or remove it from the enum.
+11. ~~**FINDING-16**: Either implement the Commitment phase transition or remove it from the enum.~~ [RESOLVED — dead phases removed]
 
 ### Low Priority
 
@@ -1157,7 +1159,7 @@ This means user A pays LESS yield fee than they should (fee based on 1.05 cost b
 2. **Relayer fee architecture**: Mark DOC-1 Section "Cross-Chain Shields (Option A)" and DOC-2 Phase 4 as NOT YET IMPLEMENTED.
 3. **Quorum counting**: Add explicit rule: "Quorum = forVotes + abstainVotes >= threshold. Against votes do not count."
 4. **Proposal threshold**: Clarify whether "eligible supply" means total supply or circulating supply.
-5. **Phase.Commitment**: Document that the Commitment phase is implicit (time-based, not state-transition based).
+5. ~~**Phase.Commitment**: Document that the Commitment phase is implicit (time-based, not state-transition based).~~ [RESOLVED — dead phases removed from enum]
 6. **Unshield fee**: Document that unshield fee is intentionally set to 0 in the POC deployment.
 7. **Adapter cost basis**: Add a known-limitation section explaining that per-user cost basis tracking is approximated when using the adapter pattern.
 

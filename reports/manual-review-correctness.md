@@ -12,7 +12,7 @@
 | Overflow | ✅ | Solidity 0.8+ built-in checks. Bounds in `_computeAllocation` (committed, reserve, demand) prevent overflow; Halmos proven for alloc+refund=committed. |
 | Division-by-zero | ✅ | `finalDemands[hop]` set from `hopStats[h].totalCommitted`; over-subscribed case has `demand > 0`. Under-subscribed uses `ARM_PRICE` (constant 1e6). |
 | Rounding | ✅ | Pro-rata: `(committed * reserve) / demand` — rounds down; refund = committed - allocUsdc. Formally proven. Hop-level `totalAllocArm` uses same formula. |
-| State machine | ✅ | Phase: Setup → Invitation → Commitment → Finalized/Canceled. `inPhase` modifier enforces. `finalize()` sets phase once. |
+| State machine | ✅ | Phase: Active → Finalized/Canceled. Direct `require(phase == Phase.Active)` guards enforce. `finalize()` sets phase once. |
 
 **Known:** `finalize()` O(n) over `participantList` — not used; allocations computed lazily in `claim()`. Documented in TESTING_NEXT_STEPS.
 

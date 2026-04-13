@@ -246,11 +246,9 @@ async function queryCrowdfund(env: DeployEnv): Promise<ContractQueryResult> {
 
   const cf = deployments.hub.crowdfund.contracts;
 
-  // Phase enum: 0 = Setup, 1 = Invitation, 2 = Commitment, 3 = Finalized, 4 = Canceled
+  // Phase enum: 0 = Active, 1 = Finalized, 2 = Canceled
   const CROWDFUND_PHASES = [
-    "Setup",
-    "Invitation",
-    "Commitment",
+    "Active",
     "Finalized",
     "Canceled",
   ];

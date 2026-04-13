@@ -161,7 +161,7 @@ export function InviteTab(props: InviteTabProps) {
   if (phase !== 0 || !windowOpen) {
     return (
       <div className="p-4 text-center text-muted-foreground">
-        Invites can only be sent during the active commitment window.
+        Invites can only be sent during the active sale window.
       </div>
     )
   }

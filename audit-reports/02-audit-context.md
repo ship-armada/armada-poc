@@ -216,9 +216,11 @@ Removing a steward doesn't cancel their pending actions. A newly elected steward
 
 Owner set once during `initialize()`, cannot be changed. Key loss = permanent lockout.
 
-### LOW: `Phase.Commitment` Dead State in Crowdfund
+### ~~LOW: `Phase.Commitment` Dead State in Crowdfund~~ [RESOLVED]
 
-The `Phase` enum includes `Commitment` (value 2) but no code ever sets `phase = Phase.Commitment`. The finalize check includes it in an OR condition, but the branch is unreachable.
+~~The `Phase` enum includes `Commitment` (value 2) but no code ever sets `phase = Phase.Commitment`.~~
+
+**Resolution**: Phase model simplified to `{Active, Finalized, Canceled}`. The dead `Setup`, `Invitation`, and `Commitment` enum values were removed. Invites and commits happen concurrently during the Active phase.
 
 ### LOW: `withdrawProceeds()` Lacks Reentrancy Guard
 

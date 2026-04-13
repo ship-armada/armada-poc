@@ -168,7 +168,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     // ============ Seed Management ============
 
-    /// @notice Add seed addresses (hop 0). Allowed before invite period ends (requires ARM loaded).
+    /// @notice Add seed addresses (hop 0). Allowed during week 1 only (requires ARM loaded).
     function addSeeds(address[] calldata seeds) external onlyLaunchTeam {
         _requireArmLoadedAndPreInviteEnd();
         for (uint256 i = 0; i < seeds.length; i++) {
@@ -176,7 +176,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         }
     }
 
-    /// @notice Add a single seed address (hop 0). Allowed before invite period ends (requires ARM loaded).
+    /// @notice Add a single seed address (hop 0). Allowed during week 1 only (requires ARM loaded).
     function addSeed(address seed) external onlyLaunchTeam {
         _requireArmLoadedAndPreInviteEnd();
         _addSeed(seed);
@@ -214,7 +214,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         emit ArmLoaded();
     }
 
-    // ============ Invitation Phase ============
+    // ============ Invitations ============
 
     /// @notice Invite an address to participate at (inviterHop + 1).
     ///         Re-inviting an already-whitelisted (invitee, hop) node increments its
@@ -274,7 +274,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         emit LaunchTeamInvited(invitee, inviteeHop);
     }
 
-    // ============ Commitment Phase ============
+    // ============ Commitments ============
 
     /// @notice Commit USDC to the crowdfund at a specific hop level
     /// @param hop Which of the caller's (address, hop) nodes to commit to

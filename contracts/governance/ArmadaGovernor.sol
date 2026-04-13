@@ -364,6 +364,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         standardSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Steward removal — defensive/emergency action, lower bar per spec
         standardSelectors[bytes4(keccak256("removeSteward()"))] = true;
+        // Permissionless crowdfund sweep — anyone can call directly, governance path is optional
+        standardSelectors[bytes4(keccak256("withdrawUnallocatedArm()"))] = true;
     }
 
     // ============ Quorum Exclusion ============

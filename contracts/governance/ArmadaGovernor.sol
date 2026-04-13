@@ -70,6 +70,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_WindDownContractAlreadySet();
     error Gov_WindDownContractNotSet();
     error Gov_SCEjected();
+    error Gov_SignalingMustBeEmpty();
+    error Gov_SignalingNoExecution();
     error Gov_TreasuryAlreadyExcluded();
 
     // ============ Types ============
@@ -298,6 +300,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 2000
         });
 
+        // Signaling: non-executable text-only proposals. Standard timing, no execution phase.
+        // Immutable — cannot be changed via setProposalTypeParams().
+        proposalTypeParams[ProposalType.Signaling] = ProposalParams({
+            votingDelay: 2 days,
+            votingPeriod: 7 days,
+            executionDelay: 0,
+            quorumBps: 2000
+        });
+
         // Hardcoded extended selectors per governance spec §Scope table.
         // These cannot be misconfigured at deployment. Governance can expand or
         // shrink this set at any time via addExtendedSelector/removeExtendedSelector.
@@ -441,7 +452,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         ProposalParams calldata params
     ) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
-        if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward) revert Gov_ImmutableProposalType();
+        if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward || proposalType == ProposalType.Signaling) revert Gov_ImmutableProposalType();
         if (params.votingDelay < MIN_VOTING_DELAY || params.votingDelay > MAX_VOTING_DELAY) revert Gov_VotingDelayOutOfBounds();
         if (params.votingPeriod < MIN_VOTING_PERIOD || params.votingPeriod > MAX_VOTING_PERIOD) revert Gov_VotingPeriodOutOfBounds();
         if (params.executionDelay < MIN_EXECUTION_DELAY || params.executionDelay > MAX_EXECUTION_DELAY) revert Gov_ExecutionDelayOutOfBounds();
@@ -714,16 +725,26 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         string memory description
     ) external returns (uint256) {
         if (windDownActive) revert Gov_GovernanceEnded();
-        if (targets.length == 0) revert Gov_EmptyProposal();
-        if (targets.length != values.length || targets.length != calldatas.length) revert Gov_LengthMismatch();
         if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward) revert Gov_AutoCreatedOnly();
         _checkQuietPeriod();
         _checkProposalThreshold(msg.sender);
 
+        // Signaling proposals are text-only: no targets, values, or calldatas allowed.
+        // Executable proposals must have at least one target with matching arrays.
+        if (proposalType == ProposalType.Signaling) {
+            if (targets.length != 0) revert Gov_SignalingMustBeEmpty();
+        } else {
+            if (targets.length == 0) revert Gov_EmptyProposal();
+            if (targets.length != values.length || targets.length != calldatas.length) revert Gov_LengthMismatch();
+        }
+
         // Mechanical classification: if any calldata triggers extended, override to Extended.
         // Proposers can opt into Extended voluntarily, but cannot downgrade to Standard
         // when calldata contains extended-classified function calls.
-        ProposalType effectiveType = _classifyProposal(proposalType, targets, calldatas);
+        // Signaling proposals skip classification (no calldata to classify).
+        ProposalType effectiveType = proposalType == ProposalType.Signaling
+            ? ProposalType.Signaling
+            : _classifyProposal(proposalType, targets, calldatas);
 
         uint256 proposalId = ++proposalCount;
         _initProposal(proposalId, effectiveType, description);
@@ -829,6 +850,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         Proposal storage p = _proposals[proposalId];
         if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+        if (p.proposalType == ProposalType.Signaling) revert Gov_SignalingNoExecution();
 
         // Steward proposals must not be queueable after steward removal or term expiry.
         // Creation-time checks in proposeStewardSpend() verify steward status at proposal
@@ -863,6 +885,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         Proposal storage p = _proposals[proposalId];
         if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+        if (p.proposalType == ProposalType.Signaling) revert Gov_SignalingNoExecution();
 
         // Mirror the queue()-time steward check: a steward removed or expired during the
         // execution delay must not have their proposal execute. Without this, the SC veto
@@ -929,6 +952,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 return ProposalState.Defeated;
             }
         }
+
+        // Signaling proposals are terminal at outcome — no queue/execute phase.
+        // Succeeded is permanent (no grace period expiry).
+        if (p.proposalType == ProposalType.Signaling) return ProposalState.Succeeded;
 
         if (p.queued) return ProposalState.Queued;
 

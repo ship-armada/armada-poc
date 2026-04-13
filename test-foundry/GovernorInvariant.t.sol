@@ -184,6 +184,39 @@ contract GovernorHandler is Test {
         }
     }
 
+    /// @dev Create a signaling (non-executable) proposal.
+    /// Signaling proposals have empty targets/values/calldatas and use Signaling type.
+    function createSignalingProposal(uint256 actorIdx) external {
+        actorIdx = bound(actorIdx, 0, actors.length - 1);
+        address actor = actors[actorIdx];
+
+        if (block.number < 2) {
+            vm.roll(2);
+        }
+
+        address[] memory targets = new address[](0);
+        uint256[] memory values = new uint256[](0);
+        bytes[] memory calldatas = new bytes[](0);
+
+        vm.prank(actor);
+        try governor.propose(
+            ProposalType.Signaling,
+            targets,
+            values,
+            calldatas,
+            "Signaling proposal"
+        ) returns (uint256 proposalId) {
+            ghost_proposalCount = proposalId;
+            ghost_highestState[proposalId] = 0; // Pending
+            ghost_quorumAtCreation[proposalId] = governor.quorum(proposalId);
+        } catch {}
+
+        // Update all proposal states
+        for (uint256 i = 1; i <= ghost_proposalCount; i++) {
+            _checkAndUpdateState(i);
+        }
+    }
+
     /// @dev Cast or change a vote on a proposal.
     /// Voters can switch between FOR, AGAINST, and ABSTAIN. Only records a new VoteRecord
     /// for first-time voters; re-votes update the existing record.
@@ -333,7 +366,7 @@ contract GovernorInvariantTest is Test, GovernorDeployHelper {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = GovernorHandler.delegateVotes.selector;
         selectors[1] = GovernorHandler.transferTokens.selector;
         selectors[2] = GovernorHandler.createProposal.selector;
@@ -341,6 +374,7 @@ contract GovernorInvariantTest is Test, GovernorDeployHelper {
         selectors[4] = GovernorHandler.advanceTime.selector;
         selectors[5] = GovernorHandler.queueProposal.selector;
         selectors[6] = GovernorHandler.transferToTreasury.selector;
+        selectors[7] = GovernorHandler.createSignalingProposal.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 

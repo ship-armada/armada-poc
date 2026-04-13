@@ -12,7 +12,8 @@ enum ProposalType {
     Standard,          // 0 — 7d voting, 48h execution, 20% quorum
     Extended,          // 1 — 14d voting, 7d execution, 30% quorum
     VetoRatification,  // 2 — 7d voting, no delay, 20% quorum (auto-created only)
-    Steward            // 3 — 7d voting, 2d execution, 20% quorum (pass-by-default, auto-created only)
+    Steward,           // 3 — 7d voting, 2d execution, 20% quorum (pass-by-default, auto-created only)
+    Signaling          // 4 — 7d voting, no execution, 20% quorum (text-only, non-executable)
 }
 
 enum ProposalState {

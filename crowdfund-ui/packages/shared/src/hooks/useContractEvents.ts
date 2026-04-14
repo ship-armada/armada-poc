@@ -107,7 +107,7 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
 
         if (cached.events.length > 0) {
           setEvents(cached.events)
-          lastBlockRef.current = cached.lastBlock
+          lastBlockRef.current = Math.max(cached.lastBlock, startBlock)
           setLastBlock(cached.lastBlock)
         }
 

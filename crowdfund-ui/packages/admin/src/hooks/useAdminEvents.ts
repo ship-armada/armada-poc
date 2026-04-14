@@ -18,18 +18,19 @@ export interface UseAdminEventsResult {
 export function useAdminEvents(
   provider: JsonRpcProvider | null,
   contractAddress: string | null,
+  startBlock: number = 0,
 ): UseAdminEventsResult {
   const [events, setEvents] = useState<CrowdfundEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const lastBlockRef = useRef<number>(0)
+  const lastBlockRef = useRef<number>(startBlock)
 
   const refresh = useCallback(async () => {
     if (!provider || !contractAddress) return
 
     try {
       const currentBlock = await provider.getBlockNumber()
-      const fromBlock = lastBlockRef.current > 0 ? lastBlockRef.current + 1 : 0
+      const fromBlock = lastBlockRef.current > 0 ? lastBlockRef.current + 1 : startBlock
 
       if (fromBlock > currentBlock) return
 
@@ -57,7 +58,7 @@ export function useAdminEvents(
   useEffect(() => {
     if (!provider || !contractAddress) return
 
-    lastBlockRef.current = 0
+    lastBlockRef.current = startBlock
     setEvents([])
     refresh()
     const id = setInterval(refresh, 10_000)

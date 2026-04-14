@@ -47,6 +47,7 @@ export function App() {
     provider,
     contractAddress,
     pollIntervalMs: pollInterval,
+    startBlock: deployment?.deployBlock,
   })
 
   const { graph, summaries, nodes } = useGraphState()

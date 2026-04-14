@@ -115,6 +115,7 @@ export function App() {
     provider,
     contractAddress: crowdfundAddress,
     pollIntervalMs: pollInterval,
+    startBlock: deployment?.deployBlock,
   })
   const { graph, summaries, nodes } = useGraphState()
   const contractState = useContractState(provider, crowdfundAddress, pollInterval)

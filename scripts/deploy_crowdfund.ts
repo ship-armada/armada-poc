@@ -30,6 +30,7 @@ import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeploymen
 interface CrowdfundDeployment {
   chainId: number;
   deployer: string;
+  deployBlock: number;
   contracts: {
     armToken: string;
     usdc: string;
@@ -250,9 +251,11 @@ async function main() {
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
   // Save deployment
+  const currentBlock = await ethers.provider.getBlockNumber();
   const deployment: CrowdfundDeployment = {
     chainId,
     deployer: deployer.address,
+    deployBlock: currentBlock,
     contracts: {
       armToken: armTokenAddress,
       usdc: usdcAddress,

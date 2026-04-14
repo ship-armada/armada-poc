@@ -25,6 +25,8 @@ export interface UseContractEventsConfig {
   provider: JsonRpcProvider | null
   contractAddress: string | null
   pollIntervalMs: number
+  /** Block number to start fetching from (e.g. contract deploy block). Defaults to 0. */
+  startBlock?: number
 }
 
 export interface UseContractEventsResult {
@@ -39,12 +41,12 @@ export interface UseContractEventsResult {
  * Polls for new events on the configured interval.
  */
 export function useContractEvents(config: UseContractEventsConfig): UseContractEventsResult {
-  const { provider, contractAddress, pollIntervalMs } = config
+  const { provider, contractAddress, pollIntervalMs, startBlock = 0 } = config
   const [events, setEvents] = useAtom(crowdfundEventsAtom)
   const [, setLastBlock] = useAtom(lastFetchedBlockAtom)
   const [loading, setLoading] = useAtom(eventsLoadingAtom)
   const [error, setError] = useAtom(eventsErrorAtom)
-  const lastBlockRef = useRef(0)
+  const lastBlockRef = useRef(startBlock)
 
   useEffect(() => {
     if (!provider || !contractAddress) return

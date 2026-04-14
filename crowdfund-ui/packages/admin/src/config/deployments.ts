@@ -6,6 +6,7 @@ import { getDeploymentFileName } from './network'
 export interface CrowdfundDeployment {
   chainId: number
   deployer: string
+  deployBlock?: number
   contracts: {
     armToken: string
     usdc: string

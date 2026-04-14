@@ -48,7 +48,7 @@ export function App() {
   const wallet = useWallet()
   const { role, launchTeamAddress, treasuryAddress, loading: roleLoading } = useRole(provider, crowdfundAddress, wallet.address)
   const adminState = useAdminState(provider, crowdfundAddress, pollInterval)
-  const { events, loading: eventsLoading } = useAdminEvents(provider, crowdfundAddress)
+  const { events, loading: eventsLoading } = useAdminEvents(provider, crowdfundAddress, deployment?.deployBlock)
   const treasury = useTreasuryBalances(provider, crowdfundAddress, treasuryAddress, usdcAddress, armTokenAddress)
   const timeControls = useTimeControls(provider)
   const participants = useParticipants(events)

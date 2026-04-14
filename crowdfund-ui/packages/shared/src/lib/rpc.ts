@@ -56,8 +56,22 @@ export function createProvider(urls: string[]): JsonRpcProvider {
   return new FallbackJsonRpcProvider(urls)
 }
 
+/** Starting chunk size for eth_getLogs. Halved automatically on range errors. */
+const INITIAL_CHUNK_SIZE = 50_000
+
+function toRawLog(log: { blockNumber: number; transactionHash: string; index: number; topics: readonly string[]; data: string }): RawLog {
+  return {
+    blockNumber: log.blockNumber,
+    transactionHash: log.transactionHash,
+    logIndex: log.index,
+    topics: log.topics as string[],
+    data: log.data,
+  }
+}
+
 /**
  * Fetch raw logs from the provider for a given contract address and block range.
+ * Automatically chunks large ranges to stay within RPC provider limits.
  * Returns logs in the RawLog format expected by parseCrowdfundEvent.
  */
 export async function fetchLogs(
@@ -66,18 +80,47 @@ export async function fetchLogs(
   fromBlock: number,
   toBlock: number | 'latest',
 ): Promise<RawLog[]> {
-  const logs = await provider.getLogs({
-    address,
-    fromBlock,
-    toBlock,
-  })
-  return logs.map((log) => ({
-    blockNumber: log.blockNumber,
-    transactionHash: log.transactionHash,
-    logIndex: log.index,
-    topics: log.topics as string[],
-    data: log.data,
-  }))
+  const resolvedTo = toBlock === 'latest' ? await provider.getBlockNumber() : toBlock
+  if (fromBlock > resolvedTo) return []
+
+  // Small range — single request
+  const totalRange = resolvedTo - fromBlock
+  if (totalRange <= INITIAL_CHUNK_SIZE) {
+    try {
+      const logs = await provider.getLogs({ address, fromBlock, toBlock: resolvedTo })
+      return logs.map(toRawLog)
+    } catch (err: any) {
+      const msg = err?.message ?? ''
+      if (msg.includes('block range') || msg.includes('range') || err?.code === -32600) {
+        // Fall through to chunked fetching
+      } else {
+        throw err
+      }
+    }
+  }
+
+  // Chunked fetching for large ranges or after a range error
+  const allLogs: RawLog[] = []
+  let chunkSize = Math.min(INITIAL_CHUNK_SIZE, totalRange)
+  let cursor = fromBlock
+
+  while (cursor <= resolvedTo) {
+    const chunkEnd = Math.min(cursor + chunkSize - 1, resolvedTo)
+    try {
+      const logs = await provider.getLogs({ address, fromBlock: cursor, toBlock: chunkEnd })
+      for (const log of logs) allLogs.push(toRawLog(log))
+      cursor = chunkEnd + 1
+    } catch (err: any) {
+      const msg = err?.message ?? ''
+      if (chunkSize > 1 && (msg.includes('block range') || msg.includes('range') || err?.code === -32600)) {
+        chunkSize = Math.max(1, Math.floor(chunkSize / 2))
+        continue
+      }
+      throw err
+    }
+  }
+
+  return allLogs
 }
 
 /** Get the latest block timestamp in seconds */

@@ -33,8 +33,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     uint8 public constant NUM_HOPS = 3;
     uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
-    uint256 public constant WINDOW_DURATION = 1 days;
-    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 6 hours;
+    uint256 public constant WINDOW_DURATION = 2 hours;
+    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 1 hours;
     uint256 public constant CLAIM_DEADLINE_DURATION = 7 days;    // (mini-Sepolia)
     uint256 public constant MIN_COMMIT = 1 * 1e6;                // $1 USDC minimum per commit (mini-Sepolia)
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)

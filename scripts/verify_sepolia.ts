@@ -70,9 +70,6 @@ async function main() {
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
 
-  const revenueLock = await ethers.getContractAt("RevenueLock", c.revenueLock);
-  const totalAllocated = await revenueLock.totalAllocated();
-
   // RevenueLock beneficiaries — reconstruct from config
   const beneficiaryConfig = config.revenueLockBeneficiaries;
   const beneficiaryAddresses = beneficiaryConfig.map(b => b.address);

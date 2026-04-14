@@ -99,6 +99,15 @@ const config: HardhatUserConfig = {
     cache: "./cache",
     artifacts: "./artifacts",
   },
+  // Etherscan verification — only active when ETHERSCAN_API_KEY is set.
+  // Without it, `npx hardhat verify` will error with a clear message.
+  ...(process.env.ETHERSCAN_API_KEY && {
+    etherscan: {
+      apiKey: {
+        sepolia: process.env.ETHERSCAN_API_KEY,
+      },
+    },
+  }),
 };
 
 export default config;

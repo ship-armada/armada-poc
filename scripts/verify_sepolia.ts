@@ -82,7 +82,7 @@ async function main() {
       name: "TimelockController",
       address: c.timelockController,
       constructorArguments: [gov.config.timelockMinDelay, [], [], gov.deployer],
-      contract: "contracts/governance/TimelockController.sol:TimelockController",
+      contract: "@openzeppelin/contracts/governance/TimelockController.sol:TimelockController",
     },
     {
       name: "ArmadaToken",

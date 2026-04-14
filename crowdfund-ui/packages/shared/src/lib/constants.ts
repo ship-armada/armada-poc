@@ -1,21 +1,21 @@
 // ABOUTME: Crowdfund contract constants, hop configuration, and ABI fragments.
 // ABOUTME: Single source of truth for all magic numbers referenced across the UI apps.
 
-/** Sale size parameters (USDC, 6 decimals) */
+/** Sale size parameters (USDC, 6 decimals) — mini-Sepolia values */
 export const CROWDFUND_CONSTANTS = {
-  BASE_SALE: 1_200_000n * 10n ** 6n,
-  MAX_SALE: 1_800_000n * 10n ** 6n,
-  MIN_SALE: 1_000_000n * 10n ** 6n,
-  ELASTIC_TRIGGER: 1_500_000n * 10n ** 6n,
+  BASE_SALE: 100n * 10n ** 6n,
+  MAX_SALE: 150n * 10n ** 6n,
+  MIN_SALE: 80n * 10n ** 6n,
+  ELASTIC_TRIGGER: 120n * 10n ** 6n,
   ARM_PRICE: 1_000_000n, // 1 USDC per ARM (6-decimal USDC = 1e6)
-  MAX_SEEDS: 150,
-  LAUNCH_TEAM_HOP1_BUDGET: 60,
-  LAUNCH_TEAM_HOP2_BUDGET: 60,
-  MIN_COMMIT: 10n * 10n ** 6n,
-  WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days in seconds
-  LAUNCH_TEAM_INVITE_PERIOD: 7 * 24 * 60 * 60, // 7 days in seconds
-  CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years in seconds
-  GOVERNANCE_QUIET_PERIOD: 7 * 24 * 60 * 60, // 7 days in seconds (matches ArmadaGovernor.QUIET_PERIOD_DURATION)
+  MAX_SEEDS: 5,
+  LAUNCH_TEAM_HOP1_BUDGET: 5,
+  LAUNCH_TEAM_HOP2_BUDGET: 5,
+  MIN_COMMIT: 1n * 10n ** 6n,
+  WINDOW_DURATION: 1 * 24 * 60 * 60, // 1 day in seconds
+  LAUNCH_TEAM_INVITE_PERIOD: 6 * 60 * 60, // 6 hours in seconds
+  CLAIM_DEADLINE_DURATION: 7 * 24 * 60 * 60, // 7 days in seconds
+  GOVERNANCE_QUIET_PERIOD: 10 * 60, // 10 minutes in seconds (matches ArmadaGovernor.QUIET_PERIOD_DURATION)
   HOP2_FLOOR_BPS: 500, // 5%
 } as const
 
@@ -28,9 +28,9 @@ export interface HopConfig {
 }
 
 export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] = [
-  { ceilingBps: 7000, capUsdc: 15_000n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
-  { ceilingBps: 4500, capUsdc: 4_000n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
-  { ceilingBps: 0, capUsdc: 1_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
+  { ceilingBps: 7000, capUsdc: 50n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },  // mini-Sepolia
+  { ceilingBps: 4500, capUsdc: 20n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 }, // mini-Sepolia
+  { ceilingBps: 0, capUsdc: 10n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },    // mini-Sepolia
 ] as const
 
 /** ABI fragments for event parsing and contract reads */

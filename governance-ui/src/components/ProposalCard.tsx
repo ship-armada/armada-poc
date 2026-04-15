@@ -32,7 +32,7 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
 
   const p = proposal
   const totalVotes = p.forVotes + p.againstVotes + p.abstainVotes
-  const quorumVotes = p.forVotes + p.abstainVotes
+  const quorumVotes = totalVotes // all vote types count toward quorum
   const quorumPct = p.quorumRequired > 0n
     ? Number((quorumVotes * 10000n) / p.quorumRequired) / 100
     : 0

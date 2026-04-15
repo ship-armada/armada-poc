@@ -45,6 +45,7 @@ export function getDeploymentFileName(baseName: string): string {
 export interface GovernanceDeployment {
   chainId: number
   deployer: string
+  deployBlock?: number
   contracts: {
     armToken: string
     timelockController: string

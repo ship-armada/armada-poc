@@ -160,15 +160,24 @@ export function useGovernanceData(
       }
       const proposals = await Promise.all(proposalPromises)
 
-      // Fetch proposal descriptions from events
+      // Fetch proposal descriptions from ProposalCreated events.
+      // Uses chunked queries to stay within free-tier RPC block range limits.
       try {
-        const events = await governor.queryFilter(
-          governor.filters.ProposalCreated(),
-          0,
-          'latest',
-        )
+        const startBlock = deployment.deployBlock ?? 0
+        const currentBlock = await provider.getBlockNumber()
+        const CHUNK = 10 // free-tier RPC limit
+        const allEvents: ethers.EventLog[] = []
+
+        for (let from = startBlock; from <= currentBlock; from += CHUNK) {
+          const to = Math.min(from + CHUNK - 1, currentBlock)
+          const chunk = await governor.queryFilter(
+            governor.filters.ProposalCreated(), from, to,
+          )
+          allEvents.push(...(chunk as ethers.EventLog[]))
+        }
+
         const descriptionMap = new Map<number, string>()
-        for (const event of events) {
+        for (const event of allEvents) {
           const parsed = governor.interface.parseLog({
             topics: [...event.topics],
             data: event.data,

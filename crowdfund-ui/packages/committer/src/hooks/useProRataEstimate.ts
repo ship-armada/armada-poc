@@ -7,6 +7,8 @@ import { estimateAllocation, type HopStatsData } from '@armada/crowdfund-shared'
 export interface HopEstimate {
   hop: number
   commitAmount: bigint
+  existingCommitted: bigint
+  totalPosition: bigint
   estimatedAccepted: bigint
   estimatedArm: bigint
   estimatedRefund: bigint
@@ -26,6 +28,7 @@ export interface UseProRataEstimateResult {
  */
 export function useProRataEstimate(
   commitAmounts: Map<number, bigint>,
+  existingCommitments: Map<number, bigint>,
   hopStats: HopStatsData[],
   saleSize: bigint,
 ): UseProRataEstimateResult {
@@ -44,20 +47,26 @@ export function useProRataEstimate(
 
       const stats = hopStats[hop]
       const hopAllocation = perHopCeiling[hop] ?? 0n
+      const existingCommitted = existingCommitments.get(hop) ?? 0n
+      const totalPosition = existingCommitted + commitAmount
 
-      // Pro-rata within this hop — use totalCommitted (live running total during Active phase)
+      // Pro-rata within this hop — estimate for user's TOTAL position (existing + new).
+      // stats.totalCommitted already includes existingCommitted, so projected demand
+      // after the new commit is stats.totalCommitted + commitAmount.
       const totalDemand = stats.totalCommitted + commitAmount
       let estimatedAccepted: bigint
       if (totalDemand <= hopAllocation) {
-        estimatedAccepted = commitAmount
+        // Hop is not oversubscribed — full position accepted
+        estimatedAccepted = totalPosition
       } else if (totalDemand === 0n) {
         estimatedAccepted = 0n
       } else {
-        estimatedAccepted = (commitAmount * hopAllocation) / totalDemand
+        // Pro-rata: user's share of the hop allocation proportional to their total position
+        estimatedAccepted = (totalPosition * hopAllocation) / totalDemand
       }
 
       const estimatedArm = estimatedAccepted * 10n ** 12n // 1 USDC (6 dec) → 1 ARM (18 dec)
-      const estimatedRefund = commitAmount - estimatedAccepted
+      const estimatedRefund = totalPosition - estimatedAccepted
 
       const oversubscriptionPct = hopAllocation > 0n
         ? Number((totalDemand * 100n) / hopAllocation)
@@ -66,6 +75,8 @@ export function useProRataEstimate(
       hopEstimates.push({
         hop,
         commitAmount,
+        existingCommitted,
+        totalPosition,
         estimatedAccepted,
         estimatedArm,
         estimatedRefund,
@@ -77,5 +88,5 @@ export function useProRataEstimate(
     }
 
     return { hopEstimates, totalEstimatedArm, totalEstimatedRefund }
-  }, [commitAmounts, hopStats, saleSize])
+  }, [commitAmounts, existingCommitments, hopStats, saleSize])
 }

@@ -18,6 +18,7 @@ export enum ProposalType {
   Extended = 1,
   VetoRatification = 2,
   Steward = 3,
+  Signaling = 4,
 }
 
 /** Vote support values: 0=Against, 1=For, 2=Abstain */

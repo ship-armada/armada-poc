@@ -8,7 +8,7 @@ import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
 
 /** UI template type — determines which form fields and calldata encoding to use */
-type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'manual'
+type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'signaling' | 'manual'
 
 const TEMPLATE_LABELS: Record<TemplateType, string> = {
   treasury: 'Treasury Distribution',
@@ -18,12 +18,14 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
   outflowConfig: 'Init Outflow Limits',
   securityCouncil: 'Set Security Council',
   govParams: 'Update Gov Parameters',
+  signaling: 'Signaling (Non-Binding)',
   manual: 'Manual Calldata',
 }
 
 /** Maps UI template to on-chain ProposalType */
 function templateToProposalType(template: TemplateType): ProposalType {
   if (template === 'steward') return ProposalType.Extended
+  if (template === 'signaling') return ProposalType.Signaling
   if (template === 'manual') return ProposalType.VetoRatification
   return ProposalType.Standard
 }
@@ -217,6 +219,14 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       }
     }
 
+    if (template === 'signaling') {
+      return {
+        targets: [],
+        values: [],
+        calldatas: [],
+      }
+    }
+
     // Fallback manual calldata path
     if (!manualTarget || !manualCalldata) return null
     return {
@@ -312,7 +322,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
         <div className="mt-1 flex flex-wrap gap-2">
-          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams'] as TemplateType[]).map((t) => (
+          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams', 'signaling'] as TemplateType[]).map((t) => (
             <button
               key={t}
               onClick={() => setTemplate(t)}
@@ -543,6 +553,19 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
           <p className="text-xs text-neutral-500">
             Updates timing and quorum for Standard or Extended proposals.
             VetoRatification and Steward params are immutable.
+          </p>
+        </div>
+      )}
+
+      {/* Signaling Template */}
+      {template === 'signaling' && (
+        <div className="mt-3 rounded bg-neutral-800 p-3">
+          <p className="text-sm text-neutral-300">
+            A non-binding, text-only proposal for gauging community sentiment.
+            No on-chain execution — the outcome is purely informational.
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            Uses Standard timing and quorum. The description is the entire proposal content.
           </p>
         </div>
       )}

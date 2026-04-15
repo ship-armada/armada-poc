@@ -11,15 +11,17 @@ import { ProposalsPanel } from './components/ProposalsPanel'
 import { TreasuryPanel } from './components/TreasuryPanel'
 import { StewardPanel } from './components/StewardPanel'
 import { EventLog } from './components/EventLog'
+import { RevenueLockPanel } from './components/RevenueLockPanel'
 import { getNetworkMode, isSepoliaMode } from './config'
 
-type Tab = 'tokens' | 'proposals' | 'treasury' | 'steward'
+type Tab = 'tokens' | 'proposals' | 'treasury' | 'steward' | 'revenueLock'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'tokens', label: 'Tokens & Voting' },
   { key: 'proposals', label: 'Proposals' },
   { key: 'treasury', label: 'Treasury' },
   { key: 'steward', label: 'Steward' },
+  { key: 'revenueLock', label: 'Revenue Lock' },
 ]
 
 export function App() {
@@ -111,6 +113,13 @@ export function App() {
           )}
           {activeTab === 'steward' && (
             <StewardPanel
+              contracts={contracts}
+              wallet={wallet}
+              govData={govData}
+            />
+          )}
+          {activeTab === 'revenueLock' && (
+            <RevenueLockPanel
               contracts={contracts}
               wallet={wallet}
               govData={govData}

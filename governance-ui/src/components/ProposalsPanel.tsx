@@ -71,6 +71,7 @@ export function ProposalsPanel({ contracts, wallet, govData }: ProposalsPanelPro
       <CreateProposalForm
         contracts={contracts}
         wallet={wallet}
+        govData={govData}
         onCreated={govData.refresh}
       />
 

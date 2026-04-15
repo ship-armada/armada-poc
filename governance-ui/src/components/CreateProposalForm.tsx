@@ -6,9 +6,10 @@ import { ethers } from 'ethers'
 import { ProposalType } from '../governance-types'
 import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
+import type { GovernanceData } from '../hooks/useGovernanceData'
 
 /** UI template type — determines which form fields and calldata encoding to use */
-type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'signaling' | 'manual'
+type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'attestRevenue' | 'signaling' | 'manual'
 
 const TEMPLATE_LABELS: Record<TemplateType, string> = {
   treasury: 'Treasury Distribution',
@@ -18,6 +19,7 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
   outflowConfig: 'Init Outflow Limits',
   securityCouncil: 'Set Security Council',
   govParams: 'Update Gov Parameters',
+  attestRevenue: 'Attest Revenue',
   signaling: 'Signaling (Non-Binding)',
   manual: 'Manual Calldata',
 }
@@ -33,10 +35,11 @@ function templateToProposalType(template: TemplateType): ProposalType {
 interface CreateProposalFormProps {
   contracts: GovernanceContracts
   wallet: WalletState
+  govData: GovernanceData
   onCreated: () => Promise<void>
 }
 
-export function CreateProposalForm({ contracts, wallet, onCreated }: CreateProposalFormProps) {
+export function CreateProposalForm({ contracts, wallet, govData, onCreated }: CreateProposalFormProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [template, setTemplate] = useState<TemplateType>('treasury')
   const [description, setDescription] = useState('')
@@ -62,6 +65,9 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
   const [outflowBps, setOutflowBps] = useState('1000')
   const [outflowAbsolute, setOutflowAbsolute] = useState('')
   const [outflowFloor, setOutflowFloor] = useState('')
+
+  // Attest revenue template fields
+  const [revenueAmount, setRevenueAmount] = useState('')
 
   // Security council template fields
   const [scAddress, setScAddress] = useState('')
@@ -182,6 +188,21 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       }
     }
 
+    if (template === 'attestRevenue') {
+      if (!revenueAmount || !deployment.contracts.revenueCounter) return null
+
+      const amountUsd = ethers.parseUnits(revenueAmount, 18)
+      const iface = new ethers.Interface([
+        'function attestRevenue(uint256 newCumulativeUsd)',
+      ])
+
+      return {
+        targets: [deployment.contracts.revenueCounter],
+        values: [0n],
+        calldatas: [iface.encodeFunctionData('attestRevenue', [amountUsd])],
+      }
+    }
+
     if (template === 'securityCouncil') {
       if (!scAddress) return null
 
@@ -277,6 +298,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       setOutflowFloor('')
       setOutflowBps('1000')
       setOutflowWindow('7')
+      setRevenueAmount('')
       setScAddress('')
       setGovVotingDelay('')
       setGovVotingPeriod('')
@@ -322,7 +344,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
         <div className="mt-1 flex flex-wrap gap-2">
-          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams', 'signaling'] as TemplateType[]).map((t) => (
+          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams', 'attestRevenue', 'signaling'] as TemplateType[]).map((t) => (
             <button
               key={t}
               onClick={() => setTemplate(t)}
@@ -554,6 +576,29 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
             Updates timing and quorum for Standard or Extended proposals.
             VetoRatification and Steward params are immutable.
           </p>
+        </div>
+      )}
+
+      {/* Attest Revenue Template */}
+      {template === 'attestRevenue' && (
+        <div className="mt-3 space-y-2">
+          <input
+            type="text"
+            value={revenueAmount}
+            onChange={(e) => setRevenueAmount(e.target.value)}
+            placeholder="Cumulative revenue in USD (e.g. 10000)"
+            className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+          />
+          <p className="text-xs text-neutral-500">
+            Sets the cumulative recognized revenue on the RevenueCounter. Must be ≥ current value
+            (monotonic). Triggers RevenueLock unlock milestones: $10K→10%, $50K→25%, $100K→40%,
+            $250K→60%, $500K→80%, $1M→100%.
+          </p>
+          {govData.recognizedRevenue > 0n && (
+            <p className="text-xs text-neutral-400">
+              Current recognized revenue: ${Number(ethers.formatUnits(govData.recognizedRevenue, 18)).toLocaleString()}
+            </p>
+          )}
         </div>
       )}
 

@@ -161,31 +161,43 @@ export function useGovernanceData(
       const proposals = await Promise.all(proposalPromises)
 
       // Fetch proposal descriptions from ProposalCreated events.
-      // Uses chunked queries to stay within free-tier RPC block range limits.
+      // Cached in localStorage to avoid re-scanning the full block range on every poll.
       try {
-        const startBlock = deployment.deployBlock ?? 0
+        const cacheKey = 'gov-proposal-descriptions'
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}') as {
+          lastBlock?: number
+          descriptions?: Record<string, string>
+        }
+        const descriptionMap = new Map<number, string>(
+          Object.entries(cached.descriptions ?? {}).map(([k, v]) => [Number(k), v]),
+        )
+        const deployBlock = deployment.deployBlock ?? 0
+        const scanFrom = Math.max(deployBlock, (cached.lastBlock ?? deployBlock - 1) + 1)
         const currentBlock = await provider.getBlockNumber()
-        const CHUNK = 10 // free-tier RPC limit
-        const allEvents: ethers.EventLog[] = []
 
-        for (let from = startBlock; from <= currentBlock; from += CHUNK) {
-          const to = Math.min(from + CHUNK - 1, currentBlock)
-          const chunk = await governor.queryFilter(
-            governor.filters.ProposalCreated(), from, to,
-          )
-          allEvents.push(...(chunk as ethers.EventLog[]))
-        }
-
-        const descriptionMap = new Map<number, string>()
-        for (const event of allEvents) {
-          const parsed = governor.interface.parseLog({
-            topics: [...event.topics],
-            data: event.data,
-          })
-          if (parsed) {
-            descriptionMap.set(Number(parsed.args[0]), parsed.args[5] as string)
+        if (scanFrom <= currentBlock) {
+          const CHUNK = 10 // free-tier RPC limit
+          for (let from = scanFrom; from <= currentBlock; from += CHUNK) {
+            const to = Math.min(from + CHUNK - 1, currentBlock)
+            const chunk = await governor.queryFilter(
+              governor.filters.ProposalCreated(), from, to,
+            )
+            for (const event of chunk) {
+              const parsed = governor.interface.parseLog({
+                topics: [...event.topics],
+                data: event.data,
+              })
+              if (parsed) {
+                descriptionMap.set(Number(parsed.args[0]), parsed.args[5] as string)
+              }
+            }
           }
+          // Persist cache
+          const descObj: Record<string, string> = {}
+          for (const [k, v] of descriptionMap) descObj[String(k)] = v
+          localStorage.setItem(cacheKey, JSON.stringify({ lastBlock: currentBlock, descriptions: descObj }))
         }
+
         for (const p of proposals) {
           const desc = descriptionMap.get(p.id)
           if (desc) p.description = desc

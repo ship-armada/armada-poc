@@ -298,11 +298,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 2000
         });
 
-        // Signaling: non-executable text-only proposals. Standard timing, no execution phase.
+        // Signaling (mini-Sepolia): non-executable text-only proposals, no execution phase.
         // Immutable — cannot be changed via setProposalTypeParams().
         proposalTypeParams[ProposalType.Signaling] = ProposalParams({
-            votingDelay: 2 days,
-            votingPeriod: 7 days,
+            votingDelay: 1 minutes,
+            votingPeriod: 5 minutes,
             executionDelay: 0,
             quorumBps: 2000
         });

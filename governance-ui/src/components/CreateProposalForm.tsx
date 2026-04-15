@@ -8,13 +8,14 @@ import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
 
 /** UI template type — determines which form fields and calldata encoding to use */
-type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'securityCouncil' | 'govParams' | 'manual'
+type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'manual'
 
 const TEMPLATE_LABELS: Record<TemplateType, string> = {
   treasury: 'Treasury Distribution',
   steward: 'Steward Election',
   enableTransfers: 'Enable ARM Transfers',
   stewardBudget: 'Steward Budget Token',
+  outflowConfig: 'Init Outflow Limits',
   securityCouncil: 'Set Security Council',
   govParams: 'Update Gov Parameters',
   manual: 'Manual Calldata',
@@ -52,6 +53,13 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
   const [budgetToken, setBudgetToken] = useState<'usdc' | 'arm'>('usdc')
   const [budgetLimit, setBudgetLimit] = useState('')
   const [budgetWindow, setBudgetWindow] = useState('7')
+
+  // Outflow config template fields
+  const [outflowToken, setOutflowToken] = useState<'usdc' | 'arm'>('usdc')
+  const [outflowWindow, setOutflowWindow] = useState('7')
+  const [outflowBps, setOutflowBps] = useState('1000')
+  const [outflowAbsolute, setOutflowAbsolute] = useState('')
+  const [outflowFloor, setOutflowFloor] = useState('')
 
   // Security council template fields
   const [scAddress, setScAddress] = useState('')
@@ -147,6 +155,31 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       }
     }
 
+    if (template === 'outflowConfig') {
+      const tokenAddr = outflowToken === 'arm'
+        ? deployment.contracts.armToken
+        : contracts.usdcAddress ?? ''
+      if (!tokenAddr || !outflowAbsolute || !outflowFloor) return null
+
+      const decimals = outflowToken === 'arm' ? 18 : 6
+      const windowSeconds = BigInt(Math.floor(Number(outflowWindow) * 86400))
+      const iface = new ethers.Interface([
+        'function initOutflowConfig(address token, uint256 windowDuration, uint256 limitBps, uint256 limitAbsolute, uint256 floorAbsolute)',
+      ])
+
+      return {
+        targets: [deployment.contracts.treasury],
+        values: [0n],
+        calldatas: [iface.encodeFunctionData('initOutflowConfig', [
+          tokenAddr,
+          windowSeconds,
+          BigInt(outflowBps),
+          ethers.parseUnits(outflowAbsolute, decimals),
+          ethers.parseUnits(outflowFloor, decimals),
+        ])],
+      }
+    }
+
     if (template === 'securityCouncil') {
       if (!scAddress) return null
 
@@ -230,6 +263,10 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       setStewardAddress('')
       setBudgetLimit('')
       setBudgetWindow('7')
+      setOutflowAbsolute('')
+      setOutflowFloor('')
+      setOutflowBps('1000')
+      setOutflowWindow('7')
       setScAddress('')
       setGovVotingDelay('')
       setGovVotingPeriod('')
@@ -275,7 +312,7 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
         <div className="mt-1 flex flex-wrap gap-2">
-          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'securityCouncil', 'govParams'] as TemplateType[]).map((t) => (
+          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams'] as TemplateType[]).map((t) => (
             <button
               key={t}
               onClick={() => setTemplate(t)}
@@ -392,6 +429,55 @@ export function CreateProposalForm({ contracts, wallet, onCreated }: CreatePropo
           <p className="text-xs text-neutral-500">
             Authorizes the steward to spend up to the limit per rolling window.
             Calls <code className="text-blue-400">addStewardBudgetToken</code> on the treasury.
+          </p>
+        </div>
+      )}
+
+      {/* Init Outflow Limits Template */}
+      {template === 'outflowConfig' && (
+        <div className="mt-3 space-y-2">
+          <select
+            value={outflowToken}
+            onChange={(e) => setOutflowToken(e.target.value as 'usdc' | 'arm')}
+            className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-300"
+          >
+            <option value="usdc">USDC (6 decimals)</option>
+            <option value="arm">ARM (18 decimals)</option>
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={outflowWindow}
+              onChange={(e) => setOutflowWindow(e.target.value)}
+              placeholder="Window (days)"
+              className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+            />
+            <input
+              type="text"
+              value={outflowBps}
+              onChange={(e) => setOutflowBps(e.target.value)}
+              placeholder="Limit % (bps, 1000=10%)"
+              className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+            />
+            <input
+              type="text"
+              value={outflowAbsolute}
+              onChange={(e) => setOutflowAbsolute(e.target.value)}
+              placeholder="Absolute cap (human-readable)"
+              className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+            />
+            <input
+              type="text"
+              value={outflowFloor}
+              onChange={(e) => setOutflowFloor(e.target.value)}
+              placeholder="Floor minimum (human-readable)"
+              className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+            />
+          </div>
+          <p className="text-xs text-neutral-500">
+            One-time initialization of outflow rate limits for a token. Required before any
+            treasury distributions or steward spending. Limit = min(bps% of balance, absolute cap),
+            but never below the floor. Floor is immutable after initialization.
           </p>
         </div>
       )}

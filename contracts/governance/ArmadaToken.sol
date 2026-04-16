@@ -52,6 +52,7 @@ contract ArmadaToken is ERC20Votes {
     event WindDownContractSet(address indexed windDownContract);
     event NoDelegationInitialized(address[] accounts);
     event AuthorizedDelegatorsInitialized(address[] delegators);
+    event AuthorizedDelegatorAdded(address indexed delegator);
 
     // ============ Constructor ============
 
@@ -127,6 +128,17 @@ contract ArmadaToken is ERC20Votes {
         require(account != address(0), "ArmadaToken: zero address");
         transferWhitelist[account] = true;
         emit WhitelistAdded(account);
+    }
+
+    /// @notice Authorize a contract to call delegateOnBehalf. Timelock-only, add-only (no removal).
+    ///         Mirrors the addToWhitelist pattern to allow governance to authorize new delegators
+    ///         (e.g. follow-on RevenueLock cohorts or replacement Crowdfund instances) after
+    ///         deployment without requiring token redeployment.
+    function addAuthorizedDelegator(address delegator) external {
+        require(msg.sender == timelock, "ArmadaToken: not timelock");
+        require(delegator != address(0), "ArmadaToken: zero address");
+        authorizedDelegator[delegator] = true;
+        emit AuthorizedDelegatorAdded(delegator);
     }
 
     /// @notice Remove the deployer from the transfer whitelist. Deployer-only, callable once.

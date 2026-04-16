@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Foundry tests for ArmadaToken.delegateOnBehalf and initAuthorizedDelegators.
+// ABOUTME: Foundry tests for ArmadaToken.delegateOnBehalf, initAuthorizedDelegators, and addAuthorizedDelegator.
 // ABOUTME: Covers authorization setup, on-behalf delegation, voting power transfer, and guard interactions.
 pragma solidity ^0.8.17;
 
@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 contract ArmadaTokenDelegateOnBehalfTest is Test {
     // Mirror events
     event AuthorizedDelegatorsInitialized(address[] delegators);
+    event AuthorizedDelegatorAdded(address indexed delegator);
     event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
 
     ArmadaToken public armToken;
@@ -199,5 +200,107 @@ contract ArmadaTokenDelegateOnBehalfTest is Test {
         armToken.delegateOnBehalf(alice, alice);
         assertEq(armToken.delegates(alice), alice);
         assertEq(armToken.getVotes(alice), 2_000_000 * 1e18);
+    }
+
+    // ============ addAuthorizedDelegator ============
+
+    function test_addAuthorizedDelegator_byTimelock_succeeds() public {
+        // WHY: Governance must be able to authorize new delegator contracts post-deployment
+        // (e.g. follow-on RevenueLock cohorts, replacement Crowdfund). Without this path the
+        // one-time init was the only authorization route and later contracts would be stranded.
+        address newDelegator = address(0xDEAD);
+
+        vm.expectEmit(true, false, false, false);
+        emit AuthorizedDelegatorAdded(newDelegator);
+
+        vm.prank(address(timelock));
+        armToken.addAuthorizedDelegator(newDelegator);
+
+        assertTrue(armToken.authorizedDelegator(newDelegator));
+    }
+
+    function test_addAuthorizedDelegator_notTimelock_reverts() public {
+        // WHY: Only the timelock (governance executor) may authorize new delegators.
+        // Deployer, EOAs, and already-authorized contracts must all be rejected — otherwise
+        // the deployer or a compromised delegator could escalate the authorized set.
+        address newDelegator = address(0xDEAD);
+
+        vm.prank(deployer);
+        vm.expectRevert("ArmadaToken: not timelock");
+        armToken.addAuthorizedDelegator(newDelegator);
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaToken: not timelock");
+        armToken.addAuthorizedDelegator(newDelegator);
+
+        // Even a previously authorized delegator cannot add others
+        address[] memory delegators = new address[](1);
+        delegators[0] = authorizedContract;
+        armToken.initAuthorizedDelegators(delegators);
+
+        vm.prank(authorizedContract);
+        vm.expectRevert("ArmadaToken: not timelock");
+        armToken.addAuthorizedDelegator(newDelegator);
+    }
+
+    function test_addAuthorizedDelegator_zeroAddress_reverts() public {
+        // WHY: Zero-address authorization would be meaningless and likely indicates a
+        // misconfigured proposal. Matches the zero-address guard in addToWhitelist.
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaToken: zero address");
+        armToken.addAuthorizedDelegator(address(0));
+    }
+
+    function test_addAuthorizedDelegator_idempotent() public {
+        // WHY: Re-adding an already-authorized delegator should be a no-op (does not revert),
+        // matching addToWhitelist semantics. This keeps governance proposals forgiving and
+        // avoids race conditions where two proposals authorize the same contract.
+        address newDelegator = address(0xDEAD);
+
+        vm.prank(address(timelock));
+        armToken.addAuthorizedDelegator(newDelegator);
+        assertTrue(armToken.authorizedDelegator(newDelegator));
+
+        // Second call should succeed without reverting
+        vm.prank(address(timelock));
+        armToken.addAuthorizedDelegator(newDelegator);
+        assertTrue(armToken.authorizedDelegator(newDelegator));
+    }
+
+    function test_addAuthorizedDelegator_enablesDelegateOnBehalf() public {
+        // WHY: A delegator authorized via the timelock path must actually be able to call
+        // delegateOnBehalf. If this breaks, the post-deployment authorization path is useless
+        // even if the authorization flag flips correctly.
+        address newDelegator = address(0xDEAD);
+
+        // Authorize via timelock (the new governance path)
+        vm.prank(address(timelock));
+        armToken.addAuthorizedDelegator(newDelegator);
+
+        // The newly-authorized contract can now delegate on behalf of a holder
+        assertEq(armToken.getVotes(bob), 0);
+        vm.prank(newDelegator);
+        armToken.delegateOnBehalf(alice, bob);
+
+        assertEq(armToken.delegates(alice), bob);
+        assertEq(armToken.getVotes(bob), 2_000_000 * 1e18);
+    }
+
+    function test_addAuthorizedDelegator_worksBeforeInit() public {
+        // WHY: The timelock path must not depend on initAuthorizedDelegators having been
+        // called. If the deployer skipped the one-time init (or the codebase moves away
+        // from it), governance should still be able to authorize delegators directly.
+        assertFalse(armToken.authorizedDelegatorsInitialized());
+
+        address newDelegator = address(0xDEAD);
+        vm.prank(address(timelock));
+        armToken.addAuthorizedDelegator(newDelegator);
+
+        assertTrue(armToken.authorizedDelegator(newDelegator));
+
+        // And it actually works — delegateOnBehalf succeeds
+        vm.prank(newDelegator);
+        armToken.delegateOnBehalf(alice, bob);
+        assertEq(armToken.delegates(alice), bob);
     }
 }

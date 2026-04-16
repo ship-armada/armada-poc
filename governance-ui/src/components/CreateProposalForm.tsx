@@ -10,7 +10,7 @@ import type { GovernanceData } from '../hooks/useGovernanceData'
 import { fetchRevenueLockCohorts, type RevenueLockCohort } from '../config'
 
 /** UI template type — determines which form fields and calldata encoding to use */
-type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'attestRevenue' | 'revenueLockCohort' | 'signaling' | 'manual'
+type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'outflowUpdate' | 'securityCouncil' | 'govParams' | 'attestRevenue' | 'revenueLockCohort' | 'signaling' | 'manual'
 
 const TEMPLATE_LABELS: Record<TemplateType, string> = {
   treasury: 'Treasury Distribution',
@@ -18,6 +18,7 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
   enableTransfers: 'Enable ARM Transfers',
   stewardBudget: 'Steward Budget Token',
   outflowConfig: 'Init Outflow Limits',
+  outflowUpdate: 'Update Outflow Limits',
   securityCouncil: 'Set Security Council',
   govParams: 'Update Gov Parameters',
   attestRevenue: 'Attest Revenue',
@@ -69,6 +70,15 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
   const [outflowBps, setOutflowBps] = useState('1000')
   const [outflowAbsolute, setOutflowAbsolute] = useState('')
   const [outflowFloor, setOutflowFloor] = useState('')
+
+  // Outflow update template fields (separate setters)
+  const [outflowUpdateToken, setOutflowUpdateToken] = useState<'usdc' | 'arm'>('usdc')
+  const [outflowUpdateIncludeWindow, setOutflowUpdateIncludeWindow] = useState(false)
+  const [outflowUpdateIncludeBps, setOutflowUpdateIncludeBps] = useState(false)
+  const [outflowUpdateIncludeAbsolute, setOutflowUpdateIncludeAbsolute] = useState(false)
+  const [outflowUpdateWindow, setOutflowUpdateWindow] = useState('7')
+  const [outflowUpdateBps, setOutflowUpdateBps] = useState('1000')
+  const [outflowUpdateAbsolute, setOutflowUpdateAbsolute] = useState('')
 
   // Attest revenue template fields
   const [revenueAmount, setRevenueAmount] = useState('')
@@ -216,6 +226,50 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
           ethers.parseUnits(outflowFloor, decimals),
         ])],
       }
+    }
+
+    if (template === 'outflowUpdate') {
+      const tokenAddr = outflowUpdateToken === 'arm'
+        ? deployment.contracts.armToken
+        : contracts.usdcAddress ?? ''
+      if (!tokenAddr) return null
+      if (!outflowUpdateIncludeWindow && !outflowUpdateIncludeBps && !outflowUpdateIncludeAbsolute) return null
+
+      const decimals = outflowUpdateToken === 'arm' ? 18 : 6
+      const iface = new ethers.Interface([
+        'function setOutflowWindow(address token, uint256 newWindow)',
+        'function setOutflowLimitBps(address token, uint256 newBps)',
+        'function setOutflowLimitAbsolute(address token, uint256 newAbsolute)',
+      ])
+
+      const targets: string[] = []
+      const values: bigint[] = []
+      const calldatas: string[] = []
+
+      if (outflowUpdateIncludeWindow) {
+        if (!outflowUpdateWindow) return null
+        const windowSeconds = BigInt(Math.floor(Number(outflowUpdateWindow) * 86400))
+        targets.push(deployment.contracts.treasury)
+        values.push(0n)
+        calldatas.push(iface.encodeFunctionData('setOutflowWindow', [tokenAddr, windowSeconds]))
+      }
+      if (outflowUpdateIncludeBps) {
+        if (!outflowUpdateBps) return null
+        targets.push(deployment.contracts.treasury)
+        values.push(0n)
+        calldatas.push(iface.encodeFunctionData('setOutflowLimitBps', [tokenAddr, BigInt(outflowUpdateBps)]))
+      }
+      if (outflowUpdateIncludeAbsolute) {
+        if (!outflowUpdateAbsolute) return null
+        targets.push(deployment.contracts.treasury)
+        values.push(0n)
+        calldatas.push(iface.encodeFunctionData('setOutflowLimitAbsolute', [
+          tokenAddr,
+          ethers.parseUnits(outflowUpdateAbsolute, decimals),
+        ]))
+      }
+
+      return { targets, values, calldatas }
     }
 
     if (template === 'attestRevenue') {
@@ -372,6 +426,12 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
       setOutflowFloor('')
       setOutflowBps('1000')
       setOutflowWindow('7')
+      setOutflowUpdateAbsolute('')
+      setOutflowUpdateBps('1000')
+      setOutflowUpdateWindow('7')
+      setOutflowUpdateIncludeWindow(false)
+      setOutflowUpdateIncludeBps(false)
+      setOutflowUpdateIncludeAbsolute(false)
       setRevenueAmount('')
       setCohortSelection('')
       setCohortAddress('')
@@ -424,7 +484,7 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
         <div className="mt-1 flex flex-wrap gap-2">
-          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams', 'attestRevenue', 'revenueLockCohort', 'signaling'] as TemplateType[]).map((t) => (
+          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'outflowUpdate', 'securityCouncil', 'govParams', 'attestRevenue', 'revenueLockCohort', 'signaling'] as TemplateType[]).map((t) => (
             <button
               key={t}
               onClick={() => setTemplate(t)}
@@ -590,6 +650,93 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
             One-time initialization of outflow rate limits for a token. Required before any
             treasury distributions or steward spending. Limit = min(bps% of balance, absolute cap),
             but never below the floor. Floor is immutable after initialization.
+          </p>
+        </div>
+      )}
+
+      {/* Update Outflow Limits Template */}
+      {template === 'outflowUpdate' && (
+        <div className="mt-3 space-y-2">
+          <select
+            value={outflowUpdateToken}
+            onChange={(e) => setOutflowUpdateToken(e.target.value as 'usdc' | 'arm')}
+            className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-300"
+          >
+            <option value="usdc">USDC (6 decimals)</option>
+            <option value="arm">ARM (18 decimals)</option>
+          </select>
+
+          <div className="space-y-2 rounded bg-neutral-950 p-2">
+            <p className="text-xs text-neutral-400">Include in this batch proposal:</p>
+
+            <label className="flex items-start gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={outflowUpdateIncludeWindow}
+                onChange={(e) => setOutflowUpdateIncludeWindow(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 space-y-1">
+                <code className="text-blue-400">setOutflowWindow(token, days)</code>
+                {outflowUpdateIncludeWindow && (
+                  <input
+                    type="text"
+                    value={outflowUpdateWindow}
+                    onChange={(e) => setOutflowUpdateWindow(e.target.value)}
+                    placeholder="New window in days (≥ 1)"
+                    className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+                  />
+                )}
+              </div>
+            </label>
+
+            <label className="flex items-start gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={outflowUpdateIncludeBps}
+                onChange={(e) => setOutflowUpdateIncludeBps(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 space-y-1">
+                <code className="text-blue-400">setOutflowLimitBps(token, bps)</code>
+                {outflowUpdateIncludeBps && (
+                  <input
+                    type="text"
+                    value={outflowUpdateBps}
+                    onChange={(e) => setOutflowUpdateBps(e.target.value)}
+                    placeholder="New bps (1–10000, e.g. 1000=10%)"
+                    className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+                  />
+                )}
+              </div>
+            </label>
+
+            <label className="flex items-start gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={outflowUpdateIncludeAbsolute}
+                onChange={(e) => setOutflowUpdateIncludeAbsolute(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 space-y-1">
+                <code className="text-blue-400">setOutflowLimitAbsolute(token, amount)</code>
+                {outflowUpdateIncludeAbsolute && (
+                  <input
+                    type="text"
+                    value={outflowUpdateAbsolute}
+                    onChange={(e) => setOutflowUpdateAbsolute(e.target.value)}
+                    placeholder="New absolute cap (must be ≥ floor)"
+                    className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+                  />
+                )}
+              </div>
+            </label>
+          </div>
+
+          <p className="text-xs text-neutral-500">
+            Updates an already-initialized outflow config. The floor is immutable —
+            absolute cap cannot be lowered below it. Window must be ≥ 1 day.
+            Read current values via Etherscan: treasury.getOutflowConfig(token).
           </p>
         </div>
       )}

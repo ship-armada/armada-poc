@@ -119,3 +119,71 @@ async function fetchHubDeployment(): Promise<Record<string, any>> {
   }
   return res.json()
 }
+
+/** Revenue lock cohort manifest (either primary or additional). */
+export interface RevenueLockCohort {
+  name: string
+  address: string
+  totalAllocation?: string
+  beneficiaryCount?: number
+  isPrimary: boolean
+}
+
+/**
+ * Enumerate all RevenueLock cohorts available for the current network.
+ * Always includes the primary lock from the governance manifest (if present).
+ * Additional cohorts are discovered via the `?list=` directory endpoint, matching
+ * files of the form `revenue-lock-<name>[-<env>].json`.
+ */
+export async function fetchRevenueLockCohorts(
+  governance: GovernanceDeployment,
+): Promise<RevenueLockCohort[]> {
+  const cohorts: RevenueLockCohort[] = []
+
+  if (governance.contracts.revenueLock) {
+    cohorts.push({
+      name: 'primary',
+      address: governance.contracts.revenueLock,
+      isPrimary: true,
+    })
+  }
+
+  try {
+    const listRes = await fetch('/api/deployments/?list=revenue-lock-')
+    if (listRes.ok) {
+      const files = (await listRes.json()) as string[]
+      const envSuffix = isSepoliaMode() ? '-sepolia' : ''
+      for (const file of files) {
+        // Only include files for the current environment
+        // Local: revenue-lock-<name>.json
+        // Sepolia: revenue-lock-<name>-sepolia.json
+        const match = envSuffix
+          ? file.match(/^revenue-lock-(.+?)-sepolia\.json$/)
+          : file.match(/^revenue-lock-(.+?)\.json$/)
+        if (!match) continue
+        // On local, skip files that end with "-sepolia"
+        if (!envSuffix && file.includes('-sepolia')) continue
+        const name = match[1]
+        // Skip if name already taken by primary
+        if (name === 'primary') continue
+
+        const res = await fetch(`/api/deployments/${file}`)
+        if (!res.ok) continue
+        const data = await res.json()
+        if (data?.contracts?.revenueLock) {
+          cohorts.push({
+            name,
+            address: data.contracts.revenueLock,
+            totalAllocation: data.totalAllocation,
+            beneficiaryCount: Array.isArray(data.beneficiaries) ? data.beneficiaries.length : undefined,
+            isPrimary: false,
+          })
+        }
+      }
+    }
+  } catch {
+    // Directory listing may not be supported on all environments — ignore
+  }
+
+  return cohorts
+}

@@ -1,15 +1,16 @@
 // ABOUTME: Form for creating governance proposals with calldata template builders.
-// ABOUTME: Supports treasury, steward, ARM transfers, steward budget, security council, gov params, and manual calldata.
+// ABOUTME: Supports treasury, steward, ARM transfers, steward budget, security council, gov params, revenue lock cohort, and manual calldata.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ethers } from 'ethers'
 import { ProposalType } from '../governance-types'
 import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
 import type { GovernanceData } from '../hooks/useGovernanceData'
+import { fetchRevenueLockCohorts, type RevenueLockCohort } from '../config'
 
 /** UI template type — determines which form fields and calldata encoding to use */
-type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'attestRevenue' | 'signaling' | 'manual'
+type TemplateType = 'treasury' | 'steward' | 'enableTransfers' | 'stewardBudget' | 'outflowConfig' | 'securityCouncil' | 'govParams' | 'attestRevenue' | 'revenueLockCohort' | 'signaling' | 'manual'
 
 const TEMPLATE_LABELS: Record<TemplateType, string> = {
   treasury: 'Treasury Distribution',
@@ -20,6 +21,7 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
   securityCouncil: 'Set Security Council',
   govParams: 'Update Gov Parameters',
   attestRevenue: 'Attest Revenue',
+  revenueLockCohort: 'Register Revenue Lock Cohort',
   signaling: 'Signaling (Non-Binding)',
   manual: 'Manual Calldata',
 }
@@ -69,6 +71,15 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
   // Attest revenue template fields
   const [revenueAmount, setRevenueAmount] = useState('')
 
+  // Revenue lock cohort template fields
+  const [cohortList, setCohortList] = useState<RevenueLockCohort[]>([])
+  const [cohortSelection, setCohortSelection] = useState<string>('') // manifest name, or 'custom'
+  const [cohortAddress, setCohortAddress] = useState('')
+  const [cohortFundingAmount, setCohortFundingAmount] = useState('')
+  const [cohortIncludeWhitelist, setCohortIncludeWhitelist] = useState(true)
+  const [cohortIncludeDelegator, setCohortIncludeDelegator] = useState(true)
+  const [cohortIncludeFunding, setCohortIncludeFunding] = useState(true)
+
   // Security council template fields
   const [scAddress, setScAddress] = useState('')
 
@@ -85,6 +96,23 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
   const [manualValue, setManualValue] = useState('0')
 
   const deployment = contracts.deployment
+
+  // Discover deployed cohort manifests for the cohort registration template
+  useEffect(() => {
+    if (!deployment) return
+    let cancelled = false
+    fetchRevenueLockCohorts(deployment)
+      .then((list) => {
+        if (cancelled) return
+        setCohortList(list)
+      })
+      .catch(() => {
+        // Directory listing may be unavailable — the custom address input is still usable
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [deployment])
 
   const proposalType = templateToProposalType(template)
 
@@ -203,6 +231,50 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
       }
     }
 
+    if (template === 'revenueLockCohort') {
+      const lockAddr = cohortSelection && cohortSelection !== 'custom'
+        ? cohortList.find((c) => c.name === cohortSelection)?.address ?? ''
+        : cohortAddress
+      if (!lockAddr || !ethers.isAddress(lockAddr)) return null
+      if (!cohortIncludeWhitelist && !cohortIncludeDelegator && !cohortIncludeFunding) return null
+      if (cohortIncludeFunding && !cohortFundingAmount) return null
+
+      const tokenIface = new ethers.Interface([
+        'function addToWhitelist(address account)',
+        'function addAuthorizedDelegator(address delegator)',
+      ])
+      const treasuryIface = new ethers.Interface([
+        'function distribute(address token, address recipient, uint256 amount)',
+      ])
+
+      const targets: string[] = []
+      const values: bigint[] = []
+      const calldatas: string[] = []
+
+      if (cohortIncludeWhitelist) {
+        targets.push(deployment.contracts.armToken)
+        values.push(0n)
+        calldatas.push(tokenIface.encodeFunctionData('addToWhitelist', [lockAddr]))
+      }
+      if (cohortIncludeDelegator) {
+        targets.push(deployment.contracts.armToken)
+        values.push(0n)
+        calldatas.push(tokenIface.encodeFunctionData('addAuthorizedDelegator', [lockAddr]))
+      }
+      if (cohortIncludeFunding) {
+        const amount = ethers.parseUnits(cohortFundingAmount, 18)
+        targets.push(deployment.contracts.treasury)
+        values.push(0n)
+        calldatas.push(treasuryIface.encodeFunctionData('distribute', [
+          deployment.contracts.armToken,
+          lockAddr,
+          amount,
+        ]))
+      }
+
+      return { targets, values, calldatas }
+    }
+
     if (template === 'securityCouncil') {
       if (!scAddress) return null
 
@@ -299,6 +371,12 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
       setOutflowBps('1000')
       setOutflowWindow('7')
       setRevenueAmount('')
+      setCohortSelection('')
+      setCohortAddress('')
+      setCohortFundingAmount('')
+      setCohortIncludeWhitelist(true)
+      setCohortIncludeDelegator(true)
+      setCohortIncludeFunding(true)
       setScAddress('')
       setGovVotingDelay('')
       setGovVotingPeriod('')
@@ -344,7 +422,7 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
       <div className="mt-3">
         <label className="text-xs text-neutral-500">Type</label>
         <div className="mt-1 flex flex-wrap gap-2">
-          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams', 'attestRevenue', 'signaling'] as TemplateType[]).map((t) => (
+          {(['treasury', 'steward', 'enableTransfers', 'stewardBudget', 'outflowConfig', 'securityCouncil', 'govParams', 'attestRevenue', 'revenueLockCohort', 'signaling'] as TemplateType[]).map((t) => (
             <button
               key={t}
               onClick={() => setTemplate(t)}
@@ -599,6 +677,98 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
               Current recognized revenue: ${Number(ethers.formatUnits(govData.recognizedRevenue, 18)).toLocaleString()}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Register Revenue Lock Cohort Template */}
+      {template === 'revenueLockCohort' && (
+        <div className="mt-3 space-y-2">
+          <label className="text-xs text-neutral-500">Cohort</label>
+          <select
+            value={cohortSelection}
+            onChange={(e) => {
+              const v = e.target.value
+              setCohortSelection(v)
+              if (v && v !== 'custom') {
+                const match = cohortList.find((c) => c.name === v)
+                if (match) setCohortAddress(match.address)
+                if (match?.totalAllocation) setCohortFundingAmount(match.totalAllocation)
+              } else if (v === 'custom') {
+                setCohortAddress('')
+                setCohortFundingAmount('')
+              }
+            }}
+            className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-300"
+          >
+            <option value="">Select a cohort…</option>
+            {cohortList
+              .filter((c) => !c.isPrimary)
+              .map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name} — {c.address.slice(0, 6)}...{c.address.slice(-4)}
+                  {c.totalAllocation ? ` (${c.totalAllocation} ARM)` : ''}
+                </option>
+              ))}
+            <option value="custom">Custom address…</option>
+          </select>
+
+          {cohortSelection === 'custom' && (
+            <input
+              type="text"
+              value={cohortAddress}
+              onChange={(e) => setCohortAddress(e.target.value)}
+              placeholder="RevenueLock contract address (0x...)"
+              className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+            />
+          )}
+
+          <div className="space-y-1 rounded bg-neutral-950 p-2">
+            <p className="text-xs text-neutral-400">Include in this batch proposal:</p>
+            <label className="flex items-center gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={cohortIncludeWhitelist}
+                onChange={(e) => setCohortIncludeWhitelist(e.target.checked)}
+              />
+              <code className="text-blue-400">armToken.addToWhitelist(lock)</code>
+              <span className="text-neutral-500">— allow lock to send ARM on release()</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={cohortIncludeDelegator}
+                onChange={(e) => setCohortIncludeDelegator(e.target.checked)}
+              />
+              <code className="text-blue-400">armToken.addAuthorizedDelegator(lock)</code>
+              <span className="text-neutral-500">— allow delegateOnBehalf</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={cohortIncludeFunding}
+                onChange={(e) => setCohortIncludeFunding(e.target.checked)}
+              />
+              <code className="text-blue-400">treasury.distribute(ARM, lock, amount)</code>
+              <span className="text-neutral-500">— fund the cohort</span>
+            </label>
+          </div>
+
+          {cohortIncludeFunding && (
+            <input
+              type="text"
+              value={cohortFundingAmount}
+              onChange={(e) => setCohortFundingAmount(e.target.value)}
+              placeholder="Funding amount in ARM (e.g. 100)"
+              className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
+            />
+          )}
+
+          <p className="text-xs text-neutral-500">
+            Registers a new RevenueLock cohort with the token (whitelist + authorized delegator)
+            and funds it from the treasury in a single batch. Deploy the cohort first via
+            <code className="mx-1 text-neutral-400">npm run deploy:revenue-lock-cohort:sepolia</code>
+            then select it here.
+          </p>
         </div>
       )}
 

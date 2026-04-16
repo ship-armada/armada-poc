@@ -1,11 +1,12 @@
 // ABOUTME: RevenueLock status panel showing unlock milestones, beneficiary state, and release action.
-// ABOUTME: Displays current revenue, unlock percentage, allocation/released/releasable, and a release button.
+// ABOUTME: Supports multiple cohorts via a selector — primary lock + additional cohorts from manifests.
 
 import { useState, useEffect, useCallback } from 'react'
 import { ethers } from 'ethers'
 import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
 import type { GovernanceData } from '../hooks/useGovernanceData'
+import { fetchRevenueLockCohorts, type RevenueLockCohort } from '../config'
 
 const REVENUE_LOCK_ABI = [
   'function allocation(address) view returns (uint256)',
@@ -39,6 +40,8 @@ interface BeneficiaryState {
 }
 
 export function RevenueLockPanel({ contracts, wallet, govData }: RevenueLockPanelProps) {
+  const [cohorts, setCohorts] = useState<RevenueLockCohort[]>([])
+  const [selectedCohortName, setSelectedCohortName] = useState<string | null>(null)
   const [unlockBps, setUnlockBps] = useState(0n)
   const [totalAllocation, setTotalAllocation] = useState(0n)
   const [beneficiaryCount, setBeneficiaryCount] = useState(0n)
@@ -48,12 +51,31 @@ export function RevenueLockPanel({ contracts, wallet, govData }: RevenueLockPane
   const [txError, setTxError] = useState<string | null>(null)
 
   const deployment = contracts.deployment
-  const revenueLockAddress = deployment?.contracts.revenueLock
+  const activeCohort = cohorts.find((c) => c.name === selectedCohortName) ?? null
+  const activeAddress = activeCohort?.address ?? null
+
+  // Load cohorts whenever the governance deployment becomes available
+  useEffect(() => {
+    if (!deployment) return
+    let cancelled = false
+    fetchRevenueLockCohorts(deployment)
+      .then((list) => {
+        if (cancelled) return
+        setCohorts(list)
+        if (list.length > 0 && !selectedCohortName) {
+          setSelectedCohortName(list[0].name)
+        }
+      })
+      .catch((err) => console.warn('[RevenueLockPanel] cohort discovery failed:', err))
+    return () => {
+      cancelled = true
+    }
+  }, [deployment, selectedCohortName])
 
   const fetchState = useCallback(async () => {
-    if (!contracts.provider || !revenueLockAddress) return
+    if (!contracts.provider || !activeAddress) return
 
-    const rl = new ethers.Contract(revenueLockAddress, REVENUE_LOCK_ABI, contracts.provider)
+    const rl = new ethers.Contract(activeAddress, REVENUE_LOCK_ABI, contracts.provider)
 
     try {
       const [unlock, total, count] = await Promise.all([
@@ -78,23 +100,28 @@ export function RevenueLockPanel({ contracts, wallet, govData }: RevenueLockPane
     } catch (err) {
       console.warn('[RevenueLockPanel] fetch error:', err)
     }
-  }, [contracts.provider, revenueLockAddress, wallet.account])
+  }, [contracts.provider, activeAddress, wallet.account])
 
   useEffect(() => {
+    // Reset per-cohort state when switching
+    setUnlockBps(0n)
+    setTotalAllocation(0n)
+    setBeneficiaryCount(0n)
+    setUserState(null)
     fetchState()
     const id = setInterval(fetchState, 15_000)
     return () => clearInterval(id)
   }, [fetchState])
 
   const handleRelease = async () => {
-    if (!wallet.account || !revenueLockAddress) return
+    if (!wallet.account || !activeAddress) return
     const target = delegatee.trim() || wallet.account
 
     setTxStatus('Releasing ARM...')
     setTxError(null)
     try {
       const signer = await wallet.getSigner()
-      const rl = new ethers.Contract(revenueLockAddress, REVENUE_LOCK_ABI, signer)
+      const rl = new ethers.Contract(activeAddress, REVENUE_LOCK_ABI, signer)
       const tx = await rl.release(target)
       setTxStatus('Waiting for confirmation...')
       await tx.wait()
@@ -107,11 +134,13 @@ export function RevenueLockPanel({ contracts, wallet, govData }: RevenueLockPane
     }
   }
 
-  if (!revenueLockAddress) {
+  if (cohorts.length === 0) {
     return (
       <div className="rounded border border-neutral-800 bg-neutral-900 p-4">
         <h3 className="text-sm font-medium text-neutral-300">Revenue Lock</h3>
-        <p className="mt-2 text-xs text-neutral-500">RevenueLock contract not deployed.</p>
+        <p className="mt-2 text-xs text-neutral-500">
+          No RevenueLock cohorts found for this network.
+        </p>
       </div>
     )
   }
@@ -123,9 +152,46 @@ export function RevenueLockPanel({ contracts, wallet, govData }: RevenueLockPane
 
   return (
     <div className="space-y-4">
+      {/* Cohort Selector */}
+      {cohorts.length > 1 && (
+        <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+          <label className="text-xs text-neutral-500">Cohort</label>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {cohorts.map((c) => (
+              <button
+                key={c.name}
+                onClick={() => setSelectedCohortName(c.name)}
+                className={`rounded px-3 py-1 text-xs ${
+                  selectedCohortName === c.name
+                    ? 'bg-blue-700 text-white'
+                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
+                }`}
+              >
+                {c.name}
+                {c.isPrimary && <span className="ml-1 opacity-60">(primary)</span>}
+              </button>
+            ))}
+          </div>
+          {activeCohort && (
+            <p className="mt-2 text-xs text-neutral-500 font-mono">
+              {activeCohort.address}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Revenue & Unlock Status */}
       <div className="rounded border border-neutral-800 bg-neutral-900 p-4">
-        <h3 className="text-sm font-medium text-neutral-300">Revenue Lock Status</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-neutral-300">
+            Revenue Lock Status{activeCohort ? ` — ${activeCohort.name}` : ''}
+          </h3>
+          {cohorts.length === 1 && activeCohort && (
+            <span className="text-xs text-neutral-500 font-mono">
+              {activeCohort.address.slice(0, 6)}...{activeCohort.address.slice(-4)}
+            </span>
+          )}
+        </div>
 
         <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
           <div>
@@ -221,7 +287,7 @@ export function RevenueLockPanel({ contracts, wallet, govData }: RevenueLockPane
       {wallet.account && userState && userState.allocation === 0n && (
         <div className="rounded border border-neutral-800 bg-neutral-900 p-4">
           <p className="text-xs text-neutral-500">
-            Connected wallet is not a RevenueLock beneficiary.
+            Connected wallet is not a beneficiary of this cohort.
           </p>
         </div>
       )}

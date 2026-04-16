@@ -30,7 +30,9 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
 function templateToProposalType(template: TemplateType): ProposalType {
   if (template === 'steward') return ProposalType.Extended
   if (template === 'signaling') return ProposalType.Signaling
-  if (template === 'manual') return ProposalType.VetoRatification
+  // Manual Calldata defaults to Standard — the on-chain classifier will auto-upgrade
+  // to Extended for any extended-classified selectors. VetoRatification cannot be
+  // proposed externally (Gov_AutoCreatedOnly), so it must not be returned here.
   return ProposalType.Standard
 }
 

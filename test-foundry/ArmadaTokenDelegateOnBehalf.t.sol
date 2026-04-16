@@ -268,9 +268,9 @@ contract ArmadaTokenDelegateOnBehalfTest is Test {
     }
 
     function test_addAuthorizedDelegator_enablesDelegateOnBehalf() public {
-        // WHY: This is the end-to-end closure of the bug fix — a delegator added via
-        // governance must be able to actually call delegateOnBehalf. If this breaks, the
-        // post-deployment authorization path is useless even if the flag flips correctly.
+        // WHY: A delegator authorized via the timelock path must actually be able to call
+        // delegateOnBehalf. If this breaks, the post-deployment authorization path is useless
+        // even if the authorization flag flips correctly.
         address newDelegator = address(0xDEAD);
 
         // Authorize via timelock (the new governance path)

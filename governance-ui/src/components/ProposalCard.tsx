@@ -264,26 +264,37 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
 
       {/* Action Buttons */}
       <div className="mt-3 flex flex-wrap gap-2">
-        {p.state === ProposalState.Active && !p.hasVoted && wallet.account && (
+        {p.state === ProposalState.Active && wallet.account && (
           <>
             <button
               onClick={() => handleVote(VoteSupport.For)}
-              className="rounded bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700"
+              disabled={p.hasVoted && p.userVoteChoice === VoteSupport.For}
+              className="rounded bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={p.hasVoted ? 'Click to change your vote' : undefined}
             >
               {isVetoRatification ? 'Uphold Veto (For)' : 'Vote For'}
             </button>
             <button
               onClick={() => handleVote(VoteSupport.Against)}
-              className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
+              disabled={p.hasVoted && p.userVoteChoice === VoteSupport.Against}
+              className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={p.hasVoted ? 'Click to change your vote' : undefined}
             >
               {isVetoRatification ? 'Eject SC (Against)' : 'Vote Against'}
             </button>
             <button
               onClick={() => handleVote(VoteSupport.Abstain)}
-              className="rounded bg-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:bg-neutral-600"
+              disabled={p.hasVoted && p.userVoteChoice === VoteSupport.Abstain}
+              className="rounded bg-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={p.hasVoted ? 'Click to change your vote' : undefined}
             >
               Abstain
             </button>
+            {p.hasVoted && (
+              <span className="self-center text-xs text-neutral-500 italic">
+                Vote-switching enabled — current vote disabled
+              </span>
+            )}
           </>
         )}
         {p.state === ProposalState.Succeeded && !isVetoRatification && (

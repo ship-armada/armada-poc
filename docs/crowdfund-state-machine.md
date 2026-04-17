@@ -98,7 +98,7 @@ flowchart TD
 | `MIN_SALE` | $1,000,000 | Minimum raise — below this, full refund |
 | `ELASTIC_TRIGGER` | $1,500,000 | Capped demand threshold to trigger expansion |
 | `ARM_PRICE` | $1.00 | Fixed price per ARM token |
-| `MAX_SEEDS` | 150 | Maximum hop-0 participants |
+| `MAX_SEEDS` | 160 | Maximum hop-0 participants |
 | `NUM_HOPS` | 3 | Hop-0 (seeds), hop-1 (invitees), hop-2 (sub-invitees) |
 
 ### Allocation Priority

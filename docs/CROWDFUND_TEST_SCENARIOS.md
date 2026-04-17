@@ -55,8 +55,8 @@ Seeds are hop-0 participants added by the launch team. Adding seeds requires ARM
 | 2.10 | Add seed with zero address | Revert | `crowdfund_integration.ts` |
 | 2.11 | Add duplicate seed | Revert: "already whitelisted" | `crowdfund_integration.ts` |
 | 2.12 | Add seeds after week 1 (launchTeamInviteEnd) | Revert | `crowdfund_adversarial.ts`, `crowdfund_launch_team.ts` |
-| 2.13 | Allow up to MAX_SEEDS (150) seeds | Succeeds | `crowdfund_launch_team.ts` |
-| 2.14 | 151st seed addition | Revert | `crowdfund_launch_team.ts` |
+| 2.13 | Allow up to MAX_SEEDS (160) seeds | Succeeds | `crowdfund_launch_team.ts` |
+| 2.14 | 161st seed addition | Revert | `crowdfund_launch_team.ts` |
 | 2.15 | `addSeeds()` batch that exceeds MAX_SEEDS mid-batch | Revert | `crowdfund_launch_team.ts` |
 
 ---

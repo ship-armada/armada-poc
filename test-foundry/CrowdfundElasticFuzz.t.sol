@@ -128,7 +128,7 @@ contract CrowdfundElasticFuzzTest is Test {
 
     /// @notice Fuzz seeds-only: varying number of seeds and commit amounts
     function testFuzz_elasticExpansion_seedsOnly(uint256 numSeeds, uint256 commitPerSeed) public {
-        numSeeds = bound(numSeeds, 1, 150);
+        numSeeds = bound(numSeeds, 1, 160);
         commitPerSeed = bound(commitPerSeed, MIN_COMMIT, HOP0_CAP);
 
         uint256 expectedCappedDemand = _min(commitPerSeed, HOP0_CAP) * numSeeds;

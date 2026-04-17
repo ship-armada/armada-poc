@@ -60,6 +60,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_StewardNotActive();
     error Gov_StewardProposerNoLongerActive();
     error Gov_UnknownProposal();
+    error Gov_UpdateDelayExceedsCap(uint256 requested, uint256 cap);
     error Gov_UseResolveRatification();
     error Gov_VotingEnded();
     error Gov_VotingNotEnded();
@@ -183,6 +184,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
     bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
     uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
+
+    // Timelock.updateDelay(uint256) — guarded at propose() time. Setting the timelock's
+    // _minDelay above MAX_EXECUTION_DELAY would permanently brick queue() because every
+    // proposal's executionDelay (≤ MAX_EXECUTION_DELAY) would fall below getMinDelay().
+    // NOTE: This guard is governor-scoped. It assumes PROPOSER_ROLE on the timelock is
+    // held ONLY by this governor. If another proposer is ever granted the role, that
+    // path bypasses this check and this guard must be re-evaluated.
+    bytes4 public constant UPDATE_DELAY_SELECTOR = bytes4(keccak256("updateDelay(uint256)"));
 
     // Fail-closed classification: selectors not in extendedSelectors AND not in
     // standardSelectors default to Extended. This prevents bypass via unclassified
@@ -741,6 +750,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             if (targets.length != values.length || targets.length != calldatas.length) revert Gov_LengthMismatch();
         }
 
+        // Bound timelock.updateDelay(uint256) at propose-time so a governance action
+        // cannot push _minDelay above MAX_EXECUTION_DELAY and permanently brick queue().
+        if (proposalType != ProposalType.Signaling) {
+            _validateTimelockCalldata(targets, calldatas);
+        }
+
         // Mechanical classification: if any calldata triggers extended, override to Extended.
         // Proposers can opt into Extended voluntarily, but cannot downgrade to Standard
         // when calldata contains extended-classified function calls.
@@ -1104,6 +1119,29 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         }
 
         return declaredType;
+    }
+
+    /// @dev Revert if any action would call timelock.updateDelay(X) with X > MAX_EXECUTION_DELAY.
+    ///      Setting _minDelay above the governor's max per-proposal executionDelay permanently
+    ///      bricks queue() (OZ TimelockController._schedule requires delay >= getMinDelay).
+    ///      Malformed calldata (< 4B selector, or < 36B = selector + uint256) is skipped;
+    ///      it would revert later at the timelock anyway and is not a minDelay escalation.
+    function _validateTimelockCalldata(address[] memory targets, bytes[] memory calldatas) internal view {
+        for (uint256 i = 0; i < targets.length; i++) {
+            if (targets[i] != address(timelock)) continue;
+            if (calldatas[i].length < 36) continue;
+            if (bytes4(calldatas[i]) != UPDATE_DELAY_SELECTOR) continue;
+
+            // Decode the uint256 argument. Skip the 4-byte selector by slicing from index 4.
+            bytes memory params = new bytes(calldatas[i].length - 4);
+            for (uint256 j = 0; j < params.length; j++) {
+                params[j] = calldatas[i][j + 4];
+            }
+            uint256 newDelay = abi.decode(params, (uint256));
+            if (newDelay > MAX_EXECUTION_DELAY) {
+                revert Gov_UpdateDelayExceedsCap(newDelay, MAX_EXECUTION_DELAY);
+            }
+        }
     }
 
     /// @dev Block proposals during the quiet period after crowdfund finalization.

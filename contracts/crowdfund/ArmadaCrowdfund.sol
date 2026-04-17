@@ -252,6 +252,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     function launchTeamInvite(address invitee, uint8 fromHop) external {
         require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
             "ArmadaCrowdfund: outside week-1 window"
@@ -271,6 +272,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         _registerOrStackInvite(invitee, inviteeHop, msg.sender);
 
+        emit Invited(launchTeam, invitee, inviteeHop, 0);
         emit LaunchTeamInvited(invitee, inviteeHop);
     }
 

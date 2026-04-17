@@ -192,11 +192,16 @@ contract ArmadaWindDown {
     /// @notice Update the wind-down deadline. Timelock-only. Cannot change after trigger.
     ///         Deadline must be in the future (same invariant the constructor enforces) to
     ///         prevent governance from disabling the permissionless trigger.
-    ///         DESIGN NOTE: Governance can repeatedly extend the deadline. This is accepted
-    ///         because setWindDownDeadline is an Extended selector (30% quorum, 14-day vote,
-    ///         7-day execution delay), and the Security Council can veto capture attempts.
-    ///         A hard cap was considered but rejected — protocol lifetime is uncertain and
-    ///         an artificial cap could force unnecessary wind-down.
+    ///         DESIGN NOTE: Governance can repeatedly extend the deadline. No hard cap is
+    ///         imposed because protocol lifetime is uncertain and an artificial cap could
+    ///         force unnecessary wind-down. Capture attempts are mitigated by the Security
+    ///         Council veto on any queued proposal. The selector is currently classified as
+    ///         Standard (20% quorum, 7-day vote, 2-day execution delay); extending the
+    ///         deadline is a loosening action that should eventually sit at the Extended
+    ///         bar per the asymmetric governance principle.
+    // TODO: Raise setWindDownDeadline to Extended for the extend-direction once the
+    // governor enforces directional classification (see ArmadaGovernor._initializeSelectors
+    // comment above the standard setWindDownDeadline registration).
     function setWindDownDeadline(uint256 _newDeadline) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
         require(!triggered, "ArmadaWindDown: already triggered");

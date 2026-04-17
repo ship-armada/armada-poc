@@ -376,13 +376,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitAbsolute(address,uint256)"))] = true;
-        // Adapter lifecycle (on AdapterRegistry) — affects which contracts interact with shielded yield
+        // Adapter authorization (on AdapterRegistry) — loosening: grants a new contract
+        // access to the protocol's shielded yield. Deauthorization is Standard (see below).
         extendedSelectors[bytes4(keccak256("authorizeAdapter(address)"))] = true;
-        extendedSelectors[bytes4(keccak256("deauthorizeAdapter(address)"))] = true;
-        extendedSelectors[bytes4(keccak256("fullDeauthorizeAdapter(address)"))] = true;
-        // Wind-down parameter adjustments (on ArmadaWindDown) — high-impact, can extend protocol lifetime
-        extendedSelectors[bytes4(keccak256("setRevenueThreshold(uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("setWindDownDeadline(uint256)"))] = true;
         // Wrapper/forwarder deny-list — force Extended for generic relay patterns that could
         // wrap an Extended action inside a Standard-looking call. Defense-in-depth alongside
         // the fail-closed default.
@@ -406,6 +402,18 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         standardSelectors[bytes4(keccak256("removeSteward()"))] = true;
         // Permissionless crowdfund sweep — anyone can call directly, governance path is optional
         standardSelectors[bytes4(keccak256("withdrawUnallocatedArm()"))] = true;
+        // Adapter deauthorization (on AdapterRegistry) — tightening: revokes an adapter's
+        // access to the protocol. Paired with authorizeAdapter (Extended) above.
+        standardSelectors[bytes4(keccak256("deauthorizeAdapter(address)"))] = true;
+        standardSelectors[bytes4(keccak256("fullDeauthorizeAdapter(address)"))] = true;
+        // Wind-down operational parameters (on ArmadaWindDown) — routine threshold /
+        // deadline adjustments. Directional nuance (e.g. extending the deadline is
+        // loosening) is not yet enforced in code; tracked separately for future work.
+        standardSelectors[bytes4(keccak256("setRevenueThreshold(uint256)"))] = true;
+        standardSelectors[bytes4(keccak256("setWindDownDeadline(uint256)"))] = true;
+        // Non-stablecoin revenue attestation (on RevenueCounter) — governance attests
+        // USD value of non-stablecoin fees (e.g. ETH). Operational governance task.
+        standardSelectors[bytes4(keccak256("attestRevenue(uint256)"))] = true;
     }
 
     // ============ Quorum Exclusion ============

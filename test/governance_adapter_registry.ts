@@ -164,8 +164,10 @@ describe("Governance Adapter Registry", function () {
 
   describe("Authorize Adapter", function () {
     it("should authorize adapter via Extended governance proposal", async function () {
-      // WHY: Adapter lifecycle selectors are Extended-classified — authorizing an adapter
-      // affects the entire shielded yield integration surface and requires higher quorum.
+      // WHY: authorizeAdapter is Extended-classified under the asymmetric principle
+      // (tightening is easy, loosening is hard): granting an adapter access to the
+      // shielded yield integration surface is a loosening action and requires the
+      // higher quorum/longer voting bar. Deauthorization is Standard (see below).
       const registryAddr = await registry.getAddress();
       const calldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
 
@@ -180,16 +182,19 @@ describe("Governance Adapter Registry", function () {
 
   describe("Deauthorize Adapter", function () {
     it("should deauthorize adapter to withdraw-only via governance", async function () {
+      // WHY: deauthorizeAdapter is Standard-classified — revoking an adapter's access
+      // is a tightening action, so it runs at the lower 20%/7d bar. Confirms the
+      // directional split from authorizeAdapter (Extended) actually works end-to-end.
       const registryAddr = await registry.getAddress();
 
-      // First: authorize
+      // First: authorize (Extended — loosening)
       const authCalldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
       await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter", ProposalType.Extended);
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(true);
 
-      // Then: deauthorize
+      // Then: deauthorize (Standard — tightening)
       const deauthCalldata = registry.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter", ProposalType.Extended);
+      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter", ProposalType.Standard);
 
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(false);
       expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(true);
@@ -200,19 +205,22 @@ describe("Governance Adapter Registry", function () {
 
   describe("Full Deauthorize Adapter", function () {
     it("should fully remove adapter after withdraw-only period via governance", async function () {
+      // WHY: fullDeauthorizeAdapter is also Standard-classified (tightening). This walks
+      // the full authorize → withdraw-only → fully removed lifecycle, exercising the
+      // Standard path for both deauthorization steps.
       const registryAddr = await registry.getAddress();
 
-      // Authorize
+      // Authorize (Extended — loosening)
       const authCalldata = registry.interface.encodeFunctionData("authorizeAdapter", [adapterAddr]);
       await proposeVoteQueueExecute([registryAddr], [authCalldata], "Authorize adapter", ProposalType.Extended);
 
-      // Deauthorize (withdraw-only)
+      // Deauthorize (Standard — tightening, withdraw-only)
       const deauthCalldata = registry.interface.encodeFunctionData("deauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter", ProposalType.Extended);
+      await proposeVoteQueueExecute([registryAddr], [deauthCalldata], "Deauthorize adapter", ProposalType.Standard);
 
-      // Full deauthorize
+      // Full deauthorize (Standard — tightening, removes withdraw-only status)
       const fullDeauthCalldata = registry.interface.encodeFunctionData("fullDeauthorizeAdapter", [adapterAddr]);
-      await proposeVoteQueueExecute([registryAddr], [fullDeauthCalldata], "Fully remove adapter", ProposalType.Extended);
+      await proposeVoteQueueExecute([registryAddr], [fullDeauthCalldata], "Fully remove adapter", ProposalType.Standard);
 
       expect(await registry.authorizedAdapters(adapterAddr)).to.equal(false);
       expect(await registry.withdrawOnlyAdapters(adapterAddr)).to.equal(false);

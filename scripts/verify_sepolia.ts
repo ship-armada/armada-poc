@@ -138,8 +138,16 @@ async function main() {
     },
     {
       name: "RevenueLock",
+      // $10k/day rate cap — must match the value used at deployment in deploy_governance.ts.
+      // See PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225.
       address: c.revenueLock,
-      constructorArguments: [c.armToken, c.revenueCounter, beneficiaryAddresses, beneficiaryAmounts],
+      constructorArguments: [
+        c.armToken,
+        c.revenueCounter,
+        ethers.parseUnits("10000", 18),
+        beneficiaryAddresses,
+        beneficiaryAmounts,
+      ],
     },
     {
       name: "ShieldPauseController",

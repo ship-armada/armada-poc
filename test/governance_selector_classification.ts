@@ -40,14 +40,13 @@ describe("Governance Selector Classification", function () {
     );
   });
 
-  // WHY: Issue #233 fixes five mis-classified selectors. Under the asymmetric
-  // governance principle ("tightening is easy, loosening is hard"), routine
-  // operational actions and tightening actions (revoking adapter access,
-  // attesting revenue, adjusting wind-down operational params) belong at the
-  // Standard bar (20% quorum / 7d). Regression-test the exact assignment so
-  // future refactors don't silently flip one back to Extended and re-raise
-  // the bar on operational governance.
-  describe("Standard-classified selectors (issue #233)", function () {
+  // WHY: Under the asymmetric governance principle ("tightening is easy,
+  // loosening is hard"), routine operational actions and tightening actions
+  // (revoking adapter access, attesting revenue, adjusting wind-down
+  // operational params) belong at the Standard bar (20% quorum / 7d). Pin
+  // the exact assignment so a refactor cannot silently flip one back to
+  // Extended and re-raise the bar on operational governance.
+  describe("Standard-classified selectors", function () {
     const standardSelectors: [string, string][] = [
       ["deauthorizeAdapter(address)", "tightening — revokes adapter access"],
       ["fullDeauthorizeAdapter(address)", "tightening — fully removes adapter"],

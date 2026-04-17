@@ -13,6 +13,17 @@ import "./IArmadaGovernance.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
 
+/// @dev Minimal interface for reading treasury outflow limits at queue time.
+///      Matches the signature of ArmadaTreasuryGov.getOutflowStatus.
+interface IArmadaTreasuryOutflow {
+    function getOutflowStatus(address token) external view returns (
+        uint256 effectiveLimit,
+        uint256 recentOutflow,
+        uint256 available
+    );
+}
+
+
 /// @title ArmadaGovernor — UUPS-upgradeable governance with typed proposals and ERC20Votes delegation
 /// @notice Implements the Armada governance spec: proposal lifecycle, per-type quorum/timing,
 ///         voting via delegated ARM tokens, and timelock execution. Upgradeable via UUPS,
@@ -73,6 +84,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_SignalingMustBeEmpty();
     error Gov_SignalingNoExecution();
     error Gov_TreasuryAlreadyExcluded();
+    error Gov_OutflowInfeasible();
 
     // ============ Types ============
 
@@ -182,6 +194,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Treasury >5% threshold for automatic extended classification of distribute() calls.
     // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
     bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
+    bytes4 public constant STEWARD_SPEND_SELECTOR = bytes4(keccak256("stewardSpend(address,address,uint256)"));
     uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
 
     // Fail-closed classification: selectors not in extendedSelectors AND not in
@@ -866,6 +879,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             }
         }
 
+        // Queue-time outflow feasibility check: reject proposals whose aggregate
+        // per-token treasury spend exceeds the current effective outflow limit.
+        // See GOVERNANCE.md §Treasury Outflow Limits — "Queue-time feasibility check".
+        _checkOutflowFeasibility(p.targets, p.calldatas);
+
         p.queued = true;
 
         bytes32 timelockId = timelock.hashOperationBatch(
@@ -1104,6 +1122,71 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         }
 
         return declaredType;
+    }
+
+    /// @dev Queue-time sanity check: reject a proposal whose aggregate per-token
+    ///      treasury spend exceeds that token's current effective outflow limit.
+    ///      Such a proposal can never execute under current parameters and should
+    ///      not occupy the timelock queue indefinitely.
+    ///
+    ///      Compares against the effective limit (the ceiling), not the available
+    ///      budget (ceiling minus recent outflows). Proposals that fit the limit
+    ///      but exceed the current available budget are allowed to queue and retry
+    ///      once the rolling window has created room.
+    ///
+    ///      Only distribute() and stewardSpend() actions targeting the treasury are
+    ///      checked — both share the (address token, address recipient, uint256 amount)
+    ///      layout. transferTo()/transferETHTo() are wind-down-only paths that bypass
+    ///      outflow limits and are intentionally excluded.
+    ///
+    ///      Reuses the calldata slice + abi.decode pattern from _classifyProposal.
+    ///      View-only; reverts before any governor or timelock state is written.
+    function _checkOutflowFeasibility(
+        address[] memory targets,
+        bytes[] memory calldatas
+    ) internal view {
+        // Aggregate amounts per token using parallel arrays in memory. Proposal
+        // batches are small (bounded by block gas), so O(n^2) is acceptable and
+        // avoids needing a mapping or a storage slot.
+        address[] memory tokens = new address[](calldatas.length);
+        uint256[] memory sums = new uint256[](calldatas.length);
+        uint256 tokenCount;
+
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            if (targets[i] != treasuryAddress) continue;
+            // 4 selector bytes + 3 * 32 param bytes = 100
+            if (calldatas[i].length < 100) continue;
+
+            bytes4 selector = bytes4(calldatas[i]);
+            if (selector != DISTRIBUTE_SELECTOR && selector != STEWARD_SPEND_SELECTOR) continue;
+
+            // Decode: (address token, address recipient, uint256 amount).
+            // Same slice pattern as _classifyProposal — skip 4-byte selector.
+            bytes memory params = new bytes(calldatas[i].length - 4);
+            for (uint256 j = 0; j < params.length; j++) {
+                params[j] = calldatas[i][j + 4];
+            }
+            (address token, , uint256 amount) = abi.decode(params, (address, address, uint256));
+
+            bool found;
+            for (uint256 k = 0; k < tokenCount; k++) {
+                if (tokens[k] == token) {
+                    sums[k] += amount;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                tokens[tokenCount] = token;
+                sums[tokenCount] = amount;
+                tokenCount++;
+            }
+        }
+
+        for (uint256 k = 0; k < tokenCount; k++) {
+            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasuryAddress).getOutflowStatus(tokens[k]);
+            if (sums[k] > effectiveLimit) revert Gov_OutflowInfeasible();
+        }
     }
 
     /// @dev Block proposals during the quiet period after crowdfund finalization.

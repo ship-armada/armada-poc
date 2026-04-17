@@ -30,7 +30,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_AlreadyResolved();
     error Gov_AutoCreatedOnly();
     error Gov_BelowProposalThreshold();
-    error Gov_CommunityOverrodeNoDoubleVeto();
+    error Gov_SingleVetoRule();
     error Gov_EmptyProposal();
     error Gov_ExecutionDelayOutOfBounds();
     error Gov_GovernanceEnded();
@@ -106,6 +106,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         bool executed;
         bool canceled;
         bool queued;
+        bool vetoRatificationDenied; // prevents re-veto of a proposal restored after community denied a veto
 
         // Execution data
         address[] targets;
@@ -190,10 +191,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // ============ Veto & Ratification ============
 
-    /// @notice Calldata hashes of proposals where community denied the SC's veto.
-    /// Prevents the SC from vetoing identical proposal content twice.
-    mapping(bytes32 => bool) public vetoDeniedHashes;
-
     /// @notice Maps ratification proposalId → original vetoed proposalId
     mapping(uint256 => uint256) public ratificationOf;
 
@@ -226,6 +223,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event StandardSelectorRemoved(bytes4 indexed selector);
     event StewardContractSet(address indexed steward);
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
+    event ProposalRestored(uint256 indexed proposalId);
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
     event ExcludedAddressesSet(address[] addresses);
@@ -527,11 +525,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (securityCouncil == address(0)) revert Gov_SCEjected();
         if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
-        // Double-veto prevention: community denied a veto on identical calldata
-        bytes32 calldataHash = _proposalCalldataHash(proposalId);
-        if (vetoDeniedHashes[calldataHash]) revert Gov_CommunityOverrodeNoDoubleVeto();
-
         Proposal storage p = _proposals[proposalId];
+
+        // Per-proposal re-veto prevention: community already denied a veto on this proposal
+        if (p.vetoRatificationDenied) revert Gov_SingleVetoRule();
 
         // Cancel the original proposal
         p.canceled = true;
@@ -566,12 +563,25 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         bool majorityAgainst = quorumMet && (p.againstVotes > p.forVotes);
 
         if (majorityAgainst) {
-            // Community denies the veto → eject SC, store calldata hash
+            // Community denies the veto → eject SC, restore proposal
             address oldSC = securityCouncil;
             securityCouncil = address(0);
 
-            vetoDeniedHashes[_proposalCalldataHash(vetoedId)] = true;
+            // Restore the original proposal to Queued state
+            Proposal storage orig = _proposals[vetoedId];
+            orig.canceled = false;
+            orig.vetoRatificationDenied = true; // prevent re-veto of this specific proposal
 
+            // Re-queue in timelock with fresh minimum delay.
+            // cancel() cleared _timestamps[id] so scheduleBatch() accepts the same operation ID.
+            timelock.scheduleBatch(
+                orig.targets, orig.values, orig.calldatas,
+                0, // no predecessor
+                _proposalSalt(vetoedId),
+                timelock.getMinDelay()
+            );
+
+            emit ProposalRestored(vetoedId);
             emit SecurityCouncilEjected(ratificationId);
             emit SecurityCouncilUpdated(oldSC, address(0));
             emit RatificationResolved(ratificationId, false);
@@ -609,13 +619,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         return ratId;
     }
-
-    /// @dev Compute a deterministic hash of a proposal's calldata for double-veto prevention.
-    function _proposalCalldataHash(uint256 proposalId) internal view returns (bytes32) {
-        Proposal storage p = _proposals[proposalId];
-        return keccak256(abi.encode(p.targets, p.values, p.calldatas));
-    }
-
 
     // ============ Steward Proposals ============
 

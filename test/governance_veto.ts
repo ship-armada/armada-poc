@@ -375,26 +375,19 @@ describe("Governance Veto", function () {
       await time.increase(SEVEN_DAYS + 1);
 
       const tx = governor.resolveRatification(ratId);
+      await expect(tx).to.emit(governor, "ProposalRestored").withArgs(proposalId);
       await expect(tx).to.emit(governor, "SecurityCouncilEjected").withArgs(ratId);
       await expect(tx).to.emit(governor, "SecurityCouncilUpdated").withArgs(carol.address, ethers.ZeroAddress);
       await expect(tx).to.emit(governor, "RatificationResolved").withArgs(ratId, false);
 
       // SC ejected
       expect(await governor.securityCouncil()).to.equal(ethers.ZeroAddress);
+      // Proposal restored to Queued
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
     });
 
-    it("should store calldata hash when veto is denied", async function () {
+    it("should restore original proposal to Queued state when veto is denied", async function () {
       const proposalId = await createAndQueueProposal(alice);
-
-      // Compute expected calldata hash
-      const [targets, values, calldatas] = await governor.getProposalActions(proposalId);
-      const expectedHash = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ["address[]", "uint256[]", "bytes[]"],
-          [targets, values, calldatas]
-        )
-      );
-
       const ratId = await vetoProposal(proposalId);
 
       // Vote AGAINST
@@ -404,7 +397,13 @@ describe("Governance Veto", function () {
       await time.increase(SEVEN_DAYS + 1);
       await governor.resolveRatification(ratId);
 
-      expect(await governor.vetoDeniedHashes(expectedHash)).to.be.true;
+      // Proposal must be Queued, not Canceled
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
+
+      // Execute after fresh timelock delay (2 days)
+      await time.increase(TWO_DAYS + 1);
+      await governor.execute(proposalId);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Executed);
     });
 
     it("should revert if voting hasn't ended", async function () {
@@ -438,18 +437,18 @@ describe("Governance Veto", function () {
     });
   });
 
-  // ======== Double-Veto Prevention ========
+  // ======== Re-Veto Prevention ========
 
-  describe("Double-Veto Prevention", function () {
-    it("should block veto on identical calldata after community denial", async function () {
-      // First proposal: create, queue, veto, community AGAINST → deny veto
-      const proposalId1 = await createAndQueueProposal(alice);
-      const ratId1 = await vetoProposal(proposalId1);
+  describe("Re-Veto Prevention", function () {
+    it("should block re-veto of a restored proposal", async function () {
+      // Veto → community AGAINST → proposal restored
+      const proposalId = await createAndQueueProposal(alice);
+      const ratId = await vetoProposal(proposalId);
 
-      await governor.connect(alice).castVote(ratId1, Vote.Against);
-      await governor.connect(bob).castVote(ratId1, Vote.Against);
+      await governor.connect(alice).castVote(ratId, Vote.Against);
+      await governor.connect(bob).castVote(ratId, Vote.Against);
       await time.increase(SEVEN_DAYS + 1);
-      await governor.resolveRatification(ratId1);
+      await governor.resolveRatification(ratId);
 
       // SC ejected, set new SC (dave)
       expect(await governor.securityCouncil()).to.equal(ethers.ZeroAddress);
@@ -457,24 +456,16 @@ describe("Governance Veto", function () {
       await governor.connect(timelockSigner).setSecurityCouncil(dave.address);
       await stopImpersonatingTimelock();
 
-      // Second proposal with identical calldata
-      const proposalId2 = await createAndQueueProposal(
-        alice,
-        undefined, // same targets (governor)
-        undefined, // same calldatas (proposalCount)
-        "second attempt"
-      );
-
-      // New SC tries to veto — should revert
+      // New SC tries to veto restored proposal — should revert
       await expect(
         governor.connect(dave).veto(
-          proposalId2, ethers.keccak256(ethers.toUtf8Bytes("rationale2"))
+          proposalId, ethers.keccak256(ethers.toUtf8Bytes("rationale2"))
         )
-      ).to.be.revertedWithCustomError(governor, "Gov_CommunityOverrodeNoDoubleVeto");
+      ).to.be.revertedWithCustomError(governor, "Gov_SingleVetoRule");
     });
 
-    it("should allow veto on modified calldata", async function () {
-      // First: veto denied
+    it("should allow veto on a new proposal with identical calldata", async function () {
+      // First: veto denied → proposal restored
       const proposalId1 = await createAndQueueProposal(alice);
       const ratId1 = await vetoProposal(proposalId1);
 
@@ -488,16 +479,15 @@ describe("Governance Veto", function () {
       await governor.connect(timelockSigner).setSecurityCouncil(dave.address);
       await stopImpersonatingTimelock();
 
-      // Second proposal with DIFFERENT calldata
-      const govAddr = await governor.getAddress();
+      // Second proposal with IDENTICAL calldata — different proposal, should be vetoable
       const proposalId2 = await createAndQueueProposal(
         alice,
-        [govAddr],
-        [governor.interface.encodeFunctionData("proposalThreshold")],
-        "different calldata"
+        undefined, // same targets
+        undefined, // same calldatas
+        "second attempt"
       );
 
-      // New SC can veto — different calldata hash
+      // New SC can veto — per-proposal flag, not calldata-based
       await governor.connect(dave).veto(
         proposalId2, ethers.keccak256(ethers.toUtf8Bytes("rationale2"))
       );
@@ -614,7 +604,7 @@ describe("Governance Veto", function () {
       expect(await governor.state(ratId)).to.equal(ProposalState.Executed);
     });
 
-    it("should complete veto-denied lifecycle: propose → vote → queue → veto → AGAINST → SC ejected → new SC set", async function () {
+    it("should complete veto-denied lifecycle: propose → queue → veto → AGAINST → restored → executed", async function () {
       // 1. Create and queue
       const proposalId = await createAndQueueProposal(alice);
 
@@ -628,24 +618,22 @@ describe("Governance Veto", function () {
       await governor.connect(alice).castVote(ratId, Vote.Against);
       await governor.connect(bob).castVote(ratId, Vote.Against);
 
-      // 4. Resolve
+      // 4. Resolve → proposal restored
       await time.increase(SEVEN_DAYS + 1);
       await governor.resolveRatification(ratId);
 
       // 5. SC ejected
       expect(await governor.securityCouncil()).to.equal(ethers.ZeroAddress);
 
-      // 6. Calldata hash stored
-      const [targets, values, calldatas] = await governor.getProposalActions(proposalId);
-      const calldataHash = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ["address[]", "uint256[]", "bytes[]"],
-          [targets, values, calldatas]
-        )
-      );
-      expect(await governor.vetoDeniedHashes(calldataHash)).to.be.true;
+      // 6. Proposal is Queued (restored)
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 
-      // 7. Governance can set new SC
+      // 7. Execute after fresh timelock delay
+      await time.increase(TWO_DAYS + 1);
+      await governor.execute(proposalId);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Executed);
+
+      // 8. Governance can set new SC
       const timelockSigner = await asTimelock();
       await governor.connect(timelockSigner).setSecurityCouncil(dave.address);
       await stopImpersonatingTimelock();

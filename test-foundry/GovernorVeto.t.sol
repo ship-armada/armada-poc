@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // ABOUTME: Foundry tests for Security Council veto mechanism and ratification votes.
-// ABOUTME: Covers veto lifecycle, SC ejection, double-veto prevention, and bond deferral.
+// ABOUTME: Covers veto lifecycle, SC ejection, proposal restoration on denied veto, and re-veto prevention.
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
@@ -11,7 +11,7 @@ import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "./helpers/GovernorDeployHelper.sol";
 
-/// @title GovernorVetoTest — Tests for SC veto, ratification, ejection, and double-veto prevention
+/// @title GovernorVetoTest — Tests for SC veto, ratification, ejection, proposal restoration, and re-veto prevention
 contract GovernorVetoTest is Test, GovernorDeployHelper {
     // Mirror events from governor for expectEmit
     event ProposalVetoed(uint256 indexed proposalId, bytes32 rationaleHash, uint256 ratificationId);
@@ -27,6 +27,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         string description
     );
     event ProposalCanceled(uint256 indexed proposalId);
+    event ProposalRestored(uint256 indexed proposalId);
     ArmadaGovernor public governor;
     ArmadaToken public armToken;
     TimelockController public timelock;
@@ -421,6 +422,8 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.warp(block.timestamp + SEVEN_DAYS + 1);
 
         vm.expectEmit(true, false, false, false);
+        emit ProposalRestored(proposalId);
+        vm.expectEmit(true, false, false, false);
         emit SecurityCouncilEjected(ratId);
         vm.expectEmit(true, true, false, false);
         emit SecurityCouncilUpdated(sc, address(0));
@@ -431,21 +434,56 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
         // SC ejected
         assertEq(governor.securityCouncil(), address(0));
+        // Proposal restored to Queued
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
     }
 
-    function test_resolve_againstStoresCalldataHash() public {
+    /// @dev WHY: When the community denies a veto (votes AGAINST), the original proposal
+    ///      must be restored to Queued state so it can proceed to execution without
+    ///      re-submission through the full governance lifecycle.
+    function test_resolve_againstRestoresProposal() public {
         uint256 proposalId = _createAndQueueProposal(alice);
-
-        // Compute expected calldata hash
-        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) =
-            governor.getProposalActions(proposalId);
-        bytes32 expectedHash = keccak256(abi.encode(targets, values, calldatas));
 
         vm.prank(sc);
         governor.veto(proposalId, keccak256("rationale"));
         uint256 ratId = governor.proposalCount();
 
-        // Vote AGAINST
+        // Vote AGAINST (deny veto)
+        vm.prank(alice);
+        governor.castVote(ratId, 0);
+        vm.prank(bob);
+        governor.castVote(ratId, 0);
+
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+
+        vm.expectEmit(true, false, false, false);
+        emit ProposalRestored(proposalId);
+
+        governor.resolveRatification(ratId);
+
+        // Original proposal should be Queued again (not Canceled)
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    /// @dev WHY: After the community denies a veto and the proposal is restored,
+    ///      the timelock must have a fresh pending operation so execute() works
+    ///      after the minimum delay.
+    function test_resolve_againstRequeuesInTimelock() public {
+        uint256 proposalId = _createAndQueueProposal(alice);
+
+        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) =
+            governor.getProposalActions(proposalId);
+        bytes32 timelockId = timelock.hashOperationBatch(
+            targets, values, calldatas, 0, bytes32(proposalId)
+        );
+
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("rationale"));
+
+        // Timelock op is cleared by veto
+        assertFalse(timelock.isOperationPending(timelockId));
+
+        uint256 ratId = governor.proposalCount();
         vm.prank(alice);
         governor.castVote(ratId, 0);
         vm.prank(bob);
@@ -454,8 +492,33 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.warp(block.timestamp + SEVEN_DAYS + 1);
         governor.resolveRatification(ratId);
 
-        // Calldata hash should be stored
-        assertTrue(governor.vetoDeniedHashes(expectedHash));
+        // Timelock op should be re-scheduled and pending
+        assertTrue(timelock.isOperationPending(timelockId));
+    }
+
+    /// @dev WHY: A restored proposal must be executable after the fresh timelock delay.
+    ///      This verifies the full lifecycle: veto → denied → restored → executed.
+    function test_resolve_restoredProposalCanBeExecuted() public {
+        uint256 proposalId = _createAndQueueProposal(alice);
+
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("rationale"));
+        uint256 ratId = governor.proposalCount();
+
+        vm.prank(alice);
+        governor.castVote(ratId, 0);
+        vm.prank(bob);
+        governor.castVote(ratId, 0);
+
+        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        governor.resolveRatification(ratId);
+
+        // Advance past fresh timelock delay (getMinDelay = 2 days)
+        vm.warp(block.timestamp + TWO_DAYS + 1);
+
+        // Execute should succeed
+        governor.execute(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Executed));
     }
 
     function test_resolve_revertsBeforeVotingEnds() public {
@@ -496,25 +559,26 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.resolveRatification(ratId);
     }
 
-    // ======== Double-Veto Prevention ========
+    // ======== Re-Veto Prevention ========
 
-    function test_doubleVeto_identicalCalldataReverts() public {
-        // First proposal: create, queue, veto, community AGAINST → deny veto
-        uint256 proposalId1 = _createAndQueueProposalWithCalldata(
-            alice, address(governor), abi.encodeWithSignature("proposalCount()"), "first attempt"
-        );
+    /// @dev WHY: A restored proposal has vetoRatificationDenied=true, preventing a newly
+    ///      appointed SC from vetoing the same proposal again. The community already
+    ///      overrode the veto — re-vetoing would undermine community sovereignty.
+    function test_reVeto_restoredProposalCannotBeVetoed() public {
+        uint256 proposalId = _createAndQueueProposal(alice);
 
         vm.prank(sc);
-        governor.veto(proposalId1, keccak256("rationale"));
-        uint256 ratId1 = governor.proposalCount();
+        governor.veto(proposalId, keccak256("rationale"));
+        uint256 ratId = governor.proposalCount();
 
+        // Community denies veto
         vm.prank(alice);
-        governor.castVote(ratId1, 0); // AGAINST
+        governor.castVote(ratId, 0);
         vm.prank(bob);
-        governor.castVote(ratId1, 0); // AGAINST
+        governor.castVote(ratId, 0);
 
         vm.warp(block.timestamp + SEVEN_DAYS + 1);
-        governor.resolveRatification(ratId1);
+        governor.resolveRatification(ratId);
 
         // SC ejected, set new SC
         assertEq(governor.securityCouncil(), address(0));
@@ -522,21 +586,19 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(address(timelock));
         governor.setSecurityCouncil(newSC);
 
-        // Second proposal with identical calldata: create, queue
-        uint256 proposalId2 = _createAndQueueProposalWithCalldata(
-            alice, address(governor), abi.encodeWithSignature("proposalCount()"), "second attempt"
-        );
-
-        // New SC tries to veto — should revert
+        // New SC tries to veto restored proposal — should revert
         vm.prank(newSC);
-        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_CommunityOverrodeNoDoubleVeto.selector));
-        governor.veto(proposalId2, keccak256("rationale2"));
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_SingleVetoRule.selector));
+        governor.veto(proposalId, keccak256("rationale2"));
     }
 
-    function test_doubleVeto_modifiedCalldataAllowed() public {
-        // First: veto denied
+    /// @dev WHY: The re-veto prevention is per-proposal, not per-calldata. A future
+    ///      proposal with identical calldata is a separate governance decision and
+    ///      must be vetoable by the SC.
+    function test_reVeto_identicalCalldataOnNewProposalAllowed() public {
+        // First proposal: veto denied → restored
         uint256 proposalId1 = _createAndQueueProposalWithCalldata(
-            alice, address(governor), abi.encodeWithSignature("proposalCount()"), "first"
+            alice, address(governor), abi.encodeWithSignature("proposalCount()"), "first attempt"
         );
 
         vm.prank(sc);
@@ -556,16 +618,15 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(address(timelock));
         governor.setSecurityCouncil(newSC);
 
-        // Second proposal with DIFFERENT calldata
+        // Second proposal with IDENTICAL calldata — different proposal, should be vetoable
         uint256 proposalId2 = _createAndQueueProposalWithCalldata(
-            alice, address(governor), abi.encodeWithSignature("proposalThreshold()"), "different calldata"
+            alice, address(governor), abi.encodeWithSignature("proposalCount()"), "second attempt"
         );
 
-        // New SC can veto — different calldata hash
+        // New SC can veto — different proposal instance, no vetoRatificationDenied flag
         vm.prank(newSC);
         governor.veto(proposalId2, keccak256("rationale2"));
 
-        // Veto succeeds
         assertEq(uint256(governor.state(proposalId2)), uint256(ProposalState.Canceled));
     }
 
@@ -671,7 +732,11 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         assertEq(uint256(governor.state(ratId)), uint256(ProposalState.Executed));
     }
 
-    function test_fullLifecycle_vetoDeniedSCEjected() public {
+    /// @dev WHY: End-to-end lifecycle test for veto-denied path. The community denies
+    ///      the veto, the SC is ejected, the proposal is restored to Queued, and
+    ///      can be executed after the fresh timelock delay. Verifies no state corruption
+    ///      across the full sequence.
+    function test_fullLifecycle_vetoDeniedRestoredAndExecuted() public {
         // 1. Create and queue
         uint256 proposalId = _createAndQueueProposal(alice);
 
@@ -686,18 +751,20 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 0);
 
-        // 4. Resolve
+        // 4. Resolve → proposal restored
         vm.warp(block.timestamp + SEVEN_DAYS + 1);
         governor.resolveRatification(ratId);
 
         // 5. SC ejected
         assertEq(governor.securityCouncil(), address(0));
 
-        // 6. Calldata hash stored — identical proposal cannot be vetoed again
-        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) =
-            governor.getProposalActions(proposalId);
-        bytes32 calldataHash = keccak256(abi.encode(targets, values, calldatas));
-        assertTrue(governor.vetoDeniedHashes(calldataHash));
+        // 6. Proposal is Queued again (not Canceled)
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+
+        // 7. Execute after fresh timelock delay
+        vm.warp(block.timestamp + TWO_DAYS + 1);
+        governor.execute(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Executed));
     }
 
     // ======== Voting on Canceled Proposals ========

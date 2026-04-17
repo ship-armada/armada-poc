@@ -1,5 +1,5 @@
 // ABOUTME: Hardhat integration tests for SC veto mechanism, ratification votes, and bond deferral.
-// ABOUTME: Covers veto lifecycle, SC ejection, double-veto prevention, queue/execute guards, and post-ejection behavior.
+// ABOUTME: Covers veto lifecycle, SC ejection, proposal restoration on denied veto, re-veto prevention, and post-ejection behavior.
 
 import { expect } from "chai";
 import { ethers } from "hardhat";

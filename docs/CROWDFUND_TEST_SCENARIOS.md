@@ -695,7 +695,7 @@ Finalization supports two modes: single-TX (default) and phased (for gas-constra
 - `crowdfund_settlement.ts` — Cancel paths, proceeds push, claim deadline, ARM sweep windows
 - `crowdfund_eager_allocation.ts` — Single-TX vs phased settlement, conservation invariants
 - `crowdfund_multinode.ts` — Self-invitation, invite stacking, aggregate claims, per-hop caps
-- `crowdfund_launch_team.ts` — 150-seed cap, week-1 budget, re-invite, sentinel properties
+- `crowdfund_launch_team.ts` — 160-seed cap, week-1 budget, re-invite, sentinel properties
 - `crowdfund_eip712.ts` — Signed invites, nonce tracking, revocation, amount boundaries
 
 **Foundry (test-foundry/):**

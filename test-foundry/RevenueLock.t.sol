@@ -551,9 +551,9 @@ contract RevenueLockTest is Test {
         );
     }
 
-    // ============ Ratchet (issue #225) Tests ============
+    // ============ Ratchet Tests ============
     //
-    // These tests target the monotonic ratchet + rate-limit introduced to neutralise
+    // These tests target the monotonic ratchet and rate-limit that neutralise
     // governance-controlled RevenueCounter upgrades. They MUST use raw setRevenue
     // (not _setRevenueAndBudget) so that the rate-limit boundary is actually
     // exercised instead of being hidden by the helper's auto-warp.

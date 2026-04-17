@@ -453,13 +453,13 @@ describe("RevenueLock", function () {
   });
 
   // ============================================================
-  // 8. Ratchet + Rate-Limit (issue #225)
+  // 8. Ratchet + Rate-Limit
   // ============================================================
   //
   // End-to-end integration tests for the monotonic ratchet and daily rate cap
-  // introduced to neutralise RevenueCounter governance-upgrade attacks. These
-  // tests use the REAL RevenueCounter (UUPS proxy, not a mock) so they exercise
-  // the full governance + ratchet interaction.
+  // that guard against RevenueCounter governance-upgrade attacks. These tests
+  // use the REAL RevenueCounter (UUPS proxy, not a mock) so they exercise the
+  // full governance + ratchet interaction.
 
   describe("Ratchet + Rate Limit", function () {
     it("initializes lastSyncTimestamp to deployment time (not zero)", async function () {

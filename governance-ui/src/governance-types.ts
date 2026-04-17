@@ -18,6 +18,7 @@ export enum ProposalType {
   Extended = 1,
   VetoRatification = 2,
   Steward = 3,
+  Signaling = 4,
 }
 
 /** Vote support values: 0=Against, 1=For, 2=Abstain */
@@ -64,6 +65,7 @@ export const PROPOSAL_TYPE_LABELS: Record<ProposalType, string> = {
   [ProposalType.Extended]: 'Extended',
   [ProposalType.VetoRatification]: 'Veto Ratification',
   [ProposalType.Steward]: 'Steward Spend',
+  [ProposalType.Signaling]: 'Signaling',
 }
 
 /** Labels for proposal states */

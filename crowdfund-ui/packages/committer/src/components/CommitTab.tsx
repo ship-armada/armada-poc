@@ -141,8 +141,17 @@ export function CommitTab(props: CommitTabProps) {
     return count
   }, [parsedAmounts])
 
-  // Pro-rata estimate
-  const estimate = useProRataEstimate(parsedAmounts, hopStats, saleSize)
+  // Existing per-hop commitments (for returning committers)
+  const existingCommitments = useMemo(() => {
+    const m = new Map<number, bigint>()
+    for (const pos of positions) {
+      if (pos.committed > 0n) m.set(pos.hop, pos.committed)
+    }
+    return m
+  }, [positions])
+
+  // Pro-rata estimate (based on total position: existing + new)
+  const estimate = useProRataEstimate(parsedAmounts, existingCommitments, hopStats, saleSize)
 
   // Balance check is a warning, not a blocking error
   const balanceInsufficient = totalAmount > 0n && totalAmount > balance

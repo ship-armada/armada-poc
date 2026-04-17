@@ -128,12 +128,17 @@ function numEnv(key: string, defaultValue: number): number {
 /**
  * Build the RevenueLock beneficiary list from environment variables.
  * Local dev uses Anvil default accounts as placeholders.
- * Non-local environments require explicit REVENUE_LOCK_BENEFICIARIES_JSON.
+ * Non-local environments require explicit configuration via either:
+ *   - REVENUE_LOCK_BENEFICIARIES_FILE: path to a JSON file (preferred, avoids shell quoting issues)
+ *   - REVENUE_LOCK_BENEFICIARIES_JSON: inline JSON string
  *
  * JSON format: [{"address":"0x...","amount":"1200000","label":"team member 1"}, ...]
  */
 function buildRevenueLockBeneficiaries(env: DeployEnv): RevenueLockBeneficiary[] {
-  const jsonStr = process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  const filePath = process.env.REVENUE_LOCK_BENEFICIARIES_FILE;
+  const jsonStr = filePath
+    ? require("fs").readFileSync(filePath, "utf-8")
+    : process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
 
   if (jsonStr) {
     // Explicit config provided — use it on any environment
@@ -162,8 +167,8 @@ function buildRevenueLockBeneficiaries(env: DeployEnv): RevenueLockBeneficiary[]
 
   // Non-local with no explicit config — fail loud
   throw new Error(
-    "REVENUE_LOCK_BENEFICIARIES_JSON is required for non-local environments. " +
-    "Set it to a JSON array of {address, amount, label} objects."
+    "RevenueLock beneficiaries required for non-local environments. " +
+    "Set REVENUE_LOCK_BENEFICIARIES_FILE (path to JSON) or REVENUE_LOCK_BENEFICIARIES_JSON (inline)."
   );
 }
 

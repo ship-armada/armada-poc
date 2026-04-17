@@ -99,6 +99,13 @@ const config: HardhatUserConfig = {
     cache: "./cache",
     artifacts: "./artifacts",
   },
+  // Etherscan verification (V2 API) — only active when ETHERSCAN_API_KEY is set.
+  // Uses a single API key for all networks per Etherscan V2 migration.
+  ...(process.env.ETHERSCAN_API_KEY && {
+    etherscan: {
+      apiKey: process.env.ETHERSCAN_API_KEY,
+    },
+  }),
 };
 
 export default config;

@@ -28,7 +28,12 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
           <div className="flex items-center justify-between">
             <span>{hopLabel(est.hop)}</span>
             <span>
-              {formatUsdc(est.estimatedAccepted)} of {formatUsdc(est.commitAmount)}
+              {formatUsdc(est.estimatedAccepted)} of {formatUsdc(est.totalPosition)}
+              {est.existingCommitted > 0n && (
+                <span className="text-muted-foreground ml-1">
+                  (adding {formatUsdc(est.commitAmount)} to {formatUsdc(est.existingCommitted)})
+                </span>
+              )}
             </span>
           </div>
           {est.oversubscriptionPct > 100 && (

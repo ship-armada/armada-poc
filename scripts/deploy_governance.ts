@@ -41,6 +41,7 @@ import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./depl
 interface GovernanceDeployment {
   chainId: number;
   deployer: string;
+  deployBlock: number;
   contracts: {
     timelockController: string;
     armToken: string;
@@ -301,9 +302,11 @@ async function main() {
   console.log("15-16. Wind-down wiring + admin renounce: DEFERRED (completed by deploy_crowdfund.ts)");
 
   // Save deployment
+  const currentBlock = await ethers.provider.getBlockNumber();
   const deployment: GovernanceDeployment = {
     chainId,
     deployer: deployer.address,
+    deployBlock: currentBlock,
     contracts: {
       timelockController: timelockAddress,
       armToken: armTokenAddress,

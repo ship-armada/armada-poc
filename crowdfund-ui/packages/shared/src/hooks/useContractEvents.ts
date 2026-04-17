@@ -25,6 +25,8 @@ export interface UseContractEventsConfig {
   provider: JsonRpcProvider | null
   contractAddress: string | null
   pollIntervalMs: number
+  /** Block number to start fetching from (e.g. contract deploy block). Defaults to 0. */
+  startBlock?: number
 }
 
 export interface UseContractEventsResult {
@@ -39,18 +41,26 @@ export interface UseContractEventsResult {
  * Polls for new events on the configured interval.
  */
 export function useContractEvents(config: UseContractEventsConfig): UseContractEventsResult {
-  const { provider, contractAddress, pollIntervalMs } = config
+  const { provider, contractAddress, pollIntervalMs, startBlock } = config
   const [events, setEvents] = useAtom(crowdfundEventsAtom)
   const [, setLastBlock] = useAtom(lastFetchedBlockAtom)
   const [loading, setLoading] = useAtom(eventsLoadingAtom)
   const [error, setError] = useAtom(eventsErrorAtom)
-  const lastBlockRef = useRef(0)
+  const lastBlockRef = useRef(-1)
+
+  // Default to block 0 when no deployBlock is available (e.g. older manifests)
+  const effectiveStartBlock = startBlock ?? 0
 
   useEffect(() => {
     if (!provider || !contractAddress) return
 
     let cancelled = false
     let intervalId: ReturnType<typeof setInterval> | null = null
+
+    // Initialize lastBlockRef to startBlock on first run
+    if (lastBlockRef.current < effectiveStartBlock) {
+      lastBlockRef.current = effectiveStartBlock
+    }
 
     async function fetchNewEvents() {
       if (!provider || !contractAddress) return
@@ -105,7 +115,7 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
 
         if (cached.events.length > 0) {
           setEvents(cached.events)
-          lastBlockRef.current = cached.lastBlock
+          lastBlockRef.current = Math.max(cached.lastBlock, effectiveStartBlock)
           setLastBlock(cached.lastBlock)
         }
 
@@ -116,20 +126,21 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
           setError(err instanceof Error ? err.message : 'Failed to initialize events')
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          // Start polling only after initialization completes
+          intervalId = setInterval(fetchNewEvents, pollIntervalMs)
+        }
       }
     }
 
     initialize()
 
-    // Poll for new events
-    intervalId = setInterval(fetchNewEvents, pollIntervalMs)
-
     return () => {
       cancelled = true
       if (intervalId) clearInterval(intervalId)
     }
-  }, [provider, contractAddress, pollIntervalMs, setEvents, setLastBlock, setLoading, setError])
+  }, [provider, contractAddress, pollIntervalMs, effectiveStartBlock, setEvents, setLastBlock, setLoading, setError])
 
   return { events, loading, error }
 }

@@ -1,0 +1,12 @@
+[
+  {
+    "address": "0x199b4b499275eab763Be408668513418DE38d24C",
+    "amount": "100",
+    "label": "test beneficiary1"
+  },
+  {
+    "address": "0x418e7F5225A1E61F2Bd8dB68f37e1D2d5E58702e",
+    "amount": "100",
+    "label": "test beneficiary2"
+  }
+]

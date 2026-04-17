@@ -20,19 +20,24 @@ export interface StatusDashboardProps {
   role: AdminRole
 }
 
-function TimelineRow(props: { label: string; isOpen: boolean; endTimestamp: number; now: number }) {
-  const { label, isOpen, endTimestamp, now } = props
+function TimelineRow(props: { label: string; isOpen: boolean; isPending?: boolean; endTimestamp: number; now: number }) {
+  const { label, isOpen, isPending, endTimestamp, now } = props
   const remaining = endTimestamp - now
+
+  const badgeClass = isOpen
+    ? 'bg-success/20 text-success'
+    : isPending
+      ? 'bg-amber-500/20 text-amber-500'
+      : 'bg-muted text-muted-foreground'
+  const badgeText = isOpen ? 'OPEN' : isPending ? 'PENDING' : 'CLOSED'
 
   return (
     <div className="rounded border border-border p-2 space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground">{label}</span>
         {endTimestamp > 0 && (
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-            isOpen ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'
-          }`}>
-            {isOpen ? 'OPEN' : 'CLOSED'}
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeClass}`}>
+            {badgeText}
           </span>
         )}
       </div>
@@ -95,12 +100,14 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
         <TimelineRow
           label="Week 1 (Seeds + LT Invites)"
           isOpen={state.phase === 0 && localTimestamp >= state.windowStart && localTimestamp < state.launchTeamInviteEnd}
+          isPending={state.phase === 0 && localTimestamp < state.windowStart}
           endTimestamp={state.launchTeamInviteEnd}
           now={localTimestamp}
         />
         <TimelineRow
           label="Commitment Window"
           isOpen={state.phase === 0 && state.armLoaded && localTimestamp >= state.windowStart && localTimestamp <= state.windowEnd}
+          isPending={state.phase === 0 && localTimestamp < state.windowStart}
           endTimestamp={state.windowEnd}
           now={localTimestamp}
         />

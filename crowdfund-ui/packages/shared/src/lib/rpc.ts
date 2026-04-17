@@ -56,8 +56,29 @@ export function createProvider(urls: string[]): JsonRpcProvider {
   return new FallbackJsonRpcProvider(urls)
 }
 
+/** Default max block range per eth_getLogs request. Free-tier RPCs (e.g. Alchemy)
+ *  can be as low as 10 blocks. Paid tiers typically support 10k–100k+. */
+const DEFAULT_MAX_BLOCK_RANGE = 10
+
+/** Delay between chunked requests to avoid RPC rate limits (ms). */
+const CHUNK_DELAY_MS = 100
+
+function toRawLog(log: { blockNumber: number; transactionHash: string; index: number; topics: readonly string[]; data: string }): RawLog {
+  return {
+    blockNumber: log.blockNumber,
+    transactionHash: log.transactionHash,
+    logIndex: log.index,
+    topics: log.topics as string[],
+    data: log.data,
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 /**
  * Fetch raw logs from the provider for a given contract address and block range.
+ * Automatically chunks large ranges into maxBlockRange-sized requests with
+ * a small delay between chunks to avoid RPC rate limits.
  * Returns logs in the RawLog format expected by parseCrowdfundEvent.
  */
 export async function fetchLogs(
@@ -65,19 +86,26 @@ export async function fetchLogs(
   address: string,
   fromBlock: number,
   toBlock: number | 'latest',
+  maxBlockRange: number = DEFAULT_MAX_BLOCK_RANGE,
 ): Promise<RawLog[]> {
-  const logs = await provider.getLogs({
-    address,
-    fromBlock,
-    toBlock,
-  })
-  return logs.map((log) => ({
-    blockNumber: log.blockNumber,
-    transactionHash: log.transactionHash,
-    logIndex: log.index,
-    topics: log.topics as string[],
-    data: log.data,
-  }))
+  const resolvedTo = toBlock === 'latest' ? await provider.getBlockNumber() : toBlock
+  if (fromBlock > resolvedTo) return []
+
+  const allLogs: RawLog[] = []
+  let cursor = fromBlock
+  let isFirstChunk = true
+
+  while (cursor <= resolvedTo) {
+    if (!isFirstChunk) await sleep(CHUNK_DELAY_MS)
+    isFirstChunk = false
+
+    const chunkEnd = Math.min(cursor + maxBlockRange - 1, resolvedTo)
+    const logs = await provider.getLogs({ address, fromBlock: cursor, toBlock: chunkEnd })
+    for (const log of logs) allLogs.push(toRawLog(log))
+    cursor = chunkEnd + 1
+  }
+
+  return allLogs
 }
 
 /** Get the latest block timestamp in seconds */

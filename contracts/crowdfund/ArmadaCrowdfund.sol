@@ -38,7 +38,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
-    uint8 public constant MAX_SEEDS = 150;                       // max number of seeds (hop-0 participants)
+    uint8 public constant MAX_SEEDS = 160;                       // max number of seeds (hop-0 participants)
     uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
     uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
 
@@ -822,7 +822,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     /// @dev Pure iteration: compute capped demand per hop and globally without writing state.
     ///      DESIGN NOTE: This iterates the full participantNodes array — O(n) where n is total
     ///      participants across all hops. The array is bounded by invite chain limits:
-    ///      MAX_SEEDS (150) at hop-0, with invitesPerPerson limits at each subsequent hop.
+    ///      MAX_SEEDS (160) at hop-0, with invitesPerPerson limits at each subsequent hop.
     ///      Practical maximum is ~1,500 nodes, costing ~6.3M gas (well within 30M block limit).
     ///      An incremental tracking approach was considered but rejected to avoid
     ///      changing the accounting flow. If invite limits are ever significantly increased,

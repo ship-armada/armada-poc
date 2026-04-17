@@ -29,7 +29,7 @@ function friendlyError(err: unknown): string {
   if (msg.includes('not launch team')) return 'Only the launch team can perform this action'
   if (msg.includes('not security council')) return 'Only the security council can perform this action'
   if (msg.includes('outside week-1 window')) return 'Launch team invite window has closed'
-  if (msg.includes('max seeds reached')) return 'Maximum seed count (150) has been reached'
+  if (msg.includes('max seeds reached')) return 'Maximum seed count (160) has been reached'
   if (msg.includes('already finalized')) return 'Crowdfund has already been finalized'
   if (msg.includes('already canceled')) return 'Crowdfund has already been canceled'
   if (msg.includes('window not ended')) return 'Commitment window has not ended yet'

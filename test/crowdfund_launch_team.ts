@@ -76,23 +76,23 @@ describe("Launch Team & Seed Cap", function () {
     await time.increaseTo(await crowdfund.windowStart());
   });
 
-  // ============ 150-Seed Cap ============
+  // ============ 160-Seed Cap ============
 
-  describe("150-Seed Cap", function () {
-    it("allows up to 150 seeds", async function () {
-      const seeds = makeAddresses(150);
+  describe("160-Seed Cap", function () {
+    it("allows up to 160 seeds", async function () {
+      const seeds = makeAddresses(160);
       // Add in batches to avoid gas limits
-      for (let i = 0; i < 150; i += 50) {
-        await crowdfund.addSeeds(seeds.slice(i, i + 50));
+      for (let i = 0; i < 160; i += 50) {
+        await crowdfund.addSeeds(seeds.slice(i, Math.min(i + 50, 160)));
       }
       const stats = await crowdfund.getHopStats(0);
-      expect(stats._whitelistCount).to.equal(150);
+      expect(stats._whitelistCount).to.equal(160);
     });
 
-    it("reverts on 151st seed", async function () {
-      const seeds = makeAddresses(150);
-      for (let i = 0; i < 150; i += 50) {
-        await crowdfund.addSeeds(seeds.slice(i, i + 50));
+    it("reverts on 161st seed", async function () {
+      const seeds = makeAddresses(160);
+      for (let i = 0; i < 160; i += 50) {
+        await crowdfund.addSeeds(seeds.slice(i, Math.min(i + 50, 160)));
       }
       const extraSeed = makeAddresses(1, 999);
       await expect(
@@ -101,10 +101,10 @@ describe("Launch Team & Seed Cap", function () {
     });
 
     it("reverts mid-batch when cap would be exceeded", async function () {
-      // Add 148 first
-      const seeds148 = makeAddresses(148);
-      for (let i = 0; i < 148; i += 50) {
-        await crowdfund.addSeeds(seeds148.slice(i, Math.min(i + 50, 148)));
+      // Add 158 first
+      const seeds158 = makeAddresses(158);
+      for (let i = 0; i < 158; i += 50) {
+        await crowdfund.addSeeds(seeds158.slice(i, Math.min(i + 50, 158)));
       }
       // Try to add 5 more (only 2 slots remain)
       const seeds5 = makeAddresses(5, 500);

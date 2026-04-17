@@ -18,6 +18,12 @@ interface IArmadaTokenRevenueLock {
 /// @notice Holds ARM for beneficiaries and releases it as cumulative protocol revenue
 ///         milestones are reached. Immutable after deployment: no admin, no upgradeability,
 ///         no sweep. Released ARM is atomically delegated via delegateOnBehalf.
+///
+///         Entitlements derive from `maxObservedRevenue`, a monotonic ratchet maintained
+///         internally — never from a direct read of RevenueCounter. The ratchet advances
+///         at no more than MAX_REVENUE_INCREASE_PER_DAY per elapsed day, which structurally
+///         neutralises governance-controlled RevenueCounter upgrades that could otherwise
+///         rewind (→ freeze) or accelerate (→ instant-unlock) entitlements.
 contract RevenueLock {
 
     // ============ Constants ============
@@ -36,6 +42,14 @@ contract RevenueLock {
     /// @notice Total ARM allocated across all beneficiaries
     uint256 public immutable totalAllocation;
 
+    /// @notice Maximum amount that `maxObservedRevenue` can advance per elapsed day,
+    ///         in 18-decimal USD to match RevenueCounter.recognizedRevenueUsd.
+    ///         Defensive security calibration: if set to $10k/day, a malicious
+    ///         RevenueCounter upgrade cannot accelerate $0 → $1M full-unlock faster
+    ///         than ~100 days, giving the community and Security Council time to respond.
+    ///         See PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225.
+    uint256 public immutable MAX_REVENUE_INCREASE_PER_DAY;
+
     // ============ State ============
 
     /// @notice Per-beneficiary total allocation
@@ -47,6 +61,17 @@ contract RevenueLock {
     /// @notice Ordered list of beneficiaries (for enumeration)
     address[] internal _beneficiaries;
 
+    /// @notice Monotonic ratchet over RevenueCounter reads. Used for all entitlement math.
+    ///         Only ever advances, never decreases, even if RevenueCounter returns a lower
+    ///         value on a later call.
+    uint256 public maxObservedRevenue;
+
+    /// @notice Wall-clock timestamp of the most recent call to `_updateMaxObservedRevenue`.
+    ///         Advances unconditionally on every sync (including no-ops) so the rate-limit
+    ///         allowance budget is consumed by real elapsed time rather than accumulating
+    ///         indefinitely during quiet periods.
+    uint256 public lastSyncTimestamp;
+
     // ============ Events ============
 
     event Released(
@@ -56,25 +81,48 @@ contract RevenueLock {
         uint256 cumulativeReleased
     );
 
+    /// @notice Emitted on every actual ratchet advance of maxObservedRevenue.
+    /// @param oldMax             Previous maxObservedRevenue value.
+    /// @param newMax             New maxObservedRevenue value (post-ratchet, post-cap).
+    /// @param reportedByCounter  Raw value returned by RevenueCounter at the time of update.
+    ///                           If `reportedByCounter > newMax`, the advance was rate-limited.
+    event ObservedRevenueUpdated(
+        uint256 oldMax,
+        uint256 newMax,
+        uint256 reportedByCounter
+    );
+
     // ============ Constructor ============
 
     /// @param _armToken ARM token address (must whitelist this contract for transfers)
     /// @param _revenueCounter RevenueCounter UUPS proxy address
+    /// @param _maxIncreasePerDay Max observed-revenue advance per elapsed day, 18-decimal USD
     /// @param beneficiaries Array of beneficiary addresses
     /// @param amounts Array of allocation amounts (18-decimal ARM), parallel to beneficiaries
     constructor(
         address _armToken,
         address _revenueCounter,
+        uint256 _maxIncreasePerDay,
         address[] memory beneficiaries,
         uint256[] memory amounts
     ) {
         require(_armToken != address(0), "RevenueLock: zero armToken");
         require(_revenueCounter != address(0), "RevenueLock: zero revenueCounter");
+        require(_maxIncreasePerDay > 0, "RevenueLock: zero maxIncrease");
         require(beneficiaries.length > 0, "RevenueLock: empty beneficiaries");
         require(beneficiaries.length == amounts.length, "RevenueLock: length mismatch");
 
         armToken = IArmadaTokenRevenueLock(_armToken);
         revenueCounter = IRevenueCounterRevenueLock(_revenueCounter);
+        MAX_REVENUE_INCREASE_PER_DAY = _maxIncreasePerDay;
+
+        // CRITICAL: lastSyncTimestamp must start at block.timestamp, NOT 0.
+        // A zero timestamp would make the first _updateMaxObservedRevenue() see
+        // `elapsed == block.timestamp`, which would let the ratchet leap to whatever
+        // RevenueCounter reports on the first call — fully bypassing the rate limit.
+        // Do NOT seed maxObservedRevenue from the counter for the same reason: a
+        // malicious initial counter implementation could start the ratchet high.
+        lastSyncTimestamp = block.timestamp;
 
         uint256 total = 0;
         for (uint256 i = 0; i < beneficiaries.length; i++) {
@@ -100,7 +148,10 @@ contract RevenueLock {
         uint256 alloc = allocation[msg.sender];
         require(alloc > 0, "RevenueLock: not a beneficiary");
 
-        uint256 unlockBps = unlockPercentage();
+        // Advance the ratchet first so entitlement math uses the current capped value.
+        _updateMaxObservedRevenue();
+
+        uint256 unlockBps = _unlockBpsForRevenue(maxObservedRevenue);
         uint256 entitled = (alloc * unlockBps) / BPS_100;
         uint256 alreadyReleased = released[msg.sender];
         uint256 amount = entitled - alreadyReleased;
@@ -114,28 +165,62 @@ contract RevenueLock {
         emit Released(msg.sender, amount, delegatee, released[msg.sender]);
     }
 
+    /// @notice Permissionless: advance the observed-revenue ratchet without claiming.
+    /// @dev Intended for monitoring bots and operational tooling. Keeps the rate-limit
+    ///      allowance window tight: without regular syncs, elapsed-time budget
+    ///      accumulates and a single later call could leap `maxObservedRevenue` by
+    ///      N × MAX_REVENUE_INCREASE_PER_DAY. OPERATIONS.md requires at least daily
+    ///      calls; monitoring infrastructure should call more frequently.
+    ///      Every call writes to storage (lastSyncTimestamp), including no-ops — that
+    ///      is expected behavior, not an inefficiency.
+    function syncObservedRevenue() external {
+        _updateMaxObservedRevenue();
+    }
+
     // ============ View Functions ============
 
     /// @notice Amount currently available for a beneficiary to release.
+    /// @dev Uses `getCappedObservedRevenue()` so this view reflects what `release()`
+    ///      would actually deliver after advancing the ratchet. Callers should prefer
+    ///      this over simulating the internal logic themselves.
     function releasable(address beneficiary) external view returns (uint256) {
         uint256 alloc = allocation[beneficiary];
         if (alloc == 0) return 0;
-        uint256 entitled = (alloc * unlockPercentage()) / BPS_100;
+        uint256 effective = getCappedObservedRevenue();
+        uint256 entitled = (alloc * _unlockBpsForRevenue(effective)) / BPS_100;
         uint256 alreadyReleased = released[beneficiary];
         if (entitled <= alreadyReleased) return 0;
         return entitled - alreadyReleased;
     }
 
     /// @notice Current unlock percentage in basis points (0 = 0%, 10000 = 100%).
-    ///         Step function based on cumulative protocol revenue milestones.
+    ///         Step function based on the rate-limited observed-revenue ratchet —
+    ///         NOT a direct read of the RevenueCounter. This matches what `release()`
+    ///         will see after `_updateMaxObservedRevenue()` runs.
     function unlockPercentage() public view returns (uint256) {
-        uint256 revenue = revenueCounter.recognizedRevenueUsd();
-        return _unlockBpsForRevenue(revenue);
+        return _unlockBpsForRevenue(getCappedObservedRevenue());
     }
 
-    /// @notice Current cumulative recognized revenue from the RevenueCounter.
+    /// @notice Raw cumulative recognized revenue as reported by the RevenueCounter.
+    /// @dev Exposed for monitoring/diagnostics only — does NOT flow through the ratchet.
+    ///      Entitlement logic uses `maxObservedRevenue` / `getCappedObservedRevenue()`.
+    ///      A sustained divergence between `currentRevenue()` and `getCappedObservedRevenue()`
+    ///      indicates either an over-reporting RevenueCounter being rate-limited or a
+    ///      malicious upgrade in progress; either warrants off-chain investigation.
     function currentRevenue() external view returns (uint256) {
         return revenueCounter.recognizedRevenueUsd();
+    }
+
+    /// @notice Preview of `maxObservedRevenue` after a hypothetical call to
+    ///         `syncObservedRevenue()` at the current block, without modifying state.
+    /// @dev Mirrors `_updateMaxObservedRevenue()` exactly. Monitoring bots should use
+    ///      this instead of re-implementing the cap math off-chain.
+    function getCappedObservedRevenue() public view returns (uint256) {
+        uint256 reported = revenueCounter.recognizedRevenueUsd();
+        uint256 elapsed = block.timestamp - lastSyncTimestamp;
+        uint256 maxAllowedIncrease = (elapsed * MAX_REVENUE_INCREASE_PER_DAY) / 1 days;
+        uint256 capped = _min(reported, maxObservedRevenue + maxAllowedIncrease);
+        return capped > maxObservedRevenue ? capped : maxObservedRevenue;
     }
 
     /// @notice Number of beneficiaries in the list.
@@ -144,6 +229,29 @@ contract RevenueLock {
     }
 
     // ============ Internal ============
+
+    /// @dev Advance `maxObservedRevenue` to the minimum of (reported, prev + budget),
+    ///      where budget = elapsed * MAX_REVENUE_INCREASE_PER_DAY / 1 days.
+    ///      `lastSyncTimestamp` ALWAYS advances to `block.timestamp`, even when
+    ///      `maxObservedRevenue` does not. This is the mechanism that consumes the
+    ///      elapsed-time allowance on every sync — without it, daily syncs during
+    ///      flat-revenue periods would fail to bound the cumulative budget and the
+    ///      rate cap would become meaningless over time.
+    function _updateMaxObservedRevenue() internal {
+        uint256 reported = revenueCounter.recognizedRevenueUsd();
+
+        uint256 elapsed = block.timestamp - lastSyncTimestamp;
+        uint256 maxAllowedIncrease = (elapsed * MAX_REVENUE_INCREASE_PER_DAY) / 1 days;
+        uint256 capped = _min(reported, maxObservedRevenue + maxAllowedIncrease);
+
+        if (capped > maxObservedRevenue) {
+            uint256 oldMax = maxObservedRevenue;
+            maxObservedRevenue = capped;
+            emit ObservedRevenueUpdated(oldMax, capped, reported);
+        }
+
+        lastSyncTimestamp = block.timestamp;
+    }
 
     /// @dev Step function: returns the unlock bps for a given cumulative revenue.
     ///      No interpolation — jumps at each threshold.
@@ -156,5 +264,9 @@ contract RevenueLock {
         if (revenue >= 50_000e18)    return 2500;  // 25%
         if (revenue >= 10_000e18)    return 1000;  // 10%
         return 0;
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 }

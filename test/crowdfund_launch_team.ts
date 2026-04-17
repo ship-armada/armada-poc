@@ -206,6 +206,83 @@ describe("Launch Team & Seed Cap", function () {
       expect(hop1Stats._whitelistCount).to.equal(1);
       expect(hop2Stats._whitelistCount).to.equal(1);
     });
+
+    // WHY: Issue #236 — canonical Invited(inviter, invitee, hop, nonce) must
+    // cover launch-team issuance too, so an observer can reconstruct the full
+    // invite graph from a single event type (inviter = launchTeam, nonce = 0).
+    it("emits canonical Invited(launchTeam, invitee, hop, 0)", async function () {
+      await expect(crowdfund.launchTeamInvite(invitee1.address, 0))
+        .to.emit(crowdfund, "Invited")
+        .withArgs(deployer.address, invitee1.address, 1, 0);
+
+      await expect(crowdfund.launchTeamInvite(invitee2.address, 1))
+        .to.emit(crowdfund, "Invited")
+        .withArgs(deployer.address, invitee2.address, 2, 0);
+    });
+
+    // WHY: Issue #236 — LaunchTeamInvited is retained as a supplementary event
+    // for UI/analytics consumers; assert both are emitted in one call.
+    it("still emits supplementary LaunchTeamInvited alongside Invited", async function () {
+      const tx = await crowdfund.launchTeamInvite(invitee1.address, 0);
+      await expect(tx)
+        .to.emit(crowdfund, "Invited")
+        .withArgs(deployer.address, invitee1.address, 1, 0);
+      await expect(tx)
+        .to.emit(crowdfund, "LaunchTeamInvited")
+        .withArgs(invitee1.address, 1);
+    });
+  });
+
+  // WHY: Issue #236 — launch-team invite issuance belongs to the armed sale
+  // flow. Without this guard, launch team could seed invite-graph nodes
+  // before ARM preload has been verified, breaking the intended sequencing
+  // (addSeed already enforces this; launchTeamInvite must match).
+  describe("armLoaded Guard", function () {
+    it("reverts when ARM has not been loaded", async function () {
+      // Deploy a fresh crowdfund WITHOUT calling loadArm()
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      const openTs = (await time.latest()) + 300;
+      const cf = await ArmadaCrowdfund.deploy(
+        await usdc.getAddress(),
+        await armToken.getAddress(),
+        treasury.address,
+        deployer.address,
+        securityCouncil.address,
+        openTs
+      );
+      await cf.waitForDeployment();
+
+      // Fund ARM but intentionally skip loadArm() to exercise the guard
+      const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
+      await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
+      await time.increaseTo(await cf.windowStart());
+
+      await expect(
+        cf.launchTeamInvite(allSigners[4].address, 0)
+      ).to.be.revertedWith("ArmadaCrowdfund: ARM not loaded");
+    });
+
+    it("succeeds once loadArm() is called", async function () {
+      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
+      const openTs = (await time.latest()) + 300;
+      const cf = await ArmadaCrowdfund.deploy(
+        await usdc.getAddress(),
+        await armToken.getAddress(),
+        treasury.address,
+        deployer.address,
+        securityCouncil.address,
+        openTs
+      );
+      await cf.waitForDeployment();
+
+      const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
+      await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
+      await cf.loadArm();
+      await time.increaseTo(await cf.windowStart());
+
+      await cf.launchTeamInvite(allSigners[4].address, 0);
+      expect(await cf.isWhitelisted(allSigners[4].address, 1)).to.be.true;
+    });
   });
 
   describe("Budget Exhaustion", function () {

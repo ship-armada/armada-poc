@@ -186,6 +186,12 @@ async function main() {
   const revenueLockBeneficiaries = beneficiaryConfig.map(b => b.address);
   const revenueLockAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
 
+  // Max advance per elapsed day for the observed-revenue ratchet — 18-decimal USD.
+  // $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225:
+  // forces a malicious RevenueCounter upgrade to take ≥100 days to accelerate
+  // $0 → $1M full-unlock, giving community + Security Council time to respond.
+  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits("10000", 18);
+
   // Guard: reject Anvil default addresses on non-local environments
   rejectAnvilAddresses(revenueLockBeneficiaries, "RevenueLock beneficiaries");
   if (config.treasuryAddress) {
@@ -198,7 +204,7 @@ async function main() {
 
   const RevenueLock = await ethers.getContractFactory("RevenueLock");
   const revenueLockContract = await RevenueLock.deploy(
-    armTokenAddress, revenueCounterAddress,
+    armTokenAddress, revenueCounterAddress, MAX_REVENUE_INCREASE_PER_DAY,
     revenueLockBeneficiaries, revenueLockAmounts, nm.override()
   );
   await revenueLockContract.deploymentTransaction()!.wait();

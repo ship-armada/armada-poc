@@ -163,7 +163,9 @@ export function useGovernanceData(
       // Fetch proposal descriptions from ProposalCreated events.
       // Cached in localStorage to avoid re-scanning the full block range on every poll.
       try {
-        const cacheKey = 'gov-proposal-descriptions'
+        // Namespace cache by chainId + governor address to avoid cross-environment contamination
+        const govAddr = deployment.contracts.governor.toLowerCase()
+        const cacheKey = `gov-proposal-descriptions-${deployment.chainId}-${govAddr}`
         const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}') as {
           lastBlock?: number
           descriptions?: Record<string, string>
@@ -172,8 +174,12 @@ export function useGovernanceData(
           Object.entries(cached.descriptions ?? {}).map(([k, v]) => [Number(k), v]),
         )
         const deployBlock = deployment.deployBlock ?? 0
-        const scanFrom = Math.max(deployBlock, (cached.lastBlock ?? deployBlock - 1) + 1)
         const currentBlock = await provider.getBlockNumber()
+        // If cached lastBlock is ahead of the current chain tip, invalidate the cache
+        const cachedLastBlock = cached.lastBlock ?? deployBlock - 1
+        const scanFrom = cachedLastBlock > currentBlock
+          ? deployBlock
+          : Math.max(deployBlock, cachedLastBlock + 1)
 
         if (scanFrom <= currentBlock) {
           const CHUNK = 10 // free-tier RPC limit

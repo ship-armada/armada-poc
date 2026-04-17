@@ -48,11 +48,11 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
   const [error, setError] = useAtom(eventsErrorAtom)
   const lastBlockRef = useRef(-1)
 
-  // Wait for startBlock to be resolved (deployment manifest loaded)
-  const effectiveStartBlock = startBlock ?? -1
+  // Default to block 0 when no deployBlock is available (e.g. older manifests)
+  const effectiveStartBlock = startBlock ?? 0
 
   useEffect(() => {
-    if (!provider || !contractAddress || effectiveStartBlock < 0) return
+    if (!provider || !contractAddress) return
 
     let cancelled = false
     let intervalId: ReturnType<typeof setInterval> | null = null

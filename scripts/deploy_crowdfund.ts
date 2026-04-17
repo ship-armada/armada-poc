@@ -167,6 +167,78 @@ async function main() {
   await (await armToken.removeDeployerFromWhitelist(nm.override())).wait();
   console.log("   Deployer removed from transfer whitelist");
 
+  // 5d. Post-distribution verification gates (issue #228, ARM_TOKEN.md §3).
+  // The protocol is NOT considered live until all four conditions hold on-chain.
+  // Any failure here halts deployment — a partial deployment is safer than a
+  // misconfigured one.
+  console.log("   Verifying post-distribution invariants...");
+
+  const treasuryBal = await armToken.balanceOf(treasuryAddress);
+  const revenueLockBal = await armToken.balanceOf(revenueLockAddress);
+  const crowdfundBal = await armToken.balanceOf(crowdfundAddress);
+  const deployerBal = await armToken.balanceOf(deployer.address);
+  const totalSupply = await armToken.totalSupply();
+
+  // Gate 1: Exact recipient balances
+  if (treasuryBal !== treasuryAllocation) {
+    throw new Error(
+      `Gate 1 failed — Treasury balance mismatch. Expected ${ethers.formatUnits(treasuryAllocation, 18)}, got ${ethers.formatUnits(treasuryBal, 18)}`
+    );
+  }
+  if (revenueLockBal !== revenueLockAllocation) {
+    throw new Error(
+      `Gate 1 failed — RevenueLock balance mismatch. Expected ${ethers.formatUnits(revenueLockAllocation, 18)}, got ${ethers.formatUnits(revenueLockBal, 18)}`
+    );
+  }
+  if (crowdfundBal !== crowdfundAllocation) {
+    throw new Error(
+      `Gate 1 failed — Crowdfund balance mismatch. Expected ${ethers.formatUnits(crowdfundAllocation, 18)}, got ${ethers.formatUnits(crowdfundBal, 18)}`
+    );
+  }
+
+  // Gate 2: Supply conservation
+  const expectedTotalSupply = ethers.parseUnits("12000000", 18);
+  if (totalSupply !== expectedTotalSupply) {
+    throw new Error(
+      `Gate 2 failed — totalSupply mismatch. Expected ${ethers.formatUnits(expectedTotalSupply, 18)}, got ${ethers.formatUnits(totalSupply, 18)}`
+    );
+  }
+  const recipientSum = treasuryBal + revenueLockBal + crowdfundBal;
+  if (recipientSum !== totalSupply) {
+    throw new Error(
+      `Gate 2 failed — sum of recipient balances (${ethers.formatUnits(recipientSum, 18)}) does not equal totalSupply (${ethers.formatUnits(totalSupply, 18)})`
+    );
+  }
+
+  // Gate 3: Zero residual bootstrap-holder balance
+  if (deployerBal !== 0n) {
+    throw new Error(
+      `Gate 3 failed — deployer ARM balance is non-zero: ${ethers.formatUnits(deployerBal, 18)}`
+    );
+  }
+
+  // Gate 4: No residual bootstrap-holder allowances to any protocol contract.
+  // The deployment script uses transfer() (not transferFrom), so no allowances are
+  // ever granted; this check is defense-in-depth against future script changes.
+  const allowanceTargets = [
+    { address: treasuryAddress, label: "treasury" },
+    { address: revenueLockAddress, label: "revenueLock" },
+    { address: crowdfundAddress, label: "crowdfund" },
+  ];
+  for (const target of allowanceTargets) {
+    const allowance = await armToken.allowance(deployer.address, target.address);
+    if (allowance !== 0n) {
+      throw new Error(
+        `Gate 4 failed — non-zero deployer allowance to ${target.label} (${target.address}): ${ethers.formatUnits(allowance, 18)}`
+      );
+    }
+  }
+
+  console.log("   Gate 1 passed: recipient balances match allocations");
+  console.log("   Gate 2 passed: totalSupply == 12M and equals sum of recipient balances");
+  console.log("   Gate 3 passed: deployer ARM balance is zero");
+  console.log("   Gate 4 passed: no residual deployer allowances to protocol contracts");
+
   // 6. Register crowdfund as excluded from quorum denominator
   console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);

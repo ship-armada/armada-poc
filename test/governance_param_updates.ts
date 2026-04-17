@@ -333,6 +333,115 @@ describe("Governance Parameter Updates", function () {
   });
 
   // ============================================================
+  // 2b. Outflow Activation Delay Invariant (issue #226)
+  // ============================================================
+  //
+  // The Extended proposal cycle (votingDelay + votingPeriod + executionDelay) must
+  // stay strictly shorter than the treasury's outflow-loosening activation delay.
+  // Without this, a captured governance could stretch Extended timing to match or
+  // exceed the 24-day delay, letting a second-proposal drain complete exactly as
+  // the scheduled loosening activates.
+
+  describe("Outflow Activation Delay Invariant", function () {
+    let standaloneGovernor: any;
+
+    beforeEach(async function () {
+      standaloneGovernor = await deployGovernorProxy(
+        await armToken.getAddress(),
+        deployer.address,
+        await treasury.getAddress(),
+      );
+    });
+
+    const ACTIVATION_DELAY = 24 * ONE_DAY;
+
+    // WHY: The governor mirrors LIMIT_ACTIVATION_DELAY as a local constant to stay
+    // under the 24576-byte mainnet deploy limit. The two constants must agree — a
+    // divergence would silently weaken the defense. This test is the contract-level
+    // CI guard for the mirror.
+    it("governor TREASURY_OUTFLOW_ACTIVATION_DELAY matches treasury LIMIT_ACTIVATION_DELAY", async function () {
+      const govDelay = await standaloneGovernor.TREASURY_OUTFLOW_ACTIVATION_DELAY();
+      const treasuryDelay = await treasury.LIMIT_ACTIVATION_DELAY();
+      expect(govDelay).to.equal(treasuryDelay);
+      expect(govDelay).to.equal(ACTIVATION_DELAY);
+    });
+
+    // WHY: The current Extended default is 2d + 14d + 7d = 23 days, exactly one day
+    // under the 24-day delay. This test locks in that the default config is within
+    // the invariant — regressions to the defaults or the invariant will trip it.
+    it("accepts Extended cycle of exactly 23 days (default config)", async function () {
+      const params = {
+        votingDelay: 2 * ONE_DAY,
+        votingPeriod: 14 * ONE_DAY,
+        executionDelay: 7 * ONE_DAY,
+        quorumBps: 3000,
+      };
+      await standaloneGovernor.setProposalTypeParams(ProposalType.Extended, params);
+      const [, , , quorum] = await standaloneGovernor.proposalTypeParams(ProposalType.Extended);
+      expect(quorum).to.equal(3000);
+    });
+
+    // WHY: The invariant is STRICT inequality (cycle < delay). A cycle exactly equal
+    // to the delay could allow a drain proposal to finish its cycle in the same block
+    // the loosening activates — the single-block overlap the delay exists to prevent.
+    it("rejects Extended cycle of exactly 24 days (equal to delay)", async function () {
+      const params = {
+        votingDelay: 3 * ONE_DAY,
+        votingPeriod: 14 * ONE_DAY,
+        executionDelay: 7 * ONE_DAY, // 3 + 14 + 7 = 24 days
+        quorumBps: 3000,
+      };
+      await expect(
+        standaloneGovernor.setProposalTypeParams(ProposalType.Extended, params)
+      ).to.be.revertedWithCustomError(standaloneGovernor, "Gov_WouldBreakOutflowDelayInvariant");
+    });
+
+    it("rejects Extended cycle above 24 days", async function () {
+      const params = {
+        votingDelay: 7 * ONE_DAY,
+        votingPeriod: 14 * ONE_DAY,
+        executionDelay: 7 * ONE_DAY, // 28 days
+        quorumBps: 3000,
+      };
+      await expect(
+        standaloneGovernor.setProposalTypeParams(ProposalType.Extended, params)
+      ).to.be.revertedWithCustomError(standaloneGovernor, "Gov_WouldBreakOutflowDelayInvariant");
+    });
+
+    // WHY: Only Extended is gated — Standard proposals cannot execute against
+    // treasury-draining calldata without first being reclassified to Extended by
+    // _classifyProposal. Gating Standard would block legitimate tightenings with no
+    // security benefit.
+    it("does not gate Standard type timing", async function () {
+      // Max Standard bounds: 14+30+14 = 58 days cycle, well over 24
+      const params = {
+        votingDelay: 14 * ONE_DAY,
+        votingPeriod: 30 * ONE_DAY,
+        executionDelay: 14 * ONE_DAY,
+        quorumBps: 2000,
+      };
+      await standaloneGovernor.setProposalTypeParams(ProposalType.Standard, params);
+      const [delay] = await standaloneGovernor.proposalTypeParams(ProposalType.Standard);
+      expect(delay).to.equal(14 * ONE_DAY);
+    });
+
+    // WHY: Bounds validation (votingDelay/Period/ExecutionDelay/quorum) must fire
+    // BEFORE the invariant check, so operators get precise error messages about
+    // individual out-of-range fields rather than a generic invariant violation.
+    it("bounds errors take precedence over invariant error", async function () {
+      const params = {
+        votingDelay: 15 * ONE_DAY, // exceeds MAX_VOTING_DELAY = 14
+        votingPeriod: 14 * ONE_DAY,
+        executionDelay: 7 * ONE_DAY,
+        quorumBps: 3000,
+      };
+      await expect(
+        standaloneGovernor.setProposalTypeParams(ProposalType.Extended, params)
+      ).to.be.revertedWithCustomError(standaloneGovernor, "Gov_VotingDelayOutOfBounds");
+    });
+  });
+
+  // ============================================================
   // 3. Quorum Snapshotting
   // ============================================================
 

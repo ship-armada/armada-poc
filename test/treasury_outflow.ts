@@ -137,7 +137,11 @@ describe("Treasury Outflow Rate Limits", function () {
       await initUsdcOutflow();
     });
 
-    it("should allow owner to update outflow window", async function () {
+    // WHY: Setting the window to a longer duration is TIGHTENING (longer lookback sums
+    // more past records), so it takes effect immediately under the asymmetric-delay
+    // semantics. The loosening direction (shorter window) is covered in the
+    // "Asymmetric Activation Delay" section below.
+    it("should allow owner to update outflow window (tightening, immediate)", async function () {
       await treasury.setOutflowWindow(await usdc.getAddress(), 60 * ONE_DAY);
       const config = await treasury.getOutflowConfig(await usdc.getAddress());
       expect(config.windowDuration).to.equal(60 * ONE_DAY);
@@ -149,10 +153,12 @@ describe("Treasury Outflow Rate Limits", function () {
       ).to.be.revertedWith("ArmadaTreasuryGov: window too short");
     });
 
-    it("should allow owner to update outflow bps", async function () {
-      await treasury.setOutflowLimitBps(await usdc.getAddress(), 2000);
+    // WHY: Tightening direction (lower bps) takes effect immediately. The loosening
+    // direction (higher bps) is covered in the "Asymmetric Activation Delay" section.
+    it("should allow owner to update outflow bps (tightening, immediate)", async function () {
+      await treasury.setOutflowLimitBps(await usdc.getAddress(), 500);
       const config = await treasury.getOutflowConfig(await usdc.getAddress());
-      expect(config.limitBps).to.equal(2000);
+      expect(config.limitBps).to.equal(500);
     });
 
     it("should reject zero bps", async function () {
@@ -167,10 +173,13 @@ describe("Treasury Outflow Rate Limits", function () {
       ).to.be.revertedWith("ArmadaTreasuryGov: bps out of range");
     });
 
-    it("should allow owner to update absolute limit", async function () {
-      await treasury.setOutflowLimitAbsolute(await usdc.getAddress(), USDC(200_000));
+    // WHY: Tightening direction (lower absolute, still >= floor) takes effect immediately.
+    // The loosening direction (higher absolute) is covered below.
+    it("should allow owner to update absolute limit (tightening, immediate)", async function () {
+      // Initial absolute = $100K, floor = $50K → tighten to $75K
+      await treasury.setOutflowLimitAbsolute(await usdc.getAddress(), USDC(75_000));
       const config = await treasury.getOutflowConfig(await usdc.getAddress());
-      expect(config.limitAbsolute).to.equal(USDC(200_000));
+      expect(config.limitAbsolute).to.equal(USDC(75_000));
     });
 
     it("should reject absolute limit below floor", async function () {
@@ -443,16 +452,24 @@ describe("Treasury Outflow Rate Limits", function () {
       expect(config.limitAbsolute).to.equal(USDC(50_000));
     });
 
-    it("should allow governance to increase limits freely", async function () {
+    // WHY: Governance may raise the limits, and the raises are scheduled rather than
+    // applied immediately. This test confirms there is no upper bound on what governance
+    // can request — the floor is immutable but the ceiling isn't — while the
+    // activation-delay section below confirms the delay is enforced.
+    it("should allow governance to schedule limit increases without upper cap", async function () {
       await fundTreasury(USDC(5_000_000));
       await initUsdcOutflow();
 
       await treasury.setOutflowLimitBps(await usdc.getAddress(), 5000); // 50%
       await treasury.setOutflowLimitAbsolute(await usdc.getAddress(), USDC(1_000_000));
 
-      const config = await treasury.getOutflowConfig(await usdc.getAddress());
-      expect(config.limitBps).to.equal(5000);
-      expect(config.limitAbsolute).to.equal(USDC(1_000_000));
+      const pending = await treasury.getPendingOutflowConfig(await usdc.getAddress());
+      expect(pending.pendingLimitBps).to.equal(5000);
+      expect(pending.pendingLimitAbsolute).to.equal(USDC(1_000_000));
+      // Active values unchanged until activation
+      const active = await treasury.getOutflowConfig(await usdc.getAddress());
+      expect(active.limitBps).to.equal(1000);
+      expect(active.limitAbsolute).to.equal(USDC(100_000));
     });
   });
 
@@ -473,6 +490,271 @@ describe("Treasury Outflow Rate Limits", function () {
       expect(status.effectiveLimit).to.equal(USDC(100_000));
       expect(status.recentOutflow).to.equal(USDC(30_000));
       expect(status.available).to.equal(USDC(70_000));
+    });
+  });
+
+  // ============================================================
+  // 8. Asymmetric Activation Delay (issue #226)
+  // ============================================================
+  //
+  // Outflow-loosening parameter changes are written to a pending slot and only take
+  // effect after LIMIT_ACTIVATION_DELAY (24 days) elapses. Tightening takes effect
+  // immediately. Direction is parameter-specific:
+  //   - setOutflowLimitAbsolute: loosens when new > active
+  //   - setOutflowLimitBps: loosens when new > active
+  //   - setOutflowWindow: loosens when new < active (shorter lookback = faster refresh)
+  //
+  // This suite covers schedule/tighten/activate semantics for each knob, the atomic
+  // loosen-then-drain attack the delay prevents, overwrite semantics, permissionless
+  // activation, and view/state-modifying parity.
+
+  describe("Asymmetric Activation Delay", function () {
+    const ACTIVATION_DELAY = 24 * ONE_DAY;
+
+    beforeEach(async function () {
+      await fundTreasury(USDC(5_000_000));
+      await initUsdcOutflow();
+    });
+
+    // ---- setOutflowLimitAbsolute ----
+
+    // WHY: The core attack from issue #226 — batching a limit raise with a drain in the
+    // same proposal. Under the delay, the drain must enforce the old (pre-pending) limit.
+    it("schedules limitAbsolute increase and enforces old limit until activation", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      // Attacker-requested increase: $100K → $1M
+      const tx = await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(1_000_000));
+      const block = await ethers.provider.getBlock(tx.blockNumber!);
+      const activatesAt = BigInt(block!.timestamp) + BigInt(ACTIVATION_DELAY);
+
+      // Scheduled event emitted
+      await expect(tx)
+        .to.emit(treasury, "OutflowLimitAbsoluteIncreaseScheduled")
+        .withArgs(usdcAddr, USDC(100_000), USDC(1_000_000), activatesAt);
+
+      // Active value is unchanged; pending slot populated
+      expect((await treasury.getOutflowConfig(usdcAddr)).limitAbsolute).to.equal(USDC(100_000));
+      const pending = await treasury.getPendingOutflowConfig(usdcAddr);
+      expect(pending.pendingLimitAbsolute).to.equal(USDC(1_000_000));
+      expect(pending.pendingLimitAbsoluteActivation).to.equal(activatesAt);
+
+      // Drain attempt against the new limit fails: $5M treasury, 10% pct = $500K effective.
+      // Try $600K (would pass under $1M pending but not under $500K current).
+      await expect(
+        treasury.distribute(usdcAddr, recipient.address, USDC(600_000))
+      ).to.be.revertedWith("ArmadaTreasuryGov: outflow limit exceeded");
+
+      // Within the current effective limit still works
+      await treasury.distribute(usdcAddr, recipient.address, USDC(400_000));
+    });
+
+    // WHY: After the delay elapses, the first outflow call (or any reader) lazily
+    // promotes the pending value and emits the activation event. A reviewer should
+    // see the event fire exactly once at the transition.
+    it("lazily activates pending limitAbsolute at T+24d and emits Activated", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(1_000_000));
+      await time.increase(ACTIVATION_DELAY);
+
+      // Trigger via activatePendingOutflowParams
+      await expect(treasury.activatePendingOutflowParams(usdcAddr))
+        .to.emit(treasury, "OutflowLimitAbsoluteActivated")
+        .withArgs(usdcAddr, USDC(100_000), USDC(1_000_000));
+
+      const config = await treasury.getOutflowConfig(usdcAddr);
+      expect(config.limitAbsolute).to.equal(USDC(1_000_000));
+      // Pending cleared
+      const pending = await treasury.getPendingOutflowConfig(usdcAddr);
+      expect(pending.pendingLimitAbsolute).to.equal(0);
+      expect(pending.pendingLimitAbsoluteActivation).to.equal(0);
+    });
+
+    // WHY: Tightening must NOT be delayed — the issue explicitly requires immediate
+    // effect so operators can respond to emerging risk without waiting 24 days. Also
+    // confirms tightening clears any pending loosening (cancellation semantics).
+    it("tightens limitAbsolute immediately and clears pending loosening", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      // Schedule a loosening first
+      await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(1_000_000));
+      expect(
+        (await treasury.getPendingOutflowConfig(usdcAddr)).pendingLimitAbsolute
+      ).to.equal(USDC(1_000_000));
+
+      // Tighten: from $100K active → $75K immediate, pending cleared
+      await expect(treasury.setOutflowLimitAbsolute(usdcAddr, USDC(75_000)))
+        .to.emit(treasury, "OutflowLimitAbsoluteDecreased")
+        .withArgs(usdcAddr, USDC(100_000), USDC(75_000));
+
+      expect((await treasury.getOutflowConfig(usdcAddr)).limitAbsolute).to.equal(USDC(75_000));
+      const pending = await treasury.getPendingOutflowConfig(usdcAddr);
+      expect(pending.pendingLimitAbsolute).to.equal(0);
+      expect(pending.pendingLimitAbsoluteActivation).to.equal(0);
+    });
+
+    // WHY: Issue #226 edge case — if active=100, pending=500, and a later proposal
+    // sets 300, that's still an increase over active (300 > 100) so it goes to pending
+    // with a fresh 24-day timer, even though it's tighter than the existing pending.
+    // Governance's most recent decision is authoritative.
+    it("overwrites pending loosening with fresh timer on subsequent loosening", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(500_000));
+      await time.increase(10 * ONE_DAY);
+
+      const tx = await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(300_000));
+      const block = await ethers.provider.getBlock(tx.blockNumber!);
+      const newActivatesAt = BigInt(block!.timestamp) + BigInt(ACTIVATION_DELAY);
+
+      const pending = await treasury.getPendingOutflowConfig(usdcAddr);
+      expect(pending.pendingLimitAbsolute).to.equal(USDC(300_000));
+      expect(pending.pendingLimitAbsoluteActivation).to.equal(newActivatesAt);
+      // Active untouched
+      expect((await treasury.getOutflowConfig(usdcAddr)).limitAbsolute).to.equal(USDC(100_000));
+    });
+
+    // ---- setOutflowLimitBps ----
+
+    it("schedules bps increase and applies old bps until activation", async function () {
+      const usdcAddr = await usdc.getAddress();
+      await expect(treasury.setOutflowLimitBps(usdcAddr, 5000))
+        .to.emit(treasury, "OutflowLimitBpsIncreaseScheduled");
+
+      expect((await treasury.getOutflowConfig(usdcAddr)).limitBps).to.equal(1000);
+      expect((await treasury.getPendingOutflowConfig(usdcAddr)).pendingLimitBps).to.equal(5000);
+    });
+
+    it("tightens bps immediately and clears pending", async function () {
+      const usdcAddr = await usdc.getAddress();
+      await treasury.setOutflowLimitBps(usdcAddr, 5000); // schedule
+
+      await expect(treasury.setOutflowLimitBps(usdcAddr, 500))
+        .to.emit(treasury, "OutflowLimitBpsDecreased")
+        .withArgs(usdcAddr, 1000, 500);
+
+      expect((await treasury.getOutflowConfig(usdcAddr)).limitBps).to.equal(500);
+      expect((await treasury.getPendingOutflowConfig(usdcAddr)).pendingLimitBps).to.equal(0);
+    });
+
+    // ---- setOutflowWindow (INVERTED direction) ----
+
+    // WHY: Window semantics are inverted vs limits. Shorter lookback loosens because
+    // older records drop out of the rolling sum faster. This is a commonly missed edge
+    // in reviews — the test nails the inverted direction.
+    it("schedules window DECREASE (loosening) with delay", async function () {
+      const usdcAddr = await usdc.getAddress();
+      // Initial window = 30 days; try to shorten to 7 days
+      const tx = await treasury.setOutflowWindow(usdcAddr, 7 * ONE_DAY);
+      const block = await ethers.provider.getBlock(tx.blockNumber!);
+      const activatesAt = BigInt(block!.timestamp) + BigInt(ACTIVATION_DELAY);
+
+      await expect(tx)
+        .to.emit(treasury, "OutflowWindowDurationDecreaseScheduled")
+        .withArgs(usdcAddr, THIRTY_DAYS, 7 * ONE_DAY, activatesAt);
+
+      expect((await treasury.getOutflowConfig(usdcAddr)).windowDuration).to.equal(THIRTY_DAYS);
+      expect(
+        (await treasury.getPendingOutflowConfig(usdcAddr)).pendingWindowDuration
+      ).to.equal(7 * ONE_DAY);
+    });
+
+    it("applies window INCREASE (tightening) immediately and clears pending", async function () {
+      const usdcAddr = await usdc.getAddress();
+      await treasury.setOutflowWindow(usdcAddr, 7 * ONE_DAY); // schedule loosening
+
+      await expect(treasury.setOutflowWindow(usdcAddr, 60 * ONE_DAY))
+        .to.emit(treasury, "OutflowWindowDurationIncreased")
+        .withArgs(usdcAddr, THIRTY_DAYS, 60 * ONE_DAY);
+
+      expect((await treasury.getOutflowConfig(usdcAddr)).windowDuration).to.equal(60 * ONE_DAY);
+      expect(
+        (await treasury.getPendingOutflowConfig(usdcAddr)).pendingWindowDuration
+      ).to.equal(0);
+    });
+
+    // ---- Permissionless trigger & view parity ----
+
+    // WHY: activatePendingOutflowParams is a no-op-safe public wrapper for monitoring
+    // bots. It must not revert when there's nothing to activate and must not emit
+    // events in that case — otherwise a bot calling it every block would spam logs.
+    it("activatePendingOutflowParams is a no-op when nothing is due", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      // Case 1: no pending state at all
+      const tx1 = await treasury.activatePendingOutflowParams(usdcAddr);
+      const receipt1 = await tx1.wait();
+      expect(receipt1!.logs.length).to.equal(0);
+
+      // Case 2: pending exists but timer hasn't elapsed
+      await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(1_000_000));
+      await time.increase(10 * ONE_DAY);
+      const tx2 = await treasury.activatePendingOutflowParams(usdcAddr);
+      const receipt2 = await tx2.wait();
+      // No Activated events emitted (timer not elapsed)
+      expect(
+        receipt2!.logs.filter((l: any) => {
+          try {
+            return treasury.interface.parseLog(l)?.name.includes("Activated");
+          } catch {
+            return false;
+          }
+        }).length
+      ).to.equal(0);
+    });
+
+    // WHY: The view-only getEffectiveOutflowConfig MUST agree with what a
+    // state-modifying _lazyActivate path would produce. Divergence between the two
+    // is the single most important correctness failure mode — Cyfrin verifies this
+    // as part of the delay-mechanism audit.
+    it("view getEffectiveOutflowConfig agrees with state-modifying activation", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      // Schedule changes for all three knobs
+      await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(800_000));
+      await treasury.setOutflowLimitBps(usdcAddr, 3000);
+      await treasury.setOutflowWindow(usdcAddr, 7 * ONE_DAY);
+
+      // Advance past activation
+      await time.increase(ACTIVATION_DELAY);
+
+      // View should report effective (post-activation) values without mutating
+      const effectiveBefore = await treasury.getEffectiveOutflowConfig(usdcAddr);
+      expect(effectiveBefore.limitAbsolute).to.equal(USDC(800_000));
+      expect(effectiveBefore.limitBps).to.equal(3000);
+      expect(effectiveBefore.windowDuration).to.equal(7 * ONE_DAY);
+
+      // Raw storage still holds pre-activation values (view didn't mutate)
+      const rawBefore = await treasury.getOutflowConfig(usdcAddr);
+      expect(rawBefore.limitAbsolute).to.equal(USDC(100_000));
+
+      // Now trigger state-modifying activation
+      await treasury.activatePendingOutflowParams(usdcAddr);
+
+      // Raw now matches effective
+      const rawAfter = await treasury.getOutflowConfig(usdcAddr);
+      const effectiveAfter = await treasury.getEffectiveOutflowConfig(usdcAddr);
+      expect(rawAfter.limitAbsolute).to.equal(effectiveAfter.limitAbsolute);
+      expect(rawAfter.limitBps).to.equal(effectiveAfter.limitBps);
+      expect(rawAfter.windowDuration).to.equal(effectiveAfter.windowDuration);
+    });
+
+    // WHY: The headline attack in issue #226: a single Extended proposal batching
+    // setOutflowLimitAbsolute + distribute at the new limit. The delay must force
+    // the drain to enforce the old limit. This simulates the batch by calling both
+    // in the same block (same tx ordering the timelock would produce).
+    it("blocks atomic batch: loosen + drain in same block enforces old limit", async function () {
+      const usdcAddr = await usdc.getAddress();
+
+      // Attacker-requested batch: raise limit to $5M, then distribute $2M.
+      // Without the delay, $2M > $500K (current pct effective) would pass against the
+      // new $5M limit. With the delay, it must fail against the old $500K.
+      await treasury.setOutflowLimitAbsolute(usdcAddr, USDC(5_000_000));
+
+      await expect(
+        treasury.distribute(usdcAddr, recipient.address, USDC(2_000_000))
+      ).to.be.revertedWith("ArmadaTreasuryGov: outflow limit exceeded");
     });
   });
 });

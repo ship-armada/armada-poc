@@ -78,6 +78,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_VotingNotStarted();
     error Gov_VotingDelayOutOfBounds();
     error Gov_VotingPeriodOutOfBounds();
+    error Gov_WouldBreakOutflowDelayInvariant();
     error Gov_WindDownAlreadyActive();
     error Gov_WindDownContractAlreadySet();
     error Gov_WindDownContractNotSet();
@@ -165,6 +166,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Succeeded proposals must be queued within this window or they expire
     uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
+
+    // Mirror of ArmadaTreasuryGov.LIMIT_ACTIVATION_DELAY. Duplicated here (instead of
+    // read cross-contract) to keep the governor under the 24576-byte mainnet deploy limit.
+    // The two constants must stay in sync; a divergence test in test/ asserts parity at
+    // deploy time, so a future edit that changes one without the other will fail CI.
+    uint256 public constant TREASURY_OUTFLOW_ACTIVATION_DELAY = 24 days;
 
     // Absolute quorum floor: prevents governance passing on trivial turnout regardless
     // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
@@ -477,6 +484,16 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (params.votingPeriod < MIN_VOTING_PERIOD || params.votingPeriod > MAX_VOTING_PERIOD) revert Gov_VotingPeriodOutOfBounds();
         if (params.executionDelay < MIN_EXECUTION_DELAY || params.executionDelay > MAX_EXECUTION_DELAY) revert Gov_ExecutionDelayOutOfBounds();
         if (params.quorumBps < MIN_QUORUM_BPS || params.quorumBps > MAX_QUORUM_BPS) revert Gov_QuorumBpsOutOfBounds();
+
+        // Extended timing invariant: the full Extended proposal cycle must stay strictly
+        // shorter than the treasury's outflow-loosening activation delay. Without this,
+        // a captured governance could stretch the Extended cycle to meet or exceed the
+        // activation delay, letting a second drain proposal complete its own cycle exactly
+        // as a scheduled loosening activates.
+        if (proposalType == ProposalType.Extended) {
+            uint256 cycle = params.votingDelay + params.votingPeriod + params.executionDelay;
+            if (cycle >= TREASURY_OUTFLOW_ACTIVATION_DELAY) revert Gov_WouldBreakOutflowDelayInvariant();
+        }
 
         proposalTypeParams[proposalType] = params;
         emit ProposalTypeParamsUpdated(proposalType, params);

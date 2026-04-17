@@ -63,6 +63,46 @@ contract TreasuryOutflowHandler is Test {
         delta = bound(delta, 0, 60 days);
         vm.warp(block.timestamp + delta);
     }
+
+    // ---- Issue #226: asymmetric delay on outflow-loosening setters ----
+    //
+    // These handler actions exercise the delayed-activation path so the existing
+    // value-conservation invariants (INV-TO1/2/3) are re-verified under fuzzed setter
+    // sequences, not just fuzzed distribute/stewardSpend sequences. Bounds are chosen
+    // so both loosening and tightening directions are reachable from the starting config.
+
+    function setLimitAbsoluteFuzzed(uint256 newAbsolute) external {
+        newAbsolute = bound(newAbsolute, 100_000e6, 5_000_000e6); // >= floor
+        vm.prank(owner);
+        try treasury.setOutflowLimitAbsolute(token, newAbsolute) {
+        } catch {
+            ghost_revertCount++;
+        }
+    }
+
+    function setLimitBpsFuzzed(uint256 newBps) external {
+        newBps = bound(newBps, 1, 10_000);
+        vm.prank(owner);
+        try treasury.setOutflowLimitBps(token, newBps) {
+        } catch {
+            ghost_revertCount++;
+        }
+    }
+
+    function setWindowFuzzed(uint256 newWindow) external {
+        newWindow = bound(newWindow, 1 days, 365 days);
+        vm.prank(owner);
+        try treasury.setOutflowWindow(token, newWindow) {
+        } catch {
+            ghost_revertCount++;
+        }
+    }
+
+    /// @dev Permissionless trigger for pending outflow param activation. Must be a no-op
+    ///      when nothing is due and must not revert in any state.
+    function activatePending() external {
+        treasury.activatePendingOutflowParams(token);
+    }
 }
 
 contract TreasuryOutflowInvariantTest is Test {
@@ -133,5 +173,38 @@ contract TreasuryOutflowInvariantTest is Test {
             handler.ghost_totalDistributed() + handler.ghost_totalStewardSpent(),
             "INV-TO3: recipient balance"
         );
+    }
+
+    /// @notice INV-TO4: Raw storage never exceeds effective values when no pending
+    ///         activation is overdue. When pendingActivation > 0 and block.timestamp
+    ///         >= pendingActivation, getEffectiveOutflowConfig must return the pending
+    ///         value; getOutflowConfig must still return the (pre-activation) active
+    ///         value. After calling activatePendingOutflowParams, the two must match.
+    ///         WHY: This is the view-vs-state-modifying parity property. A divergence
+    ///         would mean enforcement reads a different value than what monitoring sees.
+    function invariant_effectiveMatchesRawAfterActivation() public {
+        // Snapshot effective view (state-read only)
+        (uint256 effW, uint256 effB, uint256 effA,) = treasury.getEffectiveOutflowConfig(address(usdc));
+
+        // Check: if no pending is overdue, effective must equal raw
+        (uint256 pW, uint256 pWA, uint256 pB, uint256 pBA, uint256 pA, uint256 pAA) =
+            treasury.getPendingOutflowConfig(address(usdc));
+        (uint256 rawW, uint256 rawB, uint256 rawA,) = treasury.getOutflowConfig(address(usdc));
+
+        if (!(pWA > 0 && block.timestamp >= pWA)) {
+            assertEq(effW, rawW, "INV-TO4: effective window drift");
+        } else {
+            assertEq(effW, pW, "INV-TO4: effective window should be pending");
+        }
+        if (!(pBA > 0 && block.timestamp >= pBA)) {
+            assertEq(effB, rawB, "INV-TO4: effective bps drift");
+        } else {
+            assertEq(effB, pB, "INV-TO4: effective bps should be pending");
+        }
+        if (!(pAA > 0 && block.timestamp >= pAA)) {
+            assertEq(effA, rawA, "INV-TO4: effective absolute drift");
+        } else {
+            assertEq(effA, pA, "INV-TO4: effective absolute should be pending");
+        }
     }
 }

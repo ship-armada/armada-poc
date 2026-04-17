@@ -104,6 +104,10 @@ async function main() {
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const latestBlock = await ethers.provider.getBlock('latest');
+  // crowdfundOpenDelay is an operational buffer (deployment verification,
+  // announcement lead time, infra readiness) — NOT a seed-setup window.
+  // Seeds are added during week 1 of the active window; see
+  // ArmadaCrowdfund._requireArmLoadedAndPreInviteEnd.
   const openTimestamp = latestBlock!.timestamp + config.crowdfundOpenDelay;
   // Security council: config-driven for non-local, Anvil signer[10] fallback for local
   let securityCouncilAddress: string;

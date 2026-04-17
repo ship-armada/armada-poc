@@ -139,28 +139,28 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Proposal threshold: 0.1% = 10 bps
     uint256 public constant PROPOSAL_THRESHOLD_BPS = 10;
 
-    // Bounds for governance-updatable proposal parameters (mini-Sepolia)
-    uint256 public constant MIN_VOTING_DELAY = 1 minutes;
+    // Bounds for governance-updatable proposal parameters
+    uint256 public constant MIN_VOTING_DELAY = 1 days;
     uint256 public constant MAX_VOTING_DELAY = 14 days;
-    uint256 public constant MIN_VOTING_PERIOD = 5 minutes;
+    uint256 public constant MIN_VOTING_PERIOD = 1 days;
     uint256 public constant MAX_VOTING_PERIOD = 30 days;
-    uint256 public constant MIN_EXECUTION_DELAY = 1 minutes;
+    uint256 public constant MIN_EXECUTION_DELAY = 1 days;
     uint256 public constant MAX_EXECUTION_DELAY = 14 days;
     uint256 public constant MIN_QUORUM_BPS = 500;   // 5%
     uint256 public constant MAX_QUORUM_BPS = 5000;  // 50%
 
     // Succeeded proposals must be queued within this window or they expire
-    uint256 public constant QUEUE_GRACE_PERIOD = 1 days; // (mini-Sepolia)
+    uint256 public constant QUEUE_GRACE_PERIOD = 14 days;
 
     // Absolute quorum floor: prevents governance passing on trivial turnout regardless
     // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
-    uint256 public constant QUORUM_FLOOR = 10 * 1e18; // (mini-Sepolia)
+    uint256 public constant QUORUM_FLOOR = 100_000 * 1e18;
 
     // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
     // One-time bootstrapping constant; not governable.
     address public crowdfundAddress;
     bool public crowdfundAddressLocked;
-    uint256 public constant QUIET_PERIOD_DURATION = 10 minutes; // (mini-Sepolia)
+    uint256 public constant QUIET_PERIOD_DURATION = 7 days;
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.
@@ -258,51 +258,53 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         treasuryAddress = _treasuryAddress;
         deployer = msg.sender;
 
-        // Standard proposals (mini-Sepolia): 1m delay, 5m voting, 1m execution, 20% quorum
+        // Standard proposals: 2d delay, 7d voting, 2d execution, 20% quorum
         proposalTypeParams[ProposalType.Standard] = ProposalParams({
-            votingDelay: 1 minutes,
-            votingPeriod: 5 minutes,
-            executionDelay: 1 minutes,
+            votingDelay: 2 days,
+            votingPeriod: 7 days,
+            executionDelay: 2 days,
             quorumBps: 2000
         });
 
-        // Extended proposals (mini-Sepolia): 1m delay, 10m voting, 1m execution, 30% quorum
+        // Extended proposals: 2d delay, 14d voting, 7d execution, 30% quorum
         proposalTypeParams[ProposalType.Extended] = ProposalParams({
-            votingDelay: 1 minutes,
-            votingPeriod: 10 minutes,
-            executionDelay: 1 minutes,
+            votingDelay: 2 days,
+            votingPeriod: 14 days,
+            executionDelay: 7 days,
             quorumBps: 3000
         });
 
-        // VetoRatification (mini-Sepolia): immediate voting, 5m period, no execution delay, 20% quorum.
-        // These params bypass setProposalTypeParams() bounds, making VetoRatification timing
-        // effectively immutable via governance. Only the veto mechanism can create these proposals.
+        // VetoRatification: immediate voting, 7d period, no execution delay, 20% quorum.
+        // These params bypass setProposalTypeParams() bounds (MIN_VOTING_DELAY=1d,
+        // MIN_EXECUTION_DELAY=1d), making VetoRatification timing effectively immutable
+        // via governance. Only the veto mechanism can create these proposals.
         proposalTypeParams[ProposalType.VetoRatification] = ProposalParams({
             votingDelay: 0,
-            votingPeriod: 5 minutes,
+            votingPeriod: 7 days,
             executionDelay: 0,
             quorumBps: 2000
         });
 
-        // Steward (mini-Sepolia): immediate voting, 5m review window, 1m timelock, 20% quorum.
+        // Steward: immediate voting, 7d review window, 2d timelock, 20% quorum.
+        // Total lifecycle: 9 days (0d delay + 7d vote + 2d timelock).
         // Pass-by-default: passes unless quorum met AND majority votes AGAINST.
-        // The execution delay provides a veto buffer after the pass-by-default voting window,
-        // giving tokenholders time to queue a VetoRatification proposal before the steward
-        // spend executes.
+        // The 2d execution delay is intentional: it provides a veto buffer after the
+        // pass-by-default voting window, giving tokenholders time to queue a
+        // VetoRatification proposal before the steward spend executes.
         // These params bypass setProposalTypeParams() bounds, making Steward timing
         // effectively immutable via governance. Only proposeStewardSpend() creates these.
         proposalTypeParams[ProposalType.Steward] = ProposalParams({
             votingDelay: 0,
-            votingPeriod: 5 minutes,
-            executionDelay: 1 minutes,
+            votingPeriod: 7 days,
+            executionDelay: 2 days,
             quorumBps: 2000
         });
 
-        // Signaling (mini-Sepolia): non-executable text-only proposals, no execution phase.
+        // Signaling: non-executable text-only proposals. Standard timing, no execution phase.
         // Immutable — cannot be changed via setProposalTypeParams().
         proposalTypeParams[ProposalType.Signaling] = ProposalParams({
-            votingDelay: 1 minutes,
-            votingPeriod: 5 minutes,
+            votingDelay: 2 days,
+            votingPeriod: 7 days,
             executionDelay: 0,
             quorumBps: 2000
         });

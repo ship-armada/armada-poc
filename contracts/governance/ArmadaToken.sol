@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 ///         Tokens have zero voting power until delegated. Transfer-restricted until wind-down
 ///         enables free transfers via setTransferable(true).
 contract ArmadaToken is ERC20Votes {
-    uint256 public constant INITIAL_SUPPLY = 1_000 * 1e18; // 1K ARM (mini-Sepolia)
+    uint256 public constant INITIAL_SUPPLY = 12_000_000 * 1e18; // 12M ARM
 
     // ============ Immutable References ============
 

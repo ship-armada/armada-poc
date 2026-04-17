@@ -135,10 +135,15 @@ async function main() {
   const addrArray = beneficiaries.map((b) => b.address);
   const amountArray = beneficiaries.map((b) => ethers.parseUnits(b.amount, 18));
 
+  // $10k/day in 18-decimal USD. See PARAMETER_MANIFEST.md / issue #225 — rate cap on
+  // the observed-revenue ratchet, defends against malicious RevenueCounter upgrades.
+  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits("10000", 18);
+
   const RevenueLock = await ethers.getContractFactory("RevenueLock");
   const lock = await RevenueLock.deploy(
     armTokenAddress,
     revenueCounterAddress,
+    MAX_REVENUE_INCREASE_PER_DAY,
     addrArray,
     amountArray,
     nm.override(),

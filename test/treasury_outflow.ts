@@ -139,8 +139,8 @@ describe("Treasury Outflow Rate Limits", function () {
 
     // WHY: Setting the window to a longer duration is TIGHTENING (longer lookback sums
     // more past records), so it takes effect immediately under the asymmetric-delay
-    // behavior added in issue #226. The loosening direction (shorter window) is covered
-    // in the "Asymmetric Activation Delay" section below.
+    // semantics. The loosening direction (shorter window) is covered in the
+    // "Asymmetric Activation Delay" section below.
     it("should allow owner to update outflow window (tightening, immediate)", async function () {
       await treasury.setOutflowWindow(await usdc.getAddress(), 60 * ONE_DAY);
       const config = await treasury.getOutflowConfig(await usdc.getAddress());
@@ -452,10 +452,10 @@ describe("Treasury Outflow Rate Limits", function () {
       expect(config.limitAbsolute).to.equal(USDC(50_000));
     });
 
-    // WHY: Governance can still raise the limits, but under issue #226 the raises are
-    // scheduled rather than applied immediately. This test confirms there is no upper
-    // bound on what governance can request — the floor is immutable but the ceiling isn't
-    // — while the activation-delay section below confirms the delay is enforced.
+    // WHY: Governance may raise the limits, and the raises are scheduled rather than
+    // applied immediately. This test confirms there is no upper bound on what governance
+    // can request — the floor is immutable but the ceiling isn't — while the
+    // activation-delay section below confirms the delay is enforced.
     it("should allow governance to schedule limit increases without upper cap", async function () {
       await fundTreasury(USDC(5_000_000));
       await initUsdcOutflow();

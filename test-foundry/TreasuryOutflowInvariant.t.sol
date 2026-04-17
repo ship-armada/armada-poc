@@ -66,7 +66,7 @@ contract TreasuryOutflowHandler is Test {
 
     // ---- Issue #226: asymmetric delay on outflow-loosening setters ----
     //
-    // These handler actions exercise the new delayed-activation path so the existing
+    // These handler actions exercise the delayed-activation path so the existing
     // value-conservation invariants (INV-TO1/2/3) are re-verified under fuzzed setter
     // sequences, not just fuzzed distribute/stewardSpend sequences. Bounds are chosen
     // so both loosening and tightening directions are reachable from the starting config.

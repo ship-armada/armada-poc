@@ -80,6 +80,7 @@
     "verify:snark:sepolia": "hardhat run scripts/verify_snark_mode.ts --network sepoliaHub",
     "prepare": "git config core.hooksPath .githooks",
     "check:anvil-addresses": "./scripts/check-anvil-addresses.sh",
+    "check:sizes": "node scripts/check-contract-sizes.js",
     "slither": "slither . --config-file slither.config.json",
     "verify": "hardhat run scripts/verify_deployment.ts --network hub",
     "verify:sepolia": "hardhat run scripts/verify_deployment.ts --network sepoliaHub"

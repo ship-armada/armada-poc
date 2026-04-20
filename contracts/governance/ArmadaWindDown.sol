@@ -79,6 +79,11 @@ contract ArmadaWindDown {
     /// @notice Whether wind-down has been triggered
     bool public triggered;
 
+    /// @notice Timestamp at which wind-down was triggered. Zero before trigger.
+    ///         Consumed by ArmadaRedemption to enforce a post-trigger delay before
+    ///         redemptions can begin, giving time for sweepToken/sweepETH to run.
+    uint256 public triggerTime;
+
     // ============ Events ============
 
     event WindDownTriggered(address indexed caller, uint256 timestamp);
@@ -214,6 +219,7 @@ contract ArmadaWindDown {
 
     function _executeWindDown() internal {
         triggered = true;
+        triggerTime = block.timestamp;
 
         // Enable ARM transfers (users need to move ARM to redeem)
         IArmadaTokenWindDown(armToken).setTransferable(true);

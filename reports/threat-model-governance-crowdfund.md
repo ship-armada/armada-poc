@@ -87,3 +87,8 @@
 5. **ShieldPauseController fuzz/invariant tests:** No fuzz or invariant tests for the pause controller. The auto-expiry and one-shot post-wind-down behavior would benefit from invariant testing (e.g., "pause duration never exceeds MAX_PAUSE_DURATION", "post-wind-down pause can only fire once").
 6. **RevenueCounter fuzz/invariant tests:** No fuzz testing for cumulative fee accounting. An invariant that `cumulativeRevenue` is monotonically non-decreasing would catch accounting bugs.
 7. **Wind-down irreversibility:** The wind-down is intentionally irreversible. The governance deadline-extension mechanism is the only defense against premature permissionless triggers. Consider whether the revenue threshold and deadline defaults provide sufficient safety margin for mainnet.
+8. **Redeem-before-sweep (issue #254):** `ArmadaRedemption.redeem()` has two layered mitigations:
+   - **`anyPayout` guard:** reverts if no requested asset produces a non-zero payout, preventing ARM lock-in with zero return.
+   - **`REDEMPTION_DELAY` (1 day):** gates all redemptions until 1 day after `triggerTime`, providing a social-coordination window for sweeps to complete.
+
+   Residual risk: **partial-sweep forfeiture** — if some tokens are swept and others are not when a user redeems, they receive a share of swept assets but forfeit their claim on unswept ones. The unpaid share then flows pro-rata to later redeemers. The 1-day delay mitigates this by giving all sweeps time to complete, but does not guarantee they do. Operational: rely on coordinators/relayers to batch-sweep during the delay window, and frontends to warn if treasury balances remain.

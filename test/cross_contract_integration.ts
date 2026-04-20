@@ -324,48 +324,34 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(quorum).to.equal(expectedQuorum);
     });
 
-    it("proposal threshold (0.1% of total supply) is reachable by crowdfund participants", async function () {
-      await runCrowdfundAndClaim();
-
+    it("proposal threshold (5,000 ARM) is reachable by a single crowdfund participant", async function () {
+      // WHY: GOVERNANCE.md specifies a flat 5,000 ARM proposal threshold so
+      // typical crowdfund seeds can submit proposals without forming pools.
       // With BASE_SALE ($1.2M), hop-0 ceiling = 70% of netRaise = 70% of $1.14M = $798K.
       // 80 seeds * $15K = $1.2M demand > $798K ceiling → pro-rata.
-      // Each seed gets (15K * 798K) / 1.2M = $9,975 = 9,975 ARM.
-      // Threshold = 0.1% of total supply.
+      // Each seed gets (15K * 798K) / 1.2M = $9,975 = 9,975 ARM, which clears the 5,000 ARM threshold.
+      await runCrowdfundAndClaim();
 
       const threshold = await governor.proposalThreshold();
-      const INITIAL_SUPPLY = await armToken.INITIAL_SUPPLY();
-      expect(threshold).to.equal((INITIAL_SUPPLY * 10n) / 10000n); // 0.1% = 10 bps
+      expect(threshold).to.equal(ethers.parseUnits("5000", 18));
 
-      // Single seed's ARM balance
-      const seedBalance = await armToken.balanceOf(seeds[0].address);
-      expect(seedBalance).to.be.lt(threshold); // single seed can't propose
-
-      // 11 seeds pooling tokens: transfer to one address
-      // Whitelist seeds so they can transfer ARM to the pooled address
-      for (let i = 0; i < 11; i++) {
-        await armToken.addToWhitelist(seeds[i].address);
-      }
-      const pooledSeed = seeds[0];
-      for (let i = 1; i < 11; i++) {
-        const bal = await armToken.balanceOf(seeds[i].address);
-        await armToken.connect(seeds[i]).transfer(pooledSeed.address, bal);
-      }
-
-      const pooledBalance = await armToken.balanceOf(pooledSeed.address);
-      expect(pooledBalance).to.be.gte(threshold); // pooled seeds can propose
+      // A single seed clears the threshold on their own — no pooling required.
+      const seed = seeds[0];
+      const seedBalance = await armToken.balanceOf(seed.address);
+      expect(seedBalance).to.be.gte(threshold);
 
       // Delegate and propose
-      await armToken.connect(pooledSeed).delegate(pooledSeed.address);
+      await armToken.connect(seed).delegate(seed.address);
       await mine(1);
 
       const dummyCalldata = treasuryGov.interface.encodeFunctionData("distribute", [await usdc.getAddress(), deployer.address, 1]);
       await expect(
-        governor.connect(pooledSeed).propose(
+        governor.connect(seed).propose(
           ProposalType.Standard,
           [await treasuryGov.getAddress()],
           [0],
           [dummyCalldata],
-          "Crowdfund participants' first proposal"
+          "Crowdfund participant's first proposal"
         )
       ).to.not.be.reverted;
     });

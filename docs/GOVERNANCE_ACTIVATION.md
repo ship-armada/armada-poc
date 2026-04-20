@@ -105,7 +105,7 @@ Example with POC defaults:
 - **Immutable treasury:** The crowdfund's treasury destination cannot be redirected after deployment. This is intentional — it prevents admin from diverting funds.
 - **One-time quorum exclusion:** The governor's excluded addresses list locks after the first `setExcludedAddresses` call. Future crowdfund rounds would need to be included in the initial call or require a governance proposal to add a new exclusion mechanism.
 - **Fixed ARM supply:** 12M total, no mint/burn. All distribution decisions are final once tokens are transferred.
-- **Proposal threshold:** 0.1% of total supply = 12,000 ARM. This is absolute (not based on eligible supply), ensuring a minimum skin-in-the-game regardless of distribution.
+- **Proposal threshold:** 5,000 ARM (per GOVERNANCE.md). This is an absolute constant (not a fraction of supply), ensuring a minimum skin-in-the-game regardless of distribution.
 
 ## Future: Protocol Fee Capture
 

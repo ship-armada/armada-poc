@@ -79,7 +79,7 @@ contract ArmadaRedemptionTest is Test {
         // the happy-path tests can call redeem() without coordinating the delay.
         redemption.setWindDown(address(windDown));
         windDown.setTriggerTime(block.timestamp);
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(block.timestamp + 7 days + 1);
 
         // Distribute ARM
         // Treasury gets 65%, revenue-lock gets 15%, crowdfund gets 10%, alice 5%, bob 5%
@@ -518,7 +518,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         // Try at triggerTime + delay - 1 — still in the gate window
-        vm.warp(block.timestamp + 1 days - 1);
+        vm.warp(block.timestamp + 7 days - 1);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: redemption delay not elapsed");
         redemption.redeem(aliceArm, tokens, false);
@@ -532,7 +532,7 @@ contract ArmadaRedemptionTest is Test {
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
 
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(alice);
         redemption.redeem(aliceArm, tokens, false);
         assertEq(usdc.balanceOf(alice), 250_000e6);

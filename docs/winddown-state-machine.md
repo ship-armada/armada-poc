@@ -88,13 +88,13 @@ flowchart TD
 
 ### Redemption Delay (issue #254 mitigation)
 
-A 1-day delay (`REDEMPTION_DELAY = 1 days`) enforced from `ArmadaWindDown.triggerTime`
+A 7-day delay (`REDEMPTION_DELAY = 7 days`) enforced from `ArmadaWindDown.triggerTime`
 gates all redemptions. This is a **social-coordination window**, not a correctness
 guarantee: anyone can run `sweepToken`/`sweepETH` during the delay, and the delay
 gives humans, relayers, and multisigs time to coordinate.
 
 - Start clock: `triggerTime` is written in `_executeWindDown()` on both trigger paths.
-- End clock: redemption is allowed when `block.timestamp >= triggerTime + 1 day`.
+- End clock: redemption is allowed when `block.timestamp >= triggerTime + 7 days`.
 - Wiring: `ArmadaRedemption.setWindDown()` is a one-time deployer-gated setter that
   wires the wind-down reference post-deploy (breaks the constructor-circularity that
   would otherwise force a redeploy).

@@ -27,6 +27,7 @@ import {
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
+const ONE_WEEK = 7 * ONE_DAY;
 const TWENTY_FOUR_HOURS = ONE_DAY;
 
 const ARM_DECIMALS = 18;
@@ -78,10 +79,10 @@ describe("Wind-Down & Redemption Integration", function () {
     ]);
   }
 
-  // Advance time past REDEMPTION_DELAY (1 day) so redeem() clears the delay gate.
+  // Advance time past REDEMPTION_DELAY (7 days) so redeem() clears the delay gate.
   // Used in tests that trigger wind-down and then redeem in the same scenario.
   async function advancePastRedemptionDelay() {
-    await time.increase(ONE_DAY + 1);
+    await time.increase(ONE_WEEK + 1);
   }
 
   beforeEach(async function () {
@@ -639,7 +640,7 @@ describe("Wind-Down & Redemption Integration", function () {
   // ============================================================
 
   describe("Redemption delay gate", function () {
-    // WHY: Verifies that redeem() reverts during the 1-day window between wind-down
+    // WHY: Verifies that redeem() reverts during the 7-day window between wind-down
     // trigger and the earliest allowed redemption. Uses a dedicated describe block
     // (no pre-test advance past the delay) so the guard actually fires.
 
@@ -667,7 +668,7 @@ describe("Wind-Down & Redemption Integration", function () {
       // Hardhat auto-mines the next tx at `current + 1`, so advance to `boundary - 2`
       // here; the redeem tx then lands at `boundary - 1`, one second inside the gate.
       const triggeredAt = await windDown.triggerTime();
-      await time.increaseTo(Number(triggeredAt) + ONE_DAY - 2);
+      await time.increaseTo(Number(triggeredAt) + ONE_WEEK - 2);
       const tokens = [await usdc.getAddress()];
       await expect(
         redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
@@ -767,6 +768,9 @@ describe("Wind-Down & Redemption Integration", function () {
       // Sweep and redeem still works (unshields unaffected)
       await windDown.sweepToken(await usdc.getAddress());
       await armToken.connect(alice).approve(await redemption.getAddress(), ethers.MaxUint256);
+
+      // Advance past REDEMPTION_DELAY so redeem() clears the delay gate.
+      await advancePastRedemptionDelay();
 
       const tokens = [await usdc.getAddress()];
       await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
@@ -923,7 +927,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
   // Advance time past REDEMPTION_DELAY so redeem() clears the delay gate.
   // Helper for tests that call redeem() after a trigger.
   async function advancePastRedemptionDelay() {
-    await time.increase(ONE_DAY + 1);
+    await time.increase(ONE_WEEK + 1);
   }
 
   // ═══════════════════════════════════════════════════════════════════

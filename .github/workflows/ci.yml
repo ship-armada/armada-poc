@@ -58,7 +58,8 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge test
 
-  # Contract size check (EVM limit: 24576 bytes)
+  # Contract size check (EIP-170 limit: 24576 bytes).
+  # Reads Hardhat artifacts so the measured bytecode matches what actually deploys.
   contract-sizes:
     name: Contract Size Check
     runs-on: ubuntu-latest
@@ -69,26 +70,8 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci --legacy-peer-deps
-      - uses: foundry-rs/foundry-toolchain@v1
-      - name: Check contract sizes
-        run: |
-          OUTPUT=$(forge build --sizes 2>&1) || true
-          echo "$OUTPUT"
-          # Extract sizes and check for any contract exceeding 24576 bytes (24 KB EVM limit)
-          OVERSIZED=$(echo "$OUTPUT" | awk -F'|' '
-            NR > 2 && NF >= 4 {
-              gsub(/^[ \t]+|[ \t]+$/, "", $2)  # contract name
-              gsub(/^[ \t]+|[ \t]+$/, "", $3)  # size
-              if ($3+0 > 24576 && $2 != "") print $2 " (" $3 " bytes)"
-            }
-          ')
-          if [[ -n "$OVERSIZED" ]]; then
-            echo ""
-            echo "ERROR: The following contracts exceed the 24576-byte EVM size limit:"
-            echo "$OVERSIZED"
-            exit 1
-          fi
-          echo "All contracts within size limits."
+      - run: npm run compile
+      - run: npm run check:sizes
 
   # Slither static analysis (non-blocking until existing findings are triaged)
   slither:

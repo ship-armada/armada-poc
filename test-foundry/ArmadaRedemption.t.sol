@@ -361,9 +361,9 @@ contract ArmadaRedemptionTest is Test {
     }
 
     function test_revert_redeem_emptyTokenListNoETH() public {
-        // WHY: Prevents ARM lock-in with zero payout (issue #254). Passing an empty
-        // tokens list with includeETH=false would have locked ARM for no return.
-        // Post-fix, this reverts and ARM stays in the caller's wallet.
+        // WHY: Prevents ARM lock-in with zero payout (issue #254). An empty tokens
+        // list with includeETH=false produces no payout; the anyPayout guard reverts
+        // so safeTransferFrom is rolled back and ARM stays in the caller's wallet.
         address[] memory tokens = new address[](0);
         uint256 aliceArm = armToken.balanceOf(alice);
         uint256 aliceArmBefore = armToken.balanceOf(alice);

@@ -198,6 +198,38 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         windDown.governanceTriggerWindDown();
     }
 
+    // ======== Trigger Time (consumed by ArmadaRedemption delay gate) ========
+
+    function test_triggerTime_zeroBeforeTrigger() public {
+        // WHY: ArmadaRedemption uses triggerTime > 0 as the "wind-down triggered"
+        // signal. Must start at 0 so the check fails pre-trigger.
+        assertEq(windDown.triggerTime(), 0);
+    }
+
+    function test_triggerTime_setOnPermissionlessTrigger() public {
+        // WHY: Permissionless trigger path must record the block timestamp so
+        // ArmadaRedemption can enforce REDEMPTION_DELAY.
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        revenueCounter.setRevenue(0);
+
+        uint256 expected = block.timestamp;
+        vm.prank(randomUser);
+        windDown.triggerWindDown();
+
+        assertEq(windDown.triggerTime(), expected);
+    }
+
+    function test_triggerTime_setOnGovernanceTrigger() public {
+        // WHY: Governance trigger path must also record the block timestamp. Both
+        // paths converge on _executeWindDown, so this is a safety net for refactors
+        // that could accidentally split the behavior.
+        uint256 expected = block.timestamp;
+        vm.prank(address(timelock));
+        windDown.governanceTriggerWindDown();
+
+        assertEq(windDown.triggerTime(), expected);
+    }
+
     // ======== Wind-Down Hook Effects ========
 
     function test_executeWindDown_setsTokenTransferable() public {

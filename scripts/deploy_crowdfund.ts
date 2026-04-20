@@ -293,6 +293,12 @@ async function main() {
   await (await armToken.setWindDownContract(windDownAddress, nm.override())).wait();
   console.log(`   armToken.setWindDownContract(${windDownAddress})`);
 
+  // 11b. Wire wind-down to redemption (deployer-gated one-time setter). Redemption
+  // reads triggerTime from windDown to enforce the REDEMPTION_DELAY (issue #254).
+  console.log("11b. Wiring wind-down to redemption...");
+  await (await redemption.setWindDown(windDownAddress, nm.override())).wait();
+  console.log(`   redemption.setWindDown(${windDownAddress})`);
+
   // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
   // On local: uses Anvil impersonation to execute as the timelock directly.
   // On non-local: logs the governance proposals needed.

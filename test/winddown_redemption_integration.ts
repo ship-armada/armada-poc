@@ -27,6 +27,7 @@ import {
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
+const ONE_WEEK = 7 * ONE_DAY;
 const TWENTY_FOUR_HOURS = ONE_DAY;
 
 const ARM_DECIMALS = 18;
@@ -76,6 +77,12 @@ describe("Wind-Down & Redemption Integration", function () {
     await ethers.provider.send("hardhat_stopImpersonatingAccount", [
       await timelockController.getAddress(),
     ]);
+  }
+
+  // Advance time past REDEMPTION_DELAY (7 days) so redeem() clears the delay gate.
+  // Used in tests that trigger wind-down and then redeem in the same scenario.
+  async function advancePastRedemptionDelay() {
+    await time.increase(ONE_WEEK + 1);
   }
 
   beforeEach(async function () {
@@ -159,6 +166,10 @@ describe("Wind-Down & Redemption Integration", function () {
 
     // ARM token: set wind-down contract (deployer-only)
     await armToken.setWindDownContract(await windDown.getAddress());
+
+    // Redemption: wire wind-down reference (deployer-only one-time setter).
+    // ArmadaRedemption reads windDown.triggerTime() to enforce REDEMPTION_DELAY.
+    await redemption.setWindDown(await windDown.getAddress());
 
     // Timelock-only wiring via impersonation
     const timelockSigner = await asTimelock();
@@ -492,6 +503,9 @@ describe("Wind-Down & Redemption Integration", function () {
       await windDown.sweepToken(await usdc.getAddress());
       await windDown.sweepETH();
 
+      // Advance past REDEMPTION_DELAY so redeem() clears the delay gate.
+      await advancePastRedemptionDelay();
+
       // Approve redemption to take ARM
       await armToken.connect(alice).approve(
         await redemption.getAddress(),
@@ -618,6 +632,55 @@ describe("Wind-Down & Redemption Integration", function () {
       const circulatingAfter = await redemption.circulatingSupply();
       expect(circulatingAfter).to.equal(circulatingBefore - ALICE_AMOUNT);
     });
+
+  });
+
+  // ============================================================
+  // REDEMPTION_DELAY gate (issue #254 social-coordination window)
+  // ============================================================
+
+  describe("Redemption delay gate", function () {
+    // WHY: Verifies that redeem() reverts during the 7-day window between wind-down
+    // trigger and the earliest allowed redemption. Uses a dedicated describe block
+    // (no pre-test advance past the delay) so the guard actually fires.
+
+    beforeEach(async function () {
+      // Trigger wind-down and sweep — but DO NOT advance past the delay
+      await time.increaseTo(windDownDeadline + 1);
+      await windDown.triggerWindDown();
+      await windDown.sweepToken(await usdc.getAddress());
+      await windDown.sweepETH();
+
+      await armToken.connect(alice).approve(
+        await redemption.getAddress(),
+        ethers.MaxUint256,
+      );
+    });
+
+    it("reverts if redeem is attempted before the delay elapses", async function () {
+      const tokens = [await usdc.getAddress()];
+      await expect(
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+      ).to.be.revertedWith("ArmadaRedemption: redemption delay not elapsed");
+    });
+
+    it("still reverts just before the delay boundary", async function () {
+      // Hardhat auto-mines the next tx at `current + 1`, so advance to `boundary - 2`
+      // here; the redeem tx then lands at `boundary - 1`, one second inside the gate.
+      const triggeredAt = await windDown.triggerTime();
+      await time.increaseTo(Number(triggeredAt) + ONE_WEEK - 2);
+      const tokens = [await usdc.getAddress()];
+      await expect(
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+      ).to.be.revertedWith("ArmadaRedemption: redemption delay not elapsed");
+    });
+
+    it("succeeds once the delay has elapsed", async function () {
+      await advancePastRedemptionDelay();
+      const tokens = [await usdc.getAddress()];
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
+    });
   });
 
   // ============================================================
@@ -654,11 +717,14 @@ describe("Wind-Down & Redemption Integration", function () {
       expect(redemptionUsdc).to.equal(ethers.parseUnits("500000", 6));
       expect(redemptionEth).to.equal(ethers.parseEther("10"));
 
-      // 7. Alice and Bob approve and redeem
+      // 7. Alice and Bob approve and redeem (after REDEMPTION_DELAY elapses)
       await armToken.connect(alice).approve(await redemption.getAddress(), ethers.MaxUint256);
       await armToken.connect(bob).approve(await redemption.getAddress(), ethers.MaxUint256);
 
       const tokens = [await usdc.getAddress()];
+
+      // Delay gate: social-coordination window between trigger and redemptions (issue #254)
+      await advancePastRedemptionDelay();
 
       await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
       await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, true);
@@ -702,6 +768,9 @@ describe("Wind-Down & Redemption Integration", function () {
       // Sweep and redeem still works (unshields unaffected)
       await windDown.sweepToken(await usdc.getAddress());
       await armToken.connect(alice).approve(await redemption.getAddress(), ethers.MaxUint256);
+
+      // Advance past REDEMPTION_DELAY so redeem() clears the delay gate.
+      await advancePastRedemptionDelay();
 
       const tokens = [await usdc.getAddress()];
       await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
@@ -855,6 +924,12 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     await windDown.triggerWindDown();
   }
 
+  // Advance time past REDEMPTION_DELAY so redeem() clears the delay gate.
+  // Helper for tests that call redeem() after a trigger.
+  async function advancePastRedemptionDelay() {
+    await time.increase(ONE_WEEK + 1);
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // Setup
   // ═══════════════════════════════════════════════════════════════════
@@ -929,6 +1004,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
 
     // Wire governance contracts
     await armToken.setWindDownContract(await windDown.getAddress());
+    await redemption.setWindDown(await windDown.getAddress());
 
     const timelockSigner = await asTimelock();
     await governor.connect(timelockSigner).setSecurityCouncil(carol.address);

@@ -15,15 +15,25 @@ contract MockTokenRedemption is ERC20 {
     function mint(address to, uint256 amount) external { _mint(to, amount); }
 }
 
+/// @dev Minimal mock of ArmadaWindDown exposing the `triggerTime()` getter that
+///      ArmadaRedemption reads. Lets tests simulate trigger state without deploying
+///      the full wind-down contract and its dependency graph.
+contract MockWindDownRedemption {
+    uint256 public triggerTime;
+    function setTriggerTime(uint256 _t) external { triggerTime = _t; }
+}
+
 contract ArmadaRedemptionTest is Test {
     // Mirror events
     event Redeemed(address indexed redeemer, uint256 armAmount, address[] tokens, uint256 ethAmount);
+    event WindDownSet(address indexed windDown);
 
     ArmadaRedemption public redemption;
     ArmadaToken public armToken;
     TimelockController public timelock;
     MockTokenRedemption public usdc;
     MockTokenRedemption public weth;
+    MockWindDownRedemption public windDown;
 
     address public deployer = address(this);
     address public alice = address(0xA11CE);
@@ -31,7 +41,6 @@ contract ArmadaRedemptionTest is Test {
     address public treasuryAddr = address(0x7777);
     address public revenueLock = address(0xABCD);
     address public crowdfund = address(0xCF00);
-    address public windDown = address(0xD00D);
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
@@ -44,9 +53,13 @@ contract ArmadaRedemptionTest is Test {
 
         armToken = new ArmadaToken(deployer, address(timelock));
 
+        // Deploy a mock wind-down contract. Tests use this to simulate the triggerTime
+        // that ArmadaRedemption reads via the IArmadaWindDownRedemption interface.
+        windDown = new MockWindDownRedemption();
+
         // Enable transfers (simulating wind-down having triggered)
-        armToken.setWindDownContract(windDown);
-        vm.prank(windDown);
+        armToken.setWindDownContract(address(windDown));
+        vm.prank(address(windDown));
         armToken.setTransferable(true);
 
         // Whitelist deployer, alice, bob, and the redemption contract address
@@ -60,6 +73,13 @@ contract ArmadaRedemptionTest is Test {
             revenueLock,
             crowdfund
         );
+
+        // Wire wind-down reference on redemption (one-time setter) and simulate that
+        // wind-down triggered at the current timestamp. Warp past REDEMPTION_DELAY so
+        // the happy-path tests can call redeem() without coordinating the delay.
+        redemption.setWindDown(address(windDown));
+        windDown.setTriggerTime(block.timestamp);
+        vm.warp(block.timestamp + 7 days + 1);
 
         // Distribute ARM
         // Treasury gets 65%, revenue-lock gets 15%, crowdfund gets 10%, alice 5%, bob 5%
@@ -340,29 +360,39 @@ contract ArmadaRedemptionTest is Test {
         redemption.redeem(0, tokens, true);
     }
 
-    function test_redeem_emptyTokenList() public {
+    function test_revert_redeem_emptyTokenListNoETH() public {
+        // WHY: Prevents ARM lock-in with zero payout (issue #254). An empty tokens
+        // list with includeETH=false produces no payout; the anyPayout guard reverts
+        // so safeTransferFrom is rolled back and ARM stays in the caller's wallet.
         address[] memory tokens = new address[](0);
         uint256 aliceArm = armToken.balanceOf(alice);
+        uint256 aliceArmBefore = armToken.balanceOf(alice);
 
-        // Should succeed — ARM is transferred, but no tokens distributed
         vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
         redemption.redeem(aliceArm, tokens, false);
 
-        // ARM is locked
-        assertEq(armToken.balanceOf(alice), 0);
-        assertEq(armToken.balanceOf(address(redemption)), aliceArm);
+        // ARM is NOT locked — the revert rolled back safeTransferFrom
+        assertEq(armToken.balanceOf(alice), aliceArmBefore);
+        assertEq(armToken.balanceOf(address(redemption)), 0);
     }
 
-    function test_redeem_tokenWithZeroBalance() public {
+    function test_revert_redeem_tokenWithZeroBalance() public {
+        // WHY: A user listing a token whose sweep has not yet run would otherwise
+        // lock ARM for zero payout on that token (issue #254 partial-sweep case).
         MockTokenRedemption emptyToken = new MockTokenRedemption("Empty", "EMPTY");
         address[] memory tokens = new address[](1);
         tokens[0] = address(emptyToken);
 
         uint256 aliceArm = armToken.balanceOf(alice);
+        uint256 aliceArmBefore = armToken.balanceOf(alice);
+
         vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
         redemption.redeem(aliceArm, tokens, false);
 
         assertEq(emptyToken.balanceOf(alice), 0);
+        assertEq(armToken.balanceOf(alice), aliceArmBefore);
     }
 
     function test_redeem_ethOnlyNoERC20() public {
@@ -406,7 +436,7 @@ contract ArmadaRedemptionTest is Test {
     function test_revert_redeemBeforeWindDown() public {
         // Deploy a fresh ARM token where transferable is still false (pre-wind-down)
         ArmadaToken freshArm = new ArmadaToken(deployer, address(timelock));
-        freshArm.setWindDownContract(windDown);
+        freshArm.setWindDownContract(address(windDown));
 
         // Whitelist deployer and alice so we can distribute tokens without enabling global transfers
         address[] memory wl = new address[](2);
@@ -427,6 +457,189 @@ contract ArmadaRedemptionTest is Test {
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: wind-down not triggered");
         freshRedemption.redeem(1000e18, tokens, false);
+    }
+
+    // ======== setWindDown Guard ========
+
+    function test_setWindDown_emitsEvent() public {
+        // WHY: Redeployed setter path exercised in an isolated redemption to confirm
+        // the WindDownSet event fires exactly once with the provided address.
+        ArmadaRedemption fresh = new ArmadaRedemption(
+            address(armToken), treasuryAddr, revenueLock, crowdfund
+        );
+        MockWindDownRedemption freshWD = new MockWindDownRedemption();
+        vm.expectEmit(true, false, false, false);
+        emit WindDownSet(address(freshWD));
+        fresh.setWindDown(address(freshWD));
+        assertEq(fresh.windDown(), address(freshWD));
+    }
+
+    function test_revert_setWindDownTwice() public {
+        // WHY: windDown must be immutable after first-set to prevent later rebinding
+        // (which would let an admin redirect the triggerTime source).
+        MockWindDownRedemption other = new MockWindDownRedemption();
+        vm.expectRevert("ArmadaRedemption: wind-down already set");
+        redemption.setWindDown(address(other));
+    }
+
+    function test_revert_setWindDownNotAdmin() public {
+        // WHY: Only the deployer may wire the wind-down reference. Anyone else calling
+        // would be either a mistake or an attack to point the delay check at a lying
+        // contract.
+        ArmadaRedemption fresh = new ArmadaRedemption(
+            address(armToken), treasuryAddr, revenueLock, crowdfund
+        );
+        MockWindDownRedemption freshWD = new MockWindDownRedemption();
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: not admin");
+        fresh.setWindDown(address(freshWD));
+    }
+
+    function test_revert_setWindDownZero() public {
+        // WHY: Zero address would make redeem() permanently revert on the wind-down
+        // interface call. Reject at set time for a clearer failure.
+        ArmadaRedemption fresh = new ArmadaRedemption(
+            address(armToken), treasuryAddr, revenueLock, crowdfund
+        );
+        vm.expectRevert("ArmadaRedemption: zero windDown");
+        fresh.setWindDown(address(0));
+    }
+
+    // ======== Redemption Delay (issue #254 social-coordination mitigation) ========
+
+    function test_revert_redeemBeforeDelayElapsed() public {
+        // WHY: Users must not redeem during the coordination window. This prevents a
+        // same-block race between the wind-down trigger and the first redemption,
+        // giving sweep operators time to act. Reset triggerTime to now to re-enter
+        // the pre-delay window (setUp warped us past it for happy-path tests).
+        windDown.setTriggerTime(block.timestamp);
+        uint256 aliceArm = armToken.balanceOf(alice);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        // Try at triggerTime + delay - 1 — still in the gate window
+        vm.warp(block.timestamp + 7 days - 1);
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: redemption delay not elapsed");
+        redemption.redeem(aliceArm, tokens, false);
+    }
+
+    function test_redeemAtDelayBoundary() public {
+        // WHY: block.timestamp == triggerTime + REDEMPTION_DELAY is the earliest
+        // allowed moment (require uses `>=`). Verify this boundary is inclusive.
+        windDown.setTriggerTime(block.timestamp);
+        uint256 aliceArm = armToken.balanceOf(alice);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, false);
+        assertEq(usdc.balanceOf(alice), 250_000e6);
+    }
+
+    function test_revert_redeemIfWindDownNotSet() public {
+        // WHY: Pre-setWindDown, redeem must hard-fail. Without this check, a
+        // mis-ordered deploy would silently skip the delay gate.
+        ArmadaRedemption fresh = new ArmadaRedemption(
+            address(armToken), treasuryAddr, revenueLock, crowdfund
+        );
+        vm.prank(alice);
+        armToken.approve(address(fresh), type(uint256).max);
+        address[] memory tokens = new address[](0);
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: wind-down not set");
+        fresh.redeem(100e18, tokens, true);
+    }
+
+    function test_revert_redeemIfTriggerTimeZero() public {
+        // WHY: windDown set but triggerTime still zero means wind-down has not been
+        // triggered. The explicit check provides a clearer error than the subsequent
+        // arithmetic check on `block.timestamp >= 0 + REDEMPTION_DELAY` would imply.
+        ArmadaRedemption fresh = new ArmadaRedemption(
+            address(armToken), treasuryAddr, revenueLock, crowdfund
+        );
+        MockWindDownRedemption freshWD = new MockWindDownRedemption();
+        fresh.setWindDown(address(freshWD));
+        // triggerTime left at 0
+        vm.prank(alice);
+        armToken.approve(address(fresh), type(uint256).max);
+        address[] memory tokens = new address[](0);
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: wind-down not triggered");
+        fresh.redeem(100e18, tokens, true);
+    }
+
+    // ======== anyPayout Guard (issue #254) ========
+
+    function test_revert_redeem_beforeSweep_armLockedButNoPayout() public {
+        // WHY: Core issue #254 scenario. Simulate wind-down triggered and delay
+        // elapsed but NO sweeps have run — the redemption contract holds nothing
+        // for the tokens the user lists. Previously this locked ARM forever; now
+        // it reverts and the user keeps their ARM.
+        // Tokens are in setUp's redemption contract, so use a pair of fresh tokens
+        // that have zero balance on redemption to model "not yet swept".
+        MockTokenRedemption usdcNew = new MockTokenRedemption("USDC2", "USDC2");
+        MockTokenRedemption wethNew = new MockTokenRedemption("WETH2", "WETH2");
+        address[] memory tokens = new address[](2);
+        if (address(usdcNew) < address(wethNew)) {
+            tokens[0] = address(usdcNew);
+            tokens[1] = address(wethNew);
+        } else {
+            tokens[0] = address(wethNew);
+            tokens[1] = address(usdcNew);
+        }
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        uint256 aliceArmBefore = aliceArm;
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        redemption.redeem(aliceArm, tokens, false);
+
+        // Critical invariant: ARM must stay with Alice after the revert
+        assertEq(armToken.balanceOf(alice), aliceArmBefore);
+        assertEq(armToken.balanceOf(address(redemption)), 0);
+    }
+
+    function test_revert_multiTokenAllZeroBalances() public {
+        // WHY: The anyPayout guard must trigger even with multiple listed tokens when
+        // all have zero share. Covers the variant where users batch several unswept
+        // assets in the hope of saving a redeem call.
+        MockTokenRedemption a = new MockTokenRedemption("A", "A");
+        MockTokenRedemption b = new MockTokenRedemption("B", "B");
+        MockTokenRedemption c = new MockTokenRedemption("C", "C");
+        address[] memory raw = new address[](3);
+        raw[0] = address(a); raw[1] = address(b); raw[2] = address(c);
+        // Sort ascending (the contract enforces this)
+        address[] memory tokens = new address[](3);
+        tokens[0] = raw[0];
+        tokens[1] = raw[1];
+        tokens[2] = raw[2];
+        for (uint256 i = 0; i < 3; i++) {
+            for (uint256 j = i + 1; j < 3; j++) {
+                if (tokens[i] > tokens[j]) {
+                    (tokens[i], tokens[j]) = (tokens[j], tokens[i]);
+                }
+            }
+        }
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        redemption.redeem(aliceArm, tokens, false);
+    }
+
+    function test_revert_includeETH_noEth_noTokens() public {
+        // WHY: includeETH=true with no ETH in the contract and an empty tokens list
+        // must revert. Covers the ETH-only variant of the zero-payout footgun.
+        address[] memory tokens = new address[](0);
+        uint256 aliceArm = armToken.balanceOf(alice);
+        assertEq(address(redemption).balance, 0);
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        redemption.redeem(aliceArm, tokens, true);
     }
 
     // ======== Constructor Validation ========

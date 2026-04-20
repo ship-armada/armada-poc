@@ -261,16 +261,14 @@ describe("Governance Adversarial", function () {
     });
 
     it("propose with exactly threshold voting power succeeds", async function () {
-      // Threshold = 0.1% of total supply
-      // Alice has 20% of supply locked, well above threshold. She can propose.
-      // Transfer from alice (who has locked tokens) — she needs to unlock first.
-      // Simpler: alice already has enough, just verify she can propose.
+      // WHY: proposal threshold gates who can submit proposals. This confirms
+      // both the absolute value (5,000 ARM per GOVERNANCE.md) and that a
+      // well-above-threshold delegate (alice @ 20% of supply) can propose.
       const proposalId = await createProposal(alice);
       expect(proposalId).to.equal(1);
 
-      // Verify the threshold value (0.1% of total supply)
       const threshold = await governor.proposalThreshold();
-      expect(threshold).to.equal((TOTAL_SUPPLY * 10n) / 10000n);
+      expect(threshold).to.equal(ethers.parseUnits("5000", 18));
     });
 
     it("propose with no voting power reverts", async function () {

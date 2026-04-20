@@ -151,8 +151,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Proposal type parameters
     mapping(ProposalType => ProposalParams) public proposalTypeParams;
 
-    // Proposal threshold: 0.1% = 10 bps
-    uint256 public constant PROPOSAL_THRESHOLD_BPS = 10;
+    // Proposal threshold: 5,000 ARM (per GOVERNANCE.md §Proposal threshold)
+    uint256 public constant PROPOSAL_THRESHOLD = 5_000e18;
 
     // Bounds for governance-updatable proposal parameters
     uint256 public constant MIN_VOTING_DELAY = 1 days;
@@ -817,11 +817,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         return proposalId;
     }
 
-    /// @dev Check that proposer has enough delegated voting power (0.1% of total supply)
+    /// @dev Check that proposer has at least PROPOSAL_THRESHOLD delegated voting power
     function _checkProposalThreshold(address proposer) internal view {
         uint256 proposerVotes = armToken.getPastVotes(proposer, block.number - 1);
-        uint256 threshold = (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
-        if (proposerVotes < threshold) revert Gov_BelowProposalThreshold();
+        if (proposerVotes < PROPOSAL_THRESHOLD) revert Gov_BelowProposalThreshold();
     }
 
     /// @dev Initialize proposal scalar fields
@@ -1070,8 +1069,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Get proposal threshold (minimum locked tokens to propose)
-    function proposalThreshold() external view returns (uint256) {
-        return (armToken.totalSupply() * PROPOSAL_THRESHOLD_BPS) / 10000;
+    function proposalThreshold() external pure returns (uint256) {
+        return PROPOSAL_THRESHOLD;
     }
 
     // ============ Internal ============

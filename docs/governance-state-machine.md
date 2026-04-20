@@ -75,7 +75,7 @@ flowchart TD
     G --> H
 ```
 
-- **Proposal threshold**: 0.1% of total supply = 12,000 ARM (absolute, not eligible supply)
+- **Proposal threshold**: 5,000 ARM (absolute constant, not a fraction of supply — see GOVERNANCE.md §Proposal threshold)
 - **Auto-classification**: Function selectors in `extendedSelectors` mapping force Extended type. `distribute()` calls exceeding 5% of treasury balance also force Extended.
 - **Quiet period**: Configurable cooldown after a failed proposal to prevent spam
 

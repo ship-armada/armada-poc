@@ -91,3 +91,81 @@ export type { TreeViewProps } from './components/TreeView.js'
 
 export type { TreeNode } from './lib/treeLayout.js'
 export { graphToTree, filterTree } from './lib/treeLayout.js'
+
+// Shared class-name helper
+export { cn } from './lib/utils.js'
+
+// shadcn/ui primitives — generated files under components/ui, edited in place
+export { Alert, AlertTitle, AlertDescription } from './components/ui/alert.js'
+export { Badge, badgeVariants } from './components/ui/badge.js'
+export { Button, buttonVariants } from './components/ui/button.js'
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardAction,
+  CardDescription,
+  CardContent,
+} from './components/ui/card.js'
+export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from './components/ui/dialog.js'
+export { Input } from './components/ui/input.js'
+export { Label } from './components/ui/label.js'
+export {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverAnchor,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverDescription,
+} from './components/ui/popover.js'
+export { ScrollArea, ScrollBar } from './components/ui/scroll-area.js'
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectScrollDownButton,
+  SelectScrollUpButton,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from './components/ui/select.js'
+export { Separator } from './components/ui/separator.js'
+export {
+  Sheet,
+  SheetTrigger,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetFooter,
+  SheetTitle,
+  SheetDescription,
+} from './components/ui/sheet.js'
+export { Skeleton } from './components/ui/skeleton.js'
+export {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  tabsListVariants,
+} from './components/ui/tabs.js'
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from './components/ui/tooltip.js'

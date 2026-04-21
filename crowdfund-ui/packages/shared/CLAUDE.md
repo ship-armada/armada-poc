@@ -70,11 +70,34 @@ import { StatsBar } from '@armada/crowdfund-shared/components/StatsBar'
 
 ## Conventions
 
-- **No `@` path alias.** Use relative imports within this package.
+- **No `@` path alias.** Use relative imports within this package. shadcn's generator bakes `@/…` into generated files; post-process to relative before merging (see UI Primitives section below).
 - ethers v6 for ABI encoding and event parsing.
 - Jotai for shared state in hooks.
 - React is a peer dependency — it is NOT bundled with this package.
 - All files must start with two-line ABOUTME comments.
+
+## UI Primitives (shadcn/ui)
+
+All shadcn primitives live in this package under `src/components/ui/` and are consumed by every app via the `@armada/crowdfund-shared` barrel export. There is only one shadcn installation in the workspace; the apps do NOT have per-app `components.json` or `ui/` directories.
+
+### Adding or regenerating a primitive
+
+1. From this directory, run `npm_config_legacy_peer_deps=true npx shadcn@latest add <name> --yes --overwrite`. The `legacy-peer-deps` env var is required because the Railgun SDK peer deps in the repo root conflict with Radix's peer ranges; without it, shadcn's internal `npm install radix-ui` fails with ERESOLVE.
+2. shadcn writes files into `./@/components/ui/` because the components.json aliases are `@/…` and shared has no `@` path mapping — **move the files into `src/components/ui/`** and delete the `@` directory.
+3. Rewrite imports in the generated files:
+   - `from "@/lib/utils"` → `from "../../lib/utils.js"`
+   - `from "@/components/ui/<sibling>"` → `from "./<sibling>.js"`
+   - Strip any leading `"use client"` directive (this is a non-RSC project).
+4. Prepend the project's two-line `// ABOUTME:` header to each new file.
+5. Add the named exports to `src/index.ts`.
+
+### Edit in place
+
+shadcn primitives are **owned code**, not vendored deps — edit the generated file directly. Never wrap a primitive just to change its defaults; edit its cva config, markup, or imports in place. This is the intended shadcn workflow.
+
+### Variant colors
+
+Primitives pull colors exclusively from the theme tokens in `src/styles/theme.css` (`bg-primary`, `bg-destructive`, `bg-card`, etc.). When re-theming, swap the token values in `theme.css`; do not hand-edit color classes in individual primitives.
 
 ## Commands
 

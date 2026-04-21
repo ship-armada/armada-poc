@@ -175,6 +175,24 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 **Effort:** ~0.5 day
 **Depends on:** Phase 1
 
+**Open decisions for the Phase 2 agent (resolve before running `shadcn add`):**
+
+1. **Shared-scoped `components.json`.** None exists in `packages/shared/` yet. Each app has its own pointing `tailwind.css → src/index.css`. A shared-scoped one needs to be created and should probably point at `src/styles/theme.css` so any new CSS shadcn writes lands in the right file. Decide whether to delete the three per-app `components.json` files at the same time (they become vestigial if all ui primitives live in shared).
+
+2. **`@` path alias in shared — conflicts with existing convention.** `packages/shared/CLAUDE.md` states: "No `@` path alias. Use relative imports within this package." But shadcn's generator bakes `@/components`, `@/lib/utils`, etc. into every file. Three paths, none obviously right:
+   - Add an `@` alias to `packages/shared/tsconfig.json` + `vite`/`tsup` resolvers — breaks the convention explicitly.
+   - Configure `components.json` aliases as relative — shadcn's CLI may not honor this cleanly; test first.
+   - Let shadcn generate with `@` and post-process imports to relative — ugly but convention-preserving.
+   
+   Pick one and document in shared/CLAUDE.md before merging Phase 2.
+
+3. **Missing deps in `packages/shared/package.json`.** shadcn-generated components require `clsx`, `tailwind-merge`, `class-variance-authority`, and various `@radix-ui/*` packages. Shared currently declares none. Add to `dependencies` (treat shared's consumers as black-box) or `peerDependencies` (let the apps pin versions). Apps already have `tailwind-merge` in their own devDeps — whichever choice is made, avoid version drift between apps and shared.
+
+**Other heads-up (not decisions, just context):**
+- No shadcn components are installed anywhere yet (no existing `ui/` dirs to conflict with or migrate from).
+- Pre-existing `tsc -b` failures in observer tests + `NodeDetail.tsx` unused var are flagged under Phase 1 actuals — don't try to fix them in Phase 2; file a separate issue.
+- Theme tokens Phase 2 will consume are all in `packages/shared/src/styles/theme.css`. Button/Badge variant CVA configs should pull from there (e.g. `destructive` → `var(--destructive)`). Phase 5 will extend Badge with hop variants — don't over-engineer that now.
+
 **Tasks:**
 1. Run `npx shadcn@latest add button input label card dialog tooltip tabs select separator skeleton alert scroll-area popover sheet badge` — but configure shadcn to output into `packages/shared/src/components/ui/` rather than an app-local folder. May require editing `components.json` in shared.
 2. Re-export `ui/*` from `packages/shared/src/index.ts` as `export * from './components/ui'` (or a namespaced export).

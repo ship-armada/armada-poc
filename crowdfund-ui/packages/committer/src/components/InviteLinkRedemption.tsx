@@ -9,6 +9,7 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import {
   Button,
+  ErrorAlert,
   InfoTooltip,
   Input,
   Label,
@@ -299,16 +300,10 @@ export function InviteLinkRedemption() {
           <div className="text-xs text-muted-foreground">Validating invite link...</div>
         )}
 
-        {expired && (
-          <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            {PRE_CHECK_MESSAGES.expired}
-          </div>
-        )}
+        {expired && <ErrorAlert>{PRE_CHECK_MESSAGES.expired}</ErrorAlert>}
 
         {!expired && preCheckError && (
-          <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            {PRE_CHECK_MESSAGES[preCheckError]}
-          </div>
+          <ErrorAlert>{PRE_CHECK_MESSAGES[preCheckError]}</ErrorAlert>
         )}
 
         {!expired && !preCheckError && !address && (

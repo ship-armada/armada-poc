@@ -6,6 +6,7 @@ import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
 import {
   Button,
+  ErrorAlert,
   InfoTooltip,
   TOOLTIPS,
   CROWDFUND_ABI_FRAGMENTS,
@@ -150,12 +151,9 @@ export function ClaimTab(props: ClaimTabProps) {
     if (windowEnded && belowMinimum) {
       return (
         <div className="space-y-4 p-4">
-          <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
-            <div className="text-amber-500 font-medium">Below Minimum Raise</div>
-            <div className="text-muted-foreground mt-1">
-              The commitment deadline has passed and capped demand ({formatUsdc(cappedDemand)}) is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale must be finalized before refunds are available. Anyone can call finalize().
-            </div>
-          </div>
+          <ErrorAlert variant="warning" title="Below Minimum Raise">
+            The commitment deadline has passed and capped demand ({formatUsdc(cappedDemand)}) is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale must be finalized before refunds are available. Anyone can call finalize().
+          </ErrorAlert>
           {totalCommitted > 0n && (
             <div className="text-sm">
               Your deposit: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
@@ -212,9 +210,7 @@ export function ClaimTab(props: ClaimTabProps) {
   if (phase === 2) {
     return (
       <div className="space-y-4">
-        <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          Crowdfund was canceled. Claim your full refund below.
-        </div>
+        <ErrorAlert>Crowdfund was canceled. Claim your full refund below.</ErrorAlert>
         <div className="text-sm">
           Refund: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
         </div>
@@ -233,9 +229,9 @@ export function ClaimTab(props: ClaimTabProps) {
   if (refundMode) {
     return (
       <div className="space-y-4">
-        <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-500">
+        <ErrorAlert variant="warning">
           Total allocation after hop ceilings did not meet the minimum raise. Claim your full refund below.
-        </div>
+        </ErrorAlert>
         <div className="text-sm">
           Refund: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
         </div>
@@ -260,9 +256,9 @@ export function ClaimTab(props: ClaimTabProps) {
     <div className="space-y-4">
       {/* Claim expiry warning */}
       {armClaimExpired ? (
-        <div className="rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-500">
+        <ErrorAlert variant="warning">
           The 3-year ARM claim deadline has passed. You can still claim your USDC refund, but any unclaimed ARM has been forfeited.
-        </div>
+        </ErrorAlert>
       ) : (
         <>
           <div className="text-xs text-muted-foreground">

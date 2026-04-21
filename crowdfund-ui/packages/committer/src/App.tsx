@@ -20,6 +20,7 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
+  ErrorAlert,
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
@@ -254,11 +255,7 @@ export function App() {
     >
       <div className="container mx-auto p-4 space-y-4">
         {/* Wallet error */}
-        {wallet.error && (
-          <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            {wallet.error}
-          </div>
-        )}
+        {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
 
         {/* Stats bar with connected user summary */}
         <StatsBar

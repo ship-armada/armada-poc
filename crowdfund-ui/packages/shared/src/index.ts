@@ -99,6 +99,9 @@ export { LastTxChip } from './components/LastTxChip.js'
 export { InfoTooltip } from './components/InfoTooltip.js'
 export type { InfoTooltipProps } from './components/InfoTooltip.js'
 
+export { ErrorAlert } from './components/ErrorAlert.js'
+export type { ErrorAlertProps } from './components/ErrorAlert.js'
+
 export { TOOLTIPS } from './lib/tooltips.js'
 export type { TooltipKey } from './lib/tooltips.js'
 

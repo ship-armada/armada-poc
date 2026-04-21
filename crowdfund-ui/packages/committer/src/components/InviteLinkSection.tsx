@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Badge, formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
+import { Badge, Button, formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
 
@@ -134,21 +134,24 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
           })()}
 
           <div className="flex gap-2">
-            <button
-              className="flex-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            <Button
+              size="sm"
+              className="flex-1 text-xs"
               disabled={creating || selectedHop === null}
               onClick={handleCreateLink}
             >
               {creating ? 'Creating...' : 'Create Invite Link'}
-            </button>
+            </Button>
             {totalSlots > 1 && (
-              <button
-                className="rounded border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
                 disabled={creating}
                 onClick={handleCreateAll}
               >
                 Create All ({totalSlots})
-              </button>
+              </Button>
             )}
           </div>
 
@@ -183,18 +186,22 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
                   <span className="flex-1" />
                   {link.status === 'pending' && (
                     <>
-                      <button
-                        className="text-primary hover:underline text-[10px]"
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-[10px]"
                         onClick={() => handleCopy(link)}
                       >
                         Copy
-                      </button>
-                      <button
-                        className="text-destructive hover:underline text-[10px]"
+                      </Button>
+                      <Button
+                        variant="linkDestructive"
+                        size="sm"
+                        className="h-auto p-0 text-[10px]"
                         onClick={() => handleRevoke(link.nonce)}
                       >
                         Revoke
-                      </button>
+                      </Button>
                     </>
                   )}
                 </div>

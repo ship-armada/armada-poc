@@ -5,6 +5,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
 import {
+  Button,
   formatUsdc,
   parseUsdcInput,
   hopLabel,
@@ -325,12 +326,13 @@ export function CommitTab(props: CommitTabProps) {
                     onChange={(e) => handleAmountChange(pos.hop, e.target.value)}
                     className="flex-1 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   />
-                  <button
-                    className="px-3 py-2 text-xs rounded bg-muted text-muted-foreground hover:text-foreground"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => handleMax(pos.hop, pos.remaining)}
                   >
                     MAX
-                  </button>
+                  </Button>
                 </div>
                 {pos.remaining === 0n && (
                   <div className="text-xs text-amber-500">Cap reached at this hop</div>
@@ -378,13 +380,13 @@ export function CommitTab(props: CommitTabProps) {
           )}
 
           {/* Review button — balance does NOT block submission */}
-          <button
-            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          <Button
+            className="w-full"
             disabled={totalAmount === 0n || errors.length > 0}
             onClick={() => setStep('review')}
           >
             Review Commitment
-          </button>
+          </Button>
         </>
       )}
 
@@ -443,20 +445,21 @@ export function CommitTab(props: CommitTabProps) {
           />
 
           <div className="flex gap-2">
-            <button
-              className="flex-1 rounded border border-border px-4 py-2 text-sm hover:bg-muted"
+            <Button
+              variant="outline"
+              className="flex-1"
               onClick={() => setStep('input')}
               disabled={approvalTx.state.status === 'pending' || approvalTx.state.status === 'submitted' || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
             >
               Back
-            </button>
-            <button
-              className="flex-1 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            </Button>
+            <Button
+              className="flex-1"
               onClick={handleApproveAndCommit}
               disabled={approvalTx.state.status === 'pending' || approvalTx.state.status === 'submitted' || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
             >
               {needsApproval(totalAmount) ? 'Approve & Commit' : 'Commit'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

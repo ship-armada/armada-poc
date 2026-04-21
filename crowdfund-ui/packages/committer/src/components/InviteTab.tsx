@@ -5,6 +5,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
 import {
+  Button,
   hopLabel,
   formatUsdc,
   CROWDFUND_ABI_FRAGMENTS,
@@ -192,13 +193,14 @@ export function InviteTab(props: InviteTabProps) {
                 {pos.invitesAvailable} remaining
               </span>
               {/* Self-invite shortcut */}
-              <button
-                className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground"
+              <Button
+                variant="secondary"
+                size="xs"
                 onClick={() => handleSelfInvite(pos.hop)}
                 title={`Invite yourself at ${hopLabel(pos.hop + 1)}`}
               >
                 Self
-              </button>
+              </Button>
             </div>
           </div>
         ))}
@@ -256,13 +258,13 @@ export function InviteTab(props: InviteTabProps) {
         )}
 
         {/* Invite button */}
-        <button
-          className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        <Button
+          className="w-full"
           disabled={!canInvite}
           onClick={handleInvite}
         >
           Send Invite
-        </button>
+        </Button>
 
         <div className="text-xs text-muted-foreground">
           Direct invite: you pay gas, invitee appears in the graph immediately.

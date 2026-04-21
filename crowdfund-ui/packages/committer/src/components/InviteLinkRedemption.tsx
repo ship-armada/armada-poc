@@ -8,6 +8,7 @@ import { useAccount, useWalletClient } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import {
+  Button,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
   formatUsdc,
@@ -301,12 +302,9 @@ export function InviteLinkRedemption() {
         )}
 
         {!expired && !preCheckError && !address && (
-          <button
-            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            onClick={connect}
-          >
+          <Button className="w-full" onClick={connect}>
             Connect Wallet
-          </button>
+          </Button>
         )}
 
         {!expired && !preCheckError && address && (
@@ -320,12 +318,14 @@ export function InviteLinkRedemption() {
               <div className="flex items-center justify-between">
                 <label className="text-xs text-muted-foreground">Commitment Amount (USDC)</label>
                 {hopCap > 0n && (
-                  <button
-                    className="text-xs text-primary hover:underline"
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
                     onClick={handleMax}
                   >
                     MAX: {formatUsdc(hopCap)}
-                  </button>
+                  </Button>
                 )}
               </div>
               <input
@@ -356,8 +356,8 @@ export function InviteLinkRedemption() {
               </div>
             )}
 
-            <button
-              className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            <Button
+              className="w-full"
               disabled={
                 parsedAmount === 0n ||
                 errors.length > 0 ||
@@ -369,7 +369,7 @@ export function InviteLinkRedemption() {
               onClick={handleSubmit}
             >
               {needsApproval ? 'Approve & Join' : 'Join & Commit'}
-            </button>
+            </Button>
           </div>
         )}
       </div>

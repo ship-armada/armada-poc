@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
 import {
+  Button,
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
   formatUsdc,
@@ -215,13 +216,13 @@ export function ClaimTab(props: ClaimTabProps) {
         <div className="text-sm">
           Refund: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
         </div>
-        <button
-          className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        <Button
+          className="w-full"
           disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
           onClick={handleClaimRefund}
         >
           Claim Refund
-        </button>
+        </Button>
       </div>
     )
   }
@@ -236,13 +237,13 @@ export function ClaimTab(props: ClaimTabProps) {
         <div className="text-sm">
           Refund: <span className="font-medium">{formatUsdc(totalCommitted)}</span>
         </div>
-        <button
-          className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        <Button
+          className="w-full"
           disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
           onClick={handleClaimRefund}
         >
           Claim Refund
-        </button>
+        </Button>
       </div>
     )
   }
@@ -328,13 +329,13 @@ export function ClaimTab(props: ClaimTabProps) {
           <div className="text-xs text-muted-foreground">
             Delegation is required for governance voting. You can change your delegate at any time after claiming.
           </div>
-          <button
-            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          <Button
+            className="w-full"
             disabled={!isAddress(delegate) || claimArmTx.state.status === 'pending' || claimArmTx.state.status === 'submitted'}
             onClick={handleClaimArm}
           >
             Claim ARM
-          </button>
+          </Button>
         </div>
       )}
 

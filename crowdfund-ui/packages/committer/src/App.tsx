@@ -24,6 +24,7 @@ import {
   EmptyState,
   ErrorAlert,
   ErrorBoundary,
+  StaleDataBanner,
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
@@ -258,6 +259,7 @@ export function App() {
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
+        <StaleDataBanner />
         {/* Wallet error */}
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
 

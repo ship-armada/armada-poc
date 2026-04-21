@@ -22,6 +22,7 @@ import {
   TabsTrigger,
   ErrorAlert,
   ErrorBoundary,
+  StaleDataBanner,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -266,6 +267,7 @@ export function App() {
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
+        <StaleDataBanner />
         {/* Error banner */}
         {(eventsError || contractState.error) && (
           <ErrorAlert>{eventsError || contractState.error}</ErrorAlert>

@@ -105,6 +105,10 @@ export type { ErrorAlertProps } from './components/ErrorAlert.js'
 export { EmptyState } from './components/EmptyState.js'
 export type { EmptyStateProps } from './components/EmptyState.js'
 
+export { StaleDataBanner } from './components/StaleDataBanner.js'
+export { useStaleDataBanner } from './hooks/useStaleDataBanner.js'
+export type { StaleDataSignal, StaleReason } from './hooks/useStaleDataBanner.js'
+
 export { ErrorBoundary, DefaultErrorFallback } from './components/ErrorBoundary.js'
 export type {
   ErrorBoundaryProps,

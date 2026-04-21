@@ -23,6 +23,7 @@ import type { AddressSummary, GraphNode } from '../lib/graph.js'
 import type { HopStatsData } from './StatsBar.js'
 import { NodeDetail } from './NodeDetail.js'
 import { EmptyState } from './EmptyState.js'
+import { Skeleton } from './ui/skeleton.js'
 
 export interface TableViewProps {
   summaries: AddressSummary[]
@@ -36,6 +37,8 @@ export interface TableViewProps {
   hopStats?: HopStatsData[]
   saleSize?: bigint
   connectedAddress?: string | null
+  /** When true with no rows yet, renders skeleton rows instead of the empty-state cell. */
+  isLoading?: boolean
 }
 
 function displayAddress(addr: string, resolve?: (a: string) => string | null): string {
@@ -72,6 +75,7 @@ export function TableView(props: TableViewProps) {
     hopStats,
     saleSize,
     connectedAddress,
+    isLoading,
   } = props
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'totalCommitted', desc: true }])
@@ -404,23 +408,35 @@ export function TableView(props: TableViewProps) {
               )
             })}
             {table.getRowModel().rows.length === 0 && (
-              <tr>
-                <td colSpan={colCount} className="p-0">
-                  {searchQuery ? (
-                    <EmptyState
-                      icon={Search}
-                      title="No matching participants"
-                      description={`No participants match "${searchQuery}".`}
-                    />
-                  ) : (
-                    <EmptyState
-                      icon={Users}
-                      title="No participants yet"
-                      description="The invite graph is empty until the first commit lands."
-                    />
-                  )}
-                </td>
-              </tr>
+              isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="border-b border-border/40">
+                    {Array.from({ length: colCount }).map((_, j) => (
+                      <td key={j} className="px-3 py-3">
+                        <Skeleton className="h-4 w-full" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={colCount} className="p-0">
+                    {searchQuery ? (
+                      <EmptyState
+                        icon={Search}
+                        title="No matching participants"
+                        description={`No participants match "${searchQuery}".`}
+                      />
+                    ) : (
+                      <EmptyState
+                        icon={Users}
+                        title="No participants yet"
+                        description="The invite graph is empty until the first commit lands."
+                      />
+                    )}
+                  </td>
+                </tr>
+              )
             )}
           </tbody>
         </table>

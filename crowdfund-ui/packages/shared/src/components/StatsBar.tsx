@@ -11,6 +11,7 @@ import {
 } from '../lib/format.js'
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from '../lib/constants.js'
 import { estimateAllocation } from '../lib/allocation.js'
+import { Skeleton } from './ui/skeleton.js'
 
 export interface HopStatsData {
   totalCommitted: bigint
@@ -36,6 +37,40 @@ export interface StatsBarProps {
   windowEnd: number
   blockTimestamp: number
   connectedSummary?: ConnectedSummary
+  /** When true with no hop data yet, renders skeleton chrome instead of the live bar. */
+  isLoading?: boolean
+}
+
+function StatsBarSkeleton() {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-5 w-20 rounded" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-20" />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="rounded border border-border p-3 space-y-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-3 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center justify-between">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-32" />
+      </div>
+    </div>
+  )
 }
 
 /** Compute oversubscription percentage for a hop.
@@ -68,7 +103,12 @@ export function StatsBar(props: StatsBarProps) {
     participantCount,
     windowEnd,
     blockTimestamp,
+    isLoading,
   } = props
+
+  if (isLoading && hopStats.length === 0) {
+    return <StatsBarSkeleton />
+  }
 
   // Smooth countdown: increment locally from blockTimestamp
   const [localTime, setLocalTime] = useState(blockTimestamp)

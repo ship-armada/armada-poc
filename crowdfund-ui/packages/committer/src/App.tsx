@@ -272,6 +272,7 @@ export function App() {
           windowEnd={contractState.windowEnd}
           blockTimestamp={contractState.blockTimestamp}
           connectedSummary={connectedSummary}
+          isLoading={eventsLoading}
         />
 
         {/* Mobile tab bar — visible below lg breakpoint */}
@@ -303,6 +304,7 @@ export function App() {
               phase={contractState.phase}
               resolveENS={resolveENS}
               connectedAddress={wallet.address}
+              isLoading={eventsLoading}
             />
             <TableView
               summaries={summaryArray}
@@ -315,6 +317,7 @@ export function App() {
               hopStats={contractState.hopStats}
               saleSize={contractState.saleSize}
               connectedAddress={wallet.address}
+              isLoading={eventsLoading}
             />
             <div className="text-xs text-muted-foreground text-center">
               {events.length} events loaded {eventsLoading && '(syncing...)'}

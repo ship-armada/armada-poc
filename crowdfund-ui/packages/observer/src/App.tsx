@@ -202,6 +202,7 @@ export function App() {
             participantCount={contractState.participantCount}
             windowEnd={contractState.windowEnd}
             blockTimestamp={contractState.blockTimestamp}
+            isLoading={eventsLoading}
           />
           <div className="rounded-lg border border-border bg-card p-8 text-center">
             <TreeView
@@ -211,6 +212,7 @@ export function App() {
               searchQuery=""
               phase={contractState.phase}
               resolveENS={resolveENS}
+              isLoading={eventsLoading}
             />
             <p className="text-sm text-muted-foreground mt-4">
               Waiting for seeds to be added...
@@ -230,6 +232,7 @@ export function App() {
       searchQuery={searchQuery}
       phase={contractState.phase}
       resolveENS={resolveENS}
+      isLoading={eventsLoading}
     />
   )
 
@@ -245,6 +248,7 @@ export function App() {
       hoveredAddress={hoveredAddress}
       hopStats={contractState.hopStats}
       saleSize={contractState.saleSize}
+      isLoading={eventsLoading}
     />
   )
 
@@ -287,6 +291,7 @@ export function App() {
           participantCount={contractState.participantCount}
           windowEnd={contractState.windowEnd}
           blockTimestamp={contractState.blockTimestamp}
+          isLoading={eventsLoading}
         />
 
         {/* Search */}

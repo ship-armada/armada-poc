@@ -19,6 +19,8 @@ export interface TreeViewProps {
   phase: number
   resolveENS: (addr: string) => string | null
   connectedAddress?: string | null
+  /** When true with an empty graph, renders a pulsing placeholder instead of the "Waiting for seeds" empty panel. */
+  isLoading?: boolean
 }
 
 /**
@@ -300,7 +302,7 @@ const TreeEdge = React.memo(function TreeEdge(props: {
 })
 
 export function TreeView(props: TreeViewProps) {
-  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress } = props
+  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress, isLoading } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
@@ -502,6 +504,18 @@ export function TreeView(props: TreeViewProps) {
     setTooltip(null)
     onHoverAddress?.(null)
   }, [onHoverAddress])
+
+  // Loading placeholder — pulsing grey circle while the first fetch is in flight.
+  if (isLoading && graph.nodes.size === 0) {
+    return (
+      <div
+        ref={containerRef}
+        className="rounded-lg border border-border bg-card p-6 min-h-[400px] flex items-center justify-center"
+      >
+        <div className="size-24 rounded-full bg-muted animate-pulse" />
+      </div>
+    )
+  }
 
   // Empty state
   if (graph.nodes.size === 0) {

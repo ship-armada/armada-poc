@@ -362,8 +362,35 @@ Each phase lands as one or more commits directly on the umbrella branch (see §0
 
 ### Phase 4 — Wire up sonner + transaction UX overhaul
 
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commit `694302b`).
 **Effort:** ~0.5 day
 **Depends on:** Phase 2
+
+**Actuals (as shipped):**
+- `crowdfund-ui/packages/shared/src/hooks/useTxToast.ts` — new. Exports `lastTxAtom` (Jotai), the `useTxToast({ explorerUrl? })` hook returning `{ notifyTxPending(label), notifyTxSubmitted(handle, hash), notifyTxConfirmed(handle, successMessage?), notifyTxFailed(handle, error) }`, plus `LastTx`/`LastTxStatus`/`TxToastHandle` types. Each transition writes to `lastTxAtom` so the chip can follow along. Toasts use a single sonner `id` (from the returned handle) so `toast.loading` → `toast.success`/`toast.error` update the same toast instead of stacking.
+- `crowdfund-ui/packages/shared/src/components/CrowdfundToaster.tsx` — new. Sonner `Toaster` wrapped with themed classNames (`!bg-card`, `!border-border`, per-level `!border-success/40` / `!border-destructive/40` / etc). Position bottom-right, `expand`, `visibleToasts=5`. No `richColors` — explicit control via classNames. Pattern borrowed from `usdc-v2-frontend/src/components/layout/ToastContainer.tsx`.
+- `crowdfund-ui/packages/shared/src/components/LastTxChip.tsx` — new. Reads `lastTxAtom`; renders shadcn `<Button variant="ghost" size="sm">` with a lucide status icon (`Loader2`/`CircleDashed`/`CheckCircle2`/`XCircle`) + truncated hash. Click opens a `<Popover>` with the full label, explorer link (if available), error text (if any), and a Dismiss button that nulls the atom. Returns `null` when `lastTxAtom` is empty.
+- `crowdfund-ui/packages/shared/package.json` — added `sonner ^2.0.7` to `dependencies` (not peer — matches the pattern for ethers/lucide-react already in shared).
+- `crowdfund-ui/packages/shared/src/index.ts` — barrel additions: `CrowdfundToaster`, `LastTxChip`, `lastTxAtom`, `useTxToast`, and types `LastTx`, `LastTxStatus`, `UseTxToastOptions`, `UseTxToastResult`, `TxToastHandle`.
+- `crowdfund-ui/packages/committer/src/hooks/useTransactionFlow.ts` — **breaking API change**. New signature: `useTransactionFlow(signer, { explorerUrl? })` and `execute(label, fn, options?: { successMessage? })`. The hook now drives toasts via `useTxToast` + mirrors each transition into `lastTxAtom`. It still returns `{ state, execute, reset }` so existing disable-button logic keying on `state.status === 'pending'|'submitted'` keeps working.
+- Call-site migrations: `CommitTab` (approval + per-hop commit), `InviteTab` (direct invite + self-invite), `useInviteLinks` (revoke), `ClaimTab` (claim ARM + claim USDC refund), `InviteLinkRedemption` (approval + `commitWithInvite`). Each call now passes a descriptive label (e.g. `` `Commit ${formatUsdc(amount)} at ${hopLabel(hop)}` ``, `Claim ARM`, `Revoke invite link`). All inline `<TransactionFlow>` renders removed.
+- `crowdfund-ui/packages/committer/src/components/TransactionFlow.tsx` — **deleted**. Per user decision #2, not kept dormant.
+- `crowdfund-ui/packages/committer/src/hooks/useInviteLinks.ts` — dropped `revokeTx` from `UseInviteLinksResult` (the panel no longer surfaces it; toasts drive feedback). Updated `InviteTab.test.tsx` mock accordingly.
+- `crowdfund-ui/packages/committer/src/App.tsx` — `<LastTxChip />` added to both `headerRight` (replacing a Phase 3 TODO placeholder) and the mobile menu (stacked under ConnectButton). Observer + admin don't get the chip (user decision #3 — committer-only).
+- `crowdfund-ui/packages/committer/src/main.tsx` + `observer/src/main.tsx` — swapped bare `<Toaster richColors />` for `<CrowdfundToaster />`. Admin left untouched (out of scope).
+
+**Deviations from plan:**
+- **Toaster mount location.** Plan said "mount `<Toaster />` at AppShell level". The `/invite` route (`InviteLinkRedemption`) renders *outside* `<AppShell>`, so strictly mounting inside AppShell would have left that route without toasts. Kept the mount in each app's `main.tsx` (outside `<BrowserRouter>`) but replaced the bare sonner `<Toaster>` with the shared `<CrowdfundToaster>`. Still "shared, themed, bootstrap-level" — just not literally a child of `<AppShell>`. Flagged to the user; they can redirect if strict AppShell-mounting is needed.
+- **`TransactionFlow` component deleted outright** rather than kept for "multi-step flows" as the plan suggested. Per user decision: toasts are sufficient; if a future phase needs a full panel it can be reintroduced deliberately.
+- **Last-tx chip scope**: committer-only (user decision). Observer has no wallet and no tx lifecycle to surface.
+- **Tests skipped** with explicit user waiver for this phase — sonner notification wrappers, the Jotai atom, and the chip are trivial glue. The `useTxToast` state-transition contract could get a focused test if we want belt-and-braces later.
+- **Manual smoke testing** against a running local chain was not performed in this phase. Validation was build-based: all three `vite build` green; observer `tsc -b` clean; shared/committer/admin `tsc -b` at pre-existing #259 baseline with zero new errors. Committer vitest run shows only the pre-existing `useProRataEstimate.test.ts` failures (same as #259).
+
+**Pre-existing issues NOT addressed in Phase 4** (still tracked in #259):
+- `committer/src/App.tsx` unused `walletENS` local.
+- `committer/src/components/CommitTab.tsx` unused `HOP_CONFIGS` import.
+- `committer/src/components/InviteLinkRedemption.tsx` unused `isConnected` destructure (my Phase 4 change also removed the now-unused `mapRevertToMessage` import — the mapping still happens inside `useTransactionFlow` — but did **not** touch `isConnected`).
+- Test files' pre-existing type errors (ClaimTab, InviteLinkRedemption, useProRataEstimate, wagmiAdapter, admin useRole).
 
 **Tasks:**
 1. Mount `<Toaster />` (sonner) at AppShell level.
@@ -383,6 +410,37 @@ Each phase lands as one or more commits directly on the umbrella branch (see §0
 **Effort:** ~1–1.5 days
 **Depends on:** Phase 2, 3, 4
 
+**Pre-flight for the Phase 5 agent (read before writing code):**
+
+1. **What's already available from shared (Phase 2 output).** All shadcn primitives are re-exported from `@armada/crowdfund-shared` — `Button`, `Input`, `Label`, `Card`, `Dialog`, `Tooltip`, `Tabs`, `Select`, `Separator`, `Skeleton`, `Alert`, `ScrollArea`, `Popover`, `Sheet`, `Badge`. `cn()` is also there. **Do not run `shadcn add` for any of these** — they're installed. The installation lives only in `packages/shared/src/components/ui/`; per-app `components.json` files were deleted. If you need a new primitive (e.g. `RadioGroup`, `Checkbox`, `Progress`), run it from `packages/shared/` following the regeneration workflow documented in `packages/shared/CLAUDE.md` (`npm_config_legacy_peer_deps=true npx shadcn@latest add …`, then move files out of the stray `./@/` dir, rewrite `@/` imports to relative `.js`, strip `"use client"`, prepend ABOUTME header, barrel-export).
+
+2. **Transaction UX is already migrated.** Phase 4 deleted `packages/committer/src/components/TransactionFlow.tsx`. Every commit/invite/claim/revoke/redemption flow now drives toasts via `useTransactionFlow(signer, { explorerUrl })` → `tx.execute(label, fn)`. Don't look for TransactionFlow; don't reintroduce a panel. The disable-button pattern used across ClaimTab, CommitTab, InviteLinkRedemption is `tx.state.status === 'pending' || tx.state.status === 'submitted'` — preserve that when swapping plain `<button>` for shadcn `<Button>` (use the `disabled` prop).
+
+3. **Three mobile tab bar implementations** (plan task #2) — confirmed locations:
+   - `crowdfund-ui/packages/committer/src/App.tsx` — top-of-page `MobileTab` toggle (`'network' | 'participate'`).
+   - `crowdfund-ui/packages/committer/src/components/CommitTab.tsx` — per-hop amount step toggle and the "Approve exact / unlimited" segmented control.
+   - `crowdfund-ui/packages/committer/src/components/InviteTab.tsx` + `InviteLinkSection.tsx` — hop selector buttons.
+   Consolidate where it makes sense; keep in mind that not every segmented control is the same shape as `<Tabs>` (some are filter pills, some are single-choice). Use `<Tabs>` for genuine page-level navigation; use shadcn `<ToggleGroup>` (install if needed) or styled `<Button>` group for segmented inputs.
+
+4. **Button audit targets.** Grep `rg -n '<button ' crowdfund-ui/packages/observer/src crowdfund-ui/packages/committer/src` to enumerate. Known hotspots: CommitTab (Review Commitment, Back, Approve & Commit, MAX, segmented approve controls), InviteTab (Send Invite, Self), InviteLinkSection (Create/Create All, per-row Copy/Revoke), ClaimTab (Claim ARM, Claim Refund), InviteLinkRedemption (Connect Wallet, Approve & Join, MAX), and the app `<ConnectButton>` wrapper stays as-is (it's RainbowKit's; don't replace).
+
+5. **Input audit targets.** Fewer: address input in InviteTab, amount input in CommitTab + InviteLinkRedemption, delegate address in `DelegateInput.tsx`, USDC amount in CommitTab per-hop, `SearchBar` in shared (uses its own Input already?). Verify.
+
+6. **Badge variants — plan explicitly authorizes extending CVA in place.** The Phase 1 tokens expose `bg-hop-0..2`, `bg-hop-root`, `bg-hop-multi`, `bg-status-pending|submitted|confirmed|failed`, `bg-success/error/warning/info`. Extend `packages/shared/src/components/ui/badge.tsx`'s `badgeVariants` directly. Don't wrap `<Badge>` in an app-local component.
+
+7. **Icon-info tooltips.** Domain terms to annotate per plan: "hop", "pro-rata", "invite slot", "allocation", "delegation" (ARM claim). Use lucide `Info` at `size={14}`, wrap in shadcn `<Tooltip>`. Glossary text source: §9 of this doc.
+
+8. **Out of scope for Phase 5 (don't touch):**
+   - Skeleton loaders, empty states, error boundaries → Phase 6.
+   - Inline red/amber warning divs (`balanceInsufficient`, "Below Minimum Raise", "Canceled", "Floor not yet filled") → those are Phase 6 `<ErrorAlert>` / empty-state scope.
+   - Form validation rewrites → Phase 8.
+   - Admin app.
+   - The pre-existing #259 baseline errors (CommitTab unused `HOP_CONFIGS`, App.tsx unused `walletENS`, etc.) — don't fix inside Phase 5.
+
+9. **Validation gates.** Must stay green: `npx vite build` in observer, committer, admin. `npx tsc -b` in observer (clean). Shared/committer/admin `tsc -b` must stay at #259 baseline (no new errors added). Committer `vitest run` — the 6 pre-existing `useProRataEstimate.test.ts` failures are baseline; any other failures are regressions introduced by the phase.
+
+10. **Branch + commit rule.** Check out `iskay/crowdfund-ui-polish` directly. No feature branches. One or two commits; don't open a PR to main. Landing decision is deferred until every phase has landed.
+
 **Tasks:**
 1. Audit every `<button className="…">` in observer and committer. Replace with `<Button>`.
 2. Consolidate the three different mobile tab bar implementations into one — use shadcn `<Tabs>`.
@@ -394,6 +452,7 @@ Each phase lands as one or more commits directly on the umbrella branch (see §0
 - Visual consistency across the two apps when viewed side-by-side.
 - No regression — all prior click/hover/focus behaviors still work.
 - Keyboard navigation works (shadcn gives this for free via Radix).
+- **Mobile smoke test** at ≥375px viewport — no horizontal scroll, tabs/segmented controls tap targets ≥40px.
 
 ---
 

@@ -407,8 +407,53 @@ Each phase lands as one or more commits directly on the umbrella branch (see §0
 
 ### Phase 5 — Replace ad-hoc Buttons / Tabs / Inputs with shadcn
 
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commits `20be45e` · `5be643c` · `474f65e` · `27da98e` · `9b39833`).
 **Effort:** ~1–1.5 days
 **Depends on:** Phase 2, 3, 4
+
+**Actuals (as shipped):**
+
+Landed as five commits on the umbrella, one per pre-agreed decision seam. The pre-flight §5 targets landed as planned with only the scope trims noted below.
+
+- **5.1 Badge domain variants + pill swap** (`20be45e`). `crowdfund-ui/packages/shared/src/components/ui/badge.tsx` — `badgeVariants` extended with 9 new variants keyed on Phase 1 tokens: `hop-0`, `hop-1`, `hop-2`, `hop-root`, `hop-multi`, `status-pending`, `status-submitted`, `status-confirmed`, `status-failed`. Each uses `bg-<token>/20 text-<token>` except `hop-root` which uses `bg-hop-root/30 text-foreground` (hop-root token is a low-saturation muted grey-blue — 20% tint plus 0.60-lightness text would read poorly on dark background). `crowdfund-ui/packages/committer/src/components/InviteLinkSection.tsx` — inline `statusColors` Record deleted; status pill renders as `<Badge variant={…}>` mapped: pending → `status-submitted`, redeemed → `status-confirmed`, revoked/expired → `outline`. `pending` maps to `status-submitted` rather than `status-pending` because the invite-link "pending" semantic is "signed and outstanding, awaiting redemption" (cyan/blue in the existing palette), not the amber "tx pending" lifecycle state; both tokens happen to resolve to matching colors already but the intent is preserved.
+
+- **5.2 Button migration + linkDestructive CVA** (`5be643c`). `crowdfund-ui/packages/shared/src/components/ui/button.tsx` — `buttonVariants` extended with `linkDestructive: "text-destructive underline-offset-4 hover:underline"` for the Revoke row action. 16 raw `<button>` call sites replaced with shadcn `<Button>` across CommitTab (MAX → `secondary size=sm`; Review Commitment / Back / Approve & Commit), ClaimTab (Claim Refund ×2; Claim ARM), InviteTab (Self-invite → `secondary size=xs`; Send Invite), InviteLinkSection (Create → `default size=sm`; Create All → `outline size=sm`; Copy → `link size=sm h-auto p-0 text-[10px]`; Revoke → `linkDestructive size=sm h-auto p-0 text-[10px]`), InviteLinkRedemption (Connect Wallet; MAX → `link size=sm h-auto p-0 text-xs`; Approve & Join). The Phase 4 disable pattern (`tx.state.status === 'pending' || 'submitted'`) flows through the primitive's `disabled` prop unchanged on all 5 tx-driven sites. RainbowKit `<ConnectButton>` left in place per scope.
+
+- **5.3 Input migration** (`474f65e`). 4 raw `<input>` elements swapped for shadcn `<Input>` in CommitTab (per-hop amount, `inputMode="decimal"`), InviteTab (address / ENS), InviteLinkRedemption (redemption amount), DelegateInput (delegate address). Per-site typography preserved via className overrides (`text-sm`, `text-xs`, `font-mono`). In InviteLinkRedemption the existing `<label>` element was upgraded to shadcn `<Label>` with an `htmlFor="invite-redeem-amount"` binding, overriding the Label default (`text-sm font-medium`) with `text-xs font-normal text-muted-foreground` to match the prior visual. No new labels were added where the current UI had none — preserving the "straight 1:1 swap" intent from the plan; a unified `<AmountInput>` compound with proper labelling is Phase 8 scope.
+
+- **5.4 Tabs line variant + ToggleGroup segmented controls** (`27da98e`). Installed `toggle-group` via `npm_config_legacy_peer_deps=true npx shadcn@latest add toggle-group` from `packages/shared/`, applied the post-processing steps from `shared/CLAUDE.md` (moved out of `./@/components/ui/`, relative imports with `.js` extensions, stripped `"use client"`, `ABOUTME` headers, barrel exports `Toggle`, `toggleVariants`, `ToggleGroup`, `ToggleGroupItem`). Shipping `toggle.tsx` alongside `toggle-group.tsx` because the primitive depends on it (`toggleVariants` from `./toggle.js`). Re-coloured the existing Tabs `line` variant indicator from `after:bg-foreground` → `after:bg-primary` so active underlines read as brand accent rather than plain white. Tabs conversions (3 bars): observer `App.tsx:300` Tree/Table mobile, committer `App.tsx:275` network/participate mobile, committer `App.tsx:333` commit/invite/claim action header with per-trigger `disabled={!tabStates[tab].enabled}`. ToggleGroup conversions (4 segmented controls): CommitTab approve exact/unlimited; InviteTab and InviteLinkSection dynamic hop selectors; DelegateInput self/custom. Each `onValueChange` guards against Radix's empty-string emission on active-trigger re-click so state can't get stuck un-selected. Active-item styling preserved via `data-[state=on]:bg-primary data-[state=on]:text-primary-foreground` className overrides (ToggleGroup's default active styling is `bg-accent text-accent-foreground` which reads as a hover glow rather than an asserted selection). Post-commit lint passes: `rg '<button ' crowdfund-ui/packages/{observer,committer}/src` → zero hits; `rg '<input ' crowdfund-ui/packages/{observer,committer}/src` → zero hits.
+
+- **5.5 Info tooltips + TOOLTIPS glossary** (`9b39833`). New `crowdfund-ui/packages/shared/src/lib/tooltips.ts` — `TOOLTIPS` Record keyed by `hop | slot | proRata | allocation | delegate`, plus `TooltipKey` type. New `crowdfund-ui/packages/shared/src/components/InfoTooltip.tsx` — shadcn Tooltip wrapped with a lucide `Info size={14}` button trigger, 150ms `delayDuration`. Each InfoTooltip mounts its own `<TooltipProvider>` (minor duplication cost for <15 instances) so no app-bootstrap edit is required and the `/invite` route — which renders `InviteLinkRedemption.tsx` outside `<AppShell>` — still gets working tooltips. Barrel-exported `InfoTooltip`, `InfoTooltipProps`, `TOOLTIPS`, `TooltipKey`. Placed 9 info icons across 6 components: CommitTab (Hop in "Your positions"), InviteTab (Slot + Hop in "Your Invite Slots"), ClaimTab (Allocation in "Settlement Breakdown"), DelegateInput (Delegate in label), ProRataEstimate (Allocation + Pro-rata in "Estimated Allocation"), InviteLinkRedemption (Hop on Position row + Slot on Invite slots row).
+
+**Deviations from plan:**
+
+- **Info-tooltip count: 9, not 11.** The plan file budgeted ~11. Dropped 2: (a) no dedicated tooltip in CommitTab for Pro-rata / Allocation because `ProRataEstimate` is rendered as a child of CommitTab on both the input and review steps, so placing those tooltips inside `ProRataEstimate` reaches CommitTab users transitively without duplication; (b) no tooltip in `InviteLinkSection` because its invite-slot context is identical to `InviteTab`'s and they share a screen. Judgment call per decision P5-D3 ("one per term per component, judgment-call based on whether the reader has already seen the tooltip upstream").
+
+- **TooltipProvider scope.** Plan file said "add `TooltipProvider` to AppShell" as the cleanest option. Landed with per-component providers baked into `InfoTooltip` instead. AppShell-level would have required a parallel addition for the `/invite` route (standalone, not wrapped by AppShell). Self-contained was a lighter change. If many more tooltips land in Phase 6+, consider promoting to a single root-level provider.
+
+- **Tabs primitive already shipped with `line` variant.** Plan file expected to author the variant. Phase 2's shadcn install brought it in already; Phase 5.4 only needed to re-colour `after:bg-foreground` → `after:bg-primary` to match brand accent. Saved ~30 lines of CVA authoring.
+
+- **ToggleGroup install added Toggle dependency.** `toggle-group.tsx` imports `toggleVariants` from `./toggle.js`. Both files ship together; can't install one without the other via shadcn CLI. Both barrel-exported for future use even though only ToggleGroup is consumed today.
+
+- **`data-[state=on]` active-style override on every ToggleGroupItem.** The shadcn-shipped `toggleVariants` default active treatment is `bg-accent text-accent-foreground` (hover-style), which reads as a passive glow rather than a selected pill. Each of the 7 segmented-control ToggleGroupItems passes a className with `data-[state=on]:bg-primary data-[state=on]:text-primary-foreground` to restore the existing committer visual of a solid accent fill on the active item. If a future phase revisits this, consider editing `toggleVariants` in place rather than override per call site.
+
+- **Package-lock.json normalization.** The shadcn `toggle-group` install re-synced the lock file, adding entries for `@testing-library/dom`, `@testing-library/react`, and `sonner` that were previously present in workspace `package.json` manifests but missing from the lock (carry-over inconsistencies from earlier phases). Rolled into Commit 5.4 since it's incidental to the install.
+
+- **Tests skipped** with explicit user waiver for the phase ("proceed to implement" after test ask; treated as per-phase waiver). Validation was build-based: all three `vite build` green across 5 commits; observer `tsc -b` clean; shared / committer `tsc -b` at pre-existing #259 baseline with zero new errors. Every raw `<button>` and `<input>` tag in scope removed; no functional regression expected from primitive swaps.
+
+- **Manual smoke testing against running local chain was not performed in this phase.** Validation was build + type + lint only. Recommended before merging the umbrella → main.
+
+**Pre-existing issues NOT addressed in Phase 5** (tracked in #259):
+
+- `committer/src/App.tsx` unused `walletENS` local.
+- `committer/src/components/CommitTab.tsx` unused `HOP_CONFIGS` import.
+- `committer/src/components/InviteLinkRedemption.tsx` unused `isConnected` destructure.
+- Shared test files (`useAllocations.test.ts`, `rpc.test.ts`) — unused imports + type mismatch.
+- Committer test files (`ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`) — unused imports + type mismatches.
+- `committer/src/lib/wagmiAdapter.ts` strict-null issue.
+- Admin `useRole.test.ts` missing test-runner type definitions.
+
+
 
 **Pre-flight for the Phase 5 agent (read before writing code):**
 

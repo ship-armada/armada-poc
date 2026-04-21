@@ -21,12 +21,15 @@ export interface TreeViewProps {
   connectedAddress?: string | null
 }
 
-/** Color palette for hop levels */
-const HOP_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b'] as const
-
+/**
+ * Hop-level colour token accessor. Returns CSS `var()` strings so values
+ * live in the shared theme (packages/shared/src/styles/theme.css).
+ */
 function hopColor(hop: number): string {
-  if (hop < 0) return '#6b7280' // root
-  return HOP_COLORS[hop] ?? '#6b7280'
+  if (hop === 0) return 'var(--hop-0)'
+  if (hop === 1) return 'var(--hop-1)'
+  if (hop === 2) return 'var(--hop-2)'
+  return 'var(--hop-root)'
 }
 
 /** Tooltip state */
@@ -95,7 +98,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
             <circle
               r={radius + 4}
               fill="none"
-              stroke="#22d3ee"
+              style={{ stroke: 'var(--hop-connected)' }}
               strokeWidth={2}
               strokeOpacity={0.6}
             />
@@ -105,7 +108,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
               <circle
                 r={radius}
                 fill="none"
-                stroke={isSelected ? '#ffffff' : hopColor(node.hop)}
+                style={{ stroke: isSelected ? 'var(--hop-selected)' : hopColor(node.hop) }}
                 strokeWidth={isSelected ? 2.5 : 1.5}
               />
               {node.hops.map((h: number, idx: number) => {
@@ -120,7 +123,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
                   <path
                     key={h}
                     d={`M 0 0 L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
-                    fill={hopColor(h)}
+                    style={{ fill: hopColor(h) }}
                     fillOpacity={0.6}
                   />
                 )
@@ -129,9 +132,11 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
           ) : (
             <circle
               r={radius}
-              fill={node.committed > 0n ? hopColor(node.hop) : 'none'}
+              style={{
+                fill: node.committed > 0n ? hopColor(node.hop) : 'none',
+                stroke: isSelected ? 'var(--hop-selected)' : hopColor(node.hop),
+              }}
               fillOpacity={node.committed > 0n ? 0.6 : 0}
-              stroke={isSelected ? '#ffffff' : hopColor(node.hop)}
               strokeWidth={isSelected ? 2.5 : 1.5}
             />
           )}
@@ -149,8 +154,10 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
                 width={16}
                 height={14}
                 rx={3}
-                fill={isExpanded ? '#334155' : '#1e293b'}
-                stroke={isExpanded ? '#94a3b8' : '#475569'}
+                style={{
+                  fill: isExpanded ? 'var(--muted)' : 'var(--card)',
+                  stroke: isExpanded ? 'var(--muted-foreground)' : 'var(--border)',
+                }}
                 strokeWidth={0.5}
               />
               <text
@@ -177,8 +184,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
                 width={20}
                 height={12}
                 rx={2}
-                fill="#1e293b"
-                stroke="#475569"
+                style={{ fill: 'var(--card)', stroke: 'var(--border)' }}
                 strokeWidth={0.5}
               />
               <text
@@ -197,7 +203,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
             <circle
               r={radius + 4}
               fill="none"
-              stroke="#ffffff"
+              style={{ stroke: 'var(--hop-selected)' }}
               strokeWidth={1}
               strokeOpacity={0.5}
             />
@@ -228,7 +234,7 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
                     className="fill-muted-foreground"
                     fontSize={8}
                   >
-                    <tspan fill={hopColor(h)}>●</tspan> hop-{h}: ${display.toLocaleString()}
+                    <tspan style={{ fill: hopColor(h) }}>●</tspan> hop-{h}: ${display.toLocaleString()}
                   </text>
                 )
               })}
@@ -265,11 +271,13 @@ const TreeEdge = React.memo(function TreeEdge(props: {
       <path
         d={`M ${edge.source.x} ${edge.source.y} Q ${cx + nx} ${cy + ny} ${edge.target.x} ${edge.target.y}`}
         fill="none"
-        stroke={isInviterChain ? '#22d3ee' : hopColor(edge.toHop)}
         strokeWidth={isInviterChain ? 2 : 1.5}
         strokeOpacity={edgeOpacity}
         strokeDasharray="2 2"
-        style={{ transition: EDGE_TRANSITION }}
+        style={{
+          stroke: isInviterChain ? 'var(--graph-edge-chain)' : hopColor(edge.toHop),
+          transition: EDGE_TRANSITION,
+        }}
       />
     )
   }
@@ -280,11 +288,13 @@ const TreeEdge = React.memo(function TreeEdge(props: {
       y1={edge.source.y}
       x2={edge.target.x}
       y2={edge.target.y}
-      stroke={isInviterChain ? '#22d3ee' : hopColor(edge.toHop)}
       strokeWidth={isInviterChain ? 2 : 1.5}
       strokeOpacity={edgeOpacity}
       strokeDasharray={edge.fromHop === -1 ? '4 2' : undefined}
-      style={{ transition: EDGE_TRANSITION }}
+      style={{
+        stroke: isInviterChain ? 'var(--graph-edge-chain)' : hopColor(edge.toHop),
+        transition: EDGE_TRANSITION,
+      }}
     />
   )
 })

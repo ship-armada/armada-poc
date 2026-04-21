@@ -1,0 +1,161 @@
+/* ABOUTME: Dark-only theme tokens for the crowdfund UI. Consumed by observer, */
+/* ABOUTME: committer, and admin apps via @armada/crowdfund-shared/styles/theme.css. */
+
+/*
+ * This is a DARK-ONLY application. There is no light theme and no theme toggle.
+ * Values below are placeholders pending finalized brand identity — swap them
+ * in a single diff when design lands; the token *names* are stable.
+ *
+ * Token groups:
+ *   shadcn base   — --background, --foreground, --card, --popover, --primary,
+ *                   --secondary, --muted, --accent, --destructive, --border,
+ *                   --input, --ring, --chart-1..5, --radius, plus success/
+ *                   error/warning/info pairs for toasts and alerts.
+ *   domain: graph — --hop-0..2, --hop-root, --hop-multi, --hop-connected,
+ *                   --hop-selected, --hop-dimmed, --graph-edge,
+ *                   --graph-edge-active, --graph-edge-chain.
+ *   domain: tx    — --status-pending, --status-submitted, --status-confirmed,
+ *                   --status-failed.
+ */
+
+:root {
+  --radius: 0.625rem;
+
+  /* shadcn base — dark */
+  --background: oklch(0.18 0.008 240);
+  --foreground: oklch(0.96 0.005 240);
+  --card: oklch(0.22 0.01 240);
+  --card-foreground: oklch(0.96 0.005 240);
+  --popover: oklch(0.22 0.01 240);
+  --popover-foreground: oklch(0.96 0.005 240);
+  --primary: oklch(0.70 0.15 230);
+  --primary-foreground: oklch(0.16 0.02 240);
+  --secondary: oklch(0.26 0.01 240);
+  --secondary-foreground: oklch(0.96 0.005 240);
+  --muted: oklch(0.24 0.008 240);
+  --muted-foreground: oklch(0.70 0.012 240);
+  --accent: oklch(0.70 0.15 230);
+  --accent-foreground: oklch(0.16 0.02 240);
+  --destructive: oklch(0.64 0.21 25);
+  --destructive-foreground: oklch(0.98 0.005 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.70 0.15 230 / 60%);
+
+  /* shadcn charts */
+  --chart-1: oklch(0.70 0.15 230);
+  --chart-2: oklch(0.68 0.18 300);
+  --chart-3: oklch(0.78 0.16 70);
+  --chart-4: oklch(0.70 0.17 150);
+  --chart-5: oklch(0.65 0.21 25);
+
+  /* Status colour pairs used by sonner toasts + alerts */
+  --success: oklch(0.72 0.19 150);
+  --success-foreground: oklch(0.15 0.02 150);
+  --error: oklch(0.64 0.21 25);
+  --error-foreground: oklch(0.98 0.005 0);
+  --warning: oklch(0.77 0.16 80);
+  --warning-foreground: oklch(0.17 0.02 80);
+  --info: oklch(0.70 0.15 230);
+  --info-foreground: oklch(0.16 0.02 240);
+
+  /* Domain: invite graph — hop colours (0 = seed, 1, 2) */
+  --hop-0: oklch(0.65 0.19 252);
+  --hop-1: oklch(0.62 0.23 295);
+  --hop-2: oklch(0.78 0.16 70);
+  --hop-root: oklch(0.60 0.008 240);
+  --hop-multi: oklch(0.70 0.15 230);
+
+  /* Domain: graph interaction states */
+  --hop-connected: oklch(0.82 0.14 190);
+  --hop-selected: oklch(1 0 0);
+  --hop-dimmed: oklch(0.40 0.005 240 / 40%);
+
+  /* Domain: graph edges */
+  --graph-edge: oklch(0.45 0.008 240);
+  --graph-edge-active: oklch(0.70 0.15 230);
+  --graph-edge-chain: oklch(0.82 0.14 190);
+
+  /* Domain: tx lifecycle */
+  --status-pending: oklch(0.77 0.16 80);
+  --status-submitted: oklch(0.70 0.15 230);
+  --status-confirmed: oklch(0.72 0.19 150);
+  --status-failed: oklch(0.64 0.21 25);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-family-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  /* shadcn base */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  /* Domain */
+  --color-hop-0: var(--hop-0);
+  --color-hop-1: var(--hop-1);
+  --color-hop-2: var(--hop-2);
+  --color-hop-root: var(--hop-root);
+  --color-hop-multi: var(--hop-multi);
+  --color-hop-connected: var(--hop-connected);
+  --color-hop-selected: var(--hop-selected);
+  --color-hop-dimmed: var(--hop-dimmed);
+
+  --color-graph-edge: var(--graph-edge);
+  --color-graph-edge-active: var(--graph-edge-active);
+  --color-graph-edge-chain: var(--graph-edge-chain);
+
+  --color-status-pending: var(--status-pending);
+  --color-status-submitted: var(--status-submitted);
+  --color-status-confirmed: var(--status-confirmed);
+  --color-status-failed: var(--status-failed);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

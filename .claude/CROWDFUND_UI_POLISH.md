@@ -6,29 +6,31 @@
 
 ---
 
-## 0. Branch & PR strategy (locked)
+## 0. Branch strategy (locked)
 
-All polish work lands on a **single long-lived umbrella branch**, `iskay/crowdfund-ui-polish`, which is off `main`. Each phase ships as its own short-lived branch that PRs **into the umbrella, not into main**. When every phase is merged into the umbrella, one final consolidated PR goes `iskay/crowdfund-ui-polish` → `main`.
+All polish work lands **directly on a single long-lived branch**, `iskay/crowdfund-ui-polish`, off `main`. No per-phase feature branches. No PRs to `main` until the polish pass is finished.
 
-Why: the polish work is cross-cutting and the user wants a single, reviewable surface landing on main rather than a trail of small individual merges. Per-phase branches stay in the workflow so each phase is still independently reviewable *within* the umbrella.
+Each phase is one commit (or a short series of commits) on the umbrella. The umbrella's git history is the phase log. There is no intermediate review gate beyond the commit-message discipline and the Actuals block in this doc.
+
+Why: earlier drafts of this plan tried to keep per-phase branches as "independently reviewable within the umbrella", but the polish work is cross-cutting and every phase touches the same surfaces. Forking/merging per phase was churn without review value. The umbrella branch itself is the reviewable unit; the final landing decision (squash/merge/rebase onto main) is made once the polish pass is complete.
 
 ```
 main
- └─ iskay/crowdfund-ui-polish ← umbrella (long-lived; final PR → main)
-     ├─ (merged) phase 1 — dark-only theme
-     ├─ iskay/crowdfund-ui-shadcn         (merged) — phase 2
-     ├─ iskay/crowdfund-ui-tsc-cleanup    (merged) — Phase 1 carry-over fixes
-     ├─ iskay/crowdfund-ui-shell          — phase 3 (next)
-     ├─ iskay/crowdfund-ui-toasts         — phase 4
-     └─ …
+ └─ iskay/crowdfund-ui-polish ← umbrella (long-lived)
+     │  phase 1 commits — dark-only theme
+     │  phase 2 commits — shadcn primitives
+     │  Phase 1 carry-over tsc cleanup
+     │  phase 3 commits — AppShell   ← most recent
+     │  phase 4 commits — toasts     ← next
+     └  …
 ```
 
 **Rules for phase agents:**
-- Branch off `iskay/crowdfund-ui-polish` (not `main`).
-- PR targets `iskay/crowdfund-ui-polish` (not `main`). Do not force-push the umbrella.
-- Prefer fast-forward merges into the umbrella when history is linear; merge commits are fine if the umbrella has advanced.
-- Unrelated fixes needed to unblock a phase (e.g. the Phase 1 tsc cleanup) belong on their own short-lived branch → PR into umbrella → continue the phase.
-- Do not rebase or squash *merged* umbrella history. The final umbrella → main PR is the point at which squash-vs-merge is decided.
+- Check out `iskay/crowdfund-ui-polish` directly and commit onto it. Do **not** create a `iskay/crowdfund-ui-<phase>` branch.
+- Do not force-push the umbrella. Do not rewrite history.
+- Unrelated fixes needed to unblock a phase (e.g. the Phase 1 tsc cleanup) can go in as their own commit on the umbrella — doesn't need to wait for phase boundaries.
+- Squash decisions for landing on `main` are deferred until the polish pass is complete.
+- **Do not open PRs** for individual phases. If the user asks you to produce a reviewable surface (e.g. a PR to show stakeholders), push the umbrella to origin and open a draft PR `iskay/crowdfund-ui-polish → main` — but only on explicit request, not as part of a phase's normal close-out.
 
 ---
 
@@ -189,12 +191,11 @@ Multiple agents will implement phases independently. These rules keep the codeba
 
 ## 5. Plan — ordered phases
 
-Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<phase>`. Each phase should end green: `npm run test` passes, both apps load and function.
+Each phase lands as one or more commits directly on the umbrella branch (see §0). Each phase should end green: `npm run test` passes, both apps load and function.
 
 ### Phase 1 — Consolidate + dark-mode-only theme (foundation)
 
-**Status:** ✅ Implemented on `iskay/crowdfund-ui-polish` (PR pending). Plan originally called for a dedicated `iskay/crowdfund-ui-theme` branch; bundled into the umbrella polish branch instead.
-**Branch:** `iskay/crowdfund-ui-polish` (was planned: `iskay/crowdfund-ui-theme`)
+**Status:** ✅ Landed directly on `iskay/crowdfund-ui-polish` (commit `f454f7c`).
 **Effort:** ~0.5 day
 **Why first:** every later phase consumes these tokens. No UI risk — purely infra.
 
@@ -239,8 +240,7 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 2 — Install shadcn component set into shared
 
-**Status:** ✅ Implemented on `iskay/crowdfund-ui-shadcn` (PR pending).
-**Branch:** `iskay/crowdfund-ui-shadcn`
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commit `e8ab971`; Phase 1 tsc carry-over `2476d51`).
 **Effort:** ~0.5 day
 **Depends on:** Phase 1
 
@@ -298,10 +298,9 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 3 — Shared AppShell (header + footer + page container)
 
-**Status:** ✅ Implemented on `iskay/crowdfund-ui-shell` (PR pending).
-**Branch:** `iskay/crowdfund-ui-shell` (off `iskay/crowdfund-ui-polish`; PR target: `iskay/crowdfund-ui-polish`)
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commit `dff93be`).
 **Effort:** ~1 day
-**Depends on:** Phase 2 (merged into umbrella on `iskay/crowdfund-ui-polish`)
+**Depends on:** Phase 2
 
 **Actuals (as shipped):**
 - `crowdfund-ui/packages/shared/src/components/AppShell.tsx` — new. Slot-based API: `appName`, `network` (`'local' | 'sepolia' | (string & {})`), `headerRight`, `mobileMenu`, `footer`, `children`. Sticky header (`sticky top-0 z-40`) with `bg-background/80 backdrop-blur`, mobile `<Sheet>` (left-side) triggered by a `<Menu>` hamburger that only renders when `mobileMenu` is supplied, and a `<DefaultFooter>` rendering `v{VITE_APP_VERSION} · Built on Armada · <network> · GitHub`. `NetworkBadge` co-exported. Sheet uses `z-50` (Radix default) so it covers the `z-40` sticky header.
@@ -363,7 +362,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 4 — Wire up sonner + transaction UX overhaul
 
-**Branch:** `iskay/crowdfund-ui-toasts`
 **Effort:** ~0.5 day
 **Depends on:** Phase 2
 
@@ -382,7 +380,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 5 — Replace ad-hoc Buttons / Tabs / Inputs with shadcn
 
-**Branch:** `iskay/crowdfund-ui-components-migration`
 **Effort:** ~1–1.5 days
 **Depends on:** Phase 2, 3, 4
 
@@ -402,7 +399,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 6 — Skeletons, empty states, error boundaries
 
-**Branch:** `iskay/crowdfund-ui-feedback-states`
 **Effort:** ~1 day
 **Depends on:** Phase 2, 5
 
@@ -431,7 +427,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 7 — TanStack Query wrap of RPC + ENS hooks
 
-**Branch:** `iskay/crowdfund-ui-query`
 **Effort:** ~1 day
 **Depends on:** Phase 6 (error boundaries catch query failures)
 
@@ -453,7 +448,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 8 — react-hook-form + zod on commit / invite forms
 
-**Branch:** `iskay/crowdfund-ui-forms`
 **Effort:** ~1 day
 **Depends on:** Phase 5
 
@@ -475,7 +469,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 9 — framer-motion micro-animations
 
-**Branch:** `iskay/crowdfund-ui-motion`
 **Effort:** ~0.5 day
 **Depends on:** Phase 5, 6
 
@@ -495,9 +488,10 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 10 — Invite graph: spike + polish
 
-**Branch:** `iskay/crowdfund-ui-graph-spike` (for spike), then `iskay/crowdfund-ui-graph-polish`
 **Effort:** spike 0.5 day, polish 1.5–2 days
 **Depends on:** Phase 1 (for theme tokens)
+
+The spike is the exception to the "no feature branches" rule in §0: create a temporary `iskay/crowdfund-ui-graph-spike` branch for the A/B, then **discard it** once the comparison is done. Only the winning approach lands on the umbrella as a commit.
 
 **Current state:** `packages/shared/src/components/TreeView.tsx` (596 lines) — vanilla d3-hierarchy + d3-zoom. Working, handles current scale, hop collapse at >20 children, hover tooltips, pan/zoom.
 
@@ -544,7 +538,6 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 11 — Micro-interactions final pass
 
-**Branch:** `iskay/crowdfund-ui-final-polish`
 **Effort:** ~0.5 day
 
 **Tasks:**
@@ -587,11 +580,11 @@ Phase 10 can run **in parallel** with 2–9 on a separate branch since it only d
 ## 7. How future agents should use this doc
 
 - **Start of a new session:** read this file end-to-end plus CLAUDE.md.
-- **Branch rule:** branch off `iskay/crowdfund-ui-polish` (the umbrella), not `main`. PR target is the umbrella. See §0.
-- **Before picking up a phase:** check git log for which phase branches are already merged into the umbrella. Ask the user which phase to tackle if unclear.
-- **Mark progress here:** when a phase is merged into the umbrella, update its status inline (add `✅ Merged into umbrella in #<PR>` under the phase header). When the umbrella lands on `main`, switch that to `✅ Merged in #<final-PR>` on each phase. Do not delete phases.
+- **Branch rule:** check out `iskay/crowdfund-ui-polish` and commit onto it directly. No per-phase feature branches. No PRs to `main` during the polish pass. See §0.
+- **Before picking up a phase:** read `git log iskay/crowdfund-ui-polish` to see which phases have already landed. Ask the user which phase to tackle if unclear.
+- **Mark progress here:** when a phase lands, update its Status line to `✅ Landed on \`iskay/crowdfund-ui-polish\` (commit \`<sha>\`)` and fill in the Actuals block. Do not delete phases.
 - **If a phase changes in scope:** edit this doc; don't start a parallel one.
-- **When all phases are merged into the umbrella:** open the final umbrella → main PR. After that lands, archive this file to `.claude/archive/CROWDFUND_UI_POLISH.md` and add a one-line summary of what was done.
+- **When all phases have landed:** the user decides when to open the umbrella → main PR (squash vs merge is deferred until then). After that lands, archive this file to `.claude/archive/CROWDFUND_UI_POLISH.md` and add a one-line summary of what was done.
 
 ---
 

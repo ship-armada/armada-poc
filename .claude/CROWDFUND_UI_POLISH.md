@@ -298,9 +298,29 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 3 — Shared AppShell (header + footer + page container)
 
+**Status:** ✅ Implemented on `iskay/crowdfund-ui-shell` (PR pending).
 **Branch:** `iskay/crowdfund-ui-shell` (off `iskay/crowdfund-ui-polish`; PR target: `iskay/crowdfund-ui-polish`)
 **Effort:** ~1 day
 **Depends on:** Phase 2 (merged into umbrella on `iskay/crowdfund-ui-polish`)
+
+**Actuals (as shipped):**
+- `crowdfund-ui/packages/shared/src/components/AppShell.tsx` — new. Slot-based API: `appName`, `network` (`'local' | 'sepolia' | (string & {})`), `headerRight`, `mobileMenu`, `footer`, `children`. Sticky header (`sticky top-0 z-40`) with `bg-background/80 backdrop-blur`, mobile `<Sheet>` (left-side) triggered by a `<Menu>` hamburger that only renders when `mobileMenu` is supplied, and a `<DefaultFooter>` rendering `v{VITE_APP_VERSION} · Built on Armada · <network> · GitHub`. `NetworkBadge` co-exported. Sheet uses `z-50` (Radix default) so it covers the `z-40` sticky header.
+- `crowdfund-ui/packages/shared/src/index.ts` — extended with `AppShell`, `NetworkBadge`, `AppShellProps`, `AppShellNetwork`.
+- `crowdfund-ui/packages/observer/vite.config.ts` + `crowdfund-ui/packages/committer/vite.config.ts` — each `define`-injects `import.meta.env.VITE_APP_VERSION` from its own `package.json.version` at build time. Admin untouched (out of scope).
+- `crowdfund-ui/packages/observer/src/App.tsx` — three render paths (deploy-error + loading stayed unwrapped; pre-open, empty, main) now wrap in `<AppShell appName="Observer" …>`. Hand-rolled `Header()` helper removed. Added local `ParticipateLink` + `ObserverMobileMenu` components reading `VITE_COMMITTER_URL` (default `http://localhost:5174`).
+- `crowdfund-ui/packages/committer/src/App.tsx` — main render wraps in `<AppShell appName="Committer" …>`. `headerRight` composed inline from existing balance text + RainbowKit `ConnectButton`; mobile menu duplicates the wallet chrome in a stacked layout. `{/* TODO(Phase 4): last-tx chip slot goes here */}` placeholder left in both places. Hand-rolled header div removed; mobile tab bar and action tab bar left untouched (Phase 5).
+
+**Deviations from plan:**
+- **Shared `import.meta.env` typing.** Shared has no `vite-env.d.ts` (it's a library) so `import.meta.env.VITE_APP_VERSION` fails `tsc` in shared with TS2339. Resolved with a contained cast: `(import.meta as unknown as { env?: Record<string, string | undefined> }).env`. Documented inline. Preferred over adding a vite-env.d.ts to a non-Vite library package.
+- **Observer full-screen fallback states (deploy error, loading).** Left unwrapped from `AppShell` — they're pre-deployment states without network/header context, and wrapping them would only add chrome the user can't act on. Matches original behavior.
+- **Version semantics.** Injects each app's own `package.json.version`, not a shared version. Both apps currently at `0.1.0`. Falls back to `"dev"` at runtime if `VITE_APP_VERSION` is unset (e.g. during tests).
+- **Tests skipped** with explicit user waiver. Validation was build-based (all three `vite build` green; observer `tsc -b` clean; shared/committer/admin `tsc -b` at pre-existing #259 baseline with no new errors) plus observer `vite dev` serving HTTP 200 with expected HTML shell.
+
+**Pre-existing issues NOT addressed in Phase 3** (tracked in #259):
+- `committer/src/App.tsx` has an unused `walletENS` local (line 175). Surfaced during audit, left alone — CLAUDE.md rule is to not make unrelated fixes inside a phase.
+- Shared test files: `useAllocations.test.ts` unused `beforeEach`/`act`, `rpc.test.ts` `JsonRpcResult` type mismatch.
+- Committer `ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`, plus `wagmiAdapter.ts` strict-null, `CommitTab.tsx` unused `HOP_CONFIGS`.
+- Admin `useRole.test.ts` missing test-runner type definitions.
 
 **Pre-flight for the Phase 3 agent (resolve before writing code):**
 

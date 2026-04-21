@@ -10,6 +10,10 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const pkg = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'),
+)
+
 // Serves deployment JSON files from the project's deployments/ directory
 function serveDeployments() {
   return {
@@ -49,6 +53,9 @@ export default defineConfig({
     tailwindcss(),
     serveDeployments(),
   ],
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

@@ -14,6 +14,8 @@ import {
   TableView,
   SearchBar,
   TreeView,
+  AppShell,
+  Separator,
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
@@ -199,32 +201,52 @@ export function App() {
     )
   }
 
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="container mx-auto p-4 space-y-4">
-        {/* Header with ENS name and balance */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">Armada Crowdfund</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {getNetworkMode().toUpperCase()}
-            </span>
-            {wallet.connected && (
-              <span className="text-xs text-muted-foreground">
-                {formatUsdc(allowance.balance)}
-                {allowance.armBalance > 0n && (
-                  <> · {formatArm(allowance.armBalance)} ARM</>
-                )}
-              </span>
-            )}
-            <ConnectButton
-              showBalance={false}
-              chainStatus="icon"
-              accountStatus="address"
-            />
-          </div>
-        </div>
+  const walletChrome = (
+    <div className="flex items-center gap-3">
+      {wallet.connected && (
+        <span className="text-xs text-muted-foreground">
+          {formatUsdc(allowance.balance)}
+          {allowance.armBalance > 0n && (
+            <> · {formatArm(allowance.armBalance)} ARM</>
+          )}
+        </span>
+      )}
+      {/* TODO(Phase 4): last-tx chip slot goes here */}
+      <ConnectButton
+        showBalance={false}
+        chainStatus="icon"
+        accountStatus="address"
+      />
+    </div>
+  )
 
+  const mobileMenu = (
+    <div className="flex flex-col gap-3">
+      {wallet.connected ? (
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-muted-foreground">Balance</span>
+          <span>{formatUsdc(allowance.balance)}</span>
+          {allowance.armBalance > 0n && (
+            <span className="text-muted-foreground">
+              {formatArm(allowance.armBalance)} ARM
+            </span>
+          )}
+          <Separator className="my-2" />
+        </div>
+      ) : null}
+      <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+      {/* TODO(Phase 4): last-tx chip slot goes here */}
+    </div>
+  )
+
+  return (
+    <AppShell
+      appName="Committer"
+      network={getNetworkMode()}
+      headerRight={walletChrome}
+      mobileMenu={mobileMenu}
+    >
+      <div className="container mx-auto p-4 space-y-4">
         {/* Wallet error */}
         {wallet.error && (
           <div className="rounded border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
@@ -390,6 +412,6 @@ export function App() {
           </div>
         </div>
       </div>
-    </div>
+    </AppShell>
   )
 }

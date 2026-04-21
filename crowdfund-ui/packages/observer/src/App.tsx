@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
+import { ArrowUpRight } from 'lucide-react'
 import {
   createProvider,
   useContractEvents,
@@ -14,11 +15,38 @@ import {
   TableView,
   SearchBar,
   TreeView,
+  AppShell,
+  Button,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useContractState } from '@/hooks/useContractState'
+
+const COMMITTER_URL =
+  (import.meta.env.VITE_COMMITTER_URL as string | undefined) ?? 'http://localhost:5174'
+
+function ParticipateLink() {
+  return (
+    <Button asChild size="sm" variant="default">
+      <a href={COMMITTER_URL} target="_blank" rel="noopener noreferrer">
+        Participate
+        <ArrowUpRight className="size-4" />
+      </a>
+    </Button>
+  )
+}
+
+function ObserverMobileMenu() {
+  return (
+    <Button asChild variant="default" className="w-full justify-center">
+      <a href={COMMITTER_URL} target="_blank" rel="noopener noreferrer">
+        Participate
+        <ArrowUpRight className="size-4" />
+      </a>
+    </Button>
+  )
+}
 
 export function App() {
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
@@ -126,9 +154,13 @@ export function App() {
   // Pre-open state: ARM not loaded
   if (!contractState.armLoaded && contractState.phase === 0) {
     return (
-      <div className="min-h-screen bg-background text-foreground">
+      <AppShell
+        appName="Observer"
+        network={getNetworkMode()}
+        headerRight={<ParticipateLink />}
+        mobileMenu={<ObserverMobileMenu />}
+      >
         <div className="container mx-auto p-4 space-y-4">
-          <Header />
           <div className="rounded-lg border border-border bg-card p-8 text-center">
             <h2 className="text-lg font-medium mb-2">Crowdfund Not Yet Open</h2>
             <p className="text-sm text-muted-foreground">
@@ -141,16 +173,20 @@ export function App() {
             )}
           </div>
         </div>
-      </div>
+      </AppShell>
     )
   }
 
   // Empty state: ARM loaded but no seeds yet
   if (contractState.armLoaded && contractState.seedCount === 0 && contractState.phase === 0) {
     return (
-      <div className="min-h-screen bg-background text-foreground">
+      <AppShell
+        appName="Observer"
+        network={getNetworkMode()}
+        headerRight={<ParticipateLink />}
+        mobileMenu={<ObserverMobileMenu />}
+      >
         <div className="container mx-auto p-4 space-y-4">
-          <Header />
           <StatsBar
             hopStats={contractState.hopStats}
             totalCommitted={contractState.totalCommitted}
@@ -177,7 +213,7 @@ export function App() {
             </p>
           </div>
         </div>
-      </div>
+      </AppShell>
     )
   }
 
@@ -209,10 +245,13 @@ export function App() {
   )
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <AppShell
+      appName="Observer"
+      network={getNetworkMode()}
+      headerRight={<ParticipateLink />}
+      mobileMenu={<ObserverMobileMenu />}
+    >
       <div className="container mx-auto p-4 space-y-4">
-        <Header />
-
         {/* Error banner */}
         {(eventsError || contractState.error) && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
@@ -298,19 +337,6 @@ export function App() {
           {eventsLoading && ' (syncing...)'}
         </div>
       </div>
-    </div>
-  )
-}
-
-function Header() {
-  return (
-    <div className="flex items-center justify-between">
-      <h1 className="text-2xl font-bold tracking-tight">
-        Armada Crowdfund Observer
-      </h1>
-      <span className="text-xs text-muted-foreground">
-        {getNetworkMode().toUpperCase()}
-      </span>
-    </div>
+    </AppShell>
   )
 }

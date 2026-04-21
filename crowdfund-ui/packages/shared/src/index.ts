@@ -89,6 +89,9 @@ export type { NodeDetailProps } from './components/NodeDetail.js'
 export { TreeView } from './components/TreeView.js'
 export type { TreeViewProps } from './components/TreeView.js'
 
+export { AppShell, NetworkBadge } from './components/AppShell.js'
+export type { AppShellProps, AppShellNetwork } from './components/AppShell.js'
+
 export type { TreeNode } from './lib/treeLayout.js'
 export { graphToTree, filterTree } from './lib/treeLayout.js'
 

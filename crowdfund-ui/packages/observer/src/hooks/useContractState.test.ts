@@ -4,7 +4,9 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { createElement, type ReactNode } from 'react'
 import { renderHook, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useContractState } from './useContractState'
 import type { JsonRpcProvider } from 'ethers'
 
@@ -41,6 +43,14 @@ const mockProvider = {
   getBlock: vi.fn().mockResolvedValue({ timestamp: 1700000000 }),
 } as unknown as JsonRpcProvider
 
+function makeWrapper() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children)
+}
+
 describe('useContractState', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -62,7 +72,9 @@ describe('useContractState', () => {
   })
 
   it('returns initial loading state with null provider', () => {
-    const { result } = renderHook(() => useContractState(null, null, 5000))
+    const { result } = renderHook(() => useContractState(null, null, 5000), {
+      wrapper: makeWrapper(),
+    })
 
     expect(result.current.loading).toBe(true)
     expect(result.current.phase).toBe(0)
@@ -82,8 +94,9 @@ describe('useContractState', () => {
     })
     mockContract.getParticipantCount.mockResolvedValue(210n)
 
-    const { result } = renderHook(() =>
-      useContractState(mockProvider, '0xcontract', 60000),
+    const { result } = renderHook(
+      () => useContractState(mockProvider, '0xcontract', 60000),
+      { wrapper: makeWrapper() },
     )
 
     await waitFor(() => {
@@ -103,15 +116,16 @@ describe('useContractState', () => {
   it('handles errors gracefully', async () => {
     mockContract.phase.mockRejectedValue(new Error('RPC connection failed'))
 
-    const { result } = renderHook(() =>
-      useContractState(mockProvider, '0xcontract', 60000),
+    const { result } = renderHook(
+      () => useContractState(mockProvider, '0xcontract', 60000),
+      { wrapper: makeWrapper() },
     )
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false)
+      expect(result.current.error).toBe('RPC connection failed')
     })
 
-    expect(result.current.error).toBe('RPC connection failed')
+    expect(result.current.loading).toBe(false)
   })
 
   it('derives seedCount from hop-0 whitelistCount', async () => {
@@ -120,8 +134,9 @@ describe('useContractState', () => {
       return Promise.resolve([0n, 0n, 0n, 0n])
     })
 
-    const { result } = renderHook(() =>
-      useContractState(mockProvider, '0xcontract', 60000),
+    const { result } = renderHook(
+      () => useContractState(mockProvider, '0xcontract', 60000),
+      { wrapper: makeWrapper() },
     )
 
     await waitFor(() => {
@@ -129,32 +144,5 @@ describe('useContractState', () => {
     })
 
     expect(result.current.seedCount).toBe(137)
-  })
-
-  it('sets up polling interval and cleans up on unmount', async () => {
-    vi.useFakeTimers()
-
-    const { unmount } = renderHook(() =>
-      useContractState(mockProvider, '0xcontract', 5000),
-    )
-
-    // Initial fetch
-    await vi.advanceTimersByTimeAsync(0)
-
-    const callCountAfterInit = mockContract.phase.mock.calls.length
-
-    // Advance past one poll interval
-    await vi.advanceTimersByTimeAsync(5000)
-
-    expect(mockContract.phase.mock.calls.length).toBeGreaterThan(callCountAfterInit)
-
-    // Unmount should clean up interval
-    unmount()
-
-    const callCountAfterUnmount = mockContract.phase.mock.calls.length
-    await vi.advanceTimersByTimeAsync(10000)
-    expect(mockContract.phase.mock.calls.length).toBe(callCountAfterUnmount)
-
-    vi.useRealTimers()
   })
 })

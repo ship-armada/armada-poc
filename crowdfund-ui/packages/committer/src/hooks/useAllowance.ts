@@ -1,9 +1,10 @@
 // ABOUTME: USDC allowance checking for the commit flow.
-// ABOUTME: Reads current allowance and provides a needsApproval helper.
+// ABOUTME: Reads current allowance and balances; refresh() re-runs the read post-approval.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Contract } from 'ethers'
 import type { JsonRpcProvider } from 'ethers'
+import { useQuery } from '@tanstack/react-query'
 import { ERC20_ABI_FRAGMENTS } from '@armada/crowdfund-shared'
 
 export interface UseAllowanceResult {
@@ -15,6 +16,18 @@ export interface UseAllowanceResult {
   refresh: () => Promise<void>
 }
 
+interface AllowanceSnapshot {
+  allowance: bigint
+  balance: bigint
+  armBalance: bigint
+}
+
+const ZERO_SNAPSHOT: AllowanceSnapshot = {
+  allowance: 0n,
+  balance: 0n,
+  armBalance: 0n,
+}
+
 export function useAllowance(
   address: string | null,
   usdcAddress: string | null,
@@ -22,48 +35,55 @@ export function useAllowance(
   armTokenAddress: string | null,
   provider: JsonRpcProvider | null,
 ): UseAllowanceResult {
-  const [allowance, setAllowance] = useState<bigint>(0n)
-  const [balance, setBalance] = useState<bigint>(0n)
-  const [armBalance, setArmBalance] = useState<bigint>(0n)
-  const [loading, setLoading] = useState(true)
+  const enabled = !!address && !!usdcAddress && !!crowdfundAddress && !!provider
+
+  const query = useQuery({
+    queryKey: ['usdcAllowance', address, usdcAddress, crowdfundAddress, armTokenAddress],
+    queryFn: async (): Promise<AllowanceSnapshot> => {
+      const usdc = new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, provider!)
+      const readAllowance = usdc.allowance(address, crowdfundAddress) as Promise<bigint>
+      const readBalance = usdc.balanceOf(address) as Promise<bigint>
+      const readArm = armTokenAddress
+        ? (new Contract(armTokenAddress, ERC20_ABI_FRAGMENTS, provider!).balanceOf(address) as Promise<bigint>)
+        : Promise.resolve(0n)
+
+      const [allowance, balance, armBalance] = await Promise.all([
+        readAllowance,
+        readBalance,
+        readArm,
+      ])
+      return { allowance, balance, armBalance }
+    },
+    enabled,
+    staleTime: 0,
+    gcTime: 5 * 60 * 1000,
+    retry: false,
+  })
+
+  const snapshot = query.data ?? ZERO_SNAPSHOT
 
   const refresh = useCallback(async () => {
-    if (!address || !usdcAddress || !crowdfundAddress || !provider) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      const usdc = new Contract(usdcAddress, ERC20_ABI_FRAGMENTS, provider)
-      const queries: Promise<bigint>[] = [
-        usdc.allowance(address, crowdfundAddress) as Promise<bigint>,
-        usdc.balanceOf(address) as Promise<bigint>,
-      ]
-      if (armTokenAddress) {
-        const arm = new Contract(armTokenAddress, ERC20_ABI_FRAGMENTS, provider)
-        queries.push(arm.balanceOf(address) as Promise<bigint>)
-      }
-      const results = await Promise.all(queries)
-      setAllowance(results[0])
-      setBalance(results[1])
-      if (results[2] !== undefined) setArmBalance(results[2])
-    } catch {
-      // Non-fatal — will retry on next poll
-    } finally {
-      setLoading(false)
-    }
-  }, [address, usdcAddress, crowdfundAddress, armTokenAddress, provider])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+    await query.refetch()
+  }, [query])
 
   const needsApproval = useCallback(
-    (amount: bigint): boolean => {
-      return allowance < amount
-    },
-    [allowance],
+    (amount: bigint): boolean => snapshot.allowance < amount,
+    [snapshot.allowance],
   )
 
-  return { allowance, balance, armBalance, loading, needsApproval, refresh }
+  // Preserve prior semantic: loading is `false` when the hook is inactive
+  // (no wallet / no addresses), `true` only while an enabled fetch is in-flight.
+  const loading = enabled && query.isPending
+
+  return useMemo(
+    () => ({
+      allowance: snapshot.allowance,
+      balance: snapshot.balance,
+      armBalance: snapshot.armBalance,
+      loading,
+      needsApproval,
+      refresh,
+    }),
+    [snapshot, loading, needsApproval, refresh],
+  )
 }

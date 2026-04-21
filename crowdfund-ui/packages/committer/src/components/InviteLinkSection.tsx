@@ -3,9 +3,17 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
+import { Badge, formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
+
+type InviteLinkBadgeVariant = 'status-submitted' | 'status-confirmed' | 'outline'
+const statusBadgeVariant: Record<string, InviteLinkBadgeVariant> = {
+  pending: 'status-submitted',
+  redeemed: 'status-confirmed',
+  revoked: 'outline',
+  expired: 'outline',
+}
 
 export interface InviteLinkSectionProps {
   inviteLinks: UseInviteLinksResult
@@ -159,21 +167,15 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
           <div className="max-h-48 overflow-y-auto space-y-1">
             {links.map((link) => {
               const timeLeft = link.deadline - blockTimestamp
-              const statusColors: Record<string, string> = {
-                pending: 'bg-info/20 text-info',
-                redeemed: 'bg-success/20 text-success',
-                revoked: 'bg-muted text-muted-foreground',
-                expired: 'bg-muted text-muted-foreground',
-              }
 
               return (
                 <div
                   key={`${link.inviter}-${link.nonce}`}
                   className="flex items-center gap-2 text-xs rounded border border-border/50 p-2"
                 >
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColors[link.status]}`}>
+                  <Badge variant={statusBadgeVariant[link.status]} className="text-[10px] font-medium">
                     {link.status}
-                  </span>
+                  </Badge>
                   <span className="text-muted-foreground">{hopLabel(link.fromHop)}</span>
                   <span className="text-muted-foreground">
                     {link.status === 'pending' && timeLeft > 0 ? formatCountdown(timeLeft) : ''}

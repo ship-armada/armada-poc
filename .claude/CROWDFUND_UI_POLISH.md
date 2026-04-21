@@ -642,22 +642,110 @@ Landed as four commits, one per sub-goal:
 
 ### Phase 7 — TanStack Query wrap of RPC + ENS hooks
 
-**Effort:** ~1 day
-**Depends on:** Phase 6 (error boundaries catch query failures)
+**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 6 close-out audit (2026-04-21).
+**Effort:** ~1 day (probably 1.5 if `useContractEvents` is migrated; see §5 below)
+**Depends on:** Phase 6 (error boundaries exist; `isLoading` is already plumbed through StatsBar/TableView/TreeView from `useContractEvents().loading` — changing that shape has ripples).
 
-**Tasks:**
-1. Add `@tanstack/react-query`, mount `QueryClientProvider` at AppShell level.
-2. Rewrite these hooks to use `useQuery` / `useInfiniteQuery`:
-   - `useContractEvents` — long-polling today; react-query with `refetchInterval` is cleaner
-   - `useENS` — retry with backoff on failure; fallback to truncated address if permanently unresolved
-   - `useAllocations` (committer)
-3. Expose `isLoading`, `isError`, `error`, `isRefetching` from each hook so Phase 6 skeletons know when to appear.
-4. Add a top-level reconnection banner (stale data warning) when the query client is paused/offline.
+**Pre-flight for the Phase 7 agent (read before writing code):**
+
+1. **React Query is partially installed — do not reinstall it naively.**
+   - **Committer**: `@tanstack/react-query@5.96.0` is already a direct dependency (wagmi + RainbowKit require it). `<QueryClientProvider>` is already mounted at `crowdfund-ui/packages/committer/src/main.tsx:22`, wrapped around `<RainbowKitProvider>` → `<JotaiProvider>` → `<BrowserRouter>`. **Reuse the existing `queryClient`; do not create a second provider**, or hooks will split across two caches. The existing instance uses default options — tune via `new QueryClient({ defaultOptions: { queries: {...} } })` at construction if needed.
+   - **Observer**: no react-query yet. Add `@tanstack/react-query` to `crowdfund-ui/packages/observer/package.json` deps at the same version committer uses (`^5.96.0`), and mount `<QueryClientProvider>` at `packages/observer/src/main.tsx` — above `<JotaiProvider>` to match committer ordering.
+   - **Shared library**: the package ships TypeScript source directly (no build step) and lists `react` as its only peer dep. Import `@tanstack/react-query` inside shared hook files — Vite will resolve it via the consuming app's `node_modules`. Do **not** add it to `shared/package.json` dependencies (would cause duplicate copies); add it as a **peer dependency** in shared if you want to document the contract. Recommendation: add to `peerDependencies` only, and keep the `@tanstack/react-query` direct-dep in observer and (already-present in) committer.
+   - **Admin**: out of scope; do not touch `admin/main.tsx`.
+
+2. **Hooks in scope — accurate inventory after Phase 6.** The original Phase 7 task list mentioned only three hooks; the real footprint is wider. Decide whether to migrate all or stage:
+   - `packages/shared/src/hooks/useContractEvents.ts` — polling + IndexedDB cache. **Non-trivial.** See §5 for the cache-merge hazard.
+   - `packages/shared/src/hooks/useENS.ts` — batched `provider.lookupAddress` with IndexedDB cache. Returns `{ resolve, displayName }` callbacks backed by a Jotai atom. Public API is call-site-stable; internal batching can be queryified without breaking callers.
+   - `packages/shared/src/hooks/useAllocations.ts` — post-finalization batched `computeAllocation` reads. Returns a `Map<address, PrefetchedAllocation>` — no loading state exposed to callers; ripe for a queryified rewrite.
+   - `packages/shared/src/hooks/useGraphState.ts` — pure derived state (from the crowdfund events atom). **Not a query.** Leave alone.
+   - `packages/shared/src/hooks/useSelection.ts` — Jotai wiring. Leave alone.
+   - `packages/shared/src/hooks/useTxToast.ts` — Jotai + sonner. Leave alone.
+   - `packages/committer/src/hooks/useContractState.ts` — polls 15+ contract reads every `pollIntervalMs` via `Promise.all`. **Prime candidate.** Returns `{ phase, armLoaded, totalCommitted, ..., loading, error }` — the `loading` boolean is consumed in the deployment-error branch (`committer/src/App.tsx:145`). Preserve that surface.
+   - `packages/observer/src/hooks/useContractState.ts` — parallel observer copy of the same hook (verify it's near-identical before assuming). **Also a candidate.** Same `loading` consumer at `observer/src/App.tsx:145`.
+   - `packages/committer/src/hooks/useAllowance.ts` — probably polls USDC balance/allowance. Read before migrating.
+   - `packages/committer/src/hooks/useEligibility.ts` — probably derived from events + contract reads. Read before migrating.
+   - `packages/committer/src/hooks/useInviteLinks.ts` — IndexedDB-backed invite-link store. **Not a query** in the react-query sense; leave alone.
+   - `packages/committer/src/hooks/useWallet.ts` — wagmi wrapper. Leave alone — wagmi's own hooks (now that `QueryClientProvider` is shared with us) already dedupe.
+
+   **Recommendation for staging**: land `useENS` + `useAllocations` + `useContractState` (both copies) first — lowest risk, clearest wins. `useContractEvents` is the hardest and can be its own follow-up sub-commit; if it causes regressions, roll it back without unwinding the rest.
+
+3. **`isLoading` is already plumbed from Phase 6.3. Don't break the contract.** StatsBar/TableView/TreeView take an `isLoading?: boolean` prop wired in both apps as `isLoading={eventsLoading}` where `eventsLoading = useContractEvents({...}).loading`. If `useContractEvents` is rewritten to return react-query's `{ data, isLoading, isError, error, isRefetching, ... }` shape, you have two options:
+   - **Keep the public API stable** — have the rewritten hook still return `{ events, loading, error }` (mapping `isLoading → loading` internally) so call sites don't churn. Minimal ripple. Recommended for the first cut.
+   - **Change the API** — expose the raw `UseQueryResult` and update every call site, including the 5 `isLoading={eventsLoading}` wires. Cleaner long-term, but stacks with the other migration risks. Only do this once the rest of Phase 7 has settled.
+
+   Either way: `loading` in Phase 6 semantics meant "initial load is in-flight, before first successful fetch". React-query's `isLoading` has the same meaning (synonymous with `isPending && isFetching` on mount). `isRefetching` is a separate signal useful for the "syncing..." sub-text next to event count. Use both deliberately.
+
+4. **Error boundaries + react-query — they don't talk by default.** `<ErrorBoundary>` from Phase 6.4 catches render-time exceptions. `useQuery` failures land in the `error` / `isError` state — they do NOT throw unless you opt in. To make Phase 6's boundaries catch async failures, set `throwOnError: (error, query) => /* predicate */` on the query (or at the `QueryClient.defaultOptions.queries` level). Be selective: you likely want render-time throws only for fatal errors (e.g. "contract not found"), not routine RPC flakes (those should surface in a stale-data banner per task 4). Pair with `useQueryErrorResetBoundary()` in the boundary so retry via the fallback re-mounts + re-runs the query.
+
+5. **`useContractEvents` migration hazard — the IndexedDB-then-RPC flow is delicate.** The current hook does: (a) load cached events from IndexedDB on mount and seed the Jotai atom, (b) fetch new logs `from (cachedLastBlock + 1) to latest`, (c) merge, (d) persist new events to IndexedDB, (e) poll every `pollIntervalMs`, always advancing `lastBlockRef` even when no events are returned. A naive `useQuery` replacement loses the cursor semantics. Options:
+   - **`useInfiniteQuery` isn't the right tool here** — "pages" aren't semantic, the cursor is a monotonic block number.
+   - **Plain `useQuery` with `refetchInterval: pollIntervalMs` and a `queryFn` that closures over a ref holding `lastBlockRef`** — viable. Seed the Jotai atom from the query result via a `useEffect`, OR stop using the atom and have consumers read `data` directly. Stopping the atom is cleaner but ripples through `useGraphState`, which reads `crowdfundEventsAtom`.
+   - **Keep the current hook as-is and skip it this phase** — perfectly reasonable given (2) above. The acceptance criteria can still be met with just `useENS` + `useAllocations` + `useContractState` migrated.
+   - **If you migrate**, preserve IndexedDB reads on mount (seed `initialData` from `getCachedEvents()`) and the post-fetch `cacheEvents()` write (hook into `onSuccess` or a `useEffect` on `data`). Do NOT drop either — the cache is load-bearing for repeat visits.
+
+6. **ENS `useENS` — return shape is call-site-stable; internals are where the migration happens.** Current public API: `{ resolve(addr) => string | null, displayName(addr) => string }` backed by a Jotai `ensMapAtom<Map<string, string>>`. Internally it uses a `useEffect` + `provider.lookupAddress` in batches of 10. For the query migration:
+   - Use a **per-address** `useQuery(['ens', addr], () => provider.lookupAddress(addr))` with `staleTime: 24 * 60 * 60 * 1000` to match the current 24h IndexedDB TTL.
+   - Retry with exponential backoff: `retry: 3, retryDelay: attempt => Math.min(1000 * 2 ** attempt, 30_000)` (tune). react-query's default retry is 3 with its own backoff — close enough; verify before overriding.
+   - Keep the IndexedDB cache. Use `initialData` from `batchGetCachedENS`, and write on success via a persister or `onSuccess`.
+   - Preserve the public `{ resolve, displayName }` API so observer (`App.tsx:213`) and committer (`App.tsx:304`) call sites don't churn. The atom can stay or be replaced by a `QueryClient.getQueryData()` lookup — your call.
+   - **Consider the batch size**: wagmi exposes a multicall provider at `publicClient`, but if you stay on ethers v6, there's no native batching for `lookupAddress` — you get one RPC call per address. `useQuery` deduplicates across React subscribers automatically; good-enough without custom batching.
+
+7. **`useAllocations` — clean migration candidate.** Current hook does a batched `computeAllocation` read per unclaimed address, post-finalization. No loading state exposed. Migration: use `useQueries` keyed on each address, with `enabled: phase === 1 && !refundMode && summary.allocatedArm === null`. Return a `Map<address, PrefetchedAllocation>` as before (reduce over the query results). Callers don't need to know loading state since the data is additive — existing call sites stay untouched.
+
+8. **Reconnection / stale-data banner (task 4).** Surface anywhere something went wrong in a way that's not a hard error:
+   - Option A: a thin banner under the AppShell header when ANY query's `fetchStatus === 'paused'` or the last poll failed. Implement as a shared hook `useStaleDataBanner()` subscribing to the queryClient's query cache and rendering a `<ErrorAlert variant="warning" icon={WifiOff}>` at the top of the content area.
+   - Option B: don't add a banner this phase; just let react-query's `isRefetching` flow into the existing `(syncing...)` text in `observer/App.tsx:328` and `committer/App.tsx:324`.
+   - Decision: ship the banner (Option A) — it's the phase's visible user-facing output and matches the acceptance criteria. The banner should NOT show a pure "first load in flight" state (skeletons cover that); only the "we had data, now we can't refresh" case.
+
+9. **State management note.** Phase 7 must NOT introduce new React Contexts for data (shared-first convention §10). Query state is held by `QueryClient`; app-level shared state stays in Jotai. The pattern that works: `useQuery()` returns data → a thin `useAtom` effect copies it into the existing `crowdfundEventsAtom` / `ensMapAtom` if call sites read those atoms directly. If you delete the atoms, audit every consumer first — `useGraphState.ts` reads `crowdfundEventsAtom` and derives graph state with `useMemo`; it will need to switch to reading `useQuery(['events', ...]).data`.
+
+10. **Pre-existing baseline — do NOT fix inside Phase 7.** `tsc -b` baseline after Phase 6:
+    - **Observer**: clean.
+    - **Shared**: `useAllocations.test.ts` (2 unused-import errors), `rpc.test.ts` (`JsonRpcResult` property-missing error). Issue #259.
+    - **Committer**: `App.tsx:185` unused `walletENS`; `CommitTab.tsx:23` unused `HOP_CONFIGS`; `InviteLinkRedemption.tsx:53` unused `isConnected`; several test files have type mismatches (ClaimTab, InviteLinkRedemption, InviteTab, useProRataEstimate) plus `wagmiAdapter.ts:20` strict-null. Issue #259.
+    - **Admin**: `useRole.test.ts` missing test-runner type definitions. Issue #259.
+    - Phase 7 introduces none of these; validation gate is "stay at #259 baseline, don't add new errors".
+
+11. **Validation gates (same pattern as Phases 5–6):**
+    - `npx vite build` in observer + committer + admin, all green.
+    - `npx tsc -b` in observer → clean. Shared/committer/admin → stay at #259 baseline.
+    - `npx vitest run` in shared → only the pre-existing failures (if any). Committer → only `useProRataEstimate.test.ts` pre-existing failures.
+    - No new `QueryClientProvider` in committer (would cause cache split).
+    - Manual smoke: kill the RPC in DevTools mid-session → the stale-data banner should surface without the page blanking, and the ErrorBoundary fallbacks should NOT trigger for routine RPC flakes (only for unrecoverable throws).
+    - Mobile smoke at 375px — the banner should not horizontally overflow.
+
+12. **Out of scope for Phase 7 (don't touch):**
+    - Forms migration (`react-hook-form` + `zod`) → Phase 8.
+    - `framer-motion` animations → Phase 9.
+    - Graph library decision → Phase 10.
+    - The Jotai-only hooks (`useSelection`, `useTxToast`, `useInviteLinks`).
+    - wagmi-internal hooks (`useAccount`, `useWalletClient`, etc.) — they already cooperate with react-query.
+    - Admin app.
+    - Phase 6.3's `isLoading` wiring at call sites, unless you explicitly choose the "change `useContractEvents` API" path (see §3).
+
+13. **Commit granularity suggestion:**
+    - 7.1 — shared `<QueryClientProvider>` mount in observer; peerDep in shared; adopt the existing mount in committer. Zero behavior change.
+    - 7.2 — `useENS` migration (lowest risk, clearest win).
+    - 7.3 — `useAllocations` migration.
+    - 7.4 — `useContractState` migration (both apps).
+    - 7.5 — stale-data banner + `useStaleDataBanner` hook.
+    - 7.6 — (OPTIONAL) `useContractEvents` migration — separate commit, easy to revert.
+
+**Tasks (from original plan, refined by the pre-flight above):**
+
+1. Add `@tanstack/react-query` to observer; reuse the existing mount in committer. Declare as peerDep in shared.
+2. Migrate `useENS`, `useAllocations`, and both `useContractState` hooks to `useQuery`/`useQueries`. Preserve public return shapes where call sites depend on them.
+3. (Optional) Migrate `useContractEvents`. If skipped, document in the Actuals block and flag for a future phase.
+4. Expose `isLoading`, `isError`, `error`, `isRefetching` on migrated hooks; downstream chrome (StatsBar/TableView/TreeView `isLoading` prop, syncing text) should continue to work without call-site changes.
+5. Add a top-level stale-data banner (shared component) that surfaces when queries report paused/offline state; render it inside `<AppShell>`'s children above the content container in both apps.
 
 **Acceptance:**
-- Kill the RPC mid-session → banner appears → restore → banner disappears.
-- ENS failures retry 3× with exponential backoff, then silently fall back.
-- Network tab shows no redundant in-flight requests (react-query dedupes).
+- Kill the RPC mid-session → stale-data banner appears → restore → banner disappears.
+- ENS failures retry with backoff (react-query default is 3×), then silently fall back to truncated addresses via `displayName`.
+- No duplicate `QueryClientProvider` in committer; observer has a fresh one.
+- Network tab shows no redundant in-flight requests — react-query dedupes across subscribers.
+- All Phase 6 skeletons and error boundaries continue to render correctly during load/failure.
 
 ---
 

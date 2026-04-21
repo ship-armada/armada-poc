@@ -1,8 +1,8 @@
 # Crowdfund UI Polish Plan
 
-> **Status:** Planning doc — active. Archive to `.claude/archive/` when all phases are merged.
+> **Status:** Planning doc — active. Archive to `.claude/archive/` once every phase has landed and the umbrella → `main` PR is merged.
 > **Scope:** Observer and Committer apps only. Admin app is internal-only and stays bare-bones.
-> **Branch prefix:** `iskay/crowdfund-ui-*`
+> **Branch:** all work lands directly on `iskay/crowdfund-ui-polish` — no per-phase feature branches, no PRs to `main` until the polish pass is finished. See §0.
 
 ---
 

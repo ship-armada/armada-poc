@@ -6,6 +6,32 @@
 
 ---
 
+## 0. Branch & PR strategy (locked)
+
+All polish work lands on a **single long-lived umbrella branch**, `iskay/crowdfund-ui-polish`, which is off `main`. Each phase ships as its own short-lived branch that PRs **into the umbrella, not into main**. When every phase is merged into the umbrella, one final consolidated PR goes `iskay/crowdfund-ui-polish` → `main`.
+
+Why: the polish work is cross-cutting and the user wants a single, reviewable surface landing on main rather than a trail of small individual merges. Per-phase branches stay in the workflow so each phase is still independently reviewable *within* the umbrella.
+
+```
+main
+ └─ iskay/crowdfund-ui-polish ← umbrella (long-lived; final PR → main)
+     ├─ (merged) phase 1 — dark-only theme
+     ├─ iskay/crowdfund-ui-shadcn         (merged) — phase 2
+     ├─ iskay/crowdfund-ui-tsc-cleanup    (merged) — Phase 1 carry-over fixes
+     ├─ iskay/crowdfund-ui-shell          — phase 3 (next)
+     ├─ iskay/crowdfund-ui-toasts         — phase 4
+     └─ …
+```
+
+**Rules for phase agents:**
+- Branch off `iskay/crowdfund-ui-polish` (not `main`).
+- PR targets `iskay/crowdfund-ui-polish` (not `main`). Do not force-push the umbrella.
+- Prefer fast-forward merges into the umbrella when history is linear; merge commits are fine if the umbrella has advanced.
+- Unrelated fixes needed to unblock a phase (e.g. the Phase 1 tsc cleanup) belong on their own short-lived branch → PR into umbrella → continue the phase.
+- Do not rebase or squash *merged* umbrella history. The final umbrella → main PR is the point at which squash-vs-merge is decided.
+
+---
+
 ## 1. Purpose
 
 Raise the crowdfund UI from utilitarian POC scaffolding to a polished, production-feeling experience. The visual identity (logo, brand colors, typography system) is **not yet finalized** — so this plan prioritizes building a **theme system and component foundation** that makes design-team handoffs cheap later, rather than committing to specific aesthetic choices now.
@@ -22,6 +48,7 @@ Raise the crowdfund UI from utilitarian POC scaffolding to a polished, productio
 | D4 | **Spike `@xyflow/react` vs. iterate on d3** for the invite graph. | Run as a parallel half-day spike before committing to either path (see Phase 10). |
 | D5 | **Keep existing dependencies where they already work.** | Jotai, ethers/viem, wagmi, RainbowKit, sonner, Radix, shadcn setup, tanstack-table, d3-hierarchy — all stay. We're wiring and composing, not replacing. |
 | D6 | **No regression of functionality** during the polish pass. Every existing feature must still work at the end of each phase. | Do visual/UX work behind small PRs, not a single big rewrite. |
+| D7 | **Observer and Committer must be fully responsive for mobile.** Admin is **exempt** (launch-team / security-council users are on desktop; see CLAUDE.md note that admin stays bare-bones). | Every shared component must work from ≥320px wide up through desktop. Each phase touching layout must include a mobile pass before marking done. AppShell's header collapses into a shadcn `<Sheet>` below ~640px. TreeView and TableView must be usable on phones — consider stacked (vs side-by-side) layouts on narrow viewports. Test with Chrome DevTools device emulation at minimum; budget one extra hour per phase for mobile-specific tweaks. |
 
 ---
 
@@ -230,26 +257,46 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ### Phase 3 — Shared AppShell (header + footer + page container)
 
-**Branch:** `iskay/crowdfund-ui-shell`
+**Branch:** `iskay/crowdfund-ui-shell` (off `iskay/crowdfund-ui-polish`; PR target: `iskay/crowdfund-ui-polish`)
 **Effort:** ~1 day
-**Depends on:** Phase 2
+**Depends on:** Phase 2 (merged into umbrella on `iskay/crowdfund-ui-polish`)
+
+**Pre-flight for the Phase 3 agent (resolve before writing code):**
+
+1. **Mobile Sheet contents — confirmed scope (locked via D7 above).** Observer + committer must be fully responsive (admin exempt). For the mobile header Sheet (<640px breakpoint):
+   - **Observer:** Network badge + a "Participate" CTA linking to the committer's URL. Nothing else.
+   - **Committer:** Wallet connect button (RainbowKit), chain indicator, network badge. *The last-tx chip belongs to Phase 4 — leave an intentional slot or a commented placeholder and implement it there.*
+   - **Admin:** Out of scope; do not modify the admin header.
+
+2. **Network badge data source.** The committer already reads chain config via `src/config/wagmi.ts` / `src/config/networks.ts`. Observer uses its own `src/config/network.ts` (note: singular; check the actual file). Pick one of these as the authoritative source for the AppShell's badge — either (a) pass the chain/network label in as a prop so each app decides, or (b) read `import.meta.env.VITE_NETWORK` directly in AppShell. Prop-passing (a) is the cleaner seam — AppShell should not couple to env vars.
+
+3. **Footer content.** Plan says "version number, 'Built on Armada', external links". Version: read from shared's `package.json` (or each app's) at build time — prefer a `VITE_APP_VERSION` injected via vite config, fall back to a hardcoded "dev" in local. External links: minimal — GitHub repo, docs (if any), done. No need to design this to spec; keep it small and make it easy to swap.
+
+4. **Page-body layout untouched.** Plan explicitly says so. Do not refactor the tree + table grid in Phase 3; it stays in each app's `App.tsx` as children of `<AppShell>`. TreeView/TableView mobile responsiveness is a Phase 6 / Phase 10 concern, not this phase's.
 
 **Tasks:**
 1. Create `packages/shared/src/components/AppShell.tsx` with slots:
    - `headerLeft`: brand/app name
    - `headerCenter`: (optional) breadcrumb or title
-   - `headerRight`: children — each app passes its own (observer: nothing / a simple "connect for more" link to committer; committer: wallet connect button, chain indicator)
+   - `headerRight`: children — each app passes its own (observer: "Participate" link; committer: wallet connect + chain indicator; admin: minimal or unchanged)
    - `children`: page content
    - `footer`: small — version number, "Built on Armada", external links
-2. Responsive container: max-width centered, consistent horizontal gutter.
-3. Network indicator badge (reads from `config/networks.ts` or env) — shows "Local", "Sepolia", etc.
+2. Responsive container: max-width centered, consistent horizontal gutter. Works from 320px up.
+3. Network indicator badge (via prop — see pre-flight #2) — shows "Local", "Sepolia", etc.
 4. Replace each app's `App.tsx` top-level layout with `<AppShell>`. Leave page-body layout (tree + table grid) untouched for now.
+5. Mobile menu via shadcn `<Sheet>` (already available in the barrel from Phase 2). Contents per pre-flight #1.
 
 **Acceptance:**
 - Both apps share the exact same header chrome structurally, differing only in the `headerRight` slot.
 - Header is sticky on scroll.
 - Network badge visible on both.
 - Responsive: header collapses cleanly below ~640px (mobile menu via shadcn Sheet).
+- **Mobile smoke test**: at 375px (iPhone SE) viewport, header + content do not horizontally scroll; the Sheet opens, closes, and is dismissable with the backdrop.
+- No regression: existing observer/committer features still work.
+
+**Existing TS baseline after Phase 1 cleanup:**
+- Observer `tsc -b` is clean.
+- Shared + committer + admin still have unrelated pre-existing `tsc -b` errors tracked in **issue #259**. Phase 3 should not attempt to fix them; if changes unintentionally introduce *new* errors, fix those in Phase 3. Validation path: continue relying on `vite build` for all three apps, plus `npx tsc -b` in observer (clean) and shared (should stay at #259's baseline).
 
 ---
 
@@ -479,10 +526,11 @@ Phase 10 can run **in parallel** with 2–9 on a separate branch since it only d
 ## 6. How future agents should use this doc
 
 - **Start of a new session:** read this file end-to-end plus CLAUDE.md.
-- **Before picking up a phase:** check git log for which phase branches are already merged. Ask the user which phase to tackle if unclear.
-- **Mark progress here:** when a phase is merged to `main`, update its status inline (add `✅ Merged in #<PR>` under the phase header). Do not delete the phase.
+- **Branch rule:** branch off `iskay/crowdfund-ui-polish` (the umbrella), not `main`. PR target is the umbrella. See §0.
+- **Before picking up a phase:** check git log for which phase branches are already merged into the umbrella. Ask the user which phase to tackle if unclear.
+- **Mark progress here:** when a phase is merged into the umbrella, update its status inline (add `✅ Merged into umbrella in #<PR>` under the phase header). When the umbrella lands on `main`, switch that to `✅ Merged in #<final-PR>` on each phase. Do not delete phases.
 - **If a phase changes in scope:** edit this doc; don't start a parallel one.
-- **When all phases are merged:** archive this file to `.claude/archive/CROWDFUND_UI_POLISH.md` and add a one-line summary of what was done.
+- **When all phases are merged into the umbrella:** open the final umbrella → main PR. After that lands, archive this file to `.claude/archive/CROWDFUND_UI_POLISH.md` and add a one-line summary of what was done.
 
 ---
 

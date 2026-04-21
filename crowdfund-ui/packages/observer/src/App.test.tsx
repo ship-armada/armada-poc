@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { Provider as JotaiProvider } from 'jotai'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App } from './App'
 import type { ContractState } from '@/hooks/useContractState'
 
@@ -98,10 +99,15 @@ vi.mock('@armada/crowdfund-shared', async () => {
 })
 
 function renderApp() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
-    <JotaiProvider>
-      <App />
-    </JotaiProvider>,
+    <QueryClientProvider client={client}>
+      <JotaiProvider>
+        <App />
+      </JotaiProvider>
+    </QueryClientProvider>,
   )
 }
 

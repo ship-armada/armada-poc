@@ -146,7 +146,48 @@ None of these should be touched by this plan.
 
 ---
 
-## 4. Plan — ordered phases
+## 4. Shared-first conventions (apply to every phase)
+
+Multiple agents will implement phases independently. These rules keep the codebase coherent. Before opening a PR, agents MUST self-check against every item below.
+
+### Styling
+
+1. **No hex literals, no `rgb()`/`hsl()` literals, no named color utilities for domain concepts.** Use theme tokens from `packages/shared/src/styles/theme.css` exclusively. Hop colors are `text-hop-0`/`bg-hop-0`, tx status is `text-status-confirmed`, etc. Self-check: `rg -nE '#[0-9a-f]{3,8}\b|\brgb\(' crowdfund-ui/packages/ --glob '!**/theme.css' --glob '!**/node_modules/**'` on your diff — zero matches.
+2. **No inline `style={{...}}` for color, spacing, or typography.** Allowed only for values that can't be expressed in Tailwind (e.g. SVG `var()` references in `TreeView.tsx`, dynamic computed coordinates).
+3. **Class merging uses `cn()` from `@armada/crowdfund-shared`.** Not template literals, not string concat. Shadcn primitives already do this; follow suit.
+4. **Dark theme only.** Never introduce `.dark` selectors, `@custom-variant dark`, or light-mode fallbacks (D1).
+
+### Components
+
+5. **Never create a new `Button`, `Input`, `Card`, `Dialog`, `Tooltip`, etc. in an app.** Import from the shared barrel. If a variant is missing, extend the shared primitive's CVA config in place — do not wrap it in an app-local component.
+6. **No new `src/components/ui/` directories in observer, committer, or admin.** The shadcn installation lives only in `packages/shared/`. Per-app `components.json` files were deleted intentionally; don't recreate them.
+7. **Domain components (graph nodes, hop badges, participant rows, tx toasts) go in `packages/shared/src/components/`** once more than one app uses them. If you build it app-local first to ship the phase, flag it in the PR description so a future phase can promote it.
+
+### Utilities and hooks
+
+8. **Search before writing.** Before creating a formatter, hook, or helper, grep `packages/shared/src/lib/` and `packages/shared/src/hooks/`. Notably present already: `formatUsdc`, `formatUsdcPlain`, `parseUsdcInput`, `formatArm`, `truncateAddress`, `formatCountdown`, `hopLabel`, `phaseName`, `phaseColor`, `estimateAllocation`, `buildGraph`, `mergeEvents`, `parseCrowdfundEvent`, `createProvider`, `fetchLogs`, IndexedDB cache helpers, `useContractEvents`, `useGraphState`, `useSelection`, `useENS`, `useAllocations`.
+9. **Icon set = `lucide-react` only.** Already pulled in transitively via shadcn. Don't add Heroicons, Radix Icons, Phosphor, etc.
+10. **State: Jotai atoms from shared for cross-app concerns; local `useState` for component-local.** No new React Contexts. Atoms worth knowing: `crowdfundEventsAtom`, `crowdfundGraphAtom`, `selectedAddressAtom`, `searchQueryAtom`, `hoveredAddressAtom`, `ensMapAtom`.
+11. **Contract I/O uses ethers v6.** viem stays scoped to wagmi/RainbowKit wallet concerns in the committer. Don't mix inside a single module.
+
+### Imports and boundaries
+
+12. **Cross-package imports go through the barrel:** `import { X } from '@armada/crowdfund-shared'`. Never reach into `@armada/crowdfund-shared/src/...` from an app — the barrel is the contract.
+13. **Within `packages/shared/`, use relative imports with `.js` extensions** (shared convention). No `@/` path alias in shared.
+14. **Do not modify** `contracts/railgun/logic/`, `_legacy/`, `usdc-v2-frontend/`, `ArmadaYieldVault`, testing-mode code, or the Phase 1 token values in `theme.css` (brand identity owns that PR separately).
+
+### Process
+
+15. **Branch off `iskay/crowdfund-ui-polish`; PR into it, not main** (see §0).
+16. **Mobile responsiveness is non-negotiable for observer + committer** (D7). Admin exempt. Mobile smoke at ≥375px viewport before requesting review.
+17. **When a phase requires a tool invocation that shows state changes outside the repo** (a `gh issue create`, a `git push`, etc.), ask first unless the plan already authorizes it.
+18. **Test waiver is per-phase.** Don't assume the previous phase's waiver carries forward. Ask the user. Record the outcome in the phase's "Actuals" block.
+19. **Before committing, run**: `npx vite build` in each app you touched (must be green), plus `npx tsc -b` in any package whose `tsc -b` was clean pre-phase (don't regress). Shared + committer + admin have pre-existing baseline errors tracked in issue #259 — don't fix them inside a phase PR.
+20. **Surface friction.** If one of these rules is wrong for your phase, propose a revision here (end-of-response `SUGGESTED INSTRUCTION UPDATE:` pattern per root CLAUDE.md). Don't edit this doc autonomously to suit your current task.
+
+---
+
+## 5. Plan — ordered phases
 
 Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<phase>`. Each phase should end green: `npm run test` passes, both apps load and function.
 
@@ -501,7 +542,7 @@ Each phase is a **separate PR** to `main`, branching off `iskay/crowdfund-ui-<ph
 
 ---
 
-## 5. Total effort & rough order-of-merge
+## 6. Total effort & rough order-of-merge
 
 | Phase | Effort | Can start after |
 |---|---|---|
@@ -523,7 +564,7 @@ Phase 10 can run **in parallel** with 2–9 on a separate branch since it only d
 
 ---
 
-## 6. How future agents should use this doc
+## 7. How future agents should use this doc
 
 - **Start of a new session:** read this file end-to-end plus CLAUDE.md.
 - **Branch rule:** branch off `iskay/crowdfund-ui-polish` (the umbrella), not `main`. PR target is the umbrella. See §0.
@@ -534,7 +575,7 @@ Phase 10 can run **in parallel** with 2–9 on a separate branch since it only d
 
 ---
 
-## 7. Open questions / things to escalate
+## 8. Open questions / things to escalate
 
 - **Brand identity**: token values in Phase 1 are placeholders. When design lands, a single PR should re-value `theme.css`; the token names should remain stable.
 - **Graph library choice**: pending Phase 10 spike.
@@ -545,7 +586,7 @@ Phase 10 can run **in parallel** with 2–9 on a separate branch since it only d
 
 ---
 
-## 8. Glossary
+## 9. Glossary
 
 | Term | Meaning |
 |---|---|

@@ -18,12 +18,10 @@ import {
   HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
 import { decodeInviteUrl } from '@/lib/inviteLinks'
-import { mapRevertToMessage } from '@/lib/revertMessages'
 import { getHubRpcUrl, getExplorerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
-import { TransactionFlow } from './TransactionFlow'
 
 /** Pre-submission validation error types */
 type PreCheckError =
@@ -65,8 +63,8 @@ export function InviteLinkRedemption() {
   const [preCheckError, setPreCheckError] = useState<PreCheckError>(null)
   const [preCheckLoading, setPreCheckLoading] = useState(false)
 
-  const approvalTx = useTransactionFlow(signer)
-  const commitTx = useTransactionFlow(signer)
+  const approvalTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
+  const commitTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
 
   // Parse invite data from URL
   const inviteData = useMemo(() => decodeInviteUrl(searchParams), [searchParams])
@@ -200,26 +198,32 @@ export function InviteLinkRedemption() {
 
     // Step 1: Approve if needed
     if (needsApproval) {
-      const success = await approvalTx.execute(async (s) => {
-        const usdc = new Contract(deployment.contracts.usdc, ERC20_ABI_FRAGMENTS, s)
-        return usdc.approve(deployment.contracts.crowdfund, parsedAmount)
-      })
+      const success = await approvalTx.execute(
+        `Approve ${formatUsdc(parsedAmount)} USDC`,
+        async (s) => {
+          const usdc = new Contract(deployment.contracts.usdc, ERC20_ABI_FRAGMENTS, s)
+          return usdc.approve(deployment.contracts.crowdfund, parsedAmount)
+        },
+      )
       if (!success) return
       setAllowance(parsedAmount)
     }
 
     // Step 2: commitWithInvite
-    const success = await commitTx.execute(async (s) => {
-      const crowdfund = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.commitWithInvite(
-        inviteData.inviter,
-        inviteData.fromHop,
-        inviteData.nonce,
-        inviteData.deadline,
-        inviteData.signature,
-        parsedAmount,
-      )
-    })
+    const success = await commitTx.execute(
+      `Join & commit ${formatUsdc(parsedAmount)} at ${hopLabel(targetHop)}`,
+      async (s) => {
+        const crowdfund = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, s)
+        return crowdfund.commitWithInvite(
+          inviteData.inviter,
+          inviteData.fromHop,
+          inviteData.nonce,
+          inviteData.deadline,
+          inviteData.signature,
+          parsedAmount,
+        )
+      },
+    )
 
     if (success) {
       setTimeout(() => navigate('/'), 2000)
@@ -354,18 +358,18 @@ export function InviteLinkRedemption() {
 
             <button
               className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              disabled={parsedAmount === 0n || errors.length > 0 || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
+              disabled={
+                parsedAmount === 0n ||
+                errors.length > 0 ||
+                approvalTx.state.status === 'pending' ||
+                approvalTx.state.status === 'submitted' ||
+                commitTx.state.status === 'pending' ||
+                commitTx.state.status === 'submitted'
+              }
               onClick={handleSubmit}
             >
               {needsApproval ? 'Approve & Join' : 'Join & Commit'}
             </button>
-
-            <TransactionFlow
-              state={approvalTx.state.status !== 'idle' ? approvalTx.state : commitTx.state}
-              onReset={() => { approvalTx.reset(); commitTx.reset() }}
-              successMessage="Welcome to the Armada crowdfund! Redirecting..."
-              explorerUrl={getExplorerUrl()}
-            />
           </div>
         )}
       </div>

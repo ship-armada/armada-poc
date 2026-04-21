@@ -19,7 +19,6 @@ import type { HopPosition } from '@/hooks/useEligibility'
 import { useProRataEstimate } from '@/hooks/useProRataEstimate'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 import { ProRataEstimate } from './ProRataEstimate'
-import { TransactionFlow } from './TransactionFlow'
 import { getExplorerUrl } from '@/config/network'
 
 export interface CommitTabProps {
@@ -112,8 +111,8 @@ export function CommitTab(props: CommitTabProps) {
   const [amounts, setAmounts] = useState<Map<number, string>>(new Map())
   const [approveUnlimited, setApproveUnlimited] = useState(false)
   const [commitSuccess, setCommitSuccess] = useState(false)
-  const approvalTx = useTransactionFlow(signer)
-  const commitTx = useTransactionFlow(signer)
+  const approvalTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
+  const commitTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
 
   // Parse amounts to bigint
   const parsedAmounts = useMemo(() => {
@@ -194,7 +193,10 @@ export function CommitTab(props: CommitTabProps) {
     // Step 1: Approve if needed
     if (needsApproval(totalAmount)) {
       const approveAmount = approveUnlimited ? MaxUint256 : totalAmount
-      const success = await approvalTx.execute(async (s) => {
+      const label = approveUnlimited
+        ? 'Approve USDC (unlimited)'
+        : `Approve ${formatUsdc(totalAmount)} USDC`
+      const success = await approvalTx.execute(label, async (s) => {
         const usdc = new Contract(usdcAddress, ERC20_ABI_FRAGMENTS, s)
         return usdc.approve(crowdfundAddress, approveAmount)
       })
@@ -204,10 +206,13 @@ export function CommitTab(props: CommitTabProps) {
 
     // Step 2: Commit per hop (sequential)
     for (const [hop, amount] of parsedAmounts) {
-      const success = await commitTx.execute(async (s) => {
-        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-        return crowdfund.commit(hop, amount)
-      })
+      const success = await commitTx.execute(
+        `Commit ${formatUsdc(amount)} at ${hopLabel(hop)}`,
+        async (s) => {
+          const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
+          return crowdfund.commit(hop, amount)
+        },
+      )
       if (!success) return
     }
 
@@ -441,23 +446,18 @@ export function CommitTab(props: CommitTabProps) {
             <button
               className="flex-1 rounded border border-border px-4 py-2 text-sm hover:bg-muted"
               onClick={() => setStep('input')}
+              disabled={approvalTx.state.status === 'pending' || approvalTx.state.status === 'submitted' || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
             >
               Back
             </button>
             <button
-              className="flex-1 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="flex-1 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               onClick={handleApproveAndCommit}
+              disabled={approvalTx.state.status === 'pending' || approvalTx.state.status === 'submitted' || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
             >
               {needsApproval(totalAmount) ? 'Approve & Commit' : 'Commit'}
             </button>
           </div>
-
-          <TransactionFlow
-            state={approvalTx.state.status !== 'idle' ? approvalTx.state : commitTx.state}
-            onReset={() => { approvalTx.reset(); commitTx.reset() }}
-            successMessage="Commitment confirmed!"
-            explorerUrl={getExplorerUrl()}
-          />
         </div>
       )}
     </div>

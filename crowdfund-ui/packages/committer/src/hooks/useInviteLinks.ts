@@ -15,7 +15,7 @@ import {
   updateInviteLinkStatus,
   getNextNonce,
 } from '@/lib/inviteLinks'
-import { getHubChainId } from '@/config/network'
+import { getHubChainId, getExplorerUrl } from '@/config/network'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
 
 export interface UseInviteLinksResult {
@@ -23,7 +23,6 @@ export interface UseInviteLinksResult {
   loading: boolean
   createLink: (fromHop: number, deadlineSeconds?: number) => Promise<string | null>
   revokeLink: (nonce: number) => Promise<boolean>
-  revokeTx: ReturnType<typeof useTransactionFlow>
   refreshLinks: () => Promise<void>
 }
 
@@ -37,7 +36,7 @@ export function useInviteLinks(
 ): UseInviteLinksResult {
   const [links, setLinks] = useState<StoredInviteLink[]>([])
   const [loading, setLoading] = useState(true)
-  const revokeTx = useTransactionFlow(signer)
+  const revokeTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
 
   const refreshLinks = useCallback(async () => {
     if (!address) {
@@ -101,10 +100,13 @@ export function useInviteLinks(
   const revokeLink = useCallback(async (nonce: number): Promise<boolean> => {
     if (!crowdfundAddress || !address) return false
 
-    const success = await revokeTx.execute(async (s) => {
-      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.revokeInviteNonce(nonce)
-    })
+    const success = await revokeTx.execute(
+      'Revoke invite link',
+      async (s) => {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
+        return crowdfund.revokeInviteNonce(nonce)
+      },
+    )
 
     if (success) {
       await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked')
@@ -114,5 +116,5 @@ export function useInviteLinks(
     return success
   }, [crowdfundAddress, address, revokeTx, refreshLinks])
 
-  return { links, loading, createLink, revokeLink, revokeTx, refreshLinks }
+  return { links, loading, createLink, revokeLink, refreshLinks }
 }

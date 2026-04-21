@@ -15,6 +15,7 @@ import {
   SearchBar,
   TreeView,
   AppShell,
+  LastTxChip,
   Separator,
   CROWDFUND_CONSTANTS,
   formatUsdc,
@@ -211,7 +212,7 @@ export function App() {
           )}
         </span>
       )}
-      {/* TODO(Phase 4): last-tx chip slot goes here */}
+      <LastTxChip />
       <ConnectButton
         showBalance={false}
         chainStatus="icon"
@@ -235,7 +236,9 @@ export function App() {
         </div>
       ) : null}
       <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
-      {/* TODO(Phase 4): last-tx chip slot goes here */}
+      <div className="flex justify-start">
+        <LastTxChip />
+      </div>
     </div>
   )
 

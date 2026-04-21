@@ -14,7 +14,6 @@ import {
 import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
-import { TransactionFlow } from './TransactionFlow'
 import { getExplorerUrl } from '@/config/network'
 import { InviteLinkSection } from './InviteLinkSection'
 
@@ -49,7 +48,7 @@ export function InviteTab(props: InviteTabProps) {
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null)
   const [resolving, setResolving] = useState(false)
   const [selectedHop, setSelectedHop] = useState<number | null>(null)
-  const tx = useTransactionFlow(signer)
+  const tx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
 
   // Positions with available invite slots
   const invitePositions = useMemo(
@@ -125,10 +124,13 @@ export function InviteTab(props: InviteTabProps) {
   const handleInvite = useCallback(async () => {
     if (!canInvite || selectedHop === null) return
 
-    const success = await tx.execute(async (s) => {
-      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.invite(effectiveAddress, selectedHop)
-    })
+    const success = await tx.execute(
+      `Invite to ${hopLabel(selectedHop + 1)}`,
+      async (s) => {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
+        return crowdfund.invite(effectiveAddress, selectedHop)
+      },
+    )
 
     if (success) {
       setInviteeAddress('')
@@ -139,10 +141,13 @@ export function InviteTab(props: InviteTabProps) {
   const handleSelfInvite = useCallback(async (hop: number) => {
     if (!address) return
 
-    await tx.execute(async (s) => {
-      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.invite(address, hop)
-    })
+    await tx.execute(
+      `Self-invite at ${hopLabel(hop + 1)}`,
+      async (s) => {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
+        return crowdfund.invite(address, hop)
+      },
+    )
   }, [address, crowdfundAddress, tx])
 
   if (invitePositions.length === 0) {
@@ -264,13 +269,6 @@ export function InviteTab(props: InviteTabProps) {
           They can then commit USDC at hop-{(selectedHop ?? 0) + 1}.
         </div>
       </div>
-
-      <TransactionFlow
-        state={tx.state}
-        onReset={tx.reset}
-        successMessage="Invite sent!"
-        explorerUrl={getExplorerUrl()}
-      />
 
       <InviteLinkSection
         inviteLinks={inviteLinks}

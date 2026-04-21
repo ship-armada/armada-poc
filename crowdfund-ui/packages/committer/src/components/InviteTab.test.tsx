@@ -28,11 +28,6 @@ const mockInviteLinks: UseInviteLinksResult = {
   loading: false,
   createLink: vi.fn(),
   revokeLink: vi.fn(),
-  revokeTx: {
-    state: { status: 'idle', txHash: null, receipt: null, error: null },
-    execute: vi.fn(),
-    reset: vi.fn(),
-  },
   refreshLinks: vi.fn(),
 }
 

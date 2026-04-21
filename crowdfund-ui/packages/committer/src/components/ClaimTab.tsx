@@ -14,7 +14,6 @@ import {
   type CrowdfundGraph,
 } from '@armada/crowdfund-shared'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
-import { TransactionFlow } from './TransactionFlow'
 import { DelegateInput } from './DelegateInput'
 import { getExplorerUrl } from '@/config/network'
 
@@ -64,8 +63,8 @@ export function ClaimTab(props: ClaimTabProps) {
   const [hasRefundClaimed, setHasRefundClaimed] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  const claimArmTx = useTransactionFlow(signer)
-  const claimRefundTx = useTransactionFlow(signer)
+  const claimArmTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
+  const claimRefundTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
 
   // Derive per-hop allocation from graph nodes
   const hopAllocations = useMemo((): HopAllocation[] => {
@@ -116,17 +115,23 @@ export function ClaimTab(props: ClaimTabProps) {
 
   const handleClaimArm = useCallback(async () => {
     if (!isAddress(delegate)) return
-    await claimArmTx.execute(async (s) => {
-      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.claim(delegate)
-    })
+    await claimArmTx.execute(
+      'Claim ARM',
+      async (s) => {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
+        return crowdfund.claim(delegate)
+      },
+    )
   }, [delegate, crowdfundAddress, claimArmTx])
 
   const handleClaimRefund = useCallback(async () => {
-    await claimRefundTx.execute(async (s) => {
-      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
-      return crowdfund.claimRefund()
-    })
+    await claimRefundTx.execute(
+      'Claim USDC refund',
+      async (s) => {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
+        return crowdfund.claimRefund()
+      },
+    )
   }, [crowdfundAddress, claimRefundTx])
 
   // Pre-finalization
@@ -217,7 +222,6 @@ export function ClaimTab(props: ClaimTabProps) {
         >
           Claim Refund
         </button>
-        <TransactionFlow state={claimRefundTx.state} onReset={claimRefundTx.reset} successMessage="Refund claimed!" explorerUrl={getExplorerUrl()} />
       </div>
     )
   }
@@ -239,7 +243,6 @@ export function ClaimTab(props: ClaimTabProps) {
         >
           Claim Refund
         </button>
-        <TransactionFlow state={claimRefundTx.state} onReset={claimRefundTx.reset} successMessage="Refund claimed!" explorerUrl={getExplorerUrl()} />
       </div>
     )
   }
@@ -332,7 +335,6 @@ export function ClaimTab(props: ClaimTabProps) {
           >
             Claim ARM
           </button>
-          <TransactionFlow state={claimArmTx.state} onReset={claimArmTx.reset} successMessage="ARM claimed!" explorerUrl={getExplorerUrl()} />
         </div>
       )}
 

@@ -6,8 +6,6 @@ import { toast } from 'sonner'
 import { formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
-import { TransactionFlow } from './TransactionFlow'
-import { getExplorerUrl } from '@/config/network'
 
 export interface InviteLinkSectionProps {
   inviteLinks: UseInviteLinksResult
@@ -16,7 +14,7 @@ export interface InviteLinkSectionProps {
 }
 
 export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: InviteLinkSectionProps) {
-  const { links, createLink, revokeLink, revokeTx } = inviteLinks
+  const { links, createLink, revokeLink } = inviteLinks
   const [selectedHop, setSelectedHop] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -204,12 +202,6 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
         </div>
       )}
 
-      <TransactionFlow
-        state={revokeTx.state}
-        onReset={revokeTx.reset}
-        successMessage="Link revoked!"
-        explorerUrl={getExplorerUrl()}
-      />
     </div>
   )
 }

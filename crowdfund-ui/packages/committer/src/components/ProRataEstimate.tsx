@@ -2,6 +2,8 @@
 // ABOUTME: Shows per-hop breakdown with oversubscription warnings.
 
 import {
+  InfoTooltip,
+  TOOLTIPS,
   formatUsdc,
   formatArm,
   hopLabel,
@@ -21,7 +23,11 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
 
   return (
     <div className="rounded border border-border p-3 space-y-2">
-      <div className="text-xs font-medium text-muted-foreground">Estimated Allocation</div>
+      <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        <span>Estimated Allocation</span>
+        <InfoTooltip text={TOOLTIPS.allocation} label="What is allocation?" />
+        <InfoTooltip text={TOOLTIPS.proRata} label="What is pro-rata?" />
+      </div>
 
       {hopEstimates.map((est) => (
         <div key={est.hop} className="text-xs space-y-1">

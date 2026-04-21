@@ -96,6 +96,12 @@ export { CrowdfundToaster } from './components/CrowdfundToaster.js'
 
 export { LastTxChip } from './components/LastTxChip.js'
 
+export { InfoTooltip } from './components/InfoTooltip.js'
+export type { InfoTooltipProps } from './components/InfoTooltip.js'
+
+export { TOOLTIPS } from './lib/tooltips.js'
+export type { TooltipKey } from './lib/tooltips.js'
+
 export {
   lastTxAtom,
   useTxToast,

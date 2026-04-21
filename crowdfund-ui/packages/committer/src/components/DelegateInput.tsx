@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { isAddress } from 'ethers'
-import { Input, ToggleGroup, ToggleGroupItem } from '@armada/crowdfund-shared'
+import { InfoTooltip, Input, TOOLTIPS, ToggleGroup, ToggleGroupItem } from '@armada/crowdfund-shared'
 
 export interface DelegateInputProps {
   connectedAddress: string
@@ -24,7 +24,10 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
 
   return (
     <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">Delegate Address</div>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span>Delegate Address</span>
+        <InfoTooltip text={TOOLTIPS.delegate} label="What is a delegate?" />
+      </div>
       <ToggleGroup
         type="single"
         value={useSelf ? 'self' : 'custom'}

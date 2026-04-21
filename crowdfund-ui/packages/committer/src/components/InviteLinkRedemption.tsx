@@ -9,8 +9,10 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import {
   Button,
+  InfoTooltip,
   Input,
   Label,
+  TOOLTIPS,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
   formatUsdc,
@@ -263,7 +265,10 @@ export function InviteLinkRedemption() {
             <span className="font-mono text-xs">{inviteData.inviter.slice(0, 6)}...{inviteData.inviter.slice(-4)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Position</span>
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <span>Position</span>
+              <InfoTooltip text={TOOLTIPS.hop} label="What is a hop?" />
+            </span>
             <span>{hopLabel(targetHop)}</span>
           </div>
           {targetConfig && (
@@ -274,7 +279,10 @@ export function InviteLinkRedemption() {
           )}
           {targetConfig && targetConfig.maxInvites > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Invite slots</span>
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <span>Invite slots</span>
+                <InfoTooltip text={TOOLTIPS.slot} label="What is an invite slot?" />
+              </span>
               <span>{targetConfig.maxInvites} (you can invite {targetConfig.maxInvites} people to {hopLabel(targetHop + 1)})</span>
             </div>
           )}

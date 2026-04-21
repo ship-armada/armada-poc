@@ -6,7 +6,9 @@ import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
 import {
   Button,
+  InfoTooltip,
   Input,
+  TOOLTIPS,
   ToggleGroup,
   ToggleGroupItem,
   formatUsdc,
@@ -283,7 +285,10 @@ export function CommitTab(props: CommitTabProps) {
         <>
           {/* Eligibility display with inviter attribution */}
           <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">Your positions:</div>
+            <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <span>Your positions:</span>
+              <InfoTooltip text={TOOLTIPS.hop} label="What is a hop?" />
+            </div>
             {positions.map((pos) => (
               <div key={pos.hop} className="flex items-center justify-between text-xs">
                 <span>

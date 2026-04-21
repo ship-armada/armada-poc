@@ -6,6 +6,8 @@ import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
 import {
   Button,
+  InfoTooltip,
+  TOOLTIPS,
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
   formatUsdc,
@@ -275,7 +277,10 @@ export function ClaimTab(props: ClaimTabProps) {
       {/* Per-hop allocation breakdown */}
       {hopAllocations.length > 0 && (
         <div className="rounded border border-border p-3 space-y-2 text-xs">
-          <div className="text-muted-foreground font-medium text-sm">Settlement Breakdown</div>
+          <div className="flex items-center gap-1 text-muted-foreground font-medium text-sm">
+            <span>Settlement Breakdown</span>
+            <InfoTooltip text={TOOLTIPS.allocation} label="What is allocation?" />
+          </div>
           {hopAllocations.map((alloc) => {
             const pct = alloc.committed > 0n
               ? Math.round(Number(alloc.acceptedUsdc * 100n) / Number(alloc.committed))

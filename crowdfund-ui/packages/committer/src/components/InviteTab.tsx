@@ -6,7 +6,9 @@ import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
 import {
   Button,
+  InfoTooltip,
   Input,
+  TOOLTIPS,
   ToggleGroup,
   ToggleGroupItem,
   hopLabel,
@@ -179,7 +181,11 @@ export function InviteTab(props: InviteTabProps) {
     <div className="space-y-4">
       {/* Invite slot summary */}
       <div className="space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">Your Invite Slots</div>
+        <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+          <span>Your Invite Slots</span>
+          <InfoTooltip text={TOOLTIPS.slot} label="What is an invite slot?" />
+          <InfoTooltip text={TOOLTIPS.hop} label="What is a hop?" />
+        </div>
         {invitePositions.map((pos) => (
           <div
             key={pos.hop}

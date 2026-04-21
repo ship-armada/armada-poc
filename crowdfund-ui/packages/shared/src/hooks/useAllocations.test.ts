@@ -3,8 +3,10 @@
 
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor, act } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { createElement, type ReactNode } from 'react'
+import { renderHook, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAllocations } from './useAllocations.js'
 import type { AddressSummary } from '../lib/graph.js'
 
@@ -41,6 +43,14 @@ function makeSummary(
   }
 }
 
+function wrapper() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children)
+}
+
 describe('useAllocations', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -49,28 +59,32 @@ describe('useAllocations', () => {
 
   it('returns empty map when phase !== 1', () => {
     const summaries = new Map([['0xabc', makeSummary('0xabc')]])
-    const { result } = renderHook(() =>
-      useAllocations({
-        provider: {} as any,
-        contractAddress: '0xcontract',
-        phase: 0,
-        refundMode: false,
-        summaries,
-      }),
+    const { result } = renderHook(
+      () =>
+        useAllocations({
+          provider: {} as any,
+          contractAddress: '0xcontract',
+          phase: 0,
+          refundMode: false,
+          summaries,
+        }),
+      { wrapper: wrapper() },
     )
     expect(result.current.size).toBe(0)
   })
 
   it('returns empty map in refund mode', () => {
     const summaries = new Map([['0xabc', makeSummary('0xabc')]])
-    const { result } = renderHook(() =>
-      useAllocations({
-        provider: {} as any,
-        contractAddress: '0xcontract',
-        phase: 1,
-        refundMode: true,
-        summaries,
-      }),
+    const { result } = renderHook(
+      () =>
+        useAllocations({
+          provider: {} as any,
+          contractAddress: '0xcontract',
+          phase: 1,
+          refundMode: true,
+          summaries,
+        }),
+      { wrapper: wrapper() },
     )
     expect(result.current.size).toBe(0)
   })
@@ -83,14 +97,16 @@ describe('useAllocations', () => {
 
     mockComputeAllocation.mockResolvedValue([1000_000000000000000000n, 100_000000n])
 
-    const { result } = renderHook(() =>
-      useAllocations({
-        provider: { _isProvider: true } as any,
-        contractAddress: '0xcontract',
-        phase: 1,
-        refundMode: false,
-        summaries,
-      }),
+    const { result } = renderHook(
+      () =>
+        useAllocations({
+          provider: { _isProvider: true } as any,
+          contractAddress: '0xcontract',
+          phase: 1,
+          refundMode: false,
+          summaries,
+        }),
+      { wrapper: wrapper() },
     )
 
     await waitFor(() => {
@@ -106,14 +122,16 @@ describe('useAllocations', () => {
 
   it('returns empty map when provider is null', () => {
     const summaries = new Map([['0xabc', makeSummary('0xabc')]])
-    const { result } = renderHook(() =>
-      useAllocations({
-        provider: null,
-        contractAddress: '0xcontract',
-        phase: 1,
-        refundMode: false,
-        summaries,
-      }),
+    const { result } = renderHook(
+      () =>
+        useAllocations({
+          provider: null,
+          contractAddress: '0xcontract',
+          phase: 1,
+          refundMode: false,
+          summaries,
+        }),
+      { wrapper: wrapper() },
     )
     expect(result.current.size).toBe(0)
   })

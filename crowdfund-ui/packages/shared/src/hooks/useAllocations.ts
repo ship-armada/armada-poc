@@ -1,9 +1,10 @@
 // ABOUTME: Prefetches computeAllocation() results for unclaimed participants post-finalization.
-// ABOUTME: Batches RPC calls in chunks of 50 and merges with event-based allocation data.
+// ABOUTME: Uses react-query useQueries — dedupe + caching per address across subscribers.
 
-import { useEffect, useState, useRef } from 'react'
+import { useMemo } from 'react'
 import { Contract } from 'ethers'
 import type { JsonRpcProvider } from 'ethers'
+import { useQueries } from '@tanstack/react-query'
 import { CROWDFUND_ABI_FRAGMENTS } from '../lib/constants.js'
 import type { AddressSummary } from '../lib/graph.js'
 
@@ -21,7 +22,9 @@ export interface UseAllocationsConfig {
   summaries: Map<string, AddressSummary>
 }
 
-const BATCH_SIZE = 50
+/** Cache allocations for a long time — they're static post-finalization. */
+const ALLOCATION_STALE_MS = 60 * 60 * 1000 // 1h
+const ALLOCATION_GC_MS = 24 * 60 * 60 * 1000 // 24h
 
 /**
  * After finalization (phase === 1, not refundMode), prefetches theoretical
@@ -31,84 +34,60 @@ const BATCH_SIZE = 50
  */
 export function useAllocations(config: UseAllocationsConfig): Map<string, PrefetchedAllocation> {
   const { provider, contractAddress, phase, refundMode, summaries } = config
-  const [allocations, setAllocations] = useState<Map<string, PrefetchedAllocation>>(new Map())
-  const contractRef = useRef<Contract | null>(null)
-  const fetchedRef = useRef<Set<string>>(new Set())
 
-  useEffect(() => {
-    // Only activate post-finalization on the success path
-    if (phase !== 1 || refundMode || !provider || !contractAddress) {
-      return
-    }
+  const active = phase === 1 && !refundMode && !!provider && !!contractAddress
 
-    // Find unclaimed addresses not yet fetched by this hook
-    const unclaimed: string[] = []
+  // Unclaimed addresses that still need a computeAllocation() read.
+  // Stable reference unless the set of unclaimed addresses changes.
+  const unclaimed = useMemo(() => {
+    if (!active) return [] as string[]
+    const out: string[] = []
     for (const [addr, summary] of summaries) {
-      if (summary.allocatedArm === null && !fetchedRef.current.has(addr)) {
-        unclaimed.push(addr)
-      }
+      if (summary.allocatedArm === null) out.push(addr)
     }
+    return out
+  }, [active, summaries])
 
-    if (unclaimed.length === 0) return
+  // Memoised contract instance — same provider + address → same Contract.
+  const contract = useMemo(() => {
+    if (!provider || !contractAddress) return null
+    return new Contract(contractAddress, CROWDFUND_ABI_FRAGMENTS, provider)
+  }, [provider, contractAddress])
 
-    // Mark as fetched immediately to prevent duplicate requests
-    for (const addr of unclaimed) {
-      fetchedRef.current.add(addr)
-    }
-
-    if (!contractRef.current) {
-      contractRef.current = new Contract(contractAddress, CROWDFUND_ABI_FRAGMENTS, provider)
-    }
-    const contract = contractRef.current
-
-    async function fetchAllocations() {
-      const results = new Map<string, PrefetchedAllocation>()
-
-      // Process in batches
-      for (let i = 0; i < unclaimed.length; i += BATCH_SIZE) {
-        const batch = unclaimed.slice(i, i + BATCH_SIZE)
-        const batchResults = await Promise.all(
-          batch.map(async (addr) => {
-            try {
-              const [armAmount, refundUsdc] = await contract.computeAllocation(addr) as [bigint, bigint]
-              return { addr, armAmount, refundUsdc }
-            } catch {
-              // Skip addresses that fail (e.g., not a participant)
-              return null
-            }
-          }),
-        )
-
-        for (const result of batchResults) {
-          if (result) {
-            results.set(result.addr, {
-              armAmount: result.armAmount,
-              refundUsdc: result.refundUsdc,
-            })
-          }
+  const results = useQueries({
+    queries: unclaimed.map((addr) => ({
+      queryKey: ['crowdfundAllocation', contractAddress, addr],
+      queryFn: async (): Promise<PrefetchedAllocation | null> => {
+        if (!contract) return null
+        try {
+          const [armAmount, refundUsdc] = (await contract.computeAllocation(addr)) as [bigint, bigint]
+          return { armAmount, refundUsdc }
+        } catch {
+          // Not a participant, or read reverted — skip silently (matches prior behavior).
+          return null
         }
-      }
+      },
+      enabled: active && !!contract,
+      staleTime: ALLOCATION_STALE_MS,
+      gcTime: ALLOCATION_GC_MS,
+      retry: 1,
+    })),
+  })
 
-      setAllocations((prev) => {
-        const merged = new Map(prev)
-        for (const [addr, alloc] of results) {
-          merged.set(addr, alloc)
-        }
-        return merged
-      })
+  // Serialise the settled signal into a single string so the memo deps stay
+  // fixed-length across renders. dataUpdatedAt ticks when a query settles.
+  const settledSignal = useMemo(
+    () => results.map((r) => r.dataUpdatedAt).join(','),
+    [results],
+  )
+
+  return useMemo(() => {
+    const out = new Map<string, PrefetchedAllocation>()
+    for (let i = 0; i < unclaimed.length; i++) {
+      const data = results[i]?.data
+      if (data) out.set(unclaimed[i], data)
     }
-
-    fetchAllocations()
-  }, [provider, contractAddress, phase, refundMode, summaries])
-
-  // Reset when contract changes or phase goes back
-  useEffect(() => {
-    if (phase !== 1) {
-      setAllocations(new Map())
-      contractRef.current = null
-      fetchedRef.current = new Set()
-    }
-  }, [phase, contractAddress])
-
-  return allocations
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unclaimed, settledSignal])
 }

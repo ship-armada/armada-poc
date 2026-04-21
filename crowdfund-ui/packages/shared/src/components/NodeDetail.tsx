@@ -2,7 +2,6 @@
 // ABOUTME: Shows per-hop breakdown of commitment, cap, allocation, and invite info.
 
 import { formatUsdc, formatArm, hopLabel, truncateAddress } from '../lib/format.js'
-import { HOP_CONFIGS } from '../lib/constants.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
 
 export interface NodeDetailProps {
@@ -66,7 +65,6 @@ export function NodeDetail(props: NodeDetailProps) {
 
       {/* Per-hop breakdown: compact inline format */}
       {hopNodes.map((node) => {
-        const cap = node.hop < HOP_CONFIGS.length ? HOP_CONFIGS[node.hop].capUsdc : 0n
         const slotCount = node.invitesReceived
         return (
           <div key={`${node.address}-${node.hop}`} className="text-xs">

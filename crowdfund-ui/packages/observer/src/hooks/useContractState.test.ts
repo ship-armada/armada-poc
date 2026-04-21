@@ -134,7 +134,7 @@ describe('useContractState', () => {
   it('sets up polling interval and cleans up on unmount', async () => {
     vi.useFakeTimers()
 
-    const { result, unmount } = renderHook(() =>
+    const { unmount } = renderHook(() =>
       useContractState(mockProvider, '0xcontract', 5000),
     )
 

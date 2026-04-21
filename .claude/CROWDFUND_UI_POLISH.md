@@ -791,22 +791,107 @@ Landed as six commits on the umbrella, one per sub-goal from the pre-flight §13
 
 ### Phase 8 — react-hook-form + zod on commit / invite forms
 
-**Effort:** ~1 day
-**Depends on:** Phase 5
+**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 7 close-out audit (2026-04-21).
+**Effort:** ~1 day (possibly 1.5 if the shared `<AmountInput>` grows a Max-button tooltip + ceiling-source explanation, see §3 below).
+**Depends on:** Phase 5 (primitives already migrated; inline error styling is consistent). Phases 6 + 7 don't conflict but Phase 7 landed react-query wiring the Phase 8 agent should be aware of (§7 below).
 
-**Tasks:**
-1. Add `react-hook-form`, `zod`, `@hookform/resolvers`.
-2. Build a reusable `<AmountInput>` in shared: USDC unit label, Max button (wired to a prop-provided ceiling — wallet balance OR remaining allocation OR pro-rata max), thousand-separator formatting, inline error text.
-3. Convert Commit tab and Invite tab to react-hook-form + zod schemas. Validation rules:
-   - Amount > 0, ≤ balance, ≤ hop cap, ≤ remaining eligible slot
-   - Address is valid 0x... (use viem's `isAddress`)
-   - Invite count ≥ 1, ≤ remaining slots
-4. Disable submit button until form is valid. Show inline errors under fields, not in banners.
+**Pre-flight for the Phase 8 agent (read before writing code):**
 
-**Acceptance:**
-- Invalid amounts can't be submitted.
-- Errors appear under the relevant field, not globally.
-- Max button works in all three contexts (balance cap, hop cap, eligibility cap) — whichever is smallest wins and a tooltip explains why.
+1. **Dependencies to add (NONE are currently in the workspace):**
+   - `react-hook-form` — form state + submit orchestration.
+   - `zod` — schema-based validation (zod exists transitively via unrelated packages, but is not a declared project dep).
+   - `@hookform/resolvers` — wires zod into react-hook-form.
+   - Install into `crowdfund-ui/packages/committer/package.json` as direct deps (forms live in committer-local components). If the shared `<AmountInput>` takes a zod resolver, also add `zod` as a `peerDependency` on `packages/shared/` — do NOT add to shared's `dependencies` (duplicate-copy risk, same pattern as Phase 7.1 for `@tanstack/react-query`). Pin versions to match the Vite 7 / React 19 ecosystem.
+   - Install command from repo root: `npm install --legacy-peer-deps --workspace @armada/crowdfund-committer react-hook-form zod @hookform/resolvers` (the `legacy-peer-deps` is enforced by the root `.npmrc` but some paths don't inherit it cleanly — match the Phase 2 shadcn install pattern if install fails).
+   - **`viem` is already available** in committer deps (`^2.47.6`) — use `viem`'s `isAddress` for 0x validation in zod schemas per the plan's task list, but be aware that the existing code uses `ethers`' `isAddress` (`InviteTab.tsx`, `DelegateInput.tsx`, `ClaimTab.tsx`). The two are equivalent for this use — either is fine, but pick one and be consistent across the phase.
+
+2. **What "forms" means here — concrete call-site inventory.** Five components do form-ish work today. The Explore audit (2026-04-21) catalogued each:
+
+   | Component | File | Current state | Submit path |
+   |---|---|---|---|
+   | **Commit flow** | `crowdfund-ui/packages/committer/src/components/CommitTab.tsx` | 4 `useState` + 3 `useMemo`: `step` ('input' \| 'review'), `amounts: Map<hop, string>`, `approveUnlimited`, `commitSuccess`, plus computed `parsedAmounts`, `totalAmount`, `activeHopCount`, `existingCommitments`, `estimate`. Two-step state machine; `errors` Map computed inline at L167-179 keyed by hop. | `approvalTx.execute` (approve exact vs `MaxUint256`) then per-hop `commitTx.execute(label, async () => crowdfund.commit(hop, amount))` in sequence (L207-234). |
+   | **Invite issuance (direct)** | `crowdfund-ui/packages/committer/src/components/InviteTab.tsx` | 3 `useState`: `inviteeAddress`, `resolvedAddress`, `resolving`; `selectedHop` (number \| null, auto-selects first available at L68-72). ENS resolution debounced 500ms (L75-98). Duplicate-invite warning rendered as amber hint at L105-112, 270-274. | `crowdfund.invite(effectiveAddress, selectedHop)` (L139). Also has a self-invite button (L211) which bypasses the address input entirely — does NOT reuse the main form. |
+   | **Invite link creation** | `crowdfund-ui/packages/committer/src/components/InviteLinkSection.tsx` | 2 `useState`: `selectedHop`, `creating`. No other fields — it's a hop selector + "Create link" button pair. Amber "pending exceeds remaining slots" warning at L171-175. | Signs EIP-712 invite link; no contract call. |
+   | **Invite link redemption** | `crowdfund-ui/packages/committer/src/components/InviteLinkRedemption.tsx` | 2 `useState`: `amountInput` (string), `preCheckError`. Plus `parsedAmount` memo (L175), `balanceInsufficient` check (L200). Pre-check runs against `usedNonces`, inviter's remaining slots, and `windowEnd` (L101-150). | `usdc.approve` then `crowdfund.commitWithInvite(inviter, fromHop, nonce, deadline, signature, parsedAmount)` (L202-237). **Rendered outside AppShell** — standalone `/invite` route. |
+   | **Delegate input (ARM claim)** | `crowdfund-ui/packages/committer/src/components/DelegateInput.tsx` | 1 `useState`: `useSelf` (bool, ToggleGroup). Validation via `isAddress(value)` from ethers at L23 + L57. Value is prop-controlled (lives in ClaimTab). | Parent `onChange` callback — no direct contract call. |
+
+3. **The `<AmountInput>` decision (P8-D1 — lock before coding).** The plan task says build it in shared with "USDC unit label, Max button, thousand-separator formatting, inline error text". Three consumer sites: `CommitTab` per-hop input, `InviteLinkRedemption` amount, and `DelegateInput` is NOT an amount input so stays as-is. The Max button ceiling changes per site:
+
+   | Site | Max ceiling today | Source |
+   |---|---|---|
+   | `CommitTab` (per hop) | `min(pos.remaining, balance - (totalAmount - currentHopAmount))` — position cap minus already-committed AND remaining wallet balance across all hops | Computed inline at `CommitTab.tsx:190-196` |
+   | `InviteLinkRedemption` | `min(hopCap, walletBalance)` — hop cap (from `HOP_CONFIGS`) and wallet balance | Derived inline; check `InviteLinkRedemption.tsx` around the amount input |
+
+   Two paths:
+   - **P8-D1.a** `<AmountInput>` takes a single `max: bigint` prop; caller computes the min-of-sources. Simplest, but the "tooltip explains which ceiling is binding" acceptance criterion (L809) is harder — the primitive doesn't know the source breakdown.
+   - **P8-D1.b** `<AmountInput>` takes a `ceilings: { label: string; value: bigint }[]` prop array; the Max button picks the smallest and a tooltip shows "(limited by: {binding label})". Matches the acceptance criterion cleanly.
+
+   **Recommendation: P8-D1.b.** More work but the tooltip is the visible payoff the acceptance criterion targets.
+
+4. **Validation rules from the plan (L801-803) grounded in the code:**
+   - **Amount > 0, ≤ balance, ≤ hop cap, ≤ remaining eligible slot** — today's CommitTab has these as separate checks in its `errors` Map (L167-179): min-commit (from `CROWDFUND_CONSTANTS`), exceeds-remaining-cap. Balance check exists as an amber non-blocking warning at L164 + L376-380 (`balanceInsufficient`). **Phase 8 should convert the amber warning into a blocking zod rule** or preserve its "warn but don't block submit" semantics — ask the user if unclear. Recommendation: **keep balance check as a blocking validation** now that it's a form library concern; the amber non-blocking pattern was a holdover from ad-hoc useState.
+   - **Address is valid 0x...** — use `viem` or `ethers` `isAddress`. Match existing pattern (ethers) for consistency unless you're explicitly switching.
+   - **Invite count ≥ 1, ≤ remaining slots** — Phase 8 plan mentions this, but invite count is not a user-editable field today. `InviteTab` has no count selector; `InviteLinkSection` creates one link per click. If Phase 8 is adding a new "create N links at once" bulk flow, clarify scope with the user. Otherwise this rule has no corresponding field.
+
+5. **`useProRataEstimate` integration (keep as-is, it's not a form).** Signature `(commitAmounts: Map<hop, bigint>, existingCommitments: Map<hop, bigint>, hopStats, saleSize)`. Takes the parsed commit amounts as input. When forms become react-hook-form-driven, `commitAmounts` will be derived from the form's `watch()` output — remember to memoize the Map construction so `useProRataEstimate`'s dep array doesn't churn on every keystroke.
+
+6. **Inline-errors-under-fields requirement (plan L804).** Phase 5.5 / 6.1 built `InfoTooltip` and `ErrorAlert`; Phase 8's inline field errors are neither — they're a third pattern ("small `text-destructive` text below an input"). The current ad-hoc pattern in CommitTab (L383-389) reads `errors.get(hop)` and renders `<p className="text-xs text-destructive">`. Match that style with shadcn's `Form` + `FormMessage` if you install the shadcn Form primitive (via `npx shadcn@latest add form` from `packages/shared/` following the regeneration workflow documented in `packages/shared/CLAUDE.md`). The shadcn Form primitive is react-hook-form-aware and idiomatic — **highly recommended**.
+   - If you install it: add `form` to the `barrel` exports in `packages/shared/src/index.ts`, same post-processing steps as Phase 2/5.4 (move out of `./@/` dir, `@/` → relative `.js` imports, strip `"use client"`, ABOUTME header).
+   - If you skip it: handwrite a `<FieldError>` helper in shared that's visually consistent with the 4 existing inline sites (DelegateInput L57, CommitTab L383-389, InviteTab L262, InviteLinkRedemption L367). The pre-flight §4 of Phase 6 left those inline by design; Phase 8 now promotes them to form-library-driven errors but the visual can stay as-is.
+
+7. **Phase 7 deviations Phase 8 should be aware of:**
+   - **react-query is now the source of truth for `useAllowance`.** `refresh()` now calls `query.refetch()` — call semantics unchanged but under the hood it invalidates + refetches. Phase 8 should not introduce a new allowance read outside this hook.
+   - **`useContractState.ts` is still duplicated** between observer and committer (byte-identical). Phase 8 may want to touch `useAllowance`/`useContractState` call sites inside the forms; if so, keep the duplication — promoting to shared is a separate cleanup commit, flagged in Phase 7 actuals.
+   - **`StaleDataBanner`** is mounted above the content container in both apps (Phase 7.5). If Phase 8 changes the top-of-content layout (shouldn't, but in case form errors get a banner), don't bury the stale-data banner below them.
+   - **`ensMapAtom` is still mirrored from react-query** by `useENS`. The 500ms debounced ENS resolution inside `InviteTab.tsx` (L75-98) is now redundant with react-query's deduplication — Phase 8 can simplify to `const resolvedAddress = useENS({ provider, addresses: [inviteeAddress] }).resolve(inviteeAddress)` if it cleans up the flow, but it's NOT required for this phase. Flag if you touch it.
+   - **Test files must wrap `renderHook` / `render` in `<QueryClientProvider>`.** See `crowdfund-ui/packages/observer/src/App.test.tsx:100-110` and `packages/shared/src/hooks/useAllocations.test.ts:49-55` for the `makeWrapper()` pattern. Any new test added in Phase 8 that renders a form component from these files must do the same.
+
+8. **TransactionFlow integration — preserve the Phase 4 handoff.** The commit, invite, and redemption submit handlers wrap `tx.execute(label, async () => contractCall())` from `useTransactionFlow(signer, { explorerUrl })`. react-hook-form's `handleSubmit(data => ...)` should call `tx.execute` inside the submit handler — do NOT replace `useTransactionFlow` with react-hook-form's own submit states. The toasts + last-tx chip depend on `useTransactionFlow`'s atom bridge.
+
+9. **Out of scope for Phase 8 (don't touch):**
+   - `useTransactionFlow` / `useTxToast` / `lastTxAtom` — the tx lifecycle stays exactly as Phase 4 shipped it.
+   - `InviteLinkSection.tsx` as a "form" — it's a hop selector + create button; no field validation. Convert the hop selector to a zod-validated field only if it pays off; otherwise leave alone.
+   - ENS resolution logic inside `InviteTab` — optional simplification flagged in §7.
+   - The self-invite button in `InviteTab` (L211) — it bypasses the address input. Keep as a separate action, not a form submit path.
+   - Admin app (D7).
+   - `useContractState` duplication — Phase 7 follow-up, not Phase 8.
+   - framer-motion animations — Phase 9.
+   - Graph spike — Phase 10.
+   - Pre-existing #259 baseline errors (full list below).
+
+10. **Pre-existing baseline — do NOT fix inside Phase 8 commits.** `tsc -b` baseline after Phase 7:
+    - **Observer**: clean.
+    - **Shared**: `rpc.test.ts:64` `JsonRpcResult` property-missing error.
+    - **Committer**: `App.tsx:185` unused `walletENS`; `CommitTab.tsx:23` unused `HOP_CONFIGS`; `InviteLinkRedemption.tsx:53` unused `isConnected`; `wagmiAdapter.ts:20` strict-null; test files (`ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`) — unused imports + type mismatches.
+    - **Admin**: `useRole.test.ts` missing test-runner type definitions.
+    - Phase 8 introduces none of these; validation gate is "stay at the current baseline, don't add new errors". Note: Phase 7.3 fixed two shared test errors (`useAllocations.test.ts` unused `beforeEach`/`act`) incidentally while migrating that file — similar incidental cleanup is fine in Phase 8 if a file must change anyway (e.g. `CommitTab.tsx`'s unused `HOP_CONFIGS` disappears naturally if the form rewrite drops that import).
+    - **`useProRataEstimate.test.ts` has 6 runtime failures** in addition to its tsc errors. Baseline. Phase 8 should neither fix them nor regress the pass count (62/68).
+
+11. **Validation gates (same pattern as Phases 5–7):**
+    - `npx vite build` in observer + committer + admin, all green.
+    - `npx tsc -b` in observer → clean. Shared/committer/admin → stay at baseline (no new errors).
+    - `npx vitest run` in committer → 62 pass / 6 baseline `useProRataEstimate` failures. No new failures.
+    - `npx vitest run` in observer → 11 pass / 2 baseline `App.test.tsx` header-text failures.
+    - `npx vitest run` in shared → full pass (the 17 atom tests + 6 useStaleDataBanner tests + 4 useAllocations tests + 7 useENS tests).
+    - Manual smoke at 375px — form fields + error text do not horizontally overflow; Max button tap target ≥ 40px.
+    - Manual browser smoke against a local chain: (a) enter invalid amount → submit button disabled + inline error visible; (b) enter valid amount → Max button shows binding-ceiling tooltip; (c) commit flow completes end-to-end and toasts fire; (d) redemption flow completes end-to-end.
+
+12. **Commit granularity suggestion:**
+    - 8.1 — install deps (react-hook-form + zod + @hookform/resolvers); install shadcn `form` primitive into shared and barrel-export; zero behavior change.
+    - 8.2 — `<AmountInput>` in shared with P8-D1.b API. Export from barrel. No call-site changes.
+    - 8.3 — migrate `CommitTab` to react-hook-form + zod (per-hop `FieldArray`-ish — or a flat schema keyed by hop number). Swap in `<AmountInput>`.
+    - 8.4 — migrate `InviteTab` to react-hook-form + zod. Consider the ENS-resolution simplification noted in §7.
+    - 8.5 — migrate `InviteLinkRedemption` to react-hook-form + zod. Swap in `<AmountInput>`.
+    - 8.6 — migrate `DelegateInput` to react-hook-form + zod for address validation. Tiny scope.
+    - Each commit should leave the build + tsc + vitest green.
+
+13. **Outstanding follow-ups from prior phases that Phase 8 will not resolve** (tracked for visibility, not action):
+    - **Manual browser smoke owed for Phases 5, 6, 7.** None of these were smoke-tested against a running local chain. Recommend consolidating into a single pre-merge smoke sweep once the polish pass is ready to land on main.
+    - **`useContractState.ts` duplication** between observer and committer (identical files; Phase 7.4 deferred the promote-to-shared cleanup).
+    - **Observer `App.test.tsx` header-text failures** (stale "Armada Crowdfund Observer" assertions that lost relevance after Phase 3's AppShell refactor). Fix is to update the test expectations; not urgent, not a Phase 8 concern.
+    - **Committer `App.tsx:185` unused `walletENS`** — now that Phase 7.2 simplified `useENS`, consider whether `walletENS` was meant to drive something and got orphaned. Outside scope.
+
+14. **Branch + commit rule.** Check out `iskay/crowdfund-ui-polish` directly. No feature branches. Land each sub-commit on the umbrella. Do not open a PR to `main` — the landing decision is deferred until every phase has landed (§0).
 
 ---
 

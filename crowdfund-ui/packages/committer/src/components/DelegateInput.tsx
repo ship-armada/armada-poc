@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { isAddress } from 'ethers'
+import { Input } from '@armada/crowdfund-shared'
 
 export interface DelegateInputProps {
   connectedAddress: string
@@ -44,12 +45,12 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
       </div>
       {!useSelf && (
         <div>
-          <input
+          <Input
             type="text"
             placeholder="0x..."
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full rounded border border-input bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="text-xs font-mono"
           />
           {value && !isValid && (
             <div className="text-xs text-destructive mt-1">Invalid address</div>

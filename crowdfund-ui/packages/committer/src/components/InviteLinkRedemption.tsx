@@ -9,6 +9,8 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import {
   Button,
+  Input,
+  Label,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
   formatUsdc,
@@ -316,7 +318,9 @@ export function InviteLinkRedemption() {
 
             <div>
               <div className="flex items-center justify-between">
-                <label className="text-xs text-muted-foreground">Commitment Amount (USDC)</label>
+                <Label htmlFor="invite-redeem-amount" className="text-xs font-normal text-muted-foreground">
+                  Commitment Amount (USDC)
+                </Label>
                 {hopCap > 0n && (
                   <Button
                     variant="link"
@@ -328,13 +332,14 @@ export function InviteLinkRedemption() {
                   </Button>
                 )}
               </div>
-              <input
+              <Input
+                id="invite-redeem-amount"
                 type="text"
                 inputMode="decimal"
                 placeholder="0"
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
-                className="w-full rounded border border-input bg-background px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="mt-1 text-sm"
               />
               {hopCap > 0n && (
                 <div className="text-xs text-muted-foreground mt-1">

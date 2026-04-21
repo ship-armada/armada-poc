@@ -6,6 +6,7 @@ import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
 import {
   Button,
+  Input,
   formatUsdc,
   parseUsdcInput,
   hopLabel,
@@ -318,13 +319,13 @@ export function CommitTab(props: CommitTabProps) {
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     type="text"
                     inputMode="decimal"
                     placeholder="0"
                     value={amounts.get(pos.hop) ?? ''}
                     onChange={(e) => handleAmountChange(pos.hop, e.target.value)}
-                    className="flex-1 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="flex-1 text-sm"
                   />
                   <Button
                     variant="secondary"

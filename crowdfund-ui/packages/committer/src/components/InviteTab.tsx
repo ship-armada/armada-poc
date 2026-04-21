@@ -6,6 +6,7 @@ import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
 import {
   Button,
+  Input,
   hopLabel,
   formatUsdc,
   CROWDFUND_ABI_FRAGMENTS,
@@ -229,12 +230,12 @@ export function InviteTab(props: InviteTabProps) {
 
         {/* Address input */}
         <div>
-          <input
+          <Input
             type="text"
             placeholder="0x... or ENS name"
             value={inviteeAddress}
             onChange={(e) => setInviteeAddress(e.target.value)}
-            className="w-full rounded border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="text-sm font-mono"
           />
           {/* ENS resolution display */}
           {resolving && (

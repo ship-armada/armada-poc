@@ -503,10 +503,89 @@ Landed as five commits on the umbrella, one per pre-agreed decision seam. The pr
 
 ### Phase 6 — Skeletons, empty states, error boundaries
 
+**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 5 close-out audit (2026-04-21).
 **Effort:** ~1 day
-**Depends on:** Phase 2, 5
+**Depends on:** Phase 2 (Skeleton, Alert primitives installed), Phase 5 (Button/Input/Tabs migration complete so error/empty chrome lives on top of a consistent baseline).
 
-**Tasks:**
+**Pre-flight for the Phase 6 agent (read before writing code):**
+
+1. **Primitives are ready.** `Skeleton`, `Alert`, `AlertTitle`, `AlertDescription` are already barrel-exported from `@armada/crowdfund-shared` (see `packages/shared/src/index.ts`). Do not re-install. If you need a variant Alert ships without (e.g. `warning`, `info`), extend `alertVariants` CVA in place in `packages/shared/src/components/ui/alert.tsx` rather than wrapping.
+
+2. **No existing ErrorBoundary anywhere.** `componentDidCatch` / `getDerivedStateFromError` search returns zero hits in observer, committer, and shared. Greenfield — you are adding the first one. Plan ships it at `packages/shared/src/components/ErrorBoundary.tsx`.
+
+3. **Concrete inline-error hotspots to unify under `<ErrorAlert>` (destructive block panels, 6 sites):**
+   - `observer/src/App.tsx:260` — deployment/state error panel.
+   - `observer/src/App.tsx:267` — "Crowdfund Cancelled" full panel.
+   - `committer/src/App.tsx:258` — deployment/state error panel.
+   - `committer/src/components/InviteLinkRedemption.tsx:303` — invalid link / precondition failure.
+   - `committer/src/components/InviteLinkRedemption.tsx:309` — link expired or revoked.
+   - `committer/src/components/ClaimTab.tsx:215` — claim failure or precondition.
+
+   Inline `text-destructive` validation errors (not block-level, just red text next to a field) are a judgement call. My recommendation: **leave them as inline text**, don't wrap in `<Alert>`. Hit sites: `DelegateInput.tsx:57`, `CommitTab.tsx:383`, `InviteTab.tsx:262`, `InviteLinkRedemption.tsx:367`. An Alert around each field-level error is visual noise.
+
+4. **Amber/warning blocks — decision to lock (P6-D1):** 12 amber-color sites exist across CommitTab, InviteTab, InviteLinkSection, InviteLinkRedemption, ProRataEstimate, ClaimTab, and observer `App.tsx:277`. Some are block panels (`border-amber-500/50 bg-amber-500/10` — "Refund Mode", "Below Minimum Raise", "Crowdfund was canceled", "duplicate invite already issued") and some are inline `text-amber-500` warning lines. Two paths:
+   - **P6-D1.a** Add a `warning` variant to `alertVariants` CVA and promote only the block panels (5 sites). Leave the inline amber text alone — those are sub-field warnings, not alert-worthy.
+   - **P6-D1.b** Leave amber alone entirely this phase; do only the 6 destructive ones. Amber → Alert can come later.
+   
+   Recommendation: **P6-D1.a.** Consistent treatment of "here is a block-level heads-up you need to read" is the whole point of ErrorAlert. Inline warnings stay inline.
+
+5. **Skeleton targets and hazards:**
+   - **StatsBar** renders empty stat cards when `hopStats.length === 0` (see `packages/shared/src/components/StatsBar.tsx`). Wrap the whole bar in `<Skeleton>` during the initial `useContractEvents` fetch; do not try to skeletonise each stat tile individually.
+   - **TableView** has a built-in empty-state cell at `packages/shared/src/components/TableView.tsx:404–413` ("No participants yet" / "No matching participants"). For loading, render ~5 skeleton `<tr>` rows inside the `<tbody>`; for empty, promote the existing plain-text cell to the new shared `<EmptyState>` with a lucide icon (e.g. `Users` or `Search`).
+   - **TreeView** always renders a ROOT node even with an empty graph; no visible "blank" state. Skeleton for TreeView should be a centered pulsing placeholder during the first load, then swap to the real canvas. Keep the hand-off atomic — don't blink between skeleton and rendered tree while d3-hierarchy mounts.
+   - **Transactional spinners** (LastTxChip uses `Loader2` + `CircleDashed` with `animate-spin`) — these are **not Skeleton candidates.** They're ongoing-activity indicators, not data-loading placeholders. Leave them.
+   - **Dependent render hazard:** `InviteTab.tsx:253–254` has `{resolving && (<div>Resolving ENS name...</div>)}` that gates subsequent conditional renders of the resolved address. A naïve swap to `<Skeleton>` would lose the visibility toggle chaining. Either keep the text "Resolving ENS name..." (acceptable — it's inline status, not a data-load skeleton) or replace with `<Skeleton className="h-3 w-32" />` but preserve the surrounding conditionals.
+
+6. **Empty-state targets (create `packages/shared/src/components/EmptyState.tsx`):** Each takes `{ icon, title, description?, action? }` per the plan task list. Call sites that should be promoted to it:
+   - `TableView.tsx:404–413` — "No participants yet" / "No matching participants" (the current plain-text cell).
+   - `InviteTab.tsx:162` — "No Invite Slots Available" center block.
+   - `ClaimTab.tsx:365` — "No allocation found for this address." center block.
+   - `ClaimTab.tsx:192–207` (already-claimed "All Claims Complete" panel) — debatable. My recommendation: **leave it alone.** It's a terminal-success screen, not an empty state; the plan says EmptyState is for "absence of data", not "workflow complete".
+   - `CommitTab.tsx:232–238` — "Not Eligible" center block. Good EmptyState candidate.
+   - `committer App.tsx:327–331` — "Connect your wallet to participate" with `<ConnectButton/>`. Good EmptyState candidate with a primary action slot.
+   
+   StatsBar and TreeView do **not** need empty states — they handle zero-data gracefully (StatsBar shows empty tiles; TreeView shows a lonely ROOT node). Data-layer concerns, not empty-state concerns.
+
+7. **ErrorBoundary placement:**
+   - App root, once per app (observer + committer, admin optional). Catches fatal errors; shows "Something went wrong" card with a reload button.
+   - Per-panel wrappers on observer's tree, table, and stats; committer's same plus its action panel. Isolates one failing panel from blanking the whole page.
+   - Shared implementation in `packages/shared/src/components/ErrorBoundary.tsx` — use the classic class-component pattern (`componentDidCatch`, `getDerivedStateFromError`). Export a `<ErrorBoundary fallback={...}>` + a default `<DefaultErrorFallback>` card built on shadcn `<Alert variant="destructive">` + a `<Button onClick={() => window.location.reload()}>Reload</Button>`.
+   - **Do not** add error boundary around individual rows or small widgets — the plan says "each major panel", not "every component".
+
+8. **Phase 5 deviations Phase 6 should be aware of:**
+   - **Per-component `TooltipProvider`** — each `InfoTooltip` instance from Phase 5.5 mounts its own provider. If Phase 6 introduces >5 more tooltips, consider promoting to a single provider at AppShell. Otherwise stick with the per-component pattern — it keeps the `/invite` route (outside AppShell) working without bootstrap edits.
+   - **ToggleGroup active-style override** — each `<ToggleGroupItem>` from Phase 5.4 carries `data-[state=on]:bg-primary data-[state=on]:text-primary-foreground` className because the shipped `toggleVariants` active-state is `bg-accent` which reads as a hover glow. If Phase 6 touches these call sites (it probably won't), preserve the pattern or promote it into `toggleVariants` in place.
+   - **Tabs `line` variant recoloured.** Active tab underline is `after:bg-primary` (brand cyan). No impact on Phase 6 but worth knowing for visual consistency when you design Alert colors.
+   - **Badge CVA extended with 9 domain variants** (`hop-*`, `status-*`) — Phase 6's ErrorAlert should not reproduce status-pill semantics in block Alerts. Alert = panel/block; Badge = inline pill. Don't blur them.
+   - **Manual browser smoke not yet performed on Phase 5.** Phase 6 agent should run the local stack once (`npm run chains && npm run setup && npm run armada-relayer && npm run crowdfund:observer` + `crowdfund:committer`) and at minimum connect a wallet, try a commit, and hit a claim/invite flow — verifying Phase 5 didn't quietly break anything before stacking Phase 6 on top.
+   - **Validation baseline:** `npx tsc -b` in observer is clean; shared/committer/admin sit at pre-existing #259 baseline (unused `walletENS`, `HOP_CONFIGS`, assorted test file type errors). Phase 6 must not introduce *new* errors but should not attempt to fix baseline either.
+
+9. **Out of scope for Phase 6 (don't touch):**
+   - Inline red validation text next to form fields (judgement call above — leave inline).
+   - Success messages like "All positions filled", "All Claims Complete" (workflow terminations, not empty/error states).
+   - TanStack Query integration — that's Phase 7, which *depends on* Phase 6's error boundaries catching query failures.
+   - React error boundary on individual rows/widgets.
+   - LastTxChip spinners (ongoing-activity, not loading chrome).
+   - Admin app (D7).
+   - Pre-existing #259 baseline errors.
+   - Phase 1 `theme.css` token values.
+
+10. **Commit granularity suggestion (four commits seems natural):**
+    - 6.1 — shared `<ErrorAlert>` component + optional `alertVariants.warning` (per P6-D1) + swap the 6 destructive block panels + 5 amber block panels (if D1.a).
+    - 6.2 — shared `<EmptyState>` component + swap the 5 call sites listed above (TableView cell, InviteTab/ClaimTab/CommitTab center blocks, committer wallet-gate).
+    - 6.3 — Skeleton placeholders for StatsBar/TableView/TreeView initial loads.
+    - 6.4 — `ErrorBoundary` at app root + major panels.
+
+11. **Validation gates (same pattern as Phase 5):**
+    - `npx vite build` in observer + committer + admin, all green.
+    - `npx tsc -b` in observer clean; shared/committer/admin at #259 baseline (no new errors).
+    - `npx vitest run` in committer — only `useProRataEstimate.test.ts` failures expected (baseline).
+    - `rg '(bg|border)-destructive/[0-9]+' crowdfund-ui/packages/{observer,committer}/src` — only the 4 inline `text-destructive` sites from item 3 should remain (block panels all migrated to ErrorAlert).
+    - Mobile smoke at 375px — ErrorAlert doesn't horizontally overflow; Skeletons match their target component's width.
+    - Manual smoke: disconnect the RPC in DevTools mid-session → error boundary should surface, not a blank screen.
+
+**Tasks (from original plan, unchanged — pre-flight above grounds each):**
+
 1. Skeleton loaders (shadcn `<Skeleton>`) for:
    - TableView rows during initial event fetch
    - StatsBar numbers before first data

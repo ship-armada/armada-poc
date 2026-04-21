@@ -105,6 +105,12 @@ export type { ErrorAlertProps } from './components/ErrorAlert.js'
 export { EmptyState } from './components/EmptyState.js'
 export type { EmptyStateProps } from './components/EmptyState.js'
 
+export { ErrorBoundary, DefaultErrorFallback } from './components/ErrorBoundary.js'
+export type {
+  ErrorBoundaryProps,
+  DefaultErrorFallbackProps,
+} from './components/ErrorBoundary.js'
+
 export { TOOLTIPS } from './lib/tooltips.js'
 export type { TooltipKey } from './lib/tooltips.js'
 

@@ -23,6 +23,7 @@ import {
   TabsTrigger,
   EmptyState,
   ErrorAlert,
+  ErrorBoundary,
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
@@ -255,25 +256,28 @@ export function App() {
       headerRight={walletChrome}
       mobileMenu={mobileMenu}
     >
+     <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
         {/* Wallet error */}
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
 
         {/* Stats bar with connected user summary */}
-        <StatsBar
-          hopStats={contractState.hopStats}
-          totalCommitted={contractState.totalCommitted}
-          cappedDemand={contractState.cappedDemand}
-          saleSize={contractState.saleSize}
-          phase={contractState.phase}
-          armLoaded={contractState.armLoaded}
-          seedCount={contractState.seedCount}
-          participantCount={contractState.participantCount}
-          windowEnd={contractState.windowEnd}
-          blockTimestamp={contractState.blockTimestamp}
-          connectedSummary={connectedSummary}
-          isLoading={eventsLoading}
-        />
+        <ErrorBoundary>
+          <StatsBar
+            hopStats={contractState.hopStats}
+            totalCommitted={contractState.totalCommitted}
+            cappedDemand={contractState.cappedDemand}
+            saleSize={contractState.saleSize}
+            phase={contractState.phase}
+            armLoaded={contractState.armLoaded}
+            seedCount={contractState.seedCount}
+            participantCount={contractState.participantCount}
+            windowEnd={contractState.windowEnd}
+            blockTimestamp={contractState.blockTimestamp}
+            connectedSummary={connectedSummary}
+            isLoading={eventsLoading}
+          />
+        </ErrorBoundary>
 
         {/* Mobile tab bar — visible below lg breakpoint */}
         <Tabs
@@ -296,29 +300,33 @@ export function App() {
           {/* Observer panel (left ~60%) — hidden on mobile when participate tab active */}
           <div className={`lg:col-span-3 space-y-3 ${mobileTab === 'participate' ? 'hidden lg:block' : ''}`}>
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
-            <TreeView
-              graph={graph}
-              selectedAddress={selectedAddress ?? wallet.address}
-              onSelectAddress={selectAddress}
-              searchQuery={searchQuery}
-              phase={contractState.phase}
-              resolveENS={resolveENS}
-              connectedAddress={wallet.address}
-              isLoading={eventsLoading}
-            />
-            <TableView
-              summaries={summaryArray}
-              nodes={nodes}
-              selectedAddress={selectedAddress ?? wallet.address}
-              onSelectAddress={selectAddress}
-              searchQuery={searchQuery}
-              phase={contractState.phase}
-              resolveENS={resolveENS}
-              hopStats={contractState.hopStats}
-              saleSize={contractState.saleSize}
-              connectedAddress={wallet.address}
-              isLoading={eventsLoading}
-            />
+            <ErrorBoundary>
+              <TreeView
+                graph={graph}
+                selectedAddress={selectedAddress ?? wallet.address}
+                onSelectAddress={selectAddress}
+                searchQuery={searchQuery}
+                phase={contractState.phase}
+                resolveENS={resolveENS}
+                connectedAddress={wallet.address}
+                isLoading={eventsLoading}
+              />
+            </ErrorBoundary>
+            <ErrorBoundary>
+              <TableView
+                summaries={summaryArray}
+                nodes={nodes}
+                selectedAddress={selectedAddress ?? wallet.address}
+                onSelectAddress={selectAddress}
+                searchQuery={searchQuery}
+                phase={contractState.phase}
+                resolveENS={resolveENS}
+                hopStats={contractState.hopStats}
+                saleSize={contractState.saleSize}
+                connectedAddress={wallet.address}
+                isLoading={eventsLoading}
+              />
+            </ErrorBoundary>
             <div className="text-xs text-muted-foreground text-center">
               {events.length} events loaded {eventsLoading && '(syncing...)'}
             </div>
@@ -326,6 +334,7 @@ export function App() {
 
           {/* Action panel (right ~40%) — hidden on mobile when network tab active */}
           <div className={`lg:col-span-2 ${mobileTab === 'network' ? 'hidden lg:block' : ''}`}>
+           <ErrorBoundary>
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card">
                 <EmptyState
@@ -417,9 +426,11 @@ export function App() {
                 </div>
               </div>
             )}
+           </ErrorBoundary>
           </div>
         </div>
       </div>
+     </ErrorBoundary>
     </AppShell>
   )
 }

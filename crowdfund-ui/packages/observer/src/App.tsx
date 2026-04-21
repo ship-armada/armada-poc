@@ -21,6 +21,7 @@ import {
   TabsList,
   TabsTrigger,
   ErrorAlert,
+  ErrorBoundary,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -224,32 +225,36 @@ export function App() {
   }
 
   const treeView = (
-    <TreeView
-      graph={graph}
-      selectedAddress={selectedAddress}
-      onSelectAddress={selectAddress}
-      onHoverAddress={setHoveredAddress}
-      searchQuery={searchQuery}
-      phase={contractState.phase}
-      resolveENS={resolveENS}
-      isLoading={eventsLoading}
-    />
+    <ErrorBoundary>
+      <TreeView
+        graph={graph}
+        selectedAddress={selectedAddress}
+        onSelectAddress={selectAddress}
+        onHoverAddress={setHoveredAddress}
+        searchQuery={searchQuery}
+        phase={contractState.phase}
+        resolveENS={resolveENS}
+        isLoading={eventsLoading}
+      />
+    </ErrorBoundary>
   )
 
   const tableView = (
-    <TableView
-      summaries={summaryArray}
-      nodes={nodes}
-      selectedAddress={selectedAddress}
-      onSelectAddress={selectAddress}
-      searchQuery={searchQuery}
-      phase={contractState.phase}
-      resolveENS={resolveENS}
-      hoveredAddress={hoveredAddress}
-      hopStats={contractState.hopStats}
-      saleSize={contractState.saleSize}
-      isLoading={eventsLoading}
-    />
+    <ErrorBoundary>
+      <TableView
+        summaries={summaryArray}
+        nodes={nodes}
+        selectedAddress={selectedAddress}
+        onSelectAddress={selectAddress}
+        searchQuery={searchQuery}
+        phase={contractState.phase}
+        resolveENS={resolveENS}
+        hoveredAddress={hoveredAddress}
+        hopStats={contractState.hopStats}
+        saleSize={contractState.saleSize}
+        isLoading={eventsLoading}
+      />
+    </ErrorBoundary>
   )
 
   return (
@@ -259,6 +264,7 @@ export function App() {
       headerRight={<ParticipateLink />}
       mobileMenu={<ObserverMobileMenu />}
     >
+     <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
         {/* Error banner */}
         {(eventsError || contractState.error) && (
@@ -280,19 +286,21 @@ export function App() {
         )}
 
         {/* Stats bar */}
-        <StatsBar
-          hopStats={contractState.hopStats}
-          totalCommitted={contractState.totalCommitted}
-          cappedDemand={contractState.cappedDemand}
-          saleSize={contractState.saleSize}
-          phase={contractState.phase}
-          armLoaded={contractState.armLoaded}
-          seedCount={contractState.seedCount}
-          participantCount={contractState.participantCount}
-          windowEnd={contractState.windowEnd}
-          blockTimestamp={contractState.blockTimestamp}
-          isLoading={eventsLoading}
-        />
+        <ErrorBoundary>
+          <StatsBar
+            hopStats={contractState.hopStats}
+            totalCommitted={contractState.totalCommitted}
+            cappedDemand={contractState.cappedDemand}
+            saleSize={contractState.saleSize}
+            phase={contractState.phase}
+            armLoaded={contractState.armLoaded}
+            seedCount={contractState.seedCount}
+            participantCount={contractState.participantCount}
+            windowEnd={contractState.windowEnd}
+            blockTimestamp={contractState.blockTimestamp}
+            isLoading={eventsLoading}
+          />
+        </ErrorBoundary>
 
         {/* Search */}
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
@@ -330,6 +338,7 @@ export function App() {
           {eventsLoading && ' (syncing...)'}
         </div>
       </div>
+     </ErrorBoundary>
     </AppShell>
   )
 }

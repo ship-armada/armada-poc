@@ -1,13 +1,14 @@
-// ABOUTME: ENS name resolution with IndexedDB caching.
-// ABOUTME: Lazy resolution — batch-resolves addresses, caches results with 24h TTL.
+// ABOUTME: ENS name resolution backed by react-query + IndexedDB cache.
+// ABOUTME: Per-address queries dedupe across subscribers; 24h staleTime matches IDB TTL.
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useCallback } from 'react'
 import { atom, useAtom } from 'jotai'
 import type { JsonRpcProvider } from 'ethers'
-import { cacheENS, batchGetCachedENS } from '../lib/cache.js'
+import { useQueries } from '@tanstack/react-query'
+import { cacheENS, getCachedENS } from '../lib/cache.js'
 import { truncateAddress } from '../lib/format.js'
 
-/** Map of address → ENS name */
+/** Map of address (lowercase) → ENS name. Mirrors react-query's cache for legacy consumers. */
 export const ensMapAtom = atom<Map<string, string>>(new Map())
 
 export interface UseENSConfig {
@@ -20,86 +21,101 @@ export interface UseENSResult {
   displayName: (addr: string) => string
 }
 
+const ENS_STALE_MS = 24 * 60 * 60 * 1000 // 24 hours
+const ENS_GC_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+function ensQueryKey(addr: string): [string, string] {
+  return ['ens', addr.toLowerCase()]
+}
+
+async function resolveEnsName(
+  provider: JsonRpcProvider,
+  address: string,
+): Promise<string | null> {
+  const lower = address.toLowerCase()
+  const cached = await getCachedENS(lower)
+  if (cached !== null) return cached
+  const name = await provider.lookupAddress(address)
+  if (name) {
+    await cacheENS(lower, name).catch(() => {})
+    return name
+  }
+  return null
+}
+
 /**
  * Hook for lazy ENS resolution with caching.
- * Resolves addresses in batches, caches in IndexedDB with 24h TTL.
+ * Resolves addresses via react-query (dedup across subscribers) with a 24h staleTime
+ * matching the IndexedDB TTL. Unresolvable addresses resolve to `null` — react-query
+ * caches the null, no retry storms.
  */
 export function useENS(config: UseENSConfig): UseENSResult {
   const { provider, addresses } = config
   const [ensMap, setEnsMap] = useAtom(ensMapAtom)
-  const pendingRef = useRef(new Set<string>())
 
+  const uniqueAddresses = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const addr of addresses) {
+      const lower = addr.toLowerCase()
+      if (seen.has(lower)) continue
+      seen.add(lower)
+      out.push(addr)
+    }
+    return out
+  }, [addresses])
+
+  const results = useQueries({
+    queries: uniqueAddresses.map((addr) => ({
+      queryKey: ensQueryKey(addr),
+      queryFn: () => resolveEnsName(provider!, addr),
+      enabled: !!provider,
+      staleTime: ENS_STALE_MS,
+      gcTime: ENS_GC_MS,
+      retry: 2,
+    })),
+  })
+
+  // Serialize the resolution signal into a single string so the deps array
+  // stays fixed-length across renders. `results` has one entry per address;
+  // `dataUpdatedAt` ticks when a query settles.
+  const resolutionSignal = useMemo(
+    () =>
+      results
+        .map((r, i) => `${uniqueAddresses[i]?.toLowerCase() ?? ''}:${r.dataUpdatedAt}:${r.data ?? ''}`)
+        .join('|'),
+    [results, uniqueAddresses],
+  )
+
+  // Mirror successful resolutions into ensMapAtom so the resolve/displayName
+  // callbacks below (and any legacy consumers) see the same data.
   useEffect(() => {
-    if (!provider || addresses.length === 0) return
-
-    let cancelled = false
-
-    async function resolveAddresses() {
-      if (!provider) return
-
-      // Check cache first
-      const cached = await batchGetCachedENS(addresses)
-      if (cancelled) return
-
-      if (cached.size > 0) {
-        setEnsMap((prev) => {
-          const next = new Map(prev)
-          for (const [addr, name] of cached) {
-            next.set(addr, name)
-          }
-          return next
-        })
-      }
-
-      // Resolve uncached addresses (skip already pending ones)
-      const toResolve = addresses.filter(
-        (addr) =>
-          !cached.has(addr.toLowerCase()) &&
-          !pendingRef.current.has(addr.toLowerCase()),
-      )
-
-      for (const addr of toResolve) {
-        pendingRef.current.add(addr.toLowerCase())
-      }
-
-      // Resolve in batches of 10 to avoid overwhelming the provider
-      for (let i = 0; i < toResolve.length; i += 10) {
-        if (cancelled) break
-        const batch = toResolve.slice(i, i + 10)
-        const results = await Promise.allSettled(
-          batch.map((addr) => provider.lookupAddress(addr)),
-        )
-
-        if (cancelled) break
-
-        const resolved = new Map<string, string>()
-        for (let j = 0; j < batch.length; j++) {
-          const result = results[j]
-          if (result.status === 'fulfilled' && result.value) {
-            resolved.set(batch[j].toLowerCase(), result.value)
-            await cacheENS(batch[j], result.value).catch(() => {})
-          }
-          pendingRef.current.delete(batch[j].toLowerCase())
-        }
-
-        if (resolved.size > 0) {
-          setEnsMap((prev) => {
-            const next = new Map(prev)
-            for (const [addr, name] of resolved) {
-              next.set(addr, name)
-            }
-            return next
-          })
-        }
+    const resolved = new Map<string, string>()
+    for (let i = 0; i < uniqueAddresses.length; i++) {
+      const result = results[i]
+      const name = result?.data
+      if (typeof name === 'string' && name.length > 0) {
+        resolved.set(uniqueAddresses[i].toLowerCase(), name)
       }
     }
-
-    resolveAddresses()
-
-    return () => {
-      cancelled = true
-    }
-  }, [provider, addresses, setEnsMap])
+    if (resolved.size === 0) return
+    setEnsMap((prev) => {
+      let changed = false
+      for (const [addr, name] of resolved) {
+        if (prev.get(addr) !== name) {
+          changed = true
+          break
+        }
+      }
+      if (!changed) return prev
+      const next = new Map(prev)
+      for (const [addr, name] of resolved) {
+        next.set(addr, name)
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolutionSignal, setEnsMap])
 
   const resolve = useCallback(
     (addr: string): string | null => {

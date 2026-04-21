@@ -4,8 +4,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
+import { Ticket } from 'lucide-react'
 import {
   Button,
+  EmptyState,
   InfoTooltip,
   Input,
   TOOLTIPS,
@@ -158,14 +160,15 @@ export function InviteTab(props: InviteTabProps) {
 
   if (invitePositions.length === 0) {
     return (
-      <div className="p-4 text-center space-y-2">
-        <div className="text-muted-foreground">No Invite Slots Available</div>
-        <div className="text-xs text-muted-foreground">
-          {positions.length === 0
+      <EmptyState
+        icon={Ticket}
+        title="No Invite Slots Available"
+        description={
+          positions.length === 0
             ? 'You must be invited to the crowdfund before you can invite others.'
-            : 'All your invite slots have been used.'}
-        </div>
-      </div>
+            : 'All your invite slots have been used.'
+        }
+      />
     )
   }
 

@@ -4,8 +4,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
+import { Inbox } from 'lucide-react'
 import {
   Button,
+  EmptyState,
   ErrorAlert,
   InfoTooltip,
   TOOLTIPS,
@@ -252,6 +254,17 @@ export function ClaimTab(props: ClaimTabProps) {
   // Post-finalization (success) — ARM claim + refund
   const claimTimeLeft = claimDeadline - blockTimestamp
 
+  // Post-finalization and the connected address has no allocation at all — clean empty state.
+  if (armAmount === 0n && refundAmount === 0n) {
+    return (
+      <EmptyState
+        icon={Inbox}
+        title="No allocation found"
+        description="This address did not commit during the window. There is nothing to claim."
+      />
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Claim expiry warning */}
@@ -355,10 +368,6 @@ export function ClaimTab(props: ClaimTabProps) {
       {/* Show refund claimed status */}
       {hasClaimed && refundAmount > 0n && (
         <div className="text-xs text-success">USDC: {formatUsdc(refundAmount)} refund claimed</div>
-      )}
-
-      {armAmount === 0n && refundAmount === 0n && (
-        <div className="text-xs text-muted-foreground text-center">No allocation found for this address.</div>
       )}
     </div>
   )

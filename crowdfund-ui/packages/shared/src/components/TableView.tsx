@@ -16,11 +16,13 @@ import {
   type ColumnDef,
   type Row,
 } from '@tanstack/react-table'
+import { Search, Users } from 'lucide-react'
 import { formatUsdc, formatArm, hopLabel, truncateAddress } from '../lib/format.js'
 import { HOP_CONFIGS } from '../lib/constants.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
 import type { HopStatsData } from './StatsBar.js'
 import { NodeDetail } from './NodeDetail.js'
+import { EmptyState } from './EmptyState.js'
 
 export interface TableViewProps {
   summaries: AddressSummary[]
@@ -403,11 +405,20 @@ export function TableView(props: TableViewProps) {
             })}
             {table.getRowModel().rows.length === 0 && (
               <tr>
-                <td
-                  colSpan={colCount}
-                  className="px-3 py-8 text-center text-muted-foreground"
-                >
-                  {searchQuery ? 'No matching participants' : 'No participants yet'}
+                <td colSpan={colCount} className="p-0">
+                  {searchQuery ? (
+                    <EmptyState
+                      icon={Search}
+                      title="No matching participants"
+                      description={`No participants match "${searchQuery}".`}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Users}
+                      title="No participants yet"
+                      description="The invite graph is empty until the first commit lands."
+                    />
+                  )}
                 </td>
               </tr>
             )}

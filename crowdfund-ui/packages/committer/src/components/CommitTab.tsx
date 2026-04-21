@@ -4,8 +4,10 @@
 import { useState, useMemo, useCallback } from 'react'
 import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
+import { ShieldOff } from 'lucide-react'
 import {
   Button,
+  EmptyState,
   InfoTooltip,
   Input,
   TOOLTIPS,
@@ -233,12 +235,11 @@ export function CommitTab(props: CommitTabProps) {
 
   if (!eligible) {
     return (
-      <div className="p-4 text-center space-y-2">
-        <div className="text-muted-foreground">Not Eligible</div>
-        <div className="text-xs text-muted-foreground">
-          Your address has not been invited to any hop level. You need an invite to participate.
-        </div>
-      </div>
+      <EmptyState
+        icon={ShieldOff}
+        title="Not Eligible"
+        description="Your address has not been invited to any hop level. You need an invite to participate."
+      />
     )
   }
 

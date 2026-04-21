@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { Wallet } from 'lucide-react'
 import {
   createProvider,
   useContractEvents,
@@ -20,6 +21,7 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
+  EmptyState,
   ErrorAlert,
   CROWDFUND_CONSTANTS,
   formatUsdc,
@@ -322,9 +324,13 @@ export function App() {
           {/* Action panel (right ~40%) — hidden on mobile when network tab active */}
           <div className={`lg:col-span-2 ${mobileTab === 'network' ? 'hidden lg:block' : ''}`}>
             {!wallet.connected ? (
-              <div className="rounded-lg border border-border bg-card p-6 text-center space-y-3">
-                <div className="text-muted-foreground">Connect your wallet to participate</div>
-                <ConnectButton />
+              <div className="rounded-lg border border-border bg-card">
+                <EmptyState
+                  icon={Wallet}
+                  title="Connect your wallet to participate"
+                  description="Commit USDC, issue invites, and claim ARM once the crowdfund finalizes."
+                  action={<ConnectButton />}
+                />
               </div>
             ) : (
               <div className="rounded-lg border border-border bg-card">

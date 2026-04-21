@@ -17,6 +17,9 @@ import {
   TreeView,
   AppShell,
   Button,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -297,28 +300,20 @@ export function App() {
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
         {/* Mobile tab bar — visible below lg breakpoint */}
-        <div className="flex gap-1 lg:hidden">
-          <button
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
-              activeTab === 'tree'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('tree')}
-          >
-            Tree
-          </button>
-          <button
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
-              activeTab === 'table'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('table')}
-          >
-            Table
-          </button>
-        </div>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as 'tree' | 'table')}
+          className="lg:hidden"
+        >
+          <TabsList variant="line" className="w-full justify-start border-b border-border">
+            <TabsTrigger value="tree" className="flex-1">
+              Tree
+            </TabsTrigger>
+            <TabsTrigger value="table" className="flex-1">
+              Table
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {/* Desktop: side by side */}
         <div className="hidden lg:grid lg:grid-cols-2 gap-4">

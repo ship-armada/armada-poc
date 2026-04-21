@@ -7,6 +7,8 @@ import type { Signer, JsonRpcProvider } from 'ethers'
 import {
   Button,
   Input,
+  ToggleGroup,
+  ToggleGroupItem,
   hopLabel,
   formatUsdc,
   CROWDFUND_ABI_FRAGMENTS,
@@ -212,21 +214,25 @@ export function InviteTab(props: InviteTabProps) {
         <div className="text-xs font-medium text-muted-foreground">Send Direct Invite</div>
 
         {/* Hop selector */}
-        <div className="flex gap-1">
+        <ToggleGroup
+          type="single"
+          value={selectedHop !== null ? String(selectedHop) : ''}
+          onValueChange={(v) => {
+            if (v !== '') setSelectedHop(Number(v))
+          }}
+          className="gap-1"
+        >
           {invitePositions.map((pos) => (
-            <button
+            <ToggleGroupItem
               key={pos.hop}
-              className={`px-3 py-1 rounded text-xs ${
-                selectedHop === pos.hop
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setSelectedHop(pos.hop)}
+              value={String(pos.hop)}
+              size="sm"
+              className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
             >
               From {hopLabel(pos.hop)} → {hopLabel(pos.hop + 1)}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {/* Address input */}
         <div>

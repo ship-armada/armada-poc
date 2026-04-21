@@ -17,6 +17,9 @@ import {
   AppShell,
   LastTxChip,
   Separator,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
@@ -273,21 +276,20 @@ export function App() {
         />
 
         {/* Mobile tab bar — visible below lg breakpoint */}
-        <div className="flex lg:hidden border-b border-border">
-          {(['network', 'participate'] as const).map((tab) => (
-            <button
-              key={tab}
-              className={`flex-1 px-4 py-2 text-sm font-medium capitalize ${
-                mobileTab === tab
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setMobileTab(tab)}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          value={mobileTab}
+          onValueChange={(v) => setMobileTab(v as MobileTab)}
+          className="lg:hidden"
+        >
+          <TabsList variant="line" className="w-full justify-start border-b border-border">
+            <TabsTrigger value="network" className="flex-1 capitalize">
+              network
+            </TabsTrigger>
+            <TabsTrigger value="participate" className="flex-1 capitalize">
+              participate
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {/* Two-panel layout */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -330,26 +332,23 @@ export function App() {
             ) : (
               <div className="rounded-lg border border-border bg-card">
                 {/* Tab header — always visible, disabled tabs show message */}
-                <div className="flex border-b border-border">
-                  {(['commit', 'invite', 'claim'] as const).map((tab) => {
-                    const state = tabStates[tab]
-                    return (
-                      <button
+                <Tabs
+                  value={activeTab}
+                  onValueChange={(v) => setActiveTab(v as ActionTab)}
+                >
+                  <TabsList variant="line" className="w-full justify-start border-b border-border rounded-t-lg">
+                    {(['commit', 'invite', 'claim'] as const).map((tab) => (
+                      <TabsTrigger
                         key={tab}
-                        className={`flex-1 px-4 py-2 text-sm font-medium capitalize ${
-                          activeTab === tab
-                            ? 'border-b-2 border-primary text-foreground'
-                            : state.enabled
-                              ? 'text-muted-foreground hover:text-foreground'
-                              : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        onClick={() => state.enabled && setActiveTab(tab)}
+                        value={tab}
+                        disabled={!tabStates[tab].enabled}
+                        className="flex-1 capitalize"
                       >
                         {tab}
-                      </button>
-                    )
-                  })}
-                </div>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
 
                 {/* Tab content */}
                 <div className="p-4">

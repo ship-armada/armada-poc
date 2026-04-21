@@ -7,6 +7,8 @@ import type { Signer } from 'ethers'
 import {
   Button,
   Input,
+  ToggleGroup,
+  ToggleGroupItem,
   formatUsdc,
   parseUsdcInput,
   hopLabel,
@@ -413,24 +415,22 @@ export function CommitTab(props: CommitTabProps) {
               <div className="text-xs text-muted-foreground">
                 Step 1: Approve USDC spending. Step 2: Commit{parsedAmounts.size > 1 ? ` (${parsedAmounts.size} transactions)` : ''}.
               </div>
-              <div className="flex gap-2">
-                <button
-                  className={`px-3 py-1 rounded text-xs ${
-                    !approveUnlimited ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => setApproveUnlimited(false)}
-                >
+              <ToggleGroup
+                type="single"
+                value={approveUnlimited ? 'unlimited' : 'exact'}
+                onValueChange={(v) => {
+                  if (v === 'exact') setApproveUnlimited(false)
+                  else if (v === 'unlimited') setApproveUnlimited(true)
+                }}
+                className="gap-2"
+              >
+                <ToggleGroupItem value="exact" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                   Approve exact amount
-                </button>
-                <button
-                  className={`px-3 py-1 rounded text-xs ${
-                    approveUnlimited ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => setApproveUnlimited(true)}
-                >
+                </ToggleGroupItem>
+                <ToggleGroupItem value="unlimited" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                   Approve unlimited
-                </button>
-              </div>
+                </ToggleGroupItem>
+              </ToggleGroup>
               {approveUnlimited && (
                 <div className="text-[10px] text-amber-500">
                   Unlimited approval allows future commits without re-approving, but grants the contract full spending access.

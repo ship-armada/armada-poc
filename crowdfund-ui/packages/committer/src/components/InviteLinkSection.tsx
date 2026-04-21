@@ -3,7 +3,16 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Badge, Button, formatCountdown, hopLabel, formatUsdc, HOP_CONFIGS } from '@armada/crowdfund-shared'
+import {
+  Badge,
+  Button,
+  ToggleGroup,
+  ToggleGroupItem,
+  formatCountdown,
+  hopLabel,
+  formatUsdc,
+  HOP_CONFIGS,
+} from '@armada/crowdfund-shared'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
 
@@ -91,21 +100,25 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
       ) : (
         <>
           {/* Hop selector + Create button */}
-          <div className="flex gap-1">
+          <ToggleGroup
+            type="single"
+            value={selectedHop !== null ? String(selectedHop) : ''}
+            onValueChange={(v) => {
+              if (v !== '') setSelectedHop(Number(v))
+            }}
+            className="gap-1"
+          >
             {invitePositions.map((pos) => (
-              <button
+              <ToggleGroupItem
                 key={pos.hop}
-                className={`px-3 py-1 rounded text-xs ${
-                  selectedHop === pos.hop
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() => setSelectedHop(pos.hop)}
+                value={String(pos.hop)}
+                size="sm"
+                className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
               >
                 {hopLabel(pos.hop)} ({pos.invitesAvailable})
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
 
           {/* Creation prompt with contextual details */}
           {selectedHop !== null && (() => {

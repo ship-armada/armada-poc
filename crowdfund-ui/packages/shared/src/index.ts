@@ -182,6 +182,8 @@ export {
   TabsContent,
   tabsListVariants,
 } from './components/ui/tabs.js'
+export { Toggle, toggleVariants } from './components/ui/toggle.js'
+export { ToggleGroup, ToggleGroupItem } from './components/ui/toggle-group.js'
 export {
   Tooltip,
   TooltipTrigger,

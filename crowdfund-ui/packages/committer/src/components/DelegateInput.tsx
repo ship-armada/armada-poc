@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { isAddress } from 'ethers'
-import { Input } from '@armada/crowdfund-shared'
+import { Input, ToggleGroup, ToggleGroupItem } from '@armada/crowdfund-shared'
 
 export interface DelegateInputProps {
   connectedAddress: string
@@ -25,24 +25,22 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
   return (
     <div className="space-y-2">
       <div className="text-xs text-muted-foreground">Delegate Address</div>
-      <div className="flex gap-2">
-        <button
-          className={`px-3 py-1 rounded text-xs ${
-            useSelf ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
-          }`}
-          onClick={() => setUseSelf(true)}
-        >
+      <ToggleGroup
+        type="single"
+        value={useSelf ? 'self' : 'custom'}
+        onValueChange={(v) => {
+          if (v === 'self') setUseSelf(true)
+          else if (v === 'custom') setUseSelf(false)
+        }}
+        className="gap-2"
+      >
+        <ToggleGroupItem value="self" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
           Self
-        </button>
-        <button
-          className={`px-3 py-1 rounded text-xs ${
-            !useSelf ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
-          }`}
-          onClick={() => setUseSelf(false)}
-        >
+        </ToggleGroupItem>
+        <ToggleGroupItem value="custom" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
           Custom
-        </button>
-      </div>
+        </ToggleGroupItem>
+      </ToggleGroup>
       {!useSelf && (
         <div>
           <Input

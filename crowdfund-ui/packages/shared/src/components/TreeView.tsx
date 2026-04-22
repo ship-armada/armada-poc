@@ -30,6 +30,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from './ui/hover-card.j
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
 import { Button } from './ui/button.js'
 import { Separator } from './ui/separator.js'
+import { GraphLegend } from './GraphLegend.js'
 
 interface TreeViewCtxValue {
   getSummary: (address: string) => AddressSummary | undefined
@@ -656,6 +657,8 @@ function TreeViewInner(props: TreeViewProps) {
         <span>Hop-1</span>
         <span>Hop-2</span>
       </div>
+
+      <GraphLegend connectedAddress={connectedAddress} />
 
       <TreeViewContext.Provider value={ctxValue}>
         <ReactFlow

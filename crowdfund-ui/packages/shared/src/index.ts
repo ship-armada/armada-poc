@@ -43,6 +43,9 @@ export type { MockGraphOptions } from './lib/mockGraph.js'
 export { IdenticonSvg } from './components/IdenticonSvg.js'
 export type { IdenticonSvgProps } from './components/IdenticonSvg.js'
 
+export { GraphLegend } from './components/GraphLegend.js'
+export type { GraphLegendProps } from './components/GraphLegend.js'
+
 export {
   HoverCard,
   HoverCardTrigger,

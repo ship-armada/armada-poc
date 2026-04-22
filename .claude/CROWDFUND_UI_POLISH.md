@@ -945,9 +945,47 @@ Incidentally cleaned during Phase 8:
 
 ### Phase 9 — framer-motion micro-animations
 
-**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 8 close-out audit (2026-04-22).
-**Effort:** ~0.5 day (possibly 0.75 if the bundle-size check demands a lazy-loaded `motion` import pattern — see §6 below).
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commits `2e26b7f` · `ef21375` · `d304f32` · `f336ab3`).
+**Effort:** ~0.5 day (actual — close to estimate; the unexpected v11→v12 dedupe fix in 9.4 added ~15 min).
 **Depends on:** Phase 5 (primitives already migrated — Tabs, Popover, Dialog, Sheet are shadcn-wired) and Phase 6 (ErrorAlert / EmptyState / Skeleton are the landing spots for motion). Phases 7 + 8 do not conflict.
+
+**Actuals (as shipped):**
+
+Landed as four commits on the umbrella, one per sub-goal from the pre-flight §12 suggestion:
+
+- **9.1 Install framer-motion + mount MotionConfig** (`2e26b7f`). `crowdfund-ui/packages/shared/package.json` — added `framer-motion` to `dependencies` (initially `^11.18.2`, upgraded to `^12.38.0` in 9.4; see deviations) and to `peerDependencies`. `<MotionConfig reducedMotion="user">` mounted at the innermost provider layer per P9-D5 in all three apps: committer wraps `<Routes>` inside `<BrowserRouter>` (so both `/` and `/invite` inherit); observer wraps `<App />` inside `<JotaiProvider>`; admin wraps `<App />` inside `<JotaiProvider>` (included for consistency even though admin has no motion beyond 9.4's copy buttons). Includes the doc-update note to §8 flagging a deferred full-replacement spike of Radix/tailwindcss-animate with framer on Tabs/Popover/Dialog/Sheet. Bundle delta at 9.1 was negligible (+0.51 kB committer, +0.65 kB observer, +0.72 kB admin gzipped) — MotionConfig alone tree-shakes; framer features don't bundle until `motion.*` is used.
+
+- **9.2 StatsBar animated numbers** (`ef21375`). `crowdfund-ui/packages/shared/src/components/StatsBar.tsx` — wrapped 5 live-updating values in `motion.span`/`motion.div` keyed on display-string (calm) or raw bigint/integer (responsive) per pre-flight §7: countdown (display-string key, fires at minute/hour boundaries), per-hop cappedCommitted (raw bigint, fires on every commit event), per-hop uniqueCommitters (raw integer), total committed (display-string), estimated allocation (display-string). A shared `numberFade` constant (`{opacity: 0, y: -2}` → `{opacity: 1, y: 0}`, 150ms) centralizes the transform. Every `motion.span` wrapper carries `inline-block` on its className because CSS transforms don't render on `display:inline` elements. Bundle delta: committer +36.87 kB, observer +35.86 kB gzipped — the `motion.*` usage pulls in the full animation engine at this step (subsequent sub-commits are effectively free).
+
+- **9.3 Hover scale on StatsBar hop cards** (`d304f32`). Same file — converted each hop card's outer `<div>` to `<motion.div whileHover={{scale: 1.01}} transition={{duration: 0.1}}>`. Scoped to StatsBar per P9-D2 (NOT TableView rows — 100+ entries at populate-scale would thrash). Scale of 1.01 is deliberately subtle; 1.05 would feel jumpy. Bundle delta: +0.01 kB committer, +0.03 kB observer — gestures already bundled from 9.2.
+
+- **9.4 Clipboard copy checkmark fades + v11→v12 dedupe** (`f336ab3`). Two motion patterns applied to 5 clipboard sites:
+  - **Pattern A — toast-content wrapper (3 sites in `committer/src/components/InviteLinkSection.tsx`)**: a local `<CopyToast>` wraps toast body in `motion.div` (0.95→1.0 scale, 0→1 opacity, 150ms). Sonner's content-as-node API preserves its own chrome; we only animate the children.
+  - **Pattern B — AnimatePresence label swap (2 admin sites: `admin/src/components/ArmLoadPanel.tsx` + `TreasuryMonitor.tsx`)**: the "copy" → "copied" state change is wrapped in `<AnimatePresence mode="wait" initial={false}>` so the incoming label pops in (scale+fade) and outgoing fades out. The button gets `min-w-[32px] relative inline-block text-left` to keep the width stable during the swap.
+
+**Deviations from plan:**
+
+- **framer-motion v11 → v12 upgrade in shared (the big one).** Pre-flight §3 and P9-D3 recommended v11 ("v12 has a different import pathway `motion/react`"). On 9.1 install, `v11.18.2` landed local to `packages/shared/node_modules/framer-motion` while **`v12.33.0` was already hoisted at the workspace root** — declared as a direct dep by `usdc-v2-frontend` (the legacy replacement-bound frontend, still live). When committer's `InviteLinkSection` added a direct `import { motion } from 'framer-motion'` in 9.4, Node's module resolution split: shared's motion imports resolved to the local v11 copy, committer's resolved to root v12. Vite bundled **both copies** in the committer chunk, adding ~38 kB gzipped of duplicate framer-motion code. Fixed by upgrading shared to `^12` (resolved to `12.38.0`) so npm dedupes to the single root-hoisted copy. **v12 still exports `motion`, `AnimatePresence`, and `MotionConfig` from the `framer-motion` package root** — same import path, same API surface for everything Phase 9 uses. The pre-flight's v11 guidance pre-dated the `usdc-v2-frontend` v12 pin; a future cleanup retiring or rewriting `usdc-v2-frontend` can revisit this alignment.
+- **P9-D3 40 kB bundle budget exceeded by 0.35 kB** on committer (+40.35 kB gzipped vs Phase 8 baseline). Accepted per explicit user decision — razor-thin overage, most of it driven by the structural v11→v12 upgrade, not by scope creep. LazyMotion + `m` + `domAnimation` would recover perhaps 10-15 kB but adds ceremony at every `motion.*` call site. **Deferred as a follow-up** if/when the bundle audit is tightened.
+- **Admin app bundle delta (+40.22 kB)** was not explicitly budgeted in P9-D3 (which only called out committer). Admin picked up the motion surface because 9.4's clipboard fades landed there. Same v12 engine, same tree-shake behavior.
+- **Admin tsc baseline correction: 275 errors, not 10.** Prior phase actuals (Phase 4-8) cited "`useRole.test.ts` missing test-runner type definitions" as if it were ~10 errors. It's 275 — the same test-runner-type issue applies across many admin test files (`CancelPanel.test.tsx`, `EventLog.test.tsx`, etc.), all the same symptom. Prior phases were reading tail-N truncated outputs and mistook the snippet for the whole. Phase 9 introduces zero new admin tsc errors — count stays at 275 baseline. Worth filing a follow-up to add `@types/vitest` or `types: ['vitest/globals']` to admin's tsconfig.
+- **Tests skipped** with explicit user waiver for the phase ("1. I authorize you to skip tests"). Per-phase waiver recorded.
+- **No manual browser smoke performed** against a running local chain. Validation was build-based: all three `vite build` green across 4 commits; observer `tsc -b` clean; shared 1 `rpc.test.ts` baseline error; committer 14 baseline errors; admin 275 baseline errors. Committer vitest 62/68 (6 baseline fails); observer 11/13 (2 baseline fails); shared 139/139. **Recommended before umbrella → main merge**: (a) connect wallet in committer → trigger a commit → verify StatsBar numbers fade-up on stat updates; (b) hover a hop card → verify 1.01 scale; (c) copy an invite link → verify toast scale-in; (d) in admin at a local chain, click copy-address → verify "copy" → "copied" AnimatePresence swap; (e) toggle OS Reduce Motion → re-open and verify transforms collapse to zero while opacity transitions remain.
+
+**Pre-existing issues NOT addressed in Phase 9** (unchanged from Phase 8 baseline):
+- `committer/src/App.tsx` unused `walletENS` local.
+- `committer/src/components/InviteLinkRedemption.tsx` unused `isConnected` destructure.
+- Shared `lib/rpc.test.ts:64` `JsonRpcResult` type mismatch.
+- Committer test files (`ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`) — unused imports + type mismatches.
+- `committer/src/lib/wagmiAdapter.ts:20` strict-null issue.
+- Admin-wide: 275 test-runner-type errors (`vi`, `describe`, `it`, `expect` not resolvable); tsc needs `@types/vitest` or `types: ['vitest/globals']`.
+- Observer `App.test.tsx` stale-header assertions (2 runtime failures).
+- Committer `useProRataEstimate.test.ts` 6 runtime failures.
+
+**Follow-ups worth tracking (not for Phase 9 to resolve):**
+- **LazyMotion bundle optimization**: switching to `LazyMotion + m + domAnimation` would shave ~10-15 kB gzipped off committer + admin main chunks at the cost of wrapping every call site. Worth doing if a future pass tightens the bundle budget; trivial mechanical change.
+- **Admin tsconfig types: ['vitest/globals']**: adds test-runner globals to admin's tsc visibility, erases 275 of the baseline errors in one commit. Scope-creep for Phase 9; clean separate issue.
+- **Framer full-replacement spike** (see §8): Radix/tailwindcss-animate on Tabs/Popover/Dialog/Sheet stays in place. Spike the replacement on a throwaway branch when shared-element transitions or denser dialog usage justifies it.
 
 **Tasks (as originally planned):**
 1. Add `framer-motion`.

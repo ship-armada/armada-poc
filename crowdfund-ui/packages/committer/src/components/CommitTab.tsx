@@ -5,11 +5,19 @@ import { useState, useMemo, useCallback } from 'react'
 import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
 import { ShieldOff } from 'lucide-react'
+import { useForm, type Resolver } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import {
+  AmountInput,
   Button,
   EmptyState,
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
   InfoTooltip,
-  Input,
   TOOLTIPS,
   ToggleGroup,
   ToggleGroupItem,
@@ -20,7 +28,6 @@ import {
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
-  HOP_CONFIGS,
   type HopStatsData,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
@@ -46,6 +53,51 @@ export interface CommitTabProps {
 }
 
 type Step = 'input' | 'review'
+
+interface CommitFormValues {
+  approveUnlimited: boolean
+  amounts: Record<string, string>
+}
+
+/** Build a zod schema for per-hop commit validation. Factory because balance + positions change over time. */
+function makeCommitSchema(positions: HopPosition[], balance: bigint) {
+  return z
+    .object({
+      approveUnlimited: z.boolean(),
+      amounts: z.record(z.string(), z.string()),
+    })
+    .superRefine((data, ctx) => {
+      let total = 0n
+      for (const pos of positions) {
+        const raw = data.amounts[String(pos.hop)] ?? ''
+        if (!raw.trim()) continue
+        const parsed = parseUsdcInput(raw)
+        if (parsed === 0n) continue
+        if (parsed < CROWDFUND_CONSTANTS.MIN_COMMIT) {
+          ctx.addIssue({
+            path: ['amounts', String(pos.hop)],
+            code: 'custom',
+            message: `Minimum ${formatUsdc(CROWDFUND_CONSTANTS.MIN_COMMIT)}`,
+          })
+        }
+        if (parsed > pos.remaining) {
+          ctx.addIssue({
+            path: ['amounts', String(pos.hop)],
+            code: 'custom',
+            message: `Exceeds remaining cap of ${formatUsdc(pos.remaining)}`,
+          })
+        }
+        total += parsed
+      }
+      if (total > balance) {
+        ctx.addIssue({
+          path: ['amounts'],
+          code: 'custom',
+          message: `Total ${formatUsdc(total)} exceeds your USDC balance of ${formatUsdc(balance)}`,
+        })
+      }
+    })
+}
 
 /** Display inviter attribution for a position */
 function inviterDisplay(pos: HopPosition, resolveENS: (addr: string) => string | null): string {
@@ -116,21 +168,33 @@ export function CommitTab(props: CommitTabProps) {
   } = props
 
   const [step, setStep] = useState<Step>('input')
-  const [amounts, setAmounts] = useState<Map<number, string>>(new Map())
-  const [approveUnlimited, setApproveUnlimited] = useState(false)
   const [commitSuccess, setCommitSuccess] = useState(false)
   const approvalTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
   const commitTx = useTransactionFlow(signer, { explorerUrl: getExplorerUrl() })
 
+  const schema = useMemo(() => makeCommitSchema(positions, balance), [positions, balance])
+
+  const form = useForm<CommitFormValues>({
+    // @hookform/resolvers v5 + zod v4: generic inference loses the schema binding;
+    // runtime is correct but TS needs a cast.
+    resolver: zodResolver(schema) as unknown as Resolver<CommitFormValues>,
+    mode: 'onChange',
+    defaultValues: { approveUnlimited: false, amounts: {} },
+  })
+
+  const amountsValues = form.watch('amounts')
+  const approveUnlimited = form.watch('approveUnlimited')
+
   // Parse amounts to bigint
   const parsedAmounts = useMemo(() => {
     const m = new Map<number, bigint>()
-    for (const [hop, input] of amounts) {
-      const parsed = parseUsdcInput(input)
-      if (parsed > 0n) m.set(hop, parsed)
+    for (const pos of positions) {
+      const raw = amountsValues?.[String(pos.hop)] ?? ''
+      const parsed = parseUsdcInput(raw)
+      if (parsed > 0n) m.set(pos.hop, parsed)
     }
     return m
-  }, [amounts])
+  }, [amountsValues, positions])
 
   // Total commit amount
   const totalAmount = useMemo(() => {
@@ -160,40 +224,22 @@ export function CommitTab(props: CommitTabProps) {
   // Pro-rata estimate (based on total position: existing + new)
   const estimate = useProRataEstimate(parsedAmounts, existingCommitments, hopStats, saleSize)
 
-  // Balance check is a warning, not a blocking error
-  const balanceInsufficient = totalAmount > 0n && totalAmount > balance
+  // Surface the form-level "total exceeds balance" error (zod issue on path: ['amounts']).
+  // RHF nests it under errors.amounts.root; fall back to errors.amounts.message.
+  const amountsFieldErrors = form.formState.errors.amounts as
+    | { root?: { message?: string }; message?: string }
+    | undefined
+  const totalError = amountsFieldErrors?.root?.message ?? amountsFieldErrors?.message ?? null
 
-  // Validation errors (excludes balance — that's a non-blocking warning)
-  const errors = useMemo(() => {
-    const errs: string[] = []
-    for (const pos of positions) {
-      const amt = parsedAmounts.get(pos.hop) ?? 0n
-      if (amt > 0n && amt < CROWDFUND_CONSTANTS.MIN_COMMIT) {
-        errs.push(`${hopLabel(pos.hop)}: minimum commitment is ${formatUsdc(CROWDFUND_CONSTANTS.MIN_COMMIT)}`)
-      }
-      if (amt > pos.remaining) {
-        errs.push(`${hopLabel(pos.hop)}: exceeds remaining cap of ${formatUsdc(pos.remaining)}`)
-      }
-    }
-    return errs
-  }, [positions, parsedAmounts])
+  const reviewDisabled =
+    totalAmount === 0n ||
+    !form.formState.isValid ||
+    form.formState.isValidating
 
-  const handleAmountChange = useCallback((hop: number, value: string) => {
-    setCommitSuccess(false)
-    setAmounts((prev) => {
-      const next = new Map(prev)
-      next.set(hop, value)
-      return next
-    })
-  }, [])
-
-  const handleMax = useCallback((hop: number, remaining: bigint) => {
-    const maxForBalance = balance - (totalAmount - (parsedAmounts.get(hop) ?? 0n))
-    const max = remaining < maxForBalance ? remaining : maxForBalance
-    if (max > 0n) {
-      handleAmountChange(hop, (Number(max) / 1e6).toString())
-    }
-  }, [balance, totalAmount, parsedAmounts, handleAmountChange])
+  const handleReview = useCallback(async () => {
+    const ok = await form.trigger()
+    if (ok && totalAmount > 0n) setStep('review')
+  }, [form, totalAmount])
 
   const handleApproveAndCommit = useCallback(async () => {
     if (!signer || totalAmount === 0n) return
@@ -226,11 +272,11 @@ export function CommitTab(props: CommitTabProps) {
 
     // Show post-commitment summary
     setCommitSuccess(true)
-    setAmounts(new Map())
+    form.reset({ approveUnlimited: false, amounts: {} })
     setStep('input')
   }, [
     signer, totalAmount, needsApproval, approveUnlimited, approvalTx, commitTx,
-    usdcAddress, crowdfundAddress, parsedAmounts, refreshAllowance,
+    usdcAddress, crowdfundAddress, parsedAmounts, refreshAllowance, form,
   ])
 
   if (!eligible) {
@@ -259,217 +305,233 @@ export function CommitTab(props: CommitTabProps) {
     )
   }
 
+  const submitBusy =
+    approvalTx.state.status === 'pending' ||
+    approvalTx.state.status === 'submitted' ||
+    commitTx.state.status === 'pending' ||
+    commitTx.state.status === 'submitted'
+
   return (
-    <div className="space-y-4">
-      {/* Post-commitment summary */}
-      {commitSuccess && (
-        <div className="rounded border border-success/50 bg-success/10 p-3 text-sm">
-          {positions.every((p) => p.remaining === 0n) ? (
-            <>
-              <div className="font-medium text-success">All positions filled.</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Total committed: {formatUsdc(positions.reduce((s, p) => s + p.committed, 0n))} across {positions.length} hops.
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="font-medium text-success">Committed successfully.</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                You can add more to any hop with remaining capacity before the deadline.
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {step === 'input' && (
-        <>
-          {/* Eligibility display with inviter attribution */}
-          <div className="space-y-1">
-            <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <span>Your positions:</span>
-              <InfoTooltip text={TOOLTIPS.hop} label="What is a hop?" />
-            </div>
-            {positions.map((pos) => (
-              <div key={pos.hop} className="flex items-center justify-between text-xs">
-                <span>
-                  <span className="font-medium">{hopLabel(pos.hop)}</span>
-                  {pos.invitesReceived > 1 && (
-                    <span className="text-muted-foreground ml-1">({pos.invitesReceived} slots)</span>
-                  )}
-                  <span className="text-muted-foreground ml-1">— {inviterDisplay(pos, resolveENS)}</span>
-                </span>
-                <span className="text-muted-foreground">
-                  Cap: {formatUsdc(pos.effectiveCap)} | Committed: {formatUsdc(pos.committed)}
-                </span>
-              </div>
-            ))}
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleApproveAndCommit)} className="space-y-4">
+        {/* Post-commitment summary */}
+        {commitSuccess && (
+          <div className="rounded border border-success/50 bg-success/10 p-3 text-sm">
+            {positions.every((p) => p.remaining === 0n) ? (
+              <>
+                <div className="font-medium text-success">All positions filled.</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Total committed: {formatUsdc(positions.reduce((s, p) => s + p.committed, 0n))} across {positions.length} hops.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-medium text-success">Committed successfully.</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  You can add more to any hop with remaining capacity before the deadline.
+                </div>
+              </>
+            )}
           </div>
+        )}
 
-          {/* Per-hop amount inputs */}
-          {positions.map((pos) => {
-            const demand = hopDemandDisplay(pos.hop, hopStats, saleSize)
-            return (
-              <div key={pos.hop} className="rounded border border-border p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{hopLabel(pos.hop)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    Committed: {formatUsdc(pos.committed)} / {formatUsdc(pos.effectiveCap)}
+        {step === 'input' && (
+          <>
+            {/* Eligibility display with inviter attribution */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                <span>Your positions:</span>
+                <InfoTooltip text={TOOLTIPS.hop} label="What is a hop?" />
+              </div>
+              {positions.map((pos) => (
+                <div key={pos.hop} className="flex items-center justify-between text-xs">
+                  <span>
+                    <span className="font-medium">{hopLabel(pos.hop)}</span>
+                    {pos.invitesReceived > 1 && (
+                      <span className="text-muted-foreground ml-1">({pos.invitesReceived} slots)</span>
+                    )}
+                    <span className="text-muted-foreground ml-1">— {inviterDisplay(pos, resolveENS)}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    Cap: {formatUsdc(pos.effectiveCap)} | Committed: {formatUsdc(pos.committed)}
                   </span>
                 </div>
-                {/* Per-hop demand context */}
-                {demand && (
-                  <div className="text-xs text-muted-foreground">
-                    <span>Current hop demand: {demand.demand} ({demand.pct}% of {pos.hop <= 1 ? 'ceiling' : 'floor'})</span>
-                    {demand.warning && (
-                      <div className="text-amber-500 mt-0.5">{demand.warning}</div>
+              ))}
+            </div>
+
+            {/* Per-hop amount inputs */}
+            {positions.map((pos) => {
+              const demand = hopDemandDisplay(pos.hop, hopStats, saleSize)
+              const currentHopAmount = parsedAmounts.get(pos.hop) ?? 0n
+              const balanceHeadroom = balance - (totalAmount - currentHopAmount)
+              const ceilings = [
+                { label: 'Remaining at this hop', value: pos.remaining },
+                { label: 'Wallet balance', value: balanceHeadroom < 0n ? 0n : balanceHeadroom },
+              ]
+              return (
+                <div key={pos.hop} className="rounded border border-border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{hopLabel(pos.hop)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Committed: {formatUsdc(pos.committed)} / {formatUsdc(pos.effectiveCap)}
+                    </span>
+                  </div>
+                  {/* Per-hop demand context */}
+                  {demand && (
+                    <div className="text-xs text-muted-foreground">
+                      <span>Current hop demand: {demand.demand} ({demand.pct}% of {pos.hop <= 1 ? 'ceiling' : 'floor'})</span>
+                      {demand.warning && (
+                        <div className="text-amber-500 mt-0.5">{demand.warning}</div>
+                      )}
+                    </div>
+                  )}
+                  <FormField
+                    control={form.control}
+                    name={`amounts.${pos.hop}`}
+                    render={({ field, fieldState }) => (
+                      <FormItem>
+                        <FormControl>
+                          <AmountInput
+                            value={field.value ?? ''}
+                            onChange={(v) => {
+                              setCommitSuccess(false)
+                              field.onChange(v)
+                            }}
+                            onBlur={field.onBlur}
+                            ceilings={ceilings}
+                            error={!!fieldState.error}
+                            aria-label={`Commit amount for ${hopLabel(pos.hop)}`}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
                     )}
+                  />
+                  {pos.remaining === 0n && (
+                    <div className="text-xs text-amber-500">Cap reached at this hop</div>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Pro-rata estimate */}
+            {totalAmount > 0n && (
+              <ProRataEstimate
+                hopEstimates={estimate.hopEstimates}
+                totalEstimatedArm={estimate.totalEstimatedArm}
+                totalEstimatedRefund={estimate.totalEstimatedRefund}
+              />
+            )}
+
+            {/* Multi-hop total summary */}
+            {totalAmount > 0n && (
+              <div className="rounded border border-border p-3 space-y-1 text-sm">
+                <div>
+                  Total commitment: <span className="font-medium">{formatUsdc(totalAmount)}</span>
+                  {activeHopCount > 1 && <span className="text-muted-foreground"> across {activeHopCount} hops</span>}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Your USDC balance: {formatUsdc(balance)}
+                </div>
+              </div>
+            )}
+
+            {/* Form-level balance-exceeded error (blocking) */}
+            {totalError && (
+              <div className="text-xs text-destructive">{totalError}</div>
+            )}
+
+            {/* Review button — blocked by any schema error (including balance) */}
+            <Button
+              type="button"
+              className="w-full"
+              disabled={reviewDisabled}
+              onClick={handleReview}
+            >
+              Review Commitment
+            </Button>
+          </>
+        )}
+
+        {step === 'review' && (
+          <div className="space-y-4">
+            <div className="rounded border border-border p-3 space-y-2">
+              <div className="text-sm font-medium">Review Your Commitment</div>
+              {[...parsedAmounts].map(([hop, amount]) => (
+                <div key={hop} className="flex items-center justify-between text-sm">
+                  <span>{hopLabel(hop)}</span>
+                  <span className="font-medium">{formatUsdc(amount)}</span>
+                </div>
+              ))}
+              <div className="border-t border-border pt-2 flex items-center justify-between text-sm">
+                <span>Total</span>
+                <span className="font-bold">{formatUsdc(totalAmount)}</span>
+              </div>
+            </div>
+
+            {/* Approve exact vs unlimited option */}
+            {needsApproval(totalAmount) && (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  Step 1: Approve USDC spending. Step 2: Commit{parsedAmounts.size > 1 ? ` (${parsedAmounts.size} transactions)` : ''}.
+                </div>
+                <FormField
+                  control={form.control}
+                  name="approveUnlimited"
+                  render={({ field }) => (
+                    <ToggleGroup
+                      type="single"
+                      value={field.value ? 'unlimited' : 'exact'}
+                      onValueChange={(v) => {
+                        if (v === 'exact') field.onChange(false)
+                        else if (v === 'unlimited') field.onChange(true)
+                      }}
+                      className="gap-2"
+                    >
+                      <ToggleGroupItem value="exact" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                        Approve exact amount
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="unlimited" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                        Approve unlimited
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  )}
+                />
+                {approveUnlimited && (
+                  <div className="text-[10px] text-amber-500">
+                    Unlimited approval allows future commits without re-approving, but grants the contract full spending access.
                   </div>
                 )}
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0"
-                    value={amounts.get(pos.hop) ?? ''}
-                    onChange={(e) => handleAmountChange(pos.hop, e.target.value)}
-                    className="flex-1 text-sm"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleMax(pos.hop, pos.remaining)}
-                  >
-                    MAX
-                  </Button>
-                </div>
-                {pos.remaining === 0n && (
-                  <div className="text-xs text-amber-500">Cap reached at this hop</div>
-                )}
               </div>
-            )
-          })}
+            )}
 
-          {/* Pro-rata estimate */}
-          {totalAmount > 0n && (
             <ProRataEstimate
               hopEstimates={estimate.hopEstimates}
               totalEstimatedArm={estimate.totalEstimatedArm}
               totalEstimatedRefund={estimate.totalEstimatedRefund}
             />
-          )}
 
-          {/* Multi-hop total summary */}
-          {totalAmount > 0n && (
-            <div className="rounded border border-border p-3 space-y-1 text-sm">
-              <div>
-                Total commitment: <span className="font-medium">{formatUsdc(totalAmount)}</span>
-                {activeHopCount > 1 && <span className="text-muted-foreground"> across {activeHopCount} hops</span>}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Your USDC balance: {formatUsdc(balance)}
-              </div>
-            </div>
-          )}
-
-          {/* Balance warning (non-blocking) */}
-          {balanceInsufficient && (
-            <div className="text-xs text-amber-500">
-              Total exceeds your USDC balance. The transaction will revert if balance is insufficient.
-            </div>
-          )}
-
-          {/* Validation errors */}
-          {errors.length > 0 && (
-            <div className="text-xs text-destructive space-y-1">
-              {errors.map((err, i) => (
-                <div key={i}>{err}</div>
-              ))}
-            </div>
-          )}
-
-          {/* Review button — balance does NOT block submission */}
-          <Button
-            className="w-full"
-            disabled={totalAmount === 0n || errors.length > 0}
-            onClick={() => setStep('review')}
-          >
-            Review Commitment
-          </Button>
-        </>
-      )}
-
-      {step === 'review' && (
-        <div className="space-y-4">
-          <div className="rounded border border-border p-3 space-y-2">
-            <div className="text-sm font-medium">Review Your Commitment</div>
-            {[...parsedAmounts].map(([hop, amount]) => (
-              <div key={hop} className="flex items-center justify-between text-sm">
-                <span>{hopLabel(hop)}</span>
-                <span className="font-medium">{formatUsdc(amount)}</span>
-              </div>
-            ))}
-            <div className="border-t border-border pt-2 flex items-center justify-between text-sm">
-              <span>Total</span>
-              <span className="font-bold">{formatUsdc(totalAmount)}</span>
-            </div>
-          </div>
-
-          {/* Approve exact vs unlimited option */}
-          {needsApproval(totalAmount) && (
-            <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">
-                Step 1: Approve USDC spending. Step 2: Commit{parsedAmounts.size > 1 ? ` (${parsedAmounts.size} transactions)` : ''}.
-              </div>
-              <ToggleGroup
-                type="single"
-                value={approveUnlimited ? 'unlimited' : 'exact'}
-                onValueChange={(v) => {
-                  if (v === 'exact') setApproveUnlimited(false)
-                  else if (v === 'unlimited') setApproveUnlimited(true)
-                }}
-                className="gap-2"
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setStep('input')}
+                disabled={submitBusy}
               >
-                <ToggleGroupItem value="exact" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                  Approve exact amount
-                </ToggleGroupItem>
-                <ToggleGroupItem value="unlimited" size="sm" className="text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                  Approve unlimited
-                </ToggleGroupItem>
-              </ToggleGroup>
-              {approveUnlimited && (
-                <div className="text-[10px] text-amber-500">
-                  Unlimited approval allows future commits without re-approving, but grants the contract full spending access.
-                </div>
-              )}
+                Back
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1"
+                disabled={submitBusy}
+              >
+                {needsApproval(totalAmount) ? 'Approve & Commit' : 'Commit'}
+              </Button>
             </div>
-          )}
-
-          <ProRataEstimate
-            hopEstimates={estimate.hopEstimates}
-            totalEstimatedArm={estimate.totalEstimatedArm}
-            totalEstimatedRefund={estimate.totalEstimatedRefund}
-          />
-
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => setStep('input')}
-              disabled={approvalTx.state.status === 'pending' || approvalTx.state.status === 'submitted' || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
-            >
-              Back
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={handleApproveAndCommit}
-              disabled={approvalTx.state.status === 'pending' || approvalTx.state.status === 'submitted' || commitTx.state.status === 'pending' || commitTx.state.status === 'submitted'}
-            >
-              {needsApproval(totalAmount) ? 'Approve & Commit' : 'Commit'}
-            </Button>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </form>
+    </Form>
   )
 }

@@ -1,6 +1,8 @@
 // ABOUTME: Deterministic identicon renderer using @metamask/jazzicon.
 // ABOUTME: Appends jazzicon's HTMLElement output into a ref'd div; re-renders when address or size changes.
 
+/// <reference path="../types/jazzicon.d.ts" />
+
 import { useEffect, useRef } from 'react'
 import jazzicon from '@metamask/jazzicon'
 

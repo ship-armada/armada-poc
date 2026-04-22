@@ -3,7 +3,21 @@
 
 import { useState, useEffect } from 'react'
 import { isAddress } from 'ethers'
-import { InfoTooltip, Input, TOOLTIPS, ToggleGroup, ToggleGroupItem } from '@armada/crowdfund-shared'
+import { useForm, type Resolver } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+  InfoTooltip,
+  Input,
+  TOOLTIPS,
+  ToggleGroup,
+  ToggleGroupItem,
+} from '@armada/crowdfund-shared'
 
 export interface DelegateInputProps {
   connectedAddress: string
@@ -11,16 +25,51 @@ export interface DelegateInputProps {
   onChange: (address: string) => void
 }
 
+interface DelegateFormValues {
+  customAddress: string
+}
+
+const delegateSchema = z
+  .object({
+    customAddress: z.string(),
+  })
+  .superRefine((values, ctx) => {
+    const raw = values.customAddress.trim()
+    if (!raw) return // empty is fine — submit button disabled via isAddress check
+    if (!isAddress(raw)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['customAddress'],
+        message: 'Invalid address',
+      })
+    }
+  })
+
 export function DelegateInput({ connectedAddress, value, onChange }: DelegateInputProps) {
   const [useSelf, setUseSelf] = useState(true)
+
+  const form = useForm<DelegateFormValues>({
+    // @hookform/resolvers v5 + zod v4: generic inference loses the schema binding;
+    // runtime is correct but TS needs a cast.
+    resolver: zodResolver(delegateSchema) as unknown as Resolver<DelegateFormValues>,
+    mode: 'onChange',
+    defaultValues: { customAddress: '' },
+  })
 
   useEffect(() => {
     if (useSelf) {
       onChange(connectedAddress)
+    } else {
+      onChange(form.getValues('customAddress'))
     }
-  }, [useSelf, connectedAddress, onChange])
+  }, [useSelf, connectedAddress, onChange, form])
 
-  const isValid = isAddress(value)
+  // Keep the rendered value in sync when parent resets the delegate externally.
+  useEffect(() => {
+    if (!useSelf && value !== form.getValues('customAddress')) {
+      form.setValue('customAddress', value, { shouldValidate: true })
+    }
+  }, [useSelf, value, form])
 
   return (
     <div className="space-y-2">
@@ -45,18 +94,30 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
         </ToggleGroupItem>
       </ToggleGroup>
       {!useSelf && (
-        <div>
-          <Input
-            type="text"
-            placeholder="0x..."
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="text-xs font-mono"
+        <Form {...form}>
+          <FormField
+            control={form.control}
+            name="customAddress"
+            render={({ field, fieldState }) => (
+              <FormItem>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="text"
+                    placeholder="0x..."
+                    className="text-xs font-mono"
+                    aria-invalid={!!fieldState.error || undefined}
+                    onChange={(e) => {
+                      field.onChange(e)
+                      onChange(e.target.value)
+                    }}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-          {value && !isValid && (
-            <div className="text-xs text-destructive mt-1">Invalid address</div>
-          )}
-        </div>
+        </Form>
       )}
     </div>
   )

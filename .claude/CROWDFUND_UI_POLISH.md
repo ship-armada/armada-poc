@@ -1123,9 +1123,80 @@ Landed as four commits on the umbrella, one per sub-goal from the pre-flight §1
 
 ### Phase 10 — Invite graph: spike + polish
 
-**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 9 close-out audit (2026-04-22).
-**Effort:** spike 0.5 day, polish 1.5–2 days.
-**Depends on:** Phase 1 (theme tokens for hop/graph-edge colors) + Phase 2 (Popover primitive; HoverCard not yet installed — see §4). Phases 3-9 don't conflict with TreeView work but see §6 for framer-motion v12 availability.
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commits `cf3be53` · `d3e91dc` · `bc1aae8` · `75d24d6` · `d712cd6` · `4a2415a` · `7972582` · `4cdb727` · `20cd272` · `1cc3348` · `de71231` · `a090b1e` · `be248b7`). Spike branch `iskay/crowdfund-ui-graph-spike` and its worktree deleted after A/B decision.
+**Effort:** ~2.5 days actual (0.5 spike + bugfix stack + 2 polish + cleanup).
+**Depends on:** Phase 1 (theme tokens), Phase 2 (Popover primitive; HoverCard installed in 10.3a), Phase 9 (framer-motion available but not consumed by Phase 10 — xyflow has its own animation system).
+
+**Actuals (as shipped):**
+
+The xyflow path won the A/B. Decision driver was mobile touch polish (iOS-grade pinch/pan + momentum) at realistic 500-node and 1500-peak scale. d3 would have needed nontrivial engineering to match; xyflow ships it. Bundle cost of +44 kB gzipped per app was accepted against that win.
+
+**Commits, in landing order:**
+
+- **cf3be53** `fix: bind d3-zoom after the interactive SVG mounts` — bugfix on the d3 TreeView surfaced during A/B testing. Skeleton loaders from Phase 6.3 widened the loading-state window so the svgRef was `null` when the zoom `useEffect([])` ran; subsequent real-SVG render never re-bound. Replaced `useRef` with a state-based callback ref. **Superseded by 10.1; kept in history for context.**
+- **d3e91dc** `fix: stop tree layout from squeezing leaves into overlapping pixels` — bugfix on the d3 TreeView. `.size([h, w])` forced the whole tree into viewport height, collapsing fan-out-heavy rows into overlapping 1.3 px slots. Switched to `.nodeSize([40, 0])` + y-offset so the tree grows as tall as it needs. **Superseded by 10.1 (xyflow version ported the same fix).**
+- **bc1aae8** `feat: zoom-in / zoom-out / fit-view controls on d3 TreeView` — custom corner panel on d3 TreeView for fair A/B against xyflow's built-in `<Controls>`. **Superseded by 10.1** (xyflow's Controls shipped in the replacement).
+- **75d24d6** `Phase 10.1 — replace d3 TreeView with @xyflow/react` — full rewrite. Custom `ParticipantNode` + `RootNode` + `InviteEdge` components; `d3-hierarchy` still computes layout positions (`.nodeSize([40, 0])`) fed into xyflow's node/edge arrays. Zoom / pan / fit-view come from xyflow's `<Controls showInteractive={false}>`. Multi-hop pie slices, search dim, inviter-chain highlight, collapse-at-20, and selection behaviour all preserved. No `<MiniMap>` or `<Background>` (trimmed during A/B per user). TreeViewProps unchanged.
+- **d712cd6** `Phase 10.6 — synthetic stress fixture + ?mock=stressN` — **moved forward from last-in-plan to second-in-actuals** so subsequent polish commits can visually verify at 500/1000/2000 node scales. `packages/shared/src/lib/mockGraph.ts` is a seeded-RNG graph generator. Observer `App.tsx` has an early-return `MockObserverApp` when `?mock=stressN` is set. **Kept intentionally post-phase** per explicit user direction — useful for future iteration until crowdfund is prod-ready.
+- **4a2415a** `Phase 10.2 — Jazzicon identicons in xyflow nodes` — `@metamask/jazzicon` deterministic identicons on single-hop, committed nodes with radius ≥ 10. Multi-hop keeps pie slices; tiny nodes stay as solid colour. New shared `IdenticonSvg` component wraps jazzicon's HTMLElement output in a ref'd div. Ambient module decl at `src/types/jazzicon.d.ts` (upstream has no types).
+- **7972582** `Phase 10.3a — install shadcn HoverCard primitive` — standard shadcn regeneration workflow (`npm_config_legacy_peer_deps=true npx shadcn@latest add hover-card`, move out of stray `./@/` dir, `@/` → relative imports, strip `"use client"`, ABOUTME header).
+- **4cdb727** `chore: resync crowdfund-ui/package-lock.json` — nested lockfile drift from the shadcn install; normalized.
+- **20cd272** `Phase 10.3b — HoverCard on hover + Popover on click` — two-tier rich reveal on each graph node. HoverCard (180 ms delay) for peek; Popover for pinned view with action row (copy address via sonner toast; view in table via `onSelectAddress`). New local `TreeViewContext` shares graph lookups + resolveENS + phase with each ParticipantNode (so the node renders its own NodeDetail inside the Radix portals). HoverCard is suppressed while Popover is open. Removed the old mouse-tracked absolute-positioned div tooltip.
+- **1cc3348** `Phase 10.4 — GraphLegend corner panel` — new shared component top-right of TreeView explaining hop colours, multi-hop marker, connected-wallet glow, inviter chain. Collapsible via small ghost-button toggle; default open.
+- **de71231** `Phase 10.5 — extended zoom controls` — auto zoom-to-search (when search narrows to one participant match) + zoom-to-connected button (bottom-right xyflow `<Panel>`, renders only when `connectedAddress` is in the graph). Both use `rf.fitView({ nodes: [{id}] })`.
+- **a090b1e** `chore: purge d3 deps left behind by the xyflow migration` — removed 5 unused direct deps (`d3-force`, `d3-interpolate`, `d3-selection`, `d3-transition`, `d3-zoom`) + 5 `@types/*`. Kept `d3-hierarchy` + `d3-scale` (still imported by new TreeView for layout math and sqrt scale). Transitive copies remain in `node_modules` via `@xyflow/system`.
+- **be248b7** `fix: restore tsc -b baseline after Phase 10` — two Phase-10-introduced tsc regressions fixed during close-out audit: `@metamask/jazzicon` ambient decl not reaching consumer tsconfigs (added triple-slash reference in `IdenticonSvg.tsx`); `@xyflow/react/dist/style.css` CSS side-effect import tripped shared's tsc (added `packages/shared/src/types/styles.d.ts` with `declare module '*.css'`).
+
+**Deviations from plan:**
+
+- **Chose xyflow over d3 polish.** Original pre-flight recommended Step B-d3. Initial lean held through the bare spike, then flipped when the comparison surfaced (1) broken d3 zoom binding due to skeleton-loader interaction with useEffect deps and (2) mobile-touch quality gap that would have needed ~1 day of custom engineering on d3 to match. Both the zoom-binding fix (`cf3be53`) and layout-squeeze fix (`d3e91dc`) also landed on the umbrella before 10.1 as honest history — commits are dead code after 10.1 but tell the diagnostic story.
+- **Commit sequence reordered.** Plan had 10.1-constants → 10.2-jazzicon → 10.3 → 10.4 → 10.5 → 10.6-stress-fixture. Actual: 10.1 (full replacement) → 10.6 (stress fixture promoted second) → 10.2 → 10.3a/b → 10.4 → 10.5. Moving 10.6 forward gave the polish commits a visible 500-node / 1000-node / 2000-node target for eyeball verification without needing `npm run crowdfund:populate`.
+- **P10-D4 rich-tooltip scope expanded.** Plan recommended "Popover on click only, keep existing hover div". User revised during implementation to "HoverCard on hover + Popover on click". Shipped both.
+- **P10-D6 minimap decision.** Plan said skip for d3, use xyflow built-in if xyflow wins. Actual: removed xyflow's `<MiniMap>` during A/B per user feedback ("3-layer tree makes it visual noise"). Neither side ships minimap.
+- **P10-D5 bundle budget exceeded.** Soft +15 kB target blown — actual delta from Phase 9 baseline is +65 kB gzipped on observer main chunk. Breakdown: xyflow engine +44, identicons +9, HoverCard+Popover+action row +9, GraphLegend +1, zoom extensions +0.4, misc rounding +1. User accepted this given the xyflow touch + scale wins.
+- **Synthetic stress fixture kept** (task 10.6) per explicit user direction — not removed after the spike. `?mock=stress500/1000/2000` continues to work on umbrella's observer for future iteration. To be removed when the crowdfund goes prod.
+- **Dotted background removed from xyflow spike (and the shipped implementation)** per user feedback during A/B.
+- **Tests skipped** with explicit user waiver for the phase.
+- **Manual browser smoke deferred** to Butters per prior phase convention. User explicitly stated intent to run the pre-merge sweep later.
+
+**Pre-existing issues NOT addressed in Phase 10** (unchanged from Phase 9 baseline — still tracked in #259):
+
+- `committer/src/App.tsx` unused `walletENS` local (possibly orphaned by Phase 7.2 useENS simplification).
+- `committer/src/components/InviteLinkRedemption.tsx` unused `isConnected` destructure.
+- Shared `lib/rpc.test.ts:64` `JsonRpcResult` type mismatch.
+- Committer test files: `ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts` — unused imports + type mismatches.
+- `committer/src/lib/wagmiAdapter.ts:20` strict-null.
+- Admin-wide 275 tsc errors (test-runner-type globals: `vi`, `describe`, `it`, `expect` not resolvable). **Single fix available**: add `types: ['vitest/globals']` or `@types/vitest` to admin's tsconfig.
+- Observer `App.test.tsx` 2 stale-header runtime failures (pre-Phase-3 assertions that lost relevance after the AppShell refactor).
+- Committer `useProRataEstimate.test.ts` 6 runtime failures.
+
+**Bundle size at Phase 10 close (gzipped main chunk):**
+- observer: 356.94 kB (+64.87 from Phase 9)
+- committer: ~565 kB (+~53 from Phase 9)
+- admin: 247.54 kB (–4 kB variance; admin doesn't import TreeView)
+
+**tsc + vitest baseline maintained** (verified during close-out audit):
+- observer: tsc clean; vitest 11/13 (2 pre-existing header failures).
+- shared: tsc 1 error (`rpc.test.ts`); vitest 139/139.
+- committer: tsc 14 errors (#259 baseline); vitest 62/68 (6 pre-existing `useProRataEstimate`).
+- admin: tsc 275 errors (test-runner-type baseline).
+
+**Follow-ups worth tracking (not Phase 11 scope):**
+
+- Remove `?mock=stressN` + `mockGraph.ts` + `MockObserverApp` when crowdfund is prod-ready (explicit user direction: keep for now).
+- `useContractState.ts` duplication between observer/committer (Phase 7.4 deferral, still outstanding).
+- Admin test-runner-type baseline (275 errors, single-commit fix available).
+- Observer `App.test.tsx` stale-header assertions.
+- Committer `walletENS` orphaned local (possibly fallout from Phase 7.2).
+- InviteTab ENS resolution useEffect — flagged Phase 8, could simplify to `useENS({...}).resolve(...)`.
+- LazyMotion bundle optimization (deferred from Phase 9.4).
+- Manual browser smoke owed for Phases 5-10 — Butters plans a consolidated pre-merge sweep.
+
+---
+
+**Note: the pre-flight below is historical** — it describes the plan before the A/B resolved. The actuals block above supersedes it. Kept for diagnostic context on why certain decisions went the way they did.
+
+---
 
 The spike is the exception to the "no feature branches" rule in §0: create a temporary `iskay/crowdfund-ui-graph-spike` branch for the A/B, then **discard it** once the comparison is done. Only the winning approach lands on the umbrella as a commit.
 
@@ -1293,9 +1364,94 @@ The spike is the exception to the "no feature branches" rule in §0: create a te
 
 ### Phase 11 — Micro-interactions final pass
 
-**Effort:** ~0.5 day
+**Status:** 🟡 Not started. Ready for a fresh-context agent — pre-flight below is grounded in a Phase 10 close-out audit.
+**Effort:** originally ~0.5 day; realistic **1–1.5 days** if the full audit is taken seriously (a11y + keyboard + contrast + button-width-jump + aria-labels together are not a half-day of work). Agent should lock scope with user before starting.
+**Depends on:** Phases 1–10 all landed. In particular: Phase 5 (shadcn primitives migrated — focus rings largely come for free from Radix), Phase 6 (ErrorAlert / EmptyState / ErrorBoundary are the patterns Phase 11 reinforces), Phase 9 (`<MotionConfig reducedMotion="user">` mounted at each app root — tab/keyboard focus animations already respect OS settings).
 
-**Tasks:**
+**Pre-flight for the Phase 11 agent (read before writing code):**
+
+1. **User-stated scope priority.** During Phase 10 the user was explicit that, of the xyflow-over-d3 differentiators, **only mobile polish mattered** to them. Touch/pan/zoom ergonomics on the tree is in scope by extension. **Keyboard nav + Lighthouse a11y ≥ 95 are NOT a priority for the POC.** This is a material downgrade from the original acceptance bar ("Lighthouse ≥ 95"). Before writing a11y-heavy code, ask the user to confirm the acceptance scope. Options:
+   - **Trim**: skip Lighthouse target, skip WCAG-AA contrast audit. Keep focus rings + aria-labels + button-width-jump fix + clipboard consistency + mobile polish verification. Roughly the original 0.5 day.
+   - **Full**: do everything on the original list. ~1.5 days. Only makes sense if Phase 11 is also prep for a production audit.
+   - **Split**: ship Trim scope now as Phase 11; defer Full a11y to a separate later pass (Phase 12 or an external audit).
+
+   Recommendation: **Trim scope**, with the Full a11y scope flagged as a future phase when the crowdfund approaches production.
+
+2. **What's already handled for free (audit before reimplementing):**
+   - **Focus rings**: shadcn's CVA variants for `Button`, `Input`, `Label`, `Select`, `Tabs`, `Toggle`, `ToggleGroup`, `HoverCard`, `Popover`, `Dialog`, `Sheet`, `Tooltip` all emit `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`. Radix adds keyboard roving behaviour. **Remaining risk**: any ad-hoc `<button>` or `<input>` not using the shadcn primitives. Phase 5 audit was thorough; grep `rg '<button |<input ' crowdfund-ui/packages/{observer,committer}/src --glob '!**/ui/**'` should return zero hits post-Phase-10. Verify at the start of Phase 11.
+   - **aria-labels on icon-only buttons**: Phase 10's zoom controls, legend toggle, hover-card/popover triggers, copy-address button, and view-in-table button all carry `aria-label` or visible text. The LastTxChip spinner from Phase 4 likely does NOT. `StaleDataBanner` from Phase 7.5 uses ErrorAlert which has proper semantics. Audit: `rg '<Button .*size="icon"' crowdfund-ui/packages --glob '!**/ui/**'` and verify each has `aria-label`.
+   - **Reduced-motion**: Phase 9 mounted `<MotionConfig reducedMotion="user">` at each app root. framer transforms collapse to zero-duration when OS setting is on; opacity transitions remain. xyflow's `fitView({ duration })` also respects this. No Phase 11 action.
+   - **Sonner toasts**: already a11y-friendly (Radix Toast semantics under the hood).
+   - **Dialog + Sheet focus trap**: Radix handles this — focus moves in on open, restores on close. No Phase 11 work unless a bespoke portal uses manual state.
+
+3. **Concrete Phase 11 audit targets:**
+
+   **a) Copy-to-clipboard consistency.** Phase 10.3b added "Copy address" in the TreeView popover. Phase 9.4 animated clipboard confirmations with sonner + framer (InviteLinkSection link-copy, admin address copies). Audit for addresses / tx hashes / invite links that don't yet have a copy affordance:
+   - `TableView` rows: each participant address is displayed but not copy-enabled. Consider adding a hover-revealed copy icon.
+   - `LastTxChip` popover (Phase 4): tx hash is clickable but goes to explorer. A copy-hash button alongside could be useful.
+   - `NodeDetail` component: displays the inviter address. No copy affordance.
+   - `StatsBar`: no copyable content.
+   - ENS-resolved addresses: when hovering a short ENS name, copying should paste the 0x address (not the ENS).
+
+   Decision to lock: **which of these are worth wiring?** TableView copy on every row is the biggest UX win; NodeDetail inviter copy is a nice-to-have.
+
+   **b) Button width-jump during loading.** The Phase 4 `useTransactionFlow` disables buttons during `pending/submitted` states. Current pattern: disabled button keeps its label. Some sites (CommitTab "Approve & Commit", ClaimTab "Claim ARM") could use a loading spinner that **doesn't change button width** (reserved space via `min-w` + `<Loader2 className="animate-spin">`). Audit: `rg 'disabled=.*tx.state' crowdfund-ui/packages/committer/src` → each call site needs a visible "loading" indicator without width jump.
+
+   **c) Remaining ad-hoc form inputs.** Phase 8 migrated the main form flows to react-hook-form + shadcn `<Input>`. SearchBar (shared) and DelegateInput (committer) use shadcn primitives. Verify no regressions from Phase 10.
+
+   **d) Focus order.** Tab-key from top of observer / committer should reach every interactive element in a logical order. Likely correct already (DOM order = tab order, shadcn primitives play nicely), but worth a manual smoke.
+
+   **e) Mobile polish verification.** Deferred to user: the whole A/B test hinged on xyflow's mobile win. Phase 11 should include a manual smoke on a phone (or Chrome DevTools iPhone 12/SE emulation) covering:
+   - Observer `http://<host>:5173` — can you pan/pinch-zoom the tree smoothly?
+   - Observer `http://<host>:5173/?mock=stress500` — same, at scale.
+   - Committer tab navigation on mobile (Phase 3's mobile Sheet; Phase 5's mobile tab toggle).
+   - GraphLegend + zoom controls + hop labels don't overflow viewport at 375 px.
+   - HoverCard + Popover behave correctly on touch (Radix translates hover → long-press on touch).
+
+4. **Outstanding follow-ups the user may want bundled into Phase 11** (ask before taking):
+
+   - **Observer `App.test.tsx` stale-header assertions** (2 runtime failures since Phase 3). Quick test update — ~15 min, drops 2 off the vitest failure count.
+   - **Admin tsc baseline** (275 errors, all test-runner-type). Single-commit fix: add `types: ['vitest/globals']` to admin's tsconfig or install `@types/vitest`. ~15 min; drops admin tsc to near-zero.
+   - **Committer `walletENS` orphaned local** (`App.tsx:186`). Likely fallout from Phase 7.2's useENS simplification. Delete if truly unused; ~5 min.
+   - **useContractState duplication** (observer + committer byte-identical since Phase 7.4). Promote to `packages/shared/src/hooks/useContractState.ts`. Medium scope (~30 min) + touches both apps' imports.
+   - **InviteTab ENS debounced useEffect** (flagged Phase 8). Could simplify to `useENS({...}).resolve(...)` — ~20 min.
+   - **LazyMotion bundle optimization** (deferred Phase 9.4). Wraps framer's `motion.*` usage in `<LazyMotion features={domAnimation}><m.span>` — saves ~10-15 kB gzipped but adds ceremony per call site. Only worth doing if bundle tightens become a priority.
+   - **Remove `?mock=stressN` + mockGraph.ts**. **Do NOT remove in Phase 11** per explicit user direction ("keep for now; remove at some point in the future"). Track as a future cleanup task.
+
+5. **State of `iskay/crowdfund-ui-polish` at Phase 11 start:**
+   - 12+ Phase 10 commits landed (full list in Phase 10 actuals above).
+   - tsc baselines: observer clean, shared 1, committer 14, admin 275.
+   - vitest baselines: shared 139/139, observer 11/13, committer 62/68.
+   - Bundle (gzipped main chunk): observer 356.94 kB, committer ~565 kB, admin 247.54 kB.
+   - Stress fixture (`?mock=stressN`) intentionally shipping on umbrella for developer iteration.
+   - Manual browser smoke owed for Phases 5-10 — user plans a consolidated pre-merge sweep.
+   - No spike worktrees or branches exist.
+
+6. **Validation gates (same pattern as Phases 5–10):**
+   - `npx vite build` in observer + committer + admin — all three green.
+   - `npx tsc -b` in observer → clean. Shared/committer/admin → stay at Phase 10 baseline (no new errors).
+   - `npx vitest run` per package → matches Phase 10 baseline (no new failures).
+   - Mobile smoke at 375 px + 1280 px — see §3.e.
+   - If the "Full" scope is chosen (§1): Lighthouse accessibility ≥ 95 on observer + committer.
+
+7. **Decisions to lock with the user before coding:**
+
+   | ID | Question | Recommendation |
+   |----|----------|---------------|
+   | **P11-D1** | Trim vs. Full scope (§1)? | **Trim** — skip Lighthouse target + WCAG audit; keep focus-ring audit, aria-label audit, clipboard consistency, button-width-jump fix, mobile polish smoke. |
+   | **P11-D2** | Roll baseline cleanups (§4) into Phase 11, or keep them separate? | Offer both lists, let user pick. Admin tsc fix alone is high-value-per-minute. |
+   | **P11-D3** | Which TableView / NodeDetail / LastTxChip copy affordances to wire (§3.a)? | TableView row copy is the biggest UX win; LastTxChip copy-hash is medium; NodeDetail inviter copy is low. |
+   | **P11-D4** | Skip tests (per-phase waiver)? | Follow the convention; user has waived on every phase since 5. Ask to confirm. |
+   | **P11-D5** | Manual smoke: Phase 11 only, or consolidated Phase-5-through-11 sweep? | Consolidated sweep matches the user's stated plan. Phase 11 agent doesn't need to run a standalone smoke unless something new lands that warrants it. |
+
+8. **Branch + commit rule.** Check out `iskay/crowdfund-ui-polish` directly (current HEAD after Phase 10 close: `be248b7`). No feature branches. Land each sub-commit on the umbrella. Do not open a PR to `main` — the landing decision is deferred until every phase has landed (§0).
+
+9. **After Phase 11 lands:**
+   - Update this doc's Phase 11 Status to "✅ Landed" with commit shas + an Actuals block (same pattern as Phase 10 above).
+   - Ask the user whether the umbrella is ready to merge to `main` or whether a review pass precedes it.
+   - When the umbrella lands on `main`, archive this doc to `.claude/archive/CROWDFUND_UI_POLISH.md` with a one-line summary of what shipped (per §7).
+
+**Tasks (original plan — reference, may be trimmed by §1 decision):**
 - Copy-to-clipboard on every address/hash/invite-link (paired with toast + check icon, wired in Phase 9)
 - Consistent focus rings on all interactive elements (shadcn + Radix give this — audit for any remaining ad-hoc inputs)
 - Confirm loading-spinner-in-button pattern is consistent (no button width jump)
@@ -1303,10 +1459,12 @@ The spike is the exception to the "no feature branches" rule in §0: create a te
 - Audit color contrast (WCAG AA) against final dark theme
 - Check keyboard navigation end-to-end on both apps
 
-**Acceptance:**
+**Acceptance (original — may be trimmed):**
 - Lighthouse accessibility score ≥ 95 on both apps.
 - Tab-key navigation works front-to-back without mouse.
 - No console warnings.
+
+**Known session-state gotcha (operational, not code).** The umbrella branch's stash stack has had a foreign entry at `stash@{0}` from `iskay/steward-pass-by-default` through prior phases. **Do not `git stash pop` unless you personally pushed the top entry.** Check `git stash list` before touching the stack.
 
 ---
 

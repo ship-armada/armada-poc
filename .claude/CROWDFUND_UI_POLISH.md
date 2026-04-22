@@ -945,10 +945,11 @@ Incidentally cleaned during Phase 8:
 
 ### Phase 9 — framer-motion micro-animations
 
-**Effort:** ~0.5 day
-**Depends on:** Phase 5, 6
+**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 8 close-out audit (2026-04-22).
+**Effort:** ~0.5 day (possibly 0.75 if the bundle-size check demands a lazy-loaded `motion` import pattern — see §6 below).
+**Depends on:** Phase 5 (primitives already migrated — Tabs, Popover, Dialog, Sheet are shadcn-wired) and Phase 6 (ErrorAlert / EmptyState / Skeleton are the landing spots for motion). Phases 7 + 8 do not conflict.
 
-**Tasks:**
+**Tasks (as originally planned):**
 1. Add `framer-motion`.
 2. Tab panel transitions: fade + slight slide on `<Tabs>` content change.
 3. Dialog/Popover enter/exit (Radix already animates; framer gives finer control if needed — don't over-do).
@@ -959,6 +960,126 @@ Incidentally cleaned during Phase 8:
 **Acceptance:**
 - Doesn't feel excessive. If it feels like a casino, back off. Motion should confirm, not distract.
 - Respects `prefers-reduced-motion` (framer honors this via `useReducedMotion`).
+
+**Pre-flight for the Phase 9 agent (read before writing code):**
+
+1. **Decisions to lock before coding — ask the user up-front.**
+
+   | ID | Question | Recommendation | Reason |
+   |---|---|---|---|
+   | **P9-D1** | Scope — how many of the 6 tasks actually ship? The "don't feel like a casino" acceptance gate is real. | **Ship tasks 4 (StatsBar numbers), 5 (clipboard checkmark), and 6 (card hover) only.** Skip task 2 (tab transitions — Radix already does this via `animate-in fade-in-0 zoom-in-95` on data attrs, see §2) and task 3 (Dialog/Popover — same reason, plus there's effectively one Popover call site). | Each task you add is another `motion.*` import and another reduced-motion gate. Tasks 4-6 are the visible payoffs; tasks 2-3 trade bundle size for marginal polish. |
+   | **P9-D2** | Hover scale target — StatsBar hop cards only, or also TableView participant rows? | **StatsBar cards only.** | TableView renders 100+ rows at local scale and 1000+ at populate-scale; per-row scale transforms would hammer the compositor and obscure selection state. |
+   | **P9-D3** | Bundle-size budget — how much delta is acceptable? Current committer gzip is ~472 KB (Phase 8 build). framer-motion adds ~28 KB gzipped to the main chunk if imported normally, ~5 KB if using `lazy-motion` with dynamic feature loading. | **Accept the ~28 KB using the regular `motion` import.** Lazy-motion adds ceremony for a dev build; if the final bundle audit crosses a threshold Butters sets, switch to lazy-motion then. | Ceremony now = wasted time on a 0.5-day phase. |
+   | **P9-D4** | Reduced-motion — gate per-component via `useReducedMotion` or globally via a `MotionConfig`? | **Global `<MotionConfig reducedMotion="user">`** at each app's root (committer `main.tsx`, observer `main.tsx`, admin `main.tsx`). | Framer's `MotionConfig` respects OS setting and fires once. Per-component gating is error-prone — one `motion.span` without the hook is one forgotten accessibility bug. |
+   | **P9-D5** | Where does the `MotionConfig` wrap mount in committer? It already has `<QueryClientProvider>` → `<RainbowKitProvider>` → `<JotaiProvider>` → `<BrowserRouter>` nested. | **Innermost, wrapping `<App />` only.** | MotionConfig doesn't need to see the other providers; keeping it deepest minimizes re-render surface. |
+
+2. **Concrete animation targets — grounded inventory.** Five live call-site clusters, all verified against current code:
+
+   | Target | File(s) | What changes | Animation |
+   |---|---|---|---|
+   | **StatsBar countdown** | `packages/shared/src/components/StatsBar.tsx:157` | `formatCountdown(remaining)` updates every 1s via a `setInterval` at L124-130. | Key `<motion.span>` on `remaining` integer → tiny fade-up. Be aware this fires every second — consider quantizing to 60s boundaries for hour-scale countdowns to avoid distracting twitches. |
+   | **StatsBar per-hop demand** | `packages/shared/src/components/StatsBar.tsx:166-180` | Grid of 3 hop cards; `cappedCommitted`, `uniqueCommitters`, oversubscription % update on every new event. | Key `<motion.span>` on `formatUsdc(cappedCommitted)` string so the motion fires on display change, not every re-render. |
+   | **StatsBar total + estimated allocation** | `StatsBar.tsx:194, 208` | `totalCommitted`, estimated allocation — updated on event stream. | Same pattern. Keep to `y: -2` / `duration: 0.15` — these update frequently, don't create an "everything is jumping" feel. |
+   | **Copy-to-clipboard confirmations** | `committer/src/components/InviteLinkSection.tsx:55, 82` (two sites); `admin/src/components/ArmLoadPanel.tsx:35`; `admin/src/components/TreasuryMonitor.tsx:18` | All call `navigator.clipboard.writeText`. Three call `toast.success(...)` via sonner; one uses a local `setCopied(true)` + timeout. | Recommend **two motion patterns**: (a) for toast sites, wrap the toast content in a `<motion.div initial={{scale: 0.95, opacity: 0}} animate={{scale: 1, opacity: 1}}>` via sonner's custom renderer; (b) for the `setCopied` site, `<AnimatePresence>` around the checkmark icon. |
+   | **Hover-scale on StatsBar cards** | `packages/shared/src/components/StatsBar.tsx:166` — each hop card is `<div key={hop}>` with `rounded border border-border p-3`. | Hover state. | Replace with `<motion.div whileHover={{scale: 1.01}} transition={{duration: 0.1}}>`. Not `1.05` — per plan task 6, "subtle". |
+
+3. **Dependencies to add.**
+   - `framer-motion` — the only new dep. Install into `crowdfund-ui/packages/shared/package.json` as a direct dep because StatsBar lives in shared and is the primary consumer. Also add as a `peerDependency` so consuming apps (committer, observer) surface a single copy. Do NOT add `framer-motion` to the three app packages separately; it would duplicate the bundle at install time despite workspace deduping.
+   - Install command from repo root: `npm install --legacy-peer-deps --workspace @armada/crowdfund-shared framer-motion`
+   - Pin to the latest **v11** major (current stable). v12 exists but has a different import pathway (`motion/react`) — stick with v11's `framer-motion` until a future phase wants the upgrade.
+   - Do NOT install `motion` (v12's successor package) unless the user asks — it's a rename + rewrite, different API surface.
+
+4. **What's ALREADY animated — don't double-animate.** The Explore audit (2026-04-22) caught these pre-existing animations; framer would layer on top and look laggy:
+
+   | Site | Current animation | File:line | Phase 9 action |
+   |---|---|---|---|
+   | Tabs content (committer action panel + observer mobile) | Radix data-state fade via `tailwindcss-animate` | `packages/shared/src/components/ui/tabs.tsx:67,70` | **Skip** (per P9-D1). If Butters insists, wrap `<TabsContent>` children in `<AnimatePresence mode="wait">` with `<motion.div key={activeTab}>` — but disable Radix's default animation first or the two will stack. |
+   | Popover enter/exit (LastTxChip only) | Radix slide-in-from-top-2 + fade-in-0 + zoom-in-95 | `packages/shared/src/components/ui/popover.tsx:33` | **Skip** (per P9-D1). |
+   | Dialog enter/exit | Radix fade-in-0 + zoom-in-95 | `packages/shared/src/components/ui/dialog.tsx:42, 64` | No call sites in app code — Dialog primitive is exported but unused. Skip entirely. |
+   | Sheet enter/exit | Radix slide + duration-300/500 | `packages/shared/src/components/ui/sheet.tsx:39, 63` | No call sites. Skip. |
+   | `animate-spin` spinners | Tailwind animate class | `LastTxChip.tsx:16-17`, `TransactionFlow.tsx:22,29`, `admin/TimeControls.tsx:119+` | Leave as-is. Pure CSS, zero bundle cost, works perfectly. |
+   | `animate-pulse` skeletons | Tailwind animate class | `TreeView.tsx:515`, `Skeleton` primitive | Leave as-is. |
+   | TableView row hover | `transition-colors` | `packages/shared/src/components/TableView.tsx:378` | **Skip scale per P9-D2**; the transition-colors for selection state is fine. |
+   | Admin StatusDashboard | `transition-all duration-500` | `admin/src/components/StatusDashboard.tsx:130` | Leave as-is. Out of Phase 9 scope (admin app). |
+
+5. **Reduced-motion — NEW concept for this repo.** Zero prior uses of `useReducedMotion` or `prefers-reduced-motion` anywhere in `crowdfund-ui/`. Strategy:
+   - Mount `<MotionConfig reducedMotion="user">` at the top of each app's tree (per P9-D4).
+   - With `reducedMotion="user"`, framer reads the OS setting and reduces *transform* animations to zero-duration while preserving *opacity* animations (the accessibility convention — opacity changes don't trigger vestibular discomfort).
+   - **Do not** add a manual toggle in the UI — system setting is the canonical source of truth.
+   - Test manually on macOS: System Settings → Accessibility → Display → Reduce motion.
+
+6. **Bundle-size guardrail.** Phase 8 close-out baselines (verified from `vite build` output on commit `75d49cd`):
+
+   | App | Raw | Gzipped |
+   |---|---|---|
+   | observer | 772.95 kB | 253.32 kB |
+   | committer (main chunk) | 1,491.83 kB | 472.13 kB |
+   | admin | 652.31 kB | 211.45 kB |
+
+   framer-motion v11 adds ~28 kB gzipped to the main chunk when imported normally. Run `vite build` before touching any code to capture your baseline, then after install to confirm the delta. If the delta is >40 kB gzipped on committer, switch to `lazy-motion` with `domAnimation` feature (the animations Phase 9 uses are basic — fades, translates, scales — all in `domAnimation`). Example:
+
+   ```tsx
+   import { LazyMotion, domAnimation, m } from 'framer-motion'
+   <LazyMotion features={domAnimation}><m.div animate={{opacity: 1}} /></LazyMotion>
+   ```
+
+   `m` replaces `motion` (same API, no eagerly-loaded features). Only adopt this if the regular `motion` import trips the budget.
+
+7. **StatsBar key prop hazard.** The per-hop stat cards already have `key={hop}` (stable). For `motion.span key={value}` on number changes, the value must be a **string** the current render produces — `formatUsdc(cappedCommitted)` returns a string like "1,234.56 USDC". Keying on the formatted string means the motion fires when the *display* changes, not on every event (a 100-event batch that doesn't cross a formatting boundary stays still). Keying on `cappedCommitted` (bigint → string) fires on every new commit. Pick display-string keying for calm, raw-value keying for liveness — recommend display-string for countdown (L157) and totals, raw for per-hop (L166-180) so commits feel responsive.
+
+8. **Sonner toast custom rendering — do not re-invent.** Sonner supports custom render via the `toast(content)` pattern where `content` is a React node. To animate the checkmark on copy:
+   ```tsx
+   toast.success(
+     <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.15 }}>
+       Invite link copied!
+     </motion.div>
+   )
+   ```
+   This preserves sonner's existing styling and just adds the motion wrapper. Do NOT swap sonner for a custom toast implementation.
+
+9. **Call-site cleanup that Phase 9 should NOT touch:**
+   - `useTransactionFlow` + `useTxToast` + `lastTxAtom` — the tx lifecycle stays exactly as Phase 4 shipped it. The `LastTxChip` popover is Radix-animated; don't wrap it in motion (would conflict with Radix's enter/exit).
+   - The `StaleDataBanner` (Phase 7.5) — it uses a plain conditional render; Phase 9 may be tempted to animate its entry. **Skip.** The banner shows at most once per poll cycle and doesn't need ceremony.
+   - ErrorAlert + EmptyState + ErrorBoundary (Phase 6) — these are surfaced inline, no animation needed.
+   - `admin/` — entire app is out of Phase 9 scope except for the clipboard-copy sites identified in §2 (ArmLoadPanel, TreasuryMonitor). If the clipboard animation pattern lands in shared as a helper, it can be imported by admin; otherwise leave admin alone.
+   - Graph view animations — Phase 10 territory.
+   - useContractState duplication — Phase 7 follow-up, still outstanding.
+
+10. **Pre-existing #259 baseline — do NOT fix inside Phase 9.** `tsc -b` baseline after Phase 8 (verified on commit `75d49cd`):
+    - **Observer**: clean. (2 pre-existing `App.test.tsx` runtime failures unchanged — stale header-text assertions.)
+    - **Shared**: 1 pre-existing `rpc.test.ts:64` `JsonRpcResult` property-missing error.
+    - **Committer**: 13 pre-existing errors — `App.tsx:186` unused `walletENS`; `ClaimTab.test.tsx:4,12`; `InviteLinkRedemption.test.tsx:4`; `InviteLinkRedemption.tsx:115` unused `isConnected`; `InviteTab.test.tsx:14,35`; `useProRataEstimate.test.ts` x6 (arity mismatch — same underlying file + 6 runtime failures); `wagmiAdapter.ts:20` strict-null.
+    - **Admin**: `useRole.test.ts` missing test-runner type definitions.
+    - Phase 8 **incidentally cleaned** CommitTab's unused `HOP_CONFIGS` import — that one error is gone.
+    - Phase 9 validation gate: "stay at the current baseline, don't add new errors". Incidental cleanup is fine if a file must change anyway.
+
+11. **Validation gates (same pattern as Phases 5–8):**
+    - `npx vite build` in observer + committer + admin — all three green.
+    - `npx tsc -b` in observer → clean. Shared/committer/admin → stay at Phase 8 baseline.
+    - `npx vitest run` in committer → 62 pass / 6 baseline `useProRataEstimate` failures. No new failures. (CommitTab 8/8, InviteTab 7/7, InviteLinkRedemption 4/4 must all still pass.)
+    - `npx vitest run` in observer → 11 pass / 2 baseline `App.test.tsx` failures.
+    - `npx vitest run` in shared → 139/139 pass.
+    - **Bundle size**: record committer gzipped main-chunk size before and after. If delta > 40 kB gzipped, switch to lazy-motion (§6).
+    - **Manual browser smoke** at 375px and 1280px: (a) open committer, switch tabs → if P9-D1 keeps tab transitions out, confirm Radix fade still plays; (b) trigger a commit → LastTxChip popover opens; (c) copy an invite link → toast checkmark fades in; (d) toggle reduced-motion in OS → re-open app; transform animations reduce to zero-duration, opacity transitions remain.
+
+12. **Commit granularity suggestion:**
+    - 9.1 — install `framer-motion` + mount `<MotionConfig reducedMotion="user">` in all three apps (even if admin has no motion yet, it's harmless and consistent). Zero behavior change.
+    - 9.2 — StatsBar animated numbers (task 4). Lands all 4 animated values (countdown, per-hop, total, estimate) in one commit since they're all one file.
+    - 9.3 — Hover scale on StatsBar cards (task 6, trimmed scope per P9-D2).
+    - 9.4 — Copy-to-clipboard checkmark fade (task 5). Touches InviteLinkSection + two admin files; bundle them together.
+    - 9.5 — (optional, if P9-D1 expands) Tab transitions / Popover fine-tuning.
+    - Each commit leaves the build + tsc + vitest green, with the bundle delta noted in the commit body.
+
+13. **Outstanding follow-ups from prior phases that Phase 9 will not resolve** (tracked for visibility, not action):
+    - **Manual browser smoke owed for Phases 5, 6, 7, and 8.** Recommend consolidating into a single pre-merge smoke sweep once Phase 9 + 10 + 11 land.
+    - **`useContractState.ts` duplication** between observer and committer (byte-identical; Phase 7.4 deferred the promote-to-shared cleanup).
+    - **Observer `App.test.tsx` header-text failures** (stale "Armada Crowdfund Observer" assertions from pre-Phase-3). Not urgent, not a Phase 9 concern.
+    - **Committer `App.tsx:186` unused `walletENS`** — Phase 7.2 simplified `useENS`; walletENS may have been orphaned. Outside scope.
+    - **InviteTab ENS resolution useEffect** — still a debounced `provider.resolveName` call, could be simplified via `useENS` per Phase 7.2. Flagged in Phase 8 actuals. Outside Phase 9 scope.
+
+14. **Branch + commit rule.** Check out `iskay/crowdfund-ui-polish` directly. No feature branches. Land each sub-commit on the umbrella. Do not open a PR to `main` — the landing decision is deferred until every phase has landed (§0).
+
+15. **Known session-state gotcha (operational, not code).** The umbrella branch's stash stack has a foreign entry at `stash@{0}` from `iskay/steward-pass-by-default` (landed there during an earlier agent session's mishap). **Do not `git stash pop` unless you personally pushed the top entry.** Check `git stash list` before touching the stack; use `git show <ref>:<path>` or `git diff <ref>` for baseline comparisons instead of stash round-trips.
 
 ---
 

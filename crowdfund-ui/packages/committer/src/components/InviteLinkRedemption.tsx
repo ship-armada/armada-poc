@@ -9,6 +9,7 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { Loader2 } from 'lucide-react'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import {
   AmountInput,
@@ -433,7 +434,14 @@ export function InviteLinkRedemption() {
                   submitting
                 }
               >
-                {needsApproval ? 'Approve & Join' : 'Join & Commit'}
+                {submitting ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  needsApproval ? 'Approve & Join' : 'Join & Commit'
+                )}
               </Button>
             </form>
           </Form>

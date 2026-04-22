@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
-import { Inbox } from 'lucide-react'
+import { Inbox, Loader2 } from 'lucide-react'
 import {
   Button,
   EmptyState,
@@ -221,7 +221,14 @@ export function ClaimTab(props: ClaimTabProps) {
           disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
           onClick={handleClaimRefund}
         >
-          Claim Refund
+          {claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted' ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" />
+              Claiming…
+            </>
+          ) : (
+            'Claim Refund'
+          )}
         </Button>
       </div>
     )
@@ -242,7 +249,14 @@ export function ClaimTab(props: ClaimTabProps) {
           disabled={claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted'}
           onClick={handleClaimRefund}
         >
-          Claim Refund
+          {claimRefundTx.state.status === 'pending' || claimRefundTx.state.status === 'submitted' ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" />
+              Claiming…
+            </>
+          ) : (
+            'Claim Refund'
+          )}
         </Button>
       </div>
     )
@@ -348,7 +362,14 @@ export function ClaimTab(props: ClaimTabProps) {
             disabled={!isAddress(delegate) || claimArmTx.state.status === 'pending' || claimArmTx.state.status === 'submitted'}
             onClick={handleClaimArm}
           >
-            Claim ARM
+            {claimArmTx.state.status === 'pending' || claimArmTx.state.status === 'submitted' ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Claiming…
+              </>
+            ) : (
+              'Claim ARM'
+            )}
           </Button>
         </div>
       )}

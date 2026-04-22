@@ -4,7 +4,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
-import { ShieldOff } from 'lucide-react'
+import { Loader2, ShieldOff } from 'lucide-react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -526,7 +526,14 @@ export function CommitTab(props: CommitTabProps) {
                 className="flex-1"
                 disabled={submitBusy}
               >
-                {needsApproval(totalAmount) ? 'Approve & Commit' : 'Commit'}
+                {submitBusy ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  needsApproval(totalAmount) ? 'Approve & Commit' : 'Commit'
+                )}
               </Button>
             </div>
           </div>

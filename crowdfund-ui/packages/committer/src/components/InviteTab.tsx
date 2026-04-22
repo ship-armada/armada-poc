@@ -4,7 +4,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
-import { Ticket } from 'lucide-react'
+import { Loader2, Ticket } from 'lucide-react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -352,7 +352,14 @@ export function InviteTab(props: InviteTabProps) {
             className="w-full"
             disabled={!canSubmit || form.formState.isSubmitting}
           >
-            Send Invite
+            {form.formState.isSubmitting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Sending…
+              </>
+            ) : (
+              'Send Invite'
+            )}
           </Button>
 
           <div className="text-xs text-muted-foreground">

@@ -303,7 +303,11 @@ const TreeEdge = React.memo(function TreeEdge(props: {
 
 export function TreeView(props: TreeViewProps) {
   const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress, isLoading } = props
-  const svgRef = useRef<SVGSVGElement>(null)
+  // Callback ref via state: the interactive SVG only mounts on the main render path
+  // (loading / empty-state returns bail before rendering it). A plain `useRef` + `useEffect([])`
+  // binds once at mount — when the SVG isn't in the tree yet — and never re-runs to pick up the
+  // element when it appears. State triggers the zoom-binding effect whenever the element arrives.
+  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -432,10 +436,9 @@ export function TreeView(props: TreeViewProps) {
 
   // Set up zoom behavior
   useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
+    if (!svgEl) return
 
-    const svgSelection = d3Selection.select(svg)
+    const svgSelection = d3Selection.select(svgEl)
     const g = svgSelection.select<SVGGElement>('g.tree-content')
 
     const zoom = d3Zoom.zoom<SVGSVGElement, unknown>()
@@ -450,7 +453,7 @@ export function TreeView(props: TreeViewProps) {
     return () => {
       svgSelection.on('.zoom', null)
     }
-  }, [])
+  }, [svgEl])
 
   const handleNodeClick = useCallback((address: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -490,7 +493,7 @@ export function TreeView(props: TreeViewProps) {
 
   const handleNodeHover = useCallback((address: string, e: React.MouseEvent) => {
     if (address === 'armada') return
-    const svgRect = svgRef.current?.getBoundingClientRect()
+    const svgRect = svgEl?.getBoundingClientRect()
     if (!svgRect) return
     setTooltip({
       x: e.clientX - svgRect.left,
@@ -498,7 +501,7 @@ export function TreeView(props: TreeViewProps) {
       address,
     })
     onHoverAddress?.(address)
-  }, [onHoverAddress])
+  }, [svgEl, onHoverAddress])
 
   const handleNodeLeave = useCallback(() => {
     setTooltip(null)
@@ -545,7 +548,7 @@ export function TreeView(props: TreeViewProps) {
       </div>
 
       <svg
-        ref={svgRef}
+        ref={setSvgEl}
         width={dimensions.width}
         height={dimensions.height}
         className="cursor-grab active:cursor-grabbing"

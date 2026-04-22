@@ -1364,9 +1364,85 @@ The spike is the exception to the "no feature branches" rule in §0: create a te
 
 ### Phase 11 — Micro-interactions final pass
 
-**Status:** 🟡 Not started. Ready for a fresh-context agent — pre-flight below is grounded in a Phase 10 close-out audit.
-**Effort:** originally ~0.5 day; realistic **1–1.5 days** if the full audit is taken seriously (a11y + keyboard + contrast + button-width-jump + aria-labels together are not a half-day of work). Agent should lock scope with user before starting.
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commits `a34c1ec` · `32e2d1d` · `89d5796`). 11.1 was a no-op audit (findings recorded in actuals); 11.4 was deferred to Butters' consolidated Phase 5-11 smoke sweep per P11-D5.
+**Effort:** ~0.5 day actual — closer to the original estimate than the 1-1.5 day upper bound because the Trim scope (P11-D1) dropped the Lighthouse + WCAG audit.
 **Depends on:** Phases 1–10 all landed. In particular: Phase 5 (shadcn primitives migrated — focus rings largely come for free from Radix), Phase 6 (ErrorAlert / EmptyState / ErrorBoundary are the patterns Phase 11 reinforces), Phase 9 (`<MotionConfig reducedMotion="user">` mounted at each app root — tab/keyboard focus animations already respect OS settings).
+
+**Actuals (as shipped):**
+
+Landed as three commits on the umbrella. 11.1 produced no code change (audit clean); 11.4 was deferred to Butters' pre-merge smoke sweep.
+
+- **11.1 — Audit findings (no code change).** Grep `rg '<button |<input ' crowdfund-ui/packages/{observer,committer,shared}/src --glob '!**/ui/**'` returned zero matches — Phase 5 + Phase 10 kept the raw-element purge honest. Every icon-only `<Button>` site audited has an explicit `aria-label` or visible text label: AppShell mobile hamburger ("Open menu"), LastTxChip (statusLabel-driven), GraphLegend toggle ("Collapse/Expand legend"), TreeView Copy address (visible text) + View-in-table ("View in table") + zoom-to-connected Panel ("Jump to your wallet"), InfoTooltip ("More information" default), ErrorBoundary Try-again/Reload (visible text), AmountInput MAX (visible text), InviteLinkSection Copy/Revoke (visible text), observer Participate (visible text). xyflow's built-in `<Controls>` ships with library-provided aria-labels. No fixes needed.
+
+- **11.2 — Loader2 spinner on disabled tx buttons** (`a34c1ec`). Swap the button label for `<Loader2 className="animate-spin" /> + "Submitting…"/"Claiming…"/"Sending…"` during the Phase 4 `tx.state.status === 'pending' || 'submitted'` window. Six sites: CommitTab review-step submit, ClaimTab Claim Refund (×2 — main + below-minimum variant), ClaimTab Claim ARM, InviteTab Send Invite (keyed on `form.formState.isSubmitting` which covers the full RHF submit await), InviteLinkRedemption Approve & Join. Each site already uses `w-full`/`flex-1`, so layout-fixed widths absorb the swap — no layout jump. Skipped InviteLinkSection Revoke (fire-and-forget, no persistent pending state; width not at risk). Preserves Phase 4 disabled gating unchanged.
+
+- **11.3 — Clipboard affordances at three sites** (`32e2d1d`). Promoted Phase 9.4's `CopyToast` wrapper (framer-motion scale 0.95→1.0 + opacity 0→1, 150ms) from `committer/src/components/InviteLinkSection.tsx` to new shared `packages/shared/src/components/CopyToast.tsx`; barrel-exported; dedup'd the committer-local copy. New affordances:
+  - **TableView Address column** — hover-revealed `<Button variant="ghost" size="sm">` with Copy icon per row; copies the raw 0x address regardless of ENS display; skipped for the "armada" root row. Row gets a `group` class so the icon's `opacity-0 group-hover:opacity-100 focus-visible:opacity-100` kicks in on hover / keyboard focus.
+  - **LastTxChip popover** — small Copy button next to the hash, sibling to the explorer link, aria-label "Copy transaction hash".
+  - **NodeDetail inviter chain** — small Copy button next to each real 0x inviter in the "Invited by" line; hidden for self-invite / seed / unknown. Works both inside TreeView's popover + inside TableView's expanded-row detail (same component, two render sites).
+
+- **11.4 — Mobile polish smoke (deferred).** Per P11-D5, the Phase 11 agent's mobile smoke was merged into Butters' consolidated Phase 5-11 pre-merge sweep. Checklist captured below for that sweep:
+  - Observer `http://<host>:5173` at 375px — pan/pinch-zoom the xyflow tree smoothly; append `?mock=stress500` and retry at scale.
+  - Observer at 1280px — TableView row copy icon fades in on hover; focus-visible reveals it via keyboard.
+  - Committer at 375px — mobile Sheet opens/closes; Phase 5.4 Tabs action bar works; LastTxChip popover Copy button surfaces.
+  - Committer commit/invite/claim flows — verify 11.2 spinners fire during pending/submitted; toast shows "Hash copied" when clicking Copy in LastTxChip popover.
+  - GraphLegend + xyflow zoom controls don't overflow viewport at 375px.
+  - HoverCard + Popover behave on touch (Radix translates hover → long-press on touch devices).
+
+- **11.5 — Baseline cleanups bundle** (`89d5796`). Three #259 carryovers cleared:
+  - `admin/tsconfig.app.json` — added `vitest/globals` to the `types` array. Admin `tsc -b` drops from ~275 errors (all `vi`/`describe`/`it`/`expect` not-found) to 22 residual pre-existing issues (ParticipantTable generic-column type mismatch at L370/L383 + unused-import in StatusDashboard.test.tsx + `vi.Mock` namespace usage in useRole.test.ts). The residuals are pre-existing latent type issues that were masked by the test-runner noise — not Phase 11 scope.
+  - `observer/src/App.test.tsx` — two assertion updates to match post-Phase-3 AppShell: `getByText('Armada Crowdfund Observer')` → `getByText('Armada Crowdfund')` (the brand span is always rendered; "· Observer" is `sm:inline`). Also swapped the mobile-tab-bar `getAllByRole('button', { name: /Tree|Table/i })` → `getAllByRole('tab', …)` because Phase 5.4 migrated the tab bar to shadcn `<Tabs>` (role=tab, not role=button). Observer vitest now 9/9 (was 11/13).
+  - `committer/src/App.tsx` — deleted the orphaned `walletENS` local (line 186) surfaced by Phase 7.2's `useENS` API simplification; `resolveENS` is still used by the 3 TreeView/TableView children, only the unused top-level binding is gone. Committer tsc drops from 14 to 13.
+
+**Deviations from plan:**
+
+- **11.1 produced zero code changes.** Audit found nothing broken; recorded findings in this actuals block rather than ship an empty commit.
+- **11.4 deferred to Butters' consolidated sweep.** Phase 11 agent can't drive a browser in-session. Per P11-D5, this maps cleanly to the "Phase 5-11 consolidated smoke" Butters has been planning since Phase 5 close-out.
+- **11.3 self-catch during implementation.** First pass at TableView added a raw `<button>` with hand-rolled focus styles. 11.1's audit rule says zero raw `<button>` outside `ui/`. Refactored to shadcn `<Button variant="ghost" size="sm" className="h-auto p-0.5">` before commit; the final grep is clean.
+- **11.5 committer baseline drop is 1, not 4.** The 15-min "walletENS removal" targeted only the one orphaned local; other committer #259 items (ClaimTab.test.tsx vi unused, InviteLinkRedemption.tsx `isConnected` unused, InviteTab.test.tsx type mismatches, useProRataEstimate.test.ts arity, wagmiAdapter.ts strict-null) are out of Phase 11 scope per the "don't fix what the task doesn't touch" convention.
+- **Admin residual errors are higher than the plan's implied ~0.** Plan said `vitest/globals` would "erase 275 of the baseline errors in one commit" — it did (253-error drop), but the masking effect revealed 22 pre-existing issues that the runner-type noise had been hiding. These are legitimate latent issues; file a follow-up or bundle into a future admin polish pass.
+- **Tests skipped** with explicit user waiver ("4. yes, waive") per the per-phase convention since Phase 5.
+
+**Pre-existing issues NOT addressed in Phase 11** (updated baseline after 11.5):
+
+- Shared `lib/rpc.test.ts:64` `JsonRpcResult` type mismatch.
+- Committer test files (`ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`) — unused imports + type mismatches (13 errors total).
+- Committer `InviteLinkRedemption.tsx:116` unused `isConnected` destructure.
+- Committer `lib/wagmiAdapter.ts:20` strict-null.
+- Admin `ParticipantTable.tsx:370/L383` — ColumnDef generic mismatch between ParticipantRow and AggregatedRow modes.
+- Admin `StatusDashboard.test.tsx:7` unused `AdminRole` import.
+- Admin `useRole.test.ts:12` `vi.Mock` namespace (should be `Mock` imported from `vitest`).
+- `useProRataEstimate.test.ts` 6 runtime vitest failures.
+- TreeView → NodeDetail hover tooltip shares the NodeDetail component with TableView's expanded-row detail; the inviter Copy button from 11.3 renders in both places. No regression expected, but worth verifying during Butters' smoke.
+
+**Bundle size at Phase 11 close (gzipped main chunk):**
+- observer: ~357 kB (no meaningful delta from Phase 10 — CopyToast + TableView button + framer-motion already bundled).
+- committer: ~565 kB (no meaningful delta).
+- admin: ~248 kB (no meaningful delta).
+
+**tsc + vitest baseline at Phase 11 close:**
+- observer: tsc clean; vitest 13/13 (was 11/13).
+- shared: tsc 1 error (unchanged `rpc.test.ts`); vitest 139/139.
+- committer: tsc 13 errors (was 14); vitest 62/68 (6 pre-existing `useProRataEstimate`).
+- admin: tsc 22 errors (was ~275).
+
+**Outstanding follow-ups from prior phases Phase 11 did not resolve** (tracked for visibility):
+
+- **Manual browser smoke owed for Phases 5-11** — consolidated sweep is Butters' pre-merge activity.
+- **`useContractState.ts` duplication** between observer and committer (Phase 7.4 deferral, still outstanding).
+- **Admin residual 22 tsc errors** (new baseline after 11.5's unmasking).
+- **InviteTab ENS resolution useEffect simplification** (Phase 8 flag — could use `useENS({...}).resolve(...)`).
+- **LazyMotion bundle optimization** (Phase 9.4 deferral).
+- **Remove `?mock=stressN` + `mockGraph.ts` + `MockObserverApp`** when crowdfund is prod-ready (explicit user direction: keep for now).
+- **Framer-replacement-of-Radix spike** on Tabs/Popover/Dialog/Sheet (Phase 9 §8 follow-up).
+
+**After Phase 11 lands:**
+- This is the final phase of the polish pass. All eleven phases landed on `iskay/crowdfund-ui-polish`. Butters decides when to open the umbrella → `main` PR (squash/merge/rebase choice deferred until this point per §0).
+- Once the umbrella merges, archive this doc to `.claude/archive/CROWDFUND_UI_POLISH.md` with a one-line summary (per §7).
+
+---
+
+**Pre-flight (historical — Phase 11 has landed; see Actuals above):**
 
 **Pre-flight for the Phase 11 agent (read before writing code):**
 

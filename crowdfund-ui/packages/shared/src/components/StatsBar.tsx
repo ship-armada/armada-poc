@@ -177,7 +177,12 @@ export function StatsBar(props: StatsBarProps) {
       {/* Bottom row: per-hop stats */}
       <div className="grid grid-cols-3 gap-4">
         {hopStats.map((stat, hop) => (
-          <div key={hop} className="rounded border border-border p-3">
+          <motion.div
+            key={hop}
+            whileHover={{ scale: 1.01 }}
+            transition={{ duration: 0.1 }}
+            className="rounded border border-border p-3"
+          >
             <div className="text-xs text-muted-foreground mb-1">{hopLabel(hop)}</div>
             <motion.div
               key={stat.cappedCommitted.toString()}
@@ -200,7 +205,7 @@ export function StatsBar(props: StatsBarProps) {
                 </span>
               )}
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
 

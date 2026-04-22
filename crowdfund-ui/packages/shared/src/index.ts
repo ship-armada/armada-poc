@@ -40,6 +40,9 @@ export { buildGraph, mergeEvents } from './lib/graph.js'
 export { generateMockGraph } from './lib/mockGraph.js'
 export type { MockGraphOptions } from './lib/mockGraph.js'
 
+export { IdenticonSvg } from './components/IdenticonSvg.js'
+export type { IdenticonSvgProps } from './components/IdenticonSvg.js'
+
 export {
   getCachedEvents,
   cacheEvents,

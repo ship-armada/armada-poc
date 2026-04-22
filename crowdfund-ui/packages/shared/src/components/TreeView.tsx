@@ -23,6 +23,10 @@ import '@xyflow/react/dist/style.css'
 import type { CrowdfundGraph } from '../lib/graph.js'
 import { graphToTree, filterTree, type TreeNode } from '../lib/treeLayout.js'
 import { NodeDetail } from './NodeDetail.js'
+import { IdenticonSvg } from './IdenticonSvg.js'
+
+/** Below this node radius, identicons are illegible — fall back to a solid coloured circle. */
+const IDENTICON_MIN_RADIUS = 10
 
 export interface TreeViewProps {
   graph: CrowdfundGraph
@@ -75,6 +79,10 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
   const d = data
   const nodeOpacity = d.searchActive && !d.isSearchMatch ? 0.2 : 1
   const hasChildren = d.childCount > 0
+  // Identicons render only for single-hop, committed, large-enough nodes.
+  // Multi-hop nodes keep their pie-slice rendering; tiny nodes stay as solid circles.
+  const showIdenticon = !d.isMultiHop && d.committed > 0n && d.radius >= IDENTICON_MIN_RADIUS
+  const identiconSize = Math.floor(d.radius * 2)
 
   return (
     <div
@@ -89,7 +97,22 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
       <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: 'none' }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: 'none' }} />
 
-      <svg width={NODE_SIZE} height={NODE_SIZE} style={{ overflow: 'visible' }}>
+      {showIdenticon && (
+        <div
+          style={{
+            position: 'absolute',
+            left: NODE_HALF - d.radius,
+            top: NODE_HALF - d.radius,
+            width: identiconSize,
+            height: identiconSize,
+            pointerEvents: 'none',
+          }}
+        >
+          <IdenticonSvg address={d.address} size={identiconSize} />
+        </div>
+      )}
+
+      <svg width={NODE_SIZE} height={NODE_SIZE} style={{ overflow: 'visible', position: 'relative' }}>
         <g transform={`translate(${NODE_HALF}, ${NODE_HALF})`}>
           {d.isConnected && (
             <circle
@@ -131,10 +154,12 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
             <circle
               r={d.radius}
               style={{
-                fill: d.committed > 0n ? hopColor(d.hop) : 'none',
+                fill: showIdenticon
+                  ? 'none'
+                  : d.committed > 0n ? hopColor(d.hop) : 'none',
                 stroke: d.isSelected ? 'var(--hop-selected)' : hopColor(d.hop),
               }}
-              fillOpacity={d.committed > 0n ? 0.6 : 0}
+              fillOpacity={showIdenticon ? 0 : d.committed > 0n ? 0.6 : 0}
               strokeWidth={d.isSelected ? 2.5 : 1.5}
             />
           )}

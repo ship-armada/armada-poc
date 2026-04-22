@@ -182,9 +182,6 @@ export function App() {
     }
   }, [tabStates, activeTab])
 
-  // Wallet header ENS name
-  const walletENS = wallet.address ? resolveENS(wallet.address) : null
-
   // Error states
   if (deployError) {
     return (

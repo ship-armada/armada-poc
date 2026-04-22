@@ -44,6 +44,12 @@ export { IdenticonSvg } from './components/IdenticonSvg.js'
 export type { IdenticonSvgProps } from './components/IdenticonSvg.js'
 
 export {
+  HoverCard,
+  HoverCardTrigger,
+  HoverCardContent,
+} from './components/ui/hover-card.js'
+
+export {
   getCachedEvents,
   cacheEvents,
   getCachedENS,

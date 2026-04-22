@@ -1123,18 +1123,138 @@ Landed as four commits on the umbrella, one per sub-goal from the pre-flight §1
 
 ### Phase 10 — Invite graph: spike + polish
 
-**Effort:** spike 0.5 day, polish 1.5–2 days
-**Depends on:** Phase 1 (for theme tokens)
+**Status:** 🟡 Not started. Ready for a fresh-context agent to pick up — pre-flight below is grounded in a Phase 9 close-out audit (2026-04-22).
+**Effort:** spike 0.5 day, polish 1.5–2 days.
+**Depends on:** Phase 1 (theme tokens for hop/graph-edge colors) + Phase 2 (Popover primitive; HoverCard not yet installed — see §4). Phases 3-9 don't conflict with TreeView work but see §6 for framer-motion v12 availability.
 
 The spike is the exception to the "no feature branches" rule in §0: create a temporary `iskay/crowdfund-ui-graph-spike` branch for the A/B, then **discard it** once the comparison is done. Only the winning approach lands on the umbrella as a commit.
 
-**Current state:** `packages/shared/src/components/TreeView.tsx` (596 lines) — vanilla d3-hierarchy + d3-zoom. Working, handles current scale, hop collapse at >20 children, hover tooltips, pan/zoom.
+**Current state of TreeView (verified 2026-04-22):** `packages/shared/src/components/TreeView.tsx` — 620 lines (grew from the plan's cited 596 during Phase 1 theme-token swap). Uses `d3-hierarchy` + `d3-zoom` + `d3-scale` + `d3-selection`. Already themed (zero hex literals, all colors via `var(--hop-*)` / `var(--graph-edge-*)`). React.memo'd per-node + per-edge components. Handles:
+- Pan/zoom with d3-zoom (scale extent [0.1, 4]).
+- Hop-column layout (hops 0/1/2 as x-columns; d3-tree vertical spread as y).
+- Multi-hop addresses as pie-slice nodes (one slice per hop).
+- Self-invite edges as curved loops; edges dashed when `fromHop === -1` (root).
+- Collapse subtrees at >`COLLAPSE_THRESHOLD = 20` children.
+- Inviter-chain highlight: path from `connectedAddress` to ROOT rendered in `var(--graph-edge-chain)`.
+- Search dim (opacity 0.2 for non-matching nodes + selective edge dimming).
+- Selection ring.
+- Built-in tooltip: absolutely-positioned `<div>` following the mouse, body = shared `<NodeDetail>` component (143 lines, already rich).
+- Loading state: pulsing grey circle (Phase 6.3 addition).
+- CSS transitions on node/edge position: `transform 500ms ease, opacity 300ms ease`.
+
+**Pre-flight for the Phase 10 agent (read before writing code):**
+
+1. **TreeView public API — preserve it, whichever path wins.** Props (from `packages/shared/src/components/TreeView.tsx:13-24`):
+   ```ts
+   interface TreeViewProps {
+     graph: CrowdfundGraph
+     selectedAddress: string | null
+     onSelectAddress: (addr: string | null) => void
+     onHoverAddress?: (addr: string | null) => void
+     searchQuery: string
+     phase: number
+     resolveENS: (addr: string) => string | null
+     connectedAddress?: string | null
+     isLoading?: boolean
+   }
+   ```
+   Both apps depend on this shape. **Observer** renders TreeView in two places: `observer/src/App.tsx:210` (pre-open fallback, no `onHoverAddress`, no `searchQuery`) and `observer/src/App.tsx:230` (main render inside ErrorBoundary, full props). **Committer** renders one instance at `committer/src/App.tsx:306` with `selectedAddress={selectedAddress ?? wallet.address}` (defaulting selection to connected wallet). Changing the props signature means touching both apps in lockstep — prefer preserving the interface.
+
+2. **The tree layout is a derived structure, not stored data.** `packages/shared/src/lib/treeLayout.ts` exports `graphToTree(graph, resolveENS) → TreeNode` and `filterTree(root, query) → Set<string>`. Pure functions, no React, no d3. A React Flow rewrite still starts by calling `graphToTree(...)` to get the tree shape, then translates `TreeNode[]` + parent-child edges into React Flow's `nodes: Node[]` + `edges: Edge[]` arrays. Keep `treeLayout.ts` as-is; it's the abstraction boundary.
+
+3. **The graph itself comes from events, not RPC reads.** `CrowdfundGraph` has `nodes: Map<string, GraphNode>`, `edges: GraphEdge[]`, `summaries: Map<string, AddressSummary>`, and `events: CrowdfundEvent[]` — constructed by `buildGraph(events)` in `lib/graph.ts` and incremented via `mergeEvents(...)`. Phase 7's react-query `useContractEvents` is the feed. Phase 10 does NOT need to understand event parsing; just take the graph prop and render it.
+
+4. **Primitives available vs. missing from the shadcn install.** Before running `shadcn add …` for Phase 10, verify what's actually there:
+   - **Present** (barrel-exported from `@armada/crowdfund-shared`): `Button`, `Input`, `Label`, `Card`, `Dialog`, `Tooltip`, `Tabs`, `Select`, `Separator`, `Skeleton`, `Alert`, `ScrollArea`, `Popover`, `Sheet`, `Badge`, `Toggle`, `ToggleGroup`, `form` (from Phase 8.1). All use Radix under the hood; Tooltip and Popover are the current go-tos for hover/click-to-reveal.
+   - **Missing — install if you go Step B-d3 and want the plan task #3 "HoverCard on hover + Popover on click" pattern**: `HoverCard`. Run `npm_config_legacy_peer_deps=true npx shadcn@latest add hover-card --yes --overwrite` from `packages/shared/` following the regeneration workflow documented in `packages/shared/CLAUDE.md` (move out of `./@/`, rewrite imports to relative `.js`, strip `"use client"`, ABOUTME header, barrel-export).
+   - **NOT installed anywhere in the workspace**: `@xyflow/react`, `@metamask/jazzicon`, `@dicebear/core`, `@dicebear/collection`, `react-blockies`. Each is a scope decision (§5).
+
+5. **Dependencies to add (decisions to lock before install):**
+
+   | ID | Question | Recommendation | Reason |
+   |----|----------|---------------|--------|
+   | **P10-D1** | Run the Step A xyflow spike at all, or commit to d3 polish directly? | **Run the spike.** | Plan's default; the comparison is cheap (half a day) and yields a defensible decision even if d3 wins. |
+   | **P10-D2** | Identicon library: `@metamask/jazzicon` (~4 kB gzipped, deterministic hash → SVG circles) vs `@dicebear/core` + one collection (~15-25 kB, many styles)? | **jazzicon.** | Already in the Armada palette for identicons-as-chrome; multiple styles are cosmetic sugar, not worth the bundle cost given committer is at +40 kB from Phase 9 (+ admin 251.67 kB / +40.22 kB) and the P9-D3 budget was already hit. |
+   | **P10-D3** | ENS avatars: try-fetch-and-fall-back-to-identicon, or identicon-only for simplicity? | **Identicon-only this phase**, flag avatars as a follow-up. | Observer has no wagmi and would need a separate avatar fetch path; committer has RainbowKit's `useEnsAvatar` but using it inside a shared component breaks the "no wagmi in shared" rule. An avatar fetch hook in shared would need its own IDB cache + react-query wrapper — scope expansion, not polish. |
+   | **P10-D4** | Rich tooltip: keep the existing `div`+`NodeDetail` on hover, or swap to Radix `Popover` on click + `HoverCard` on hover? | **Step B-d3: Popover on click only**, keep the existing hover div (or promote to Radix `Tooltip`). | Two separate rich-reveal primitives (click + hover) is feature creep for the same data. Click-to-pin a popover is the better UX (user can interact with inner buttons like "copy address"); hover is secondary. `HoverCard` install can be skipped. Revisit if design wants both. |
+   | **P10-D5** | Bundle budget for the polish step? Phase 9 landed at committer +40.35 kB gzipped. jazzicon ~4 kB. Radix Popover is already in the bundle. | **Soft +15 kB budget.** | Keeps total Phase 9+10 delta under ~55 kB. If xyflow wins the spike, that jumps to ~45 kB alone (xyflow is ~40 kB gzipped baseline + ~5 kB for the custom node/edge logic) — ask Butters before locking. |
+   | **P10-D6** | Minimap: d3-driven, or use React Flow's built-in `<MiniMap>` (only if xyflow wins)? | **If d3 wins: skip minimap this phase** (tree tops out at hop-2, not enough depth for a minimap to add value at current scale); **if xyflow wins: use built-in**. | Minimaps earn their cost on deep/wide graphs. The crowdfund tree has exactly 3 layers (hop 0/1/2); the collapse-at-20 mechanism is the real scale-handling tool. Legend + zoom-to-fit are higher-value additions. |
+   | **P10-D7** | Spike branch: where to base it from? | **Off `iskay/crowdfund-ui-polish` HEAD** (current: `c3bb002`). | Matches the existing theme tokens + Phase 9 motion availability. Discard the branch after A/B review — do not land on umbrella. |
+
+6. **Phase 9 state the Phase 10 agent should know:**
+   - **framer-motion v12 is in shared** (`packages/shared/package.json` dependencies + peerDependencies). Imports still work via `from 'framer-motion'` — same API surface for `motion`, `AnimatePresence`, `MotionConfig`. If Step B-d3 wants smoother collapse/expand transitions than d3-transition provides (e.g. layout morph via `<motion.g layout>`), framer is available. If you use it, read Phase 9 Actuals first — there's a known v11 → v12 dedupe history: both shared and `usdc-v2-frontend` pin v12 so the root hoist resolves cleanly.
+   - **Bundle budget** (Phase 8 baseline → Phase 9 close-out): committer 472.13 → 512.48 kB gzipped (+40.35 kB); observer 253.32 → 292.07 kB; admin 211.45 → 251.67 kB. Phase 10 should record its own delta in each commit.
+   - **`<MotionConfig reducedMotion="user">` is mounted at each app root**. If you add framer animations to the graph (e.g. `motion.g` node transitions), they'll respect OS reduced-motion automatically — no extra gating needed.
+   - **StatsBar numbers animate on value change** (Phase 9.2) — not relevant to TreeView, but if you're wondering whether "animated numbers" already exist in the codebase, that's where.
+   - **LazyMotion deferred follow-up**: if Phase 10 adds significant framer usage, consider doing the LazyMotion + `m` + `domAnimation` swap together for both Phase 9 and 10 call sites. Not required for Phase 10 unless budget is blown.
+
+7. **`crowdfund:populate` scale — correction to the plan's "~500+ nodes" claim.** The script fills by *USDC budget*, not node count. Default target: `TARGET=1050000` USDC (env-overridable, see `scripts/crowdfund_populate.ts`). With the default seed cap and hop-1/hop-2 caps, that yields roughly (back-of-envelope) **~100-200 participants** at current per-participant averages — nowhere near 500. To actually stress the graph at 500+ nodes for the spike comparison, either:
+   - **Increase the target** (`TARGET=5000000 npm run crowdfund:populate` — but respect the hard contract cap `CROWDFUND_CONSTANTS.ABSOLUTE_MAX`; read `contracts/crowdfund/*` for the exact ceiling before pushing past it).
+   - **Generate synthetic `CrowdfundGraph` data** in a dev-only fixture file and render via a `?mock=stress500` URL param. Cleaner for the spike, doesn't require a real crowdfund state.
+   Recommend (b) for the spike — zero contract interaction, reproducible, lets you test 500/1000/2000-node scenarios without running `crowdfund:populate` each time.
+
+8. **Known call-site inventory (anything touching TreeView directly or transitively):**
+   - `observer/src/App.tsx:210, 230` (2 render sites).
+   - `committer/src/App.tsx:306` (1 render site).
+   - `packages/shared/src/components/NodeDetail.tsx` (143 lines) — rendered inside TreeView's tooltip AND inside each app's detail side panel. **Do not break its props** (`summary`, `hopNodes`, `resolveENS?`, `phase`). If Step B adds a Popover variant with buttons (copy address, view in table), add them via new optional props, don't rewrite the existing component.
+   - `packages/shared/src/hooks/useSelection.ts` — Jotai-backed hook providing `selectedAddress` / `selectAddress` / `searchQuery` / `setSearchQuery` / `hoveredAddress` / `setHoveredAddress`. Atoms are shared across observer and committer. TreeView reads/writes via the prop contract; don't reach into atoms from inside TreeView.
+   - `packages/shared/src/components/SearchBar.tsx` — drives `searchQuery`. Phase 10 should not touch SearchBar.
+   - `packages/shared/src/components/TableView.tsx` — also takes `selectedAddress`/`onSelectAddress`, so tree and table stay synchronized. Any new "view in table" button in a Popover should just call `onSelectAddress(addr)` and let TableView do its thing; don't add new coupling.
+
+9. **Out of scope for Phase 10 (don't touch):**
+   - Event fetching, IDB cache, ENS resolution — Phase 7 owns these. The graph prop is the contract.
+   - TableView, StatsBar, NodeDetail public props — if a change is needed, propose it and wait for user; don't refactor mid-phase.
+   - Contract-side changes to support richer graph data (e.g. on-chain avatars) — not in scope.
+   - Micro-interactions & keyboard nav polish — Phase 11 owns that sweep.
+   - Admin app — D7 exempt.
+   - Pre-existing tsc + vitest baseline errors (see §11).
+
+10. **Commit granularity suggestion (Step B-d3 path):**
+    - **Spike branch (`iskay/crowdfund-ui-graph-spike`)**: one WIP commit containing the xyflow prototype + a throwaway `README.md` scoring the A/B. Do NOT polish; do NOT add tests. Branch gets discarded or abandoned after user review.
+    - **10.1 — Extract constants + inline JSDoc** on the magic numbers (`COLLAPSE_THRESHOLD = 20`, node-size scale range `[4, 24]`, hop-column x positions `80 + ((hop+1)/3) * (w-160)`, transition durations `500ms`/`300ms`). Move to a `TREE_CONSTANTS` object at top of `TreeView.tsx`. Zero behavior change. Prereq for 10.2-10.5 because every subsequent change touches these.
+    - **10.2 — Jazzicon identicons** (shared component `IdenticonSvg` returning an inline SVG from address hash, inserted into `TreeNodeEl` as a `<circle fill="url(#pattern-…)">` or a `<foreignObject>`). Bundle delta should be ~4 kB.
+    - **10.3 — Popover-on-click** replacing the positioned `<div>` tooltip. `NodeDetail` becomes the popover body. Keep the existing mouse-tracked hover tooltip (or swap to shadcn `Tooltip`) as a lighter fly-by. Adds a "copy address" + "view in table" action row inside the popover.
+    - **10.4 — Legend** (new shared component `GraphLegend.tsx`) explaining hop colors, multi-hop marker, connected-wallet glow, search dim. Rendered as a compact corner panel inside TreeView.
+    - **10.5 — Zoom controls**: zoom-to-fit, zoom-to-connected, zoom-to-node-on-search. Tiny corner panel with three lucide-icon buttons. Programmatic zoom via d3-zoom's `transform` on the svg selection.
+    - **10.6 — (If P10-D6 says ship minimap)** d3-driven minimap panel.
+    - **Each commit** records gzipped bundle delta in its commit body.
+
+11. **Validation gates (same pattern as Phases 5-9):**
+    - `npx vite build` in observer + committer + admin, all green.
+    - `npx tsc -b` in observer → clean. Shared/committer/admin → stay at Phase 9 baseline (1/14/275 errors). **Admin is 275, not 10** — prior phase actuals cited a tail-N substring; the corrected baseline landed in Phase 9 Actuals.
+    - `npx vitest run` in committer → 62 pass / 6 baseline `useProRataEstimate` fail.
+    - `npx vitest run` in observer → 11 pass / 2 baseline `App.test.tsx` header-text fail.
+    - `npx vitest run` in shared → 139/139. A TreeView rewrite that changes `flatNodes`/`flatEdges` internals likely won't affect tests directly (they cover `graphToTree`, `filterTree`, atoms), but any incidental change to `treeLayout.ts` or `graph.ts` must keep tests green.
+    - **Manual smoke** at 375px + 1280px is more important for Phase 10 than prior phases — graph interaction is visual. At minimum: (a) pan/zoom with mouse wheel + drag; (b) select a node → NodeDetail renders; (c) search → non-matches dim; (d) tap collapse badge on a >20-child subtree → subtree collapses + total renders as `+N`; (e) if RHK avatars land, confirm ENS-resolved addresses show the ENS avatar fallback; (f) pointer tooltip follows the mouse cleanly (no lag at 500+ nodes).
+
+12. **Pre-existing issues NOT addressed in Phase 10** (unchanged from Phase 9 baseline):
+    - `committer/src/App.tsx` unused `walletENS` local.
+    - `committer/src/components/InviteLinkRedemption.tsx` unused `isConnected` destructure.
+    - Shared `lib/rpc.test.ts:64` `JsonRpcResult` type mismatch.
+    - Committer test files (`ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`) — unused imports + type mismatches.
+    - `committer/src/lib/wagmiAdapter.ts:20` strict-null.
+    - Admin-wide: 275 test-runner-type errors (`vi`, `describe`, `it`, `expect` not resolvable); tsc needs `@types/vitest` or `types: ['vitest/globals']` — flagged as a Phase 9 follow-up.
+    - Observer `App.test.tsx` 2 stale-header assertions from Phase 3 AppShell refactor.
+    - Committer `useProRataEstimate.test.ts` 6 runtime failures.
+
+13. **Known session-state gotcha (operational, not code).** Same as Phase 9's §15 — still applies. The umbrella branch's stash stack has a foreign entry at `stash@{0}` from `iskay/steward-pass-by-default` (earlier agent session mishap). **Do not `git stash pop` unless you personally pushed the top entry.** Always check `git stash list` before touching the stack. Use `git show <ref>:<path>` or `git diff <ref>` for baseline comparisons instead of stash round-trips. Confirmed present as of 2026-04-22: `stash@{0}: WIP on iskay/steward-pass-by-default`.
+
+14. **Outstanding follow-ups from prior phases that Phase 10 will not resolve** (tracked for visibility, not action):
+    - **Manual browser smoke owed for Phases 5, 6, 7, 8, and 9.** Recommend consolidating into a single pre-merge smoke sweep once Phase 10 + 11 land.
+    - **`useContractState.ts` duplication** between observer and committer (byte-identical; Phase 7.4 deferred the promote-to-shared cleanup).
+    - **Admin test-runner-type baseline** (275 errors; one `types: ['vitest/globals']` commit fixes nearly all).
+    - **Committer `App.tsx` unused `walletENS` local** — possibly orphaned by Phase 7.2's `useENS` simplification. Outside scope.
+    - **InviteTab ENS resolution useEffect** — flagged as a Phase 8 deviation; could simplify to `useENS({...}).resolve(...)`. Outside Phase 10 scope.
+    - **LazyMotion + m + domAnimation swap** — deferred from Phase 9.4; Phase 10 may want to bundle this in if graph animations push the committer chunk past ~520 kB gzipped.
+    - **Full framer-replacement-of-Radix spike on Tabs/Popover/Dialog/Sheet** — documented in §8; not a Phase 10 concern unless graph selection surfaces a shared-element transition between TreeView and TableView (very unlikely at this polish level).
+
+15. **Branch + commit rule (Phase 10 exception to §0).** Step A: spike on throwaway `iskay/crowdfund-ui-graph-spike` branched off `iskay/crowdfund-ui-polish`. After A/B review, the spike branch is **discarded** (or abandoned without merge). Step B commits land directly on `iskay/crowdfund-ui-polish` per the umbrella rule. Do not open a PR to `main` — the landing decision is deferred until every phase has landed.
 
 #### Step A — Spike `@xyflow/react` on a parallel branch
 
 1. Create a new React Flow-based TreeView rendering the same data.
 2. Time-box: **half a day.** Don't polish.
-3. A/B compare with current d3 version on same dataset (use `crowdfund:populate` to generate ~500+ nodes). Score on:
+3. A/B compare with current d3 version on same dataset (generate synthetic 500+ node fixture per §7, or raise `crowdfund:populate`'s `TARGET`). Score on:
    - Visual quality out of the box
    - Smoothness of pan/zoom with 500+ nodes
    - How easy it is to put identicons + ENS avatars into nodes

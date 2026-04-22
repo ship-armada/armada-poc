@@ -1,7 +1,7 @@
 // ABOUTME: DAG visualization of the crowdfund invite tree using @xyflow/react (React Flow).
 // ABOUTME: Custom node/edge types; d3-hierarchy still computes layout positions fed into React Flow.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import * as d3Hierarchy from 'd3-hierarchy'
 import * as d3Scale from 'd3-scale'
 import {
@@ -19,11 +19,26 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { Copy, Table2 } from 'lucide-react'
+import { toast } from 'sonner'
 
-import type { CrowdfundGraph } from '../lib/graph.js'
+import type { CrowdfundGraph, AddressSummary, GraphNode } from '../lib/graph.js'
 import { graphToTree, filterTree, type TreeNode } from '../lib/treeLayout.js'
 import { NodeDetail } from './NodeDetail.js'
 import { IdenticonSvg } from './IdenticonSvg.js'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from './ui/hover-card.js'
+import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
+import { Button } from './ui/button.js'
+import { Separator } from './ui/separator.js'
+
+interface TreeViewCtxValue {
+  getSummary: (address: string) => AddressSummary | undefined
+  getHopNodes: (address: string) => GraphNode[]
+  resolveENS: (address: string) => string | null
+  phase: number
+  onSelectAddress: (address: string | null) => void
+}
+const TreeViewContext = React.createContext<TreeViewCtxValue | null>(null)
 
 /** Below this node radius, identicons are illegible — fall back to a solid coloured circle. */
 const IDENTICON_MIN_RADIUS = 10
@@ -77,6 +92,7 @@ interface ParticipantNodeData extends Record<string, unknown> {
 
 function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
   const d = data
+  const ctx = useContext(TreeViewContext)
   const nodeOpacity = d.searchActive && !d.isSearchMatch ? 0.2 : 1
   const hasChildren = d.childCount > 0
   // Identicons render only for single-hop, committed, large-enough nodes.
@@ -84,7 +100,20 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
   const showIdenticon = !d.isMultiHop && d.committed > 0n && d.radius >= IDENTICON_MIN_RADIUS
   const identiconSize = Math.floor(d.radius * 2)
 
-  return (
+  const summary = ctx?.getSummary(d.address)
+  const hopNodes = ctx ? ctx.getHopNodes(d.address) : []
+  const detailBody = summary ? (
+    <NodeDetail summary={summary} hopNodes={hopNodes} resolveENS={ctx?.resolveENS} phase={ctx?.phase ?? 0} />
+  ) : null
+
+  const copyAddress = useCallback(() => {
+    navigator.clipboard.writeText(d.address).then(
+      () => toast.success('Address copied'),
+      () => toast.error('Clipboard write failed'),
+    )
+  }, [d.address])
+
+  const innerContent = (
     <div
       style={{
         width: NODE_SIZE,
@@ -92,6 +121,7 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
         position: 'relative',
         opacity: nodeOpacity,
         transition: 'opacity 300ms ease',
+        cursor: 'pointer',
       }}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: 'none' }} />
@@ -235,6 +265,50 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
       </svg>
     </div>
   )
+
+  // If we don't have access to graph data (e.g. rendered before Provider mounts), skip HoverCard/Popover.
+  if (!summary || !detailBody) return innerContent
+
+  return (
+    <Popover
+      open={d.isSelected}
+      onOpenChange={(open) => {
+        if (!open) ctx?.onSelectAddress(null)
+      }}
+    >
+      <HoverCard openDelay={180} closeDelay={120}>
+        <PopoverTrigger asChild>
+          <HoverCardTrigger asChild>{innerContent}</HoverCardTrigger>
+        </PopoverTrigger>
+        {/* Hover peek — suppressed while the click-pinned Popover is open. */}
+        {!d.isSelected && (
+          <HoverCardContent side="right" align="start" className="w-72">
+            {detailBody}
+          </HoverCardContent>
+        )}
+      </HoverCard>
+      <PopoverContent side="right" align="start" className="w-80 space-y-2">
+        {detailBody}
+        <Separator />
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="flex-1" onClick={copyAddress}>
+            <Copy className="size-3.5" />
+            Copy address
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1"
+            onClick={() => ctx?.onSelectAddress(d.address)}
+            aria-label="View in table"
+          >
+            <Table2 className="size-3.5" />
+            View in table
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 interface RootNodeData extends Record<string, unknown> {
@@ -316,10 +390,17 @@ function TreeViewInner(props: TreeViewProps) {
   const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress } = props
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsedSubtrees, setCollapsedSubtrees] = useState<Set<string>>(new Set())
-  const [tooltip, setTooltip] = useState<{ address: string; x: number; y: number } | null>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const containerRef = React.useRef<HTMLDivElement>(null)
   const rf = useReactFlow()
+
+  const ctxValue = useMemo<TreeViewCtxValue>(() => ({
+    getSummary: (addr) => graph.summaries.get(addr),
+    getHopNodes: (addr) => [...graph.nodes.values()].filter((n) => n.address === addr),
+    resolveENS,
+    phase,
+    onSelectAddress,
+  }), [graph, resolveENS, phase, onSelectAddress])
 
   useEffect(() => {
     const el = containerRef.current
@@ -517,23 +598,15 @@ function TreeViewInner(props: TreeViewProps) {
   )
 
   const handleNodeMouseEnter = useCallback(
-    (evt: React.MouseEvent, node: Node) => {
+    (_evt: React.MouseEvent, node: Node) => {
       if (node.type === 'root') return
       const data = node.data as ParticipantNodeData
-      const rect = containerRef.current?.getBoundingClientRect()
-      if (!rect) return
-      setTooltip({
-        address: data.address,
-        x: evt.clientX - rect.left,
-        y: evt.clientY - rect.top,
-      })
       onHoverAddress?.(data.address)
     },
     [onHoverAddress],
   )
 
   const handleNodeMouseLeave = useCallback(() => {
-    setTooltip(null)
     onHoverAddress?.(null)
   }, [onHoverAddress])
 
@@ -584,44 +657,29 @@ function TreeViewInner(props: TreeViewProps) {
         <span>Hop-2</span>
       </div>
 
-      <ReactFlow
-        nodes={renderedNodes}
-        edges={renderedEdges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodeClick={handleNodeClick}
-        onNodeMouseEnter={handleNodeMouseEnter}
-        onNodeMouseLeave={handleNodeMouseLeave}
-        onPaneClick={handlePaneClick}
-        fitView
-        fitViewOptions={{ padding: 0.15 }}
-        minZoom={0.1}
-        maxZoom={4}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        proOptions={{ hideAttribution: true }}
-        colorMode="dark"
-      >
-        <Controls showInteractive={false} />
-      </ReactFlow>
-
-      {tooltip && graph.summaries.has(tooltip.address) && (
-        <div
-          className="absolute z-20 rounded-lg border border-border bg-popover p-3 shadow-lg max-w-xs pointer-events-none"
-          style={{
-            left: Math.min(tooltip.x + 12, dimensions.width - 280),
-            top: Math.min(tooltip.y + 12, dimensions.height - 200),
-          }}
+      <TreeViewContext.Provider value={ctxValue}>
+        <ReactFlow
+          nodes={renderedNodes}
+          edges={renderedEdges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodeClick={handleNodeClick}
+          onNodeMouseEnter={handleNodeMouseEnter}
+          onNodeMouseLeave={handleNodeMouseLeave}
+          onPaneClick={handlePaneClick}
+          fitView
+          fitViewOptions={{ padding: 0.15 }}
+          minZoom={0.1}
+          maxZoom={4}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          proOptions={{ hideAttribution: true }}
+          colorMode="dark"
         >
-          <NodeDetail
-            summary={graph.summaries.get(tooltip.address)!}
-            hopNodes={[...graph.nodes.values()].filter((n) => n.address === tooltip.address)}
-            resolveENS={resolveENS}
-            phase={phase}
-          />
-        </div>
-      )}
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </TreeViewContext.Provider>
     </div>
   )
 }

@@ -1193,6 +1193,7 @@ Phase 10 can run **in parallel** with 2–9 on a separate branch since it only d
 - **Accessibility baseline**: we haven't defined a target (AA vs AAA). AA is assumed. Flag if user wants stricter.
 - **i18n**: not in scope now. If added later, will need to refactor all string literals — flag early.
 - **Admin app**: explicitly out of scope. If a future change to shared breaks admin, fix admin but don't polish it.
+- **Framer-motion full replacement of Radix/tailwindcss-animate (deferred spike)**: Phase 9 intentionally keeps Radix's CSS-driven data-state animations on Tabs, Popover, Dialog, and Sheet, and scopes framer to net-new motion (animated numbers, clipboard fades, hover scale). The trade-off accepted: Radix covers current call-site density well; replacing it is a recurring maintenance tax against the shadcn regeneration workflow. **Follow-up worth considering**: when Phase 10 / 11 or design work adds denser call sites (multiple dialogs, page transitions, shared-element transitions between table ↔ graph selection), spike a **full replacement on a throwaway branch** (e.g. `iskay/crowdfund-ui-framer-spike`) — replace Radix animations in `tabs.tsx`, `popover.tsx`, `dialog.tsx`, `sheet.tsx` using `AnimatePresence` + `forceMount`, compare visual polish and bundle delta against the Radix baseline, then keep or discard. Do not land on the umbrella unless the comparison clearly wins; this is a look-and-feel judgment call that needs side-by-side review.
 
 ---
 

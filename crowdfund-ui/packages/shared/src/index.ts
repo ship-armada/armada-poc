@@ -37,6 +37,9 @@ export type {
 } from './lib/graph.js'
 export { buildGraph, mergeEvents } from './lib/graph.js'
 
+export { generateMockGraph } from './lib/mockGraph.js'
+export type { MockGraphOptions } from './lib/mockGraph.js'
+
 export {
   getCachedEvents,
   cacheEvents,

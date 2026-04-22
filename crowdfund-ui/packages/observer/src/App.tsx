@@ -23,6 +23,7 @@ import {
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
+  generateMockGraph,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -54,7 +55,49 @@ function ObserverMobileMenu() {
   )
 }
 
+/**
+ * Dev-only stress-test mode — renders TreeView against a synthetic CrowdfundGraph
+ * bypassing all contract machinery. Enabled via `?mock=stressN` (e.g. `?mock=stress500`).
+ * Does not ship wallet-dependent chrome (StatsBar/TableView/SearchBar are skipped
+ * because they require real contract state).
+ */
+function MockObserverApp({ size }: { size: number }) {
+  const graph = useMemo(() => generateMockGraph(size), [size])
+  const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
+  const resolveENS = () => null
+  return (
+    <AppShell appName={`Observer · stress ?mock=stress${size}`} network="local">
+      <div className="container mx-auto p-4 space-y-4">
+        <div className="rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
+          <strong>STRESS MODE</strong> — {graph.summaries.size} synthetic addresses rendered.
+          Contract machinery bypassed. Remove <code>?mock=…</code> from the URL to exit.
+        </div>
+        <TreeView
+          graph={graph}
+          selectedAddress={selectedAddress}
+          onSelectAddress={setSelectedAddress}
+          searchQuery=""
+          phase={0}
+          resolveENS={resolveENS}
+        />
+      </div>
+    </AppShell>
+  )
+}
+
+function getMockSizeFromUrl(): number {
+  if (typeof window === 'undefined') return 0
+  const p = new URLSearchParams(window.location.search).get('mock')
+  if (!p) return 0
+  const n = parseInt(p.replace(/^stress/, ''), 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 export function App() {
+  const [mockSize] = useState(getMockSizeFromUrl)
+  if (mockSize > 0) return <MockObserverApp size={mockSize} />
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)

@@ -374,11 +374,22 @@ export function TreeView(props: TreeViewProps) {
       return d.children
     })
 
+    // `.nodeSize([spacing, 0])` gives each leaf a fixed vertical slot rather than
+    // squeezing the whole tree into the viewport height. At fan-outs > ~20, the
+    // old `.size(...)` approach collapsed leaves into overlapping pixels; with
+    // nodeSize the tree grows as tall as it needs and the user pans / zooms.
+    const VERTICAL_SPACING = 40
     const treeLayout = d3Hierarchy.tree<TreeNode>()
-      .size([dimensions.height - 80, dimensions.width - 160])
+      .nodeSize([VERTICAL_SPACING, 0])
       .separation((a, b) => (a.parent === b.parent ? 1 : 1.5))
 
     treeLayout(root)
+
+    // nodeSize-based layout produces signed, root-centred y-coordinates.
+    // Shift so the topmost node lands just below the hop-column labels.
+    let minLayoutX = Infinity
+    root.each((d) => { if ((d.x ?? 0) < minLayoutX) minLayoutX = d.x ?? 0 })
+    const yOffset = 40 - minLayoutX
 
     // Walk the hierarchy and build flat arrays
     root.each((d) => {
@@ -388,15 +399,15 @@ export function TreeView(props: TreeViewProps) {
       nodes.push({
         ...d.data,
         x: hopX,
-        y: (d.x ?? 0) + 40, // d.x is the vertical spread from tree layout
+        y: (d.x ?? 0) + yOffset,
         depth: d.depth,
       })
 
       if (d.parent) {
         const parentHopX = 80 + ((d.parent.data.hop + 1) / 3) * (dimensions.width - 160)
         edges.push({
-          source: { x: parentHopX, y: (d.parent.x ?? 0) + 40 },
-          target: { x: hopX, y: (d.x ?? 0) + 40 },
+          source: { x: parentHopX, y: (d.parent.x ?? 0) + yOffset },
+          target: { x: hopX, y: (d.x ?? 0) + yOffset },
           fromHop: d.parent.data.hop,
           toHop: d.data.hop,
           isSelfInvite: d.parent.data.address === d.data.address,

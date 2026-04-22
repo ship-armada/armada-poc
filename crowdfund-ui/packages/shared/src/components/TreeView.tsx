@@ -1,16 +1,28 @@
-// ABOUTME: DAG visualization of the crowdfund invite tree using d3-hierarchy.
-// ABOUTME: Renders ROOT → hop-0 → hop-1 → hop-2 with pan/zoom, selection, and tooltips.
+// ABOUTME: DAG visualization of the crowdfund invite tree using @xyflow/react (React Flow).
+// ABOUTME: Custom node/edge types; d3-hierarchy still computes layout positions fed into React Flow.
 
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import * as d3Hierarchy from 'd3-hierarchy'
-import * as d3Zoom from 'd3-zoom'
 import * as d3Scale from 'd3-scale'
-import * as d3Selection from 'd3-selection'
-import { ZoomIn, ZoomOut, Maximize } from 'lucide-react'
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Controls,
+  Handle,
+  Position,
+  BaseEdge,
+  getStraightPath,
+  useReactFlow,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type EdgeProps,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+
 import type { CrowdfundGraph } from '../lib/graph.js'
 import { graphToTree, filterTree, type TreeNode } from '../lib/treeLayout.js'
 import { NodeDetail } from './NodeDetail.js'
-import { Button } from './ui/button.js'
 
 export interface TreeViewProps {
   graph: CrowdfundGraph
@@ -21,14 +33,14 @@ export interface TreeViewProps {
   phase: number
   resolveENS: (addr: string) => string | null
   connectedAddress?: string | null
-  /** When true with an empty graph, renders a pulsing placeholder instead of the "Waiting for seeds" empty panel. */
   isLoading?: boolean
 }
 
-/**
- * Hop-level colour token accessor. Returns CSS `var()` strings so values
- * live in the shared theme (packages/shared/src/styles/theme.css).
- */
+/** Fixed container size for custom nodes. d3 layout outputs centers, so we translate by NODE_HALF. */
+const NODE_SIZE = 80
+const NODE_HALF = NODE_SIZE / 2
+const COLLAPSE_THRESHOLD = 20
+
 function hopColor(hop: number): string {
   if (hop === 0) return 'var(--hop-0)'
   if (hop === 1) return 'var(--hop-1)'
@@ -36,25 +48,17 @@ function hopColor(hop: number): string {
   return 'var(--hop-root)'
 }
 
-/** Tooltip state */
-interface TooltipState {
-  x: number
-  y: number
+// ────────────────────────── Custom node types ──────────────────────────
+
+interface ParticipantNodeData extends Record<string, unknown> {
   address: string
-}
-
-/** Collapsed subtree indicator */
-const COLLAPSE_THRESHOLD = 20
-
-/** CSS transition for smooth enter/position changes */
-const NODE_TRANSITION = 'transform 500ms ease, opacity 300ms ease'
-const EDGE_TRANSITION = 'opacity 300ms ease'
-
-/** Memoized node component to avoid re-rendering all nodes on selection changes */
-const TreeNodeEl = React.memo(function TreeNodeEl(props: {
-  node: TreeNode & { x: number; y: number }
+  label: string
+  hop: number
+  hops: number[]
+  isMultiHop: boolean
+  committed: bigint
+  perHop: Map<number, bigint>
   radius: number
-  isRoot: boolean
   isSelected: boolean
   isConnected: boolean
   isSearchMatch: boolean
@@ -62,71 +66,61 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
   isExpanded: boolean
   isCollapsed: boolean
   childCount: number
-  onClick: (address: string, e: React.MouseEvent) => void
-  onBadgeClick: (address: string, e: React.MouseEvent) => void
-  onSubtreeToggle: (nodeId: string, e: React.MouseEvent) => void
-  onMouseEnter: (address: string, e: React.MouseEvent) => void
-  onMouseLeave: () => void
-}) {
-  const {
-    node, radius, isRoot, isSelected, isConnected, isSearchMatch, searchActive,
-    isExpanded, isCollapsed, childCount,
-    onClick, onBadgeClick, onSubtreeToggle, onMouseEnter, onMouseLeave,
-  } = props
+  onBadgeClick: (address: string) => void
+  onSubtreeToggle: (nodeId: string) => void
+  nodeId: string
+}
 
-  const nodeOpacity = searchActive && !isSearchMatch ? 0.2 : 1
-  const hasChildren = childCount > 0
+function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
+  const d = data
+  const nodeOpacity = d.searchActive && !d.isSearchMatch ? 0.2 : 1
+  const hasChildren = d.childCount > 0
 
   return (
-    <g
-      transform={`translate(${node.x}, ${node.y})`}
-      opacity={nodeOpacity}
-      className="cursor-pointer"
-      style={{ transition: NODE_TRANSITION }}
-      onClick={(e) => onClick(node.address, e)}
-      onMouseEnter={(e) => onMouseEnter(node.address, e)}
-      onMouseLeave={onMouseLeave}
+    <div
+      style={{
+        width: NODE_SIZE,
+        height: NODE_SIZE,
+        position: 'relative',
+        opacity: nodeOpacity,
+        transition: 'opacity 300ms ease',
+      }}
     >
-      {isRoot ? (
-        <text
-          textAnchor="middle"
-          dominantBaseline="central"
-          className="fill-foreground text-xs font-medium"
-        >
-          Armada
-        </text>
-      ) : (
-        <>
-          {/* Connected address glow ring */}
-          {isConnected && (
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: 'none' }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: 'none' }} />
+
+      <svg width={NODE_SIZE} height={NODE_SIZE} style={{ overflow: 'visible' }}>
+        <g transform={`translate(${NODE_HALF}, ${NODE_HALF})`}>
+          {d.isConnected && (
             <circle
-              r={radius + 4}
+              r={d.radius + 4}
               fill="none"
               style={{ stroke: 'var(--hop-connected)' }}
               strokeWidth={2}
               strokeOpacity={0.6}
             />
           )}
-          {node.isMultiHop ? (
+
+          {d.isMultiHop ? (
             <>
               <circle
-                r={radius}
+                r={d.radius}
                 fill="none"
-                style={{ stroke: isSelected ? 'var(--hop-selected)' : hopColor(node.hop) }}
-                strokeWidth={isSelected ? 2.5 : 1.5}
+                style={{ stroke: d.isSelected ? 'var(--hop-selected)' : hopColor(d.hop) }}
+                strokeWidth={d.isSelected ? 2.5 : 1.5}
               />
-              {node.hops.map((h: number, idx: number) => {
-                const angle = (idx / node.hops.length) * Math.PI * 2 - Math.PI / 2
-                const nextAngle = ((idx + 1) / node.hops.length) * Math.PI * 2 - Math.PI / 2
+              {d.hops.map((h: number, idx: number) => {
+                const angle = (idx / d.hops.length) * Math.PI * 2 - Math.PI / 2
+                const nextAngle = ((idx + 1) / d.hops.length) * Math.PI * 2 - Math.PI / 2
                 const largeArc = nextAngle - angle > Math.PI ? 1 : 0
-                const x1 = Math.cos(angle) * radius
-                const y1 = Math.sin(angle) * radius
-                const x2 = Math.cos(nextAngle) * radius
-                const y2 = Math.sin(nextAngle) * radius
+                const x1 = Math.cos(angle) * d.radius
+                const y1 = Math.sin(angle) * d.radius
+                const x2 = Math.cos(nextAngle) * d.radius
+                const y2 = Math.sin(nextAngle) * d.radius
                 return (
                   <path
                     key={h}
-                    d={`M 0 0 L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                    d={`M 0 0 L ${x1} ${y1} A ${d.radius} ${d.radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
                     style={{ fill: hopColor(h) }}
                     fillOpacity={0.6}
                   />
@@ -135,193 +129,177 @@ const TreeNodeEl = React.memo(function TreeNodeEl(props: {
             </>
           ) : (
             <circle
-              r={radius}
+              r={d.radius}
               style={{
-                fill: node.committed > 0n ? hopColor(node.hop) : 'none',
-                stroke: isSelected ? 'var(--hop-selected)' : hopColor(node.hop),
+                fill: d.committed > 0n ? hopColor(d.hop) : 'none',
+                stroke: d.isSelected ? 'var(--hop-selected)' : hopColor(d.hop),
               }}
-              fillOpacity={node.committed > 0n ? 0.6 : 0}
-              strokeWidth={isSelected ? 2.5 : 1.5}
+              fillOpacity={d.committed > 0n ? 0.6 : 0}
+              strokeWidth={d.isSelected ? 2.5 : 1.5}
             />
           )}
 
-          {/* Multi-hop badge — click to expand/collapse per-hop detail */}
-          {node.isMultiHop && (
+          {d.isMultiHop && (
             <g
-              transform={`translate(${radius + 2}, ${-radius - 2})`}
-              onClick={(e) => onBadgeClick(node.address, e)}
-              className="cursor-pointer"
+              transform={`translate(${d.radius + 2}, ${-d.radius - 2})`}
+              onClick={(e) => {
+                e.stopPropagation()
+                d.onBadgeClick(d.address)
+              }}
+              style={{ cursor: 'pointer' }}
             >
               <rect
-                x={-8}
-                y={-7}
-                width={16}
-                height={14}
-                rx={3}
+                x={-8} y={-7} width={16} height={14} rx={3}
                 style={{
-                  fill: isExpanded ? 'var(--muted)' : 'var(--card)',
-                  stroke: isExpanded ? 'var(--muted-foreground)' : 'var(--border)',
+                  fill: d.isExpanded ? 'var(--muted)' : 'var(--card)',
+                  stroke: d.isExpanded ? 'var(--muted-foreground)' : 'var(--border)',
                 }}
                 strokeWidth={0.5}
               />
               <text
-                textAnchor="middle"
-                dominantBaseline="central"
-                className="fill-foreground"
-                fontSize={9}
+                textAnchor="middle" dominantBaseline="central"
+                className="fill-foreground" fontSize={9}
               >
-                {isExpanded ? '−' : `×${node.hops.length}`}
+                {d.isExpanded ? '−' : `×${d.hops.length}`}
               </text>
             </g>
           )}
 
-          {/* Collapse/expand indicator for large subtrees */}
-          {hasChildren && childCount > COLLAPSE_THRESHOLD && (
+          {hasChildren && d.childCount > COLLAPSE_THRESHOLD && (
             <g
-              transform={`translate(${radius + 2}, ${radius + 2})`}
-              onClick={(e) => onSubtreeToggle(node.id, e)}
-              className="cursor-pointer"
+              transform={`translate(${d.radius + 2}, ${d.radius + 2})`}
+              onClick={(e) => {
+                e.stopPropagation()
+                d.onSubtreeToggle(d.nodeId)
+              }}
+              style={{ cursor: 'pointer' }}
             >
               <rect
-                x={-10}
-                y={-6}
-                width={20}
-                height={12}
-                rx={2}
+                x={-10} y={-6} width={20} height={12} rx={2}
                 style={{ fill: 'var(--card)', stroke: 'var(--border)' }}
                 strokeWidth={0.5}
               />
               <text
-                textAnchor="middle"
-                dominantBaseline="central"
-                className="fill-muted-foreground"
-                fontSize={8}
+                textAnchor="middle" dominantBaseline="central"
+                className="fill-muted-foreground" fontSize={8}
               >
-                {isCollapsed ? `+${childCount}` : '−'}
+                {d.isCollapsed ? `+${d.childCount}` : '−'}
               </text>
             </g>
           )}
 
-          {/* Selection ring */}
-          {isSelected && (
+          {d.isSelected && (
             <circle
-              r={radius + 4}
-              fill="none"
+              r={d.radius + 4} fill="none"
               style={{ stroke: 'var(--hop-selected)' }}
-              strokeWidth={1}
-              strokeOpacity={0.5}
+              strokeWidth={1} strokeOpacity={0.5}
             />
           )}
 
-          {/* Label for larger nodes */}
-          {radius > 12 && (
+          {d.radius > 12 && (
             <text
-              y={radius + 14}
+              y={d.radius + 14}
               textAnchor="middle"
               className="fill-muted-foreground"
               fontSize={9}
             >
-              {node.label}
+              {d.label}
             </text>
           )}
-
-          {/* Expanded per-hop breakdown labels */}
-          {isExpanded && node.isMultiHop && (
-            <g transform={`translate(${radius + 20}, -${(node.hops.length - 1) * 7})`}>
-              {node.hops.map((h: number, idx: number) => {
-                const amount = node.perHop.get(h) ?? 0n
-                const display = Number(amount / (10n ** 6n))
-                return (
-                  <text
-                    key={h}
-                    y={idx * 14}
-                    className="fill-muted-foreground"
-                    fontSize={8}
-                  >
-                    <tspan style={{ fill: hopColor(h) }}>●</tspan> hop-{h}: ${display.toLocaleString()}
-                  </text>
-                )
-              })}
-            </g>
-          )}
-        </>
-      )}
-    </g>
+        </g>
+      </svg>
+    </div>
   )
-})
+}
 
-/** Memoized edge component */
-const TreeEdge = React.memo(function TreeEdge(props: {
-  edge: { source: { x: number; y: number }; target: { x: number; y: number }; fromHop: number; toHop: number; isSelfInvite: boolean }
-  dimmed: boolean
+interface RootNodeData extends Record<string, unknown> {
+  label: string
+}
+
+function RootNode({ data }: NodeProps<Node<RootNodeData>>) {
+  return (
+    <div
+      style={{
+        width: NODE_SIZE, height: NODE_SIZE,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: 'none' }} />
+      <span className="text-xs font-medium text-foreground">{data.label}</span>
+    </div>
+  )
+}
+
+// ────────────────────────── Custom edge type ──────────────────────────
+
+interface InviteEdgeData extends Record<string, unknown> {
+  fromHop: number
+  toHop: number
+  isSelfInvite: boolean
   isInviterChain: boolean
-}) {
-  const { edge, dimmed, isInviterChain } = props
-  const edgeOpacity = dimmed ? 0.1 : isInviterChain ? 0.8 : 0.4
+  dimmed: boolean
+}
 
-  // Self-invite: render curved loop
-  if (edge.isSelfInvite) {
-    const cx = (edge.source.x + edge.target.x) / 2
-    const cy = (edge.source.y + edge.target.y) / 2
-    const dx = edge.target.x - edge.source.x
-    const dy = edge.target.y - edge.source.y
-    const dist = Math.sqrt(dx * dx + dy * dy)
+function InviteEdge(props: EdgeProps<Edge<InviteEdgeData>>) {
+  const { sourceX, sourceY, targetX, targetY, data, id } = props
+  if (!data) return null
+
+  const edgeOpacity = data.dimmed ? 0.1 : data.isInviterChain ? 0.8 : 0.4
+  const stroke = data.isInviterChain ? 'var(--graph-edge-chain)' : hopColor(data.toHop)
+  const strokeWidth = data.isInviterChain ? 2 : 1.5
+
+  if (data.isSelfInvite) {
+    const cx = (sourceX + targetX) / 2
+    const cy = (sourceY + targetY) / 2
+    const dx = targetX - sourceX
+    const dy = targetY - sourceY
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1
     const offset = Math.max(30, dist * 0.5)
-    // Curve perpendicular to the line between source and target
-    const nx = -dy / (dist || 1) * offset
-    const ny = dx / (dist || 1) * offset
-
+    const nx = -dy / dist * offset
+    const ny = dx / dist * offset
+    const path = `M ${sourceX} ${sourceY} Q ${cx + nx} ${cy + ny} ${targetX} ${targetY}`
     return (
-      <path
-        d={`M ${edge.source.x} ${edge.source.y} Q ${cx + nx} ${cy + ny} ${edge.target.x} ${edge.target.y}`}
-        fill="none"
-        strokeWidth={isInviterChain ? 2 : 1.5}
-        strokeOpacity={edgeOpacity}
-        strokeDasharray="2 2"
-        style={{
-          stroke: isInviterChain ? 'var(--graph-edge-chain)' : hopColor(edge.toHop),
-          transition: EDGE_TRANSITION,
-        }}
+      <BaseEdge
+        id={id}
+        path={path}
+        style={{ stroke, strokeWidth, strokeOpacity: edgeOpacity, strokeDasharray: '2 2' }}
       />
     )
   }
 
+  const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY })
   return (
-    <line
-      x1={edge.source.x}
-      y1={edge.source.y}
-      x2={edge.target.x}
-      y2={edge.target.y}
-      strokeWidth={isInviterChain ? 2 : 1.5}
-      strokeOpacity={edgeOpacity}
-      strokeDasharray={edge.fromHop === -1 ? '4 2' : undefined}
+    <BaseEdge
+      id={id}
+      path={path}
       style={{
-        stroke: isInviterChain ? 'var(--graph-edge-chain)' : hopColor(edge.toHop),
-        transition: EDGE_TRANSITION,
+        stroke,
+        strokeWidth,
+        strokeOpacity: edgeOpacity,
+        strokeDasharray: data.fromHop === -1 ? '4 2' : undefined,
       }}
     />
   )
-})
+}
 
-export function TreeView(props: TreeViewProps) {
-  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress, isLoading } = props
-  // Callback ref via state: the interactive SVG only mounts on the main render path
-  // (loading / empty-state returns bail before rendering it). A plain `useRef` + `useEffect([])`
-  // binds once at mount — when the SVG isn't in the tree yet — and never re-runs to pick up the
-  // element when it appears. State triggers the zoom-binding effect whenever the element arrives.
-  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null)
-  const zoomBehaviorRef = useRef<d3Zoom.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+const nodeTypes = { participant: ParticipantNode, root: RootNode }
+const edgeTypes = { invite: InviteEdge }
+
+// ────────────────────────── TreeView core ──────────────────────────
+
+function TreeViewInner(props: TreeViewProps) {
+  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress } = props
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsedSubtrees, setCollapsedSubtrees] = useState<Set<string>>(new Set())
+  const [tooltip, setTooltip] = useState<{ address: string; x: number; y: number } | null>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const rf = useReactFlow()
 
-  // Observe container size
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const observer = new ResizeObserver((entries) => {
+    const el = containerRef.current
+    if (!el) return
+    const obs = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (entry) {
         setDimensions({
@@ -330,28 +308,20 @@ export function TreeView(props: TreeViewProps) {
         })
       }
     })
-    observer.observe(container)
-    return () => observer.disconnect()
+    obs.observe(el)
+    return () => obs.disconnect()
   }, [])
 
-  // Build tree structure from graph
-  const tree = useMemo(
-    () => graphToTree(graph, resolveENS),
-    [graph, resolveENS],
-  )
+  const tree = useMemo(() => graphToTree(graph, resolveENS), [graph, resolveENS])
 
-  // Search filter
   const matchedAddresses = useMemo(
     () => (searchQuery ? filterTree(tree, searchQuery) : null),
     [tree, searchQuery],
   )
 
-  // Compute node size scale
   const maxCommitted = useMemo(() => {
     let max = 0n
-    for (const summary of graph.summaries.values()) {
-      if (summary.totalCommitted > max) max = summary.totalCommitted
-    }
+    for (const s of graph.summaries.values()) if (s.totalCommitted > max) max = s.totalCommitted
     return max
   }, [graph.summaries])
 
@@ -360,204 +330,200 @@ export function TreeView(props: TreeViewProps) {
     [maxCommitted],
   )
 
-  // Flatten tree for rendering, respecting collapse state
-  const { flatNodes, flatEdges } = useMemo(() => {
-    const nodes: Array<TreeNode & { x: number; y: number; depth: number }> = []
-    const edges: Array<{ source: { x: number; y: number }; target: { x: number; y: number }; fromHop: number; toHop: number; isSelfInvite: boolean; sourceAddr: string; targetAddr: string }> = []
+  const handleBadgeClick = useCallback((address: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(address)) next.delete(address); else next.add(address)
+      return next
+    })
+  }, [])
+
+  const handleSubtreeToggle = useCallback((nodeId: string) => {
+    setCollapsedSubtrees((prev) => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId)
+      return next
+    })
+  }, [])
+
+  const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
+    const outNodes: Node[] = []
+    const outEdges: Edge[] = []
 
     if (tree.children.length === 0) {
-      // Empty state — just the root
-      nodes.push({ ...tree, x: dimensions.width / 2, y: 40, depth: 0 })
-      return { flatNodes: nodes, flatEdges: edges }
+      outNodes.push({
+        id: 'armada',
+        type: 'root',
+        position: { x: dimensions.width / 2 - NODE_HALF, y: 20 - NODE_HALF },
+        data: { label: 'Armada' } satisfies RootNodeData,
+        draggable: false, selectable: false,
+      })
+      return { nodes: outNodes, edges: outEdges }
     }
 
-    // Use d3 tree layout
-    const root = d3Hierarchy.hierarchy(tree, (d) => {
-      if (collapsedSubtrees.has(d.id)) return []
-      return d.children
-    })
-
-    // `.nodeSize([spacing, 0])` gives each leaf a fixed vertical slot rather than
-    // squeezing the whole tree into the viewport height. At fan-outs > ~20, the
-    // old `.size(...)` approach collapsed leaves into overlapping pixels; with
-    // nodeSize the tree grows as tall as it needs and the user pans / zooms.
+    const root = d3Hierarchy.hierarchy(tree, (d) => (collapsedSubtrees.has(d.id) ? [] : d.children))
+    // nodeSize over size: give each leaf fixed vertical room, let the tree grow as tall as needed.
     const VERTICAL_SPACING = 40
-    const treeLayout = d3Hierarchy.tree<TreeNode>()
+    const layout = d3Hierarchy
+      .tree<TreeNode>()
       .nodeSize([VERTICAL_SPACING, 0])
       .separation((a, b) => (a.parent === b.parent ? 1 : 1.5))
+    layout(root)
 
-    treeLayout(root)
-
-    // nodeSize-based layout produces signed, root-centred y-coordinates.
-    // Shift so the topmost node lands just below the hop-column labels.
+    // Shift signed, root-centred y-coords so the topmost node lands just below the hop labels.
     let minLayoutX = Infinity
     root.each((d) => { if ((d.x ?? 0) < minLayoutX) minLayoutX = d.x ?? 0 })
     const yOffset = 40 - minLayoutX
 
-    // Walk the hierarchy and build flat arrays
     root.each((d) => {
-      // For tree layout: x = vertical position, y = horizontal (depth-based)
-      // We want hop columns left-to-right, so swap x/y
       const hopX = 80 + ((d.data.hop + 1) / 3) * (dimensions.width - 160)
-      nodes.push({
-        ...d.data,
-        x: hopX,
-        y: (d.x ?? 0) + yOffset,
-        depth: d.depth,
+      const centerY = (d.x ?? 0) + yOffset
+      const isRoot = d.data.id === 'armada'
+      outNodes.push({
+        id: d.data.id,
+        type: isRoot ? 'root' : 'participant',
+        position: { x: hopX - NODE_HALF, y: centerY - NODE_HALF },
+        data: isRoot
+          ? ({ label: 'Armada' } satisfies RootNodeData)
+          : ({
+              address: d.data.address, label: d.data.label,
+              hop: d.data.hop, hops: d.data.hops,
+              isMultiHop: d.data.isMultiHop,
+              committed: d.data.committed, perHop: d.data.perHop,
+              radius: sizeScale(Number(d.data.committed)),
+              isSelected: false, isConnected: false,
+              isSearchMatch: true, searchActive: false,
+              isExpanded: false, isCollapsed: false,
+              childCount: d.data.children.length,
+              onBadgeClick: handleBadgeClick,
+              onSubtreeToggle: handleSubtreeToggle,
+              nodeId: d.data.id,
+            } satisfies ParticipantNodeData),
+        draggable: false,
       })
 
       if (d.parent) {
-        const parentHopX = 80 + ((d.parent.data.hop + 1) / 3) * (dimensions.width - 160)
-        edges.push({
-          source: { x: parentHopX, y: (d.parent.x ?? 0) + yOffset },
-          target: { x: hopX, y: (d.x ?? 0) + yOffset },
-          fromHop: d.parent.data.hop,
-          toHop: d.data.hop,
-          isSelfInvite: d.parent.data.address === d.data.address,
-          sourceAddr: d.parent.data.address,
-          targetAddr: d.data.address,
+        const parentId = d.parent.data.id
+        const childId = d.data.id
+        outEdges.push({
+          id: `e-${parentId}->${childId}`,
+          source: parentId,
+          target: childId,
+          type: 'invite',
+          data: {
+            fromHop: d.parent.data.hop,
+            toHop: d.data.hop,
+            isSelfInvite: d.parent.data.address === d.data.address,
+            isInviterChain: false,
+            dimmed: false,
+          } satisfies InviteEdgeData,
         })
       }
     })
 
-    return { flatNodes: nodes, flatEdges: edges }
-  }, [tree, dimensions, collapsedSubtrees])
+    return { nodes: outNodes, edges: outEdges }
+  }, [tree, dimensions, collapsedSubtrees, sizeScale, handleBadgeClick, handleSubtreeToggle])
 
-  // Compute inviter chain: set of (sourceAddr, targetAddr) pairs on path from connected address to ROOT
-  const inviterChainEdges = useMemo(() => {
-    const chainEdges = new Set<string>()
-    if (!connectedAddress) return chainEdges
-
+  const inviterChainKeys = useMemo(() => {
+    const set = new Set<string>()
+    if (!connectedAddress) return set
     const connAddr = connectedAddress.toLowerCase()
-    // Build child→parent lookup from edges
-    const parentOf = new Map<string, string>()
-    for (const edge of flatEdges) {
-      if (!edge.isSelfInvite) {
-        parentOf.set(edge.targetAddr, edge.sourceAddr)
-      }
+    const parentOfAddr = new Map<string, string>()
+    for (const e of flowEdges) {
+      const data = e.data as InviteEdgeData
+      if (!data.isSelfInvite) parentOfAddr.set(e.target, e.source)
     }
-
-    // Walk from connected address up to root, marking each edge
     let current = connAddr
     while (current && current !== 'armada') {
-      const parent = parentOf.get(current)
+      const parent = parentOfAddr.get(current)
       if (!parent) break
-      chainEdges.add(`${parent}->${current}`)
+      set.add(`e-${parent}->${current}`)
       current = parent
     }
-    return chainEdges
-  }, [connectedAddress, flatEdges])
+    return set
+  }, [connectedAddress, flowEdges])
 
-  // Set up zoom behavior
-  useEffect(() => {
-    if (!svgEl) return
+  const renderedNodes = useMemo<Node[]>(() => {
+    return flowNodes.map((n) => {
+      if (n.type === 'root') return n
+      const base = n.data as ParticipantNodeData
+      const isSelected = selectedAddress === base.address
+      const isConnected = !!connectedAddress && base.address === connectedAddress.toLowerCase()
+      const isSearchMatch = matchedAddresses === null || matchedAddresses.has(base.address)
+      return {
+        ...n,
+        data: {
+          ...base,
+          isSelected,
+          isConnected,
+          isSearchMatch,
+          searchActive: matchedAddresses !== null,
+          isExpanded: expanded.has(base.address),
+          isCollapsed: collapsedSubtrees.has(base.nodeId),
+        } satisfies ParticipantNodeData,
+      }
+    })
+  }, [flowNodes, selectedAddress, connectedAddress, matchedAddresses, expanded, collapsedSubtrees])
 
-    const svgSelection = d3Selection.select(svgEl)
-    const g = svgSelection.select<SVGGElement>('g.tree-content')
+  const renderedEdges = useMemo<Edge[]>(() => {
+    return flowEdges.map((e) => {
+      const base = e.data as InviteEdgeData
+      const sourceMatched = matchedAddresses === null || matchedAddresses.has(e.source)
+      const targetMatched = matchedAddresses === null || matchedAddresses.has(e.target)
+      const dimmed = matchedAddresses !== null && !sourceMatched && !targetMatched
+      return {
+        ...e,
+        data: {
+          ...base,
+          isInviterChain: inviterChainKeys.has(e.id),
+          dimmed,
+        } satisfies InviteEdgeData,
+      }
+    })
+  }, [flowEdges, matchedAddresses, inviterChainKeys])
 
-    const zoom = d3Zoom.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on('zoom', (event) => {
-        g.attr('transform', event.transform.toString())
+  const handleNodeClick = useCallback(
+    (_evt: React.MouseEvent, node: Node) => {
+      if (node.type === 'root') return
+      const data = node.data as ParticipantNodeData
+      onSelectAddress(selectedAddress === data.address ? null : data.address)
+    },
+    [onSelectAddress, selectedAddress],
+  )
+
+  const handleNodeMouseEnter = useCallback(
+    (evt: React.MouseEvent, node: Node) => {
+      if (node.type === 'root') return
+      const data = node.data as ParticipantNodeData
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setTooltip({
+        address: data.address,
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top,
       })
+      onHoverAddress?.(data.address)
+    },
+    [onHoverAddress],
+  )
 
-    svgSelection.call(zoom)
-    zoomBehaviorRef.current = zoom
-
-    // Cleanup
-    return () => {
-      svgSelection.on('.zoom', null)
-      zoomBehaviorRef.current = null
-    }
-  }, [svgEl])
-
-  const handleNodeClick = useCallback((address: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (address === 'armada') return
-    onSelectAddress(selectedAddress === address ? null : address)
-  }, [selectedAddress, onSelectAddress])
-
-  const handleBadgeClick = useCallback((address: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(address)) {
-        next.delete(address)
-      } else {
-        next.add(address)
-      }
-      return next
-    })
-  }, [])
-
-  const handleSubtreeToggle = useCallback((nodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setCollapsedSubtrees((prev) => {
-      const next = new Set(prev)
-      if (next.has(nodeId)) {
-        next.delete(nodeId)
-      } else {
-        next.add(nodeId)
-      }
-      return next
-    })
-  }, [])
-
-  const handleBackgroundClick = useCallback(() => {
-    onSelectAddress(null)
-  }, [onSelectAddress])
-
-  const handleNodeHover = useCallback((address: string, e: React.MouseEvent) => {
-    if (address === 'armada') return
-    const svgRect = svgEl?.getBoundingClientRect()
-    if (!svgRect) return
-    setTooltip({
-      x: e.clientX - svgRect.left,
-      y: e.clientY - svgRect.top,
-      address,
-    })
-    onHoverAddress?.(address)
-  }, [svgEl, onHoverAddress])
-
-  const handleNodeLeave = useCallback(() => {
+  const handleNodeMouseLeave = useCallback(() => {
     setTooltip(null)
     onHoverAddress?.(null)
   }, [onHoverAddress])
 
-  // Imperative zoom controls — mirror what xyflow ships via <Controls>.
-  const handleZoomIn = useCallback(() => {
-    if (!svgEl || !zoomBehaviorRef.current) return
-    d3Selection.select(svgEl).transition().duration(200).call(zoomBehaviorRef.current.scaleBy, 1.3)
-  }, [svgEl])
+  const handlePaneClick = useCallback(() => {
+    onSelectAddress(null)
+  }, [onSelectAddress])
 
-  const handleZoomOut = useCallback(() => {
-    if (!svgEl || !zoomBehaviorRef.current) return
-    d3Selection.select(svgEl).transition().duration(200).call(zoomBehaviorRef.current.scaleBy, 1 / 1.3)
-  }, [svgEl])
-
-  const handleFitView = useCallback(() => {
-    if (!svgEl || !zoomBehaviorRef.current || flatNodes.length === 0) return
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const n of flatNodes) {
-      if (n.x < minX) minX = n.x
-      if (n.x > maxX) maxX = n.x
-      if (n.y < minY) minY = n.y
-      if (n.y > maxY) maxY = n.y
+  useEffect(() => {
+    if (flowNodes.length > 0) {
+      const t = setTimeout(() => rf.fitView({ padding: 0.15, duration: 300 }), 50)
+      return () => clearTimeout(t)
     }
-    const pad = 60
-    const contentW = (maxX - minX) + pad * 2
-    const contentH = (maxY - minY) + pad * 2
-    const scale = Math.min(dimensions.width / contentW, dimensions.height / contentH, 4)
-    const cx = (minX + maxX) / 2
-    const cy = (minY + maxY) / 2
-    const tx = dimensions.width / 2 - cx * scale
-    const ty = dimensions.height / 2 - cy * scale
-    const transform = d3Zoom.zoomIdentity.translate(tx, ty).scale(scale)
-    d3Selection.select(svgEl).transition().duration(300).call(zoomBehaviorRef.current.transform, transform)
-  }, [svgEl, flatNodes, dimensions])
+  }, [flowNodes.length, rf])
 
-  // Loading placeholder — pulsing grey circle while the first fetch is in flight.
-  if (isLoading && graph.nodes.size === 0) {
+  if (props.isLoading && graph.nodes.size === 0) {
     return (
       <div
         ref={containerRef}
@@ -568,7 +534,6 @@ export function TreeView(props: TreeViewProps) {
     )
   }
 
-  // Empty state
   if (graph.nodes.size === 0) {
     return (
       <div
@@ -586,8 +551,7 @@ export function TreeView(props: TreeViewProps) {
   }
 
   return (
-    <div ref={containerRef} className="rounded-lg border border-border bg-card relative min-h-[400px]">
-      {/* Hop column labels */}
+    <div ref={containerRef} className="rounded-lg border border-border bg-card relative min-h-[400px]" style={{ height: dimensions.height }}>
       <div className="absolute top-2 left-0 right-0 flex justify-around text-xs text-muted-foreground z-10 pointer-events-none">
         <span>Root</span>
         <span>Seed (hop-0)</span>
@@ -595,72 +559,28 @@ export function TreeView(props: TreeViewProps) {
         <span>Hop-2</span>
       </div>
 
-      {/* Zoom controls — mirror xyflow's <Controls> for fair A/B comparison */}
-      <div className="absolute bottom-3 left-3 z-10 flex flex-col gap-0.5 rounded-md border border-border bg-card/80 backdrop-blur-sm p-1 shadow-sm">
-        <Button variant="ghost" size="icon" className="size-7" onClick={handleZoomIn} aria-label="Zoom in">
-          <ZoomIn className="size-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="size-7" onClick={handleZoomOut} aria-label="Zoom out">
-          <ZoomOut className="size-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="size-7" onClick={handleFitView} aria-label="Fit view">
-          <Maximize className="size-4" />
-        </Button>
-      </div>
-
-      <svg
-        ref={setSvgEl}
-        width={dimensions.width}
-        height={dimensions.height}
-        className="cursor-grab active:cursor-grabbing"
-        onClick={handleBackgroundClick}
+      <ReactFlow
+        nodes={renderedNodes}
+        edges={renderedEdges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodeClick={handleNodeClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
+        onPaneClick={handlePaneClick}
+        fitView
+        fitViewOptions={{ padding: 0.15 }}
+        minZoom={0.1}
+        maxZoom={4}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        proOptions={{ hideAttribution: true }}
+        colorMode="dark"
       >
-        <g className="tree-content">
-          {/* Edges */}
-          {flatEdges.map((edge, i) => {
-            // Selective edge dimming: dim only edges where neither endpoint matches search
-            const edgeDimmed = matchedAddresses !== null &&
-              !flatNodes.some((n) =>
-                matchedAddresses.has(n.address) &&
-                ((Math.abs(n.x - edge.source.x) < 1 && Math.abs(n.y - edge.source.y) < 1) ||
-                 (Math.abs(n.x - edge.target.x) < 1 && Math.abs(n.y - edge.target.y) < 1))
-              )
+        <Controls showInteractive={false} />
+      </ReactFlow>
 
-            return (
-              <TreeEdge key={`edge-${i}`} edge={edge} dimmed={edgeDimmed} isInviterChain={inviterChainEdges.has(`${edge.sourceAddr}->${edge.targetAddr}`)} />
-            )
-          })}
-
-          {/* Nodes */}
-          {flatNodes.map((node) => {
-            const isRoot = node.id === 'armada'
-            const radius = isRoot ? 0 : sizeScale(Number(node.committed))
-
-            return (
-              <TreeNodeEl
-                key={node.id}
-                node={node}
-                radius={radius}
-                isRoot={isRoot}
-                isSelected={selectedAddress === node.address}
-                isConnected={!!connectedAddress && node.address === connectedAddress.toLowerCase()}
-                isSearchMatch={matchedAddresses === null || matchedAddresses.has(node.address)}
-                searchActive={matchedAddresses !== null}
-                isExpanded={expanded.has(node.address)}
-                isCollapsed={collapsedSubtrees.has(node.id)}
-                childCount={node.children.length}
-                onClick={handleNodeClick}
-                onBadgeClick={handleBadgeClick}
-                onSubtreeToggle={handleSubtreeToggle}
-                onMouseEnter={handleNodeHover}
-                onMouseLeave={handleNodeLeave}
-              />
-            )
-          })}
-        </g>
-      </svg>
-
-      {/* Tooltip */}
       {tooltip && graph.summaries.has(tooltip.address) && (
         <div
           className="absolute z-20 rounded-lg border border-border bg-popover p-3 shadow-lg max-w-xs pointer-events-none"
@@ -671,14 +591,20 @@ export function TreeView(props: TreeViewProps) {
         >
           <NodeDetail
             summary={graph.summaries.get(tooltip.address)!}
-            hopNodes={
-              [...graph.nodes.values()].filter((n) => n.address === tooltip.address)
-            }
+            hopNodes={[...graph.nodes.values()].filter((n) => n.address === tooltip.address)}
             resolveENS={resolveENS}
             phase={phase}
           />
         </div>
       )}
     </div>
+  )
+}
+
+export function TreeView(props: TreeViewProps) {
+  return (
+    <ReactFlowProvider>
+      <TreeViewInner {...props} />
+    </ReactFlowProvider>
   )
 }

@@ -8,6 +8,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   Controls,
+  Panel,
   Handle,
   Position,
   BaseEdge,
@@ -19,7 +20,7 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Copy, Table2 } from 'lucide-react'
+import { Copy, Crosshair, Search, Table2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { CrowdfundGraph, AddressSummary, GraphNode } from '../lib/graph.js'
@@ -622,6 +623,41 @@ function TreeViewInner(props: TreeViewProps) {
     }
   }, [flowNodes.length, rf])
 
+  // Auto zoom-to-search: when the search narrows to exactly one participant
+  // match (plus root), jump the viewport to it. Tracks the last-zoomed match
+  // in a ref so we don't re-fire on every unrelated re-render.
+  const searchMatchAddress = useMemo(() => {
+    if (!matchedAddresses) return null
+    const participants = [...matchedAddresses].filter((a) => a !== 'armada')
+    return participants.length === 1 ? participants[0] ?? null : null
+  }, [matchedAddresses])
+  const lastZoomedSearchRef = React.useRef<string | null>(null)
+  useEffect(() => {
+    if (!searchMatchAddress || searchMatchAddress === lastZoomedSearchRef.current) return
+    lastZoomedSearchRef.current = searchMatchAddress
+    rf.fitView({ nodes: [{ id: searchMatchAddress }], padding: 0.5, duration: 300, maxZoom: 1.5 })
+  }, [searchMatchAddress, rf])
+  // Reset the ref when the search is cleared so a later single-match re-zooms.
+  useEffect(() => {
+    if (!searchMatchAddress) lastZoomedSearchRef.current = null
+  }, [searchMatchAddress])
+
+  // Zoom-to-connected — only enabled when the connected wallet has a node in the graph.
+  const connectedHasNode = useMemo(() => {
+    if (!connectedAddress) return false
+    const lower = connectedAddress.toLowerCase()
+    return flowNodes.some((n) => n.id === lower)
+  }, [connectedAddress, flowNodes])
+  const handleZoomToConnected = useCallback(() => {
+    if (!connectedAddress) return
+    rf.fitView({
+      nodes: [{ id: connectedAddress.toLowerCase() }],
+      padding: 0.5,
+      duration: 300,
+      maxZoom: 1.5,
+    })
+  }, [connectedAddress, rf])
+
   if (props.isLoading && graph.nodes.size === 0) {
     return (
       <div
@@ -681,6 +717,27 @@ function TreeViewInner(props: TreeViewProps) {
           colorMode="dark"
         >
           <Controls showInteractive={false} />
+          {(connectedHasNode || searchMatchAddress) && (
+            <Panel position="bottom-right" className="flex flex-col gap-1">
+              {connectedHasNode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 shadow-sm bg-card/80 backdrop-blur-sm"
+                  onClick={handleZoomToConnected}
+                  aria-label="Jump to your wallet"
+                >
+                  <Crosshair className="size-3.5" />
+                  My wallet
+                </Button>
+              )}
+              {searchMatchAddress && (
+                <span className="text-[10px] text-muted-foreground rounded-md border border-border bg-card/80 backdrop-blur-sm px-2 py-1 flex items-center gap-1 shadow-sm">
+                  <Search className="size-3" /> auto-zoomed to match
+                </span>
+              )}
+            </Panel>
+          )}
         </ReactFlow>
       </TreeViewContext.Provider>
     </div>

@@ -2,6 +2,7 @@
 // ABOUTME: Shows balances at both the contract and treasury addresses.
 
 import { useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { formatUsdc, formatArm, truncateAddress } from '@armada/crowdfund-shared'
 import type { TreasuryBalances } from '@/hooks/useTreasuryBalances'
 
@@ -28,10 +29,34 @@ export function TreasuryMonitor({ treasury, treasuryAddress }: TreasuryMonitorPr
           <div className="flex items-center gap-2 text-[10px]">
             <span className="text-muted-foreground font-mono">{truncateAddress(treasuryAddress)}</span>
             <button
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground relative inline-block min-w-[32px] text-left"
               onClick={handleCopy}
             >
-              {copied ? 'copied' : 'copy'}
+              <AnimatePresence mode="wait" initial={false}>
+                {copied ? (
+                  <motion.span
+                    key="copied"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="inline-block"
+                  >
+                    copied
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="copy"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.1 }}
+                    className="inline-block"
+                  >
+                    copy
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </button>
           </div>
         )}

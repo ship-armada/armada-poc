@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { Contract } from 'ethers'
 import type { Signer, JsonRpcProvider } from 'ethers'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
@@ -52,10 +53,34 @@ export function ArmLoadPanel({ signer, crowdfundAddress, provider, armTokenAddre
           <span className="text-muted-foreground">Contract:</span>
           <span className="font-mono">{truncateAddress(crowdfundAddress)}</span>
           <button
-            className="text-[10px] text-muted-foreground hover:text-foreground"
+            className="text-[10px] text-muted-foreground hover:text-foreground relative inline-block min-w-[32px] text-left"
             onClick={handleCopy}
           >
-            {copied ? 'copied' : 'copy'}
+            <AnimatePresence mode="wait" initial={false}>
+              {copied ? (
+                <motion.span
+                  key="copied"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="inline-block"
+                >
+                  copied
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="copy"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.1 }}
+                  className="inline-block"
+                >
+                  copy
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
         {armBalance !== null && (

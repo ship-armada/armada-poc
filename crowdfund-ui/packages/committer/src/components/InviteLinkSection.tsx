@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
+import { motion } from 'framer-motion'
 import {
   Badge,
   Button,
@@ -13,6 +14,18 @@ import {
   formatUsdc,
   HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
+
+function CopyToast({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      initial={{ scale: 0.95, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.15 }}
+    >
+      {children}
+    </motion.div>
+  )
+}
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
 
@@ -53,7 +66,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
     if (url) {
       const fullUrl = `${window.location.origin}${url}`
       await navigator.clipboard.writeText(fullUrl)
-      toast.success('Invite link copied to clipboard!')
+      toast.success(<CopyToast>Invite link copied to clipboard!</CopyToast>)
     } else {
       toast.error('Failed to create invite link')
     }
@@ -67,7 +80,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
       }
     }
     setCreating(false)
-    toast.success('All invite links created!')
+    toast.success(<CopyToast>All invite links created!</CopyToast>)
   }, [invitePositions, createLink])
 
   const handleCopy = useCallback(async (link: { inviter: string; fromHop: number; nonce: number; deadline: number; signature: string }) => {
@@ -80,7 +93,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
     })
     const url = `${window.location.origin}/invite?${params.toString()}`
     await navigator.clipboard.writeText(url)
-    toast.success('Link copied!')
+    toast.success(<CopyToast>Link copied!</CopyToast>)
   }, [])
 
   const handleRevoke = useCallback(async (nonce: number) => {

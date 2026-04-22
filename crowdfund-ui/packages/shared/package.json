@@ -30,7 +30,7 @@
     "d3-transition": "^3.0.1",
     "d3-zoom": "^3.0.0",
     "ethers": "^6.15.0",
-    "framer-motion": "^11.18.2",
+    "framer-motion": "^12.38.0",
     "idb": "^8.0.3",
     "jotai": "^2.15.1",
     "lucide-react": "^0.552.0",
@@ -57,7 +57,7 @@
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.96.0",
-    "framer-motion": "^11.0.0",
+    "framer-motion": "^12.0.0",
     "react": "^19.0.0",
     "react-hook-form": "^7.73.0",
     "zod": "^4.3.0"

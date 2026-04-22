@@ -2,6 +2,7 @@
 // ABOUTME: Accepts all data via props — no internal data fetching.
 
 import { useState, useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
 import {
   formatUsdc,
   hopLabel,
@@ -12,6 +13,12 @@ import {
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from '../lib/constants.js'
 import { estimateAllocation } from '../lib/allocation.js'
 import { Skeleton } from './ui/skeleton.js'
+
+const numberFade = {
+  initial: { opacity: 0, y: -2 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.15 },
+}
 
 export interface HopStatsData {
   totalCommitted: bigint
@@ -154,7 +161,14 @@ export function StatsBar(props: StatsBarProps) {
           </span>
           {phase === 0 && windowEnd > 0 && (
             <span className="text-muted-foreground">
-              Ends: <span className="text-foreground font-medium">{formatCountdown(remaining)}</span>
+              Ends:{' '}
+              <motion.span
+                key={formatCountdown(remaining)}
+                {...numberFade}
+                className="text-foreground font-medium inline-block"
+              >
+                {formatCountdown(remaining)}
+              </motion.span>
             </span>
           )}
         </div>
@@ -165,11 +179,21 @@ export function StatsBar(props: StatsBarProps) {
         {hopStats.map((stat, hop) => (
           <div key={hop} className="rounded border border-border p-3">
             <div className="text-xs text-muted-foreground mb-1">{hopLabel(hop)}</div>
-            <div className="text-lg font-semibold">{formatUsdc(stat.cappedCommitted)}</div>
+            <motion.div
+              key={stat.cappedCommitted.toString()}
+              {...numberFade}
+              className="text-lg font-semibold"
+            >
+              {formatUsdc(stat.cappedCommitted)}
+            </motion.div>
             <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
-              <span>
+              <motion.span
+                key={stat.uniqueCommitters}
+                {...numberFade}
+                className="inline-block"
+              >
                 {stat.uniqueCommitters}/{stat.whitelistCount} committed
-              </span>
+              </motion.span>
               {HOP_CONFIGS[hop]?.ceilingBps > 0 && (
                 <span>
                   {oversubPct(stat.cappedCommitted, hop, saleSize)} of ceiling
@@ -191,7 +215,14 @@ export function StatsBar(props: StatsBarProps) {
           <div className="mt-3 space-y-1">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">
-                Total committed: <span className="text-foreground font-medium">{formatUsdc(totalCommitted)}</span>
+                Total committed:{' '}
+                <motion.span
+                  key={formatUsdc(totalCommitted)}
+                  {...numberFade}
+                  className="text-foreground font-medium inline-block"
+                >
+                  {formatUsdc(totalCommitted)}
+                </motion.span>
               </span>
               {props.connectedSummary && props.connectedSummary.totalCommitted > 0n && (
                 <span className="text-muted-foreground">
@@ -205,7 +236,14 @@ export function StatsBar(props: StatsBarProps) {
                 Effective demand: <span className="text-foreground font-medium">{formatUsdc(cappedDemand)}</span>
               </span>
               <span className="text-muted-foreground">
-                Est. allocation: <span className={`font-medium ${belowMin ? 'text-destructive' : 'text-foreground'}`}>{formatUsdc(estimate.totalAllocUsdc)}</span>
+                Est. allocation:{' '}
+                <motion.span
+                  key={formatUsdc(estimate.totalAllocUsdc)}
+                  {...numberFade}
+                  className={`font-medium inline-block ${belowMin ? 'text-destructive' : 'text-foreground'}`}
+                >
+                  {formatUsdc(estimate.totalAllocUsdc)}
+                </motion.span>
               </span>
             </div>
             {/* Explanatory notes when values diverge */}

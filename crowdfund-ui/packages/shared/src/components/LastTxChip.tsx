@@ -2,9 +2,11 @@
 // ABOUTME: Click opens a Popover with the full label, explorer link, and error (if any).
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { CheckCircle2, CircleDashed, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle2, CircleDashed, Copy, Loader2, XCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { lastTxAtom, type LastTxStatus } from '../hooks/useTxToast.js'
 import { Button } from './ui/button.js'
+import { CopyToast } from './CopyToast.js'
 import {
   Popover,
   PopoverContent,
@@ -62,18 +64,35 @@ export function LastTxChip() {
           {lastTx.hash && (
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="text-muted-foreground">Hash</span>
-              {lastTx.explorerUrl ? (
-                <a
-                  href={`${lastTx.explorerUrl}/tx/${lastTx.hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-primary hover:underline"
+              <div className="flex items-center gap-1">
+                {lastTx.explorerUrl ? (
+                  <a
+                    href={`${lastTx.explorerUrl}/tx/${lastTx.hash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-primary hover:underline"
+                  >
+                    {hashDisplay}
+                  </a>
+                ) : (
+                  <span className="font-mono">{hashDisplay}</span>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Copy transaction hash"
+                  className="h-auto p-0.5 text-muted-foreground hover:text-foreground"
+                  onClick={() =>
+                    navigator.clipboard.writeText(lastTx.hash!).then(
+                      () => toast.success(<CopyToast>Hash copied</CopyToast>),
+                      () => toast.error('Clipboard write failed'),
+                    )
+                  }
                 >
-                  {hashDisplay}
-                </a>
-              ) : (
-                <span className="font-mono">{hashDisplay}</span>
-              )}
+                  <Copy className="size-3" />
+                </Button>
+              </div>
             </div>
           )}
           {lastTx.error && (

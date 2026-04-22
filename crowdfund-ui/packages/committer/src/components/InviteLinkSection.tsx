@@ -3,10 +3,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { motion } from 'framer-motion'
 import {
   Badge,
   Button,
+  CopyToast,
   ToggleGroup,
   ToggleGroupItem,
   formatCountdown,
@@ -14,18 +14,6 @@ import {
   formatUsdc,
   HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
-
-function CopyToast({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ duration: 0.15 }}
-    >
-      {children}
-    </motion.div>
-  )
-}
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 import type { HopPosition } from '@/hooks/useEligibility'
 

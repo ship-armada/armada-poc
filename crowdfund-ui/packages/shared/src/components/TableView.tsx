@@ -16,13 +16,16 @@ import {
   type ColumnDef,
   type Row,
 } from '@tanstack/react-table'
-import { Search, Users } from 'lucide-react'
+import { Copy, Search, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatUsdc, formatArm, hopLabel, truncateAddress } from '../lib/format.js'
 import { HOP_CONFIGS } from '../lib/constants.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
 import type { HopStatsData } from './StatsBar.js'
 import { NodeDetail } from './NodeDetail.js'
 import { EmptyState } from './EmptyState.js'
+import { CopyToast } from './CopyToast.js'
+import { Button } from './ui/button.js'
 import { Skeleton } from './ui/skeleton.js'
 
 export interface TableViewProps {
@@ -141,11 +144,35 @@ export function TableView(props: TableViewProps) {
     const cols: ColumnDef<AddressSummary, any>[] = [
       columnHelper.accessor('address', {
         header: 'Address',
-        cell: (info) => (
-          <span className="font-mono text-xs">
-            {displayAddress(info.getValue(), resolveENS)}
-          </span>
-        ),
+        cell: (info) => {
+          const raw = info.getValue()
+          const copyable = raw !== 'armada'
+          const handleCopy = (e: React.MouseEvent) => {
+            e.stopPropagation()
+            if (!copyable) return
+            navigator.clipboard.writeText(raw).then(
+              () => toast.success(<CopyToast>Address copied</CopyToast>),
+              () => toast.error('Clipboard write failed'),
+            )
+          }
+          return (
+            <span className="inline-flex items-center gap-1 font-mono text-xs">
+              <span>{displayAddress(raw, resolveENS)}</span>
+              {copyable && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCopy}
+                  aria-label="Copy address"
+                  className="h-auto p-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground transition-opacity"
+                >
+                  <Copy className="size-3" />
+                </Button>
+              )}
+            </span>
+          )
+        },
         sortingFn: 'alphanumeric',
         filterFn: (row, _columnId, filterValue: string) => {
           const addr = row.original.address
@@ -375,7 +402,7 @@ export function TableView(props: TableViewProps) {
                       if (el) rowRefs.current.set(addr, el)
                       else rowRefs.current.delete(addr)
                     }}
-                    className={`border-t border-border cursor-pointer transition-colors ${
+                    className={`group border-t border-border cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-primary/10'
                         : isConnected

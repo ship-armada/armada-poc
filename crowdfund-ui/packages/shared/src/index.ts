@@ -109,6 +109,8 @@ export type { AppShellProps, AppShellNetwork } from './components/AppShell.js'
 
 export { CrowdfundToaster } from './components/CrowdfundToaster.js'
 
+export { CopyToast } from './components/CopyToast.js'
+
 export { LastTxChip } from './components/LastTxChip.js'
 
 export { InfoTooltip } from './components/InfoTooltip.js'

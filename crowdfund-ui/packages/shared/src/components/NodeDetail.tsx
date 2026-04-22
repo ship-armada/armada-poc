@@ -1,8 +1,12 @@
 // ABOUTME: Expanded detail view for a single participant address.
 // ABOUTME: Shows per-hop breakdown of commitment, cap, allocation, and invite info.
 
+import { Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatUsdc, formatArm, hopLabel, truncateAddress } from '../lib/format.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
+import { Button } from './ui/button.js'
+import { CopyToast } from './CopyToast.js'
 
 export interface NodeDetailProps {
   summary: AddressSummary
@@ -95,13 +99,35 @@ export function NodeDetail(props: NodeDetailProps) {
       {/* Invited by: per-hop inviter chain */}
       <div className="text-xs text-muted-foreground">
         Invited by:{' '}
-        {inviterChain.map((entry, idx) => (
-          <span key={entry.hop}>
-            {idx > 0 && ' · '}
-            {hopNodes.length > 1 && <span>{hopLabel(entry.hop)}: </span>}
-            {entry.label}
-          </span>
-        ))}
+        {inviterChain.map((entry, idx) => {
+          const copyable =
+            entry.inviter !== null && entry.inviter !== summary.address && entry.hop !== 0
+          return (
+            <span key={entry.hop} className="inline-flex items-center gap-1">
+              {idx > 0 && ' · '}
+              {hopNodes.length > 1 && <span>{hopLabel(entry.hop)}: </span>}
+              <span>{entry.label}</span>
+              {copyable && entry.inviter && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Copy inviter address"
+                  className="h-auto p-0.5 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(entry.inviter!).then(
+                      () => toast.success(<CopyToast>Address copied</CopyToast>),
+                      () => toast.error('Clipboard write failed'),
+                    )
+                  }}
+                >
+                  <Copy className="size-3" />
+                </Button>
+              )}
+            </span>
+          )
+        })}
       </div>
 
       {/* Invite usage summary */}

@@ -105,6 +105,9 @@ export type { ErrorAlertProps } from './components/ErrorAlert.js'
 export { EmptyState } from './components/EmptyState.js'
 export type { EmptyStateProps } from './components/EmptyState.js'
 
+export { AmountInput } from './components/AmountInput.js'
+export type { AmountInputProps, AmountCeiling } from './components/AmountInput.js'
+
 export { StaleDataBanner } from './components/StaleDataBanner.js'
 export { useStaleDataBanner } from './hooks/useStaleDataBanner.js'
 export type { StaleDataSignal, StaleReason } from './hooks/useStaleDataBanner.js'

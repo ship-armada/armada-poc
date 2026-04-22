@@ -6,9 +6,11 @@ import * as d3Hierarchy from 'd3-hierarchy'
 import * as d3Zoom from 'd3-zoom'
 import * as d3Scale from 'd3-scale'
 import * as d3Selection from 'd3-selection'
+import { ZoomIn, ZoomOut, Maximize } from 'lucide-react'
 import type { CrowdfundGraph } from '../lib/graph.js'
 import { graphToTree, filterTree, type TreeNode } from '../lib/treeLayout.js'
 import { NodeDetail } from './NodeDetail.js'
+import { Button } from './ui/button.js'
 
 export interface TreeViewProps {
   graph: CrowdfundGraph
@@ -308,6 +310,7 @@ export function TreeView(props: TreeViewProps) {
   // binds once at mount — when the SVG isn't in the tree yet — and never re-runs to pick up the
   // element when it appears. State triggers the zoom-binding effect whenever the element arrives.
   const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null)
+  const zoomBehaviorRef = useRef<d3Zoom.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -459,10 +462,12 @@ export function TreeView(props: TreeViewProps) {
       })
 
     svgSelection.call(zoom)
+    zoomBehaviorRef.current = zoom
 
     // Cleanup
     return () => {
       svgSelection.on('.zoom', null)
+      zoomBehaviorRef.current = null
     }
   }, [svgEl])
 
@@ -519,6 +524,38 @@ export function TreeView(props: TreeViewProps) {
     onHoverAddress?.(null)
   }, [onHoverAddress])
 
+  // Imperative zoom controls — mirror what xyflow ships via <Controls>.
+  const handleZoomIn = useCallback(() => {
+    if (!svgEl || !zoomBehaviorRef.current) return
+    d3Selection.select(svgEl).transition().duration(200).call(zoomBehaviorRef.current.scaleBy, 1.3)
+  }, [svgEl])
+
+  const handleZoomOut = useCallback(() => {
+    if (!svgEl || !zoomBehaviorRef.current) return
+    d3Selection.select(svgEl).transition().duration(200).call(zoomBehaviorRef.current.scaleBy, 1 / 1.3)
+  }, [svgEl])
+
+  const handleFitView = useCallback(() => {
+    if (!svgEl || !zoomBehaviorRef.current || flatNodes.length === 0) return
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const n of flatNodes) {
+      if (n.x < minX) minX = n.x
+      if (n.x > maxX) maxX = n.x
+      if (n.y < minY) minY = n.y
+      if (n.y > maxY) maxY = n.y
+    }
+    const pad = 60
+    const contentW = (maxX - minX) + pad * 2
+    const contentH = (maxY - minY) + pad * 2
+    const scale = Math.min(dimensions.width / contentW, dimensions.height / contentH, 4)
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    const tx = dimensions.width / 2 - cx * scale
+    const ty = dimensions.height / 2 - cy * scale
+    const transform = d3Zoom.zoomIdentity.translate(tx, ty).scale(scale)
+    d3Selection.select(svgEl).transition().duration(300).call(zoomBehaviorRef.current.transform, transform)
+  }, [svgEl, flatNodes, dimensions])
+
   // Loading placeholder — pulsing grey circle while the first fetch is in flight.
   if (isLoading && graph.nodes.size === 0) {
     return (
@@ -556,6 +593,19 @@ export function TreeView(props: TreeViewProps) {
         <span>Seed (hop-0)</span>
         <span>Hop-1</span>
         <span>Hop-2</span>
+      </div>
+
+      {/* Zoom controls — mirror xyflow's <Controls> for fair A/B comparison */}
+      <div className="absolute bottom-3 left-3 z-10 flex flex-col gap-0.5 rounded-md border border-border bg-card/80 backdrop-blur-sm p-1 shadow-sm">
+        <Button variant="ghost" size="icon" className="size-7" onClick={handleZoomIn} aria-label="Zoom in">
+          <ZoomIn className="size-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="size-7" onClick={handleZoomOut} aria-label="Zoom out">
+          <ZoomOut className="size-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="size-7" onClick={handleFitView} aria-label="Fit view">
+          <Maximize className="size-4" />
+        </Button>
       </div>
 
       <svg

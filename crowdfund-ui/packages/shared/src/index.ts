@@ -88,6 +88,9 @@ export type { UseENSConfig, UseENSResult } from './hooks/useENS.js'
 export { useAllocations } from './hooks/useAllocations.js'
 export type { PrefetchedAllocation, UseAllocationsConfig } from './hooks/useAllocations.js'
 
+export { useContractState } from './hooks/useContractState.js'
+export type { ContractState } from './hooks/useContractState.js'
+
 // Components
 export { StatsBar } from './components/StatsBar.js'
 export type { StatsBarProps, HopStatsData, ConnectedSummary } from './components/StatsBar.js'

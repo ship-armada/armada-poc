@@ -5,10 +5,8 @@ import { useMemo } from 'react'
 import { Contract } from 'ethers'
 import type { JsonRpcProvider } from 'ethers'
 import { useQuery } from '@tanstack/react-query'
-import {
-  CROWDFUND_ABI_FRAGMENTS,
-  type HopStatsData,
-} from '@armada/crowdfund-shared'
+import { CROWDFUND_ABI_FRAGMENTS } from '../lib/constants.js'
+import type { HopStatsData } from '../components/StatsBar.js'
 
 export interface ContractState {
   phase: number

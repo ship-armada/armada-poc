@@ -24,11 +24,11 @@ import {
   ErrorBoundary,
   StaleDataBanner,
   generateMockGraph,
+  useContractState,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
-import { useContractState } from '@/hooks/useContractState'
 
 const COMMITTER_URL =
   (import.meta.env.VITE_COMMITTER_URL as string | undefined) ?? 'http://localhost:5174'

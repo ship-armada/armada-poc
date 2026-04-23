@@ -7,7 +7,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useContractState } from './useContractState'
+import { useContractState } from './useContractState.js'
 import type { JsonRpcProvider } from 'ethers'
 
 // Mock ethers Contract to avoid real RPC calls

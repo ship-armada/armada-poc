@@ -28,6 +28,7 @@ import {
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
+  useContractState,
   type ConnectedSummary,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
@@ -36,7 +37,6 @@ import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
-import { useContractState } from '@/hooks/useContractState'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { CommitTab } from '@/components/CommitTab'
 import { InviteTab } from '@/components/InviteTab'

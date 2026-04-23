@@ -8,7 +8,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { Provider as JotaiProvider } from 'jotai'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App } from './App'
-import type { ContractState } from '@/hooks/useContractState'
+import type { ContractState } from '@armada/crowdfund-shared'
 
 // Default contract state for mocking
 const defaultContractState: ContractState = {
@@ -61,10 +61,6 @@ vi.mock('@/config/deployments', () => ({
   },
 }))
 
-vi.mock('@/hooks/useContractState', () => ({
-  useContractState: () => mockContractState,
-}))
-
 vi.mock('ethers', async () => {
   const actual = await vi.importActual('ethers')
   return {
@@ -94,6 +90,7 @@ vi.mock('@armada/crowdfund-shared', async () => {
     }),
     useENS: () => ({ resolve: () => null }),
     useAllocations: () => new Map(),
+    useContractState: () => mockContractState,
     createProvider: () => ({}),
   }
 })

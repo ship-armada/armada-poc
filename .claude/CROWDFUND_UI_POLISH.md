@@ -1460,7 +1460,7 @@ Test-file cleanup:
 
 - **Manual browser smoke** — Butters ran the golden-path smoke against `npm run dev` post-Phase-11. Hop-2 jazzicon fix (`9b7b17d`) was the only surfaced issue; addressed in-session.
 - ~~**`useContractState.ts` duplication**~~ — **resolved** in `493d35e` (promoted to `packages/shared/src/hooks/useContractState.ts`; both apps import from the shared barrel).
-- **InviteTab ENS resolution useEffect simplification** (Phase 8 flag — could use `useENS({...}).resolve(...)`).
+- ~~**InviteTab ENS resolution useEffect simplification**~~ — **closed as won't-fix.** The local debounced `useEffect` + `setTimeout(500ms)` is the right tool for a transient input the user is actively typing. Swapping to `useENS` would (a) lose the debounce — react-query fires per-address changes without it — and (b) pollute the 24h IDB cache with partial/failed typing intermediates. The shared `useENS` is the right tool for batch-resolving known addresses (table rows, graph nodes); the two solve different problems.
 - **LazyMotion bundle optimization** (Phase 9.4 deferral — ~10-15 kB gzipped win if/when bundle budget tightens).
 - **Remove `?mock=stressN` + `mockGraph.ts` + `MockObserverApp`** when crowdfund is prod-ready (explicit user direction: keep for now).
 - **Framer-replacement-of-Radix spike** on Tabs/Popover/Dialog/Sheet (Phase 9 §8 follow-up).

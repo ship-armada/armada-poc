@@ -1364,7 +1364,7 @@ The spike is the exception to the "no feature branches" rule in §0: create a te
 
 ### Phase 11 — Micro-interactions final pass
 
-**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commits `a34c1ec` · `32e2d1d` · `89d5796`). 11.1 was a no-op audit (findings recorded in actuals); 11.4 was deferred to Butters' consolidated Phase 5-11 smoke sweep per P11-D5.
+**Status:** ✅ Landed on `iskay/crowdfund-ui-polish` (commits `a34c1ec` · `32e2d1d` · `89d5796` · `9b7b17d` · `11ef844`). 11.1 was a no-op audit (findings recorded in actuals); 11.4 smoke was run by Butters against `npm run dev` post-phase and surfaced the hop-2 jazzicon size-scale bug (`9b7b17d`). The #259 baseline was subsequently cleared so all three apps `npm run build` green (`11ef844`).
 **Effort:** ~0.5 day actual — closer to the original estimate than the 1-1.5 day upper bound because the Trim scope (P11-D1) dropped the Lighthouse + WCAG audit.
 **Depends on:** Phases 1–10 all landed. In particular: Phase 5 (shadcn primitives migrated — focus rings largely come for free from Radix), Phase 6 (ErrorAlert / EmptyState / ErrorBoundary are the patterns Phase 11 reinforces), Phase 9 (`<MotionConfig reducedMotion="user">` mounted at each app root — tab/keyboard focus animations already respect OS settings).
 
@@ -1403,36 +1403,65 @@ Landed as three commits on the umbrella. 11.1 produced no code change (audit cle
 - **Admin residual errors are higher than the plan's implied ~0.** Plan said `vitest/globals` would "erase 275 of the baseline errors in one commit" — it did (253-error drop), but the masking effect revealed 22 pre-existing issues that the runner-type noise had been hiding. These are legitimate latent issues; file a follow-up or bundle into a future admin polish pass.
 - **Tests skipped** with explicit user waiver ("4. yes, waive") per the per-phase convention since Phase 5.
 
-**Pre-existing issues NOT addressed in Phase 11** (updated baseline after 11.5):
+**Pre-existing #259 baseline — CLEARED** (`11ef844`, post-Phase-11.5 follow-up commit):
 
-- Shared `lib/rpc.test.ts:64` `JsonRpcResult` type mismatch.
-- Committer test files (`ClaimTab.test.tsx`, `InviteLinkRedemption.test.tsx`, `InviteTab.test.tsx`, `useProRataEstimate.test.ts`) — unused imports + type mismatches (13 errors total).
-- Committer `InviteLinkRedemption.tsx:116` unused `isConnected` destructure.
-- Committer `lib/wagmiAdapter.ts:20` strict-null.
-- Admin `ParticipantTable.tsx:370/L383` — ColumnDef generic mismatch between ParticipantRow and AggregatedRow modes.
-- Admin `StatusDashboard.test.tsx:7` unused `AdminRole` import.
-- Admin `useRole.test.ts:12` `vi.Mock` namespace (should be `Mock` imported from `vitest`).
-- `useProRataEstimate.test.ts` 6 runtime vitest failures.
-- TreeView → NodeDetail hover tooltip shares the NodeDetail component with TableView's expanded-row detail; the inviter Copy button from 11.3 renders in both places. No regression expected, but worth verifying during Butters' smoke.
+The tsc + vitest residuals documented above were subsequently closed out so
+all three apps `npm run build` green. Summary of the cleanup commit:
+
+Prod-code fixes:
+- `committer/lib/wagmiAdapter.ts`: explicit `account` null guard (matches
+  the chain-null guard pattern above).
+- `committer/components/InviteLinkRedemption.tsx`: drop orphaned
+  `isConnected` destructure (Phase 7 simplified the wallet-check path).
+- `admin/components/FinalizePanel.tsx`: drop unused `saleSize` + `ARM_PRICE`
+  destructures (prop stays in the interface for caller compatibility).
+- `admin/components/ParticipantTable.tsx`: extract a generic `<TableBody>`
+  helper and render per-hop vs aggregated in separate branches so
+  `flexRender`'s column-context generics resolve through a concrete
+  `Table<T>` at each site (the prior ternary yielded `Table<ParticipantRow>
+  | Table<AggregatedRow>` which TS cannot narrow through `flexRender`).
+
+Test-file cleanup:
+- `committer/ClaimTab.test.tsx`: drop unused `vi`; add `events: []` to mock
+  `CrowdfundGraph`.
+- `committer/InviteLinkRedemption.test.tsx`: drop unused `beforeEach`.
+- `committer/InviteTab.test.tsx`: add `invitedBy` + `nodes`/`provider` to
+  mock defaults.
+- `committer/useProRataEstimate.test.ts`: add missing `existingCommitments`
+  argument (hook grew 3→4 params pre-Phase-11; 6 runtime failures all
+  resolve).
+- `admin/FinalizePanel.test.tsx`: disambiguate `/refund mode/i` match.
+- `admin/ParticipantTable.test.tsx`: hop-0 inviter sentinel is `"armada"`,
+  not a 0x.
+- `admin/SeedManager.test.tsx`: `MAX_SEEDS` is 160 (not 150); raise
+  `seedCount` for the "exceeds remaining" case.
+- `admin/StatusDashboard.test.tsx`: drop unused `AdminRole`; update
+  timeline labels; whitelist format is `142/160`; accept multi-match on
+  `/$500,000/`.
+- `admin/useRole.test.ts`: replace `vi.Mock` namespace with
+  `import type { Mock } from 'vitest'`.
+- `shared/rpc.test.ts`: cast the error-shaped mock return through the
+  spy's return type — ethers v6's `JsonRpcResult` only types the success
+  path; fallback provider handles both shapes at runtime.
 
 **Bundle size at Phase 11 close (gzipped main chunk):**
-- observer: ~357 kB (no meaningful delta from Phase 10 — CopyToast + TableView button + framer-motion already bundled).
+- observer: ~357 kB (no meaningful delta from Phase 10).
 - committer: ~565 kB (no meaningful delta).
 - admin: ~248 kB (no meaningful delta).
 
-**tsc + vitest baseline at Phase 11 close:**
-- observer: tsc clean; vitest 13/13 (was 11/13).
-- shared: tsc 1 error (unchanged `rpc.test.ts`); vitest 139/139.
-- committer: tsc 13 errors (was 14); vitest 62/68 (6 pre-existing `useProRataEstimate`).
-- admin: tsc 22 errors (was ~275).
+**tsc + vitest baseline at Phase 11 close (post-clearout):**
+- observer: tsc clean; vitest 13/13; `npm run build` ✅.
+- shared: tsc clean; vitest 139/139.
+- committer: tsc clean; vitest 68/68; `npm run build` ✅.
+- admin: tsc clean; vitest 78/78; `npm run build` ✅.
+- **Total: 298/298 tests passing across all four packages.**
 
 **Outstanding follow-ups from prior phases Phase 11 did not resolve** (tracked for visibility):
 
-- **Manual browser smoke owed for Phases 5-11** — consolidated sweep is Butters' pre-merge activity.
-- **`useContractState.ts` duplication** between observer and committer (Phase 7.4 deferral, still outstanding).
-- **Admin residual 22 tsc errors** (new baseline after 11.5's unmasking).
+- **Manual browser smoke** — Butters ran the golden-path smoke against `npm run dev` post-Phase-11. Hop-2 jazzicon fix (`9b7b17d`) was the only surfaced issue; addressed in-session.
+- **`useContractState.ts` duplication** between observer and committer (Phase 7.4 deferral, still outstanding — one file could be promoted to shared).
 - **InviteTab ENS resolution useEffect simplification** (Phase 8 flag — could use `useENS({...}).resolve(...)`).
-- **LazyMotion bundle optimization** (Phase 9.4 deferral).
+- **LazyMotion bundle optimization** (Phase 9.4 deferral — ~10-15 kB gzipped win if/when bundle budget tightens).
 - **Remove `?mock=stressN` + `mockGraph.ts` + `MockObserverApp`** when crowdfund is prod-ready (explicit user direction: keep for now).
 - **Framer-replacement-of-Radix spike** on Tabs/Popover/Dialog/Sheet (Phase 9 §8 follow-up).
 

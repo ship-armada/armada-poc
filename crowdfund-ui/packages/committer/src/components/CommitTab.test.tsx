@@ -2,7 +2,7 @@
 // ABOUTME: Covers not-eligible, window-closed, input rendering, and balance validation.
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { CommitTab } from './CommitTab'
 import type { CommitTabProps } from './CommitTab'
 import type { HopPosition } from '@/hooks/useEligibility'
@@ -101,5 +101,43 @@ describe('CommitTab', () => {
     renderCommitTab()
     const btn = screen.getByText('Review Commitment')
     expect(btn).toBeDisabled()
+  })
+
+  it('enables Review button after typing a valid amount', async () => {
+    renderCommitTab()
+    const btn = screen.getByText('Review Commitment')
+    expect(btn).toBeDisabled()
+    const input = screen.getByLabelText(/Commit amount/) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '100' } })
+    await waitFor(() => expect(btn).not.toBeDisabled())
+  })
+
+  it('enables Review button after typing even when balance loads async (useAllowance race)', async () => {
+    // Mount with balance=0 (like useAllowance's initial snapshot) then rerender
+    // with the real balance, simulating the query resolving after mount.
+    const { rerender } = renderCommitTab({ balance: 0n })
+    rerender(
+      <CommitTab
+        {...({
+          positions: [makePosition()],
+          eligible: true,
+          balance: 50_000n * USDC,
+          needsApproval: () => false,
+          refreshAllowance: vi.fn(),
+          signer: null,
+          crowdfundAddress: '0x1234567890abcdef1234567890abcdef12345678',
+          usdcAddress: '0xabcdef1234567890abcdef1234567890abcdef12',
+          hopStats: defaultHopStats,
+          saleSize: 1_200_000n * USDC,
+          phase: 0,
+          windowOpen: true,
+          resolveENS: () => null,
+        } as CommitTabProps)}
+      />,
+    )
+    const btn = screen.getByText('Review Commitment')
+    const input = screen.getByLabelText(/Commit amount/) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '100' } })
+    await waitFor(() => expect(btn).not.toBeDisabled(), { timeout: 1500 })
   })
 })

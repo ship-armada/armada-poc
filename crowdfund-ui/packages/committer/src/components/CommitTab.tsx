@@ -5,7 +5,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { Contract, MaxUint256 } from 'ethers'
 import type { Signer } from 'ethers'
 import { Loader2, ShieldOff } from 'lucide-react'
-import { useForm, type Resolver } from 'react-hook-form'
+import { useForm, useWatch, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -182,8 +182,10 @@ export function CommitTab(props: CommitTabProps) {
     defaultValues: { approveUnlimited: false, amounts: {} },
   })
 
-  const amountsValues = form.watch('amounts')
-  const approveUnlimited = form.watch('approveUnlimited')
+  // useWatch returns a fresh reference on each change; `form.watch()` returns
+  // a proxy over internal mutable state, so `useMemo` deps don't see updates.
+  const amountsValues = useWatch({ control: form.control, name: 'amounts' })
+  const approveUnlimited = useWatch({ control: form.control, name: 'approveUnlimited' })
 
   // Parse amounts to bigint
   const parsedAmounts = useMemo(() => {

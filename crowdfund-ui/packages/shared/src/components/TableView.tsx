@@ -42,6 +42,12 @@ export interface TableViewProps {
   connectedAddress?: string | null
   /** When true with no rows yet, renders skeleton rows instead of the empty-state cell. */
   isLoading?: boolean
+  /**
+   * Request to scroll a row into view. Decoupled from `selectedAddress` so that
+   * clicking a tree node selects without yanking the table scroll position.
+   * The tick ensures repeat requests for the same address re-fire the effect.
+   */
+  focusRequest?: { address: string; tick: number } | null
 }
 
 function displayAddress(addr: string, resolve?: (a: string) => string | null): string {
@@ -79,6 +85,7 @@ export function TableView(props: TableViewProps) {
     saleSize,
     connectedAddress,
     isLoading,
+    focusRequest,
   } = props
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'totalCommitted', desc: true }])
@@ -121,14 +128,15 @@ export function TableView(props: TableViewProps) {
     return filtered
   }, [summaries, hopFilter, multiHopOnly, oversubOnly, oversubscribedHops])
 
-  // Scroll to selected row when selection changes
+  // Scroll to a row only when an explicit focus request is made (e.g. "View in
+  // table" button). Clicking a tree node selects without scrolling.
   useEffect(() => {
-    if (!selectedAddress) return
-    const el = rowRefs.current.get(selectedAddress)
+    if (!focusRequest) return
+    const el = rowRefs.current.get(focusRequest.address)
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
-  }, [selectedAddress])
+  }, [focusRequest])
 
   const handleInviterClick = useCallback(
     (e: React.MouseEvent, inviterAddr: string) => {

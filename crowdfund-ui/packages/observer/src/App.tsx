@@ -140,7 +140,15 @@ export function App() {
     setSearchQuery,
     hoveredAddress,
     setHoveredAddress,
+    focusRequest,
+    requestFocus,
   } = useSelection()
+
+  // "View in table" selects the address AND scrolls the table. Plain tree clicks select only.
+  const handleViewInTable = (addr: string) => {
+    selectAddress(addr)
+    requestFocus(addr)
+  }
 
   // ENS resolution
   const addresses = useMemo(
@@ -274,6 +282,7 @@ export function App() {
         graph={graph}
         selectedAddress={selectedAddress}
         onSelectAddress={selectAddress}
+        onViewInTable={handleViewInTable}
         onHoverAddress={setHoveredAddress}
         searchQuery={searchQuery}
         phase={contractState.phase}
@@ -290,6 +299,7 @@ export function App() {
         nodes={nodes}
         selectedAddress={selectedAddress}
         onSelectAddress={selectAddress}
+        focusRequest={focusRequest}
         searchQuery={searchQuery}
         phase={contractState.phase}
         resolveENS={resolveENS}

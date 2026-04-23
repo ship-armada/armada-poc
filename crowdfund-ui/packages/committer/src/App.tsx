@@ -130,7 +130,13 @@ export function App() {
   })
   const { graph, summaries, nodes } = useGraphState()
   const contractState = useContractState(provider, crowdfundAddress, pollInterval)
-  const { selectedAddress, selectAddress, searchQuery, setSearchQuery } = useSelection()
+  const { selectedAddress, selectAddress, searchQuery, setSearchQuery, focusRequest, requestFocus } = useSelection()
+
+  // "View in table" selects the address AND scrolls the table. Plain tree clicks select only.
+  const handleViewInTable = (addr: string) => {
+    selectAddress(addr)
+    requestFocus(addr)
+  }
 
   // ENS
   const addresses = useMemo(() => [...summaries.keys()], [summaries])
@@ -302,8 +308,9 @@ export function App() {
             <ErrorBoundary>
               <TreeView
                 graph={graph}
-                selectedAddress={selectedAddress ?? wallet.address}
+                selectedAddress={selectedAddress}
                 onSelectAddress={selectAddress}
+                onViewInTable={handleViewInTable}
                 searchQuery={searchQuery}
                 phase={contractState.phase}
                 resolveENS={resolveENS}
@@ -315,8 +322,9 @@ export function App() {
               <TableView
                 summaries={summaryArray}
                 nodes={nodes}
-                selectedAddress={selectedAddress ?? wallet.address}
+                selectedAddress={selectedAddress}
                 onSelectAddress={selectAddress}
+                focusRequest={focusRequest}
                 searchQuery={searchQuery}
                 phase={contractState.phase}
                 resolveENS={resolveENS}

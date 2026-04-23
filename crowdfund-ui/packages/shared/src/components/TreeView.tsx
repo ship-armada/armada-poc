@@ -39,6 +39,7 @@ interface TreeViewCtxValue {
   resolveENS: (address: string) => string | null
   phase: number
   onSelectAddress: (address: string | null) => void
+  onViewInTable: (address: string) => void
 }
 const TreeViewContext = React.createContext<TreeViewCtxValue | null>(null)
 
@@ -50,6 +51,12 @@ export interface TreeViewProps {
   selectedAddress: string | null
   onSelectAddress: (addr: string | null) => void
   onHoverAddress?: (addr: string | null) => void
+  /**
+   * Invoked when the user clicks the "View in table" button in a node's popover.
+   * Callers should scroll the table to `addr` (and may also update selection).
+   * If omitted, the button falls back to `onSelectAddress(addr)`.
+   */
+  onViewInTable?: (addr: string) => void
   searchQuery: string
   phase: number
   resolveENS: (addr: string) => string | null
@@ -301,7 +308,7 @@ function ParticipantNode({ data }: NodeProps<Node<ParticipantNodeData>>) {
             size="sm"
             variant="outline"
             className="flex-1"
-            onClick={() => ctx?.onSelectAddress(d.address)}
+            onClick={() => ctx?.onViewInTable(d.address)}
             aria-label="View in table"
           >
             <Table2 className="size-3.5" />
@@ -389,7 +396,7 @@ const edgeTypes = { invite: InviteEdge }
 // ────────────────────────── TreeView core ──────────────────────────
 
 function TreeViewInner(props: TreeViewProps) {
-  const { graph, selectedAddress, onSelectAddress, onHoverAddress, searchQuery, phase, resolveENS, connectedAddress } = props
+  const { graph, selectedAddress, onSelectAddress, onHoverAddress, onViewInTable, searchQuery, phase, resolveENS, connectedAddress } = props
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsedSubtrees, setCollapsedSubtrees] = useState<Set<string>>(new Set())
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
@@ -402,7 +409,9 @@ function TreeViewInner(props: TreeViewProps) {
     resolveENS,
     phase,
     onSelectAddress,
-  }), [graph, resolveENS, phase, onSelectAddress])
+    // Fall back to plain selection if the caller didn't wire a scroll action.
+    onViewInTable: onViewInTable ?? ((addr) => onSelectAddress(addr)),
+  }), [graph, resolveENS, phase, onSelectAddress, onViewInTable])
 
   useEffect(() => {
     const el = containerRef.current

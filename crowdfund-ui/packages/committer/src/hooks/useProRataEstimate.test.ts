@@ -26,7 +26,7 @@ function makeHopStats(overrides: Partial<HopStatsData>[] = []): HopStatsData[] {
 describe('useProRataEstimate', () => {
   it('returns empty estimates for empty commit amounts', () => {
     const { result } = renderHook(() =>
-      useProRataEstimate(new Map(), makeHopStats(), SALE_SIZE),
+      useProRataEstimate(new Map(), new Map(), makeHopStats(), SALE_SIZE),
     )
     expect(result.current.hopEstimates).toHaveLength(0)
     expect(result.current.totalEstimatedArm).toBe(0n)
@@ -37,7 +37,7 @@ describe('useProRataEstimate', () => {
     const commitAmounts = new Map([[0, 10_000n * USDC]])
     // Hop-0 ceiling: 70% of 1.2M = 840,000 USDC. Current demand: 0. Our commit: 10,000.
     const { result } = renderHook(() =>
-      useProRataEstimate(commitAmounts, makeHopStats(), SALE_SIZE),
+      useProRataEstimate(commitAmounts, new Map(), makeHopStats(), SALE_SIZE),
     )
     expect(result.current.hopEstimates).toHaveLength(1)
     const est = result.current.hopEstimates[0]
@@ -52,7 +52,7 @@ describe('useProRataEstimate', () => {
     // Hop-0 ceiling: 840,000. Existing demand: 800,000. Adding 100,000 → total 900,000 > 840,000
     const stats = makeHopStats([{ totalCommitted: 800_000n * USDC }])
     const { result } = renderHook(() =>
-      useProRataEstimate(commitAmounts, stats, SALE_SIZE),
+      useProRataEstimate(commitAmounts, new Map(), stats, SALE_SIZE),
     )
     const est = result.current.hopEstimates[0]
     // Pro-rata: 100,000 * 840,000 / 900,000 ≈ 93,333
@@ -71,7 +71,7 @@ describe('useProRataEstimate', () => {
       { cappedCommitted: 0n },
     ])
     const { result } = renderHook(() =>
-      useProRataEstimate(commitAmounts, stats, SALE_SIZE),
+      useProRataEstimate(commitAmounts, new Map(), stats, SALE_SIZE),
     )
     const est = result.current.hopEstimates[0]
     // Hop-2 allocation = 1.2M - 500k - 300k = 400k. Demand = 500. Under-subscribed.
@@ -84,7 +84,7 @@ describe('useProRataEstimate', () => {
       [1, 3_000n * USDC],
     ])
     const { result } = renderHook(() =>
-      useProRataEstimate(commitAmounts, makeHopStats(), SALE_SIZE),
+      useProRataEstimate(commitAmounts, new Map(), makeHopStats(), SALE_SIZE),
     )
     expect(result.current.hopEstimates).toHaveLength(2)
     expect(result.current.totalEstimatedArm).toBe(
@@ -95,7 +95,7 @@ describe('useProRataEstimate', () => {
   it('skips zero or negative amounts', () => {
     const commitAmounts = new Map([[0, 0n]])
     const { result } = renderHook(() =>
-      useProRataEstimate(commitAmounts, makeHopStats(), SALE_SIZE),
+      useProRataEstimate(commitAmounts, new Map(), makeHopStats(), SALE_SIZE),
     )
     expect(result.current.hopEstimates).toHaveLength(0)
   })

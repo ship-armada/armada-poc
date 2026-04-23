@@ -4,7 +4,6 @@
 import { render, screen } from '@testing-library/react'
 import { StatusDashboard } from './StatusDashboard'
 import type { AdminState } from '@/hooks/useAdminState'
-import type { AdminRole } from '@/hooks/useRole'
 
 function makeState(overrides: Partial<AdminState> = {}): AdminState {
   return {
@@ -60,8 +59,7 @@ describe('StatusDashboard', () => {
 
   it('renders timeline rows', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('Seed Loading')).toBeInTheDocument()
-    expect(screen.getByText('LT Invite Window')).toBeInTheDocument()
+    expect(screen.getByText('Week 1 (Seeds + LT Invites)')).toBeInTheDocument()
     expect(screen.getByText('Commitment Window')).toBeInTheDocument()
     expect(screen.getByText('Claim Period')).toBeInTheDocument()
   })
@@ -76,7 +74,7 @@ describe('StatusDashboard', () => {
 
   it('shows hop-0 whitelist in N/MAX format', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('142/150')).toBeInTheDocument()
+    expect(screen.getByText('142/160')).toBeInTheDocument()
   })
 
   it('shows plain count for hop-1 and hop-2 whitelist', () => {
@@ -87,8 +85,10 @@ describe('StatusDashboard', () => {
 
   it('shows hop stats committed values', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    // Total committed $500,000 should appear in the progress area
-    expect(screen.getByText(/\$500,000/)).toBeInTheDocument()
+    // Total committed $500,000 should appear in the progress area (multiple
+    // cells render the value; assert at-least-one so the test survives layout
+    // tweaks).
+    expect(screen.getAllByText(/\$500,000/).length).toBeGreaterThan(0)
   })
 
   it('shows LT budget only for launch_team role', () => {

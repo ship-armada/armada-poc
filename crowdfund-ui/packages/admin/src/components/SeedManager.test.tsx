@@ -26,7 +26,7 @@ describe('SeedManager', () => {
   it('renders the textarea and seed count', () => {
     render(<SeedManager signer={null} crowdfundAddress="0x1234" seedCount={10} />)
     expect(screen.getByPlaceholderText(/paste addresses/i)).toBeInTheDocument()
-    expect(screen.getByText('10 / 150')).toBeInTheDocument()
+    expect(screen.getByText('10 / 160')).toBeInTheDocument()
   })
 
   it('shows valid count for valid addresses', () => {
@@ -54,7 +54,7 @@ describe('SeedManager', () => {
   })
 
   it('warns when exceeding remaining slots', () => {
-    render(<SeedManager signer={null} crowdfundAddress="0x1234" seedCount={149} />)
+    render(<SeedManager signer={null} crowdfundAddress="0x1234" seedCount={159} />)
     const textarea = screen.getByPlaceholderText(/paste addresses/i)
     fireEvent.change(textarea, { target: { value: `${VALID_ADDR_1}\n${VALID_ADDR_2}` } })
     expect(screen.getByText(/exceeds remaining/i)).toBeInTheDocument()

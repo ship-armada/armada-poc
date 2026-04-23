@@ -12,6 +12,7 @@ import {
   useReactTable,
   type SortingState,
   type ColumnDef,
+  type Table as TanstackTable,
 } from '@tanstack/react-table'
 import {
   formatUsdc,
@@ -284,8 +285,45 @@ export function ParticipantTable({ participants, phase, launchTeamAddress }: Par
     getExpandedRowModel: getExpandedRowModel(),
   })
 
-  const table = viewMode === 'per-hop' ? perHopTable : aggTable
   const dataCount = viewMode === 'per-hop' ? filtered.length : aggregated.length
+
+  // Generic renderer — keeps each branch's Table<T> concrete so flexRender's
+  // column-context generics resolve correctly (a ternary between Table<A> and
+  // Table<B> yields a union that flexRender can't narrow through).
+  function TableBody<T>({ table }: { table: TanstackTable<T> }) {
+    return (
+      <table className="w-full text-xs">
+        <thead>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <tr key={headerGroup.id} className="border-b border-border">
+              {headerGroup.headers.map((header) => (
+                <th
+                  key={header.id}
+                  className="py-1 pr-4 text-left text-muted-foreground cursor-pointer hover:text-foreground"
+                  onClick={header.column.getToggleSortingHandler()}
+                >
+                  {flexRender(header.column.columnDef.header, header.getContext())}
+                  {header.column.getIsSorted() === 'asc' ? ' ^' : ''}
+                  {header.column.getIsSorted() === 'desc' ? ' v' : ''}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {table.getRowModel().rows.map((row) => (
+            <tr key={row.id} className="border-b border-border/30 hover:bg-muted/50">
+              {row.getVisibleCells().map((cell) => (
+                <td key={cell.id} className="py-1 pr-4">
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
@@ -357,36 +395,11 @@ export function ParticipantTable({ participants, phase, launchTeamAddress }: Par
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id} className="border-b border-border">
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="py-1 pr-4 text-left text-muted-foreground cursor-pointer hover:text-foreground"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                    {header.column.getIsSorted() === 'asc' ? ' ^' : ''}
-                    {header.column.getIsSorted() === 'desc' ? ' v' : ''}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-border/30 hover:bg-muted/50">
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="py-1 pr-4">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {viewMode === 'per-hop' ? (
+          <TableBody table={perHopTable} />
+        ) : (
+          <TableBody table={aggTable} />
+        )}
         {dataCount === 0 && (
           <div className="text-xs text-muted-foreground text-center py-4">No participants</div>
         )}

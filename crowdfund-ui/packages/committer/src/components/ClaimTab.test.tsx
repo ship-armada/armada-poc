@@ -1,7 +1,7 @@
 // ABOUTME: Tests for ClaimTab component — state-dependent rendering across all phases.
 // ABOUTME: Covers pre-finalization, post-fin success, refund mode, canceled, and below-minimum states.
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ClaimTab } from './ClaimTab'
 import type { ClaimTabProps } from './ClaimTab'
@@ -13,6 +13,7 @@ const emptyGraph: CrowdfundGraph = {
   nodes: new Map(),
   edges: [],
   summaries: new Map(),
+  events: [],
 }
 
 function renderClaimTab(overrides: Partial<ClaimTabProps> = {}) {

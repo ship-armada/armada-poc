@@ -35,7 +35,7 @@ describe('ParticipantTable', () => {
   })
 
   it('shows "Armada" for hop-0 inviter', () => {
-    const rows = [makeRow({ hop: 0, invitedBy: ['0xsomeone'] })]
+    const rows = [makeRow({ hop: 0, invitedBy: ['armada'] })]
     render(<ParticipantTable participants={rows} phase={0} launchTeamAddress={LT_ADDR} />)
     expect(screen.getByText('Armada')).toBeInTheDocument()
   })

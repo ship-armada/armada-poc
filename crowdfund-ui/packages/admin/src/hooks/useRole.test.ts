@@ -1,6 +1,7 @@
 // ABOUTME: Tests for useRole hook — role detection from connected wallet address.
 // ABOUTME: Verifies launch_team, security_council, and observer role assignment.
 
+import type { Mock } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useRole } from './useRole'
 
@@ -9,7 +10,7 @@ const SECURITY_COUNCIL = '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
 const TREASURY = '0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
 const RANDOM = '0xDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
 
-let mockContractInstance: Record<string, vi.Mock>
+let mockContractInstance: Record<string, Mock>
 
 vi.mock('ethers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ethers')>()

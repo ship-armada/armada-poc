@@ -113,7 +113,7 @@ export function InviteLinkRedemption() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
-  const { address: rawAddress, isConnected } = useAccount()
+  const { address: rawAddress } = useAccount()
   const { data: walletClient } = useWalletClient()
   const { openConnectModal } = useConnectModal()
 

@@ -20,9 +20,9 @@ export interface FinalizePanelProps {
   cappedDemand: bigint
 }
 
-export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, saleSize, cappedDemand }: FinalizePanelProps) {
+export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, cappedDemand }: FinalizePanelProps) {
   const tx = useTransactionFlow(signer)
-  const { MIN_SALE, ELASTIC_TRIGGER, BASE_SALE, MAX_SALE, ARM_PRICE } = CROWDFUND_CONSTANTS
+  const { MIN_SALE, ELASTIC_TRIGGER, BASE_SALE, MAX_SALE } = CROWDFUND_CONSTANTS
 
   const belowMin = cappedDemand < MIN_SALE
   const meetsMin = cappedDemand >= MIN_SALE

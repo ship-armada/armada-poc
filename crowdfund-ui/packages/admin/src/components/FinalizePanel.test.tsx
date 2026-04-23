@@ -53,7 +53,9 @@ describe('FinalizePanel', () => {
         cappedDemand={500_000n * 10n ** 6n}
       />,
     )
-    expect(screen.getByText(/refund mode/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Capped demand is below the minimum raise/),
+    ).toBeInTheDocument()
   })
 
   it('shows elastic trigger status', () => {

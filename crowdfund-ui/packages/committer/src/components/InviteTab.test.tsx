@@ -19,6 +19,7 @@ function makePosition(overrides: Partial<HopPosition> = {}): HopPosition {
     remaining: 15_000n * USDC,
     invitesUsed: 1,
     invitesAvailable: 2,
+    invitedBy: ['armada'],
     ...overrides,
   }
 }
@@ -41,6 +42,8 @@ function renderInviteTab(overrides: Partial<InviteTabProps> = {}) {
     windowOpen: true,
     inviteLinks: mockInviteLinks,
     blockTimestamp: 1700000000,
+    nodes: new Map(),
+    provider: null,
     ...overrides,
   }
   return render(<InviteTab {...defaultProps} />)

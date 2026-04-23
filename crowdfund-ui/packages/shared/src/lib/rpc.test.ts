@@ -60,8 +60,12 @@ describe('FallbackJsonRpcProvider', () => {
 
     // RPC error response — valid transport, but execution failed.
     // _send returns successfully (no throw) with an error field in the result.
+    // Cast: ethers' JsonRpcResult type only describes the success shape, but
+    // providers return a union with JsonRpcError at runtime.
     vi.spyOn(provider._providers[0], '_send').mockResolvedValue(
-      [{ id: 1, error: { code: -32000, message: 'execution reverted' } }],
+      [{ id: 1, error: { code: -32000, message: 'execution reverted' } }] as unknown as Awaited<
+        ReturnType<typeof provider._providers[0]['_send']>
+      >,
     )
     vi.spyOn(provider._providers[1], '_send')
 

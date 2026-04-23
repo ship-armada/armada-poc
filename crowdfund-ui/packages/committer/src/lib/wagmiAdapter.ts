@@ -11,6 +11,7 @@ import type { WalletClient } from 'viem'
 export function walletClientToSigner(walletClient: WalletClient): JsonRpcSigner {
   const { account, chain, transport } = walletClient
   if (!chain) throw new Error('WalletClient has no chain')
+  if (!account) throw new Error('WalletClient has no account')
   const network = {
     chainId: chain.id,
     name: chain.name,

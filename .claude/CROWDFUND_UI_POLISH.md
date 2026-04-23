@@ -1459,7 +1459,7 @@ Test-file cleanup:
 **Outstanding follow-ups from prior phases Phase 11 did not resolve** (tracked for visibility):
 
 - **Manual browser smoke** — Butters ran the golden-path smoke against `npm run dev` post-Phase-11. Hop-2 jazzicon fix (`9b7b17d`) was the only surfaced issue; addressed in-session.
-- **`useContractState.ts` duplication** between observer and committer (Phase 7.4 deferral, still outstanding — one file could be promoted to shared).
+- ~~**`useContractState.ts` duplication**~~ — **resolved** in `493d35e` (promoted to `packages/shared/src/hooks/useContractState.ts`; both apps import from the shared barrel).
 - **InviteTab ENS resolution useEffect simplification** (Phase 8 flag — could use `useENS({...}).resolve(...)`).
 - **LazyMotion bundle optimization** (Phase 9.4 deferral — ~10-15 kB gzipped win if/when bundle budget tightens).
 - **Remove `?mock=stressN` + `mockGraph.ts` + `MockObserverApp`** when crowdfund is prod-ready (explicit user direction: keep for now).

@@ -43,7 +43,7 @@ interface TreeViewCtxValue {
 const TreeViewContext = React.createContext<TreeViewCtxValue | null>(null)
 
 /** Below this node radius, identicons are illegible — fall back to a solid coloured circle. */
-const IDENTICON_MIN_RADIUS = 10
+const IDENTICON_MIN_RADIUS = 6
 
 export interface TreeViewProps {
   graph: CrowdfundGraph
@@ -434,7 +434,7 @@ function TreeViewInner(props: TreeViewProps) {
   }, [graph.summaries])
 
   const sizeScale = useMemo(
-    () => d3Scale.scaleSqrt().domain([0, Number(maxCommitted) || 1]).range([4, 24]),
+    () => d3Scale.scaleSqrt().domain([0, Number(maxCommitted) || 1]).range([6, 24]),
     [maxCommitted],
   )
 

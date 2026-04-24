@@ -1,7 +1,7 @@
 // ABOUTME: Root component for the crowdfund committer app.
 // ABOUTME: Embeds observer as left panel, adds wallet-connected action panel on right.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { Wallet } from 'lucide-react'
@@ -28,6 +28,7 @@ import {
   CROWDFUND_CONSTANTS,
   formatUsdc,
   formatArm,
+  generateMockGraph,
   useContractState,
   type ConnectedSummary,
 } from '@armada/crowdfund-shared'
@@ -44,6 +45,181 @@ import { ClaimTab } from '@/components/ClaimTab'
 
 type ActionTab = 'commit' | 'invite' | 'claim'
 type MobileTab = 'network' | 'participate'
+
+/**
+ * Dev-only stress-test mode — mirrors the committer's 3:2 observer+action
+ * grid against a synthetic CrowdfundGraph. Enabled via `?mock=stressN`.
+ *
+ * The action panel is rendered in a "whitelisted participant" visual state
+ * (enabled tab strip + per-tab placeholder content), but none of the
+ * Commit/Invite/Claim interactions run — a real signer, provider, and
+ * contract state would be needed. A fake `connectedAddress` is picked from
+ * the first hop-1 node so the tree's "My wallet" zoom has a target.
+ */
+function MockCommitterApp({ size }: { size: number }) {
+  const graph = useMemo(() => generateMockGraph(size), [size])
+  const summaryArray = useMemo(() => [...graph.summaries.values()], [graph])
+  const mockConnectedAddress = useMemo(() => {
+    // Prefer a hop-1 address — that's the typical "whitelisted participant".
+    for (const s of graph.summaries.values()) {
+      if (s.hops.includes(1)) return s.address
+    }
+    return summaryArray[0]?.address ?? null
+  }, [graph, summaryArray])
+
+  const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
+  const [hoveredAddress, setHoveredAddress] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [focusRequest, setFocusRequest] = useState<{
+    address: string
+    tick: number
+  } | null>(null)
+  const [activeTab, setActiveTab] = useState<ActionTab>('commit')
+  const resolveENS = useCallback(() => null, [])
+
+  const handleViewInTable = useCallback((addr: string) => {
+    setSelectedAddress(addr)
+    setFocusRequest((prev) => ({ address: addr, tick: (prev?.tick ?? 0) + 1 }))
+  }, [])
+
+  return (
+    <AppShell appName={`Committer · stress ?mock=stress${size}`} network="local">
+      <div className="container mx-auto p-4 space-y-4">
+        <div className="rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
+          <strong>STRESS MODE</strong> — {graph.summaries.size} synthetic addresses rendered,
+          action-panel visuals stubbed as a whitelisted hop-1 participant.
+          Interactions are disabled. Remove <code>?mock=…</code> from the URL to exit.
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
+          <div className="lg:col-span-3 space-y-3">
+            <SearchBar value={searchQuery} onChange={setSearchQuery} />
+            <ErrorBoundary>
+              <TreeView
+                graph={graph}
+                selectedAddress={selectedAddress}
+                onSelectAddress={setSelectedAddress}
+                onHoverAddress={setHoveredAddress}
+                onViewInTable={handleViewInTable}
+                searchQuery={searchQuery}
+                phase={0}
+                resolveENS={resolveENS}
+                connectedAddress={mockConnectedAddress}
+              />
+            </ErrorBoundary>
+            <ErrorBoundary>
+              <TableView
+                summaries={summaryArray}
+                nodes={graph.nodes}
+                selectedAddress={selectedAddress}
+                onSelectAddress={setSelectedAddress}
+                focusRequest={focusRequest}
+                searchQuery={searchQuery}
+                phase={0}
+                resolveENS={resolveENS}
+                hoveredAddress={hoveredAddress}
+                connectedAddress={mockConnectedAddress}
+              />
+            </ErrorBoundary>
+          </div>
+          <div className="lg:col-span-2">
+            <MockActionPanel
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              address={mockConnectedAddress}
+            />
+          </div>
+        </div>
+      </div>
+    </AppShell>
+  )
+}
+
+/**
+ * Visual-only stand-in for the real commit/invite/claim action panel.
+ * Shows a tab strip plus per-tab placeholder content describing what
+ * the real panel would do — no interactions.
+ */
+function MockActionPanel({
+  activeTab,
+  onTabChange,
+  address,
+}: {
+  activeTab: ActionTab
+  onTabChange: (tab: ActionTab) => void
+  address: string | null
+}) {
+  const truncated = address
+    ? `${address.slice(0, 6)}…${address.slice(-4)}`
+    : '—'
+  return (
+    <div className="rounded-lg border border-border bg-card">
+      {/* Header — fake wallet identity so the panel reads as "connected". */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+        <div className="size-6 rounded-full bg-muted flex items-center justify-center">
+          <Wallet className="size-3.5 text-muted-foreground" />
+        </div>
+        <div className="flex-1">
+          <div className="text-xs text-muted-foreground">Mock wallet · Hop 1</div>
+          <div className="font-mono text-sm">{truncated}</div>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as ActionTab)}>
+        <TabsList variant="line" className="w-full justify-start border-b border-border">
+          {(['commit', 'invite', 'claim'] as const).map((tab) => (
+            <TabsTrigger key={tab} value={tab} className="flex-1 capitalize">
+              {tab}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      <div className="p-6 space-y-3 text-sm">
+        {activeTab === 'commit' && (
+          <>
+            <div className="font-medium text-foreground">Commit USDC</div>
+            <div className="text-muted-foreground leading-relaxed">
+              Eligible at Hop 1. In a live session you'd enter a per-hop
+              USDC amount, review the pro-rata estimate, approve USDC, and
+              submit a commit transaction here.
+            </div>
+          </>
+        )}
+        {activeTab === 'invite' && (
+          <>
+            <div className="font-medium text-foreground">Invite participants</div>
+            <div className="text-muted-foreground leading-relaxed">
+              Generate an EIP-712 signed invite link or issue a direct
+              on-chain invite to a specific address. Slot counts and
+              expiration are shown here in live mode.
+            </div>
+          </>
+        )}
+        {activeTab === 'claim' && (
+          <>
+            <div className="font-medium text-foreground">Claim ARM / refund</div>
+            <div className="text-muted-foreground leading-relaxed">
+              After the crowdfund finalizes, claim your allocated ARM
+              (with mandatory delegation) or, if the sale ended below the
+              minimum raise, claim a full USDC refund.
+            </div>
+          </>
+        )}
+        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Interactions disabled — no signer or contract state in stress mode.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function getMockSizeFromUrl(): number {
+  if (typeof window === 'undefined') return 0
+  const p = new URLSearchParams(window.location.search).get('mock')
+  if (!p) return 0
+  const n = parseInt(p.replace(/^stress/, ''), 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
 
 /** Determine tab enabled state and disabled message based on contract phase */
 function getTabState(
@@ -97,6 +273,10 @@ function getTabState(
 }
 
 export function App() {
+  const [mockSize] = useState(getMockSizeFromUrl)
+  if (mockSize > 0) return <MockCommitterApp size={mockSize} />
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)

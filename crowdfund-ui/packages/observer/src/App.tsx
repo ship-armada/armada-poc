@@ -1,7 +1,7 @@
 // ABOUTME: Root component for the crowdfund observer app.
 // ABOUTME: Read-only visualization of on-chain invite graph and commitment data.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ArrowUpRight } from 'lucide-react'
 import {
@@ -56,15 +56,29 @@ function ObserverMobileMenu() {
 }
 
 /**
- * Dev-only stress-test mode — renders TreeView against a synthetic CrowdfundGraph
- * bypassing all contract machinery. Enabled via `?mock=stressN` (e.g. `?mock=stress500`).
- * Does not ship wallet-dependent chrome (StatsBar/TableView/SearchBar are skipped
- * because they require real contract state).
+ * Dev-only stress-test mode — renders TreeView + TableView against a
+ * synthetic CrowdfundGraph bypassing all contract machinery. Enabled via
+ * `?mock=stressN` (e.g. `?mock=stress500`). StatsBar is skipped because it
+ * genuinely needs contract state (phase, sale size, window times); the tree
+ * and table only need the graph's summaries/nodes and work fine.
  */
 function MockObserverApp({ size }: { size: number }) {
   const graph = useMemo(() => generateMockGraph(size), [size])
+  const summaryArray = useMemo(() => [...graph.summaries.values()], [graph])
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
-  const resolveENS = () => null
+  const [hoveredAddress, setHoveredAddress] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [focusRequest, setFocusRequest] = useState<{
+    address: string
+    tick: number
+  } | null>(null)
+  const resolveENS = useCallback(() => null, [])
+
+  const handleViewInTable = useCallback((addr: string) => {
+    setSelectedAddress(addr)
+    setFocusRequest((prev) => ({ address: addr, tick: (prev?.tick ?? 0) + 1 }))
+  }, [])
+
   return (
     <AppShell appName={`Observer · stress ?mock=stress${size}`} network="local">
       <div className="container mx-auto p-4 space-y-4">
@@ -72,14 +86,39 @@ function MockObserverApp({ size }: { size: number }) {
           <strong>STRESS MODE</strong> — {graph.summaries.size} synthetic addresses rendered.
           Contract machinery bypassed. Remove <code>?mock=…</code> from the URL to exit.
         </div>
-        <TreeView
-          graph={graph}
-          selectedAddress={selectedAddress}
-          onSelectAddress={setSelectedAddress}
-          searchQuery=""
-          phase={0}
-          resolveENS={resolveENS}
-        />
+        <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        {/* items-start keeps each column at its own natural height. Without
+            it the grid stretches both cells to match the tallest (usually
+            TableView with 300 rows at stress300), pulling TreeView's
+            container to a many-thousand-px height and producing a very
+            tall, narrow ellipse plus a sim-restart feedback loop. */}
+        <div className="grid lg:grid-cols-2 gap-4 items-start">
+          <ErrorBoundary>
+            <TreeView
+              graph={graph}
+              selectedAddress={selectedAddress}
+              onSelectAddress={setSelectedAddress}
+              onHoverAddress={setHoveredAddress}
+              onViewInTable={handleViewInTable}
+              searchQuery={searchQuery}
+              phase={0}
+              resolveENS={resolveENS}
+            />
+          </ErrorBoundary>
+          <ErrorBoundary>
+            <TableView
+              summaries={summaryArray}
+              nodes={graph.nodes}
+              selectedAddress={selectedAddress}
+              onSelectAddress={setSelectedAddress}
+              focusRequest={focusRequest}
+              searchQuery={searchQuery}
+              phase={0}
+              resolveENS={resolveENS}
+              hoveredAddress={hoveredAddress}
+            />
+          </ErrorBoundary>
+        </div>
       </div>
     </AppShell>
   )
@@ -377,7 +416,7 @@ export function App() {
         </Tabs>
 
         {/* Desktop: side by side */}
-        <div className="hidden lg:grid lg:grid-cols-2 gap-4">
+        <div className="hidden lg:grid lg:grid-cols-2 gap-4 items-start">
           {treeView}
           {tableView}
         </div>

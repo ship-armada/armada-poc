@@ -52,23 +52,6 @@ function MultiHopSwatch() {
   )
 }
 
-/** Thin stroked line sample — used for the edge-style legend rows. */
-function LineSwatch({ stroke, dashed }: { stroke: string; dashed?: boolean }) {
-  return (
-    <svg width={18} height={10} aria-hidden>
-      <line
-        x1={1}
-        y1={5}
-        x2={17}
-        y2={5}
-        style={{ stroke }}
-        strokeWidth={1.8}
-        strokeDasharray={dashed ? '3 2' : undefined}
-      />
-    </svg>
-  )
-}
-
 export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
   const [open, setOpen] = useState(true)
 
@@ -109,16 +92,10 @@ export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
             <span className="text-muted-foreground">Multi-hop</span>
           </div>
           {connectedAddress && (
-            <>
-              <div className="flex items-center gap-2">
-                <Swatch stroke="var(--hop-connected)" />
-                <span className="text-muted-foreground">Your wallet</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <LineSwatch stroke="var(--graph-edge-chain)" />
-                <span className="text-muted-foreground">Inviter chain</span>
-              </div>
-            </>
+            <div className="flex items-center gap-2">
+              <Swatch stroke="var(--hop-connected)" />
+              <span className="text-muted-foreground">Your wallet</span>
+            </div>
           )}
         </div>
       )}

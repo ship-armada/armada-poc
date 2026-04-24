@@ -139,7 +139,7 @@ export function StatsBar(props: StatsBarProps) {
   const remaining = windowEnd - localTime
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-border bg-card p-4 tabular-nums shadow-elevated">
       {/* Top row: phase badge + sale size + countdown */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">

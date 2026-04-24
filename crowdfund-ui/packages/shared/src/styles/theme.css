@@ -23,6 +23,11 @@
 
   /* shadcn base — dark */
   --background: oklch(0.18 0.008 240);
+  /* --background-deep is the outer colour of the radial body gradient. It is
+     darker than --background to give a subtle "spotlight" feel without moving
+     off our blue-grey hue. Interior UI surfaces (cards/popovers) still use
+     --background / --card, so shadcn primitives are unaffected. */
+  --background-deep: oklch(0.12 0.008 240);
   --foreground: oklch(0.96 0.005 240);
   --card: oklch(0.22 0.01 240);
   --card-foreground: oklch(0.96 0.005 240);
@@ -91,9 +96,21 @@
   --status-failed: oklch(0.64 0.21 25);
 }
 
+/* Paint the root element so WebKit/Chromium overscroll (rubber-band on macOS)
+   reveals our palette rather than the browser default white. Body's radial
+   gradient sits on top of this for the in-viewport look. */
+html {
+  background-color: var(--background-deep);
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  /* Radial "spotlight" gradient: centre-lighter, edges-deeper. Attachment
+     fixed so the gradient stays put while scrolling instead of tiling. */
+  background:
+    radial-gradient(circle at 50% 20%, var(--background) 0%, var(--background-deep) 70%);
+  background-attachment: fixed;
 }
 
 @theme inline {
@@ -102,6 +119,12 @@ body {
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-family-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-family-heading: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Composite drop-shadow for top-level surfaces. Pairs an ambient shadow
+     with a 1px inset highlight to simulate a light-from-above bevel. Used
+     via the `shadow-elevated` utility; apply only to outermost panels. */
+  --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
   /* shadcn base */
   --color-background: var(--background);
@@ -164,6 +187,53 @@ body {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Base background colour is set via the radial gradient above; only the
+       text colour is applied here so the gradient is not overridden. */
+    @apply text-foreground;
+  }
+
+  /* Custom scrollbar — WebKit/Chromium and Firefox. Matches the dark
+     palette so scrollbars read as part of the UI rather than OS chrome. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+  }
+}
+
+/* Page-enter animation — subtle fade-and-rise for page-level content blocks.
+   Used on committer pages when switching between Network / Participate /
+   My Position. Disabled when the user prefers reduced motion. */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.28s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter {
+    animation: none;
   }
 }

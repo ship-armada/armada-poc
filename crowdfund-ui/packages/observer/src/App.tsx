@@ -3,7 +3,7 @@
 
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import {
   createProvider,
   useContractEvents,
@@ -23,6 +23,7 @@ import {
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
+  formatUsdc,
   generateMockGraph,
   useContractState,
 } from '@armada/crowdfund-shared'
@@ -315,6 +316,56 @@ export function App() {
     )
   }
 
+  const daysLeft =
+    contractState.armLoaded && contractState.windowEnd > 0 && contractState.blockTimestamp > 0
+      ? Math.max(0, Math.floor((contractState.windowEnd - contractState.blockTimestamp) / 86400))
+      : 0
+
+  const treeCampaignHeader = (
+    <div className="rounded-md border border-border bg-card/85 px-4 py-3 shadow-sm backdrop-blur-sm">
+      <div className="font-heading text-sm font-semibold tracking-tight">
+        Armada Crowdfund
+      </div>
+      <div className="mt-2 flex items-start gap-5 tabular-nums">
+        <div>
+          <div className="text-sm font-semibold text-foreground">
+            {formatUsdc(contractState.totalCommitted)}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Committed
+          </div>
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-foreground">
+            {contractState.participantCount}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Participants
+          </div>
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-foreground">{daysLeft}</div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Days left
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const treeCampaignDetailsLink = (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+      onClick={() => {
+        /* TODO: open campaign details */
+      }}
+    >
+      View campaign details
+      <ArrowRight className="size-3" />
+    </button>
+  )
+
   const treeView = (
     <ErrorBoundary>
       <TreeView
@@ -327,6 +378,8 @@ export function App() {
         phase={contractState.phase}
         resolveENS={resolveENS}
         isLoading={eventsLoading}
+        campaignHeader={treeCampaignHeader}
+        campaignDetailsLink={treeCampaignDetailsLink}
       />
     </ErrorBoundary>
   )

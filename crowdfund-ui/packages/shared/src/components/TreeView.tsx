@@ -1,7 +1,7 @@
 // ABOUTME: Radial, force-directed DAG view of the crowdfund invite tree.
 // ABOUTME: Layout via d3-force (custom elliptical + angular forces), render in React SVG.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   forceSimulation,
   forceLink,
@@ -57,6 +57,12 @@ export interface TreeViewProps {
   resolveENS: (addr: string) => string | null
   connectedAddress?: string | null
   isLoading?: boolean
+  /** Inset chrome overlaid on the tree. Each slot is optional; each is rendered
+   *  as an absolutely-positioned sibling of the SVG so hosts can put arbitrary
+   *  React nodes (title cards, CTAs, links) in a fixed canvas location. */
+  campaignHeader?: ReactNode   // top-left
+  campaignDetailsLink?: ReactNode // top-right
+  participateCta?: ReactNode   // full-width bottom bar
 }
 
 type SimNode = RadialNode & SimulationNodeDatum & {
@@ -212,6 +218,9 @@ export function TreeView(props: TreeViewProps) {
     phase,
     resolveENS,
     connectedAddress,
+    campaignHeader,
+    campaignDetailsLink,
+    participateCta,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -651,7 +660,8 @@ export function TreeView(props: TreeViewProps) {
           'radial-gradient(circle at center, #0F172A 0%, #020617 100%)',
       }}
     >
-      <GraphLegend connectedAddress={connectedAddress} />
+      {/* Overlays are rendered after the SVG (later in the tree) so their
+          absolute positioning wins stacking against SVG pixels. */}
       <svg
         ref={svgRef}
         width="100%"
@@ -1133,8 +1143,29 @@ export function TreeView(props: TreeViewProps) {
         />
       </svg>
 
-      {/* Zoom controls — in / out / fit. */}
-      <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-1">
+      {/* Top-left inset: campaign header (title + headline stats). Only
+          rendered when the host supplies a `campaignHeader` node. */}
+      {campaignHeader && (
+        <div className="absolute top-3 left-3 z-10 max-w-[calc(100%-7rem)]">
+          {campaignHeader}
+        </div>
+      )}
+
+      {/* Top-right inset: campaign details link / CTA. */}
+      {campaignDetailsLink && (
+        <div className="absolute top-3 right-3 z-10">{campaignDetailsLink}</div>
+      )}
+
+      {/* Legend — bottom-left. Lifted above the participate CTA when present. */}
+      <GraphLegend
+        connectedAddress={connectedAddress}
+        className={participateCta ? 'bottom-20 left-3' : 'bottom-3 left-3'}
+      />
+
+      {/* Zoom controls — middle-right, vertically centered. Includes the
+          optional "Jump to my wallet" affordance when the connected wallet
+          has a node in this graph. */}
+      <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1">
         <Button
           variant="outline"
           size="icon"
@@ -1162,48 +1193,52 @@ export function TreeView(props: TreeViewProps) {
         >
           <Maximize2 className="size-3.5" />
         </Button>
-      </div>
-
-      {/* "My wallet" zoom — bottom-right, only when the connected wallet has
-          a node in this graph. Matches the legacy TreeView affordance. */}
-      {connectedHasNode && (
-        <div className="absolute bottom-2 right-2 z-10">
+        {connectedHasNode && (
           <Button
             variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 shadow-sm bg-card/80 backdrop-blur-sm"
+            size="icon"
+            className="size-7 bg-card/80 backdrop-blur-sm shadow-sm"
             onClick={handleZoomToConnected}
             aria-label="Jump to your wallet"
+            title="Jump to your wallet"
           >
             <Crosshair className="size-3.5" />
-            My wallet
           </Button>
+        )}
+      </div>
+
+      {/* Full-width participate CTA bar at the bottom of the tree. Only
+          rendered when the host supplies a `participateCta` node. */}
+      {participateCta && (
+        <div className="absolute inset-x-0 bottom-0 z-10 border-t border-border/70 bg-card/80 backdrop-blur-sm">
+          {participateCta}
         </div>
       )}
 
-      {/* Hover tooltip — anchored to the node in screen space via the active
-          zoom transform. Re-renders ride the existing tick / zoom / pan
-          render cycles, so we don't need a mousemove handler. Skips root
-          (its hover is a no-op), unpositioned nodes, and the currently-
-          selected node (the click popover below takes over for it). */}
+      {/* Hover info card — fixed bottom-right overlay (above the participate
+          bar when that bar is present). Shows the hovered node's address,
+          committed amount, and hop. Skips root (its hover is a no-op),
+          unpositioned nodes, and the currently-selected node (the click
+          popover below takes over for it). */}
       {(() => {
         const n = hoveredId ? nodeMapRef.current.get(hoveredId) : null
         if (!n || n.hop < 0 || n.x == null || n.y == null) return null
         if (selectedAddress && n.address === selectedAddress) return null
-        const screenX = zoomTransform.k * (n.x + cx) + zoomTransform.x
-        const screenY = zoomTransform.k * (n.y + cy) + zoomTransform.y
         const hopLine = n.isMultiHop
           ? `Hops ${n.hops.join(', ')}`
           : `Hop ${n.hop}`
+        const position = participateCta ? 'bottom-20 right-3' : 'bottom-3 right-3'
         return (
           <div
-            className="absolute pointer-events-none z-20 rounded-md border border-border bg-card shadow-md px-2 py-1.5 text-xs leading-tight min-w-[8rem]"
-            style={{ left: screenX + 14, top: screenY - 10 }}
+            className={`absolute ${position} pointer-events-none z-20 min-w-[10rem] rounded-md border border-border bg-card/90 px-3 py-2 text-xs leading-tight shadow-md backdrop-blur-sm`}
           >
-            <div className="font-mono text-foreground">
+            <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+              Node
+            </div>
+            <div className="font-mono text-sm text-foreground">
               {truncateAddress(n.address)}
             </div>
-            <div className="text-muted-foreground mt-0.5">
+            <div className="mt-1 text-muted-foreground tabular-nums">
               {formatUsdc(n.committed)} committed
             </div>
             <div className="text-muted-foreground">{hopLine}</div>

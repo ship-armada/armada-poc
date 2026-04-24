@@ -2,7 +2,7 @@
 // ABOUTME: Consumed by observer and committer apps. Admin keeps its own layout (out of scope).
 
 import { type ReactNode } from 'react'
-import { Menu } from 'lucide-react'
+import { Diamond, Menu } from 'lucide-react'
 import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
 import { Separator } from './ui/separator.js'
@@ -24,6 +24,11 @@ export interface AppShellProps {
   appName: string
   /** Network label used for the badge text and variant. */
   network: AppShellNetwork
+  /**
+   * Desktop-only primary navigation (≥sm), rendered between the brand and the
+   * right-side chrome. Mobile navigation should be composed into `mobileMenu`.
+   */
+  headerNav?: ReactNode
   /**
    * Desktop-only header actions (≥sm). Hidden below the sm breakpoint — compose
    * anything the user still needs on mobile into `mobileMenu` instead.
@@ -53,23 +58,34 @@ function NetworkBadge({ network }: { network: AppShellNetwork }) {
 // Consuming apps (observer, committer) inject `VITE_APP_VERSION` via Vite's `define` block at build time.
 const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
 
-function DefaultFooter({ network }: { network: AppShellNetwork }) {
+function DefaultFooter({
+  network,
+  appName,
+}: {
+  network: AppShellNetwork
+  appName: string
+}) {
   const version = viteEnv?.VITE_APP_VERSION ?? 'dev'
   return (
-    <footer className="mt-8 border-t border-border">
-      <div className="container mx-auto flex flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row">
-        <div className="flex items-center gap-2">
-          <span>v{version}</span>
+    <footer className="mt-12 border-t border-border/60">
+      <div className="container mx-auto flex flex-col items-center justify-between gap-2 px-4 py-5 text-[11px] text-muted-foreground sm:flex-row">
+        <div className="flex items-center gap-2.5">
+          <Diamond className="size-3 text-primary/70" aria-hidden="true" />
+          <span className="font-heading uppercase tracking-[0.22em] text-foreground/70">
+            ARMADA
+          </span>
           <Separator orientation="vertical" className="h-3" />
-          <span>Built on Armada</span>
+          <span className="uppercase tracking-wider">{appName}</span>
           <Separator orientation="vertical" className="h-3" />
-          <span className="uppercase">{network}</span>
+          <span className="uppercase tracking-wider">{network}</span>
+          <Separator orientation="vertical" className="h-3" />
+          <span className="tabular-nums">v{version}</span>
         </div>
         <a
           href="https://github.com/ship-armada/taipei"
           target="_blank"
           rel="noopener noreferrer"
-          className="transition-colors hover:text-foreground"
+          className="uppercase tracking-wider transition-colors hover:text-foreground"
         >
           GitHub
         </a>
@@ -81,20 +97,21 @@ function DefaultFooter({ network }: { network: AppShellNetwork }) {
 export function AppShell({
   appName,
   network,
+  headerNav,
   headerRight,
   mobileMenu,
   footer,
   children,
 }: AppShellProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex min-h-screen flex-col text-foreground">
       <header
         className={cn(
           'sticky top-0 z-40 w-full border-b border-border',
           'bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60',
         )}
       >
-        <div className="container mx-auto flex h-14 items-center justify-between gap-3 px-4">
+        <div className="container mx-auto flex h-14 items-center gap-3 px-4">
           {/* Left: hamburger (mobile) + brand */}
           <div className="flex min-w-0 items-center gap-2">
             {mobileMenu !== undefined && (
@@ -112,7 +129,7 @@ export function AppShell({
                 </SheetTrigger>
                 <SheetContent side="left" className="w-80 sm:max-w-sm">
                   <SheetHeader>
-                    <SheetTitle>Armada Crowdfund</SheetTitle>
+                    <SheetTitle className="font-heading uppercase tracking-[0.22em]">ARMADA</SheetTitle>
                     <SheetDescription>{appName}</SheetDescription>
                   </SheetHeader>
                   <div className="flex flex-col gap-3 px-4 pb-4">
@@ -126,18 +143,26 @@ export function AppShell({
                 </SheetContent>
               </Sheet>
             )}
-            <div className="flex min-w-0 items-baseline gap-2">
-              <span className="truncate text-base font-bold tracking-tight sm:text-lg">
-                Armada Crowdfund
-              </span>
-              <span className="hidden text-xs font-medium uppercase tracking-wider text-muted-foreground sm:inline">
-                · {appName}
+            <div className="flex min-w-0 items-center gap-2">
+              <Diamond className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span className="truncate font-heading text-sm font-semibold uppercase tracking-[0.22em] sm:text-base">
+                ARMADA
               </span>
             </div>
           </div>
 
+          {/* Center: desktop-only primary nav */}
+          {headerNav && (
+            <nav
+              aria-label="Primary"
+              className="hidden flex-1 justify-center sm:flex"
+            >
+              {headerNav}
+            </nav>
+          )}
+
           {/* Right: network badge + app-specific actions (desktop only) */}
-          <div className="hidden items-center gap-3 sm:flex">
+          <div className={cn('hidden items-center gap-3 sm:flex', !headerNav && 'ml-auto')}>
             <NetworkBadge network={network} />
             {headerRight}
           </div>
@@ -146,7 +171,7 @@ export function AppShell({
 
       <main className="flex-1">{children}</main>
 
-      {footer === undefined ? <DefaultFooter network={network} /> : footer}
+      {footer === undefined ? <DefaultFooter network={network} appName={appName} /> : footer}
     </div>
   )
 }

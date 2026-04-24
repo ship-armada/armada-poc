@@ -55,11 +55,14 @@ function MultiHopSwatch() {
 export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
   const [open, setOpen] = useState(true)
 
+  // Positioning (top/left/bottom/right + z-index) comes from `className` so
+  // the TreeView can place the legend wherever it wants. Defaults to bottom-
+  // left when no override is supplied.
   return (
     <div
       className={[
-        'absolute top-3 left-3 z-10 rounded-md border border-border bg-card/80 backdrop-blur-sm shadow-sm text-xs',
-        className ?? '',
+        'absolute z-10 rounded-md border border-border bg-card/80 backdrop-blur-sm shadow-sm text-xs',
+        className ?? 'bottom-3 left-3',
       ].join(' ')}
     >
       <Button

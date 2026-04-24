@@ -1,11 +1,12 @@
 // ABOUTME: Root component for the crowdfund committer app.
-// ABOUTME: Embeds observer as left panel, adds wallet-connected action panel on right.
+// ABOUTME: Renders three header-nav pages: Network, Participate, and My Position.
 
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { Wallet } from 'lucide-react'
+import { ArrowRight, Wallet } from 'lucide-react'
 import {
+  Button,
   createProvider,
   useContractEvents,
   useGraphState,
@@ -30,6 +31,7 @@ import {
   formatArm,
   generateMockGraph,
   useContractState,
+  cn,
   type ConnectedSummary,
 } from '@armada/crowdfund-shared'
 import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
@@ -44,7 +46,66 @@ import { InviteTab } from '@/components/InviteTab'
 import { ClaimTab } from '@/components/ClaimTab'
 
 type ActionTab = 'commit' | 'invite' | 'claim'
-type MobileTab = 'network' | 'participate'
+type Page = 'network' | 'participate' | 'my-position'
+
+const PAGE_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
+  { id: 'network', label: 'Network' },
+  { id: 'participate', label: 'Participate' },
+  { id: 'my-position', label: 'My Position' },
+]
+
+/** Page navigation — renders as header nav on desktop, stacked list on mobile.
+ *  Horizontal variant: color-only active state with a 2px primary underline,
+ *  mirroring the reference mockup. Vertical variant (mobile sheet) keeps a
+ *  subtle bg fill on active since there's no underline room in a stacked list. */
+function PageNav({
+  current,
+  onChange,
+  orientation = 'horizontal',
+}: {
+  current: Page
+  onChange: (p: Page) => void
+  orientation?: 'horizontal' | 'vertical'
+}) {
+  const isVertical = orientation === 'vertical'
+  return (
+    <ul
+      className={cn(
+        'flex items-center',
+        isVertical ? 'flex-col items-stretch gap-1' : 'gap-6',
+      )}
+    >
+      {PAGE_ITEMS.map((item) => {
+        const active = item.id === current
+        return (
+          <li key={item.id}>
+            <button
+              type="button"
+              onClick={() => onChange(item.id)}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'text-sm font-medium transition-colors hover:text-foreground',
+                isVertical
+                  ? cn(
+                      'w-full rounded-md px-3 py-1.5 text-left',
+                      active ? 'bg-muted/60 text-foreground' : 'text-muted-foreground',
+                    )
+                  : cn(
+                      'border-b-2 pb-1',
+                      active
+                        ? 'border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground',
+                    ),
+              )}
+            >
+              {item.label}
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
 
 /**
  * Dev-only stress-test mode — mirrors the committer's 3:2 observer+action
@@ -75,6 +136,7 @@ function MockCommitterApp({ size }: { size: number }) {
     tick: number
   } | null>(null)
   const [activeTab, setActiveTab] = useState<ActionTab>('commit')
+  const [page, setPage] = useState<Page>('network')
   const resolveENS = useCallback(() => null, [])
 
   const handleViewInTable = useCallback((addr: string) => {
@@ -82,16 +144,29 @@ function MockCommitterApp({ size }: { size: number }) {
     setFocusRequest((prev) => ({ address: addr, tick: (prev?.tick ?? 0) + 1 }))
   }, [])
 
+  const headerNav = <PageNav current={page} onChange={setPage} />
+  const mobileMenu = (
+    <div className="flex flex-col gap-3">
+      <PageNav current={page} onChange={setPage} orientation="vertical" />
+    </div>
+  )
+
   return (
-    <AppShell appName={`Committer · stress ?mock=stress${size}`} network="local">
+    <AppShell
+      appName={`Committer · stress ?mock=stress${size}`}
+      network="local"
+      headerNav={headerNav}
+      mobileMenu={mobileMenu}
+    >
       <div className="container mx-auto p-4 space-y-4">
         <div className="rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
           <strong>STRESS MODE</strong> — {graph.summaries.size} synthetic addresses rendered,
           action-panel visuals stubbed as a whitelisted hop-1 participant.
           Interactions are disabled. Remove <code>?mock=…</code> from the URL to exit.
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
-          <div className="lg:col-span-3 space-y-3">
+
+        {page === 'network' && (
+          <div key="mock-page-network" className="space-y-3 animate-page-enter">
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
             <ErrorBoundary>
               <TreeView
@@ -104,6 +179,61 @@ function MockCommitterApp({ size }: { size: number }) {
                 phase={0}
                 resolveENS={resolveENS}
                 connectedAddress={mockConnectedAddress}
+                campaignHeader={
+                  <div className="rounded-md border border-border bg-card/85 px-4 py-3 shadow-sm backdrop-blur-sm">
+                    <div className="font-heading text-sm font-semibold tracking-tight">
+                      Armada Crowdfund
+                    </div>
+                    <div className="mt-2 flex items-start gap-5 tabular-nums">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">
+                          $15,000
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Committed
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">
+                          {graph.summaries.size}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Participants
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">13</div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Days left
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                }
+                campaignDetailsLink={
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+                  >
+                    View campaign details
+                    <ArrowRight className="size-3" />
+                  </button>
+                }
+                participateCta={
+                  <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">
+                        Ready to join this network?
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Participate as an existing node.
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => setPage('participate')}>
+                      Participate
+                    </Button>
+                  </div>
+                }
               />
             </ErrorBoundary>
             <ErrorBoundary>
@@ -121,14 +251,28 @@ function MockCommitterApp({ size }: { size: number }) {
               />
             </ErrorBoundary>
           </div>
-          <div className="lg:col-span-2">
+        )}
+
+        {page === 'participate' && (
+          <div key="mock-page-participate" className="mx-auto max-w-2xl animate-page-enter">
             <MockActionPanel
               activeTab={activeTab}
               onTabChange={setActiveTab}
               address={mockConnectedAddress}
             />
           </div>
-        </div>
+        )}
+
+        {page === 'my-position' && (
+          <div
+            key="mock-page-my-position"
+            className="mx-auto max-w-2xl rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground shadow-elevated animate-page-enter"
+          >
+            <div className="mb-2 font-medium text-foreground">My Position</div>
+            Wallet-scoped dashboard — coming soon. This page will show your committed total,
+            remaining invite slots, hop level, and a mini view of your subtree.
+          </div>
+        )}
       </div>
     </AppShell>
   )
@@ -152,7 +296,7 @@ function MockActionPanel({
     ? `${address.slice(0, 6)}…${address.slice(-4)}`
     : '—'
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className="rounded-lg border border-border bg-card shadow-elevated">
       {/* Header — fake wallet identity so the panel reads as "connected". */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
         <div className="size-6 rounded-full bg-muted flex items-center justify-center">
@@ -281,7 +425,7 @@ export function App() {
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
   const [activeTab, setActiveTab] = useState<ActionTab>('commit')
-  const [mobileTab, setMobileTab] = useState<MobileTab>('participate')
+  const [page, setPage] = useState<Page>('network')
 
   const pollInterval = getPollIntervalMs()
 
@@ -396,7 +540,7 @@ export function App() {
   const walletChrome = (
     <div className="flex items-center gap-3">
       {wallet.connected && (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {formatUsdc(allowance.balance)}
           {allowance.armBalance > 0n && (
             <> · {formatArm(allowance.armBalance)} ARM</>
@@ -414,8 +558,10 @@ export function App() {
 
   const mobileMenu = (
     <div className="flex flex-col gap-3">
+      <PageNav current={page} onChange={setPage} orientation="vertical" />
+      <Separator />
       {wallet.connected ? (
-        <div className="flex flex-col gap-1 text-sm">
+        <div className="flex flex-col gap-1 text-sm tabular-nums">
           <span className="text-xs text-muted-foreground">Balance</span>
           <span>{formatUsdc(allowance.balance)}</span>
           {allowance.armBalance > 0n && (
@@ -433,57 +579,111 @@ export function App() {
     </div>
   )
 
+  const headerNav = <PageNav current={page} onChange={setPage} />
+
+  // Derive "days remaining in commit window" for the inset campaign header.
+  // Falls back to 0 before the window is known or after it closes.
+  const daysLeft =
+    contractState.armLoaded && contractState.windowEnd > 0 && contractState.blockTimestamp > 0
+      ? Math.max(0, Math.floor((contractState.windowEnd - contractState.blockTimestamp) / 86400))
+      : 0
+
+  const treeCampaignHeader = (
+    <div className="rounded-md border border-border bg-card/85 px-4 py-3 shadow-sm backdrop-blur-sm">
+      <div className="font-heading text-sm font-semibold tracking-tight">
+        Armada Crowdfund
+      </div>
+      <div className="mt-2 flex items-start gap-5 tabular-nums">
+        <div>
+          <div className="text-sm font-semibold text-foreground">
+            {formatUsdc(contractState.totalCommitted)}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Committed
+          </div>
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-foreground">
+            {contractState.participantCount}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Participants
+          </div>
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-foreground">{daysLeft}</div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Days left
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  // TODO: wire to a campaign-details dialog / route. Placeholder for now.
+  const treeCampaignDetailsLink = (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+      onClick={() => {
+        /* TODO: open campaign details */
+      }}
+    >
+      View campaign details
+      <ArrowRight className="size-3" />
+    </button>
+  )
+
+  const treeParticipateCta = (
+    <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="text-sm font-medium text-foreground">
+          Ready to join this network?
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Participate as an existing node.
+        </div>
+      </div>
+      <Button size="sm" onClick={() => setPage('participate')}>
+        Participate
+      </Button>
+    </div>
+  )
+
+  const networkStats = (
+    <ErrorBoundary>
+      <StatsBar
+        hopStats={contractState.hopStats}
+        totalCommitted={contractState.totalCommitted}
+        cappedDemand={contractState.cappedDemand}
+        saleSize={contractState.saleSize}
+        phase={contractState.phase}
+        armLoaded={contractState.armLoaded}
+        seedCount={contractState.seedCount}
+        participantCount={contractState.participantCount}
+        windowEnd={contractState.windowEnd}
+        blockTimestamp={contractState.blockTimestamp}
+        connectedSummary={connectedSummary}
+        isLoading={eventsLoading}
+      />
+    </ErrorBoundary>
+  )
+
   return (
     <AppShell
       appName="Committer"
       network={getNetworkMode()}
+      headerNav={headerNav}
       headerRight={walletChrome}
       mobileMenu={mobileMenu}
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
         <StaleDataBanner />
-        {/* Wallet error */}
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
 
-        {/* Stats bar with connected user summary */}
-        <ErrorBoundary>
-          <StatsBar
-            hopStats={contractState.hopStats}
-            totalCommitted={contractState.totalCommitted}
-            cappedDemand={contractState.cappedDemand}
-            saleSize={contractState.saleSize}
-            phase={contractState.phase}
-            armLoaded={contractState.armLoaded}
-            seedCount={contractState.seedCount}
-            participantCount={contractState.participantCount}
-            windowEnd={contractState.windowEnd}
-            blockTimestamp={contractState.blockTimestamp}
-            connectedSummary={connectedSummary}
-            isLoading={eventsLoading}
-          />
-        </ErrorBoundary>
-
-        {/* Mobile tab bar — visible below lg breakpoint */}
-        <Tabs
-          value={mobileTab}
-          onValueChange={(v) => setMobileTab(v as MobileTab)}
-          className="lg:hidden"
-        >
-          <TabsList variant="line" className="w-full justify-start border-b border-border">
-            <TabsTrigger value="network" className="flex-1 capitalize">
-              network
-            </TabsTrigger>
-            <TabsTrigger value="participate" className="flex-1 capitalize">
-              participate
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        {/* Two-panel layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          {/* Observer panel (left ~60%) — hidden on mobile when participate tab active */}
-          <div className={`lg:col-span-3 space-y-3 ${mobileTab === 'participate' ? 'hidden lg:block' : ''}`}>
+        {page === 'network' && (
+          <div key="page-network" className="space-y-3 animate-page-enter">
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
             <ErrorBoundary>
               <TreeView
@@ -496,8 +696,12 @@ export function App() {
                 resolveENS={resolveENS}
                 connectedAddress={wallet.address}
                 isLoading={eventsLoading}
+                campaignHeader={treeCampaignHeader}
+                campaignDetailsLink={treeCampaignDetailsLink}
+                participateCta={treeParticipateCta}
               />
             </ErrorBoundary>
+            {networkStats}
             <ErrorBoundary>
               <TableView
                 summaries={summaryArray}
@@ -518,12 +722,13 @@ export function App() {
               {events.length} events loaded {eventsLoading && '(syncing...)'}
             </div>
           </div>
+        )}
 
-          {/* Action panel (right ~40%) — hidden on mobile when network tab active */}
-          <div className={`lg:col-span-2 ${mobileTab === 'network' ? 'hidden lg:block' : ''}`}>
+        {page === 'participate' && (
+          <div key="page-participate" className="mx-auto w-full max-w-2xl animate-page-enter">
            <ErrorBoundary>
             {!wallet.connected ? (
-              <div className="rounded-lg border border-border bg-card">
+              <div className="rounded-lg border border-border bg-card shadow-elevated">
                 <EmptyState
                   icon={Wallet}
                   title="Connect your wallet to participate"
@@ -532,8 +737,7 @@ export function App() {
                 />
               </div>
             ) : (
-              <div className="rounded-lg border border-border bg-card">
-                {/* Tab header — always visible, disabled tabs show message */}
+              <div className="rounded-lg border border-border bg-card shadow-elevated">
                 <Tabs
                   value={activeTab}
                   onValueChange={(v) => setActiveTab(v as ActionTab)}
@@ -552,9 +756,7 @@ export function App() {
                   </TabsList>
                 </Tabs>
 
-                {/* Tab content */}
                 <div className="p-4">
-                  {/* Show disabled message for inactive tabs */}
                   {!tabStates[activeTab].enabled ? (
                     <div className="p-4 text-center text-muted-foreground text-sm">
                       {tabStates[activeTab].message}
@@ -615,7 +817,32 @@ export function App() {
             )}
            </ErrorBoundary>
           </div>
-        </div>
+        )}
+
+        {page === 'my-position' && (
+          <div key="page-my-position" className="mx-auto w-full max-w-2xl space-y-3 animate-page-enter">
+            {!wallet.connected ? (
+              <div className="rounded-lg border border-border bg-card shadow-elevated">
+                <EmptyState
+                  icon={Wallet}
+                  title="Connect your wallet to view your position"
+                  description="Your committed total, invite slots, hop level, and activity will appear here."
+                  action={<ConnectButton />}
+                />
+              </div>
+            ) : (
+              <>
+                {networkStats}
+                {/* TODO: replace shared StatsBar above with a wallet-scoped summary (committed, invites remaining, hop level, mini subtree, activity feed). For now, we render the full StatsBar so connectedSummary is visible inline. */}
+                <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground shadow-elevated">
+                  <div className="mb-2 font-medium text-foreground">My Position</div>
+                  Wallet-scoped dashboard coming soon — invite tools, activity feed, and a
+                  focused view of your subtree will live here.
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
      </ErrorBoundary>
     </AppShell>

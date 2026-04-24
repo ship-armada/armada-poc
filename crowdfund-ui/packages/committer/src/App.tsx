@@ -14,7 +14,7 @@ import {
   StatsBar,
   TableView,
   SearchBar,
-  RadialTreeView as TreeView,
+  TreeView,
   AppShell,
   LastTxChip,
   Separator,

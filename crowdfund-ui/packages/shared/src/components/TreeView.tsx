@@ -12,6 +12,10 @@ import {
   type SimulationLinkDatum,
 } from 'd3-force'
 import { select } from 'd3-selection'
+// Side-effect import: d3-transition augments the d3-selection prototype
+// with `.transition()`, used by the zoom-control handlers below to
+// animate zoom transform changes.
+import 'd3-transition'
 import {
   zoom as d3Zoom,
   zoomIdentity,
@@ -34,9 +38,9 @@ import { Button } from './ui/button.js'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover.js'
 import { Separator } from './ui/separator.js'
 
-// Feature-parity follow-ups (vs. the previous xyflow TreeView) are tracked
-// locally in .context/radial-treeview-parity-followups.md. Remaining gap
-// worth noting: inviter-chain edge emphasis for the connected wallet.
+// Feature-parity follow-ups are tracked locally in
+// .context/radial-treeview-parity-followups.md. Remaining gap worth
+// noting: inviter-chain edge emphasis for the connected wallet.
 
 export interface TreeViewProps {
   graph: CrowdfundGraph
@@ -1129,7 +1133,7 @@ export function TreeView(props: TreeViewProps) {
         />
       </svg>
 
-      {/* Zoom controls — mirrors xyflow's <Controls /> affordances. */}
+      {/* Zoom controls — in / out / fit. */}
       <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-1">
         <Button
           variant="outline"

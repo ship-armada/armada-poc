@@ -32,12 +32,12 @@ Requires deployed contracts (`npm run setup` from project root).
 
 ## Dependencies
 
-Current dependencies are the scaffold baseline. When implementing, add:
+Most data-layer and view-component deps live in
+`@armada/crowdfund-shared`. Committer-specific deps:
 - `wagmi` + `@rainbow-me/rainbowkit` — wallet connection and chain management
 - `viem` — wagmi peer dependency (also used for EIP-712 typed data signing)
-- `@tanstack/react-table` — table in the observer panel
-- `d3-hierarchy` + `d3-force` — tree view in the observer panel
-- `idb` — IndexedDB for event cache, ENS cache, and invite link storage
+- `ethers` — contract reads + writes
+See `package.json` for the full list.
 
 ## Key Patterns
 

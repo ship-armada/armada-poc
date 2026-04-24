@@ -27,7 +27,7 @@ function Swatch({ color, stroke }: { color?: string; stroke?: string }) {
 }
 
 /** Multi-hop marker — circle with a dashed outer ring (matches the
- *  RadialTreeView's multi-hop rendering, which draws a dashed
+ *  TreeView's multi-hop rendering, which draws a dashed
  *  `--hop-multi` stroke at r+3 around the node). */
 function MultiHopSwatch() {
   return (

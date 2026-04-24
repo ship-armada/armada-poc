@@ -1,9 +1,9 @@
-// ABOUTME: Transforms CrowdfundGraph into a tree structure for d3-hierarchy.
+// ABOUTME: Transforms CrowdfundGraph into a rooted tree used by radialLayout.
 // ABOUTME: Pure functions — no React, no d3. Handles multi-hop merging and dedup.
 
 import type { CrowdfundGraph } from './graph.js'
 
-/** A node in the tree suitable for d3-hierarchy */
+/** A node in the rooted tree of addresses. */
 export interface TreeNode {
   id: string
   address: string

@@ -30,11 +30,11 @@ Requires deployed contracts. Run `npm run setup` from the project root first (st
 
 ## Dependencies
 
-Current dependencies are the scaffold baseline. When implementing, add:
-- `d3-hierarchy` + `d3-force` — layered DAG layout for the tree view
-- `@tanstack/react-table` — sortable/filterable table
-- `idb` — IndexedDB wrapper for event and ENS caching
-- `wagmi` — ENS resolution hooks (read-only, no wallet connection needed)
+Most data-layer dependencies live in `@armada/crowdfund-shared` — this
+app pulls them transitively. Observer-specific deps:
+- `ethers` — RPC provider + event parsing
+- `vite`, `react`, `tailwindcss` — toolchain + framework
+See `package.json` for the full list.
 
 ## Key Patterns
 

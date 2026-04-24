@@ -107,6 +107,12 @@ export type { NodeDetailProps } from './components/NodeDetail.js'
 export { TreeView } from './components/TreeView.js'
 export type { TreeViewProps } from './components/TreeView.js'
 
+export { RadialTreeView } from './components/RadialTreeView.js'
+export type { RadialTreeViewProps } from './components/RadialTreeView.js'
+
+export type { RadialNode, RadialEdge, RadialGraph } from './lib/radialLayout.js'
+export { buildRadialGraph } from './lib/radialLayout.js'
+
 export { AppShell, NetworkBadge } from './components/AppShell.js'
 export type { AppShellProps, AppShellNetwork } from './components/AppShell.js'
 

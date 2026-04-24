@@ -61,7 +61,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ///      enforces this invariant at setter time so a captured governance cannot stretch
     ///      the Extended cycle to exceed this delay and bypass the defense.
     ///      24 days > 23 days (current Extended default: 2d + 14d + 7d).
-    uint256 public constant LIMIT_ACTIVATION_DELAY = 24 days;
+    ///      medi-Sepolia: 16 days > 4.25 days (Extended default: 6h + 3d + 1d) — defense preserved.
+    uint256 public constant LIMIT_ACTIVATION_DELAY = 16 days; // (medi-Sepolia)
 
     // Per-token steward budget table (governance-managed via Extended proposals).
     // Each authorized token has an absolute spending limit per rolling window.

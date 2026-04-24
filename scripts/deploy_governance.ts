@@ -330,7 +330,7 @@ async function main() {
     },
     config: {
       timelockMinDelay: timelockDelay,
-      totalSupply: "12000000",
+      totalSupply: "10000",
       treasuryAllocation: config.armDistribution.treasury,
     },
     timestamp: new Date().toISOString(),

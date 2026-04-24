@@ -201,7 +201,7 @@ async function main() {
   }
 
   // Gate 2: Supply conservation
-  const expectedTotalSupply = ethers.parseUnits("12000000", 18);
+  const expectedTotalSupply = ethers.parseUnits("10000", 18); // medi-Sepolia
   if (totalSupply !== expectedTotalSupply) {
     throw new Error(
       `Gate 2 failed — totalSupply mismatch. Expected ${ethers.formatUnits(expectedTotalSupply, 18)}, got ${ethers.formatUnits(totalSupply, 18)}`
@@ -239,7 +239,7 @@ async function main() {
   }
 
   console.log("   Gate 1 passed: recipient balances match allocations");
-  console.log("   Gate 2 passed: totalSupply == 12M and equals sum of recipient balances");
+  console.log("   Gate 2 passed: totalSupply == 10K and equals sum of recipient balances");
   console.log("   Gate 3 passed: deployer ARM balance is zero");
   console.log("   Gate 4 passed: no residual deployer allowances to protocol contracts");
 
@@ -346,9 +346,9 @@ async function main() {
       governor: governorAddress,
     },
     config: {
-      baseSale: "1200000",
-      maxSale: "1800000",
-      minSale: "1000000",
+      baseSale: "1000",
+      maxSale: "1500",
+      minSale: "800",
       armPrice: "1.00",
       armFunded: config.armDistribution.crowdfund,
     },

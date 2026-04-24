@@ -25,22 +25,22 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     // ============ Constants ============
 
-    uint256 public constant BASE_SALE = 1_200_000 * 1e6;       // $1.2M USDC
-    uint256 public constant MAX_SALE  = 1_800_000 * 1e6;       // $1.8M USDC
-    uint256 public constant MIN_SALE  = 1_000_000 * 1e6;       // $1.0M USDC
+    uint256 public constant BASE_SALE = 1_000 * 1e6;            // $1,000 USDC (medi-Sepolia)
+    uint256 public constant MAX_SALE  = 1_500 * 1e6;            // $1,500 USDC (medi-Sepolia)
+    uint256 public constant MIN_SALE  = 800 * 1e6;              // $800 USDC (medi-Sepolia)
     uint256 public constant ARM_PRICE = 1e6;                    // $1.00 per ARM in USDC
-    uint256 public constant ELASTIC_TRIGGER = 1_500_000 * 1e6;  // $1.5M capped demand triggers expansion
+    uint256 public constant ELASTIC_TRIGGER = 1_250 * 1e6;      // $1,250 capped demand triggers expansion (medi-Sepolia)
     uint8 public constant NUM_HOPS = 3;
     uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
-    uint256 public constant WINDOW_DURATION = 21 days;
-    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 7 days;
-    uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
-    uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
+    uint256 public constant WINDOW_DURATION = 14 days;           // (medi-Sepolia)
+    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 5 days;  // (medi-Sepolia)
+    uint256 public constant CLAIM_DEADLINE_DURATION = 60 days;   // (medi-Sepolia)
+    uint256 public constant MIN_COMMIT = 1 * 1e6;                // $1 USDC minimum per commit (medi-Sepolia)
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
-    uint8 public constant MAX_SEEDS = 160;                       // max number of seeds (hop-0 participants)
-    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
-    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
+    uint8 public constant MAX_SEEDS = 25;                        // max number of seeds (medi-Sepolia)
+    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 15;          // launch team direct hop-1 invite slots (medi-Sepolia)
+    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 15;          // launch team direct hop-2 invite slots (medi-Sepolia)
 
     // EIP-712 typehash for off-chain invite signatures
     bytes32 public constant INVITE_TYPEHASH = keccak256(
@@ -161,9 +161,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         launchTeamInviteEnd = _openTimestamp + LAUNCH_TEAM_INVITE_PERIOD;
         // phase defaults to Phase.Active (value 0)
 
-        hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 15_000 * 1e6, maxInvites: 3, maxInvitesReceived: 1 });
-        hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 4_000 * 1e6,  maxInvites: 2, maxInvitesReceived: 10 });
-        hopConfigs[2] = HopConfig({ ceilingBps: 0,    capUsdc: 1_000 * 1e6,  maxInvites: 0, maxInvitesReceived: 20 });
+        hopConfigs[0] = HopConfig({ ceilingBps: 7000, capUsdc: 50 * 1e6, maxInvites: 3, maxInvitesReceived: 1 });  // (medi-Sepolia)
+        hopConfigs[1] = HopConfig({ ceilingBps: 4500, capUsdc: 20 * 1e6, maxInvites: 2, maxInvitesReceived: 10 }); // (medi-Sepolia)
+        hopConfigs[2] = HopConfig({ ceilingBps: 0,    capUsdc: 10 * 1e6, maxInvites: 0, maxInvitesReceived: 20 }); // (medi-Sepolia)
     }
 
     // ============ Seed Management ============

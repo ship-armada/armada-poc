@@ -18,9 +18,10 @@ import {
   type ZoomBehavior,
   type ZoomTransform,
 } from 'd3-zoom'
-import { Dot, Maximize2, Minus, Plus, ShipWheel, UserRound } from 'lucide-react'
+import { Copy, Crosshair, Dot, Maximize2, Minus, Plus, ShipWheel, Table2, UserRound } from 'lucide-react'
+import { toast } from 'sonner'
 
-import type { CrowdfundGraph } from '../lib/graph.js'
+import type { CrowdfundGraph, GraphNode } from '../lib/graph.js'
 import {
   buildRadialGraph,
   computeAngleMap,
@@ -28,21 +29,25 @@ import {
 } from '../lib/radialLayout.js'
 import { formatUsdc, truncateAddress } from '../lib/format.js'
 import { GraphLegend } from './GraphLegend.js'
+import { NodeDetail } from './NodeDetail.js'
 import { Button } from './ui/button.js'
+import { Popover, PopoverAnchor, PopoverContent } from './ui/popover.js'
+import { Separator } from './ui/separator.js'
 
 // Feature-parity follow-ups (vs. the previous xyflow TreeView) are tracked
-// locally in .context/radial-treeview-parity-followups.md. Notable gaps:
-// NodeDetail click-popover, search-filter dim, "My wallet" zoom, inviter
-// chain edge emphasis. See that file before adding features here.
+// locally in .context/radial-treeview-parity-followups.md. Remaining gap
+// worth noting: inviter-chain edge emphasis for the connected wallet.
 
 export interface TreeViewProps {
   graph: CrowdfundGraph
   selectedAddress: string | null
   onSelectAddress: (addr: string | null) => void
   onHoverAddress?: (addr: string | null) => void
-  /** Accepted for API parity with TreeView; not yet wired in the spike. */
+  /** Invoked when the user clicks "View in table" inside a node popover.
+   *  Callers should scroll the table to `addr` and update selection. */
   onViewInTable?: (addr: string) => void
-  /** Accepted for API parity with TreeView; search not yet wired in the spike. */
+  /** Dims nodes + edges that don't match the (case-insensitive) query.
+   *  Matches against the raw address and the resolved ENS label. */
   searchQuery: string
   phase: number
   resolveENS: (addr: string) => string | null
@@ -194,7 +199,16 @@ function nodeRadius(hop: number): number {
 }
 
 export function TreeView(props: TreeViewProps) {
-  const { graph, selectedAddress, onSelectAddress, onHoverAddress, connectedAddress } = props
+  const {
+    graph,
+    selectedAddress,
+    onSelectAddress,
+    onHoverAddress,
+    onViewInTable,
+    phase,
+    resolveENS,
+    connectedAddress,
+  } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -334,6 +348,23 @@ export function TreeView(props: TreeViewProps) {
     select(svg).transition().duration(300).call(zb.transform, target)
   }, [dimensions, nodes])
 
+  /** Zoom to the connected wallet's node, centred in the viewport at 1.5x. */
+  const handleZoomToConnected = useCallback(() => {
+    const svg = svgRef.current
+    const zb = zoomBehaviorRef.current
+    if (!svg || !zb || !dimensions || !connectedLower) return
+    const n = nodeMapRef.current.get(connectedLower)
+    if (!n || n.x == null || n.y == null) return
+    const scale = 1.5
+    const cxVp = dimensions.width / 2
+    const cyVp = dimensions.height / 2
+    // Same transform-solve as handleFitView: k*(nodeC + cVp) + t = cVp.
+    const tx = cxVp * (1 - scale) - scale * n.x
+    const ty = cyVp * (1 - scale) - scale * n.y
+    const target = zoomIdentity.translate(tx, ty).scale(scale)
+    select(svg).transition().duration(300).call(zb.transform, target)
+  }, [dimensions, connectedLower])
+
   const handlePaneClick = useCallback(() => {
     if (draggedRef.current) return
     onSelectAddress(null)
@@ -344,6 +375,36 @@ export function TreeView(props: TreeViewProps) {
   // This keeps `target` stable across selection/hover rerenders so the
   // simulation doesn't restart and jiggle every node on click.
   const target = useMemo(() => buildRadialGraph(graph), [graph])
+
+  // True when the connected wallet has a participant node in this graph —
+  // gates the "My wallet" zoom button below. Derived from summaries so it
+  // doesn't re-evaluate on every simulation tick.
+  const connectedHasNode = useMemo(() => {
+    if (!connectedLower) return false
+    return graph.summaries.has(connectedLower)
+  }, [connectedLower, graph.summaries])
+
+  // Search-filter match set: addresses whose raw address or resolved ENS
+  // label contains the (case-insensitive) query. `null` when search is
+  // inactive — downstream code treats `null` as "no filter, nothing to
+  // dim". Armada root is added to the set whenever there's at least one
+  // match so it stays lit as the shared ancestor of every match.
+  const matchedAddresses = useMemo(() => {
+    const q = (props.searchQuery ?? '').trim().toLowerCase()
+    if (!q) return null
+    const matched = new Set<string>()
+    for (const [addr] of graph.summaries) {
+      const label = resolveENS?.(addr)
+      if (
+        addr.toLowerCase().includes(q) ||
+        (label && label.toLowerCase().includes(q))
+      ) {
+        matched.add(addr)
+      }
+    }
+    if (matched.size > 0) matched.add('armada')
+    return matched
+  }, [graph.summaries, props.searchQuery, resolveENS])
 
   // Sunburst angle allocation — one source of truth for the sync effect
   // (assigns node.angle) and the render path (draws sector boundary arcs).
@@ -860,13 +921,20 @@ export function TreeView(props: TreeViewProps) {
               // such edges at stress300, so it stays subtle.
               const isHot = s.hop < 0 && t.hop === 0
               const baseOpacity = isHot ? 0.45 : t.hop === 2 ? 0.08 : 0.18
-              // During hover: lineage edges brighten, non-lineage edges fade.
-              // Idle state: just the base (hop-stratified) opacity.
-              const opacity = !highlight
-                ? baseOpacity
-                : highlight.edges.has(e.id)
-                  ? 0.5
-                  : 0.03
+              // Hover lineage edges brighten, non-lineage edges fade.
+              // Search-filter: edges that touch at least one matched node
+              // keep their base opacity; edges between two non-matches
+              // fade out. Hover wins over search when both are active.
+              let opacity: number
+              if (highlight) {
+                opacity = highlight.edges.has(e.id) ? 0.5 : 0.03
+              } else if (matchedAddresses) {
+                const srcMatched = matchedAddresses.has(s.address)
+                const tgtMatched = matchedAddresses.has(t.address)
+                opacity = srcMatched || tgtMatched ? baseOpacity : 0.03
+              } else {
+                opacity = baseOpacity
+              }
               return (
                 <path
                   key={e.id}
@@ -932,11 +1000,16 @@ export function TreeView(props: TreeViewProps) {
                     ? 'url(#rtv-glow-hop1)'
                     : undefined
 
-              // Dim non-lineage nodes during hover; keep full opacity otherwise.
-              // Selected node stays fully opaque so selection context isn't lost
-              // when hovering elsewhere.
-              const nodeOpacity =
-                !highlight || highlight.nodes.has(n.id) || isSelected ? 1 : 0.15
+              // Dim non-lineage nodes during hover AND non-matching nodes
+              // during search. Root + selected node always stay lit.
+              const hoverDim =
+                highlight !== null && !highlight.nodes.has(n.id) && !isSelected
+              const searchDim =
+                matchedAddresses !== null &&
+                !matchedAddresses.has(n.address) &&
+                n.hop >= 0 &&
+                !isSelected
+              const nodeOpacity = hoverDim || searchDim ? 0.15 : 1
 
               return (
                 <g
@@ -1087,13 +1160,32 @@ export function TreeView(props: TreeViewProps) {
         </Button>
       </div>
 
+      {/* "My wallet" zoom — bottom-right, only when the connected wallet has
+          a node in this graph. Matches the legacy TreeView affordance. */}
+      {connectedHasNode && (
+        <div className="absolute bottom-2 right-2 z-10">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 shadow-sm bg-card/80 backdrop-blur-sm"
+            onClick={handleZoomToConnected}
+            aria-label="Jump to your wallet"
+          >
+            <Crosshair className="size-3.5" />
+            My wallet
+          </Button>
+        </div>
+      )}
+
       {/* Hover tooltip — anchored to the node in screen space via the active
           zoom transform. Re-renders ride the existing tick / zoom / pan
           render cycles, so we don't need a mousemove handler. Skips root
-          (its hover is a no-op) and nodes without positions. */}
+          (its hover is a no-op), unpositioned nodes, and the currently-
+          selected node (the click popover below takes over for it). */}
       {(() => {
         const n = hoveredId ? nodeMapRef.current.get(hoveredId) : null
         if (!n || n.hop < 0 || n.x == null || n.y == null) return null
+        if (selectedAddress && n.address === selectedAddress) return null
         const screenX = zoomTransform.k * (n.x + cx) + zoomTransform.x
         const screenY = zoomTransform.k * (n.y + cy) + zoomTransform.y
         const hopLine = n.isMultiHop
@@ -1112,6 +1204,90 @@ export function TreeView(props: TreeViewProps) {
             </div>
             <div className="text-muted-foreground">{hopLine}</div>
           </div>
+        )
+      })()}
+
+      {/* Click-pinned NodeDetail popover — anchored to the selected node's
+          screen position via a 1×1 invisible <div> used as PopoverAnchor.
+          Content is rendered into a Radix portal so it escapes the
+          container's overflow:hidden. Closes by clicking outside, pressing
+          Escape (Radix default), or clicking the same node again (which
+          toggles selection off via the node's onClick handler). */}
+      {(() => {
+        const n = selectedAddress
+          ? nodeMapRef.current.get(selectedAddress)
+          : null
+        if (!n || n.hop < 0 || n.x == null || n.y == null) return null
+        const summary = graph.summaries.get(n.address)
+        if (!summary) return null
+        const hopNodes: GraphNode[] = []
+        for (const gn of graph.nodes.values()) {
+          if (gn.address === n.address) hopNodes.push(gn)
+        }
+        const screenX = zoomTransform.k * (n.x + cx) + zoomTransform.x
+        const screenY = zoomTransform.k * (n.y + cy) + zoomTransform.y
+        return (
+          <Popover
+            open
+            onOpenChange={(open) => {
+              if (!open) onSelectAddress(null)
+            }}
+          >
+            <PopoverAnchor asChild>
+              <div
+                aria-hidden
+                className="absolute pointer-events-none"
+                style={{
+                  left: screenX,
+                  top: screenY,
+                  width: 1,
+                  height: 1,
+                }}
+              />
+            </PopoverAnchor>
+            <PopoverContent
+              side="right"
+              align="start"
+              sideOffset={12}
+              className="w-80 space-y-2"
+            >
+              <NodeDetail
+                summary={summary}
+                hopNodes={hopNodes}
+                resolveENS={resolveENS}
+                phase={phase}
+              />
+              <Separator />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(n.address).then(
+                      () => toast.success('Address copied'),
+                      () => toast.error('Clipboard write failed'),
+                    )
+                  }}
+                >
+                  <Copy className="size-3.5" />
+                  Copy address
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() =>
+                    (onViewInTable ?? onSelectAddress)(n.address)
+                  }
+                  aria-label="View in table"
+                >
+                  <Table2 className="size-3.5" />
+                  View in table
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         )
       })()}
     </div>

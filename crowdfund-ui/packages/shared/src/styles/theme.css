@@ -59,12 +59,18 @@
   --info: oklch(0.70 0.15 230);
   --info-foreground: oklch(0.16 0.02 240);
 
-  /* Domain: invite graph — hop colours (0 = seed, 1, 2). Aligned with the
-     radial-view mockup: teal seed / violet hop-1 / amber hop-2. */
-  --hop-0: oklch(0.86 0.12 180);  /* teal — approximates #5EEAD4 */
-  --hop-1: oklch(0.62 0.23 295);  /* violet — approximates #8B5CF6 */
-  --hop-2: oklch(0.76 0.17 65);   /* amber — approximates #F59E0B */
-  --hop-root: oklch(0.60 0.008 240);
+  /* Domain: invite graph — hop colours. Four-colour scheme matching the
+     radial-view mockup: teal root / purple hop-0 / orange hop-1 / fuchsia
+     hop-2. `--hop-root` is now an active colour (previously grey). */
+  --hop-root: oklch(0.86 0.12 180);  /* teal */
+  --hop-0: oklch(0.62 0.23 295);     /* purple */
+  --hop-1: oklch(0.72 0.17 45);      /* orange, lightly desaturated */
+  --hop-2: oklch(0.68 0.20 335);     /* fuchsia, more desaturated */
+  /* Icon variants — slightly lighter than the base hop colour so icons
+     pop against a same-colour translucent fill. Used by RadialTreeView. */
+  --hop-root-icon: oklch(0.94 0.10 180);
+  --hop-0-icon: oklch(0.76 0.20 295);
+  --hop-1-icon: oklch(0.82 0.15 45);
   --hop-multi: oklch(0.70 0.15 230);
 
   /* Domain: graph interaction states */

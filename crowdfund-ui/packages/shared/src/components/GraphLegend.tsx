@@ -26,20 +26,27 @@ function Swatch({ color, stroke }: { color?: string; stroke?: string }) {
   )
 }
 
-/** Two-slice pie stub matching the multi-hop node rendering. */
+/** Multi-hop marker — circle with a dashed outer ring (matches the
+ *  RadialTreeView's multi-hop rendering, which draws a dashed
+ *  `--hop-multi` stroke at r+3 around the node). */
 function MultiHopSwatch() {
   return (
     <svg width={14} height={14} aria-hidden>
-      <circle cx={7} cy={7} r={5.5} fill="none" style={{ stroke: 'var(--hop-1)' }} strokeWidth={1.5} />
-      <path
-        d="M 7 7 L 7 1.5 A 5.5 5.5 0 0 1 12.5 7 Z"
-        style={{ fill: 'var(--hop-0)' }}
-        fillOpacity={0.6}
+      <circle
+        cx={7}
+        cy={7}
+        r={3.5}
+        style={{ fill: 'var(--hop-0)', stroke: 'var(--hop-0)', fillOpacity: 0.6 }}
+        strokeWidth={1.5}
       />
-      <path
-        d="M 7 7 L 12.5 7 A 5.5 5.5 0 0 1 1.5 7 Z"
-        style={{ fill: 'var(--hop-1)' }}
-        fillOpacity={0.6}
+      <circle
+        cx={7}
+        cy={7}
+        r={6}
+        fill="none"
+        style={{ stroke: 'var(--hop-multi)' }}
+        strokeWidth={1}
+        strokeDasharray="2 2"
       />
     </svg>
   )
@@ -68,7 +75,7 @@ export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
   return (
     <div
       className={[
-        'absolute top-3 right-3 z-10 rounded-md border border-border bg-card/80 backdrop-blur-sm shadow-sm text-xs',
+        'absolute top-3 left-3 z-10 rounded-md border border-border bg-card/80 backdrop-blur-sm shadow-sm text-xs',
         className ?? '',
       ].join(' ')}
     >
@@ -87,7 +94,7 @@ export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
         <div className="px-3 pb-2 space-y-1.5">
           <div className="flex items-center gap-2">
             <Swatch color="var(--hop-0)" />
-            <span className="text-muted-foreground">Hop 0 · seed</span>
+            <span className="text-muted-foreground">Hop 0</span>
           </div>
           <div className="flex items-center gap-2">
             <Swatch color="var(--hop-1)" />
@@ -100,10 +107,6 @@ export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
           <div className="flex items-center gap-2">
             <MultiHopSwatch />
             <span className="text-muted-foreground">Multi-hop</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <LineSwatch stroke="var(--hop-1)" dashed />
-            <span className="text-muted-foreground">From Armada</span>
           </div>
           {connectedAddress && (
             <>

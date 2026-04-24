@@ -6,7 +6,6 @@ import {
   forceSimulation,
   forceLink,
   forceManyBody,
-  forceRadial,
   forceCollide,
   type Simulation,
   type SimulationNodeDatum,
@@ -19,10 +18,14 @@ import {
   type ZoomBehavior,
   type ZoomTransform,
 } from 'd3-zoom'
-import { Maximize2, Minus, Plus } from 'lucide-react'
+import { Dot, Maximize2, Minus, Plus, ShipWheel, UserRound } from 'lucide-react'
 
 import type { CrowdfundGraph } from '../lib/graph.js'
-import { buildRadialGraph, type RadialNode } from '../lib/radialLayout.js'
+import {
+  buildRadialGraph,
+  computeAngleMap,
+  type RadialNode,
+} from '../lib/radialLayout.js'
 import { formatUsdc, truncateAddress } from '../lib/format.js'
 import { GraphLegend } from './GraphLegend.js'
 import { Button } from './ui/button.js'
@@ -54,52 +57,147 @@ export interface RadialTreeViewProps {
   isLoading?: boolean
 }
 
-type SimNode = RadialNode & SimulationNodeDatum
+type SimNode = RadialNode & SimulationNodeDatum & {
+  /** Target angle (radians) for the sunburst-style angular force. Set by the
+   *  sync effect from the current target graph; read by `forceAngular`. */
+  angle?: number
+}
 type SimEdge = SimulationLinkDatum<SimNode> & { id: string }
 
-/** Padding from the container edge to the outer-most hop ring, in px.
- *  Must accommodate the outer-ring node radius (hop-2, r=4) + stroke + some
- *  force overshoot. Deliberately smaller than earlier revisions now that
- *  outer nodes have shrunk — more radius means more breathing room on every
- *  ring without changing the band ratios. */
-const OUTER_PADDING = 30
+/**
+ * Custom d3-force that pulls each node toward its assigned angular sector
+ * while letting radial/charge/collision forces handle distance and spacing.
+ * Multiplying by current radius makes the convergence rate consistent across
+ * rings (a 0.5 rad delta at r=250 and r=80 will take similar tick counts).
+ * Skips root (pinned at origin) and pre-positioning nodes near the origin to
+ * avoid noisy tangents.
+ */
+function forceAngular(strength: number) {
+  let simNodes: SimNode[] = []
 
-/** The radius of the outer-most ring for a given viewport. */
-function computeMaxR(width: number, height: number): number {
-  return Math.max(80, Math.min(width, height) / 2 - OUTER_PADDING)
+  function force(alpha: number) {
+    for (const n of simNodes) {
+      if (n.hop < 0) continue
+      if (n.x == null || n.y == null || n.angle == null) continue
+      const r = Math.sqrt(n.x * n.x + n.y * n.y)
+      if (r < 1) continue
+
+      const currentAngle = Math.atan2(n.y, n.x)
+      let delta = n.angle - currentAngle
+      // Normalize to [-π, π] so the pull always takes the shorter arc.
+      while (delta > Math.PI) delta -= 2 * Math.PI
+      while (delta < -Math.PI) delta += 2 * Math.PI
+
+      const tangentX = -Math.sin(currentAngle)
+      const tangentY = Math.cos(currentAngle)
+      const push = strength * delta * r * alpha
+      n.vx = (n.vx ?? 0) + tangentX * push
+      n.vy = (n.vy ?? 0) + tangentY * push
+    }
+  }
+  force.initialize = (nodes: SimNode[]) => {
+    simNodes = nodes
+  }
+  return force
 }
 
-/** Compute the ring radius for a given hop, scaled to the viewport. */
-function hopRadius(hop: number, maxR: number): number {
+/** Replacement for d3-force's `forceRadial` that targets an ELLIPSE
+ *  instead of a circle. For each node at current angle θ = atan2(y, x),
+ *  the target distance from origin is `hopBand(hop) * ellipseR(θ)` where
+ *  ellipseR(θ) = (rx·ry) / √((ry·cos θ)² + (rx·sin θ)²). Same force shape
+ *  as forceRadial (radial pull scaled by strength × alpha / currentR),
+ *  just with an angle-aware target radius. */
+function forceEllipse(rx: number, ry: number, strength = 0.9) {
+  let simNodes: SimNode[] = []
+  function force(alpha: number) {
+    for (const n of simNodes) {
+      if (n.hop < 0) continue
+      if (n.x == null || n.y == null) continue
+      const curR = Math.sqrt(n.x * n.x + n.y * n.y)
+      if (curR < 1e-3) continue
+      const cosT = n.x / curR
+      const sinT = n.y / curR
+      const ellipseR =
+        (rx * ry) / Math.sqrt((ry * cosT) ** 2 + (rx * sinT) ** 2)
+      const targetR = hopBand(n.hop) * ellipseR
+      const k = ((targetR - curR) * strength * alpha) / curR
+      n.vx = (n.vx ?? 0) + n.x * k
+      n.vy = (n.vy ?? 0) + n.y * k
+    }
+  }
+  force.initialize = (nodes: SimNode[]) => {
+    simNodes = nodes
+  }
+  return force
+}
+
+/** Padding from the container edge to the outer-most hop ring, in px.
+ *  Must accommodate the outer-ring node radius (hop-2, r=3) + stroke + some
+ *  force overshoot. Applied on both axes so the ellipse has equal padding. */
+const OUTER_PADDING = 30
+
+/** Cap on ellipse aspect ratio (rx/ry). Keeps wide viewports from producing
+ *  an uncomfortably stretched graph; 1 would be perfectly circular. */
+const MAX_ASPECT = 1.3
+
+/** The outermost horizontal + vertical radii for a given viewport. Layout
+ *  is elliptical — container is typically wider than tall, so rx > ry. rx
+ *  is clamped to MAX_ASPECT × ry so very wide containers don't produce an
+ *  exaggerated ellipse. */
+function computeMaxRadii(
+  width: number,
+  height: number,
+): { rx: number; ry: number } {
+  const ry = Math.max(80, height / 2 - OUTER_PADDING)
+  const rxNatural = Math.max(80, width / 2 - OUTER_PADDING)
+  const rx = Math.min(rxNatural, ry * MAX_ASPECT)
+  return { rx, ry }
+}
+
+/** Hop-to-band fraction of the outer radius. Same fraction applies to rx
+ *  and ry — each ring is an ellipse with the same aspect ratio as the outer. */
+function hopBand(hop: number): number {
   if (hop < 0) return 0 // root at center
-  // Hops 0..2 spread from centre to the outer ring.
   const bands = [0.3, 0.65, 1.0]
-  return bands[Math.min(hop, bands.length - 1)]! * maxR
+  return bands[Math.min(hop, bands.length - 1)]!
 }
 
 function hopColorVar(hop: number): string {
-  // Root uses hop-0 teal rather than `--hop-root` grey — matches the mockup
-  // where the Armada centre sits visually inside the seed colour family.
-  if (hop < 0) return 'var(--hop-0)'
+  // Four-colour scheme: teal root / purple hop-0 / orange hop-1 / fuchsia hop-2.
+  if (hop < 0) return 'var(--hop-root)'
   if (hop === 0) return 'var(--hop-0)'
   if (hop === 1) return 'var(--hop-1)'
   return 'var(--hop-2)'
 }
 
-/** Source-side colour for an edge gradient. Root edges blend teal→teal. */
-function edgeSourceColor(sourceHop: number): string {
-  return hopColorVar(sourceHop < 0 ? 0 : sourceHop)
+/** SVG elliptical arc path from (startAngle, endAngle) on the ellipse
+ *  with semi-axes (rx, ry) centered at (cx, cy). Pass rx == ry for a
+ *  circular arc. */
+function describeArc(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  startAngle: number,
+  endAngle: number,
+): string {
+  const startX = cx + Math.cos(startAngle) * rx
+  const startY = cy + Math.sin(startAngle) * ry
+  const endX = cx + Math.cos(endAngle) * rx
+  const endY = cy + Math.sin(endAngle) * ry
+  const largeArcFlag = endAngle - startAngle > Math.PI ? 1 : 0
+  return `M ${startX},${startY} A ${rx},${ry} 0 ${largeArcFlag},1 ${endX},${endY}`
 }
 
 /** Node radius by hop. Matches the design mockup's visual hierarchy —
  *  Armada center dominates, seeds prominent, hops 1/2 recede. Drives both the
  *  rendered `<circle>` and the `forceCollide` radius so spacing matches size. */
 function nodeRadius(hop: number): number {
-  if (hop < 0) return 28 // Armada root — clearly largest, also pulses
-  if (hop === 0) return 18
-  if (hop === 1) return 9
-  if (hop === 2) return 4
-  return 4
+  if (hop < 0) return 45 // Armada root — dominant focal point per the mockup
+  if (hop === 0) return 14
+  if (hop === 1) return 7
+  if (hop === 2) return 3
+  return 3
 }
 
 export function RadialTreeView(props: RadialTreeViewProps) {
@@ -254,6 +352,17 @@ export function RadialTreeView(props: RadialTreeViewProps) {
   // simulation doesn't restart and jiggle every node on click.
   const target = useMemo(() => buildRadialGraph(graph), [graph])
 
+  // Sunburst angle allocation — one source of truth for the sync effect
+  // (assigns node.angle) and the render path (draws sector boundary arcs).
+  //   gapFraction=0.22   — padding on each side of every parent wedge
+  //   reservedAngle=0.35 — ~20° reserved at the top and bottom of the
+  //                        vertical axis so ring labels aren't obscured
+  //                        by nodes sitting near 90°/270°.
+  const angleMap = useMemo(
+    () => computeAngleMap(target.edges, 'armada', 0.22, 0.35),
+    [target],
+  )
+
   // Lineage helpers for hover dimming — parent + children adjacency from the
   // tree edges. O(V + E) to build, reused for every hover event.
   const { parentOf, childrenOf } = useMemo(() => {
@@ -329,9 +438,13 @@ export function RadialTreeView(props: RadialTreeViewProps) {
 
     const prev = nodeMapRef.current
     const next = new Map<string, SimNode>()
+    const { rx, ry } = computeMaxRadii(dimensions.width, dimensions.height)
 
-    // Merge: keep x/y from previous run; new nodes are seeded from their parent's position
-    // so they animate outward instead of popping in at the origin.
+    // Merge: keep x/y from previous run; new nodes are seeded along the line
+    // from their parent toward their own target position (angle × ring-radius)
+    // so the first tick's radial-force amplification points in the correct
+    // direction. Seeding directly on top of the parent made new nodes fling
+    // out along random jitter, then swing around the circle to their target.
     for (const n of target.nodes) {
       const existing = prev.get(n.id)
       if (existing) {
@@ -343,15 +456,26 @@ export function RadialTreeView(props: RadialTreeViewProps) {
         existing.isMultiHop = n.isMultiHop
         existing.committed = n.committed
         existing.parentId = n.parentId
+        existing.angle = angleMap.get(n.id)?.angle
         next.set(n.id, existing)
       } else {
         const seed: SimNode = { ...n }
+        seed.angle = angleMap.get(n.id)?.angle
+        const info = angleMap.get(n.id)
         const parentSim = n.parentId ? prev.get(n.parentId) ?? next.get(n.parentId) : null
-        if (parentSim && typeof parentSim.x === 'number' && typeof parentSim.y === 'number') {
-          seed.x = parentSim.x + (Math.random() - 0.5) * 4
-          seed.y = parentSim.y + (Math.random() - 0.5) * 4
+        if (info && parentSim && typeof parentSim.x === 'number' && typeof parentSim.y === 'number') {
+          const frac = hopBand(n.hop)
+          const targetX = Math.cos(info.angle) * frac * rx
+          const targetY = Math.sin(info.angle) * frac * ry
+          const t = 0.1 // seed 10% of the way from parent toward final target
+          seed.x = parentSim.x + (targetX - parentSim.x) * t
+          seed.y = parentSim.y + (targetY - parentSim.y) * t
+        } else if (info) {
+          // No parent position yet — seed on the target angle at a small radius.
+          seed.x = Math.cos(info.angle) * 8
+          seed.y = Math.sin(info.angle) * 8
         } else {
-          // Armada root or orphan — start near center.
+          // Armada root or orphan.
           seed.x = 0
           seed.y = 0
         }
@@ -376,8 +500,6 @@ export function RadialTreeView(props: RadialTreeViewProps) {
       target: next.get(e.target) ?? e.target,
     }))
 
-    const maxR = computeMaxR(dimensions.width, dimensions.height)
-
     sim
       .nodes(nodeArr)
       // Stronger link force pulls siblings angularly toward their parent so
@@ -391,11 +513,10 @@ export function RadialTreeView(props: RadialTreeViewProps) {
       )
       // Weak charge — radial force should dominate. With -80 nodes bounced off
       // their rings; at -35 they settle and the ring structure is legible.
-      .force('charge', forceManyBody<SimNode>().strength(-35).distanceMax(maxR))
-      .force(
-        'radial',
-        forceRadial<SimNode>((d) => hopRadius(d.hop, maxR)).strength(0.9),
-      )
+      // `distanceMax` uses the major axis so charge falls off before reaching
+      // across the whole ellipse.
+      .force('charge', forceManyBody<SimNode>().strength(-35).distanceMax(rx))
+      .force('radial', forceEllipse(rx, ry, 0.9))
       // Collision buffer varies by hop: inner rings (root, hop-0, hop-1)
       // get +4 for generous spacing. Hop-2 keeps +2 — any larger and the
       // ~240-node outer ring at stress300 overflows its circumference and
@@ -406,9 +527,14 @@ export function RadialTreeView(props: RadialTreeViewProps) {
           (d) => nodeRadius(d.hop) + (d.hop < 2 ? 4 : 2),
         ),
       )
+      // Sunburst angular force — pulls each node toward its assigned sector
+      // midpoint so branches stay grouped on the outer rings. Strength 0.1
+      // is gentle; raise toward 0.2–0.3 for tighter wedges, lower if layout
+      // feels over-constrained.
+      .force('angular', forceAngular(0.1))
       .alpha(0.6)
       .restart()
-  }, [target, dimensions])
+  }, [target, angleMap, dimensions])
 
   // Empty / loading states — match TreeView's container styling.
   if (props.isLoading && graph.nodes.size === 0) {
@@ -460,10 +586,9 @@ export function RadialTreeView(props: RadialTreeViewProps) {
       className="rounded-lg border border-border relative min-h-[600px] overflow-hidden"
       style={{
         height: dimensions.height,
-        // Radial gradient background — lighter centre, darker rim. Acts as
-        // both a depth cue and a viewport vignette that stays anchored to
-        // the screen centre as the user pans. Hex values chosen to be
-        // theme-adjacent; if promoted, move to `--rtv-bg-{inner,outer}` tokens.
+        // Radial gradient background — lighter centre, darker rim. Depth
+        // cue + viewport vignette. Hex values chosen to be theme-adjacent;
+        // if promoted, move to `--rtv-bg-{inner,outer}` tokens.
         background:
           'radial-gradient(circle at center, #0F172A 0%, #020617 100%)',
       }}
@@ -488,49 +613,73 @@ export function RadialTreeView(props: RadialTreeViewProps) {
             @keyframes rtv-edge-flow {
               to { stroke-dashoffset: -10; }
             }
-            /* Root-circle pulse. Scale only the outer circle so the inner
-               dark core + "Armada" text stay still — otherwise the label
-               appears to glitch. transform-box: fill-box pins the origin
-               to the circle's fill centre. */
-            .rtv-root-pulse {
-              transform-box: fill-box;
-              transform-origin: center;
-              animation: rtv-root-pulse 3s ease-in-out infinite;
+            /* "Hot" edges — root→seed spokes get a faster pulse to draw
+               the eye toward Armada. Reuses the same keyframes; only the
+               duration changes. Higher opacity + stroke width are applied
+               via SVG attributes per-edge (SVG attrs beat CSS rules). */
+            .rtv-edge-hot {
+              animation-duration: 2s;
             }
-            @keyframes rtv-root-pulse {
-              0%, 100% { transform: scale(1); }
-              50%      { transform: scale(1.04); }
+            /* Node entrance — pops new nodes from scale 0.3 to 1 with a
+               quick fade. Applied to an inner wrapper g (NOT the outer
+               positioning g) because CSS transform on an SVG element with
+               an existing transform attribute replaces the attribute and
+               would kill the translate. Animation runs once per DOM mount;
+               existing nodes skip it across graph updates. */
+            .rtv-node-enter {
+              transform-origin: center;
+              animation: rtv-node-pop 0.4s ease-out;
+            }
+            @keyframes rtv-node-pop {
+              0%   { transform: scale(0.3); opacity: 0; }
+              100% { transform: scale(1);   opacity: 1; }
             }
             @media (prefers-reduced-motion: reduce) {
               .rtv-edge {
                 animation: none;
                 stroke-dasharray: none;
               }
-              .rtv-root-pulse { animation: none; }
+              .rtv-node-enter { animation: none; }
             }
           `}</style>
-          {/* Glow filters — applied selectively to root + hop-0 only (per
-              mockup). Padded filter region prevents the blur from being
-              clipped at the element's tight default bounding box. */}
+          {/* Glow filters — one per hop. Each stdDev is ~0.35 × the hop's
+              node radius so the halo scales with node size and every ring
+              reads as a "light source" of comparable relative intensity.
+              Filter region is uniformly padded (-100%/300%) so there's
+              plenty of headroom for the blur without clipping. Hop-2 has
+              no glow (r=3 is too small — blur washes out the dot). */}
           <filter
-            id="rtv-glow-strong"
-            x="-50%"
-            y="-50%"
-            width="200%"
-            height="200%"
+            id="rtv-glow-root"
+            x="-100%"
+            y="-100%"
+            width="300%"
+            height="300%"
           >
-            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+            <feGaussianBlur stdDeviation="16" result="coloredBlur" />
             <feMerge>
               <feMergeNode in="coloredBlur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
           <filter
-            id="rtv-glow-medium"
-            x="-50%"
-            y="-50%"
-            width="200%"
-            height="200%"
+            id="rtv-glow-hop0"
+            x="-100%"
+            y="-100%"
+            width="300%"
+            height="300%"
+          >
+            <feGaussianBlur stdDeviation="5" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter
+            id="rtv-glow-hop1"
+            x="-100%"
+            y="-100%"
+            width="300%"
+            height="300%"
           >
             <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
             <feMerge>
@@ -538,19 +687,36 @@ export function RadialTreeView(props: RadialTreeViewProps) {
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
-          <filter
-            id="rtv-glow-soft"
-            x="-50%"
-            y="-50%"
-            width="200%"
-            height="200%"
-          >
-            <feGaussianBlur stdDeviation="1.5" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
+          {/* Procedural grayscale noise — breaks up the "flat digital"
+              look without a PNG asset. feTurbulence generates fractal
+              noise; feColorMatrix desaturates to grayscale so it doesn't
+              tint the scene at low opacity. */}
+          <filter id="rtv-noise" x="0" y="0" width="100%" height="100%">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.9"
+              numOctaves={2}
+              stitchTiles="stitch"
+            />
+            <feColorMatrix type="saturate" values="0" />
           </filter>
+          {/* Viewport-fixed vignette. Centered at the SVG centre (not the
+              content centre) so it stays put during pan. Transparent at
+              the inner 60% so data-bearing rings aren't darkened; fades to
+              the theme background colour at the corners, reinforcing focus
+              on the Armada centre. */}
+          <radialGradient
+            id="rtv-vignette"
+            gradientUnits="userSpaceOnUse"
+            cx={dimensions.width / 2}
+            cy={dimensions.height / 2}
+            r={Math.sqrt(
+              (dimensions.width / 2) ** 2 + (dimensions.height / 2) ** 2,
+            )}
+          >
+            <stop offset="60%" stopColor="transparent" />
+            <stop offset="100%" stopColor="var(--background)" />
+          </radialGradient>
           {/* Per-edge gradients — one per edge because `userSpaceOnUse`
               needs endpoint coords to run from source to target regardless
               of edge orientation. With shared gradients the direction would
@@ -569,7 +735,7 @@ export function RadialTreeView(props: RadialTreeViewProps) {
                 x2={t.x}
                 y2={t.y}
               >
-                <stop offset="0%" stopColor={edgeSourceColor(s.hop)} />
+                <stop offset="0%" stopColor={hopColorVar(s.hop)} />
                 <stop offset="100%" stopColor={hopColorVar(t.hop)} />
               </linearGradient>
             )
@@ -579,19 +745,93 @@ export function RadialTreeView(props: RadialTreeViewProps) {
           transform={`translate(${zoomTransform.x}, ${zoomTransform.y}) scale(${zoomTransform.k})`}
         >
           <g transform={`translate(${cx}, ${cy})`}>
-          {/* Hop rings — faint guide circles. */}
-          {[0, 1, 2].map((h) => (
-            <circle
-              key={`ring-${h}`}
-              cx={0}
-              cy={0}
-              r={hopRadius(h, computeMaxR(dimensions.width, dimensions.height))}
-              fill="none"
-              stroke="var(--border)"
-              strokeDasharray="2 4"
-              strokeOpacity={0.35}
-            />
-          ))}
+          {/* Hop orbital rings — neutral stroke (theme border) at low
+              opacity so they read as structural guides rather than visual
+              accents competing with node colours. Rendered as ellipses
+              because layout is elliptical (rx > ry, wider than tall). */}
+          {(() => {
+            const { rx, ry } = computeMaxRadii(
+              dimensions.width,
+              dimensions.height,
+            )
+            return [0, 1, 2].map((h) => {
+              const frac = hopBand(h)
+              return (
+                <ellipse
+                  key={`ring-${h}`}
+                  cx={0}
+                  cy={0}
+                  rx={frac * rx}
+                  ry={frac * ry}
+                  fill="none"
+                  stroke="var(--border)"
+                  strokeWidth={1}
+                  strokeOpacity={0.2}
+                />
+              )
+            })
+          })()}
+
+          {/* Hop labels — floating above each ring at the top (-y) so the
+              structure is self-explanatory. Offset by 8px outward so the
+              label doesn't collide with a node that happens to sit near 90°. */}
+          {(() => {
+            const { ry } = computeMaxRadii(dimensions.width, dimensions.height)
+            return [0, 1, 2].map((h) => {
+              // Label at the top of each ring's ellipse — y-axis, so use ry.
+              const bandRy = hopBand(h) * ry
+              return (
+                <text
+                  key={`ring-label-${h}`}
+                  x={0}
+                  y={-(bandRy + 8)}
+                  textAnchor="middle"
+                  fill={hopColorVar(h)}
+                  fillOpacity={0.9}
+                  className="text-[11px] font-semibold pointer-events-none select-none"
+                >
+                  {h === 0 ? 'Seed' : `Hop ${h}`}
+                </text>
+              )
+            })
+          })()}
+
+          {/* Sector boundary arcs — one faint arc per seed's angular wedge,
+              drawn just outside the hop-2 ring (in the OUTER_PADDING zone).
+              Makes the sunburst wedge structure visible without crowding the
+              data rings. Only seeds (hop === 0) get arcs; nested hop-1
+              sectors would be too many and too short. */}
+          {(() => {
+            const { rx, ry } = computeMaxRadii(
+              dimensions.width,
+              dimensions.height,
+            )
+            const arcRx = rx + 15
+            const arcRy = ry + 15
+            return target.nodes
+              .filter((n) => n.hop === 0)
+              .map((seed) => {
+                const info = angleMap.get(seed.id)
+                if (!info) return null
+                return (
+                  <path
+                    key={`sector-${seed.id}`}
+                    d={describeArc(
+                      0,
+                      0,
+                      arcRx,
+                      arcRy,
+                      info.angleMin,
+                      info.angleMax,
+                    )}
+                    stroke="var(--border)"
+                    strokeOpacity={0.2}
+                    strokeWidth={1}
+                    fill="none"
+                  />
+                )
+              })
+          })()}
 
           {/* Edges. Quadratic Bezier curves bowing toward the Armada centre.
               Control point = midpoint × 0.7 — pulls the curve 30% closer to
@@ -608,7 +848,25 @@ export function RadialTreeView(props: RadialTreeViewProps) {
               const my = (s.y + t.y) / 2
               const cx = mx * 0.7
               const cy = my * 0.7
-              const baseOpacity = t.hop === 2 ? 0.06 : 0.15
+              // Clip edge endpoints to the node boundaries so edges don't
+              // visibly pass through the translucent interior of hollow
+              // nodes. Shortening along the straight source→target vector
+              // approximates the curve-tangent direction closely enough
+              // that the visible curve change is imperceptible.
+              const dx = t.x - s.x
+              const dy = t.y - s.y
+              const dist = Math.sqrt(dx * dx + dy * dy) || 1
+              const sRadius = nodeRadius(s.hop)
+              const tRadius = nodeRadius(t.hop)
+              const sStartX = s.x + (dx / dist) * sRadius
+              const sStartY = s.y + (dy / dist) * sRadius
+              const tEndX = t.x - (dx / dist) * tRadius
+              const tEndY = t.y - (dy / dist) * tRadius
+              // Root→seed edges get a faster pulse + higher opacity + thicker
+              // stroke — "energy pulse" radiating outward from Armada. Only 6
+              // such edges at stress300, so it stays subtle.
+              const isHot = s.hop < 0 && t.hop === 0
+              const baseOpacity = isHot ? 0.45 : t.hop === 2 ? 0.08 : 0.18
               // During hover: lineage edges brighten, non-lineage edges fade.
               // Idle state: just the base (hop-stratified) opacity.
               const opacity = !highlight
@@ -619,11 +877,11 @@ export function RadialTreeView(props: RadialTreeViewProps) {
               return (
                 <path
                   key={e.id}
-                  className="rtv-edge"
-                  d={`M ${s.x},${s.y} Q ${cx},${cy} ${t.x},${t.y}`}
+                  className={isHot ? 'rtv-edge rtv-edge-hot' : 'rtv-edge'}
+                  d={`M ${sStartX},${sStartY} Q ${cx},${cy} ${tEndX},${tEndY}`}
                   fill="none"
                   stroke={`url(#rtv-edge-grad-${e.id})`}
-                  strokeWidth={1}
+                  strokeWidth={isHot ? 2 : 1}
                   strokeOpacity={opacity}
                   style={{ transition: 'stroke-opacity 150ms ease-out' }}
                 />
@@ -639,23 +897,46 @@ export function RadialTreeView(props: RadialTreeViewProps) {
               const isSelected = !isRoot && selectedAddress === n.address
               const isConnected = !isRoot && !!connectedLower && n.address === connectedLower
               const r = nodeRadius(n.hop)
-              const fill = hopColorVar(n.hop)
+              // Root, hop-0, and hop-1 render as hollow rings — hop-coloured
+              // stroke with a partially-transparent fill of the same colour.
+              // Hop-2 stays solid (they're dots too small to benefit from a
+              // ring treatment). Selected/connected stroke emphasis overrides
+              // the default outline colour in both modes.
+              const isHollow = n.hop < 2
+              // Pre-blend the hop colour against the card background so the
+              // main circle can render OPAQUE (covering the glow backing's
+              // interior) while still LOOKING like a translucent fill.
+              // Icons then sit on a known solid colour rather than seeing the
+              // saturated backing bleed through.
+              const fillPct =
+                n.hop < 0 ? 5 : n.hop === 0 ? 15 : n.hop === 1 ? 25 : 100
+              const fill =
+                fillPct === 100
+                  ? hopColorVar(n.hop)
+                  : `color-mix(in oklch, ${hopColorVar(n.hop)} ${fillPct}%, var(--card) ${100 - fillPct}%)`
+              const strokeBase = isHollow ? (n.hop < 0 ? 3 : 2) : 1
               const stroke = isSelected
                 ? 'var(--hop-selected)'
                 : isConnected
                   ? 'var(--hop-connected)'
-                  : 'var(--card)'
-              const strokeWidth = isSelected ? 2.5 : isConnected ? 2 : 1
+                  : isHollow
+                    ? hopColorVar(n.hop)
+                    : 'var(--card)'
+              const strokeWidth = isSelected
+                ? strokeBase + 1
+                : isConnected
+                  ? strokeBase + 0.5
+                  : strokeBase
               // Glow stratified by hop: strong on root, medium on hop-0,
               // soft on hop-1, none on hop-2 (kept crisp — r=4 dots would
               // wash out under blur and we avoid ~240 filter evaluations
               // per tick on the outer ring).
               const glowFilter = isRoot
-                ? 'url(#rtv-glow-strong)'
+                ? 'url(#rtv-glow-root)'
                 : n.hop === 0
-                  ? 'url(#rtv-glow-medium)'
+                  ? 'url(#rtv-glow-hop0)'
                   : n.hop === 1
-                    ? 'url(#rtv-glow-soft)'
+                    ? 'url(#rtv-glow-hop1)'
                     : undefined
 
               // Dim non-lineage nodes during hover; keep full opacity otherwise.
@@ -689,24 +970,28 @@ export function RadialTreeView(props: RadialTreeViewProps) {
                     onHoverAddress?.(null)
                   }}
                 >
+                  <g className="rtv-node-enter">
+                  {/* Glow backing (hollow nodes only): an opaque, full-
+                      saturation copy of the node underneath the main
+                      translucent one, so the Gaussian blur has a full-
+                      intensity source to work with. Without this, the
+                      translucent fill of a hollow node makes the glow
+                      disappear. */}
+                  {isHollow && glowFilter && (
+                    <circle
+                      r={r}
+                      fill={hopColorVar(n.hop)}
+                      filter={glowFilter}
+                      pointerEvents="none"
+                    />
+                  )}
                   <circle
                     r={r}
                     fill={fill}
                     stroke={stroke}
                     strokeWidth={strokeWidth}
-                    filter={glowFilter}
-                    className={isRoot ? 'rtv-root-pulse' : undefined}
+                    filter={isHollow ? undefined : glowFilter}
                   />
-                  {/* Root only: inner dark core turns the Armada circle into
-                      a teal ring framing the centred label — matches the
-                      mockup's ship-icon treatment. */}
-                  {isRoot && (
-                    <circle
-                      r={r * 0.6}
-                      fill="var(--card)"
-                      pointerEvents="none"
-                    />
-                  )}
                   {n.isMultiHop && !isRoot && (
                     <circle
                       r={r + 3}
@@ -717,21 +1002,65 @@ export function RadialTreeView(props: RadialTreeViewProps) {
                       pointerEvents="none"
                     />
                   )}
+                  {/* Per-hop icons: root (ship placeholder — to be replaced
+                      with logo), hop-0 (user), hop-1 (circle). Hop-2 is too
+                      small for legible iconography. Each icon is wrapped
+                      in a <g> translated by -size/2 so its natural
+                      top-left origin lands centered at the node's (0, 0).
+                      Colours match the hop's outline colour — against the
+                      translucent same-colour fill, the full-intensity icon
+                      reads as a brighter mark inside the node. */}
                   {isRoot && (
-                    <text
-                      y={4}
-                      textAnchor="middle"
-                      className="fill-foreground text-[10px] font-semibold pointer-events-none"
-                    >
-                      Armada
-                    </text>
+                    <g transform="translate(-20, -20)" pointerEvents="none">
+                      <ShipWheel size={40} color="var(--hop-root-icon)" strokeWidth={1.75} />
+                    </g>
                   )}
+                  {n.hop === 0 && (
+                    <g transform="translate(-8, -8)" pointerEvents="none">
+                      <UserRound size={16} color="var(--hop-0-icon)" strokeWidth={2} />
+                    </g>
+                  )}
+                  {/* Lucide Dot is a tiny centred circle inside a 24-viewBox;
+                      size 24 gives us a visible solid dot at the node centre
+                      without enlarging the glyph beyond readability. */}
+                  {n.hop === 1 && (
+                    <g transform="translate(-12, -12)" pointerEvents="none">
+                      <Dot size={24} color="var(--hop-1-icon)" strokeWidth={2} />
+                    </g>
+                  )}
+                  </g>
                 </g>
               )
             })}
           </g>
           </g>
         </g>
+
+        {/* Vignette overlay — sibling to the zoom group so it stays
+            viewport-fixed, rendered last so it composites on top of all
+            content. pointerEvents:none so clicks pass through to the
+            pane/nodes beneath. */}
+        <rect
+          x={0}
+          y={0}
+          width={dimensions.width}
+          height={dimensions.height}
+          fill="url(#rtv-vignette)"
+          pointerEvents="none"
+        />
+        {/* Noise grain overlay — rendered after vignette so the grain
+            appears uniform across the composite, including the darkened
+            corners. Opacity kept very low; even 0.04 adds perceptible
+            texture without muddying the content. */}
+        <rect
+          x={0}
+          y={0}
+          width={dimensions.width}
+          height={dimensions.height}
+          filter="url(#rtv-noise)"
+          opacity={0.06}
+          pointerEvents="none"
+        />
       </svg>
 
       {/* Zoom controls — mirrors xyflow's <Controls /> affordances. */}

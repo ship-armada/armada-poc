@@ -47,6 +47,7 @@ import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { CommitTab } from '@/components/CommitTab'
 import { InviteTab } from '@/components/InviteTab'
 import { ClaimTab } from '@/components/ClaimTab'
+import { MyPositionPanel } from '@/components/MyPositionPanel'
 
 type ActionTab = 'commit' | 'invite'
 type ParticipateIntent = ActionTab | null
@@ -1142,7 +1143,7 @@ export function App() {
         )}
 
         {page === 'my-position' && (
-          <div key="page-my-position" className="mx-auto w-full max-w-2xl space-y-3 animate-page-enter">
+          <div key="page-my-position" className="mx-auto w-full max-w-4xl animate-page-enter">
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card shadow-elevated">
                 <EmptyState
@@ -1153,44 +1154,24 @@ export function App() {
                 />
               </div>
             ) : (
-              <>
-                {networkStats}
-                {/* TODO: replace shared StatsBar above with a wallet-scoped summary (committed, invites remaining, hop level, mini subtree, activity feed). For now, we render the full StatsBar so connectedSummary is visible inline. */}
-                <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
-                  <div className="mb-3 text-base font-medium text-foreground">
-                    Claim status
-                  </div>
-                  {claimAvailability.state === 'available' ? (
-                    <>
-                      <div className="text-sm text-foreground">
-                        Claim is open. You can claim your ARM tokens
-                        {contractState.refundMode ? ' or USDC refund' : ''} now.
-                      </div>
-                      <div className="mt-3">
-                        <Button size="sm" onClick={() => setPage('claim')}>
-                          Claim now
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-sm text-muted-foreground">
-                        {claimAvailability.state === 'pre-open'
-                          ? 'Not yet available — the campaign has not opened.'
-                          : `Not yet available — ${claimAvailability.reason.toLowerCase()}.`}
-                      </div>
-                      {lifecycleCountdown !== undefined && lifecycleCountdown > 0 && (
-                        <div className="mt-2 text-xs text-muted-foreground tabular-nums">
-                          Available in{' '}
-                          <span className="text-foreground">
-                            {formatCountdown(lifecycleCountdown)}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </>
+              <ErrorBoundary>
+                <MyPositionPanel
+                  address={wallet.address!}
+                  positions={eligibility.positions}
+                  totalCommitted={userTotalCommitted}
+                  graph={graph}
+                  events={events}
+                  resolveENS={resolveENS}
+                  claimAvailable={claimAvailability.state === 'available'}
+                  claimCountdown={lifecycleCountdown}
+                  onGoToInvite={() => {
+                    setIntent('invite')
+                    setPage('participate')
+                  }}
+                  onGoToNetwork={() => setPage('network')}
+                  onGoToClaim={() => setPage('claim')}
+                />
+              </ErrorBoundary>
             )}
           </div>
         )}

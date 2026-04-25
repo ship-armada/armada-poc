@@ -131,6 +131,20 @@ export type { EmptyStateProps } from './components/EmptyState.js'
 export { AmountInput } from './components/AmountInput.js'
 export type { AmountInputProps, AmountCeiling } from './components/AmountInput.js'
 
+export { Stepper, StepFooter } from './components/Stepper.js'
+export type {
+  StepperProps,
+  StepperStep,
+  StepFooterProps,
+} from './components/Stepper.js'
+
+export { TxStatusPipeline } from './components/TxStatusPipeline.js'
+export type {
+  TxStatusPipelineProps,
+  TxPipelineRow,
+  TxPipelineStatus,
+} from './components/TxStatusPipeline.js'
+
 export { LifecycleBanner } from './components/LifecycleBanner.js'
 export type {
   LifecycleBannerProps,

@@ -1,5 +1,5 @@
-// ABOUTME: Tests for ClaimTab component — state-dependent rendering across all phases.
-// ABOUTME: Covers pre-finalization, post-fin success, refund mode, canceled, and below-minimum states.
+// ABOUTME: Tests for ClaimTab component — info states and stepper review/confirm flow.
+// ABOUTME: Walks pre-finalization info, canceled, refund mode, and "no allocation" branches.
 
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -42,7 +42,7 @@ describe('ClaimTab', () => {
         blockTimestamp: 1700000000,
         windowEnd: 1700100000,
       })
-      expect(screen.getByText('Claims Available After Finalization')).toBeInTheDocument()
+      expect(screen.getByText('Claims open after finalization')).toBeInTheDocument()
       expect(screen.getByText(/Commitment deadline in/)).toBeInTheDocument()
     })
 
@@ -57,37 +57,37 @@ describe('ClaimTab', () => {
         windowEnd: 1700100000,
         cappedDemand: 870_000n * USDC, // Below 1M min
       })
-      expect(screen.getByText('Below Minimum Raise')).toBeInTheDocument()
-      expect(screen.getByText(/minimum raise/)).toBeInTheDocument()
+      expect(screen.getByText('Below minimum raise')).toBeInTheDocument()
+      // "minimum raise" appears in both the title and the body — assert the body copy
+      expect(screen.getByText(/below the minimum raise/i)).toBeInTheDocument()
     })
   })
 
   describe('canceled (phase 2)', () => {
-    it('shows cancellation refund message', () => {
+    it('routes into the refund stepper showing the cancellation message and refund total', () => {
       renderClaimTab({ phase: 2 })
-      expect(screen.getByText(/Crowdfund was canceled/)).toBeInTheDocument()
-      expect(screen.getByText('Claim Refund')).toBeInTheDocument()
+      expect(screen.getByText(/crowdfund was cancelled/i)).toBeInTheDocument()
+      expect(screen.getByText('Review your refund')).toBeInTheDocument()
+      // totalCommitted is 19,000 USDC for the default render
+      expect(screen.getAllByText(/\$19,000/).length).toBeGreaterThanOrEqual(1)
     })
   })
 
   describe('refund mode (phase 1, refundMode true)', () => {
-    it('shows refund-only message', () => {
+    it('routes into the refund stepper showing the refund-only message', () => {
       renderClaimTab({ phase: 1, refundMode: true })
       expect(screen.getByText(/did not meet the minimum raise/)).toBeInTheDocument()
-      expect(screen.getByText('Claim Refund')).toBeInTheDocument()
+      expect(screen.getByText('Review your refund')).toBeInTheDocument()
     })
   })
 
-  describe('all claimed', () => {
-    it('shows all-claims-complete message', () => {
-      // When phase >= 1, provider exists, and both flags set
-      // We need to mock the fetch — since provider is null, loading will be false immediately
+  describe('no allocation', () => {
+    it('shows no-allocation empty state when post-finalization with zero allocation', () => {
       renderClaimTab({
         phase: 1,
         refundMode: false,
       })
-      // With no provider, it won't fetch allocations and will show the post-fin success view
-      // with 0 ARM and 0 refund (no allocation found)
+      // With no provider, no allocation is fetched → 0 ARM + 0 refund → empty state.
       expect(screen.getByText(/No allocation found/)).toBeInTheDocument()
     })
   })

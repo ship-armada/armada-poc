@@ -1,5 +1,5 @@
-// ABOUTME: Tests for CommitTab component — eligibility, window states, validation, and rendering.
-// ABOUTME: Covers not-eligible, window-closed, input rendering, and balance validation.
+// ABOUTME: Tests for CommitTab component — eligibility, window states, validation, step nav.
+// ABOUTME: Walks through the context → amount → review flow.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -50,6 +50,14 @@ function renderCommitTab(overrides: Partial<CommitTabProps> = {}) {
   return render(<CommitTab {...defaultProps} />)
 }
 
+/** Click the primary "Continue" button on the current step. */
+function clickContinue() {
+  const continueBtn = screen.getAllByRole('button', { name: 'Continue' })
+  // The first matching enabled button is the step's primary CTA.
+  const target = continueBtn.find((b) => !(b as HTMLButtonElement).disabled) ?? continueBtn[0]
+  fireEvent.click(target)
+}
+
 describe('CommitTab', () => {
   it('shows not-eligible message when not eligible', () => {
     renderCommitTab({ eligible: false, positions: [] })
@@ -66,20 +74,34 @@ describe('CommitTab', () => {
     expect(screen.getByText('Commitment window is not yet open.')).toBeInTheDocument()
   })
 
-  it('renders per-hop input cards when eligible and window open', () => {
+  it('lands on the context step with eligibility info and inviter attribution', () => {
     renderCommitTab()
-    // hopLabel(0) returns "Seed (hop-0)" — appears in eligibility display and input card
+    expect(screen.getByText('Your positions')).toBeInTheDocument()
+    expect(screen.getByText(/invited by Armada/)).toBeInTheDocument()
+    // hopLabel(0) appears on this step
     expect(screen.getAllByText('Seed (hop-0)').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('Review Commitment')).toBeInTheDocument()
+  })
+
+  it('advances to the amount step and renders per-hop input cards', () => {
+    renderCommitTab()
+    clickContinue()
+    expect(screen.getByLabelText(/Commit amount/)).toBeInTheDocument()
+    expect(screen.getAllByText('Seed (hop-0)').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders multiple hop inputs for multi-position user', () => {
     renderCommitTab({
       positions: [
         makePosition({ hop: 0 }),
-        makePosition({ hop: 1, effectiveCap: 8_000n * USDC, remaining: 8_000n * USDC, invitedBy: ['0x1234567890abcdef1234567890abcdef12345678'] }),
+        makePosition({
+          hop: 1,
+          effectiveCap: 8_000n * USDC,
+          remaining: 8_000n * USDC,
+          invitedBy: ['0x1234567890abcdef1234567890abcdef12345678'],
+        }),
       ],
     })
+    clickContinue()
     expect(screen.getAllByText('Seed (hop-0)').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Hop-1').length).toBeGreaterThanOrEqual(1)
   })
@@ -88,33 +110,31 @@ describe('CommitTab', () => {
     renderCommitTab({
       positions: [makePosition({ remaining: 0n })],
     })
+    clickContinue()
     expect(screen.getByText('Cap reached at this hop')).toBeInTheDocument()
   })
 
-  it('renders eligibility display with inviter attribution', () => {
+  it('disables the amount-step Continue button when no amounts entered', () => {
     renderCommitTab()
-    expect(screen.getByText('Your positions:')).toBeInTheDocument()
-    expect(screen.getByText(/invited by Armada/)).toBeInTheDocument()
+    clickContinue()
+    // Now on amount step. There's only one Continue button visible — the
+    // step footer's primary CTA, which should be disabled until input.
+    const continueBtns = screen.getAllByRole('button', { name: 'Continue' })
+    expect(continueBtns[continueBtns.length - 1]).toBeDisabled()
   })
 
-  it('disables Review button when no amounts entered', () => {
+  it('enables the amount-step Continue button after typing a valid amount', async () => {
     renderCommitTab()
-    const btn = screen.getByText('Review Commitment')
-    expect(btn).toBeDisabled()
-  })
-
-  it('enables Review button after typing a valid amount', async () => {
-    renderCommitTab()
-    const btn = screen.getByText('Review Commitment')
-    expect(btn).toBeDisabled()
+    clickContinue()
+    const continueBtns = screen.getAllByRole('button', { name: 'Continue' })
+    const cta = continueBtns[continueBtns.length - 1]
+    expect(cta).toBeDisabled()
     const input = screen.getByLabelText(/Commit amount/) as HTMLInputElement
     fireEvent.change(input, { target: { value: '100' } })
-    await waitFor(() => expect(btn).not.toBeDisabled())
+    await waitFor(() => expect(cta).not.toBeDisabled())
   })
 
-  it('enables Review button after typing even when balance loads async (useAllowance race)', async () => {
-    // Mount with balance=0 (like useAllowance's initial snapshot) then rerender
-    // with the real balance, simulating the query resolving after mount.
+  it('enables Continue after typing even when balance loads async (useAllowance race)', async () => {
     const { rerender } = renderCommitTab({ balance: 0n })
     rerender(
       <CommitTab
@@ -135,9 +155,11 @@ describe('CommitTab', () => {
         } as CommitTabProps)}
       />,
     )
-    const btn = screen.getByText('Review Commitment')
+    clickContinue()
+    const continueBtns = screen.getAllByRole('button', { name: 'Continue' })
+    const cta = continueBtns[continueBtns.length - 1]
     const input = screen.getByLabelText(/Commit amount/) as HTMLInputElement
     fireEvent.change(input, { target: { value: '100' } })
-    await waitFor(() => expect(btn).not.toBeDisabled(), { timeout: 1500 })
+    await waitFor(() => expect(cta).not.toBeDisabled(), { timeout: 1500 })
   })
 })

@@ -1,8 +1,8 @@
-// ABOUTME: Tests for InviteTab component — slot display, form states, and no-slots view.
-// ABOUTME: Covers invite positions, hop selector, self-invite button, and window-closed state.
+// ABOUTME: Tests for InviteTab component — slot display, mode picker, step navigation.
+// ABOUTME: Walks through mode → details → review for direct, mode → link for shareable.
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { InviteTab } from './InviteTab'
 import type { InviteTabProps } from './InviteTab'
 import type { HopPosition } from '@/hooks/useEligibility'
@@ -67,28 +67,27 @@ describe('InviteTab', () => {
     expect(screen.getByText(/Invites can only be sent during/)).toBeInTheDocument()
   })
 
-  it('renders invite slot summary', () => {
+  it('lands on the mode step with slot summary and both invite types', () => {
     renderInviteTab()
-    expect(screen.getByText('Your Invite Slots')).toBeInTheDocument()
+    expect(screen.getByText('Your invite slots')).toBeInTheDocument()
     expect(screen.getByText('Seed (hop-0)')).toBeInTheDocument()
     expect(screen.getByText(/1 used/)).toBeInTheDocument()
     expect(screen.getByText('2 remaining')).toBeInTheDocument()
+    expect(screen.getByText('Direct on-chain invite')).toBeInTheDocument()
+    expect(screen.getByText('Shareable link')).toBeInTheDocument()
   })
 
-  it('renders self-invite button', () => {
+  it('advances from mode → details (direct) showing the address input', () => {
     renderInviteTab()
-    expect(screen.getByText('Self')).toBeInTheDocument()
+    // Default mode is 'direct'; clicking Continue progresses to details.
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByPlaceholderText('0x… or ENS name')).toBeInTheDocument()
   })
 
-  it('renders send invite form', () => {
+  it('switching to link mode and continuing renders the invite link section', () => {
     renderInviteTab()
-    expect(screen.getByText('Send Direct Invite')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('0x... or ENS name')).toBeInTheDocument()
-    expect(screen.getByText('Send Invite')).toBeInTheDocument()
-  })
-
-  it('renders invite link section', () => {
-    renderInviteTab()
+    fireEvent.click(screen.getByText('Shareable link'))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(screen.getByText('Invite Links (EIP-712)')).toBeInTheDocument()
   })
 })

@@ -49,6 +49,7 @@ import { InviteTab } from '@/components/InviteTab'
 import { ClaimTab } from '@/components/ClaimTab'
 
 type ActionTab = 'commit' | 'invite'
+type ParticipateIntent = ActionTab | null
 type Page = 'network' | 'participate' | 'claim' | 'my-position'
 
 /**
@@ -522,7 +523,7 @@ export function App() {
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
-  const [activeTab, setActiveTab] = useState<ActionTab>('commit')
+  const [intent, setIntent] = useState<ParticipateIntent>(null)
   const [page, setPage] = useState<Page>('network')
 
   const pollInterval = getPollIntervalMs()
@@ -594,20 +595,13 @@ export function App() {
     }
   }, [wallet.address, eligibility.positions, userTotalCommitted])
 
-  // Tab enabled/disabled states for the Participate sub-tabs.
+  // Per-intent enabled state — drives the intent picker on the Participate
+  // page and the soft-disabled flag on the participate nav item.
   const hasInviteSlots = eligibility.positions.some((p) => p.invitesAvailable > 0)
   const tabStates = useMemo(() => ({
     commit: getTabState('commit', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots),
     invite: getTabState('invite', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots),
   }), [contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots])
-
-  // Auto-select first enabled action tab when the active one becomes disabled.
-  useEffect(() => {
-    if (!tabStates[activeTab].enabled) {
-      const firstEnabled = (['commit', 'invite'] as const).find((t) => tabStates[t].enabled)
-      if (firstEnabled) setActiveTab(firstEnabled)
-    }
-  }, [tabStates, activeTab])
 
   // Claim availability + lifecycle stage — drive the Claim page state and
   // the persistent lifecycle banner shown above every page.
@@ -967,68 +961,93 @@ export function App() {
                   </Button>
                 </div>
               </div>
-            ) : (
-              <div className="rounded-lg border border-border bg-card shadow-elevated">
-                <Tabs
-                  value={activeTab}
-                  onValueChange={(v) => setActiveTab(v as ActionTab)}
-                >
-                  <TabsList variant="line" className="w-full justify-start border-b border-border rounded-t-lg">
-                    {(['commit', 'invite'] as const).map((tab) => (
-                      <TabsTrigger
-                        key={tab}
-                        value={tab}
-                        disabled={!tabStates[tab].enabled}
-                        className="flex-1 capitalize"
-                      >
-                        {tab}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-
-                <div className="p-4">
-                  {!tabStates[activeTab].enabled ? (
-                    <div className="p-4 text-center text-muted-foreground text-sm">
-                      {tabStates[activeTab].message}
+            ) : intent === null ? (
+              // Step 1 of the checkout: choose intent. Sub-flows handle their
+              // own internal step state once the user picks one.
+              <div className="rounded-lg border border-border bg-card shadow-elevated overflow-hidden">
+                <div className="border-b border-border/60 bg-card/40 px-6 py-3 text-center text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Step 1 <span className="opacity-50">·</span> Choose entry
+                </div>
+                <div className="space-y-4 px-6 py-5">
+                  <div>
+                    <div className="mb-1 text-base font-medium text-foreground">
+                      How do you want to participate?
                     </div>
-                  ) : (
-                    <>
-                      {activeTab === 'commit' && (
-                        <CommitTab
-                          positions={eligibility.positions}
-                          eligible={eligibility.eligible}
-                          balance={allowance.balance}
-                          needsApproval={allowance.needsApproval}
-                          refreshAllowance={allowance.refresh}
-                          signer={wallet.signer}
-                          crowdfundAddress={crowdfundAddress!}
-                          usdcAddress={usdcAddress!}
-                          hopStats={contractState.hopStats}
-                          saleSize={contractState.saleSize}
-                          phase={contractState.phase}
-                          windowOpen={windowOpen}
-                          resolveENS={resolveENS}
-                        />
+                    <div className="text-sm text-muted-foreground">
+                      You can commit USDC at any hop you've been invited to, or invite
+                      others using your remaining slots.
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      disabled={!eligibility.eligible}
+                      onClick={() => setIntent('commit')}
+                      className={cn(
+                        'rounded-md border bg-card/40 p-4 text-left transition-colors hover:border-primary/60',
+                        'disabled:cursor-not-allowed disabled:opacity-50',
+                        intent === ('commit' as ParticipateIntent)
+                          ? 'border-primary'
+                          : 'border-border/60',
                       )}
-                      {activeTab === 'invite' && (
-                        <InviteTab
-                          positions={eligibility.positions}
-                          signer={wallet.signer}
-                          address={wallet.address}
-                          crowdfundAddress={crowdfundAddress!}
-                          phase={contractState.phase}
-                          windowOpen={windowOpen}
-                          inviteLinks={inviteLinks}
-                          blockTimestamp={contractState.blockTimestamp}
-                          nodes={nodes}
-                          provider={provider}
-                        />
+                    >
+                      <div className="text-sm font-medium text-foreground">Commit USDC</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {eligibility.eligible
+                          ? `Eligible at ${eligibility.positions.length} hop${eligibility.positions.length === 1 ? '' : 's'}`
+                          : 'Not eligible — you need an invite first'}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!hasInviteSlots}
+                      onClick={() => setIntent('invite')}
+                      className={cn(
+                        'rounded-md border bg-card/40 p-4 text-left transition-colors hover:border-primary/60',
+                        'disabled:cursor-not-allowed disabled:opacity-50',
                       )}
-                    </>
-                  )}
+                    >
+                      <div className="text-sm font-medium text-foreground">Invite someone</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {hasInviteSlots
+                          ? 'Send an on-chain invite or share a link'
+                          : 'No invite slots available'}
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
+            ) : intent === 'commit' ? (
+              <CommitTab
+                positions={eligibility.positions}
+                eligible={eligibility.eligible}
+                balance={allowance.balance}
+                needsApproval={allowance.needsApproval}
+                refreshAllowance={allowance.refresh}
+                signer={wallet.signer}
+                crowdfundAddress={crowdfundAddress!}
+                usdcAddress={usdcAddress!}
+                hopStats={contractState.hopStats}
+                saleSize={contractState.saleSize}
+                phase={contractState.phase}
+                windowOpen={windowOpen}
+                resolveENS={resolveENS}
+                onBackToIntent={() => setIntent(null)}
+              />
+            ) : (
+              <InviteTab
+                positions={eligibility.positions}
+                signer={wallet.signer}
+                address={wallet.address}
+                crowdfundAddress={crowdfundAddress!}
+                phase={contractState.phase}
+                windowOpen={windowOpen}
+                inviteLinks={inviteLinks}
+                blockTimestamp={contractState.blockTimestamp}
+                nodes={nodes}
+                provider={provider}
+                onBackToIntent={() => setIntent(null)}
+              />
             )}
             <WhatsNextCard
               steps={[

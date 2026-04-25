@@ -30,6 +30,12 @@ export interface AppShellProps {
    */
   headerNav?: ReactNode
   /**
+   * Desktop-only inline status indicator (≥sm), rendered between the centered
+   * primary nav and the right-side chrome. Use for compact, contextual info
+   * like a campaign-lifecycle stepper. Hidden below the sm breakpoint.
+   */
+  headerStatus?: ReactNode
+  /**
    * Desktop-only header actions (≥sm). Hidden below the sm breakpoint — compose
    * anything the user still needs on mobile into `mobileMenu` instead.
    */
@@ -98,6 +104,7 @@ export function AppShell({
   appName,
   network,
   headerNav,
+  headerStatus,
   headerRight,
   mobileMenu,
   footer,
@@ -159,6 +166,14 @@ export function AppShell({
             >
               {headerNav}
             </nav>
+          )}
+
+          {/* Inline status indicator (desktop). Sits between the centered nav
+              and the right-side chrome. Auto-width so the centered nav stays
+              roughly centered (the slot adds asymmetry, but typical content
+              here is narrow — a compact lifecycle stepper or similar). */}
+          {headerStatus && (
+            <div className="hidden items-center sm:flex">{headerStatus}</div>
           )}
 
           {/* Right: network badge + app-specific actions (desktop only) */}

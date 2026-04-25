@@ -18,6 +18,7 @@ import {
   TreeView,
   AppShell,
   LastTxChip,
+  LifecycleBanner,
   Separator,
   Tabs,
   TabsList,
@@ -26,7 +27,9 @@ import {
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
+  WhatsNextCard,
   CROWDFUND_CONSTANTS,
+  formatCountdown,
   formatUsdc,
   formatArm,
   generateMockGraph,
@@ -45,27 +48,48 @@ import { CommitTab } from '@/components/CommitTab'
 import { InviteTab } from '@/components/InviteTab'
 import { ClaimTab } from '@/components/ClaimTab'
 
-type ActionTab = 'commit' | 'invite' | 'claim'
-type Page = 'network' | 'participate' | 'my-position'
+type ActionTab = 'commit' | 'invite'
+type Page = 'network' | 'participate' | 'claim' | 'my-position'
+
+/**
+ * Master switch for the lifecycle progress bar (header strip + mobile body
+ * fallback). Currently hidden because the Claim nav suffix surfaces the same
+ * countdown more compactly. The component, derivations, and rendering paths
+ * stay in the codebase — flip to `true` to bring the banner back.
+ */
+const SHOW_LIFECYCLE_BAR = false
 
 const PAGE_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
   { id: 'network', label: 'Network' },
   { id: 'participate', label: 'Participate' },
+  { id: 'claim', label: 'Claim' },
   { id: 'my-position', label: 'My Position' },
 ]
 
-/** Page navigation — renders as header nav on desktop, stacked list on mobile.
+/**
+ * Page navigation — renders as header nav on desktop, stacked list on mobile.
  *  Horizontal variant: color-only active state with a 2px primary underline,
  *  mirroring the reference mockup. Vertical variant (mobile sheet) keeps a
- *  subtle bg fill on active since there's no underline room in a stacked list. */
+ *  subtle bg fill on active since there's no underline room in a stacked list.
+ *
+ *  `softDisabled` items remain clickable so the destination page can render
+ *  its own explanation, but render in a more-muted style with a parenthesized
+ *  suffix (e.g. "(20d 13h)" on Claim while the invite window is still open,
+ *  "(ended)" on Participate after the window closes). The map's value is the
+ *  literal suffix text — pass an empty string to mute without a suffix.
+ */
 function PageNav({
   current,
   onChange,
   orientation = 'horizontal',
+  softDisabled,
 }: {
   current: Page
   onChange: (p: Page) => void
   orientation?: 'horizontal' | 'vertical'
+  /** Pages that are present but not yet (or no longer) actionable, mapped
+   *  to the suffix text rendered after the label. */
+  softDisabled?: ReadonlyMap<Page, string>
 }) {
   const isVertical = orientation === 'vertical'
   return (
@@ -77,28 +101,39 @@ function PageNav({
     >
       {PAGE_ITEMS.map((item) => {
         const active = item.id === current
+        const muted = softDisabled?.has(item.id) ?? false
+        const suffix = softDisabled?.get(item.id)
         return (
           <li key={item.id}>
             <button
               type="button"
               onClick={() => onChange(item.id)}
               aria-current={active ? 'page' : undefined}
+              aria-disabled={muted ? 'true' : undefined}
               className={cn(
                 'text-sm font-medium transition-colors hover:text-foreground',
                 isVertical
                   ? cn(
                       'w-full rounded-md px-3 py-1.5 text-left',
                       active ? 'bg-muted/60 text-foreground' : 'text-muted-foreground',
+                      muted && !active && 'opacity-60',
                     )
                   : cn(
                       'border-b-2 pb-1',
                       active
                         ? 'border-primary text-foreground'
+                        : muted
+                        ? 'border-transparent text-muted-foreground/60'
                         : 'border-transparent text-muted-foreground',
                     ),
               )}
             >
               {item.label}
+              {muted && suffix && (
+                <span className="ml-1 text-[10px] tracking-wide tabular-nums opacity-80">
+                  ({suffix})
+                </span>
+              )}
             </button>
           </li>
         )
@@ -144,10 +179,23 @@ function MockCommitterApp({ size }: { size: number }) {
     setFocusRequest((prev) => ({ address: addr, tick: (prev?.tick ?? 0) + 1 }))
   }, [])
 
-  const headerNav = <PageNav current={page} onChange={setPage} />
+  // Stress mode pretends we're mid-commit window: claim shows a fake
+  // countdown so the nav matches what live users see.
+  const mockSoftDisabled = useMemo<Map<Page, string>>(
+    () => new Map<Page, string>([['claim', formatCountdown(13 * 86400 + 4 * 3600)]]),
+    [],
+  )
+  const headerNav = (
+    <PageNav current={page} onChange={setPage} softDisabled={mockSoftDisabled} />
+  )
   const mobileMenu = (
     <div className="flex flex-col gap-3">
-      <PageNav current={page} onChange={setPage} orientation="vertical" />
+      <PageNav
+        current={page}
+        onChange={setPage}
+        orientation="vertical"
+        softDisabled={mockSoftDisabled}
+      />
     </div>
   )
 
@@ -156,6 +204,11 @@ function MockCommitterApp({ size }: { size: number }) {
       appName={`Committer · stress ?mock=stress${size}`}
       network="local"
       headerNav={headerNav}
+      headerStatus={
+        SHOW_LIFECYCLE_BAR ? (
+          <LifecycleBanner stage="commit-invite" countdownSeconds={13 * 86400} compact />
+        ) : undefined
+      }
       mobileMenu={mobileMenu}
     >
       <div className="container mx-auto p-4 space-y-4">
@@ -164,6 +217,13 @@ function MockCommitterApp({ size }: { size: number }) {
           action-panel visuals stubbed as a whitelisted hop-1 participant.
           Interactions are disabled. Remove <code>?mock=…</code> from the URL to exit.
         </div>
+
+        {SHOW_LIFECYCLE_BAR && (
+          // Mobile-only fallback for the lifecycle status (sm+ uses the header).
+          <div className="sm:hidden">
+            <LifecycleBanner stage="commit-invite" countdownSeconds={13 * 86400} />
+          </div>
+        )}
 
         {page === 'network' && (
           <div key="mock-page-network" className="space-y-3 animate-page-enter">
@@ -254,11 +314,38 @@ function MockCommitterApp({ size }: { size: number }) {
         )}
 
         {page === 'participate' && (
-          <div key="mock-page-participate" className="mx-auto max-w-2xl animate-page-enter">
+          <div key="mock-page-participate" className="mx-auto max-w-2xl space-y-3 animate-page-enter">
             <MockActionPanel
               activeTab={activeTab}
               onTabChange={setActiveTab}
               address={mockConnectedAddress}
+            />
+            <WhatsNextCard
+              steps={[
+                { label: 'Commit USDC', status: 'active' },
+                { label: 'Invite others (optional)' },
+                { label: 'Wait for the campaign window to end' },
+                { label: 'Claim your tokens' },
+              ]}
+            />
+          </div>
+        )}
+
+        {page === 'claim' && (
+          <div key="mock-page-claim" className="mx-auto max-w-2xl space-y-3 animate-page-enter">
+            <div className="rounded-lg border border-border bg-card p-6 text-sm shadow-elevated">
+              <div className="mb-1 font-medium text-foreground">Claim isn't open yet</div>
+              <div className="text-muted-foreground">
+                You'll be able to claim ARM tokens (or a USDC refund) after the
+                commitment window closes and the sale finalizes.
+              </div>
+            </div>
+            <WhatsNextCard
+              steps={[
+                { label: 'Commit & invite', status: 'done' },
+                { label: 'Window closes', status: 'active' },
+                { label: 'Claim your tokens' },
+              ]}
             />
           </div>
         )}
@@ -310,7 +397,7 @@ function MockActionPanel({
 
       <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as ActionTab)}>
         <TabsList variant="line" className="w-full justify-start border-b border-border">
-          {(['commit', 'invite', 'claim'] as const).map((tab) => (
+          {(['commit', 'invite'] as const).map((tab) => (
             <TabsTrigger key={tab} value={tab} className="flex-1 capitalize">
               {tab}
             </TabsTrigger>
@@ -339,16 +426,6 @@ function MockActionPanel({
             </div>
           </>
         )}
-        {activeTab === 'claim' && (
-          <>
-            <div className="font-medium text-foreground">Claim ARM / refund</div>
-            <div className="text-muted-foreground leading-relaxed">
-              After the crowdfund finalizes, claim your allocated ARM
-              (with mandatory delegation) or, if the sale ended below the
-              minimum raise, claim a full USDC refund.
-            </div>
-          </>
-        )}
         <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           Interactions disabled — no signer or contract state in stress mode.
         </div>
@@ -365,7 +442,8 @@ function getMockSizeFromUrl(): number {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-/** Determine tab enabled state and disabled message based on contract phase */
+/** Determine commit/invite tab enabled state + disabled message. Claim was
+ *  promoted to its own page; see `getClaimAvailability` for that gating. */
 function getTabState(
   tab: ActionTab,
   phase: number,
@@ -373,47 +451,67 @@ function getTabState(
   armLoaded: boolean,
   windowEnd: number,
   blockTimestamp: number,
-  cappedDemand: bigint,
   hasInviteSlots: boolean,
 ): { enabled: boolean; message: string } {
   const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
-  const belowMin = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
 
-  // Pre-open (ARM not loaded)
   if (!armLoaded && phase === 0) {
     return { enabled: false, message: 'Not yet open' }
   }
+  if (phase === 2) return { enabled: false, message: 'Cancelled' }
+  if (phase === 1) return { enabled: false, message: 'Finalized' }
 
-  // Cancelled
-  if (phase === 2) {
-    if (tab === 'claim') return { enabled: true, message: '' }
-    return { enabled: false, message: 'Cancelled' }
-  }
-
-  // Finalized
-  if (phase === 1) {
-    if (tab === 'claim') return { enabled: true, message: '' }
-    return { enabled: false, message: 'Finalized' }
-  }
-
-  // Phase 0
   if (tab === 'commit') {
     if (!windowOpen && windowEnded) return { enabled: false, message: 'Deadline passed' }
     if (!windowOpen) return { enabled: false, message: 'Not yet open' }
     return { enabled: true, message: '' }
   }
 
-  if (tab === 'invite') {
-    if (!windowOpen && windowEnded) return { enabled: false, message: 'Deadline passed' }
-    if (!windowOpen) return { enabled: false, message: 'Not yet open' }
-    if (!hasInviteSlots) return { enabled: false, message: 'No invite slots' }
-    return { enabled: true, message: '' }
-  }
+  // tab === 'invite'
+  if (!windowOpen && windowEnded) return { enabled: false, message: 'Deadline passed' }
+  if (!windowOpen) return { enabled: false, message: 'Not yet open' }
+  if (!hasInviteSlots) return { enabled: false, message: 'No invite slots' }
+  return { enabled: true, message: '' }
+}
 
-  // Claim tab in phase 0
-  if (windowEnded && belowMin) return { enabled: true, message: '' }
-  if (windowEnded) return { enabled: false, message: 'Awaiting finalization' }
-  return { enabled: false, message: 'Available after finalization' }
+type ClaimAvailability =
+  | { state: 'available' }
+  | { state: 'pending'; reason: string }
+  | { state: 'pre-open' }
+
+/** Mirror of the Claim page's gate. Used both to gate tab presentation
+ *  ("(soon)" suffix) and to drive the Claim page's empty-state copy. */
+function getClaimAvailability(
+  phase: number,
+  armLoaded: boolean,
+  windowEnd: number,
+  blockTimestamp: number,
+  cappedDemand: bigint,
+): ClaimAvailability {
+  if (!armLoaded && phase === 0) return { state: 'pre-open' }
+  if (phase === 1) return { state: 'available' } // finalized
+  if (phase === 2) return { state: 'available' } // cancelled (refunds)
+
+  // phase 0
+  const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
+  const belowMin = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
+  if (windowEnded && belowMin) return { state: 'available' } // refund eligibility
+  if (windowEnded) return { state: 'pending', reason: 'Awaiting finalization' }
+  return { state: 'pending', reason: 'Opens after the campaign window ends' }
+}
+
+/** Map contract state to the lifecycle banner's stage. */
+function deriveLifecycleStage(
+  phase: number,
+  windowEnd: number,
+  blockTimestamp: number,
+  claimDeadline: number,
+): 'commit-invite' | 'claim' | 'complete' {
+  if (phase === 1 && claimDeadline > 0 && blockTimestamp > claimDeadline) return 'complete'
+  if (phase === 1 || phase === 2) return 'claim'
+  // phase 0
+  if (windowEnd > 0 && blockTimestamp > windowEnd) return 'claim'
+  return 'commit-invite'
 }
 
 export function App() {
@@ -496,21 +594,111 @@ export function App() {
     }
   }, [wallet.address, eligibility.positions, userTotalCommitted])
 
-  // Tab enabled/disabled states
+  // Tab enabled/disabled states for the Participate sub-tabs.
   const hasInviteSlots = eligibility.positions.some((p) => p.invitesAvailable > 0)
   const tabStates = useMemo(() => ({
-    commit: getTabState('commit', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, contractState.cappedDemand, hasInviteSlots),
-    invite: getTabState('invite', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, contractState.cappedDemand, hasInviteSlots),
-    claim: getTabState('claim', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, contractState.cappedDemand, hasInviteSlots),
-  }), [contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, contractState.cappedDemand, hasInviteSlots])
+    commit: getTabState('commit', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots),
+    invite: getTabState('invite', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots),
+  }), [contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots])
 
-  // Auto-select first enabled tab
+  // Auto-select first enabled action tab when the active one becomes disabled.
   useEffect(() => {
     if (!tabStates[activeTab].enabled) {
-      const firstEnabled = (['commit', 'invite', 'claim'] as const).find((t) => tabStates[t].enabled)
+      const firstEnabled = (['commit', 'invite'] as const).find((t) => tabStates[t].enabled)
       if (firstEnabled) setActiveTab(firstEnabled)
     }
   }, [tabStates, activeTab])
+
+  // Claim availability + lifecycle stage — drive the Claim page state and
+  // the persistent lifecycle banner shown above every page.
+  const claimAvailability = useMemo(
+    () =>
+      getClaimAvailability(
+        contractState.phase,
+        contractState.armLoaded,
+        contractState.windowEnd,
+        contractState.blockTimestamp,
+        contractState.cappedDemand,
+      ),
+    [
+      contractState.phase,
+      contractState.armLoaded,
+      contractState.windowEnd,
+      contractState.blockTimestamp,
+      contractState.cappedDemand,
+    ],
+  )
+
+  const lifecycleStage = useMemo(
+    () =>
+      deriveLifecycleStage(
+        contractState.phase,
+        contractState.windowEnd,
+        contractState.blockTimestamp,
+        contractState.claimDeadline,
+      ),
+    [
+      contractState.phase,
+      contractState.windowEnd,
+      contractState.blockTimestamp,
+      contractState.claimDeadline,
+    ],
+  )
+
+  const lifecycleCountdown = useMemo(() => {
+    if (lifecycleStage === 'commit-invite' && contractState.windowEnd > 0) {
+      return Math.max(0, contractState.windowEnd - contractState.blockTimestamp)
+    }
+    if (lifecycleStage === 'claim' && contractState.claimDeadline > 0) {
+      return Math.max(0, contractState.claimDeadline - contractState.blockTimestamp)
+    }
+    return undefined
+  }, [
+    lifecycleStage,
+    contractState.windowEnd,
+    contractState.claimDeadline,
+    contractState.blockTimestamp,
+  ])
+
+  // Soft-disabled nav items: present but not actionable yet (Claim before
+  // finalization) or no longer actionable (Participate after window end).
+  // Map values are the suffix shown after the tab label, e.g. "20d 13h" for
+  // Claim while the invite/commit window counts down.
+  const softDisabledPages = useMemo<Map<Page, string>>(() => {
+    const m = new Map<Page, string>()
+
+    // Claim suffix — prefer the live countdown to invite/commit window
+    // close. Falls back to "soon" before the window opens or after it
+    // closes but before finalization (when no countdown applies).
+    if (claimAvailability.state !== 'available') {
+      const windowSecondsLeft =
+        contractState.windowEnd > 0 && contractState.blockTimestamp > 0
+          ? contractState.windowEnd - contractState.blockTimestamp
+          : 0
+      const suffix =
+        windowSecondsLeft > 0 ? formatCountdown(windowSecondsLeft) : 'soon'
+      m.set('claim', suffix)
+    }
+
+    // Participate suffix — "ended" once the commit window has closed,
+    // "soon" if the campaign hasn't opened yet, otherwise no suffix.
+    const participateActive =
+      tabStates.commit.enabled || tabStates.invite.enabled
+    if (!participateActive) {
+      const windowEnded =
+        contractState.windowEnd > 0 &&
+        contractState.blockTimestamp > contractState.windowEnd
+      m.set('participate', windowEnded ? 'ended' : 'soon')
+    }
+
+    return m
+  }, [
+    claimAvailability.state,
+    contractState.windowEnd,
+    contractState.blockTimestamp,
+    tabStates.commit.enabled,
+    tabStates.invite.enabled,
+  ])
 
   // Error states
   if (deployError) {
@@ -558,7 +746,12 @@ export function App() {
 
   const mobileMenu = (
     <div className="flex flex-col gap-3">
-      <PageNav current={page} onChange={setPage} orientation="vertical" />
+      <PageNav
+        current={page}
+        onChange={setPage}
+        orientation="vertical"
+        softDisabled={softDisabledPages}
+      />
       <Separator />
       {wallet.connected ? (
         <div className="flex flex-col gap-1 text-sm tabular-nums">
@@ -579,7 +772,9 @@ export function App() {
     </div>
   )
 
-  const headerNav = <PageNav current={page} onChange={setPage} />
+  const headerNav = (
+    <PageNav current={page} onChange={setPage} softDisabled={softDisabledPages} />
+  )
 
   // Derive "days remaining in commit window" for the inset campaign header.
   // Falls back to 0 before the window is known or after it closes.
@@ -669,11 +864,20 @@ export function App() {
     </ErrorBoundary>
   )
 
+  const lifecycleStatus = SHOW_LIFECYCLE_BAR ? (
+    <LifecycleBanner
+      stage={lifecycleStage}
+      countdownSeconds={lifecycleCountdown}
+      compact
+    />
+  ) : undefined
+
   return (
     <AppShell
       appName="Committer"
       network={getNetworkMode()}
       headerNav={headerNav}
+      headerStatus={lifecycleStatus}
       headerRight={walletChrome}
       mobileMenu={mobileMenu}
     >
@@ -681,6 +885,16 @@ export function App() {
       <div className="container mx-auto p-4 space-y-4">
         <StaleDataBanner />
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
+
+        {SHOW_LIFECYCLE_BAR && (
+          // Mobile-only fallback for the lifecycle status. On sm+ the status
+          // lives in the AppShell header (compact form); below that
+          // breakpoint the header collapses, so we render the full banner
+          // here instead.
+          <div className="sm:hidden">
+            <LifecycleBanner stage={lifecycleStage} countdownSeconds={lifecycleCountdown} />
+          </div>
+        )}
 
         {page === 'network' && (
           <div key="page-network" className="space-y-3 animate-page-enter">
@@ -725,16 +939,33 @@ export function App() {
         )}
 
         {page === 'participate' && (
-          <div key="page-participate" className="mx-auto w-full max-w-2xl animate-page-enter">
+          <div key="page-participate" className="mx-auto w-full max-w-2xl space-y-3 animate-page-enter">
            <ErrorBoundary>
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card shadow-elevated">
                 <EmptyState
                   icon={Wallet}
                   title="Connect your wallet to participate"
-                  description="Commit USDC, issue invites, and claim ARM once the crowdfund finalizes."
+                  description="Commit USDC and issue invites while the campaign window is open."
                   action={<ConnectButton />}
                 />
+              </div>
+            ) : softDisabledPages.has('participate') ? (
+              // Window has closed (or hasn't opened yet) — explain instead of vanishing.
+              <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
+                <div className="mb-1 text-base font-medium text-foreground">
+                  This phase has ended
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  You can no longer commit or invite. Head over to Claim when the
+                  sale finalizes to claim your ARM tokens (or a USDC refund if the
+                  sale ends below the minimum raise).
+                </div>
+                <div className="mt-4">
+                  <Button size="sm" onClick={() => setPage('claim')}>
+                    Go to Claim
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="rounded-lg border border-border bg-card shadow-elevated">
@@ -743,7 +974,7 @@ export function App() {
                   onValueChange={(v) => setActiveTab(v as ActionTab)}
                 >
                   <TabsList variant="line" className="w-full justify-start border-b border-border rounded-t-lg">
-                    {(['commit', 'invite', 'claim'] as const).map((tab) => (
+                    {(['commit', 'invite'] as const).map((tab) => (
                       <TabsTrigger
                         key={tab}
                         value={tab}
@@ -794,27 +1025,99 @@ export function App() {
                           provider={provider}
                         />
                       )}
-                      {activeTab === 'claim' && wallet.address && (
-                        <ClaimTab
-                          address={wallet.address}
-                          signer={wallet.signer}
-                          provider={provider}
-                          crowdfundAddress={crowdfundAddress!}
-                          phase={contractState.phase}
-                          refundMode={contractState.refundMode}
-                          blockTimestamp={contractState.blockTimestamp}
-                          claimDeadline={contractState.claimDeadline}
-                          totalCommitted={userTotalCommitted}
-                          windowEnd={contractState.windowEnd}
-                          cappedDemand={contractState.cappedDemand}
-                          graph={graph}
-                        />
-                      )}
                     </>
                   )}
                 </div>
               </div>
             )}
+            <WhatsNextCard
+              steps={[
+                {
+                  label: 'Commit USDC',
+                  status: userTotalCommitted > 0n ? 'done' : 'active',
+                  detail:
+                    userTotalCommitted > 0n
+                      ? `You've committed ${formatUsdc(userTotalCommitted)}`
+                      : 'Pick a hop and submit your commitment',
+                },
+                {
+                  label: 'Invite others (optional)',
+                  detail: hasInviteSlots ? 'You have invite slots available' : undefined,
+                },
+                { label: 'Wait for the campaign window to end' },
+                { label: 'Claim your ARM tokens (or USDC refund)' },
+              ]}
+            />
+           </ErrorBoundary>
+          </div>
+        )}
+
+        {page === 'claim' && (
+          <div key="page-claim" className="mx-auto w-full max-w-2xl space-y-3 animate-page-enter">
+           <ErrorBoundary>
+            {!wallet.connected ? (
+              <div className="rounded-lg border border-border bg-card shadow-elevated">
+                <EmptyState
+                  icon={Wallet}
+                  title="Connect your wallet to claim"
+                  description="Once the campaign finalizes you'll be able to claim ARM tokens (or a USDC refund) from here."
+                  action={<ConnectButton />}
+                />
+              </div>
+            ) : claimAvailability.state !== 'available' ? (
+              // Pre-claim explanation — keeps the page visible so users learn
+              // when claim opens, instead of bouncing back to Participate.
+              <>
+                <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
+                  <div className="mb-1 text-base font-medium text-foreground">
+                    Claiming is not yet available
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {claimAvailability.state === 'pre-open'
+                      ? 'The campaign has not opened yet. Once ARM is loaded and the commitment window closes, you can claim from this page.'
+                      : `${claimAvailability.reason}. You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum raise) from here.`}
+                  </div>
+                  {lifecycleCountdown !== undefined && lifecycleCountdown > 0 && (
+                    <div className="mt-3 text-xs text-muted-foreground tabular-nums">
+                      Estimated:{' '}
+                      <span className="text-foreground">
+                        {formatCountdown(lifecycleCountdown)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <WhatsNextCard
+                  steps={[
+                    {
+                      label: 'Commit & invite',
+                      status: lifecycleStage === 'commit-invite' ? 'active' : 'done',
+                    },
+                    {
+                      label: 'Window closes & sale finalizes',
+                      status: lifecycleStage === 'commit-invite' ? 'pending' : 'active',
+                    },
+                    { label: 'Claim ARM (or USDC refund)' },
+                  ]}
+                />
+              </>
+            ) : wallet.address ? (
+              <div className="rounded-lg border border-border bg-card p-4 shadow-elevated">
+                <ClaimTab
+                  address={wallet.address}
+                  signer={wallet.signer}
+                  provider={provider}
+                  crowdfundAddress={crowdfundAddress!}
+                  phase={contractState.phase}
+                  refundMode={contractState.refundMode}
+                  blockTimestamp={contractState.blockTimestamp}
+                  claimDeadline={contractState.claimDeadline}
+                  totalCommitted={userTotalCommitted}
+                  windowEnd={contractState.windowEnd}
+                  cappedDemand={contractState.cappedDemand}
+                  graph={graph}
+                />
+              </div>
+            ) : null}
            </ErrorBoundary>
           </div>
         )}
@@ -834,10 +1137,39 @@ export function App() {
               <>
                 {networkStats}
                 {/* TODO: replace shared StatsBar above with a wallet-scoped summary (committed, invites remaining, hop level, mini subtree, activity feed). For now, we render the full StatsBar so connectedSummary is visible inline. */}
-                <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground shadow-elevated">
-                  <div className="mb-2 font-medium text-foreground">My Position</div>
-                  Wallet-scoped dashboard coming soon — invite tools, activity feed, and a
-                  focused view of your subtree will live here.
+                <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
+                  <div className="mb-3 text-base font-medium text-foreground">
+                    Claim status
+                  </div>
+                  {claimAvailability.state === 'available' ? (
+                    <>
+                      <div className="text-sm text-foreground">
+                        Claim is open. You can claim your ARM tokens
+                        {contractState.refundMode ? ' or USDC refund' : ''} now.
+                      </div>
+                      <div className="mt-3">
+                        <Button size="sm" onClick={() => setPage('claim')}>
+                          Claim now
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm text-muted-foreground">
+                        {claimAvailability.state === 'pre-open'
+                          ? 'Not yet available — the campaign has not opened.'
+                          : `Not yet available — ${claimAvailability.reason.toLowerCase()}.`}
+                      </div>
+                      {lifecycleCountdown !== undefined && lifecycleCountdown > 0 && (
+                        <div className="mt-2 text-xs text-muted-foreground tabular-nums">
+                          Available in{' '}
+                          <span className="text-foreground">
+                            {formatCountdown(lifecycleCountdown)}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </>
             )}

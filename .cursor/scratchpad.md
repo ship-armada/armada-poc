@@ -152,6 +152,7 @@ The goal is a concrete, executable plan that the Executor can follow step-by-ste
 
 ## Project Status Board
 
+- [x] Crowdfund UI header polish: align observer/committer header with design reference (rounded inset header, border-aligned active nav, wallet button icon, balanced typography)
 - [x] Task 1.1: Slither installed and run — report saved to `reports/slither-report.txt`, `reports/slither-report.json`
 - [ ] Task 1.2: Aderyn (skipped — Rust not configured)
 - [x] Task 1.3: Static analysis summary — `reports/static-analysis-summary.md`
@@ -184,6 +185,24 @@ The goal is a concrete, executable plan that the Executor can follow step-by-ste
 
 ## Executor's Feedback or Assistance Requests
 
+**Crowdfund UI header polish started (2026-04-24):** User requested Executor mode. Scope is the existing crowdfund UI header only: shared `AppShell` controls observer/committer chrome, committer `PageNav` controls the selected tab underline, and committer wallet chrome controls RainbowKit button presentation. Success criteria: header is inset with rounded border, active nav underline sits on the header border, wallet control has an icon/pill treatment, and typography spacing better matches the reference.
+
+**Crowdfund UI header polish completed (2026-04-24):** Updated `AppShell` to use an inset rounded header shell with refined brand/network typography; updated committer `PageNav` so the active tab underline sits on the header border; replaced the default RainbowKit header button with a custom icon pill. Verification: IDE lints clean; `npm --workspace @armada/crowdfund-shared run typecheck` passed; `npm --workspace @armada/crowdfund-committer run build` passed. Browser inspection confirmed the header shell and underline; app body was waiting for seeds in local data state.
+
+**Crowdfund UI header follow-up (2026-04-24):** User requested removing the inset treatment. Updated `AppShell` to a normal full-width sticky top header with a bottom border while preserving the refined brand/network typography, border-aligned active tab underline, and custom wallet pill.
+
+**Crowdfund UI header underline follow-up (2026-04-24):** User requested the active selected tab underline appear inline with the bottom border, not above it. Updated committer `PageNav` so horizontal tabs stretch to the header height and render the active indicator as an absolute overlay at the border line.
+
+**Crowdfund UI wallet chrome follow-up (2026-04-24):** User requested muting wallet chrome text and replacing the Lucide wallet glyph with `crowdfund-ui/packages/shared/src/assets/color_circle.svg`. Updated the committer custom RainbowKit header button to import and render that SVG in both disconnected and connected states, with muted foreground text and foreground hover.
+
+**Crowdfund tree campaign header follow-up (2026-04-24):** User requested removing the campaign header card background/border, adding muted vertical stat separators, and changing stat labels away from all-caps. Updated the committer live header, committer stress/mock header, and observer header definitions.
+
+**Crowdfund tree legend follow-up (2026-04-24):** User requested removing the legend title and collapsible affordance/functionality. Updated `GraphLegend` to render only the legend rows, with no local open state, button, or chevron icons.
+
+**Crowdfund tree participate CTA follow-up (2026-04-24):** User requested the bottom "Ready to join this network?" CTA be inset with rounded border, centered content, darker/desaturated white-text button, and smaller text with more vertical spacing. Updated the shared `TreeView` participate CTA wrapper plus committer live and stress/mock CTA content.
+
+**Crowdfund tree participate CTA spacing follow-up (2026-04-25):** User reported changing flex `gap` did not affect on-screen spacing. Updated both live and stress/mock CTA variants to use explicit desktop button margin (`sm:ml-16`) with `sm:gap-0`, making the text-to-button spacing deterministic.
+
 **Phase 1 complete (Tasks 1.1, 1.3).** Task 1.2 (Aderyn) skipped: Rust toolchain not configured (`rustup default stable` needed). User can run `cargo install aderyn && aderyn .` manually and merge results into `reports/static-analysis-summary.md`.
 
 **Slither findings:** 189 total. Key action items: ArmadaYieldAdapter.lendPrivate (use SafeERC20 for shareToken.transfer), PrivacyPool.initialize zero-checks, ArmadaTreasuryGov.constructor zero-check. See `reports/static-analysis-summary.md` for full triage.
@@ -202,6 +221,7 @@ The goal is a concrete, executable plan that the Executor can follow step-by-ste
 
 ## Lessons
 
+- **Crowdfund UI verification preference (2026-04-24):** Do not rebuild crowdfund apps after small UI changes unless the user asks. Prefer lints or targeted type checks when useful.
 - **Relayer function selectors (2025-02-13):** The relayer's `ALLOWED_SELECTORS` must match the compiled contract ABI. Use `forge-out/ArmadaYieldAdapter.sol/ArmadaYieldAdapter.json` to derive selectors: `lendAndShield` = 0xf2987ad1, `redeemAndShield` = 0x0793b70e. Do not hardcode selectors from documentation or older builds.
 - **Slither fixes applied (2025-02-13):** ArmadaYieldAdapter.lendPrivate (shareToken.safeTransfer), PrivacyPool.initialize (zero-checks for all address params), PrivacyPool.setTreasury (zero-check), ArmadaTreasuryGov.constructor (zero-check). All 262 tests pass.
 - **Foundry:** Use `forge test --offline` in sandboxed environments to avoid SCDynamicStoreBuilder crash (macOS proxy lookup).

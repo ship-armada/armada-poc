@@ -1,12 +1,8 @@
 // ABOUTME: Compact corner panel explaining the TreeView's visual vocabulary.
-// ABOUTME: Hop colours, multi-hop marker, connected-wallet glow, inviter chain.
-
-import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Button } from './ui/button.js'
+// ABOUTME: Hop colours, multi-hop marker, and connected-wallet glow.
 
 export interface GraphLegendProps {
-  /** If supplied, legend includes the "your wallet" + "inviter chain" rows. */
+  /** If supplied, legend includes the "your wallet" row. */
   connectedAddress?: string | null
   className?: string
 }
@@ -53,8 +49,6 @@ function MultiHopSwatch() {
 }
 
 export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
-  const [open, setOpen] = useState(true)
-
   // Positioning (top/left/bottom/right + z-index) comes from `className` so
   // the TreeView can place the legend wherever it wants. Defaults to bottom-
   // left when no override is supplied.
@@ -65,43 +59,30 @@ export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
         className ?? 'bottom-3 left-3',
       ].join(' ')}
     >
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 px-2 gap-1 font-normal text-muted-foreground hover:text-foreground"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-label={open ? 'Collapse legend' : 'Expand legend'}
-      >
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        Legend
-      </Button>
-      {open && (
-        <div className="px-3 pb-2 space-y-1.5">
-          <div className="flex items-center gap-2">
-            <Swatch color="var(--hop-0)" />
-            <span className="text-muted-foreground">Hop 0</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Swatch color="var(--hop-1)" />
-            <span className="text-muted-foreground">Hop 1</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Swatch color="var(--hop-2)" />
-            <span className="text-muted-foreground">Hop 2</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <MultiHopSwatch />
-            <span className="text-muted-foreground">Multi-hop</span>
-          </div>
-          {connectedAddress && (
-            <div className="flex items-center gap-2">
-              <Swatch stroke="var(--hop-connected)" />
-              <span className="text-muted-foreground">Your wallet</span>
-            </div>
-          )}
+      <div className="space-y-1.5 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Swatch color="var(--hop-0)" />
+          <span className="text-muted-foreground">Hop 0</span>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <Swatch color="var(--hop-1)" />
+          <span className="text-muted-foreground">Hop 1</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Swatch color="var(--hop-2)" />
+          <span className="text-muted-foreground">Hop 2</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <MultiHopSwatch />
+          <span className="text-muted-foreground">Multi-hop</span>
+        </div>
+        {connectedAddress && (
+          <div className="flex items-center gap-2">
+            <Swatch stroke="var(--hop-connected)" />
+            <span className="text-muted-foreground">Your wallet</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -54,7 +54,10 @@ function NetworkBadge({ network }: { network: AppShellNetwork }) {
   const label = network.toUpperCase()
   const variant: 'secondary' | 'outline' = network === 'sepolia' ? 'outline' : 'secondary'
   return (
-    <Badge variant={variant} className="uppercase tracking-wide">
+    <Badge
+      variant={variant}
+      className="h-5 rounded-md border-border/60 bg-muted/45 px-2 font-heading text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/85"
+    >
       {label}
     </Badge>
   )
@@ -114,13 +117,17 @@ export function AppShell({
     <div className="flex min-h-screen flex-col text-foreground">
       <header
         className={cn(
-          'sticky top-0 z-40 w-full border-b border-border',
-          'bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+          'sticky top-0 z-40 w-full border-b border-border/70',
+          'bg-background/88 backdrop-blur supports-[backdrop-filter]:bg-background/72',
         )}
       >
-        <div className="container mx-auto flex h-14 items-center gap-3 px-4">
+        <div
+          className={cn(
+            'container mx-auto flex h-12 items-center gap-3 px-4',
+          )}
+        >
           {/* Left: hamburger (mobile) + brand */}
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-full min-w-0 items-center gap-2">
             {mobileMenu !== undefined && (
               <Sheet>
                 <SheetTrigger asChild>
@@ -150,9 +157,14 @@ export function AppShell({
                 </SheetContent>
               </Sheet>
             )}
-            <div className="flex min-w-0 items-center gap-2">
-              <Diamond className="size-4 shrink-0 text-primary" aria-hidden="true" />
-              <span className="truncate font-heading text-sm font-semibold uppercase tracking-[0.22em] sm:text-base">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span
+                className="flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/15 shadow-[0_0_16px_rgba(83,224,224,0.12)]"
+                aria-hidden="true"
+              >
+                <Diamond className="size-3.5 text-primary" />
+              </span>
+              <span className="truncate font-heading text-[13px] font-semibold uppercase tracking-[0.14em] text-foreground/95">
                 ARMADA
               </span>
             </div>
@@ -162,7 +174,7 @@ export function AppShell({
           {headerNav && (
             <nav
               aria-label="Primary"
-              className="hidden flex-1 justify-center sm:flex"
+              className="hidden h-full flex-1 justify-center sm:flex"
             >
               {headerNav}
             </nav>
@@ -173,11 +185,11 @@ export function AppShell({
               roughly centered (the slot adds asymmetry, but typical content
               here is narrow — a compact lifecycle stepper or similar). */}
           {headerStatus && (
-            <div className="hidden items-center sm:flex">{headerStatus}</div>
+            <div className="hidden h-full items-center sm:flex">{headerStatus}</div>
           )}
 
           {/* Right: network badge + app-specific actions (desktop only) */}
-          <div className={cn('hidden items-center gap-3 sm:flex', !headerNav && 'ml-auto')}>
+          <div className={cn('hidden items-center gap-2 sm:flex', !headerNav && 'ml-auto')}>
             <NetworkBadge network={network} />
             {headerRight}
           </div>

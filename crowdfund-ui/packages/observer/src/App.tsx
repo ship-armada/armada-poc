@@ -322,30 +322,32 @@ export function App() {
       : 0
 
   const treeCampaignHeader = (
-    <div className="rounded-md border border-border bg-card/85 px-4 py-3 shadow-sm backdrop-blur-sm">
+    <div className="px-1 py-1">
       <div className="font-heading text-sm font-semibold tracking-tight">
         Armada Crowdfund
       </div>
-      <div className="mt-2 flex items-start gap-5 tabular-nums">
+      <div className="mt-2 flex items-start gap-4 tabular-nums">
         <div>
           <div className="text-sm font-semibold text-foreground">
             {formatUsdc(contractState.totalCommitted)}
           </div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             Committed
           </div>
         </div>
+        <div className="h-8 w-px bg-border/60" aria-hidden="true" />
         <div>
           <div className="text-sm font-semibold text-foreground">
             {contractState.participantCount}
           </div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             Participants
           </div>
         </div>
+        <div className="h-8 w-px bg-border/60" aria-hidden="true" />
         <div>
           <div className="text-sm font-semibold text-foreground">{daysLeft}</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             Days left
           </div>
         </div>

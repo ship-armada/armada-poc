@@ -4,7 +4,8 @@
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { ArrowRight, Wallet } from 'lucide-react'
+import { ArrowRight, ChevronDown, Loader2, Wallet } from 'lucide-react'
+import colorCircleIcon from '../../shared/src/assets/color_circle.svg'
 import {
   Button,
   createProvider,
@@ -97,8 +98,8 @@ function PageNav({
   return (
     <ul
       className={cn(
-        'flex items-center',
-        isVertical ? 'flex-col items-stretch gap-1' : 'gap-6',
+        'flex',
+        isVertical ? 'flex-col items-stretch gap-1' : 'h-full items-stretch gap-7',
       )}
     >
       {PAGE_ITEMS.map((item) => {
@@ -106,7 +107,7 @@ function PageNav({
         const muted = softDisabled?.has(item.id) ?? false
         const suffix = softDisabled?.get(item.id)
         return (
-          <li key={item.id}>
+          <li key={item.id} className={cn(!isVertical && 'flex h-full')}>
             <button
               type="button"
               onClick={() => onChange(item.id)}
@@ -121,12 +122,12 @@ function PageNav({
                       muted && !active && 'opacity-60',
                     )
                   : cn(
-                      'border-b-2 pb-1',
+                      'relative flex h-full items-center px-0 text-[12px] font-semibold leading-none tracking-[0.01em]',
                       active
-                        ? 'border-primary text-foreground'
+                        ? 'text-primary after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-primary'
                         : muted
-                        ? 'border-transparent text-muted-foreground/60'
-                        : 'border-transparent text-muted-foreground',
+                        ? 'text-muted-foreground/60'
+                        : 'text-muted-foreground',
                     ),
               )}
             >
@@ -141,6 +142,101 @@ function PageNav({
         )
       })}
     </ul>
+  )
+}
+
+function HeaderWalletButton({ className }: { className?: string }) {
+  return (
+    <ConnectButton.Custom>
+      {({
+        account,
+        chain,
+        mounted,
+        authenticationStatus,
+        openAccountModal,
+        openChainModal,
+        openConnectModal,
+      }) => {
+        const isReady = mounted && authenticationStatus !== 'loading'
+        const isConnected =
+          isReady &&
+          account &&
+          chain &&
+          (!authenticationStatus || authenticationStatus === 'authenticated')
+
+        if (!isReady) {
+          return (
+            <button
+              type="button"
+              className={cn(
+                'inline-flex h-8 items-center gap-2 rounded-lg border border-border/70 bg-card/70 px-3 text-xs font-semibold text-muted-foreground shadow-sm',
+                className,
+              )}
+              disabled
+            >
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              Wallet
+            </button>
+          )
+        }
+
+        if (!isConnected) {
+          return (
+            <button
+              type="button"
+              className={cn(
+                'inline-flex h-8 items-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 text-xs font-semibold text-muted-foreground shadow-sm transition-colors hover:border-primary/45 hover:bg-card hover:text-foreground',
+                className,
+              )}
+              onClick={openConnectModal}
+            >
+              <img
+                src={colorCircleIcon}
+                alt=""
+                className="size-[18px] rounded-full"
+                aria-hidden="true"
+              />
+              Connect Wallet
+            </button>
+          )
+        }
+
+        if (chain.unsupported) {
+          return (
+            <button
+              type="button"
+              className={cn(
+                'inline-flex h-8 items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/15',
+                className,
+              )}
+              onClick={openChainModal}
+            >
+              Wrong network
+            </button>
+          )
+        }
+
+        return (
+          <button
+            type="button"
+            className={cn(
+              'inline-flex h-8 items-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 text-xs font-semibold text-muted-foreground shadow-sm transition-colors hover:border-primary/45 hover:bg-card hover:text-foreground',
+              className,
+            )}
+            onClick={openAccountModal}
+          >
+            <img
+              src={colorCircleIcon}
+              alt=""
+              className="size-[18px] rounded-full"
+              aria-hidden="true"
+            />
+            <span className="tabular-nums">{account.displayName}</span>
+            <ChevronDown className="size-3 text-muted-foreground" aria-hidden="true" />
+          </button>
+        )
+      }}
+    </ConnectButton.Custom>
   )
 }
 
@@ -242,30 +338,32 @@ function MockCommitterApp({ size }: { size: number }) {
                 resolveENS={resolveENS}
                 connectedAddress={mockConnectedAddress}
                 campaignHeader={
-                  <div className="rounded-md border border-border bg-card/85 px-4 py-3 shadow-sm backdrop-blur-sm">
+                  <div className="px-1 py-1">
                     <div className="font-heading text-sm font-semibold tracking-tight">
                       Armada Crowdfund
                     </div>
-                    <div className="mt-2 flex items-start gap-5 tabular-nums">
+                    <div className="mt-2 flex items-start gap-4 tabular-nums">
                       <div>
                         <div className="text-sm font-semibold text-foreground">
                           $15,000
                         </div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <div className="text-[11px] text-muted-foreground">
                           Committed
                         </div>
                       </div>
+                      <div className="h-8 w-px bg-border/60" aria-hidden="true" />
                       <div>
                         <div className="text-sm font-semibold text-foreground">
                           {graph.summaries.size}
                         </div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <div className="text-[11px] text-muted-foreground">
                           Participants
                         </div>
                       </div>
+                      <div className="h-8 w-px bg-border/60" aria-hidden="true" />
                       <div>
                         <div className="text-sm font-semibold text-foreground">13</div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <div className="text-[11px] text-muted-foreground">
                           Days left
                         </div>
                       </div>
@@ -282,16 +380,20 @@ function MockCommitterApp({ size }: { size: number }) {
                   </button>
                 }
                 participateCta={
-                  <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-foreground">
+                  <div className="flex flex-col items-stretch gap-6 px-5 py-4 text-center sm:flex-row sm:items-center sm:justify-center sm:gap-0 sm:text-left">
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-medium text-foreground">
                         Ready to join this network?
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-[11px] text-muted-foreground">
                         Participate as an existing node.
                       </div>
                     </div>
-                    <Button size="sm" onClick={() => setPage('participate')}>
+                    <Button
+                      size="sm"
+                      className="rounded-[4px] bg-primary/55 px-5 text-white hover:bg-primary/65 sm:ml-16"
+                      onClick={() => setPage('participate')}
+                    >
                       Participate
                     </Button>
                   </div>
@@ -721,21 +823,9 @@ export function App() {
   }
 
   const walletChrome = (
-    <div className="flex items-center gap-3">
-      {wallet.connected && (
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {formatUsdc(allowance.balance)}
-          {allowance.armBalance > 0n && (
-            <> · {formatArm(allowance.armBalance)} ARM</>
-          )}
-        </span>
-      )}
+    <div className="flex items-center gap-2">
       <LastTxChip />
-      <ConnectButton
-        showBalance={false}
-        chainStatus="icon"
-        accountStatus="address"
-      />
+      <HeaderWalletButton />
     </div>
   )
 
@@ -760,7 +850,7 @@ export function App() {
           <Separator className="my-2" />
         </div>
       ) : null}
-      <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+      <HeaderWalletButton className="w-full justify-center" />
       <div className="flex justify-start">
         <LastTxChip />
       </div>
@@ -779,30 +869,32 @@ export function App() {
       : 0
 
   const treeCampaignHeader = (
-    <div className="rounded-md border border-border bg-card/85 px-4 py-3 shadow-sm backdrop-blur-sm">
+    <div className="px-1 py-1">
       <div className="font-heading text-sm font-semibold tracking-tight">
         Armada Crowdfund
       </div>
-      <div className="mt-2 flex items-start gap-5 tabular-nums">
+      <div className="mt-2 flex items-start gap-4 tabular-nums">
         <div>
           <div className="text-sm font-semibold text-foreground">
             {formatUsdc(contractState.totalCommitted)}
           </div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             Committed
           </div>
         </div>
+        <div className="h-8 w-px bg-border/60" aria-hidden="true" />
         <div>
           <div className="text-sm font-semibold text-foreground">
             {contractState.participantCount}
           </div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             Participants
           </div>
         </div>
+        <div className="h-8 w-px bg-border/60" aria-hidden="true" />
         <div>
           <div className="text-sm font-semibold text-foreground">{daysLeft}</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             Days left
           </div>
         </div>
@@ -825,16 +917,20 @@ export function App() {
   )
 
   const treeParticipateCta = (
-    <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
+    <div className="flex flex-col gap-6 px-5 py-4 text-center sm:flex-row sm:items-center sm:justify-center sm:gap-0 sm:text-left">
+      <div className="space-y-1.5">
         <div className="text-sm font-medium text-foreground">
           Ready to join this network?
         </div>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-[11px] text-muted-foreground">
           Participate as an existing node.
         </div>
       </div>
-      <Button size="sm" onClick={() => setPage('participate')}>
+      <Button
+        size="sm"
+        className="rounded-[4px] bg-primary/55 px-8 text-[13px] text-white hover:bg-primary/65 sm:ml-24"
+        onClick={() => setPage('participate')}
+      >
         Participate
       </Button>
     </div>

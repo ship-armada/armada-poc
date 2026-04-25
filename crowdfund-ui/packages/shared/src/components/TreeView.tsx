@@ -1146,7 +1146,7 @@ export function TreeView(props: TreeViewProps) {
       {/* Top-left inset: campaign header (title + headline stats). Only
           rendered when the host supplies a `campaignHeader` node. */}
       {campaignHeader && (
-        <div className="absolute top-3 left-3 z-10 max-w-[calc(100%-7rem)]">
+        <div className="absolute top-3 left-5 z-10 max-w-[calc(100%-7rem)]">
           {campaignHeader}
         </div>
       )}
@@ -1159,13 +1159,13 @@ export function TreeView(props: TreeViewProps) {
       {/* Legend — bottom-left. Lifted above the participate CTA when present. */}
       <GraphLegend
         connectedAddress={connectedAddress}
-        className={participateCta ? 'bottom-20 left-3' : 'bottom-3 left-3'}
+        className={participateCta ? 'bottom-26 left-5' : 'bottom-3 left-3'}
       />
 
       {/* Zoom controls — middle-right, vertically centered. Includes the
           optional "Jump to my wallet" affordance when the connected wallet
           has a node in this graph. */}
-      <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1">
+      <div className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1">
         <Button
           variant="outline"
           size="icon"
@@ -1210,7 +1210,7 @@ export function TreeView(props: TreeViewProps) {
       {/* Full-width participate CTA bar at the bottom of the tree. Only
           rendered when the host supplies a `participateCta` node. */}
       {participateCta && (
-        <div className="absolute inset-x-0 bottom-0 z-10 border-t border-border/70 bg-card/80 backdrop-blur-sm">
+        <div className="absolute inset-x-5 bottom-3 z-10 rounded-md border border-border/70 bg-card/60 shadow-sm backdrop-blur-sm">
           {participateCta}
         </div>
       )}
@@ -1227,7 +1227,7 @@ export function TreeView(props: TreeViewProps) {
         const hopLine = n.isMultiHop
           ? `Hops ${n.hops.join(', ')}`
           : `Hop ${n.hop}`
-        const position = participateCta ? 'bottom-20 right-3' : 'bottom-3 right-3'
+        const position = participateCta ? 'bottom-26 right-5' : 'bottom-3 right-5'
         return (
           <div
             className={`absolute ${position} pointer-events-none z-20 min-w-[10rem] rounded-md border border-border bg-card/90 px-3 py-2 text-xs leading-tight shadow-md backdrop-blur-sm`}

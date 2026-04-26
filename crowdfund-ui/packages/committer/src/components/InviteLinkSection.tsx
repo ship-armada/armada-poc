@@ -93,7 +93,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
   const totalSlots = invitePositions.reduce((sum, p) => sum + p.invitesAvailable, 0)
 
   return (
-    <div className="space-y-3 border-t border-border pt-4 mt-4">
+    <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-background/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <div className="text-xs font-medium text-muted-foreground">Invite Links (EIP-712)</div>
 
       {invitePositions.length === 0 ? (
@@ -127,7 +127,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
             const targetConfig = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop] : null
             const selectedPos = invitePositions.find((p) => p.hop === selectedHop)
             return (
-              <div className="rounded border border-border p-2 space-y-1 text-xs text-muted-foreground">
+              <div className="space-y-1 rounded-lg border border-primary/25 bg-primary/5 p-3 text-xs text-muted-foreground">
                 <div>From: your {hopLabel(selectedHop)} position</div>
                 <div>
                   Inviting to: {hopLabel(targetHop)}
@@ -150,7 +150,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
           <div className="flex gap-2">
             <Button
               size="sm"
-              className="flex-1 text-xs"
+              className="h-9 flex-1 rounded-[4px] bg-hop-0/75 text-xs text-white shadow-[0_0_18px_rgba(132,80,210,0.14)] hover:bg-hop-0/85"
               disabled={creating || selectedHop === null}
               onClick={handleCreateLink}
             >
@@ -160,7 +160,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
               <Button
                 variant="outline"
                 size="sm"
-                className="text-xs"
+                className="h-9 rounded-[4px] border-border/70 bg-background/25 text-xs text-muted-foreground hover:text-foreground"
                 disabled={creating}
                 onClick={handleCreateAll}
               >
@@ -188,7 +188,7 @@ export function InviteLinkSection({ inviteLinks, positions, blockTimestamp }: In
               return (
                 <div
                   key={`${link.inviter}-${link.nonce}`}
-                  className="flex items-center gap-2 text-xs rounded border border-border/50 p-2"
+                  className="flex items-center gap-2 rounded-md border border-border/60 bg-card/30 p-2 text-xs"
                 >
                   <Badge variant={statusBadgeVariant[link.status]} className="text-[10px] font-medium">
                     {link.status}

@@ -22,7 +22,7 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
   if (hopEstimates.length === 0) return null
 
   return (
-    <div className="rounded border border-border p-3 space-y-2">
+    <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/5 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
         <span>Estimated Allocation</span>
         <InfoTooltip text={TOOLTIPS.allocation} label="What is allocation?" />
@@ -30,10 +30,10 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
       </div>
 
       {hopEstimates.map((est) => (
-        <div key={est.hop} className="text-xs space-y-1">
+        <div key={est.hop} className="space-y-1 text-xs">
           <div className="flex items-center justify-between">
-            <span>{hopLabel(est.hop)}</span>
-            <span>
+            <span className="text-muted-foreground">{hopLabel(est.hop)}</span>
+            <span className="font-medium tabular-nums text-foreground">
               {formatUsdc(est.estimatedAccepted)} of {formatUsdc(est.totalPosition)}
               {est.existingCommitted > 0n && (
                 <span className="text-muted-foreground ml-1">
@@ -50,7 +50,7 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
         </div>
       ))}
 
-      <div className="border-t border-border pt-2 space-y-1">
+      <div className="space-y-1 border-t border-primary/20 pt-2">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Est. ARM</span>
           <span className="font-medium text-success">{formatArm(totalEstimatedArm)}</span>
@@ -63,7 +63,7 @@ export function ProRataEstimate(props: ProRataEstimateProps) {
         )}
       </div>
 
-      <div className="text-[10px] text-muted-foreground space-y-0.5">
+      <div className="space-y-0.5 text-[10px] text-muted-foreground">
         <div>Estimate only — demand changes between now and deadline.</div>
         <div>Commitments are final — no withdrawals before deadline.</div>
         <div>3-week maximum lock — USDC locked until finalization + refund claim.</div>

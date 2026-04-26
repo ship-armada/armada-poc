@@ -345,10 +345,10 @@ export function ClaimTab(props: ClaimTabProps) {
       {step === 'review' && (
         <div className="space-y-4">
           <div>
-            <div className="mb-1 text-base font-medium text-foreground">
+            <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
               {mode === 'arm' ? 'Review your allocation' : 'Review your refund'}
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm leading-relaxed text-muted-foreground">
               {phase === 2
                 ? 'The crowdfund was cancelled. You can claim a full refund of your commitment.'
                 : refundMode
@@ -360,7 +360,7 @@ export function ClaimTab(props: ClaimTabProps) {
           </div>
 
           {!armClaimExpired && mode === 'arm' && claimTimeLeft > 0 && (
-            <div className="rounded-md border border-border/60 bg-card/40 p-3 text-xs text-muted-foreground tabular-nums">
+            <div className="rounded-lg border border-primary/25 bg-primary/5 p-4 text-xs text-muted-foreground tabular-nums shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               Claim deadline in {formatCountdown(claimTimeLeft)}. ARM claim expires at this
               deadline; the USDC refund (if any) does not.
             </div>
@@ -372,7 +372,7 @@ export function ClaimTab(props: ClaimTabProps) {
           )}
 
           {mode === 'arm' && hopAllocations.length > 0 && (
-            <div className="rounded-md border border-border/60 bg-card/40 p-3 space-y-2 text-xs">
+            <div className="space-y-2 rounded-lg border border-border/70 bg-background/25 p-4 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="flex items-center gap-1 text-sm font-medium text-foreground">
                 <span>Settlement breakdown</span>
                 <InfoTooltip text={TOOLTIPS.allocation} label="What is allocation?" />
@@ -407,7 +407,7 @@ export function ClaimTab(props: ClaimTabProps) {
           )}
 
           {mode === 'arm' && hopAllocations.length === 0 && (
-            <div className="rounded-md border border-border/60 bg-card/40 p-3 space-y-2 text-sm">
+            <div className="space-y-2 rounded-lg border border-border/70 bg-background/25 p-4 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">ARM allocation</span>
                 <span className="font-medium tabular-nums">{formatArm(armAmount)}</span>
@@ -420,7 +420,7 @@ export function ClaimTab(props: ClaimTabProps) {
           )}
 
           {mode === 'refund' && (
-            <div className="rounded-md border border-border/60 bg-card/40 p-3 text-sm">
+            <div className="rounded-lg border border-border/70 bg-background/25 p-4 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Refund</span>
                 <span className="font-medium tabular-nums">
@@ -440,8 +440,8 @@ export function ClaimTab(props: ClaimTabProps) {
       {step === 'delegate' && mode === 'arm' && (
         <div className="space-y-4">
           <div>
-            <div className="mb-1 text-base font-medium text-foreground">Set your delegate</div>
-            <div className="text-sm text-muted-foreground">
+            <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">Set your delegate</div>
+            <div className="text-sm leading-relaxed text-muted-foreground">
               Delegation is required for governance voting. You can delegate to yourself and
               change the delegate at any time after claiming.
             </div>
@@ -465,15 +465,15 @@ export function ClaimTab(props: ClaimTabProps) {
       {step === 'confirm' && (
         <div className="space-y-4">
           <div>
-            <div className="mb-1 text-base font-medium text-foreground">Confirm claim</div>
-            <div className="text-sm text-muted-foreground">
+            <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">Confirm claim</div>
+            <div className="text-sm leading-relaxed text-muted-foreground">
               {mode === 'arm'
                 ? `Claim ${formatArm(armAmount)}${refundAmount > 0n ? ` plus ${formatUsdc(refundAmount)} refund` : ''}.`
                 : `Claim ${formatUsdc(refundPathAmount)} refund.`}
             </div>
           </div>
 
-          <div className="rounded-md border border-border/60 bg-card/40 p-3 space-y-2 text-sm">
+          <div className="space-y-2 rounded-lg border border-border/70 bg-background/25 p-4 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             {mode === 'arm' ? (
               <>
                 <div className="flex items-center justify-between">
@@ -516,7 +516,7 @@ export function ClaimTab(props: ClaimTabProps) {
       {step === 'status' && (
         <div className="space-y-4">
           <div>
-            <div className="mb-1 text-base font-medium text-foreground">
+            <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
               {pipelineRunning
                 ? 'Submitting your claim'
                 : pipelineError
@@ -525,7 +525,7 @@ export function ClaimTab(props: ClaimTabProps) {
                 ? 'Claim submitted!'
                 : 'Preparing transaction'}
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm leading-relaxed text-muted-foreground">
               {pipelineRunning
                 ? 'Confirm in your wallet. The page will update once your transaction confirms.'
                 : pipelineDone

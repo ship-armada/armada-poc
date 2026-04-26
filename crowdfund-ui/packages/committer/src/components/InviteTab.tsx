@@ -345,10 +345,10 @@ export function InviteTab(props: InviteTabProps) {
         {step === 'mode' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 How do you want to invite?
               </div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 Send an invite directly to a wallet address, or generate a shareable link the
                 invitee redeems on their own.
               </div>
@@ -363,7 +363,7 @@ export function InviteTab(props: InviteTabProps) {
               {invitePositions.map((pos) => (
                 <div
                   key={pos.hop}
-                  className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/50 px-3 py-2 text-xs"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/25 px-3.5 py-3 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
                 >
                   <div className="min-w-0">
                     <span className="font-medium text-foreground">{hopLabel(pos.hop)}</span>
@@ -397,8 +397,8 @@ export function InviteTab(props: InviteTabProps) {
               <button
                 type="button"
                 onClick={() => setMode('direct')}
-                className={`rounded-md border bg-card/40 p-4 text-left transition-colors hover:border-primary/60 ${
-                  mode === 'direct' ? 'border-primary' : 'border-border/60'
+                className={`rounded-lg border bg-background/25 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all hover:border-primary/60 hover:bg-primary/5 ${
+                  mode === 'direct' ? 'border-primary/70 bg-primary/10' : 'border-border/70'
                 }`}
               >
                 <Send className="mb-2 size-4 text-primary" aria-hidden="true" />
@@ -410,8 +410,8 @@ export function InviteTab(props: InviteTabProps) {
               <button
                 type="button"
                 onClick={() => setMode('link')}
-                className={`rounded-md border bg-card/40 p-4 text-left transition-colors hover:border-primary/60 ${
-                  mode === 'link' ? 'border-primary' : 'border-border/60'
+                className={`rounded-lg border bg-background/25 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all hover:border-primary/60 hover:bg-primary/5 ${
+                  mode === 'link' ? 'border-primary/70 bg-primary/10' : 'border-border/70'
                 }`}
               >
                 <Link2 className="mb-2 size-4 text-primary" aria-hidden="true" />
@@ -434,10 +434,10 @@ export function InviteTab(props: InviteTabProps) {
         {step === 'details' && mode === 'direct' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 Who are you inviting?
               </div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 Pick a slot and the recipient address (or ENS name).
               </div>
             </div>
@@ -477,7 +477,7 @@ export function InviteTab(props: InviteTabProps) {
                       {...field}
                       type="text"
                       placeholder="0x… or ENS name"
-                      className="text-sm font-mono"
+                      className="h-11 rounded-md border-border/70 bg-background/35 text-sm font-mono shadow-inner focus-visible:border-primary/70 focus-visible:ring-primary/20"
                       aria-invalid={!!fieldState.error || undefined}
                     />
                   </FormControl>
@@ -525,13 +525,13 @@ export function InviteTab(props: InviteTabProps) {
         {step === 'review' && mode === 'direct' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">Review and confirm</div>
-              <div className="text-sm text-muted-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">Review and confirm</div>
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 You're sending an on-chain invite at {hopLabel(targetHop)}. You pay the gas.
               </div>
             </div>
 
-            <div className="rounded-md border border-border/60 bg-card/40 p-3 space-y-2 text-sm">
+            <div className="space-y-2 rounded-lg border border-border/70 bg-background/25 p-4 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">From slot</span>
                 <span className="font-medium">
@@ -563,7 +563,7 @@ export function InviteTab(props: InviteTabProps) {
         {step === 'status' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 {pipelineRunning
                   ? 'Submitting your invite'
                   : pipelineError
@@ -572,7 +572,7 @@ export function InviteTab(props: InviteTabProps) {
                   ? 'Invite sent!'
                   : 'Preparing transaction'}
               </div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 {pipelineRunning
                   ? 'Confirm in your wallet. The recipient will appear in the graph once the transaction confirms.'
                   : pipelineDone
@@ -597,8 +597,8 @@ export function InviteTab(props: InviteTabProps) {
         {step === 'link' && mode === 'link' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">Shareable link</div>
-              <div className="text-sm text-muted-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">Shareable link</div>
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 Sign an EIP-712 message to mint a redeemable link. Anyone with the link can join
                 at the chosen hop until you revoke it or it expires.
               </div>

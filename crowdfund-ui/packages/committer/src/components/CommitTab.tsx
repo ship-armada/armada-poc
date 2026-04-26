@@ -413,11 +413,11 @@ export function CommitTab(props: CommitTabProps) {
         {step === 'context' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 You're eligible to commit
               </div>
-              <div className="text-sm text-muted-foreground">
-                Confirm where you stand in the network before entering an amount.
+              <div className="text-sm leading-relaxed text-muted-foreground">
+                Your address has been whitelisted to participate in the crowdfund.
               </div>
             </div>
             <div className="space-y-2">
@@ -428,7 +428,7 @@ export function CommitTab(props: CommitTabProps) {
               {positions.map((pos) => (
                 <div
                   key={pos.hop}
-                  className="flex items-center justify-between rounded-md border border-border/60 bg-card/50 px-3 py-2 text-xs"
+                  className="flex items-center justify-between gap-3 py-2 text-xs"
                 >
                   <span>
                     <span className="font-medium text-foreground">{hopLabel(pos.hop)}</span>
@@ -455,10 +455,10 @@ export function CommitTab(props: CommitTabProps) {
         {step === 'amount' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 Enter your commit amount
               </div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 You can commit at multiple hops if you have multiple positions.
               </div>
             </div>
@@ -472,7 +472,7 @@ export function CommitTab(props: CommitTabProps) {
                 { label: 'Wallet balance', value: balanceHeadroom < 0n ? 0n : balanceHeadroom },
               ]
               return (
-                <div key={pos.hop} className="rounded-md border border-border/60 bg-card/40 p-3 space-y-2">
+                <div key={pos.hop} className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{hopLabel(pos.hop)}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">
@@ -525,7 +525,7 @@ export function CommitTab(props: CommitTabProps) {
             )}
 
             {totalAmount > 0n && (
-              <div className="rounded-md border border-border/60 bg-card/40 p-3 space-y-1 text-sm">
+              <div className="space-y-1 rounded-lg border border-primary/25 bg-primary/5 p-4 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
                 <div>
                   Total commitment:{' '}
                   <span className="font-medium tabular-nums">{formatUsdc(totalAmount)}</span>
@@ -553,16 +553,16 @@ export function CommitTab(props: CommitTabProps) {
         {step === 'review' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 Review and confirm
               </div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 You're committing {formatUsdc(totalAmount)} USDC
                 {activeHopCount > 1 && <> across {activeHopCount} hops</>}.
               </div>
             </div>
 
-            <div className="rounded-md border border-border/60 bg-card/40 p-3 space-y-2">
+            <div className="space-y-2 rounded-lg border border-border/70 bg-background/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Breakdown
               </div>
@@ -640,7 +640,7 @@ export function CommitTab(props: CommitTabProps) {
         {step === 'status' && (
           <div className="space-y-4">
             <div>
-              <div className="mb-1 text-base font-medium text-foreground">
+              <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                 {pipelineRunning
                   ? 'Submitting your commitment'
                   : pipelineError
@@ -649,7 +649,7 @@ export function CommitTab(props: CommitTabProps) {
                   ? 'Transaction submitted!'
                   : 'Preparing transactions'}
               </div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm leading-relaxed text-muted-foreground">
                 {pipelineRunning
                   ? 'Confirm each request in your wallet. This page will update as transactions confirm.'
                   : pipelineError

@@ -1,10 +1,10 @@
 // ABOUTME: Root component for the crowdfund committer app.
 // ABOUTME: Renders three header-nav pages: Network, Participate, and My Position.
 
-import { useCallback, useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo, type ReactNode } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { ArrowRight, ChevronDown, Loader2, Wallet } from 'lucide-react'
+import { ArrowRight, ChevronDown, GitBranch, Loader2, UserPlus, Wallet } from 'lucide-react'
 import colorCircleIcon from '../../shared/src/assets/color_circle.svg'
 import {
   Button,
@@ -237,6 +237,27 @@ function HeaderWalletButton({ className }: { className?: string }) {
         )
       }}
     </ConnectButton.Custom>
+  )
+}
+
+function PageWithHelp({
+  children,
+  aside,
+}: {
+  children: ReactNode
+  aside?: ReactNode
+}) {
+  return (
+    <div className="relative mx-auto w-full max-w-6xl">
+      <div className="mx-auto w-full max-w-2xl space-y-3">
+        {children}
+      </div>
+      {aside && (
+        <aside className="mx-auto mt-3 w-full max-w-2xl xl:absolute xl:left-[calc(50%+22rem)] xl:top-0 xl:mt-0 xl:w-56">
+          {aside}
+        </aside>
+      )}
+    </div>
   )
 }
 
@@ -1030,8 +1051,32 @@ export function App() {
         )}
 
         {page === 'participate' && (
-          <div key="page-participate" className="mx-auto w-full max-w-2xl space-y-3 animate-page-enter">
+          <div key="page-participate" className="animate-page-enter">
            <ErrorBoundary>
+            <PageWithHelp
+              aside={
+                <WhatsNextCard
+                  title="Next steps"
+                  variant="rail"
+                  steps={[
+                    {
+                      label: 'Commit USDC',
+                      status: userTotalCommitted > 0n ? 'done' : 'active',
+                      detail:
+                        userTotalCommitted > 0n
+                          ? `You've committed ${formatUsdc(userTotalCommitted)}`
+                          : 'Pick a hop and submit your commitment',
+                    },
+                    {
+                      label: 'Invite others (optional)',
+                      detail: hasInviteSlots ? 'You have invite slots available' : undefined,
+                    },
+                    { label: 'Wait for the campaign window to end' },
+                    { label: 'Claim ARM or refund' },
+                  ]}
+                />
+              }
+            >
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card shadow-elevated">
                 <EmptyState
@@ -1061,38 +1106,38 @@ export function App() {
             ) : intent === null ? (
               // Step 1 of the checkout: choose intent. Sub-flows handle their
               // own internal step state once the user picks one.
-              <div className="rounded-lg border border-border bg-card shadow-elevated overflow-hidden">
-                <div className="border-b border-border/60 bg-card/40 px-6 py-3 text-center text-[11px] uppercase tracking-wider text-muted-foreground">
-                  Step 1 <span className="opacity-50">·</span> Choose entry
-                </div>
-                <div className="space-y-4 px-6 py-5">
+              <div className="overflow-hidden rounded-xl border border-border/80 bg-card/80 shadow-elevated ring-1 ring-white/[0.03] backdrop-blur-sm">
+                <div className="space-y-5 px-6 py-6">
                   <div>
-                    <div className="mb-1 text-base font-medium text-foreground">
+                    <div className="mb-2 text-lg font-semibold tracking-tight text-foreground">
                       How do you want to participate?
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      You can commit USDC at any hop you've been invited to, or invite
-                      others using your remaining slots.
-                    </div>
+
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4">
                     <button
                       type="button"
                       disabled={!eligibility.eligible}
                       onClick={() => setIntent('commit')}
                       className={cn(
-                        'rounded-md border bg-card/40 p-4 text-left transition-colors hover:border-primary/60',
+                        'group relative flex items-center gap-4 overflow-hidden rounded-lg border border-border/70 bg-background/20 p-4 text-left transition-all',
+                        'hover:border-hop-0/70 hover:bg-hop-0/5 hover:shadow-[0_0_24px_rgba(132,80,210,0.10)]',
                         'disabled:cursor-not-allowed disabled:opacity-50',
                         intent === ('commit' as ParticipateIntent)
-                          ? 'border-primary'
-                          : 'border-border/60',
+                          ? 'border-hop-0/80 bg-hop-0/10'
+                          : 'border-border/70',
                       )}
                     >
-                      <div className="text-sm font-medium text-foreground">Commit USDC</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {eligibility.eligible
-                          ? `Eligible at ${eligibility.positions.length} hop${eligibility.positions.length === 1 ? '' : 's'}`
-                          : 'Not eligible — you need an invite first'}
+                      <div className="flex size-16 shrink-0 items-center justify-center rounded-xl border border-hop-0/35 bg-hop-0/15 text-hop-0">
+                        <UserPlus className="size-4" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-foreground">Commit USDC</div>
+                        <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                          {eligibility.eligible
+                            ? `Eligible at ${eligibility.positions.length} hop${eligibility.positions.length === 1 ? '' : 's'}`
+                            : 'Not eligible — you need an invite first'}
+                        </div>
                       </div>
                     </button>
                     <button
@@ -1100,15 +1145,21 @@ export function App() {
                       disabled={!hasInviteSlots}
                       onClick={() => setIntent('invite')}
                       className={cn(
-                        'rounded-md border bg-card/40 p-4 text-left transition-colors hover:border-primary/60',
+                        'group relative flex items-center gap-4 overflow-hidden rounded-lg border border-border/70 bg-background/20 p-4 text-left transition-all',
+                        'hover:border-hop-0/70 hover:bg-hop-0/5 hover:shadow-[0_0_24px_rgba(132,80,210,0.10)]',
                         'disabled:cursor-not-allowed disabled:opacity-50',
                       )}
                     >
-                      <div className="text-sm font-medium text-foreground">Invite someone</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {hasInviteSlots
-                          ? 'Send an on-chain invite or share a link'
-                          : 'No invite slots available'}
+                      <div className="flex size-16 shrink-0 items-center justify-center rounded-xl border border-hop-0/35 bg-hop-0/15 text-hop-0">
+                        <GitBranch className="size-4" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-foreground">Invite someone</div>
+                        <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                          {hasInviteSlots
+                            ? 'Send an on-chain invite or share a link'
+                            : 'No invite slots available'}
+                        </div>
                       </div>
                     </button>
                   </div>
@@ -1146,31 +1197,35 @@ export function App() {
                 onBackToIntent={() => setIntent(null)}
               />
             )}
-            <WhatsNextCard
-              steps={[
-                {
-                  label: 'Commit USDC',
-                  status: userTotalCommitted > 0n ? 'done' : 'active',
-                  detail:
-                    userTotalCommitted > 0n
-                      ? `You've committed ${formatUsdc(userTotalCommitted)}`
-                      : 'Pick a hop and submit your commitment',
-                },
-                {
-                  label: 'Invite others (optional)',
-                  detail: hasInviteSlots ? 'You have invite slots available' : undefined,
-                },
-                { label: 'Wait for the campaign window to end' },
-                { label: 'Claim your ARM tokens (or USDC refund)' },
-              ]}
-            />
+            </PageWithHelp>
            </ErrorBoundary>
           </div>
         )}
 
         {page === 'claim' && (
-          <div key="page-claim" className="mx-auto w-full max-w-2xl space-y-3 animate-page-enter">
+          <div key="page-claim" className="animate-page-enter">
            <ErrorBoundary>
+            <PageWithHelp
+              aside={
+                wallet.connected && claimAvailability.state !== 'available' ? (
+                  <WhatsNextCard
+                    title="Next steps"
+                    variant="rail"
+                    steps={[
+                      {
+                        label: 'Commit & invite',
+                        status: lifecycleStage === 'commit-invite' ? 'active' : 'done',
+                      },
+                      {
+                        label: 'Window closes & sale finalizes',
+                        status: lifecycleStage === 'commit-invite' ? 'pending' : 'active',
+                      },
+                      { label: 'Claim ARM or refund' },
+                    ]}
+                  />
+                ) : undefined
+              }
+            >
             {!wallet.connected ? (
               <div className="rounded-lg border border-border bg-card shadow-elevated">
                 <EmptyState
@@ -1183,39 +1238,24 @@ export function App() {
             ) : claimAvailability.state !== 'available' ? (
               // Pre-claim explanation — keeps the page visible so users learn
               // when claim opens, instead of bouncing back to Participate.
-              <>
-                <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
-                  <div className="mb-1 text-base font-medium text-foreground">
-                    Claiming is not yet available
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {claimAvailability.state === 'pre-open'
-                      ? 'The campaign has not opened yet. Once ARM is loaded and the commitment window closes, you can claim from this page.'
-                      : `${claimAvailability.reason}. You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum raise) from here.`}
-                  </div>
-                  {lifecycleCountdown !== undefined && lifecycleCountdown > 0 && (
-                    <div className="mt-3 text-xs text-muted-foreground tabular-nums">
-                      Estimated:{' '}
-                      <span className="text-foreground">
-                        {formatCountdown(lifecycleCountdown)}
-                      </span>
-                    </div>
-                  )}
+              <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
+                <div className="mb-1 text-base font-medium text-foreground">
+                  Claiming is not yet available
                 </div>
-                <WhatsNextCard
-                  steps={[
-                    {
-                      label: 'Commit & invite',
-                      status: lifecycleStage === 'commit-invite' ? 'active' : 'done',
-                    },
-                    {
-                      label: 'Window closes & sale finalizes',
-                      status: lifecycleStage === 'commit-invite' ? 'pending' : 'active',
-                    },
-                    { label: 'Claim ARM (or USDC refund)' },
-                  ]}
-                />
-              </>
+                <div className="text-sm text-muted-foreground">
+                  {claimAvailability.state === 'pre-open'
+                    ? 'The campaign has not opened yet. Once ARM is loaded and the commitment window closes, you can claim from this page.'
+                    : `${claimAvailability.reason}. You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum raise) from here.`}
+                </div>
+                {lifecycleCountdown !== undefined && lifecycleCountdown > 0 && (
+                  <div className="mt-3 text-xs text-muted-foreground tabular-nums">
+                    Estimated:{' '}
+                    <span className="text-foreground">
+                      {formatCountdown(lifecycleCountdown)}
+                    </span>
+                  </div>
+                )}
+              </div>
             ) : wallet.address ? (
               <div className="rounded-lg border border-border bg-card p-4 shadow-elevated">
                 <ClaimTab
@@ -1234,6 +1274,7 @@ export function App() {
                 />
               </div>
             ) : null}
+            </PageWithHelp>
            </ErrorBoundary>
           </div>
         )}

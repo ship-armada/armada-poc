@@ -79,8 +79,9 @@ export function AmountInput({
   const maxButton = (
     <Button
       type="button"
-      variant="secondary"
+      variant="ghost"
       size="sm"
+      className="h-11 self-center rounded-[4px] border border-border/60 bg-transparent px-4 text-xs text-muted-foreground hover:border-hop-0/40 hover:bg-hop-0/10 hover:text-foreground"
       onClick={handleMax}
       disabled={maxDisabled}
     >
@@ -91,7 +92,7 @@ export function AmountInput({
   const showTooltip = !maxDisabled && ceilings && ceilings.length > 1 && binding
 
   return (
-    <div className={cn('flex gap-2', className)}>
+    <div className={cn('flex items-center gap-2', className)}>
       <Input
         id={id}
         name={name}
@@ -105,7 +106,10 @@ export function AmountInput({
         aria-describedby={ariaProps['aria-describedby']}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
-        className={cn('flex-1 text-sm', inputClassName)}
+        className={cn(
+          'h-11 flex-1 rounded-md border-border/70 bg-background/35 text-base font-medium tabular-nums shadow-inner placeholder:text-muted-foreground/60 focus-visible:border-primary/70 focus-visible:ring-primary/20',
+          inputClassName,
+        )}
       />
       {showTooltip ? (
         <TooltipProvider delayDuration={150}>

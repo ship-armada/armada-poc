@@ -85,7 +85,9 @@ export function TxStatusPipeline({ rows, className, title }: TxStatusPipelinePro
           <li
             key={row.id}
             className={cn(
-              'flex items-start gap-3 rounded-md border border-border/60 bg-card/40 p-3',
+              'flex items-start gap-3 rounded-lg border border-border/70 bg-background/25 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
+              row.status === 'pending' && 'border-primary/35 bg-primary/5',
+              row.status === 'submitted' && 'border-info/35 bg-info/5',
               row.status === 'confirmed' && 'border-success/40 bg-success/5',
               row.status === 'error' && 'border-destructive/40 bg-destructive/5',
             )}

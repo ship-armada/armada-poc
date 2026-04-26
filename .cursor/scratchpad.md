@@ -203,6 +203,28 @@ The goal is a concrete, executable plan that the Executor can follow step-by-ste
 
 **Crowdfund tree participate CTA spacing follow-up (2026-04-25):** User reported changing flex `gap` did not affect on-screen spacing. Updated both live and stress/mock CTA variants to use explicit desktop button margin (`sm:ml-16`) with `sm:gap-0`, making the text-to-button spacing deterministic.
 
+**Crowdfund committer next-steps rail (2026-04-26):** User approved moving "What happens next?" cards lower in visual hierarchy. Added a compact `rail` variant to `WhatsNextCard` and introduced `PageWithHelp` in committer so Participate/Claim main content remains centered while next steps render as a subtle right-margin rail on wide screens and below content on smaller screens.
+
+**Crowdfund checkout polish (2026-04-26):** Updated Participate checkout styling to better match the design mockup: shared `Stepper` now uses numbered progress dots with labels and top caption, shared `StepFooter` uses more polished back/primary button chrome, Participate entry cards have icon blocks/accent borders, and commit/invite/claim review/detail/status surfaces use softer accent-tinted borders/backgrounds. Verification: IDE lints clean for touched files; `npm --workspace @armada/crowdfund-shared run typecheck` passed; direct committer TypeScript project check passed via `./node_modules/.bin/tsc -b /Users/ikay/conductor/workspaces/poc/taipei/crowdfund-ui/packages/committer/tsconfig.json`. No app rebuild run per user preference.
+
+**Crowdfund checkout helper text removal (2026-04-26):** User clarified that the visible "Step X · label" copy was mockup helper text. Removed the shared `Stepper` caption from checkout forms and removed the Participate entry picker's "Step 1 · Choose entry" strip. Verification: IDE lints clean for touched files.
+
+**Crowdfund participate entry stacking (2026-04-26):** User requested the first Participate form options stack vertically instead of side by side. Removed the desktop two-column grid from the entry picker. Verification: IDE lints clean for `committer/src/App.tsx`.
+
+**Crowdfund participate entry option layout (2026-04-26):** User requested text in each option card sit to the right of the icon. Updated both entry buttons to use horizontal icon/text layout with fixed-size icon blocks and wrapped copy. Verification: IDE lints clean for `committer/src/App.tsx`.
+
+**Crowdfund participate entry accent unification (2026-04-26):** User requested both entry options use purple accents. Updated the Invite option hover, border, icon background, and icon color from primary blue to `hop-0` purple. Verification: IDE lints clean for `committer/src/App.tsx`.
+
+**Crowdfund commit context position list (2026-04-26):** User requested removing the card treatment from the Confirm context positions list. Simplified each position row to plain inline list rows without border/background/shadow. Verification: IDE lints clean for `CommitTab.tsx`.
+
+**Crowdfund participate primary button accent (2026-04-26):** User requested Continue/Confirm buttons on participate forms use purple instead of blue. Updated shared `StepFooter` default primary action styling to `hop-0` purple and switched the invite-link create action to the same purple treatment. Verification: IDE lints clean for touched files.
+
+**Crowdfund commit amount input card removal (2026-04-26):** User requested removing the card around the amount input on the Commit amount form. Removed border/background/padding/shadow from each per-hop amount input wrapper while preserving labels, demand context, and validation. Verification: IDE lints clean for `CommitTab.tsx`.
+
+**Crowdfund amount max button polish (2026-04-26):** User requested the Max button be more subtle, ghosted instead of solid blue, and vertically centered with the amount input. Updated shared `AmountInput` to use a ghost-style Max button with muted text, subtle border, purple hover tint, and `h-11` alignment. Verification: IDE lints clean for `AmountInput.tsx`.
+
+**Crowdfund invite confirm regression fix (2026-04-26):** User reported clicking "Confirm transaction" on direct invite after entering an address did nothing. Root cause: shared `StepFooter` passed the React click event into `onNext`; `InviteTab.runPipeline` has an optional override parameter, so it interpreted the event as an override and returned before sending. Fixed `StepFooter` to invoke callbacks with no event argument and added `Stepper.test.tsx` regression coverage. Verification: `npm --workspace @armada/crowdfund-shared run test -- Stepper` passed; shared typecheck passed; committer TypeScript project check passed; IDE lints clean.
+
 **Phase 1 complete (Tasks 1.1, 1.3).** Task 1.2 (Aderyn) skipped: Rust toolchain not configured (`rustup default stable` needed). User can run `cargo install aderyn && aderyn .` manually and merge results into `reports/static-analysis-summary.md`.
 
 **Slither findings:** 189 total. Key action items: ArmadaYieldAdapter.lendPrivate (use SafeERC20 for shareToken.transfer), PrivacyPool.initialize zero-checks, ArmadaTreasuryGov.constructor zero-check. See `reports/static-analysis-summary.md` for full triage.

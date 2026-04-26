@@ -72,7 +72,7 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
   }, [useSelf, value, form])
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 rounded-lg border border-border/70 bg-background/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
         <span>Delegate Address</span>
         <InfoTooltip text={TOOLTIPS.delegate} label="What is a delegate?" />
@@ -105,7 +105,7 @@ export function DelegateInput({ connectedAddress, value, onChange }: DelegateInp
                     {...field}
                     type="text"
                     placeholder="0x..."
-                    className="text-xs font-mono"
+                    className="h-11 rounded-md border-border/70 bg-background/35 text-sm font-mono shadow-inner focus-visible:border-primary/70 focus-visible:ring-primary/20"
                     aria-invalid={!!fieldState.error || undefined}
                     onChange={(e) => {
                       field.onChange(e)

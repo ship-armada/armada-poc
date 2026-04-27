@@ -924,10 +924,20 @@ export function App() {
   )
 
   // TODO: wire to a campaign-details dialog / route. Placeholder for now.
+  // Two-layer background trick gives a clean gradient border that respects
+  // border-radius without the concentric-arc thinning of a wrapper+padding
+  // approach: padding-box paints the inner card surface, border-box paints
+  // the gradient under the transparent border.
   const treeCampaignDetailsLink = (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-opacity hover:opacity-85"
+      style={{
+        background:
+          'linear-gradient(var(--card), var(--card)) padding-box, ' +
+          'linear-gradient(to right, var(--primary), var(--hop-0)) border-box',
+        border: '1px solid transparent',
+      }}
       onClick={() => {
         /* TODO: open campaign details */
       }}
@@ -949,7 +959,14 @@ export function App() {
       </div>
       <Button
         size="sm"
-        className="rounded-[4px] bg-gradient-to-r from-primary/55 to-primary/40 px-8 text-[13px] text-white hover:from-primary/65 hover:to-primary/50 sm:ml-24"
+        // Bold blue→purple gradient mirrors the "Send Invite" CTA from
+        // the mockup. The pulsing halo is set inline because Tailwind v4's
+        // `animate-{name}` utility generation was producing an empty rule
+        // that shadowed our hand-written one. Inline `animation` is the
+        // simplest path that actually applies; the keyframe lives in
+        // theme.css alongside the other animations.
+        className="rounded-md bg-gradient-to-r from-primary to-hop-0 px-8 text-[13px] font-medium text-white sm:ml-24"
+        style={{ animation: 'glow-pulse 3.5s ease-in-out infinite' }}
         onClick={() => setPage('participate')}
       >
         Participate

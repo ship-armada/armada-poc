@@ -132,6 +132,14 @@ body {
      via the `shadow-elevated` utility; apply only to outermost panels. */
   --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
+  /* Animation registrations — Tailwind v4 generates `animate-{name}`
+     utilities from these. Registering here means our keyframes don't get
+     shadowed by Tailwind's empty fallback rule that resolves the utility
+     to `animation: var(--animate-X)` where var is undefined. */
+  --animate-page-enter: page-enter 0.28s ease-out;
+  --animate-row-enter: row-enter 0.25s ease-out;
+  --animate-glow-pulse: glow-pulse 3.5s ease-in-out infinite;
+
   /* shadcn base */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -265,6 +273,31 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-row-enter {
+    animation: none;
+  }
+}
+
+/* Glow-pulse — a soft outer halo that gently pulses brightness, used as a
+   "click here" cue on primary CTAs. Animates `box-shadow` directly on the
+   element so there's no pseudo-element / child-stacking risk inside
+   complex components like shadcn Button. Tinted with the --primary token
+   so it integrates with our blue→purple CTA palette. */
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 10px color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 55%, transparent);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-glow-pulse {
     animation: none;
   }
 }

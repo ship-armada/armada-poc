@@ -7,8 +7,8 @@
   command = """
     mkdir -p crowdfund-ui/packages/committer/public/api/deployments && \
     cp deployments/crowdfund-hub-sepolia.json crowdfund-ui/packages/committer/public/api/deployments/ && \
+    rm -f package-lock.json && \
     npm install --legacy-peer-deps && \
-    npm install @rollup/rollup-linux-x64-gnu --no-save --legacy-peer-deps && \
     npm run build --workspace=@armada/crowdfund-committer
   """
 

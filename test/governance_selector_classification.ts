@@ -53,6 +53,7 @@ describe("Governance Selector Classification", function () {
       ["setRevenueThreshold(uint256)", "operational wind-down parameter"],
       ["setWindDownDeadline(uint256)", "operational wind-down parameter"],
       ["attestRevenue(uint256)", "operational non-stablecoin revenue attestation"],
+      ["distributeETH(address,uint256)", "ETH distribution mirrors distribute() classification"],
     ];
 
     for (const [sig, reason] of standardSelectors) {

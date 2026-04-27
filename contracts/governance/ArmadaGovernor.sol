@@ -202,6 +202,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Treasury >5% threshold for automatic extended classification of distribute() calls.
     // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
     bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
+    bytes4 public constant DISTRIBUTE_ETH_SELECTOR = bytes4(keccak256("distributeETH(address,uint256)"));
     bytes4 public constant STEWARD_SPEND_SELECTOR = bytes4(keccak256("stewardSpend(address,address,uint256)"));
     uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
 
@@ -393,6 +394,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Fail-closed default: selectors explicitly permitted at Standard classification.
         // Any selector NOT in extendedSelectors AND NOT in standardSelectors defaults to Extended.
         standardSelectors[DISTRIBUTE_SELECTOR] = true;  // distribute() below the 5% threshold
+        standardSelectors[DISTRIBUTE_ETH_SELECTOR] = true; // distributeETH() below the 5% threshold
         standardSelectors[bytes4(keccak256("stewardSpend(address,address,uint256)"))] = true;
         standardSelectors[bytes4(keccak256("transferTo(address,address,uint256)"))] = true;
         standardSelectors[bytes4(keccak256("transferETHTo(address,uint256)"))] = true;
@@ -1154,6 +1156,22 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 }
             }
 
+            // Same 5% rule applied to native ETH distributions. Treasury balance is read
+            // via address(treasuryAddress).balance — same spot-read trade-offs as the ERC20
+            // path apply (donation inflation tolerated for the reasons above).
+            // distributeETH(address,uint256) calldata = 4 + 32 + 32 = 68 bytes.
+            if (selector == DISTRIBUTE_ETH_SELECTOR && calldatas[i].length >= 68) {
+                bytes memory params = new bytes(calldatas[i].length - 4);
+                for (uint256 j = 0; j < params.length; j++) {
+                    params[j] = calldatas[i][j + 4];
+                }
+                (, uint256 amount) = abi.decode(params, (address, uint256));
+                uint256 treasuryBalance = treasuryAddress.balance;
+                if (treasuryBalance > 0 && amount > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
+                    return ProposalType.Extended;
+                }
+            }
+
             // Fail-closed: unrecognized selectors force Extended classification.
             // This prevents bypass via wrapper/forwarder contracts or newly added
             // protocol functions that haven't been classified yet.
@@ -1173,10 +1191,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      but exceed the current available budget are allowed to queue and retry
     ///      once the rolling window has created room.
     ///
-    ///      Only distribute() and stewardSpend() actions targeting the treasury are
-    ///      checked — both share the (address token, address recipient, uint256 amount)
-    ///      layout. transferTo()/transferETHTo() are wind-down-only paths that bypass
-    ///      outflow limits and are intentionally excluded.
+    ///      distribute(), stewardSpend(), and distributeETH() actions targeting the
+    ///      treasury are checked. The first two share the (address token, address
+    ///      recipient, uint256 amount) layout; distributeETH() drops the token argument
+    ///      and is aggregated under the address(0) sentinel. transferTo()/transferETHTo()
+    ///      are wind-down-only paths that bypass outflow limits and are intentionally excluded.
     ///
     ///      Reuses the calldata slice + abi.decode pattern from _classifyProposal.
     ///      View-only; reverts before any governor or timelock state is written.
@@ -1193,19 +1212,33 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         for (uint256 i = 0; i < calldatas.length; i++) {
             if (targets[i] != treasuryAddress) continue;
-            // 4 selector bytes + 3 * 32 param bytes = 100
-            if (calldatas[i].length < 100) continue;
+            if (calldatas[i].length < 4) continue;
 
             bytes4 selector = bytes4(calldatas[i]);
-            if (selector != DISTRIBUTE_SELECTOR && selector != STEWARD_SPEND_SELECTOR) continue;
+            address token;
+            uint256 amount;
 
-            // Decode: (address token, address recipient, uint256 amount).
-            // Same slice pattern as _classifyProposal — skip 4-byte selector.
-            bytes memory params = new bytes(calldatas[i].length - 4);
-            for (uint256 j = 0; j < params.length; j++) {
-                params[j] = calldatas[i][j + 4];
+            if (selector == DISTRIBUTE_SELECTOR || selector == STEWARD_SPEND_SELECTOR) {
+                // 4 selector bytes + 3 * 32 param bytes = 100
+                if (calldatas[i].length < 100) continue;
+                bytes memory params = new bytes(calldatas[i].length - 4);
+                for (uint256 j = 0; j < params.length; j++) {
+                    params[j] = calldatas[i][j + 4];
+                }
+                (token, , amount) = abi.decode(params, (address, address, uint256));
+            } else if (selector == DISTRIBUTE_ETH_SELECTOR) {
+                // 4 selector bytes + 2 * 32 param bytes = 68. address(0) is the ETH sentinel
+                // used by ArmadaTreasuryGov's outflow accounting.
+                if (calldatas[i].length < 68) continue;
+                bytes memory params = new bytes(calldatas[i].length - 4);
+                for (uint256 j = 0; j < params.length; j++) {
+                    params[j] = calldatas[i][j + 4];
+                }
+                (, amount) = abi.decode(params, (address, uint256));
+                token = address(0);
+            } else {
+                continue;
             }
-            (address token, , uint256 amount) = abi.decode(params, (address, address, uint256));
 
             bool found;
             for (uint256 k = 0; k < tokenCount; k++) {

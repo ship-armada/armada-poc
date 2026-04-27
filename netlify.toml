@@ -7,7 +7,7 @@
   command = """
     mkdir -p crowdfund-ui/packages/committer/public/api/deployments && \
     cp deployments/crowdfund-hub-sepolia.json crowdfund-ui/packages/committer/public/api/deployments/ && \
-    rm -f package-lock.json && \
+    rm -rf node_modules package-lock.json && \
     npm install --legacy-peer-deps && \
     npm run build --workspace=@armada/crowdfund-committer
   """

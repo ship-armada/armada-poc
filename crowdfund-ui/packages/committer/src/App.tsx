@@ -36,7 +36,9 @@ import {
   generateMockGraph,
   useContractState,
   cn,
-  type ConnectedSummary,
+  estimateUserArmAllocation,
+  type UserAllocation,
+  type UserHopPosition,
 } from '@armada/crowdfund-shared'
 import { getExplorerUrl, getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
@@ -345,7 +347,7 @@ function MockCommitterApp({ size }: { size: number }) {
         )}
 
         {page === 'network' && (
-          <div key="mock-page-network" className="space-y-3 animate-page-enter">
+          <div key="mock-page-network" className="space-y-8 animate-page-enter">
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
             <ErrorBoundary>
               <TreeView
@@ -710,14 +712,32 @@ export function App() {
     contractState.blockTimestamp >= contractState.windowStart &&
     contractState.blockTimestamp <= contractState.windowEnd
 
-  // Connected user summary for StatsBar
-  const connectedSummary = useMemo((): ConnectedSummary | undefined => {
+  // Connected user's projected ARM allocation, used by StatsBar's
+  // "Your Allocation" card. Undefined when the user has no positions —
+  // the card falls back to a "Connect wallet" placeholder.
+  const userAllocation = useMemo((): UserAllocation | undefined => {
     if (!wallet.address || eligibility.positions.length === 0) return undefined
+    const positions: UserHopPosition[] = eligibility.positions.map((p) => ({
+      hop: p.hop,
+      committed: p.committed,
+      effectiveCap: p.effectiveCap,
+    }))
     return {
-      totalCommitted: userTotalCommitted,
+      estArmAllocation: estimateUserArmAllocation(
+        positions,
+        contractState.hopStats,
+        contractState.cappedDemand,
+        contractState.saleSize,
+      ),
       hopCount: eligibility.positions.length,
     }
-  }, [wallet.address, eligibility.positions, userTotalCommitted])
+  }, [
+    wallet.address,
+    eligibility.positions,
+    contractState.hopStats,
+    contractState.cappedDemand,
+    contractState.saleSize,
+  ])
 
   // Per-intent enabled state — drives the intent picker on the Participate
   // page and the soft-disabled flag on the participate nav item.
@@ -981,13 +1001,12 @@ export function App() {
         totalCommitted={contractState.totalCommitted}
         cappedDemand={contractState.cappedDemand}
         saleSize={contractState.saleSize}
+        participantCount={contractState.participantCount}
         phase={contractState.phase}
         armLoaded={contractState.armLoaded}
-        seedCount={contractState.seedCount}
-        participantCount={contractState.participantCount}
         windowEnd={contractState.windowEnd}
         blockTimestamp={contractState.blockTimestamp}
-        connectedSummary={connectedSummary}
+        userAllocation={userAllocation}
         isLoading={eventsLoading}
       />
     </ErrorBoundary>
@@ -1026,7 +1045,7 @@ export function App() {
         )}
 
         {page === 'network' && (
-          <div key="page-network" className="space-y-3 animate-page-enter">
+          <div key="page-network" className="space-y-8 animate-page-enter">
             <ErrorBoundary>
               <TreeView
                 graph={graph}

@@ -289,10 +289,9 @@ export function App() {
             totalCommitted={contractState.totalCommitted}
             cappedDemand={contractState.cappedDemand}
             saleSize={contractState.saleSize}
+            participantCount={contractState.participantCount}
             phase={contractState.phase}
             armLoaded={contractState.armLoaded}
-            seedCount={contractState.seedCount}
-            participantCount={contractState.participantCount}
             windowEnd={contractState.windowEnd}
             blockTimestamp={contractState.blockTimestamp}
             isLoading={eventsLoading}
@@ -441,10 +440,9 @@ export function App() {
             totalCommitted={contractState.totalCommitted}
             cappedDemand={contractState.cappedDemand}
             saleSize={contractState.saleSize}
+            participantCount={contractState.participantCount}
             phase={contractState.phase}
             armLoaded={contractState.armLoaded}
-            seedCount={contractState.seedCount}
-            participantCount={contractState.participantCount}
             windowEnd={contractState.windowEnd}
             blockTimestamp={contractState.blockTimestamp}
             isLoading={eventsLoading}

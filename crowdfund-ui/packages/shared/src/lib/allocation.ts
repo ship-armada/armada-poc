@@ -69,3 +69,48 @@ export function estimateAllocation(hopStats: HopStatsData[], cappedDemand: bigin
     effectiveSaleSize,
   }
 }
+
+export interface UserHopPosition {
+  hop: number
+  /** User's raw committed amount in this hop (uncapped). */
+  committed: bigint
+  /** User's effective per-hop cap = invitesReceived * per-slot cap. */
+  effectiveCap: bigint
+}
+
+/**
+ * Estimate the connected user's projected ARM allocation if the sale
+ * finalized now. Pro-rates each hop position against the hop's allocation
+ * after ceilings; sums across hops; converts USDC (6 dec) → ARM (18 dec).
+ * Returns 0 ARM for an empty positions array.
+ */
+export function estimateUserArmAllocation(
+  positions: UserHopPosition[],
+  hopStats: HopStatsData[],
+  cappedDemand: bigint,
+  saleSize: bigint,
+): bigint {
+  if (positions.length === 0) return 0n
+  const { perHopCeiling } = estimateAllocation(hopStats, cappedDemand, saleSize)
+  let acceptedTotal = 0n
+  for (const pos of positions) {
+    const stats = hopStats[pos.hop]
+    if (!stats) continue
+    // The user's contribution to capped demand is min(committed, effectiveCap).
+    const userCapped =
+      pos.committed < pos.effectiveCap ? pos.committed : pos.effectiveCap
+    const hopCappedDemand = stats.cappedCommitted
+    const hopCeiling = perHopCeiling[pos.hop] ?? 0n
+    let accepted: bigint
+    if (hopCappedDemand <= hopCeiling) {
+      accepted = userCapped
+    } else if (hopCappedDemand === 0n) {
+      accepted = 0n
+    } else {
+      accepted = (userCapped * hopCeiling) / hopCappedDemand
+    }
+    acceptedTotal += accepted
+  }
+  // 1 USDC (6 dec) → 1 ARM (18 dec)
+  return acceptedTotal * 10n ** 12n
+}

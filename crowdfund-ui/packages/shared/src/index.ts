@@ -24,8 +24,8 @@ export {
   phaseColor,
 } from './lib/format.js'
 
-export { estimateAllocation } from './lib/allocation.js'
-export type { AllocationEstimate } from './lib/allocation.js'
+export { estimateAllocation, estimateUserArmAllocation } from './lib/allocation.js'
+export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
 
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 
@@ -93,7 +93,7 @@ export type { ContractState } from './hooks/useContractState.js'
 
 // Components
 export { StatsBar } from './components/StatsBar.js'
-export type { StatsBarProps, HopStatsData, ConnectedSummary } from './components/StatsBar.js'
+export type { StatsBarProps, HopStatsData, UserAllocation } from './components/StatsBar.js'
 
 export { TableView } from './components/TableView.js'
 export type { TableViewProps } from './components/TableView.js'

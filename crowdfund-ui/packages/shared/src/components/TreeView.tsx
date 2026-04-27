@@ -178,6 +178,11 @@ function hopColorVar(hop: number): string {
   return 'var(--hop-2)'
 }
 
+/** Bright yellow used for the connected wallet's outline + icon + glow.
+ *  Sourced from the shared `--accent-you` theme token (defined in theme.css)
+ *  so the legend swatch, table row rail, and tree node stay in lockstep. */
+const CONNECTED_HIGHLIGHT = 'var(--accent-you)'
+
 /** SVG elliptical arc path from (startAngle, endAngle) on the ellipse
  *  with semi-axes (rx, ry) centered at (cx, cy). Pass rx == ry for a
  *  circular arc. */
@@ -993,7 +998,7 @@ export function TreeView(props: TreeViewProps) {
               const stroke = isSelected
                 ? 'var(--hop-selected)'
                 : isConnected
-                  ? 'var(--hop-connected)'
+                  ? CONNECTED_HIGHLIGHT
                   : isHollow
                     ? hopColorVar(n.hop)
                     : 'var(--card)'
@@ -1060,7 +1065,9 @@ export function TreeView(props: TreeViewProps) {
                   {isHollow && glowFilter && (
                     <circle
                       r={r}
-                      fill={hopColorVar(n.hop)}
+                      // Glow source: feGaussianBlur preserves source colour,
+                      // so swapping the backing fill swaps the halo's hue.
+                      fill={isConnected ? CONNECTED_HIGHLIGHT : hopColorVar(n.hop)}
                       filter={glowFilter}
                       pointerEvents="none"
                     />
@@ -1097,7 +1104,11 @@ export function TreeView(props: TreeViewProps) {
                   )}
                   {n.hop === 0 && (
                     <g transform="translate(-8, -8)" pointerEvents="none">
-                      <UserRound size={16} color="var(--hop-0-icon)" strokeWidth={2} />
+                      <UserRound
+                        size={16}
+                        color={isConnected ? CONNECTED_HIGHLIGHT : 'var(--hop-0-icon)'}
+                        strokeWidth={2}
+                      />
                     </g>
                   )}
                   {/* Lucide Dot is a tiny centred circle inside a 24-viewBox;
@@ -1105,7 +1116,11 @@ export function TreeView(props: TreeViewProps) {
                       without enlarging the glyph beyond readability. */}
                   {n.hop === 1 && (
                     <g transform="translate(-12, -12)" pointerEvents="none">
-                      <Dot size={24} color="var(--hop-1-icon)" strokeWidth={2} />
+                      <Dot
+                        size={24}
+                        color={isConnected ? CONNECTED_HIGHLIGHT : 'var(--hop-1-icon)'}
+                        strokeWidth={2}
+                      />
                     </g>
                   )}
                   </g>

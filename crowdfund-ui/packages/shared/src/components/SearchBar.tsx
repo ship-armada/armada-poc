@@ -8,6 +8,9 @@ export interface SearchBarProps {
   onChange: (query: string) => void
   placeholder?: string
   debounceMs?: number
+  /** Forwarded to the outer wrapper — useful for inline sizing
+   *  (e.g. `flex-1 min-w-[200px]` when the search shares a row with filters). */
+  className?: string
 }
 
 /**
@@ -15,7 +18,13 @@ export interface SearchBarProps {
  * Calls onChange after debounceMs of inactivity (default 300ms).
  */
 export function SearchBar(props: SearchBarProps) {
-  const { value, onChange, placeholder = 'Search address or ENS...', debounceMs = 300 } = props
+  const {
+    value,
+    onChange,
+    placeholder = 'Search address or ENS...',
+    debounceMs = 300,
+    className,
+  } = props
   const [localValue, setLocalValue] = useState(value)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -45,7 +54,7 @@ export function SearchBar(props: SearchBarProps) {
   }, [])
 
   return (
-    <div className="relative">
+    <div className={`relative${className ? ` ${className}` : ''}`}>
       <svg
         className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
         xmlns="http://www.w3.org/2000/svg"
@@ -64,7 +73,14 @@ export function SearchBar(props: SearchBarProps) {
         value={localValue}
         onChange={handleChange}
         placeholder={placeholder}
-        className="w-full rounded-md border border-input bg-background py-2 pl-10 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className={
+          // Soft translucent fill over the card surface, bigger radius,
+          // and a primary-tinted focus ring + border for a more polished
+          // anchor element. Primary substitutes for ChatGPT's literal cyan.
+          'w-full rounded-lg border border-border/60 bg-background/60 py-2 pl-10 pr-3 text-xs ' +
+          'placeholder:text-muted-foreground transition-colors ' +
+          'focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/30'
+        }
       />
     </div>
   )

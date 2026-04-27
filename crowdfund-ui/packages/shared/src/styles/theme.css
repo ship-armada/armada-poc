@@ -83,6 +83,12 @@
   --hop-selected: oklch(1 0 0);
   --hop-dimmed: oklch(0.40 0.005 240 / 40%);
 
+  /* Bright yellow used as the "this is the connected wallet" accent — node
+     outline + glow + icon in TreeView, swatch in GraphLegend, and the table
+     row's left rail. Inherits chroma + hue from --warning, lightness bumped
+     to 0.92 so it pops against the dark tree backdrop. */
+  --accent-you: oklch(from var(--warning) 0.92 c h);
+
   /* Domain: graph edges — slate-400-ish; combined with per-hop opacity in
      TreeView (hop-2 edges dimmer than hop-0/1) to stay subtle at scale. */
   --graph-edge: oklch(0.68 0.02 245);
@@ -169,6 +175,7 @@ body {
   --color-hop-root: var(--hop-root);
   --color-hop-multi: var(--hop-multi);
   --color-hop-connected: var(--hop-connected);
+  --color-accent-you: var(--accent-you);
   --color-hop-selected: var(--hop-selected);
   --color-hop-dimmed: var(--hop-dimmed);
 
@@ -234,6 +241,30 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-page-enter {
+    animation: none;
+  }
+}
+
+/* Row-enter animation — applied to data rows on mount so paginated /
+   filtered data feels alive. Smaller offset than page-enter (4px vs 6px)
+   so a stack of rows doesn't read as a flock of moving elements. */
+@keyframes row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-row-enter {
+  animation: row-enter 0.25s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-row-enter {
     animation: none;
   }
 }

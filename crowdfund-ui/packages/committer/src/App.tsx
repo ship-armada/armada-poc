@@ -38,7 +38,7 @@ import {
   cn,
   type ConnectedSummary,
 } from '@armada/crowdfund-shared'
-import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
+import { getExplorerUrl, getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -360,7 +360,7 @@ function MockCommitterApp({ size }: { size: number }) {
                 connectedAddress={mockConnectedAddress}
                 campaignHeader={
                   <div className="px-1 py-1">
-                    <div className="font-heading text-sm font-semibold tracking-tight">
+                    <div className="font-heading text-lg font-semibold tracking-tight">
                       Armada Crowdfund
                     </div>
                     <div className="mt-2 flex items-start gap-4 tabular-nums">
@@ -891,7 +891,7 @@ export function App() {
 
   const treeCampaignHeader = (
     <div className="px-1 py-1">
-      <div className="font-heading text-sm font-semibold tracking-tight">
+      <div className="font-heading text-lg font-semibold tracking-tight">
         Armada Crowdfund
       </div>
       <div className="mt-2 flex items-start gap-4 tabular-nums">
@@ -949,7 +949,7 @@ export function App() {
       </div>
       <Button
         size="sm"
-        className="rounded-[4px] bg-primary/55 px-8 text-[13px] text-white hover:bg-primary/65 sm:ml-24"
+        className="rounded-[4px] bg-gradient-to-r from-primary/55 to-primary/40 px-8 text-[13px] text-white hover:from-primary/65 hover:to-primary/50 sm:ml-24"
         onClick={() => setPage('participate')}
       >
         Participate
@@ -1010,7 +1010,6 @@ export function App() {
 
         {page === 'network' && (
           <div key="page-network" className="space-y-3 animate-page-enter">
-            <SearchBar value={searchQuery} onChange={setSearchQuery} />
             <ErrorBoundary>
               <TreeView
                 graph={graph}
@@ -1036,12 +1035,18 @@ export function App() {
                 onSelectAddress={selectAddress}
                 focusRequest={focusRequest}
                 searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
                 phase={contractState.phase}
                 resolveENS={resolveENS}
                 hopStats={contractState.hopStats}
                 saleSize={contractState.saleSize}
                 connectedAddress={wallet.address}
                 isLoading={eventsLoading}
+                explorerUrl={getExplorerUrl()}
+                // "View in tree" selects the node; TreeView highlights it
+                // via the shared selection atom. TODO: also zoom — TreeView
+                // would need a new focusRequest prop mirroring the table's.
+                onFocusInTree={selectAddress}
               />
             </ErrorBoundary>
             <div className="text-xs text-muted-foreground text-center">

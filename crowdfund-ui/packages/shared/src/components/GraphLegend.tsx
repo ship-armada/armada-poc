@@ -78,7 +78,7 @@ export function GraphLegend({ connectedAddress, className }: GraphLegendProps) {
         </div>
         {connectedAddress && (
           <div className="flex items-center gap-2">
-            <Swatch stroke="var(--hop-connected)" />
+            <Swatch stroke="var(--accent-you)" />
             <span className="text-muted-foreground">Your wallet</span>
           </div>
         )}

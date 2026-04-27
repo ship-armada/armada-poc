@@ -1,0 +1,4 @@
+# Generated at build time by netlify.toml — copies the active deployment
+# manifest into Vite's static-asset directory so production builds can fetch
+# /api/deployments/<filename>.json from the served dist/.
+public/

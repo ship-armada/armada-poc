@@ -1,0 +1,27 @@
+# Netlify build config — committer app for medi-Sepolia public test.
+# Branch: iskay/crowdfund-ui-polish (configured in the Netlify UI).
+
+[build]
+  base    = "."
+  publish = "crowdfund-ui/packages/committer/dist"
+  command = """
+    mkdir -p crowdfund-ui/packages/committer/public/api/deployments && \
+    cp deployments/crowdfund-hub-sepolia.json crowdfund-ui/packages/committer/public/api/deployments/ && \
+    npm install --legacy-peer-deps && \
+    npm run build --workspace=@armada/crowdfund-committer
+  """
+
+[build.environment]
+  # Required: Railgun SDK peer-dep conflict forces legacy resolution.
+  NPM_FLAGS    = "--legacy-peer-deps"
+  NODE_VERSION = "20"
+  # Switches all network-dependent decisions in the app (manifest filename,
+  # hub RPC, chain ID 11155111, sepolia.etherscan, 15s poll). VITE_WALLETCONNECT_PROJECT_ID
+  # is set via the Netlify UI as a deploy-context env var.
+  VITE_NETWORK = "sepolia"
+
+# SPA fallback — react-router serves /invite?... and other dynamic paths.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

@@ -13,7 +13,7 @@ export const CROWDFUND_CONSTANTS = {
   LAUNCH_TEAM_HOP2_BUDGET: 15,
   MIN_COMMIT: 1n * 10n ** 6n,
   WINDOW_DURATION: 14 * 24 * 60 * 60, // 14 days in seconds
-  LAUNCH_TEAM_INVITE_PERIOD: 5 * 24 * 60 * 60, // 5 days in seconds
+  LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days in seconds (equal to WINDOW_DURATION on medi-Sepolia)
   CLAIM_DEADLINE_DURATION: 60 * 24 * 60 * 60, // 60 days in seconds
   GOVERNANCE_QUIET_PERIOD: 1 * 24 * 60 * 60, // 1 day in seconds (matches ArmadaGovernor.QUIET_PERIOD_DURATION)
   HOP2_FLOOR_BPS: 500, // 5%

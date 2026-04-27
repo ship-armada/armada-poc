@@ -75,6 +75,15 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
     uint256 constant OTHER_LIMIT_ABS = 10_000 * 1e18;
     uint256 constant OTHER_FLOOR = 5_000 * 1e18;
 
+    // ETH outflow parameters under the address(0) sentinel.
+    // Treasury balance 10000 ETH → 5% (500 ETH) stays above the 100 ETH effective limit
+    // and our test amounts, so proposals stay on the Standard timing track.
+    uint256 constant ETH_TREASURY_BALANCE = 10_000 ether;
+    uint256 constant ETH_EFFECTIVE_LIMIT = 100 ether;
+    uint256 constant ETH_LIMIT_BPS = 100; // 1%
+    uint256 constant ETH_LIMIT_ABS = 100 ether;
+    uint256 constant ETH_FLOOR = 50 ether;
+
     function setUp() public {
         // Deploy timelock (governor will be added as proposer later)
         address[] memory proposers = new address[](0);
@@ -121,11 +130,13 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
         other = new QueueOutflowMockToken("Other Token", "OTHER", uint8(OTHER_DECIMALS_VAL));
         usdc.mint(address(treasury), USDC_TREASURY_BALANCE);
         other.mint(address(treasury), OTHER_TREASURY_BALANCE);
+        vm.deal(address(treasury), ETH_TREASURY_BALANCE);
 
         // Initialize outflow configs and steward budgets (timelock-owned).
         vm.startPrank(address(timelock));
         treasury.initOutflowConfig(address(usdc), USDC_WINDOW, USDC_LIMIT_BPS, USDC_LIMIT_ABS, USDC_FLOOR);
         treasury.initOutflowConfig(address(other), USDC_WINDOW, OTHER_LIMIT_BPS, OTHER_LIMIT_ABS, OTHER_FLOOR);
+        treasury.initOutflowConfig(address(0), USDC_WINDOW, ETH_LIMIT_BPS, ETH_LIMIT_ABS, ETH_FLOOR);
         // Steward budgets sized large enough that queue-time outflow limit is the binding constraint.
         treasury.addStewardBudgetToken(address(usdc), USDC_EFFECTIVE_LIMIT, USDC_WINDOW);
         treasury.addStewardBudgetToken(address(other), OTHER_EFFECTIVE_LIMIT, USDC_WINDOW);
@@ -145,6 +156,9 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
         (uint256 otherLimit,,) = treasury.getOutflowStatus(address(other));
         assertEq(usdcLimit, USDC_EFFECTIVE_LIMIT, "USDC effective limit sanity");
         assertEq(otherLimit, OTHER_EFFECTIVE_LIMIT, "OTHER effective limit sanity");
+        // ETH outflow status uses address(this).balance via the address(0) sentinel.
+        (uint256 ethLimit,,) = treasury.getOutflowStatus(address(0));
+        assertEq(ethLimit, ETH_EFFECTIVE_LIMIT, "ETH effective limit sanity");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -407,6 +421,65 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
         );
 
         uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "at limit");
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ETH parity: queue-time feasibility for distributeETH (address(0) sentinel)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // WHY: distributeETH must obey the same queue-time feasibility check as distribute(),
+    // otherwise an infeasible ETH proposal would sit in the timelock indefinitely. The
+    // governor decodes (address recipient, uint256 amount) and aggregates against the
+    // address(0) bucket.
+    function test_queue_revertsWhenSingleDistributeETHExceedsEffectiveLimit() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(treasury);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature(
+            "distributeETH(address,uint256)", bob, ETH_EFFECTIVE_LIMIT + 1
+        );
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "exceed-limit eth");
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_OutflowInfeasible.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Two individually-feasible distributeETH calls together exceed the limit.
+    // Aggregation under the address(0) bucket must catch this.
+    function test_queue_revertsWhenBatchedDistributeETHAggregateExceedsLimit() public {
+        uint256 half = ETH_EFFECTIVE_LIMIT / 2 + 1;
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSignature("distributeETH(address,uint256)", alice, half);
+        calldatas[1] = abi.encodeWithSignature("distributeETH(address,uint256)", bob, half);
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "batched eth");
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_OutflowInfeasible.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Counterpart to the over-rejecting guard for distribute(). A distributeETH
+    // at exactly the effective limit must queue successfully — confirms the ETH path
+    // doesn't have an off-by-one.
+    function test_queue_succeedsWhenSingleDistributeETHAtLimit() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(treasury);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature(
+            "distributeETH(address,uint256)", alice, ETH_EFFECTIVE_LIMIT
+        );
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "eth at limit");
 
         governor.queue(proposalId);
         assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));

@@ -143,6 +143,19 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         emit DirectDistribution(token, recipient, amount);
     }
 
+    /// @notice Direct ETH distribution: send native ETH to recipient immediately.
+    /// @dev Uses address(0) as the token sentinel for outflow accounting. A separate
+    ///      OutflowConfig must be initialized for address(0) before this can be called;
+    ///      governance handles initialization via initOutflowConfig.
+    function distributeETH(address payable recipient, uint256 amount) external onlyOwner nonReentrant {
+        require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
+        _checkAndRecordOutflow(address(0), amount);
+        (bool ok,) = recipient.call{value: amount}("");
+        require(ok, "ArmadaTreasuryGov: ETH transfer failed");
+        emit DirectDistribution(address(0), recipient, amount);
+    }
+
     // ============ Steward Spending (executed by timelock via governor) ============
 
     /// @notice Execute a steward spend from the per-token budget.
@@ -415,7 +428,11 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         _lazyActivate(token);
 
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+        // address(0) sentinel routes balance lookup to native ETH; IERC20 calls on the
+        // zero address would revert at the high-level EXTCODESIZE check.
+        uint256 treasuryBalance = token == address(0)
+            ? address(this).balance
+            : IERC20(token).balanceOf(address(this));
         uint256 effectiveLimit = _effectiveLimit(config, treasuryBalance);
 
         // Sum recent outflows within the rolling window
@@ -497,7 +514,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     // ============ View Functions ============
 
     function getBalance(address token) external view returns (uint256) {
-        return IERC20(token).balanceOf(address(this));
+        // address(0) is the ETH sentinel — read native balance instead of an IERC20 call.
+        return token == address(0) ? address(this).balance : IERC20(token).balanceOf(address(this));
     }
 
     /// @notice View the steward's current budget status for a token
@@ -576,7 +594,10 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
         (uint256 effWindow, uint256 effBps, uint256 effAbsolute) = _effectiveParams(config);
 
-        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+        // address(0) sentinel routes balance lookup to native ETH; mirrors _checkAndRecordOutflow.
+        uint256 treasuryBalance = token == address(0)
+            ? address(this).balance
+            : IERC20(token).balanceOf(address(this));
         uint256 pctLimit = (treasuryBalance * effBps) / 10000;
         uint256 limit = pctLimit > effAbsolute ? pctLimit : effAbsolute;
         effectiveLimit = limit > config.floorAbsolute ? limit : config.floorAbsolute;

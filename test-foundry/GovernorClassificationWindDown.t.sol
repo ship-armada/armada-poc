@@ -372,6 +372,42 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Standard));
     }
 
+    // WHY: distributeETH must mirror the >5% auto-promotion that distribute() has, or
+    // governance could drain ETH at the Standard quorum/timing threshold while ERC20
+    // drains require Extended. Treasury balance is read via address.balance for the
+    // ETH path.
+    function test_classify_distributeETHLargeAmountForcesExtended() public {
+        vm.deal(address(treasury), 100 ether);
+
+        // 6 ETH > 5% of 100 ETH → Extended
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("distributeETH(address,uint256)")),
+            alice,
+            6 ether
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(treasury), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // WHY: Counterpart to the small-distribute test — sub-threshold ETH distributions
+    // must stay Standard so routine operational ETH spends use the lower-cost path.
+    function test_classify_distributeETHSmallAmountStaysStandard() public {
+        vm.deal(address(treasury), 100 ether);
+
+        // 4 ETH < 5% of 100 ETH → Standard
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("distributeETH(address,uint256)")),
+            alice,
+            4 ether
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(treasury), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Standard));
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ARMADA FEE MODULE SELECTOR CLASSIFICATION
     // ═══════════════════════════════════════════════════════════════

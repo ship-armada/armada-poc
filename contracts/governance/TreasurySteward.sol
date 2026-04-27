@@ -19,7 +19,7 @@ contract TreasurySteward {
     address public currentSteward;
 
     uint256 public termStart;
-    uint256 public constant TERM_DURATION = 180 days; // 6-month term
+    uint256 public constant TERM_DURATION = 7 days; // 1-week term (medi-Sepolia; was 180 days)
 
     // ============ Events ============
 

@@ -55,7 +55,7 @@ contract ArmadaRedemption is ReentrancyGuard {
     /// @notice Delay after wind-down trigger before redemptions can begin. Provides a
     ///         social coordination window for sweepToken/sweepETH to run, mitigating
     ///         the partial-sweep / pre-sweep ARM-lock footgun tracked in issue #254.
-    uint256 public constant REDEMPTION_DELAY = 7 days;
+    uint256 public constant REDEMPTION_DELAY = 6 hours; // (medi-Sepolia)
 
     // ============ Mutable State ============
 

@@ -151,8 +151,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Proposal type parameters
     mapping(ProposalType => ProposalParams) public proposalTypeParams;
 
-    // Proposal threshold: 50 ARM (0.5% of 10k supply — medi-Sepolia)
-    uint256 public constant PROPOSAL_THRESHOLD = 50e18;
+    // Proposal threshold: 10 ARM (0.1% of 10k supply — medi-Sepolia)
+    uint256 public constant PROPOSAL_THRESHOLD = 10e18;
 
     // Bounds for governance-updatable proposal parameters (medi-Sepolia)
     uint256 public constant MIN_VOTING_DELAY = 1 hours;
@@ -165,13 +165,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     uint256 public constant MAX_QUORUM_BPS = 5000;  // 50%
 
     // Succeeded proposals must be queued within this window or they expire
-    uint256 public constant QUEUE_GRACE_PERIOD = 3 days; // (medi-Sepolia)
+    uint256 public constant QUEUE_GRACE_PERIOD = 12 hours; // (medi-Sepolia)
 
     // Mirror of ArmadaTreasuryGov.LIMIT_ACTIVATION_DELAY. Duplicated here (instead of
     // read cross-contract) to keep the governor under the 24576-byte mainnet deploy limit.
     // The two constants must stay in sync; a divergence test in test/ asserts parity at
     // deploy time, so a future edit that changes one without the other will fail CI.
-    uint256 public constant TREASURY_OUTFLOW_ACTIVATION_DELAY = 16 days; // (medi-Sepolia)
+    uint256 public constant TREASURY_OUTFLOW_ACTIVATION_DELAY = 1 days; // (medi-Sepolia: > Extended cycle of 17h)
 
     // Absolute quorum floor: prevents governance passing on trivial turnout regardless
     // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
@@ -285,33 +285,33 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         treasuryAddress = _treasuryAddress;
         deployer = msg.sender;
 
-        // Standard proposals (medi-Sepolia): 6h delay, 2d voting, 6h execution, 20% quorum
+        // Standard proposals (medi-Sepolia): 1h delay, 6h voting, 1h execution, 20% quorum
         proposalTypeParams[ProposalType.Standard] = ProposalParams({
-            votingDelay: 6 hours,
-            votingPeriod: 2 days,
-            executionDelay: 6 hours,
+            votingDelay: 1 hours,
+            votingPeriod: 6 hours,
+            executionDelay: 1 hours,
             quorumBps: 2000
         });
 
-        // Extended proposals (medi-Sepolia): 6h delay, 3d voting, 1d execution, 30% quorum
+        // Extended proposals (medi-Sepolia): 1h delay, 12h voting, 4h execution, 30% quorum
         proposalTypeParams[ProposalType.Extended] = ProposalParams({
-            votingDelay: 6 hours,
-            votingPeriod: 3 days,
-            executionDelay: 1 days,
+            votingDelay: 1 hours,
+            votingPeriod: 12 hours,
+            executionDelay: 4 hours,
             quorumBps: 3000
         });
 
-        // VetoRatification (medi-Sepolia): immediate voting, 2d period, no execution delay, 20% quorum.
+        // VetoRatification (medi-Sepolia): immediate voting, 6h period, no execution delay, 20% quorum.
         // These params bypass setProposalTypeParams() bounds, making VetoRatification timing
         // effectively immutable via governance. Only the veto mechanism can create these proposals.
         proposalTypeParams[ProposalType.VetoRatification] = ProposalParams({
             votingDelay: 0,
-            votingPeriod: 2 days,
+            votingPeriod: 6 hours,
             executionDelay: 0,
             quorumBps: 2000
         });
 
-        // Steward (medi-Sepolia): immediate voting, 2d review window, 6h timelock, 20% quorum.
+        // Steward (medi-Sepolia): immediate voting, 6h review window, 2h timelock, 20% quorum.
         // Pass-by-default: passes unless quorum met AND majority votes AGAINST.
         // The execution delay provides a veto buffer after the pass-by-default voting window,
         // giving tokenholders time to queue a VetoRatification proposal before the steward
@@ -320,16 +320,16 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // effectively immutable via governance. Only proposeStewardSpend() creates these.
         proposalTypeParams[ProposalType.Steward] = ProposalParams({
             votingDelay: 0,
-            votingPeriod: 2 days,
-            executionDelay: 6 hours,
+            votingPeriod: 6 hours,
+            executionDelay: 2 hours,
             quorumBps: 2000
         });
 
         // Signaling (medi-Sepolia): non-executable text-only proposals. Standard timing, no execution phase.
         // Immutable — cannot be changed via setProposalTypeParams().
         proposalTypeParams[ProposalType.Signaling] = ProposalParams({
-            votingDelay: 6 hours,
-            votingPeriod: 2 days,
+            votingDelay: 1 hours,
+            votingPeriod: 6 hours,
             executionDelay: 0,
             quorumBps: 2000
         });

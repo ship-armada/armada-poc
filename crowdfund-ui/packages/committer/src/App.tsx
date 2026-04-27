@@ -18,7 +18,6 @@ import {
   SearchBar,
   TreeView,
   AppShell,
-  LastTxChip,
   LifecycleBanner,
   Separator,
   Tabs,
@@ -865,7 +864,6 @@ export function App() {
 
   const walletChrome = (
     <div className="flex items-center gap-2">
-      <LastTxChip />
       <HeaderWalletButton />
     </div>
   )
@@ -892,9 +890,6 @@ export function App() {
         </div>
       ) : null}
       <HeaderWalletButton className="w-full justify-center" />
-      <div className="flex justify-start">
-        <LastTxChip />
-      </div>
     </div>
   )
 

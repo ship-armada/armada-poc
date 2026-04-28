@@ -384,50 +384,6 @@ describe("Launch Team & Seed Cap", function () {
     });
   });
 
-  describe("Launch Team Cannot Commit", function () {
-    beforeEach(async function () {
-      await crowdfund.addSeed(allSigners[3].address);
-
-    });
-
-    it("launch team address cannot commit USDC", async function () {
-      // Even if somehow whitelisted (e.g., added as seed), commit should revert
-      // In practice, deployer == launchTeam == admin in this test, and deployer
-      // is not a seed, but let's test the guard directly.
-      // First, make the launchTeam address a seed-like participant manually
-      // by deploying a separate crowdfund where launchTeam is a different address
-      const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
-      const ltSigner = allSigners[5];
-      const cfOpenTimestamp = (await time.latest()) + 300;
-      const cf = await ArmadaCrowdfund.deploy(
-        await usdc.getAddress(),
-        await armToken.getAddress(),
-        treasury.address,
-        ltSigner.address,         // separate launch team
-        securityCouncil.address,  // securityCouncil
-        cfOpenTimestamp      // openTimestamp
-      );
-      await cf.waitForDeployment();
-
-      // Fund ARM and verify pre-load
-      const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
-      await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
-      await cf.loadArm();
-
-      // Advance to window start, then add launchTeam as a seed
-      await time.increaseTo(await cf.windowStart());
-      await cf.connect(ltSigner).addSeed(ltSigner.address);
-
-      // Fund the launch team address
-      await fundAndApprove(ltSigner, USDC(15000));
-
-      // Try to commit — should be blocked by launch team guard
-      await expect(
-        cf.connect(ltSigner).commit(0, USDC(100))
-      ).to.be.revertedWith("ArmadaCrowdfund: launch team cannot commit");
-    });
-  });
-
   describe("Re-Invite Behavior", function () {
     let invitee: SignerWithAddress;
 

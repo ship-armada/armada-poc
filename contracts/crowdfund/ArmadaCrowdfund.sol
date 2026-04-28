@@ -184,6 +184,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     function _addSeed(address seed) internal {
         require(seed != address(0), "ArmadaCrowdfund: zero address");
+        require(seed != launchTeam, "ArmadaCrowdfund: launchTeam cannot be a seed");
         require(hopStats[0].whitelistCount < MAX_SEEDS, "ArmadaCrowdfund: seed cap reached");
         require(!participants[seed][0].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
 
@@ -225,6 +226,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(block.timestamp <= windowEnd, "ArmadaCrowdfund: window closed");
+        require(msg.sender != launchTeam, "ArmadaCrowdfund: launchTeam cannot invite via regular path");
+        require(invitee != launchTeam, "ArmadaCrowdfund: launchTeam cannot be invitee");
 
         Participant storage inviter = participants[msg.sender][inviterHop];
         require(inviter.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
@@ -259,6 +262,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         );
         require(fromHop == 0 || fromHop == 1, "ArmadaCrowdfund: invalid hop for launch team");
         require(invitee != address(0), "ArmadaCrowdfund: zero address");
+        require(invitee != launchTeam, "ArmadaCrowdfund: launchTeam cannot be invitee");
 
         uint8 inviteeHop = fromHop + 1;
 

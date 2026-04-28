@@ -1115,67 +1115,125 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         return bytes32(proposalId);
     }
 
+    /// @dev Decode the parameters of a treasury-outflow selector calldata into the
+    ///      (token, amount) tuple used for aggregation. Handles distribute(),
+    ///      distributeETH(), and stewardSpend(). For distributeETH(), token is set to
+    ///      address(0) — the ETH sentinel used by ArmadaTreasuryGov's outflow accounting.
+    ///      Returns ok=false if the selector is unrecognized or the calldata is too
+    ///      short to decode the expected layout.
+    ///
+    ///      Shared by _classifyProposal (5% threshold gate) and _checkOutflowFeasibility
+    ///      (queue-time effective-limit gate) so the two checks can never disagree on
+    ///      how a given calldata is interpreted.
+    function _decodeTreasuryDistribute(bytes memory data)
+        internal pure returns (address token, uint256 amount, bool ok)
+    {
+        if (data.length < 4) return (address(0), 0, false);
+        bytes4 selector = bytes4(data);
+
+        if (selector == DISTRIBUTE_SELECTOR || selector == STEWARD_SPEND_SELECTOR) {
+            // distribute(address token, address recipient, uint256 amount)
+            // stewardSpend(address token, address recipient, uint256 amount)
+            // 4 selector bytes + 3 * 32 param bytes = 100
+            if (data.length < 100) return (address(0), 0, false);
+            bytes memory params = new bytes(data.length - 4);
+            for (uint256 j = 0; j < params.length; j++) {
+                params[j] = data[j + 4];
+            }
+            (token, , amount) = abi.decode(params, (address, address, uint256));
+            return (token, amount, true);
+        }
+
+        if (selector == DISTRIBUTE_ETH_SELECTOR) {
+            // distributeETH(address recipient, uint256 amount)
+            // 4 selector bytes + 2 * 32 param bytes = 68
+            if (data.length < 68) return (address(0), 0, false);
+            bytes memory params = new bytes(data.length - 4);
+            for (uint256 j = 0; j < params.length; j++) {
+                params[j] = data[j + 4];
+            }
+            (, amount) = abi.decode(params, (address, uint256));
+            return (address(0), amount, true);
+        }
+
+        return (address(0), 0, false);
+    }
+
     /// @dev Classify a proposal based on its calldata. Fail-closed: any selector not
     ///      explicitly registered as Extended or Standard defaults to Extended.
     ///      If any action targets an extended selector, the entire proposal is Extended.
-    ///      If a distribute() call would move >5% of treasury balance, force Extended.
+    ///      Treasury-targeted distribute() and distributeETH() amounts are aggregated
+    ///      per token across the entire proposal; if any token's aggregate exceeds 5%
+    ///      of the spot treasury balance, force Extended. Per-token aggregation
+    ///      prevents a proposer from batch-splitting one large drain into many
+    ///      sub-threshold calls.
     function _classifyProposal(
         ProposalType declaredType,
-        address[] memory, /* targets — reserved for future target-specific checks */
+        address[] memory targets,
         bytes[] memory calldatas
     ) internal view returns (ProposalType) {
         // If already Extended, no need to check further
         if (declaredType == ProposalType.Extended) return ProposalType.Extended;
 
+        // Pass 1: per-call selector classification.
+        // Any extended selector forces Extended; any unrecognized selector forces
+        // Extended (fail-closed) — guarding against wrapper/forwarder bypass and
+        // newly added protocol functions that haven't been classified yet.
         for (uint256 i = 0; i < calldatas.length; i++) {
             if (calldatas[i].length < 4) continue;
-
             bytes4 selector = bytes4(calldatas[i]);
-
-            // Check registered extended selectors
             if (extendedSelectors[selector]) return ProposalType.Extended;
-
-            // Special case: distribute() calls exceeding 5% of treasury balance.
-            // DESIGN NOTE: This uses a spot balanceOf() check. An attacker could inflate the
-            // treasury balance (by donating tokens) to make a large distribution appear to be
-            // below the 5% threshold. This is accepted because: (1) donated tokens are lost to
-            // the attacker, making the attack economically irrational, (2) USDC lacks
-            // checkpointing so snapshot-based alternatives are not available, and (3) the
-            // Security Council can veto any suspicious proposal regardless of classification.
-            if (selector == DISTRIBUTE_SELECTOR && calldatas[i].length >= 100) {
-                // Decode: distribute(address token, address recipient, uint256 amount)
-                // Skip the 4-byte selector by slicing from index 4 onward
-                bytes memory params = new bytes(calldatas[i].length - 4);
-                for (uint256 j = 0; j < params.length; j++) {
-                    params[j] = calldatas[i][j + 4];
-                }
-                (address token, , uint256 amount) = abi.decode(params, (address, address, uint256));
-                uint256 treasuryBalance = IERC20(token).balanceOf(treasuryAddress);
-                if (treasuryBalance > 0 && amount > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
-                    return ProposalType.Extended;
-                }
-            }
-
-            // Same 5% rule applied to native ETH distributions. Treasury balance is read
-            // via address(treasuryAddress).balance — same spot-read trade-offs as the ERC20
-            // path apply (donation inflation tolerated for the reasons above).
-            // distributeETH(address,uint256) calldata = 4 + 32 + 32 = 68 bytes.
-            if (selector == DISTRIBUTE_ETH_SELECTOR && calldatas[i].length >= 68) {
-                bytes memory params = new bytes(calldatas[i].length - 4);
-                for (uint256 j = 0; j < params.length; j++) {
-                    params[j] = calldatas[i][j + 4];
-                }
-                (, uint256 amount) = abi.decode(params, (address, uint256));
-                uint256 treasuryBalance = treasuryAddress.balance;
-                if (treasuryBalance > 0 && amount > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
-                    return ProposalType.Extended;
-                }
-            }
-
-            // Fail-closed: unrecognized selectors force Extended classification.
-            // This prevents bypass via wrapper/forwarder contracts or newly added
-            // protocol functions that haven't been classified yet.
             if (!standardSelectors[selector]) return ProposalType.Extended;
+        }
+
+        // Pass 2: per-token aggregation of treasury-targeted distribute() /
+        // distributeETH() amounts; force Extended if any token's aggregate exceeds
+        // the 5% threshold. stewardSpend() is excluded — it is governed separately
+        // by the per-token steward budget table, not by the 5% rule.
+        //
+        // DESIGN NOTE: Uses a spot balanceOf() check. An attacker could inflate the
+        // treasury balance (by donating tokens) to make a large distribution appear
+        // to be below the 5% threshold. This is accepted because: (1) donated tokens
+        // are lost to the attacker, making the attack economically irrational,
+        // (2) USDC lacks checkpointing so snapshot-based alternatives are not
+        // available, and (3) the Security Council can veto any suspicious proposal
+        // regardless of classification.
+        address[] memory tokens = new address[](calldatas.length);
+        uint256[] memory sums = new uint256[](calldatas.length);
+        uint256 tokenCount;
+
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            if (targets[i] != treasuryAddress) continue;
+            if (calldatas[i].length < 4) continue;
+            bytes4 selector = bytes4(calldatas[i]);
+            if (selector != DISTRIBUTE_SELECTOR && selector != DISTRIBUTE_ETH_SELECTOR) continue;
+
+            (address token, uint256 amount, bool ok) = _decodeTreasuryDistribute(calldatas[i]);
+            if (!ok) continue;
+
+            bool found;
+            for (uint256 k = 0; k < tokenCount; k++) {
+                if (tokens[k] == token) {
+                    sums[k] += amount;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                tokens[tokenCount] = token;
+                sums[tokenCount] = amount;
+                tokenCount++;
+            }
+        }
+
+        for (uint256 k = 0; k < tokenCount; k++) {
+            uint256 treasuryBalance = tokens[k] == address(0)
+                ? treasuryAddress.balance
+                : IERC20(tokens[k]).balanceOf(treasuryAddress);
+            if (treasuryBalance > 0 &&
+                sums[k] > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
+                return ProposalType.Extended;
+            }
         }
 
         return declaredType;
@@ -1197,8 +1255,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      and is aggregated under the address(0) sentinel. transferTo()/transferETHTo()
     ///      are wind-down-only paths that bypass outflow limits and are intentionally excluded.
     ///
-    ///      Reuses the calldata slice + abi.decode pattern from _classifyProposal.
-    ///      View-only; reverts before any governor or timelock state is written.
+    ///      Shares the _decodeTreasuryDistribute helper with _classifyProposal so the
+    ///      classification gate and the feasibility gate cannot disagree on how a
+    ///      given calldata is interpreted. View-only; reverts before any governor or
+    ///      timelock state is written.
     function _checkOutflowFeasibility(
         address[] memory targets,
         bytes[] memory calldatas
@@ -1213,32 +1273,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         for (uint256 i = 0; i < calldatas.length; i++) {
             if (targets[i] != treasuryAddress) continue;
             if (calldatas[i].length < 4) continue;
-
             bytes4 selector = bytes4(calldatas[i]);
-            address token;
-            uint256 amount;
+            if (selector != DISTRIBUTE_SELECTOR &&
+                selector != STEWARD_SPEND_SELECTOR &&
+                selector != DISTRIBUTE_ETH_SELECTOR) continue;
 
-            if (selector == DISTRIBUTE_SELECTOR || selector == STEWARD_SPEND_SELECTOR) {
-                // 4 selector bytes + 3 * 32 param bytes = 100
-                if (calldatas[i].length < 100) continue;
-                bytes memory params = new bytes(calldatas[i].length - 4);
-                for (uint256 j = 0; j < params.length; j++) {
-                    params[j] = calldatas[i][j + 4];
-                }
-                (token, , amount) = abi.decode(params, (address, address, uint256));
-            } else if (selector == DISTRIBUTE_ETH_SELECTOR) {
-                // 4 selector bytes + 2 * 32 param bytes = 68. address(0) is the ETH sentinel
-                // used by ArmadaTreasuryGov's outflow accounting.
-                if (calldatas[i].length < 68) continue;
-                bytes memory params = new bytes(calldatas[i].length - 4);
-                for (uint256 j = 0; j < params.length; j++) {
-                    params[j] = calldatas[i][j + 4];
-                }
-                (, amount) = abi.decode(params, (address, uint256));
-                token = address(0);
-            } else {
-                continue;
-            }
+            (address token, uint256 amount, bool ok) = _decodeTreasuryDistribute(calldatas[i]);
+            if (!ok) continue;
 
             bool found;
             for (uint256 k = 0; k < tokenCount; k++) {

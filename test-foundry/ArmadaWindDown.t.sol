@@ -241,6 +241,49 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         assertTrue(armToken.transferable());
     }
 
+    // WHY: The two paths to enabling ARM transfers — governance proposal and
+    // wind-down trigger — are independent. The spec-expected post-crowdfund global
+    // unlock runs through the governance path long before any wind-down trigger.
+    // _executeWindDown must therefore tolerate transfers being already enabled and
+    // not fail on the token's "already enabled" revert. Without this guard, the
+    // entire wind-down + redemption surface (sweepToken, sweepETH, redeem, treasury
+    // wind-down sweep) becomes permanently unreachable.
+    function test_executeWindDown_governanceTriggerSucceedsWhenTransfersAlreadyEnabled() public {
+        // Pre-enable transfers via the governance path (timelock acts as the executor).
+        vm.prank(address(timelock));
+        armToken.setTransferable(true);
+        assertTrue(armToken.transferable());
+
+        // Wind-down trigger must succeed despite transfers already being on.
+        vm.prank(address(timelock));
+        windDown.governanceTriggerWindDown();
+
+        assertTrue(windDown.triggered());
+        assertEq(windDown.triggerTime(), block.timestamp);
+        assertTrue(armToken.transferable());
+    }
+
+    // WHY: Same scenario via the permissionless trigger path. Both code paths
+    // converge on _executeWindDown, but covering both pins the contract guarantee
+    // that the bricking failure mode cannot recur on either path after a refactor.
+    function test_executeWindDown_permissionlessTriggerSucceedsWhenTransfersAlreadyEnabled() public {
+        // Pre-enable transfers via governance.
+        vm.prank(address(timelock));
+        armToken.setTransferable(true);
+        assertTrue(armToken.transferable());
+
+        // Satisfy permissionless trigger conditions.
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        revenueCounter.setRevenue(REVENUE_THRESHOLD - 1);
+
+        vm.prank(randomUser);
+        windDown.triggerWindDown();
+
+        assertTrue(windDown.triggered());
+        assertEq(windDown.triggerTime(), block.timestamp);
+        assertTrue(armToken.transferable());
+    }
+
     function test_executeWindDown_disablesGovernance() public {
         assertFalse(governor.windDownActive());
 

@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // Minimal interfaces for cross-contract calls during wind-down
 interface IArmadaTokenWindDown {
     function setTransferable(bool _transferable) external;
+    function transferable() external view returns (bool);
 }
 
 interface IArmadaGovernorWindDown {
@@ -221,8 +222,13 @@ contract ArmadaWindDown {
         triggered = true;
         triggerTime = block.timestamp;
 
-        // Enable ARM transfers (users need to move ARM to redeem)
-        IArmadaTokenWindDown(armToken).setTransferable(true);
+        // Enable ARM transfers (users need to move ARM to redeem). The post-condition
+        // is "transfers are enabled" — not "transfers were flipped here". Governance
+        // can independently enable transfers via a separate proposal, so we only call
+        // setTransferable when needed; the token's setter reverts on already-enabled.
+        if (!IArmadaTokenWindDown(armToken).transferable()) {
+            IArmadaTokenWindDown(armToken).setTransferable(true);
+        }
 
         // Permanently disable governance (no new proposals)
         governor.setWindDownActive();

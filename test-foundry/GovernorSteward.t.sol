@@ -739,6 +739,70 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         assertFalse(authorized);
     }
 
+    // WHY: `delete` on a dynamic storage array iterates and zeroes each element. Gas
+    // refunds are credited at end-of-transaction, so the iteration itself can OOG
+    // before any refund applies. If removeStewardBudgetToken cleared
+    // _stewardSpendHistory[token], it would become unreachable once the spend log
+    // grew large enough — at ~1 spend/day, several thousand entries accumulate over
+    // the lifetime of a long-lived protocol. Pin the contract behavior of NOT
+    // clearing history on removal so a future refactor cannot reintroduce the bug.
+    function test_removeStewardBudgetToken_succeedsWithLargeSpendHistory() public {
+        vm.startPrank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Generate 200 spend records across many advancing windows so each is in
+        // budget at the time it executes. 200 entries is well above the threshold
+        // where a per-element delete would meaningfully consume block gas, and
+        // dwarfs anything `_sumRecentRecords` will revisit at any single read.
+        uint256 spendsPerWindow = 5;
+        uint256 windows = 40;
+        for (uint256 w = 0; w < windows; w++) {
+            for (uint256 i = 0; i < spendsPerWindow; i++) {
+                treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT / spendsPerWindow);
+            }
+            vm.warp(block.timestamp + BUDGET_WINDOW + 1);
+        }
+
+        treasury.removeStewardBudgetToken(address(usdc));
+        vm.stopPrank();
+
+        (,, bool authorized) = treasury.stewardBudgets(address(usdc));
+        assertFalse(authorized, "budget was removed");
+    }
+
+    // WHY: Removing then re-adding a budget must not "reset the clock" on the
+    // rolling-window cap. A captured timelock would otherwise bypass the rate
+    // limit by toggling the budget. _stewardSpendHistory persists across removal
+    // and re-authorization; entries inside the new window count against the new
+    // budget at the next stewardSpend call.
+    function test_removeStewardBudgetToken_preservesSpendHistoryForRollingWindow() public {
+        vm.startPrank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Spend the entire budget. Recent-spend counter should now equal BUDGET_LIMIT.
+        treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
+
+        // Remove and immediately re-add — without the fix, history would survive in
+        // storage but spec'd behavior was for it to be cleared. We now intentionally
+        // preserve it; verify by attempting another spend and observing the budget
+        // is still fully consumed within the same window.
+        treasury.removeStewardBudgetToken(address(usdc));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Recent spending of BUDGET_LIMIT is still within the rolling window, so the
+        // re-authorized budget shows zero remaining headroom.
+        vm.expectRevert("ArmadaTreasuryGov: exceeds steward budget");
+        treasury.stewardSpend(address(usdc), alice, 1);
+
+        // Past the window, history naturally falls outside _sumRecentRecords' cutoff
+        // and the new budget is fully usable again.
+        vm.warp(block.timestamp + BUDGET_WINDOW + 1);
+        treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(alice), BUDGET_LIMIT * 2);
+    }
+
     function test_budgetFunctions_rejectNonOwner() public {
         vm.prank(alice);
         vm.expectRevert("ArmadaTreasuryGov: not owner");

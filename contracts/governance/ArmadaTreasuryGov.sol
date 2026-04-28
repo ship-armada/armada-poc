@@ -227,11 +227,20 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     /// @notice Remove a token from the steward budget table, disabling steward spending.
     /// @param token Token address to deauthorize
+    /// @dev _stewardSpendHistory[token] is intentionally NOT cleared. Two reasons:
+    ///      (1) `delete` on a dynamic storage array iterates and zeroes each element;
+    ///      gas refunds are credited at end-of-transaction so the iteration itself can
+    ///      OOG before the refund applies, which would brick this function once the
+    ///      array grows large enough.
+    ///      (2) Preserving history defends against rolling-window evasion: a captured
+    ///      timelock cannot reset the recent-spend counter by removing and re-adding
+    ///      the budget. If the token is later re-authorized, entries within the new
+    ///      window still count against the new budget; older entries are naturally
+    ///      ignored by _sumRecentRecords' cutoff.
     function removeStewardBudgetToken(address token) external onlyOwner {
         require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
 
         delete stewardBudgets[token];
-        delete _stewardSpendHistory[token];
 
         emit StewardBudgetTokenRemoved(token);
     }

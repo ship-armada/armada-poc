@@ -151,7 +151,7 @@ A proposal is automatically **extended** if it grants authority,
 loosens constraints, or increases risk exposure:
 
 * Fee parameter increases
-* Treasury allocation exceeding 5% of current treasury balance
+* Treasury allocation via `distribute()` or `distributeETH()` exceeding 5% of current treasury balance (the 5% rule applies to the per-tx distribution channel only — `stewardSpend()` is governed by the per-token Steward Budget table; see §Treasury Steward)
 * Treasury Steward election
 * Security Council seat changes via governance
 * Contract upgrades (governor, fee module, revenue counter)
@@ -279,8 +279,9 @@ All reusable governance parameters listed above are themselves governable — lo
 |----------|-------|---------------|
 | **Fees** | Fee increases (shield fee, yield fee, volume tiers, integrator terms) | Extended |
 | **Fees** | Fee decreases | Standard |
-| **Treasury operations** | Allocations, grants, partnerships ≤5% | Standard |
-| **Treasury operations** | Allocations >5% | Extended |
+| **Treasury operations** | `distribute()` / `distributeETH()` allocations ≤5% of treasury balance | Standard |
+| **Treasury operations** | `distribute()` / `distributeETH()` allocations >5% of treasury balance | Extended |
+| **Treasury operations** | `stewardSpend()` (within an authorized per-token Steward Budget) | Steward (pass-by-default; per-token budget is the gate, not the 5% rule — see §Treasury Steward) |
 | **Parameters** | Batch windows, relayer config, yield sources | Standard |
 | **Parameters** | Activity shaping defaults (transaction size constraints, rate limits, recommended ranges) | Extended |
 | **Parameters** | Ingress normalization (standard ingress amounts, phase, custom deposit availability) | Extended |
@@ -368,6 +369,7 @@ This inverts the normal proposal flow for routine operational spending: the stew
 - **No carryover.** Unused budget does not accumulate. Each token's limit is always its configured amount per trailing window.
 - **Multiple proposals may stack** within the same window, but their combined value per token cannot exceed that token's budget limit.
 - **Steward spending counts against treasury outflow limits.** The per-token steward budget and the aggregate treasury outflow limits (§Treasury Outflow Limits) are not independent — steward proposals consume from the same rolling outflow window as governance proposals. A steward proposal can be within the steward's per-token budget but still revert at execution if it would breach the aggregate treasury outflow limit.
+- **The 5% Extended classification rule does not apply to `stewardSpend()`.** That rule gates the per-tx `distribute()` / `distributeETH()` channel. The steward channel is pre-authorized via the per-token Steward Budget table — adding a token, increasing a limit, or extending a window already requires an Extended proposal (§Governable). Within an authorized budget, individual `stewardSpend()` proposals are governed by the budget table and the aggregate treasury outflow limits, not by per-tx 5% classification. Both gates are enforced at queue time: a `stewardSpend()` whose aggregate per-token amount exceeds either the steward budget limit or the effective outflow limit is rejected before reaching the timelock.
 
 ### Circuit breaker
 

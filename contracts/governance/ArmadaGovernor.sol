@@ -13,13 +13,20 @@ import "./IArmadaGovernance.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
 
-/// @dev Minimal interface for reading treasury outflow limits at queue time.
-///      Matches the signature of ArmadaTreasuryGov.getOutflowStatus.
+/// @dev Minimal interface for reading treasury limits at queue time.
+///      Matches the signatures of ArmadaTreasuryGov.getOutflowStatus and getStewardBudget.
+///      The `Outflow` name is retained because the queue-time gates collectively guard
+///      treasury outflow paths (rolling-window outflow ceiling + per-token steward budget).
 interface IArmadaTreasuryOutflow {
     function getOutflowStatus(address token) external view returns (
         uint256 effectiveLimit,
         uint256 recentOutflow,
         uint256 available
+    );
+    function getStewardBudget(address token) external view returns (
+        uint256 budget,
+        uint256 spent,
+        uint256 remaining
     );
 }
 
@@ -87,6 +94,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_SignalingNoExecution();
     error Gov_TreasuryAlreadyExcluded();
     error Gov_OutflowInfeasible();
+    error Gov_StewardBudgetInfeasible();
 
     // ============ Types ============
 
@@ -1240,17 +1248,25 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @dev Queue-time sanity check: reject a proposal whose aggregate per-token
-    ///      treasury spend exceeds that token's current effective outflow limit.
-    ///      Such a proposal can never execute under current parameters and should
-    ///      not occupy the timelock queue indefinitely.
+    ///      treasury spend exceeds that token's current effective outflow limit, or
+    ///      whose aggregate per-token stewardSpend exceeds the per-token steward
+    ///      budget limit. Such a proposal can never execute under current parameters
+    ///      and should not occupy the timelock queue indefinitely.
     ///
-    ///      Compares against the effective limit (the ceiling), not the available
-    ///      budget (ceiling minus recent outflows). Proposals that fit the limit
-    ///      but exceed the current available budget are allowed to queue and retry
-    ///      once the rolling window has created room.
+    ///      Compares against the effective limit / budget limit (the ceiling), not the
+    ///      available (ceiling minus recent outflows / recent steward spending).
+    ///      Proposals that fit the limit but exceed the current available are allowed
+    ///      to queue and retry once the rolling window has created room.
     ///
-    ///      distribute(), stewardSpend(), and distributeETH() actions targeting the
-    ///      treasury are checked. The first two share the (address token, address
+    ///      Two independent gates run on the same iteration:
+    ///      1. Aggregate outflow check: distribute() + stewardSpend() + distributeETH()
+    ///         per-token sums vs treasury rolling-window outflow ceiling.
+    ///      2. Aggregate steward budget check: stewardSpend()-only per-token sums vs
+    ///         the per-token steward budget limit. Tokens not in the budget table
+    ///         return budget=0, so any positive aggregate fails — surfacing
+    ///         unauthorized-token steward proposals at queue time instead of execute.
+    ///
+    ///      The first two outflow selectors share the (address token, address
     ///      recipient, uint256 amount) layout; distributeETH() drops the token argument
     ///      and is aggregated under the address(0) sentinel. transferTo()/transferETHTo()
     ///      are wind-down-only paths that bypass outflow limits and are intentionally excluded.
@@ -1266,9 +1282,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Aggregate amounts per token using parallel arrays in memory. Proposal
         // batches are small (bounded by block gas), so O(n^2) is acceptable and
         // avoids needing a mapping or a storage slot.
-        address[] memory tokens = new address[](calldatas.length);
-        uint256[] memory sums = new uint256[](calldatas.length);
-        uint256 tokenCount;
+        address[] memory outflowTokens = new address[](calldatas.length);
+        uint256[] memory outflowSums = new uint256[](calldatas.length);
+        uint256 outflowTokenCount;
+
+        address[] memory stewardTokens = new address[](calldatas.length);
+        uint256[] memory stewardSums = new uint256[](calldatas.length);
+        uint256 stewardTokenCount;
 
         for (uint256 i = 0; i < calldatas.length; i++) {
             if (targets[i] != treasuryAddress) continue;
@@ -1281,24 +1301,48 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             (address token, uint256 amount, bool ok) = _decodeTreasuryDistribute(calldatas[i]);
             if (!ok) continue;
 
+            // Outflow aggregation covers all three treasury-outflow selectors.
             bool found;
-            for (uint256 k = 0; k < tokenCount; k++) {
-                if (tokens[k] == token) {
-                    sums[k] += amount;
+            for (uint256 k = 0; k < outflowTokenCount; k++) {
+                if (outflowTokens[k] == token) {
+                    outflowSums[k] += amount;
                     found = true;
                     break;
                 }
             }
             if (!found) {
-                tokens[tokenCount] = token;
-                sums[tokenCount] = amount;
-                tokenCount++;
+                outflowTokens[outflowTokenCount] = token;
+                outflowSums[outflowTokenCount] = amount;
+                outflowTokenCount++;
+            }
+
+            // Steward-budget aggregation covers stewardSpend() only — distribute()
+            // and distributeETH() are not gated by the steward budget table.
+            if (selector == STEWARD_SPEND_SELECTOR) {
+                bool sFound;
+                for (uint256 k = 0; k < stewardTokenCount; k++) {
+                    if (stewardTokens[k] == token) {
+                        stewardSums[k] += amount;
+                        sFound = true;
+                        break;
+                    }
+                }
+                if (!sFound) {
+                    stewardTokens[stewardTokenCount] = token;
+                    stewardSums[stewardTokenCount] = amount;
+                    stewardTokenCount++;
+                }
             }
         }
 
-        for (uint256 k = 0; k < tokenCount; k++) {
-            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasuryAddress).getOutflowStatus(tokens[k]);
-            if (sums[k] > effectiveLimit) revert Gov_OutflowInfeasible();
+        for (uint256 k = 0; k < outflowTokenCount; k++) {
+            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasuryAddress).getOutflowStatus(outflowTokens[k]);
+            if (outflowSums[k] > effectiveLimit) revert Gov_OutflowInfeasible();
+        }
+
+        for (uint256 k = 0; k < stewardTokenCount; k++) {
+            (uint256 budget,,) = IArmadaTreasuryOutflow(treasuryAddress).getStewardBudget(stewardTokens[k]);
+            if (stewardSums[k] > budget) revert Gov_StewardBudgetInfeasible();
         }
     }
 

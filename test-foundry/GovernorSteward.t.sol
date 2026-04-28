@@ -472,6 +472,10 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // WHY: Verify that a still-active steward's proposals can still be queued normally.
     // Regression guard — the new check must not break the happy path.
     function test_queue_succeedsForActiveSteward() public {
+        // Authorize USDC for steward spending so the queue-time budget check is satisfied.
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
 
         _passVotingPeriod(proposalId);
@@ -486,7 +490,10 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // M-10 (execute): Steward proposals blocked at execute() after removal/expiry
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @dev Helper: propose, pass voting, queue, and return proposalId
+    /// @dev Helper: propose, pass voting, queue, and return proposalId.
+    ///      Caller must seed the steward budget (via addStewardBudgetToken) before
+    ///      invoking — without it the queue-time budget feasibility check rejects
+    ///      stewardSpend on an unauthorized token.
     function _queueStewardProposal(uint256 amount) internal returns (uint256) {
         uint256 proposalId = _proposeStewardSpend(alice, amount);
         _passVotingPeriod(proposalId);
@@ -498,6 +505,9 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // must not have their proposal executed. Without the execute()-time check, the
     // queue()-time guard is insufficient — same TOCTOU class as M-10, one step later.
     function test_execute_revertsForRemovedSteward() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         uint256 proposalId = _queueStewardProposal(100 * 1e6);
 
         // Remove steward during the execution delay
@@ -514,6 +524,9 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // WHY: Same scenario but with term expiry. A steward whose term expires during
     // the execution delay must not have their proposal executed.
     function test_execute_revertsForExpiredStewardTerm() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         // Warp to near term end so term expires during the execution delay
         vm.warp(block.timestamp + 172 days);
         vm.roll(block.number + 1);
@@ -531,6 +544,9 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // WHY: If a new steward is elected during the execution delay, the old steward's
     // queued proposal must not execute — the proposer no longer matches currentSteward().
     function test_execute_revertsWhenDifferentStewardElected() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         uint256 proposalId = _queueStewardProposal(100 * 1e6);
 
         // Elect a different steward during execution delay

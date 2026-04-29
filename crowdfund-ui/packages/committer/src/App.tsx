@@ -39,7 +39,7 @@ import {
   type UserAllocation,
   type UserHopPosition,
 } from '@armada/crowdfund-shared'
-import { getExplorerUrl, getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
+import { getExplorerUrl, getHubRpcUrls, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -652,6 +652,7 @@ export function App() {
   const [page, setPage] = useState<Page>('network')
 
   const pollInterval = getPollIntervalMs()
+  const indexerUrl = getIndexerUrl()
 
   // Load deployment
   useEffect(() => {
@@ -670,11 +671,12 @@ export function App() {
   const armTokenAddress = deployment?.contracts.armToken ?? null
 
   // Shared data layer
-  const { events, loading: eventsLoading } = useContractEvents({
+  const { events, loading: eventsLoading, indexerHealth, ingestReceiptLogs } = useContractEvents({
     provider,
     contractAddress: crowdfundAddress,
     pollIntervalMs: pollInterval,
     startBlock: deployment?.deployBlock,
+    indexerBaseUrl: indexerUrl,
   })
   const { graph, summaries, nodes } = useGraphState()
   const contractState = useContractState(provider, crowdfundAddress, pollInterval)
@@ -1026,7 +1028,7 @@ export function App() {
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
-        <StaleDataBanner />
+        <StaleDataBanner indexerHealth={indexerHealth} />
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
 
         {SHOW_LIFECYCLE_BAR && (
@@ -1217,6 +1219,7 @@ export function App() {
                 windowOpen={windowOpen}
                 resolveENS={resolveENS}
                 onBackToIntent={() => setIntent(null)}
+                onReceiptLogs={ingestReceiptLogs}
               />
             ) : (
               <InviteTab
@@ -1231,6 +1234,7 @@ export function App() {
                 nodes={nodes}
                 provider={provider}
                 onBackToIntent={() => setIntent(null)}
+                onReceiptLogs={ingestReceiptLogs}
               />
             )}
             </PageWithHelp>
@@ -1307,6 +1311,7 @@ export function App() {
                   windowEnd={contractState.windowEnd}
                   cappedDemand={contractState.cappedDemand}
                   graph={graph}
+                  onReceiptLogs={ingestReceiptLogs}
                 />
               </div>
             ) : null}

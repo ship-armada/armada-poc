@@ -24,6 +24,7 @@ import {
   hopLabel,
   useTxToast,
   type CrowdfundGraph,
+  type ReceiptLogLike,
 } from '@armada/crowdfund-shared'
 import { DelegateInput } from './DelegateInput'
 import { getExplorerUrl } from '@/config/network'
@@ -42,6 +43,7 @@ export interface ClaimTabProps {
   windowEnd: number
   cappedDemand: bigint
   graph: CrowdfundGraph
+  onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
 }
 
 interface HopAllocation {
@@ -81,6 +83,7 @@ export function ClaimTab(props: ClaimTabProps) {
     windowEnd,
     cappedDemand,
     graph,
+    onReceiptLogs,
   } = props
 
   const [delegate, setDelegate] = useState(address)
@@ -201,6 +204,7 @@ export function ClaimTab(props: ClaimTabProps) {
 
         setRow({ status: 'confirmed', txHash })
         txToast.notifyTxConfirmed(handle)
+        onReceiptLogs?.(receipt.logs)
         if (mode === 'arm') setHasClaimed(true)
         else setHasRefundClaimed(true)
         setPipelineRunning(false)
@@ -224,6 +228,7 @@ export function ClaimTab(props: ClaimTabProps) {
       crowdfundAddress,
       txToast,
       explorerBuilder,
+      onReceiptLogs,
     ],
   )
 

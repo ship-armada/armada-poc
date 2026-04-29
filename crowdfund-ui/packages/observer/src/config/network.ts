@@ -26,6 +26,11 @@ export function getHubRpcUrls(): string[] {
   return fallback ? [primary, fallback] : [primary]
 }
 
+export function getIndexerUrl(): string | null {
+  if (isLocalMode()) return null
+  return (import.meta.env.VITE_CROWDFUND_INDEXER_URL as string | undefined) ?? null
+}
+
 export function getHubChainId(): number {
   return isLocalMode() ? 31337 : 11155111
 }

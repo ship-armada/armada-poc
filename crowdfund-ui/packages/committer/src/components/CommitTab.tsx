@@ -35,6 +35,7 @@ import {
   CROWDFUND_CONSTANTS,
   useTxToast,
   type HopStatsData,
+  type ReceiptLogLike,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
 import { useProRataEstimate } from '@/hooks/useProRataEstimate'
@@ -59,6 +60,7 @@ export interface CommitTabProps {
   /** Optional: invoked when the user clicks Back from step 1, returning to
    *  the Participate page's intent picker. */
   onBackToIntent?: () => void
+  onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
 }
 
 type Step = 'context' | 'amount' | 'review' | 'status'
@@ -187,6 +189,7 @@ export function CommitTab(props: CommitTabProps) {
     windowOpen,
     resolveENS,
     onBackToIntent,
+    onReceiptLogs,
   } = props
 
   const [step, setStep] = useState<Step>('context')
@@ -340,6 +343,7 @@ export function CommitTab(props: CommitTabProps) {
 
         setStatus(op.id, { status: 'confirmed', txHash })
         txToast.notifyTxConfirmed(handle)
+        onReceiptLogs?.(receipt.logs)
         if (op.onConfirmed) await op.onConfirmed()
       } catch (err) {
         const msg = mapRevertToMessage(err)
@@ -363,6 +367,7 @@ export function CommitTab(props: CommitTabProps) {
     crowdfundAddress,
     refreshAllowance,
     txToast,
+    onReceiptLogs,
   ])
 
   const resetFlow = useCallback(() => {

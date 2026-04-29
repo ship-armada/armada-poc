@@ -55,6 +55,8 @@
     "crowdfund:observer": "npm run dev --workspace=@armada/crowdfund-observer",
     "crowdfund:committer": "npm run dev --workspace=@armada/crowdfund-committer",
     "crowdfund:admin": "npm run dev --workspace=@armada/crowdfund-admin",
+    "crowdfund:indexer": "npm run dev --workspace=@armada/crowdfund-indexer",
+    "crowdfund:indexer:cli": "npm run cli --workspace=@armada/crowdfund-indexer",
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
     "demo:build": "cd usdc-v2-frontend && npm run build",
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",

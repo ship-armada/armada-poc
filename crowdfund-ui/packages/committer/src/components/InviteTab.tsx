@@ -33,6 +33,7 @@ import {
   HOP_CONFIGS,
   useTxToast,
   type GraphNode,
+  type ReceiptLogLike,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
@@ -54,6 +55,7 @@ export interface InviteTabProps {
   /** Optional: invoked when the user clicks Back from step 1, returning to
    *  the Participate page's intent picker. */
   onBackToIntent?: () => void
+  onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
 }
 
 type InviteMode = 'direct' | 'link'
@@ -124,6 +126,7 @@ export function InviteTab(props: InviteTabProps) {
     nodes,
     provider,
     onBackToIntent,
+    onReceiptLogs,
   } = props
 
   const [mode, setMode] = useState<InviteMode>('direct')
@@ -273,6 +276,7 @@ export function InviteTab(props: InviteTabProps) {
 
         setRow({ status: 'confirmed', txHash })
         txToast.notifyTxConfirmed(handle)
+        onReceiptLogs?.(receipt.logs)
         setPipelineRunning(false)
         setPipelineDone(true)
       } catch (err) {
@@ -291,6 +295,7 @@ export function InviteTab(props: InviteTabProps) {
       crowdfundAddress,
       txToast,
       explorerBuilder,
+      onReceiptLogs,
     ],
   )
 

@@ -27,7 +27,7 @@ import {
   generateMockGraph,
   useContractState,
 } from '@armada/crowdfund-shared'
-import { getHubRpcUrls, getPollIntervalMs, getNetworkMode } from '@/config/network'
+import { getHubRpcUrls, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 
@@ -144,6 +144,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<'tree' | 'table'>('tree')
 
   const pollInterval = getPollIntervalMs()
+  const indexerUrl = getIndexerUrl()
 
   // Load deployment manifest on mount
   useEffect(() => {
@@ -160,11 +161,12 @@ export function App() {
   const contractAddress = deployment?.contracts.crowdfund ?? null
 
   // Event fetching + graph construction
-  const { events, loading: eventsLoading, error: eventsError } = useContractEvents({
+  const { events, loading: eventsLoading, error: eventsError, indexerHealth } = useContractEvents({
     provider,
     contractAddress,
     pollIntervalMs: pollInterval,
     startBlock: deployment?.deployBlock,
+    indexerBaseUrl: indexerUrl,
   })
 
   const { graph, summaries, nodes } = useGraphState()
@@ -413,7 +415,7 @@ export function App() {
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">
-        <StaleDataBanner />
+        <StaleDataBanner indexerHealth={indexerHealth} />
         {/* Error banner */}
         {(eventsError || contractState.error) && (
           <ErrorAlert>{eventsError || contractState.error}</ErrorAlert>

@@ -29,6 +29,14 @@ export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
 
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 
+export { fetchIndexedEventsSnapshot, fetchIndexerHealth, reviveIndexedEvent } from './lib/indexer.js'
+export type {
+  IndexedEventsSnapshot,
+  IndexedSnapshotMetadata,
+  IndexerHealth,
+  IndexerHealthStatus,
+} from './lib/indexer.js'
+
 export type {
   GraphNode,
   GraphEdge,
@@ -70,6 +78,7 @@ export {
   useContractEvents,
 } from './hooks/useContractEvents.js'
 export type { UseContractEventsConfig, UseContractEventsResult } from './hooks/useContractEvents.js'
+export type { ReceiptLogLike } from './hooks/useContractEvents.js'
 
 export { crowdfundGraphAtom, useGraphState } from './hooks/useGraphState.js'
 export type { UseGraphStateResult } from './hooks/useGraphState.js'

@@ -1,14 +1,16 @@
 // ABOUTME: Event fetching pipeline with polling and IndexedDB caching.
 // ABOUTME: Backed by react-query; IDB seeds initial data, cursor is stored in query data.
 
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { atom, useSetAtom } from 'jotai'
 import type { JsonRpcProvider } from 'ethers'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchLogs } from '../lib/rpc.js'
 import { parseCrowdfundEvents } from '../lib/events.js'
 import { getCachedEvents, cacheEvents } from '../lib/cache.js'
+import { fetchIndexedEventsSnapshot, fetchIndexerHealth } from '../lib/indexer.js'
 import type { CrowdfundEvent } from '../lib/events.js'
+import type { IndexerHealth } from '../lib/indexer.js'
 
 /** Atom holding all fetched events, oldest first — mirrored from query data for non-hook consumers (useGraphState). */
 export const crowdfundEventsAtom = atom<CrowdfundEvent[]>([])
@@ -28,17 +30,30 @@ export interface UseContractEventsConfig {
   pollIntervalMs: number
   /** Block number to start fetching from (e.g. contract deploy block). Defaults to 0. */
   startBlock?: number
+  /** Optional indexer API base URL. When provided, Sepolia loads use indexed snapshots before RPC fallback. */
+  indexerBaseUrl?: string | null
 }
 
 export interface UseContractEventsResult {
   events: CrowdfundEvent[]
   loading: boolean
   error: string | null
+  indexerHealth: IndexerHealth | null
+  ingestReceiptLogs: (logs: readonly ReceiptLogLike[]) => void
 }
 
 interface EventsSnapshot {
   events: CrowdfundEvent[]
   cursor: number
+}
+
+export interface ReceiptLogLike {
+  blockNumber?: number
+  transactionHash?: string
+  index?: number
+  logIndex?: number
+  topics: readonly string[]
+  data: string
 }
 
 const EMPTY_EVENTS: CrowdfundEvent[] = []
@@ -47,13 +62,23 @@ function dedupEventKey(e: CrowdfundEvent): string {
   return `${e.transactionHash}-${e.logIndex}`
 }
 
+function toRawReceiptLog(log: ReceiptLogLike) {
+  return {
+    blockNumber: log.blockNumber ?? 0,
+    transactionHash: log.transactionHash ?? '',
+    logIndex: log.logIndex ?? log.index ?? 0,
+    topics: [...log.topics],
+    data: log.data,
+  }
+}
+
 /**
  * Hook that fetches crowdfund events from the blockchain.
  * On mount: loads cached events from IndexedDB via the query's initial fetch.
  * Then polls for new events on the configured interval, extending the cursor.
  */
 export function useContractEvents(config: UseContractEventsConfig): UseContractEventsResult {
-  const { provider, contractAddress, pollIntervalMs, startBlock } = config
+  const { provider, contractAddress, pollIntervalMs, startBlock, indexerBaseUrl } = config
   const effectiveStartBlock = startBlock ?? 0
 
   const setEventsAtom = useSetAtom(crowdfundEventsAtom)
@@ -66,8 +91,8 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
   // queryKey is stable per contract address + start block. Cursor lives inside
   // query data so it survives refetches without a parallel ref.
   const queryKey = useMemo(
-    () => ['crowdfundEvents', contractAddress, effectiveStartBlock] as const,
-    [contractAddress, effectiveStartBlock],
+    () => ['crowdfundEvents', contractAddress, effectiveStartBlock, indexerBaseUrl ?? null] as const,
+    [contractAddress, effectiveStartBlock, indexerBaseUrl],
   )
 
   const query = useQuery<EventsSnapshot, Error>({
@@ -79,6 +104,24 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
 
       let prior = queryClient.getQueryData<EventsSnapshot>(queryKey)
       if (prior === undefined) {
+        if (indexerBaseUrl) {
+          try {
+            const indexed = await fetchIndexedEventsSnapshot(indexerBaseUrl)
+            if (
+              indexed.metadata.contractAddress.toLowerCase() === contractAddress.toLowerCase() &&
+              indexed.metadata.deployBlock === effectiveStartBlock
+            ) {
+              cacheEvents(indexed.events, indexed.metadata.verifiedBlock).catch(() => {})
+              return {
+                events: indexed.events,
+                cursor: indexed.metadata.verifiedBlock,
+              }
+            }
+          } catch {
+            // Fall back to the existing RPC/IndexedDB path when the indexer is unavailable.
+          }
+        }
+
         // First run — seed cursor + events from IndexedDB.
         const cached = await getCachedEvents().catch(() => ({
           events: [] as CrowdfundEvent[],
@@ -118,6 +161,34 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
     retry: false,
   })
 
+  const healthQuery = useQuery<IndexerHealth, Error>({
+    queryKey: ['crowdfundIndexerHealth', indexerBaseUrl],
+    queryFn: () => fetchIndexerHealth(indexerBaseUrl!),
+    enabled: !!indexerBaseUrl,
+    refetchInterval: pollIntervalMs,
+    refetchIntervalInBackground: false,
+    staleTime: pollIntervalMs,
+    retry: false,
+  })
+
+  const ingestReceiptLogs = useCallback(
+    (logs: readonly ReceiptLogLike[]) => {
+      const receiptEvents = parseCrowdfundEvents(logs.map(toRawReceiptLog))
+      if (receiptEvents.length === 0) return
+
+      queryClient.setQueryData<EventsSnapshot>(queryKey, (prior) => {
+        const existing = new Set((prior?.events ?? []).map(dedupEventKey))
+        const unique = receiptEvents.filter((event) => !existing.has(dedupEventKey(event)))
+        if (unique.length === 0) return prior
+        const merged = [...(prior?.events ?? []), ...unique].sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
+        const latestBlock = Math.max(prior?.cursor ?? effectiveStartBlock, ...unique.map((event) => event.blockNumber))
+        cacheEvents(unique, latestBlock).catch(() => {})
+        return { events: merged, cursor: latestBlock }
+      })
+    },
+    [effectiveStartBlock, queryClient, queryKey],
+  )
+
   const events = query.data?.events ?? EMPTY_EVENTS
   const loading = query.isPending
   const errorMessage = query.error
@@ -144,5 +215,11 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
     setErrorAtom(errorMessage)
   }, [errorMessage, setErrorAtom])
 
-  return { events, loading, error: errorMessage }
+  return {
+    events,
+    loading,
+    error: errorMessage,
+    indexerHealth: healthQuery.data ?? null,
+    ingestReceiptLogs,
+  }
 }

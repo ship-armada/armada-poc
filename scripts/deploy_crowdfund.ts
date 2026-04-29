@@ -243,6 +243,14 @@ async function main() {
   console.log("   Gate 3 passed: deployer ARM balance is zero");
   console.log("   Gate 4 passed: no residual deployer allowances to protocol contracts");
 
+  // 5e. Activate RevenueLock — required before any beneficiary can call release().
+  // Permissionless one-shot; the contract verifies its own ARM balance internally
+  // (must be >= totalAllocation). Fails fast if Gate 1 above somehow underfunded.
+  console.log("   Activating RevenueLock...");
+  const revenueLock = await ethers.getContractAt("RevenueLock", revenueLockAddress);
+  await (await revenueLock.activate(nm.override())).wait();
+  console.log(`   RevenueLock activated`);
+
   // 6. Register crowdfund as excluded from quorum denominator
   console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);

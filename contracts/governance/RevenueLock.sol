@@ -72,6 +72,10 @@ contract RevenueLock {
     ///         indefinitely during quiet periods.
     uint256 public lastSyncTimestamp;
 
+    /// @notice Whether the contract has been verified as fully funded. Releases are
+    ///         blocked until activation. Set once via the permissionless `activate()`.
+    bool public activated;
+
     // ============ Events ============
 
     event Released(
@@ -80,6 +84,10 @@ contract RevenueLock {
         address delegatee,
         uint256 cumulativeReleased
     );
+
+    /// @notice Emitted once when activation succeeds. fundedBalance is the contract's
+    ///         ARM balance at activation time (must be >= totalAllocation).
+    event Activated(uint256 fundedBalance);
 
     /// @notice Emitted on every actual ratchet advance of maxObservedRevenue.
     /// @param oldMax             Previous maxObservedRevenue value.
@@ -138,12 +146,32 @@ contract RevenueLock {
         totalAllocation = total;
     }
 
+    // ============ Activation ============
+
+    /// @notice Permissionless: verify the contract holds at least totalAllocation ARM
+    ///         and unlock release() for all beneficiaries. One-shot — once activated,
+    ///         the gate cannot be re-armed. Must be called after the deployer/governance
+    ///         funds the contract and before any beneficiary attempts to release.
+    /// @dev Without this gate, partial funding (e.g. 1.2M of 2.4M) produces order-
+    ///      dependent claims: early beneficiaries claim, later ones revert at transfer.
+    ///      The contract is immutable with no admin/sweep, so an underfunded deployment
+    ///      would have no recovery path. This check fails fast for ALL beneficiaries
+    ///      until the funding is fully topped up.
+    function activate() external {
+        require(!activated, "RevenueLock: already activated");
+        uint256 balance = armToken.balanceOf(address(this));
+        require(balance >= totalAllocation, "RevenueLock: underfunded");
+        activated = true;
+        emit Activated(balance);
+    }
+
     // ============ Release ============
 
     /// @notice Release unlocked ARM to the caller and delegate their voting power.
     /// @param delegatee Address to receive the caller's voting power delegation.
     ///        Self-delegation is valid. Cannot be address(0).
     function release(address delegatee) external {
+        require(activated, "RevenueLock: not activated");
         require(delegatee != address(0), "RevenueLock: zero delegatee");
         uint256 alloc = allocation[msg.sender];
         require(alloc > 0, "RevenueLock: not a beneficiary");

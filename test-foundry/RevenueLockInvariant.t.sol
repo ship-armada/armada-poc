@@ -163,6 +163,9 @@ contract RevenueLockInvariantTest is Test {
         // Fund RevenueLock
         armToken.transfer(address(revenueLock), TOTAL_LOCK);
 
+        // Activate — release() reverts before activation. Permissionless one-shot.
+        revenueLock.activate();
+
         // Deploy handler
         handler = new RevenueLockHandler(
             revenueLock,

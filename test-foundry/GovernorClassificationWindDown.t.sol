@@ -631,5 +631,50 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         assertEq(governor.securityCouncil(), address(0));
     }
 
+    // WHY: The default-zero SC creates a launch-window in which no proposal can be
+    // vetoed and the 100k-ARM quorum floor may not yet be meetable via delegations.
+    // Allowing the deployer to bootstrap the SC before clearDeployer() closes that
+    // window. Matches the asymmetric-bootstrap pattern used for setCrowdfundAddress
+    // and setStewardContract. After clearDeployer(), only the timelock can set.
+    function test_securityCouncil_deployerCanBootstrap() public {
+        // The test contract IS the deployer (governor was deployed by address(this)).
+        assertEq(governor.deployer(), address(this));
+
+        governor.setSecurityCouncil(securityCouncil);
+        assertEq(governor.securityCouncil(), securityCouncil);
+    }
+
+    // WHY: During the bootstrap window, the deployer may need to correct an initial
+    // SC before clearDeployer() locks the role. Pin that overwrite is permitted.
+    function test_securityCouncil_deployerCanReplaceDuringBootstrap() public {
+        governor.setSecurityCouncil(securityCouncil);
+        assertEq(governor.securityCouncil(), securityCouncil);
+
+        address replacement = address(0xCAFE);
+        governor.setSecurityCouncil(replacement);
+        assertEq(governor.securityCouncil(), replacement);
+    }
+
+    // WHY: clearDeployer() permanently closes the deployer-bootstrap path. Any later
+    // attempt by the (now-cleared) original deployer EOA must revert. Ensures the
+    // bootstrap path is one-shot relative to the deploy lifecycle.
+    function test_securityCouncil_deployerLockedAfterClearDeployer() public {
+        governor.clearDeployer();
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
+        governor.setSecurityCouncil(securityCouncil);
+    }
+
+    // WHY: After clearDeployer() the timelock remains the sole governance authority
+    // for SC replacement / ejection / re-installation. Regression guard: the new
+    // deployer branch must not break the existing timelock path.
+    function test_securityCouncil_timelockCanSetAfterClearDeployer() public {
+        governor.clearDeployer();
+
+        vm.prank(address(timelock));
+        governor.setSecurityCouncil(securityCouncil);
+        assertEq(governor.securityCouncil(), securityCouncil);
+    }
+
 }
 

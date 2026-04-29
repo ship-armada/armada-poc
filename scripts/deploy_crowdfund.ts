@@ -267,6 +267,14 @@ async function main() {
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
 
+  // 8a. Bootstrap the governor's Security Council. Without this, the SC slot stays
+  // address(0) at launch — vetoes revert and the SC-gated emergency-pause is inert
+  // until a passed governance proposal sets it. Governance can replace or eject the
+  // SC later via timelock; this only sets the initial value.
+  console.log("   Bootstrapping governor security council...");
+  await (await governor.setSecurityCouncil(securityCouncilAddress, nm.override())).wait();
+  console.log(`   Governor security council set to ${securityCouncilAddress}`);
+
   // 8b. Clear deployer privilege on governor (all deployer-gated one-time setters are done)
   console.log("   Clearing deployer address on governor...");
   await (await governor.clearDeployer(nm.override())).wait();

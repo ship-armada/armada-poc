@@ -576,10 +576,21 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     event SecurityCouncilUpdated(address indexed oldSC, address indexed newSC);
 
-    /// @notice Set or replace the Security Council address. Governance-only (timelock).
-    /// Setting to address(0) disables all SC powers (ejection state).
+    /// @notice Set or replace the Security Council address.
+    /// @dev Two callers: (1) the timelock — the post-bootstrap governance path, used
+    ///      for replacements, ejection (newSC == address(0)), and re-install after
+    ///      ejection; (2) the deployer, but only while the deployer role is still
+    ///      held (deployer != address(0)) — the bootstrap path. clearDeployer()
+    ///      permanently closes the deployer path. This matches the asymmetric-
+    ///      bootstrap pattern used for setCrowdfundAddress / setStewardContract,
+    ///      and avoids a launch-window in which no SC exists because governance
+    ///      cannot meet quorum yet.
     function setSecurityCouncil(address newSC) external {
-        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        // Authorized: timelock (governance), or deployer pre-clearDeployer (bootstrap).
+        address d = deployer;
+        if (msg.sender != address(timelock) && (msg.sender != d || d == address(0))) {
+            revert Gov_NotTimelock();
+        }
         emit SecurityCouncilUpdated(securityCouncil, newSC);
         securityCouncil = newSC;
     }

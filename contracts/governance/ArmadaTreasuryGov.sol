@@ -63,6 +63,15 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ///      24 days > 23 days (current Extended default: 2d + 14d + 7d).
     uint256 public constant LIMIT_ACTIVATION_DELAY = 24 days;
 
+    /// @notice Upper bound on outflow window duration to prevent self-lockdown.
+    /// @dev A window of `type(uint256).max` (or any sufficiently large value) makes the
+    ///      rolling-window cap behave as a lifetime cap. Tightening is immediate, so
+    ///      bad/mistaken governance can lock down treasury outflows; recovery requires
+    ///      a loosening proposal that waits LIMIT_ACTIVATION_DELAY (24 days) — three
+    ///      weeks of unable-to-pay-anything. Realistic operational windows are 30 days;
+    ///      365 days is generous headroom while still bounding the lockdown blast radius.
+    uint256 public constant MAX_OUTFLOW_WINDOW = 365 days;
+
     // Per-token steward budget table (governance-managed via Extended proposals).
     // Each authorized token has an absolute spending limit per rolling window.
     // Unused budget does not carry over between windows.
@@ -263,6 +272,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ) external onlyOwner {
         require(!_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow already initialized");
         require(windowDuration >= 1 days, "ArmadaTreasuryGov: window too short");
+        require(windowDuration <= MAX_OUTFLOW_WINDOW, "ArmadaTreasuryGov: window too long");
         require(limitBps > 0, "ArmadaTreasuryGov: zero bps");
         require(limitBps <= 10000, "ArmadaTreasuryGov: bps out of range");
         require(limitAbsolute >= floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
@@ -293,6 +303,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function setOutflowWindow(address token, uint256 newWindow) external onlyOwner {
         require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
         require(newWindow >= 1 days, "ArmadaTreasuryGov: window too short");
+        require(newWindow <= MAX_OUTFLOW_WINDOW, "ArmadaTreasuryGov: window too long");
 
         _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];

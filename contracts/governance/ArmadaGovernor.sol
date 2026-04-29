@@ -92,7 +92,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_SCEjected();
     error Gov_SignalingMustBeEmpty();
     error Gov_SignalingNoExecution();
-    error Gov_TreasuryAlreadyExcluded();
+    error Gov_DuplicateExcludedAddress();
     error Gov_OutflowInfeasible();
     error Gov_StewardBudgetInfeasible();
 
@@ -436,10 +436,22 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (excludedAddressesLocked) revert Gov_AlreadyLocked();
 
         excludedAddressesLocked = true;
+        // Duplicate detection. _initProposal sums balanceOf across this list, so a
+        // duplicate would double-count its balance into excludedBalance and lower
+        // the quorum threshold below the spec value. The treasury is implicitly
+        // excluded by the quorum-denominator math (its balance is subtracted
+        // separately at proposal creation), so listing it here would be an explicit
+        // duplicate of the implicit exclusion. excludedAddressesLocked makes any
+        // bootstrap mistake permanent, so detection happens here. Realistic input
+        // is 2-5 addresses; O(n^2) is gas-trivial at that size.
         for (uint256 i = 0; i < addrs.length; i++) {
-            if (addrs[i] == address(0)) revert Gov_ZeroAddress();
-            if (addrs[i] == treasuryAddress) revert Gov_TreasuryAlreadyExcluded();
-            _excludedFromQuorum.push(addrs[i]);
+            address candidate = addrs[i];
+            if (candidate == address(0)) revert Gov_ZeroAddress();
+            if (candidate == treasuryAddress) revert Gov_DuplicateExcludedAddress();
+            for (uint256 j = 0; j < i; j++) {
+                if (addrs[j] == candidate) revert Gov_DuplicateExcludedAddress();
+            }
+            _excludedFromQuorum.push(candidate);
         }
 
         emit ExcludedAddressesSet(addrs);

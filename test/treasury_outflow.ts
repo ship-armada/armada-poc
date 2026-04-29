@@ -324,6 +324,18 @@ describe("Treasury Outflow Rate Limits", function () {
         treasury.distribute(await usdc.getAddress(), recipient.address, USDC(1_000_000))
       ).to.be.revertedWith("ArmadaTreasuryGov: outflow config required");
     });
+
+    // WHY: stewardSpend already enforces amount > 0; distribute should match. A zero-
+    // amount call would otherwise insert a no-op record into the append-only outflow
+    // history and silently invoke the recipient's fallback — meaningless economically
+    // but pollutes storage and removes a defense-in-depth guard.
+    it("should revert distribute on zero amount", async function () {
+      await fundTreasury(USDC(1_000_000));
+      await initUsdcOutflow();
+      await expect(
+        treasury.distribute(await usdc.getAddress(), recipient.address, 0n)
+      ).to.be.revertedWith("ArmadaTreasuryGov: zero amount");
+    });
   });
 
   // ============================================================

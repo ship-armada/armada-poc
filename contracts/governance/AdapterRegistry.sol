@@ -56,6 +56,7 @@ contract AdapterRegistry is IAdapterRegistry {
     /// Users can still exit positions through a withdraw-only adapter.
     function deauthorizeAdapter(address adapter) external {
         require(msg.sender == timelock, "AdapterRegistry: not timelock");
+        require(adapter != address(0), "AdapterRegistry: zero address");
         require(authorizedAdapters[adapter], "AdapterRegistry: not authorized");
 
         authorizedAdapters[adapter] = false;
@@ -68,6 +69,7 @@ contract AdapterRegistry is IAdapterRegistry {
     /// After this, the adapter has no protocol access.
     function fullDeauthorizeAdapter(address adapter) external {
         require(msg.sender == timelock, "AdapterRegistry: not timelock");
+        require(adapter != address(0), "AdapterRegistry: zero address");
         require(withdrawOnlyAdapters[adapter], "AdapterRegistry: not withdraw-only");
 
         withdrawOnlyAdapters[adapter] = false;

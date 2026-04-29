@@ -377,6 +377,20 @@ contract ArmadaRedemptionTest is Test {
         assertEq(armToken.balanceOf(address(redemption)), 0);
     }
 
+    // WHY: A zero-address entry in the tokens[] list would otherwise revert
+    // indirectly via the IERC20.balanceOf call hitting the EXTCODESIZE check on
+    // address(0). The explicit guard inside the loop matches the explicit
+    // tokens[i] != armToken check above it and produces a clean error message.
+    function test_revert_redeem_zeroToken() public {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: zero token");
+        redemption.redeem(aliceArm, tokens, false);
+    }
+
     function test_revert_redeem_tokenWithZeroBalance() public {
         // WHY: A user listing a token whose sweep has not yet run would otherwise
         // lock ARM for zero payout on that token (issue #254 partial-sweep case).

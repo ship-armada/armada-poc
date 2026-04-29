@@ -153,6 +153,7 @@ contract ArmadaRedemption is ReentrancyGuard {
         bool anyPayout;
         for (uint256 i = 0; i < tokens.length; i++) {
             // ARM deposited in this contract is locked permanently — never distributable
+            require(tokens[i] != address(0), "ArmadaRedemption: zero token");
             require(tokens[i] != address(armToken), "ArmadaRedemption: cannot redeem ARM");
 
             // Tokens must be sorted ascending with no duplicates to prevent double-claiming

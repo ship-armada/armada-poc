@@ -113,6 +113,15 @@ contract AdapterRegistryTest is Test {
         registry.deauthorizeAdapter(adapter1);
     }
 
+    // WHY: authorizeAdapter rejects address(0); deauthorize should match for a clean
+    // explicit error instead of the "not authorized" status revert that the zero
+    // address would otherwise hit. Cross-function symmetry with the authorize path.
+    function test_deauthorizeAdapter_revertsIfZeroAddress() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("AdapterRegistry: zero address");
+        registry.deauthorizeAdapter(address(0));
+    }
+
     // ======== Full Deauthorization ========
 
     function test_fullDeauthorizeAdapter_clearsWithdrawOnly() public {
@@ -165,6 +174,14 @@ contract AdapterRegistryTest is Test {
         vm.prank(nobody);
         vm.expectRevert("AdapterRegistry: not timelock");
         registry.fullDeauthorizeAdapter(adapter1);
+    }
+
+    // WHY: Same cross-function symmetry as deauthorize — explicit zero-address
+    // rejection rather than the indirect "not withdraw-only" status revert.
+    function test_fullDeauthorizeAdapter_revertsIfZeroAddress() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("AdapterRegistry: zero address");
+        registry.fullDeauthorizeAdapter(address(0));
     }
 
     // ======== Lifecycle ========

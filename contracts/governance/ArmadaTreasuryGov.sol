@@ -138,6 +138,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @notice Direct distribution: send tokens to recipient immediately
     function distribute(address token, address recipient, uint256 amount) external onlyOwner {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
         _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
         emit DirectDistribution(token, recipient, amount);
@@ -503,6 +504,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function transferTo(address token, address recipient, uint256 amount) external {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
         IERC20(token).safeTransfer(recipient, amount);
         emit WindDownTransfer(token, recipient, amount);
     }
@@ -512,6 +514,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function transferETHTo(address payable recipient, uint256 amount) external {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
         (bool success,) = recipient.call{value: amount}("");
         require(success, "ArmadaTreasuryGov: ETH transfer failed");
         emit WindDownETHTransfer(recipient, amount);

@@ -54,6 +54,34 @@ function getLogIndex(log: RpcLog): number {
   return log.logIndex ?? log.index ?? 0
 }
 
+function isHexString(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]*$/.test(value)
+}
+
+function validateRpcLogs(value: unknown, range: BlockRange): readonly RpcLog[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Malformed RPC log response for ${range.fromBlock}-${range.toBlock}: expected array`)
+  }
+
+  for (const [idx, log] of value.entries()) {
+    if (!log || typeof log !== 'object') {
+      throw new Error(`Malformed RPC log at index ${idx}: expected object`)
+    }
+    const candidate = log as Partial<RpcLog>
+    const logIndex = candidate.logIndex ?? candidate.index
+    if (!Number.isSafeInteger(candidate.blockNumber)) throw new Error(`Malformed RPC log at index ${idx}: missing blockNumber`)
+    if (!isHexString(candidate.blockHash)) throw new Error(`Malformed RPC log at index ${idx}: missing blockHash`)
+    if (!isHexString(candidate.transactionHash)) throw new Error(`Malformed RPC log at index ${idx}: missing transactionHash`)
+    if (!Number.isSafeInteger(logIndex)) throw new Error(`Malformed RPC log at index ${idx}: missing log index`)
+    if (!Array.isArray(candidate.topics) || !candidate.topics.every(isHexString)) {
+      throw new Error(`Malformed RPC log at index ${idx}: invalid topics`)
+    }
+    if (!isHexString(candidate.data)) throw new Error(`Malformed RPC log at index ${idx}: missing data`)
+  }
+
+  return value as readonly RpcLog[]
+}
+
 function toIndexedRawLog(
   log: RpcLog,
   chainId: number,
@@ -117,11 +145,11 @@ export async function fetchIndexedLogs(
   config: RangePipelineConfig,
   range: BlockRange,
 ): Promise<IndexedRawLog[]> {
-  const logs = await provider.getLogs({
+  const logs = validateRpcLogs(await provider.getLogs({
     address: config.contractAddress,
     fromBlock: range.fromBlock,
     toBlock: range.toBlock,
-  })
+  }), range)
   return logs.map((log) => toIndexedRawLog(log, config.chainId, config.contractAddress))
 }
 

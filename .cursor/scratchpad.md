@@ -44,6 +44,22 @@ Manageable resilience additions to include in implementation: static verified sn
 
 Repo placement and branching: build the service as a new Node/TypeScript workspace package at `crowdfund-ui/packages/indexer` named `@armada/crowdfund-indexer`, so it can reuse shared crowdfund event/graph logic and fit the existing `crowdfund-ui/packages/*` workspace glob. Before implementation, create `feature/crowdfund-sync-indexer` from the current `iskay/crowdfund-ui-polish` branch, not from `main`; carry or intentionally handle current planning edits before branching.
 
+### Crowdfund Indexer Robust Polling Loop (2026-04-29)
+
+Planner analysis: the current `backfillVerifiedRanges` function is a suitable core primitive because it plans contiguous chunks from `verifiedCursor + 1`, verifies chunks sequentially, records failed/suspicious ranges, and stops before advancing across bad data. However, the API only runs a one-shot startup backfill when `CROWDFUND_BACKFILL_ON_START=true`; it does not continuously poll. Production operation needs a supervised polling worker around the existing backfill primitive.
+
+Reliability requirements for the polling loop:
+- Never skip a range after an RPC error, timeout, 429, malformed response, digest mismatch, or audit-provider mismatch.
+- Never allow one unexpected provider response to crash the API process.
+- Persist enough failure state (`lastError`, failed range records, attempts) for operators and `/health` to see what happened.
+- Use bounded timeouts and exponential backoff with jitter so non-responses and rate limits do not hang the loop.
+- Avoid overlapping poll iterations; only one backfill/publish cycle should run per process.
+- Keep API serving the last verified snapshot while the worker is degraded.
+
+Proposed implementation: add a reusable worker module, for example `src/ingest/poller.ts`, that repeatedly calls `backfillVerifiedRanges` with safe wrappers for `getBlockNumber` and `getLogs`. Add timeout/retry helpers that classify `rate_limited`, `timeout`, `network`, `malformed_response`, and `unknown` errors. The worker should catch all per-cycle errors, write them to store metadata, emit structured log lines, back off, and continue. Add API env flags such as `CROWDFUND_POLL_INTERVAL_MS`, `CROWDFUND_POLL_ERROR_BACKOFF_MS`, `CROWDFUND_RPC_TIMEOUT_MS`, `CROWDFUND_RPC_MAX_RETRIES`, `CROWDFUND_PUBLISH_ON_POLL`, and `CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS`.
+
+Success criteria: tests prove that timeout/non-response/429/malformed provider failures create failed range records or visible store errors without cursor advancement; digest mismatches remain suspicious and block promotion; repeated cycles do not overlap; successful later repairs resume from the same failed range; API startup with polling enabled continues serving after worker errors.
+
 ---
 
 ## High-level Task Breakdown
@@ -175,7 +191,8 @@ Repo placement and branching: build the service as a new Node/TypeScript workspa
 - [x] Crowdfund indexer Task 8: added Postgres-backed durable store and runtime store backend selection.
 - [x] Crowdfund indexer Task 9: added S3-compatible object-storage snapshot publication backend.
 - [x] Crowdfund indexer Task 10: added backup/restore operator docs.
-- [ ] Crowdfund indexer Task 11: run an end-to-end Sepolia/local smoke test with live indexer API and configured frontends.
+- [x] Crowdfund indexer Task 11: implemented robust continuous polling loop with timeout/retry/backoff/error visibility.
+- [ ] Crowdfund indexer Task 12: run an end-to-end Sepolia/local smoke test with live indexer API and configured frontends.
 - [x] Task 1.1: Slither installed and run — report saved to `reports/slither-report.txt`, `reports/slither-report.json`
 - [ ] Task 1.2: Aderyn (skipped — Rust not configured)
 - [x] Task 1.3: Static analysis summary — `reports/static-analysis-summary.md`
@@ -267,6 +284,10 @@ Repo placement and branching: build the service as a new Node/TypeScript workspa
 **Crowdfund indexer Task 9 checkpoint (2026-04-28):** Added S3-compatible object storage publication for static verified snapshots. `publish-snapshot` now supports `CROWDFUND_SNAPSHOT_PUBLISHER=file|s3`; S3 mode writes immutable `snapshot-{verifiedBlock}.json` and mutable `latest.json` to `CROWDFUND_SNAPSHOT_BUCKET` with optional `CROWDFUND_SNAPSHOT_PREFIX`, `CROWDFUND_SNAPSHOT_ENDPOINT`, `CROWDFUND_SNAPSHOT_REGION`, `CROWDFUND_SNAPSHOT_PUBLIC_BASE_URL`, and `CROWDFUND_SNAPSHOT_FORCE_PATH_STYLE`. Store metadata records the public `latest.json` URL when configured, otherwise the `s3://` URI. Verification: `npm run test --workspace=@armada/crowdfund-indexer` passed (39 tests); `npm run typecheck --workspace=@armada/crowdfund-indexer` passed; IDE lints clean.
 
 **Crowdfund indexer Task 10 checkpoint (2026-04-28):** Added `docs/CROWDFUND_INDEXER_RUNBOOK.md` covering runtime model, required env vars, Postgres and local file stores, S3-compatible static snapshot publishing, API startup, CLI operations, normal operating loop, failure recovery, backup checklist, and smoke test checklist. Accuracy checked against current CLI/API/store/publisher env handling. No code tests needed for docs-only change.
+
+**Crowdfund indexer Task 11 checkpoint (2026-04-29):** Added supervised continuous polling worker around `backfillVerifiedRanges`. `CrowdfundIndexerPoller` prevents overlapping cycles, wraps primary/audit RPC calls with bounded timeout/retry/backoff/jitter, classifies errors (`timeout`, `rate_limited`, `network`, `malformed_response`, `unknown`), persists cycle errors to store metadata, and can publish snapshots after successful poll cycles. Hardened RPC log validation so malformed log responses fail visibly instead of being treated as empty data. API startup now supports `CROWDFUND_POLL_ON_START=true` plus `CROWDFUND_POLL_INTERVAL_MS`, `CROWDFUND_POLL_ERROR_BACKOFF_MS`, `CROWDFUND_RPC_TIMEOUT_MS`, `CROWDFUND_RPC_MAX_RETRIES`, `CROWDFUND_RPC_RETRY_BASE_DELAY_MS`, `CROWDFUND_RPC_RETRY_JITTER_MS`, `CROWDFUND_PUBLISH_ON_POLL`, and `CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS`. Verification: `npm run test --workspace=@armada/crowdfund-indexer` passed (44 tests); `npm run typecheck --workspace=@armada/crowdfund-indexer` passed; IDE lints clean. Updated `docs/CROWDFUND_INDEXER_RUNBOOK.md` for the continuous polling operating model.
+
+**Crowdfund indexer env samples checkpoint (2026-04-29):** Added tracked root `sample.env.dev` and `sample.env.production` files covering Sepolia deployment values, indexer store selection, polling-on-start defaults, RPC retry/timeout settings, snapshot publishing, and Vite frontend variables. Expanded `docs/CROWDFUND_INDEXER_RUNBOOK.md` with sample-file usage instructions and an environment variable reference documenting defaults and behavior. Updated `.gitignore` with `*.env` so real copied env files like `dev.env`/`production.env` remain untracked while `sample.env.*` stays trackable. Verification: `git status --short` shows both sample files as unignored/untracked additions; docs-only/env-only change, no code tests needed.
 
 **Phase 1 complete (Tasks 1.1, 1.3).** Task 1.2 (Aderyn) skipped: Rust toolchain not configured (`rustup default stable` needed). User can run `cargo install aderyn && aderyn .` manually and merge results into `reports/static-analysis-summary.md`.
 

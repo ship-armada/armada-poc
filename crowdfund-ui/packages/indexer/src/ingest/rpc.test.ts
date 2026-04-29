@@ -155,6 +155,22 @@ describe('RPC range pipeline', () => {
     expect(data.lastError).toBe('RPC timeout')
   })
 
+  it('rejects malformed log responses instead of treating them as empty data', async () => {
+    const store = await makeStore()
+
+    const record = await stageRange({
+      ...config,
+      store,
+      provider: makeProvider([{} as RpcLog]),
+      range: { fromBlock: 120, toBlock: 129 },
+    })
+
+    const data = await store.read()
+    expect(record.status).toBe('failed')
+    expect(data.cursor.ingestedCursor).toBe(99)
+    expect(data.lastError).toContain('Malformed RPC log')
+  })
+
   it('repairs failed ranges through verification', async () => {
     const store = await makeStore()
     await store.upsertRange(makeRange({ fromBlock: 100, toBlock: 109 }))

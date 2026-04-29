@@ -32,6 +32,23 @@ Data layers:
 
 ## Required Environment
 
+Tracked sample files are provided at the repository root:
+
+- `sample.env.dev` — local development against Sepolia, JSON file store, local indexer URL, polling enabled.
+- `sample.env.production` — production-style Sepolia config, Postgres store, S3-compatible snapshots, polling enabled.
+
+The Node indexer does not automatically load these files. Source a copied file before running commands:
+
+```bash
+cp sample.env.dev dev.env
+set -a
+source dev.env
+set +a
+npm run crowdfund:indexer
+```
+
+For the Vite frontends, sourced `VITE_*` variables are inherited by `npm run crowdfund:committer` and `npm run crowdfund:observer`.
+
 Core Sepolia config:
 
 ```bash
@@ -54,7 +71,15 @@ API:
 
 ```bash
 export CROWDFUND_INDEXER_PORT=3002
-export CROWDFUND_BACKFILL_ON_START=true
+export CROWDFUND_POLL_ON_START=true
+export CROWDFUND_POLL_INTERVAL_MS=15000
+export CROWDFUND_POLL_ERROR_BACKOFF_MS=60000
+export CROWDFUND_RPC_TIMEOUT_MS=15000
+export CROWDFUND_RPC_MAX_RETRIES=3
+export CROWDFUND_RPC_RETRY_BASE_DELAY_MS=1000
+export CROWDFUND_RPC_RETRY_JITTER_MS=250
+export CROWDFUND_PUBLISH_ON_POLL=true
+export CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS=60000
 ```
 
 Frontend:
@@ -62,6 +87,77 @@ Frontend:
 ```bash
 export VITE_CROWDFUND_INDEXER_URL=https://<indexer-api-host>
 ```
+
+---
+
+## Environment Variable Reference
+
+Core deployment variables:
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `CROWDFUND_CHAIN_ID` | `11155111` | Chain ID stamped into indexed raw logs and snapshot metadata. |
+| `CROWDFUND_CONTRACT_ADDRESS` | required | Crowdfund contract address to scan and serve. API/CLI fail fast when missing. |
+| `CROWDFUND_DEPLOY_BLOCK` | `0` | Initial cursor. Set to the deployment block to avoid scanning before deployment. |
+| `CROWDFUND_PRIMARY_RPC_URL` | required for backfill/poll | Primary RPC used for head reads, range ingestion, and reconciliation. |
+| `CROWDFUND_AUDIT_RPC_URL` | unset | Optional independent RPC used to verify range digests. If unset, primary RPC is used for audit too. |
+
+Storage variables:
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `CROWDFUND_INDEXER_STORE` | auto | `postgres` or `file`. If unset, database URL selects Postgres; otherwise file store is used. |
+| `CROWDFUND_INDEXER_STORE_BACKEND` | unset | Backward-compatible alias for `CROWDFUND_INDEXER_STORE`. |
+| `CROWDFUND_DATABASE_URL` | unset | Postgres connection string. Preferred production DB env. |
+| `DATABASE_URL` | unset | Fallback Postgres connection string if `CROWDFUND_DATABASE_URL` is absent. |
+| `CROWDFUND_INDEXER_STORE_PATH` | `data/crowdfund-indexer/store.json` | JSON file store path for local/dev mode. |
+
+Cursor and range variables:
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `CROWDFUND_CONFIRMATION_DEPTH` | `12` | Blocks behind chain head required before data is verified. Lower only for dev. |
+| `CROWDFUND_OVERLAP_WINDOW` | `100` | Stored cursor setting reserved for overlap/rescan policy. |
+| `CROWDFUND_MAX_BLOCK_RANGE` | `500` | Maximum inclusive block range per `eth_getLogs` chunk. |
+
+API and polling variables:
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `CROWDFUND_INDEXER_PORT` | `3002` | HTTP API port. |
+| `CROWDFUND_POLL_ON_START` | `false` | Starts continuous supervised polling when `true`. Recommended for production. |
+| `CROWDFUND_BACKFILL_ON_START` | `false` | Runs one startup catch-up pass when `true` and polling is disabled. |
+| `CROWDFUND_POLL_INTERVAL_MS` | `15000` | Delay between successful poll cycles. |
+| `CROWDFUND_POLL_ERROR_BACKOFF_MS` | `60000` | Delay after a cycle-level worker failure. |
+| `CROWDFUND_RPC_TIMEOUT_MS` | `15000` | Timeout for each RPC call made by the polling worker. |
+| `CROWDFUND_RPC_MAX_RETRIES` | `3` | Retry count after failed/timed-out RPC calls. |
+| `CROWDFUND_RPC_RETRY_BASE_DELAY_MS` | `1000` | Base retry delay before exponential backoff. |
+| `CROWDFUND_RPC_RETRY_JITTER_MS` | `250` | Random jitter added to retry delay. |
+| `CROWDFUND_PUBLISH_ON_POLL` | `false` | Publishes a static snapshot after successful poll cycles when `true`. |
+| `CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS` | `60000` | Minimum interval between automatic snapshot publishes. |
+
+Snapshot publication variables:
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `CROWDFUND_SNAPSHOT_PUBLISHER` | `file` | `file` writes local artifacts; `s3` writes to S3-compatible object storage. |
+| `CROWDFUND_SNAPSHOT_DIR` | `data/crowdfund-indexer/snapshots` | Local output directory for `file` publisher. |
+| `CROWDFUND_SNAPSHOT_BUCKET` | required for `s3` | Bucket name for object snapshot publication. |
+| `CROWDFUND_SNAPSHOT_PREFIX` | unset | Object key prefix, e.g. `crowdfund/sepolia`. |
+| `CROWDFUND_SNAPSHOT_REGION` | `AWS_REGION` | Region passed to the AWS SDK S3 client. |
+| `CROWDFUND_SNAPSHOT_ENDPOINT` | unset | Optional S3-compatible endpoint, e.g. R2. |
+| `CROWDFUND_SNAPSHOT_PUBLIC_BASE_URL` | unset | Public root URL used in health metadata for `latest.json`. Prefix is appended automatically. |
+| `CROWDFUND_SNAPSHOT_FORCE_PATH_STYLE` | `false` | Enables path-style S3 requests for compatible providers that need it. |
+
+Frontend variables:
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `VITE_NETWORK` | `local` | Set to `sepolia` for Sepolia deployment files/RPCs. |
+| `VITE_SEPOLIA_RPC` | public Sepolia RPC | Browser RPC used by observer/committer. |
+| `VITE_SEPOLIA_RPC_FALLBACK` | unset | Optional browser RPC fallback. |
+| `VITE_CROWDFUND_INDEXER_URL` | unset | Indexer API base URL used for snapshot/health loading. |
+| `VITE_WALLETCONNECT_PROJECT_ID` | dev fallback | WalletConnect project ID for wallet connections. Set explicitly outside local dev. |
 
 ---
 
@@ -136,7 +232,14 @@ Published artifacts:
 npm run crowdfund:indexer
 ```
 
-With `CROWDFUND_BACKFILL_ON_START=true`, the API starts serving immediately and runs one startup catch-up pass in the background.
+With `CROWDFUND_POLL_ON_START=true`, the API starts serving immediately and runs a supervised polling worker in the background. The worker retries bounded RPC failures, times out non-responsive calls, avoids overlapping cycles, and records failures in store metadata without advancing over failed ranges.
+
+For a one-shot startup catch-up without continuous polling, use:
+
+```bash
+export CROWDFUND_BACKFILL_ON_START=true
+export CROWDFUND_POLL_ON_START=false
+```
 
 Health endpoint:
 
@@ -197,14 +300,14 @@ Publishing refuses failed contract-read reconciliation when `CROWDFUND_PRIMARY_R
 
 ## Normal Operating Loop
 
-1. Start the API with Postgres and object storage configured.
+1. Start the API with Postgres, object storage, and `CROWDFUND_POLL_ON_START=true` configured.
 2. Run `status` and confirm the store initializes correctly.
-3. Run `backfill latest` until `verifiedCursor` reaches `confirmedHead`.
-4. Run `publish-snapshot`.
+3. Let the polling worker catch up until `verifiedCursor` reaches `confirmedHead`.
+4. If `CROWDFUND_PUBLISH_ON_POLL=false`, run `publish-snapshot` manually.
 5. Configure frontends with `VITE_CROWDFUND_INDEXER_URL`.
 6. Monitor `/health` for `stale`, `degraded`, `unhealthy`, or nonzero gaps.
 
-During active campaigns, run a scheduled loop equivalent to:
+During active campaigns, the built-in polling worker replaces a cron loop. If the worker is disabled, run a scheduled loop equivalent to:
 
 ```bash
 npm run crowdfund:indexer:cli -- backfill latest
@@ -230,7 +333,7 @@ Actions:
 1. Confirm the RPC outage independently.
 2. Switch `CROWDFUND_PRIMARY_RPC_URL` if needed.
 3. Keep `CROWDFUND_AUDIT_RPC_URL` on a different provider.
-4. Run `repair` for failed ranges, then `backfill latest`.
+4. The worker will retry future cycles automatically. For immediate recovery, run `repair` for failed ranges, then `backfill latest`.
 5. Publish a new snapshot after health returns to healthy.
 
 ### Missed Or Suspicious Event Range

@@ -39,6 +39,20 @@ export type {
 } from './ingest/backfill.js'
 
 export {
+  classifyRpcError,
+  createResilientRangeProvider,
+  CrowdfundIndexerPoller,
+} from './ingest/poller.js'
+export type {
+  CrowdfundIndexerPollerOptions,
+  PollCycleResult,
+  PollCycleStatus,
+  PollerLogger,
+  ResilientProviderOptions,
+  RpcErrorKind,
+} from './ingest/poller.js'
+
+export {
   createJsonRpcRangeProvider,
   fetchIndexedLogs,
   repairRanges,

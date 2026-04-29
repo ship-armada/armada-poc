@@ -26,9 +26,9 @@ if ! ./scripts/check-secrets.sh $STAGED_FILES; then
 fi
 
 # --- Check 3: .env file leak prevention ---
-# Only config/local.env and config/sepolia.env are committed intentionally.
+# Only non-secret environment templates and committed public config envs are allowed.
 # All other .env files should be gitignored, but check as a safety net.
-ALLOWED_ENV_FILES="config/local.env config/sepolia.env"
+ALLOWED_ENV_FILES="config/local.env config/sepolia.env sample.env.dev sample.env.production"
 ENV_VIOLATIONS=""
 for f in $STAGED_FILES; do
   if [[ "$f" == *.env || "$f" == *.env.* ]]; then

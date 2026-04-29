@@ -119,4 +119,13 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     /// @dev Only the owner (timelock) can authorize upgrades.
     function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    // ============ Storage Gap ============
+
+    /// @dev Reserved storage for future upgrades. 3 state slots + 47 gap = 50 total.
+    ///      Matches the 50-slot reservation convention used by ArmadaGovernor. The
+    ///      project deploys via raw ERC1967Proxy (no OZ upgrades-plugin layout-diff
+    ///      tooling), so this gap is the only line of defense against a future upgrade
+    ///      that adds state above lastSyncedCumulative silently shifting that slot.
+    uint256[47] private __gap;
 }

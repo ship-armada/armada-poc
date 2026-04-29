@@ -147,9 +147,13 @@ contract ArmadaRedemption is ReentrancyGuard {
         // Transfer ARM from redeemer to this contract (locked permanently)
         armToken.safeTransferFrom(msg.sender, address(this), armAmount);
 
-        // Distribute pro-rata share of each requested ERC20 token. Track whether any
-        // payout occurred so we can revert if the caller would lock ARM for zero return
-        // (e.g. redeeming before sweeps have populated the contract — see issue #254).
+        // Distribute pro-rata share of each requested ERC20 token. Each requested asset
+        // must yield a non-zero share — partial sweeps that leave some balances at zero
+        // would otherwise silently forfeit the redeemer's claim on the un-swept assets,
+        // shifting that value to later redeemers (sequential-correctness violation per
+        // GOVERNANCE.md §Redemption mechanism). The strict check forces redeemers to
+        // wait until all requested assets are swept (or to call again with only the
+        // swept subset). Same rule applies to ETH below.
         bool anyPayout;
         for (uint256 i = 0; i < tokens.length; i++) {
             // ARM deposited in this contract is locked permanently — never distributable
@@ -163,10 +167,9 @@ contract ArmadaRedemption is ReentrancyGuard {
 
             uint256 available = IERC20(tokens[i]).balanceOf(address(this));
             uint256 share = (available * armAmount) / circulating;
-            if (share > 0) {
-                IERC20(tokens[i]).safeTransfer(msg.sender, share);
-                anyPayout = true;
-            }
+            require(share > 0, "ArmadaRedemption: zero share for token");
+            IERC20(tokens[i]).safeTransfer(msg.sender, share);
+            anyPayout = true;
         }
 
         // Distribute pro-rata share of ETH if requested
@@ -174,18 +177,16 @@ contract ArmadaRedemption is ReentrancyGuard {
         if (includeETH) {
             uint256 ethBalance = address(this).balance;
             ethPayout = (ethBalance * armAmount) / circulating;
-            if (ethPayout > 0) {
-                (bool success,) = msg.sender.call{value: ethPayout}("");
-                require(success, "ArmadaRedemption: ETH transfer failed");
-                anyPayout = true;
-            }
+            require(ethPayout > 0, "ArmadaRedemption: zero share for ETH");
+            (bool success,) = msg.sender.call{value: ethPayout}("");
+            require(success, "ArmadaRedemption: ETH transfer failed");
+            anyPayout = true;
         }
 
-        // Prevent ARM lock-in with zero return (issue #254). This closes the catastrophic
-        // all-zero-payout case that the REDEMPTION_DELAY cannot guarantee against — the
-        // delay gives sweeps a chance to run but does not force them. If no sweep ever
-        // ran, or the caller requested only un-swept assets, this revert preserves ARM.
-        require(anyPayout, "ArmadaRedemption: no assets available - call sweep first");
+        // Belt-and-suspenders for the empty-input case (tokens.length == 0 && !includeETH).
+        // The per-asset checks above don't fire on empty input, so this preserves ARM if
+        // a caller requests nothing.
+        require(anyPayout, "ArmadaRedemption: must request at least one asset");
 
         emit Redeemed(msg.sender, armAmount, tokens, ethPayout);
     }

@@ -361,15 +361,15 @@ contract ArmadaRedemptionTest is Test {
     }
 
     function test_revert_redeem_emptyTokenListNoETH() public {
-        // WHY: Prevents ARM lock-in with zero payout (issue #254). An empty tokens
-        // list with includeETH=false produces no payout; the anyPayout guard reverts
-        // so safeTransferFrom is rolled back and ARM stays in the caller's wallet.
+        // WHY: Prevents ARM lock-in with zero payout. An empty tokens list with
+        // includeETH=false produces no payout; the empty-input guard reverts so
+        // safeTransferFrom is rolled back and ARM stays in the caller's wallet.
         address[] memory tokens = new address[](0);
         uint256 aliceArm = armToken.balanceOf(alice);
         uint256 aliceArmBefore = armToken.balanceOf(alice);
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        vm.expectRevert("ArmadaRedemption: must request at least one asset");
         redemption.redeem(aliceArm, tokens, false);
 
         // ARM is NOT locked — the revert rolled back safeTransferFrom
@@ -393,7 +393,8 @@ contract ArmadaRedemptionTest is Test {
 
     function test_revert_redeem_tokenWithZeroBalance() public {
         // WHY: A user listing a token whose sweep has not yet run would otherwise
-        // lock ARM for zero payout on that token (issue #254 partial-sweep case).
+        // lock ARM for zero payout on that token (partial-sweep forfeiture case).
+        // The strict per-asset share check now reverts before ARM is committed.
         MockTokenRedemption emptyToken = new MockTokenRedemption("Empty", "EMPTY");
         address[] memory tokens = new address[](1);
         tokens[0] = address(emptyToken);
@@ -402,11 +403,71 @@ contract ArmadaRedemptionTest is Test {
         uint256 aliceArmBefore = armToken.balanceOf(alice);
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        vm.expectRevert("ArmadaRedemption: zero share for token");
         redemption.redeem(aliceArm, tokens, false);
 
         assertEq(emptyToken.balanceOf(alice), 0);
         assertEq(armToken.balanceOf(alice), aliceArmBefore);
+    }
+
+    // WHY: Sequential-correctness violation per GOVERNANCE.md §Redemption mechanism.
+    // If sweepers run in stages — say USDC swept but OTHER not yet — a redeemer who
+    // requests both used to receive USDC, get anyPayout=true, and silently forfeit
+    // their share of OTHER. Their ARM stayed locked, reducing `circulating` for
+    // everyone after, so late redeemers absorbed the forfeited shares. The strict
+    // require fires at the un-swept asset, reverts the redemption entirely, and
+    // forces the redeemer to wait or to call again with only swept assets.
+    function test_revert_redeem_partialSweep_unsweptTokenForfeited() public {
+        // Deploy two redeemable tokens. Sweep only one of them.
+        MockTokenRedemption other = new MockTokenRedemption("Other", "OTH");
+        usdc.mint(address(redemption), 1_000_000e6); // simulating USDC sweep landed
+        // `other` has zero balance — sweep has not run yet.
+
+        address[] memory tokens = new address[](2);
+        // Sort ascending so the existing tokens-not-sorted check passes.
+        if (address(usdc) < address(other)) {
+            tokens[0] = address(usdc);
+            tokens[1] = address(other);
+        } else {
+            tokens[0] = address(other);
+            tokens[1] = address(usdc);
+        }
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        uint256 aliceArmBefore = aliceArm;
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: zero share for token");
+        redemption.redeem(aliceArm, tokens, false);
+
+        // ARM rolled back; Alice received nothing.
+        assertEq(armToken.balanceOf(alice), aliceArmBefore);
+        assertEq(usdc.balanceOf(alice), 0);
+        assertEq(other.balanceOf(alice), 0);
+    }
+
+    // WHY: ETH path mirrors the per-token rule. A redeemer with includeETH=true but
+    // no ETH yet swept used to get tokens, mark anyPayout, and silently forfeit
+    // their ETH share. Same sequential-correctness violation as the token case.
+    function test_revert_redeem_includeETH_butNoETHSwept() public {
+        // ERC20 sweep landed; ETH sweep has not run.
+        usdc.mint(address(redemption), 1_000_000e6);
+        // address(redemption).balance is 0 (no ETH swept).
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        uint256 aliceArmBefore = aliceArm;
+
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: zero share for ETH");
+        redemption.redeem(aliceArm, tokens, true);
+
+        // ARM rolled back; Alice received nothing.
+        assertEq(armToken.balanceOf(alice), aliceArmBefore);
+        assertEq(usdc.balanceOf(alice), 0);
+        assertEq(alice.balance, 0);
     }
 
     function test_redeem_ethOnlyNoERC20() public {
@@ -608,7 +669,7 @@ contract ArmadaRedemptionTest is Test {
         uint256 aliceArmBefore = aliceArm;
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        vm.expectRevert("ArmadaRedemption: zero share for token");
         redemption.redeem(aliceArm, tokens, false);
 
         // Critical invariant: ARM must stay with Alice after the revert
@@ -617,9 +678,9 @@ contract ArmadaRedemptionTest is Test {
     }
 
     function test_revert_multiTokenAllZeroBalances() public {
-        // WHY: The anyPayout guard must trigger even with multiple listed tokens when
-        // all have zero share. Covers the variant where users batch several unswept
-        // assets in the hope of saving a redeem call.
+        // WHY: The strict per-asset share check must trigger on the FIRST un-swept
+        // token when multiple are listed. Covers the variant where users batch
+        // several unswept assets in the hope of saving a redeem call.
         MockTokenRedemption a = new MockTokenRedemption("A", "A");
         MockTokenRedemption b = new MockTokenRedemption("B", "B");
         MockTokenRedemption c = new MockTokenRedemption("C", "C");
@@ -640,7 +701,7 @@ contract ArmadaRedemptionTest is Test {
 
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        vm.expectRevert("ArmadaRedemption: zero share for token");
         redemption.redeem(aliceArm, tokens, false);
     }
 
@@ -652,7 +713,7 @@ contract ArmadaRedemptionTest is Test {
         assertEq(address(redemption).balance, 0);
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: no assets available - call sweep first");
+        vm.expectRevert("ArmadaRedemption: zero share for ETH");
         redemption.redeem(aliceArm, tokens, true);
     }
 

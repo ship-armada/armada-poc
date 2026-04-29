@@ -594,6 +594,12 @@ describe("Wind-Down & Redemption Integration", function () {
       const weth = await MockUSDCV2.deploy("Wrapped ETH", "WETH");
       await weth.waitForDeployment();
 
+      // Fund the redemption contract with WETH so the per-asset share>0 check
+      // passes on index 0 and the loop reaches the sort check at index 1.
+      // Without this, the strict share-check would fire first on the empty token
+      // and we'd never test the sort path.
+      await weth.mint(await redemption.getAddress(), ethers.parseUnits("1000", 6));
+
       const addr1 = await usdc.getAddress();
       const addr2 = await weth.getAddress();
 

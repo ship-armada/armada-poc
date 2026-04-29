@@ -52,9 +52,13 @@ contract TreasurySteward {
     }
 
     /// @notice Remove the current steward (called by timelock after governance proposal)
+    /// @dev Clears both currentSteward and termStart. isStewardActive and termEnd both
+    ///      short-circuit on currentSteward == address(0) today, but clearing termStart
+    ///      defends against future readers that consume it without the address guard.
     function removeSteward() external onlyTimelock {
         emit StewardRemoved(currentSteward);
         currentSteward = address(0);
+        delete termStart;
     }
 
     // ============ View Functions ============

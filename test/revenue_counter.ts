@@ -72,6 +72,23 @@ describe("RevenueCounter", function () {
         revenueCounter.initialize(alice.address)
       ).to.be.revertedWith("Initializable: contract is already initialized");
     });
+
+    // WHY: A misdeploy that passes address(0) as the owner would leave the
+    // contract ungovernable. _transferOwnership in OZ Ownable does NOT reject
+    // address(0) (it's used internally for renounceOwnership), so the explicit
+    // check at the top of initialize is the only defense.
+    it("should reject zero owner", async function () {
+      const RevenueCounter = await ethers.getContractFactory("RevenueCounter");
+      const impl = await RevenueCounter.deploy();
+      await impl.waitForDeployment();
+      const initData = RevenueCounter.interface.encodeFunctionData("initialize", [
+        ethers.ZeroAddress,
+      ]);
+      const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
+      await expect(
+        ERC1967Proxy.deploy(await impl.getAddress(), initData)
+      ).to.be.revertedWith("RevenueCounter: zero owner");
+    });
   });
 
   // ============================================================

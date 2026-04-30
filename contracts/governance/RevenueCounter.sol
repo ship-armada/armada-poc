@@ -45,6 +45,7 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     /// @param _owner The governance address (timelock) that owns this contract.
     function initialize(address _owner) external initializer {
+        require(_owner != address(0), "RevenueCounter: zero owner");
         __Ownable_init();
         __UUPSUpgradeable_init();
         _transferOwnership(_owner);

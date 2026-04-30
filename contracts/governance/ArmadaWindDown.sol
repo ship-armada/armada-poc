@@ -22,6 +22,7 @@ interface IShieldPauseControllerWindDown {
 interface IRevenueCounterWindDown {
     function recognizedRevenueUsd() external view returns (uint256);
     function freeze() external;
+    function syncStablecoinRevenue() external;
 }
 
 interface IRevenueLockWindDown {
@@ -155,6 +156,16 @@ contract ArmadaWindDown {
     function triggerWindDown() external {
         require(!triggered, "ArmadaWindDown: already triggered");
         require(block.timestamp > windDownDeadline, "ArmadaWindDown: deadline not passed");
+
+        // Best-effort sync from the fee collector before reading the threshold.
+        // Without this, a stale recognizedRevenueUsd could let wind-down trigger
+        // when the actual fee balance is already above threshold (no one called
+        // syncStablecoinRevenue recently). Wrapped in try/catch so wind-down stays
+        // permissionless even if sync reverts (no fee collector configured, fee
+        // collector itself reverts, etc.) — the threshold check then runs against
+        // whatever value the counter currently has.
+        try revenueCounter.syncStablecoinRevenue() {} catch {}
+
         require(
             revenueCounter.recognizedRevenueUsd() < revenueThreshold,
             "ArmadaWindDown: revenue meets threshold"

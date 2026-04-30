@@ -15,13 +15,33 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./helpers/GovernorDeployHelper.sol";
 
 /// @dev Mock RevenueCounter for testing. freeze() is a no-op stub so wind-down
-///      trigger flow can call into it without reverting.
+///      trigger flow can call into it without reverting. syncStablecoinRevenue
+///      reads from a settable pendingSyncedValue — tests can simulate a fee
+///      collector that has accumulated value but hasn't been synced. If
+///      shouldRevertOnSync is set, the call reverts so try/catch can be tested.
 contract MockRevenueCounter {
     uint256 public recognizedRevenueUsd;
+    uint256 public pendingSyncedValue;
     bool public frozen;
+    bool public shouldRevertOnSync;
 
     function setRevenue(uint256 _revenue) external {
         recognizedRevenueUsd = _revenue;
+    }
+
+    function setPendingSyncedValue(uint256 _v) external {
+        pendingSyncedValue = _v;
+    }
+
+    function setShouldRevertOnSync(bool _b) external {
+        shouldRevertOnSync = _b;
+    }
+
+    function syncStablecoinRevenue() external {
+        require(!shouldRevertOnSync, "MockRevenueCounter: sync revert");
+        if (pendingSyncedValue > recognizedRevenueUsd) {
+            recognizedRevenueUsd = pendingSyncedValue;
+        }
     }
 
     function freeze() external {
@@ -189,6 +209,39 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.prank(randomUser);
         vm.expectRevert("ArmadaWindDown: deadline not passed");
         windDown.triggerWindDown();
+    }
+
+    // WHY: Without a best-effort sync before the threshold check, a stale
+    // recognizedRevenueUsd lets wind-down trigger when the actual fee balance
+    // is already above threshold (no one called syncStablecoinRevenue recently).
+    // The sync inside triggerWindDown pulls the pending value forward; the
+    // expectRevert proves the threshold check saw the post-sync value (without
+    // the sync, the stale below-threshold value would have let trigger succeed).
+    function test_permissionlessTrigger_syncsBeforeThresholdCheck() public {
+        // Counter shows below threshold (stale).
+        revenueCounter.setRevenue(REVENUE_THRESHOLD / 2);
+        // Pending sync would push the value to at-threshold, so the check should fail.
+        revenueCounter.setPendingSyncedValue(REVENUE_THRESHOLD);
+
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        vm.prank(randomUser);
+        vm.expectRevert("ArmadaWindDown: revenue meets threshold");
+        windDown.triggerWindDown();
+    }
+
+    // WHY: Best-effort sync must not block wind-down on its own failure. If the
+    // sync reverts (no fee collector, fee collector itself reverts, etc.), the
+    // try/catch swallows it and the threshold check runs against whatever value
+    // the counter currently has. Pin permissionless trigger as fail-open.
+    function test_permissionlessTrigger_succeedsWhenSyncReverts() public {
+        revenueCounter.setRevenue(REVENUE_THRESHOLD - 1); // below threshold
+        revenueCounter.setShouldRevertOnSync(true); // sync would revert
+
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        vm.prank(randomUser);
+        windDown.triggerWindDown();
+
+        assertTrue(windDown.triggered(), "trigger succeeded despite sync revert");
     }
 
     // ======== Governance Trigger ========

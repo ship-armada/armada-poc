@@ -27,6 +27,7 @@ contract MockRevenueWD {
     bool public frozen;
     function setRevenue(uint256 r) external { recognizedRevenueUsd = r; }
     function freeze() external { frozen = true; }
+    function syncStablecoinRevenue() external {} // no-op: invariant tests don't model sync
 }
 
 contract MockRevenueLockWD {

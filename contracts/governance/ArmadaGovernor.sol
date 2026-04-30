@@ -404,8 +404,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         standardSelectors[DISTRIBUTE_SELECTOR] = true;  // distribute() below the 5% threshold
         standardSelectors[DISTRIBUTE_ETH_SELECTOR] = true; // distributeETH() below the 5% threshold
         standardSelectors[bytes4(keccak256("stewardSpend(address,address,uint256)"))] = true;
-        standardSelectors[bytes4(keccak256("transferTo(address,address,uint256)"))] = true;
-        standardSelectors[bytes4(keccak256("transferETHTo(address,uint256)"))] = true;
+        // transferTo / transferETHTo are intentionally NOT registered. They are
+        // wind-down-only on the treasury (require msg.sender == windDownContract),
+        // so any governance proposal calling them via the timelock would revert.
+        // Leaving them un-registered makes them fail-closed to Extended — a more
+        // honest signal to proposers that these are not governance paths.
         // ARM token transfer enable — one-way, irreversible, callable via governance or wind-down
         standardSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Steward removal — defensive/emergency action, lower bar per spec

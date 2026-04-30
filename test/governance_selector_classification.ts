@@ -76,4 +76,24 @@ describe("Governance Selector Classification", function () {
       expect(await governor.standardSelectors(s)).to.equal(false);
     });
   });
+
+  // WHY: transferTo / transferETHTo on ArmadaTreasuryGov are wind-down-only
+  // (require msg.sender == windDownContract). A governance proposal calling
+  // them via the timelock would always revert. Listing them in standardSelectors
+  // would advertise a governance path that doesn't exist. They're intentionally
+  // un-registered so fail-closed promotes any such proposal to Extended.
+  describe("Wind-down-only selectors (un-registered, fail-closed Extended)", function () {
+    const windDownOnlySelectors = [
+      "transferTo(address,address,uint256)",
+      "transferETHTo(address,uint256)",
+    ];
+
+    for (const sig of windDownOnlySelectors) {
+      it(`leaves ${sig} un-registered`, async function () {
+        const s = sel(sig);
+        expect(await governor.standardSelectors(s)).to.equal(false);
+        expect(await governor.extendedSelectors(s)).to.equal(false);
+      });
+    }
+  });
 });

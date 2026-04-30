@@ -21,6 +21,11 @@ interface IShieldPauseControllerWindDown {
 
 interface IRevenueCounterWindDown {
     function recognizedRevenueUsd() external view returns (uint256);
+    function freeze() external;
+}
+
+interface IRevenueLockWindDown {
+    function freezeAtWindDown() external;
 }
 
 interface ITreasuryWindDown {
@@ -61,8 +66,11 @@ contract ArmadaWindDown {
     /// @notice Shield pause controller
     IShieldPauseControllerWindDown public immutable pauseContract;
 
-    /// @notice Revenue counter (reads cumulative recognized revenue)
+    /// @notice Revenue counter (reads cumulative recognized revenue, frozen at trigger)
     IRevenueCounterWindDown public immutable revenueCounter;
+
+    /// @notice Revenue lock (frozen at trigger so circulatingSupply is stable)
+    IRevenueLockWindDown public immutable revenueLock;
 
     /// @notice Timelock address (governance authority for direct trigger and parameter changes)
     address public immutable timelock;
@@ -111,6 +119,7 @@ contract ArmadaWindDown {
         address _redemptionContract,
         address _pauseContract,
         address _revenueCounter,
+        address _revenueLock,
         address _timelock,
         uint256 _revenueThreshold,
         uint256 _windDownDeadline
@@ -121,6 +130,7 @@ contract ArmadaWindDown {
         require(_redemptionContract != address(0), "ArmadaWindDown: zero redemption");
         require(_pauseContract != address(0), "ArmadaWindDown: zero pauseContract");
         require(_revenueCounter != address(0), "ArmadaWindDown: zero revenueCounter");
+        require(_revenueLock != address(0), "ArmadaWindDown: zero revenueLock");
         require(_timelock != address(0), "ArmadaWindDown: zero timelock");
         require(_windDownDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
         require(_revenueThreshold > 0, "ArmadaWindDown: zero threshold");
@@ -131,6 +141,7 @@ contract ArmadaWindDown {
         redemptionContract = _redemptionContract;
         pauseContract = IShieldPauseControllerWindDown(_pauseContract);
         revenueCounter = IRevenueCounterWindDown(_revenueCounter);
+        revenueLock = IRevenueLockWindDown(_revenueLock);
         timelock = _timelock;
         revenueThreshold = _revenueThreshold;
         windDownDeadline = _windDownDeadline;
@@ -221,6 +232,18 @@ contract ArmadaWindDown {
     function _executeWindDown() internal {
         triggered = true;
         triggerTime = block.timestamp;
+
+        // Freeze the revenue counter FIRST so that the RevenueLock final-ratchet-update
+        // below reads a stable upstream value. After freeze, no further attestRevenue
+        // or syncStablecoinRevenue can advance the counter — the unlock-percentage
+        // milestone state at trigger time becomes the permanent fixed point.
+        revenueCounter.freeze();
+
+        // Then freeze the RevenueLock ratchet. freezeAtWindDown performs one final
+        // _updateMaxObservedRevenue against the (just frozen) counter and locks
+        // maxObservedRevenue. After this, ArmadaRedemption.lockedAtWindDown returns
+        // a stable value across the redemption window.
+        revenueLock.freezeAtWindDown();
 
         // Enable ARM transfers (users need to move ARM to redeem). The post-condition
         // is "transfers are enabled" — not "transfers were flipped here". Governance

@@ -628,8 +628,9 @@ Large treasury proposals (especially those approaching outflow limits) should be
 
 1. Wind-down triggers (automatic or governance vote)
 2. **ARM transfers are enabled (or confirmed already enabled)** — wind-down ensures `transferable == true` on the ARM token as a post-condition. If governance previously enabled transfers via a separate proposal (the spec-expected post-crowdfund unlock), wind-down skips the redundant `setTransferable(true)` call; otherwise wind-down flips it during the trigger transaction. Either way, holders must be able to move ARM to redeem their treasury share.
-3. Shielded pool enters withdraw-only mode immediately — `shield()` and shielded `transfer()` disabled; `unshield()` always available **indefinitely with no deadline**. There is no exit window — users can withdraw at any time, forever.
-4. **Governance ends.** The governor stops accepting new proposals. No further governance votes, no steward proposals, no parameter changes. All remaining actions are permissionless (redemption, unshielding).
+3. **Revenue counter and revenue-lock ratchet are frozen.** The wind-down contract calls `freeze()` on the `RevenueCounter` (rejecting further `attestRevenue` and `syncStablecoinRevenue` calls) and `freezeAtWindDown()` on the `RevenueLock` (locking `maxObservedRevenue` after one final ratchet update against the just-frozen counter). The unlock-percentage milestone state at trigger time becomes the permanent fixed point. This stabilizes the redemption denominator: subsequent `release()` calls do not change `lockedAtWindDown()`, so claim/release timing cannot shift the ratio between sequential redemptions.
+4. Shielded pool enters withdraw-only mode immediately — `shield()` and shielded `transfer()` disabled; `unshield()` always available **indefinitely with no deadline**. There is no exit window — users can withdraw at any time, forever.
+5. **Governance ends.** The governor stops accepting new proposals. No further governance votes, no steward proposals, no parameter changes. All remaining actions are permissionless (redemption, unshielding).
 5. **Non-ARM treasury assets are swept to the redemption contract** via a permissionless `sweepToken(address token)` function on the wind-down contract. Anyone can call this function for any ERC-20 token address after wind-down triggers — it transfers the treasury's full balance of that token to the redemption contract. **`sweepToken(ARM)` reverts** — ARM cannot be swept. Treasury ARM remains locked permanently. Multiple calls (one per token) are needed to sweep all assets. Native ETH is swept via a separate `sweepETH()`. The wind-down contract has pre-authorized authority over the treasury for this purpose. No manual multisig action required — community members or participants can sweep whatever tokens they know about.
 6. Treasury ARM has no distribution mechanism after wind-down — it remains locked permanently.
 
@@ -643,14 +644,28 @@ A **redemption contract** holds the treasury's non-ARM assets after wind-down. A
 - The contract sends the holder their share of each treasury asset (USDC, ETH, etc.)
 - The deposited ARM is locked in the redemption contract permanently (not burned — the ARM token has no burn function)
 
-**Circulating supply** for the denominator is computed as: `ARM.totalSupply() - ARM.balanceOf(treasury) - ARM.balanceOf(revenueLock) - ARM.balanceOf(crowdfundContract) - ARM.balanceOf(redemptionContract)`. These four addresses are **hardcoded** in the redemption contract — no registry, no governance-managed list. The revenue-gated lock mechanism is a one-time launch construct (see REVENUE_LOCK.md §11), so no future lock contracts need to be accounted for. Custom grants post-transfer-unlock are standard treasury transfers, not lock contracts.
+**Circulating supply** for the denominator includes all ARM that is economically entitled to holders, regardless of whether it has been claimed or released into a wallet. Entitlement is derived from allocation math, not raw contract balances:
 
-If wind-down triggers before all crowdfund participants have claimed, the unclaimed ARM in the crowdfund contract is excluded from the denominator (participants can still call `claim()` after wind-down and then redeem). As holders redeem, the redemption contract's ARM balance grows and the denominator shrinks, ensuring correct pro-rata math for sequential redemptions.
+```
+circulatingSupply = ARM.totalSupply()
+                  - ARM.balanceOf(treasury)
+                  - ARM.balanceOf(redemptionContract)
+                  - revenueLock.lockedAtWindDown()
+                  - crowdfundUnsoldInContract
+```
+
+Where:
+- **`revenueLock.lockedAtWindDown()`** = `totalAllocation × (10000 − unlockBpsAtWindDown) / 10000`. The locked (unvested) portion. Frozen at wind-down trigger so the value is stable across the redemption window. The vested portion stays in the denominator: beneficiaries can call `release()` and then redeem with no fairness penalty.
+- **`crowdfundUnsoldInContract`** = `ARM.balanceOf(crowdfundContract) − crowdfundContract.armStillOwed()`. The unsold portion still in the crowdfund (will eventually be swept to treasury). Computed dynamically — once the unsold portion is swept via `withdrawUnallocatedArm`, this drops to 0 and the treasury balance subtraction picks it up. Allocated-unclaimed ARM stays in the denominator: participants can call `claim()` and then redeem with no fairness penalty.
+
+The treasury, redemption contract, RevenueLock, and Crowdfund addresses are **hardcoded** in the redemption contract — no registry, no governance-managed list. The revenue-gated lock mechanism is a one-time launch construct (see REVENUE_LOCK.md §11), so no future lock contracts need to be accounted for. Custom grants post-transfer-unlock are standard treasury transfers, not lock contracts.
+
+Participants can still call `claim()` after wind-down and then redeem. The denominator already accounts for their entitled-unclaimed ARM, so claim timing does not affect payout fairness. As holders redeem, the redemption contract's ARM balance grows and its portion is excluded from the denominator, ensuring correct pro-rata math for sequential redemptions.
 
 **Properties:**
 - **Permissionless.** No governance vote needed. No snapshot. No merkle tree. No claim window. Deposit ARM, receive your share, whenever you want.
 - **Self-service.** Each holder decides when to redeem. No coordination required.
-- **Sequential correctness.** Each redemption is calculated against the remaining assets and remaining circulating supply. Early and late redeemers get the same pro-rata outcome, with one caveat: if revenue-lock beneficiaries call `release()` after wind-down (because milestones were previously reached), the lock contract's ARM balance decreases, shrinking the denominator slightly. This means redemption ratios can shift marginally between redemptions if releases happen in between. The effect is bounded by the amount of unreleased ARM at wind-down time and is negligible in practice.
+- **Sequential correctness and claim invariance.** Claiming or releasing ARM does not change circulating supply. Before a claim/release, entitled ARM is counted as circulating (included in the denominator via allocation math, not the contract balance). After a claim/release, the same ARM is in a wallet and still counted as circulating. Redemption outcomes are therefore independent of claim/release timing. Early and late redeemers receive the same per-ARM payout regardless of whether revenue-lock beneficiaries have called `release()` or crowdfund participants have called `claim()`.
 - **No burn required.** ARM deposited into the redemption contract is locked permanently. The denominator calculation excludes it, so the math stays correct.
 
 ### Who receives treasury distribution

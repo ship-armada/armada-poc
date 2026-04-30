@@ -29,10 +29,24 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     /// @notice USDC has 6 decimals; we store revenue in 18 decimals. Scale factor = 1e12.
     uint256 private constant USDC_TO_USD_SCALE = 1e12;
 
+    /// @notice Wind-down contract authorized to freeze the counter at trigger time.
+    ///         Set once via setWindDownContract.
+    address public windDownContract;
+    /// @notice One-time setter lock for windDownContract.
+    bool public windDownContractSet;
+
+    /// @notice Whether the counter is permanently frozen. Set by the wind-down
+    ///         contract at trigger time. Once frozen, recognizedRevenueUsd cannot
+    ///         change — attestRevenue and syncStablecoinRevenue revert. Stabilizes
+    ///         the redemption denominator across the post-wind-down redemption window.
+    bool public frozen;
+
     // ============ Events ============
 
     event RevenueUpdated(uint256 cumulativeRevenue, uint256 previousRevenue);
     event FeeCollectorUpdated(address indexed oldCollector, address indexed newCollector);
+    event WindDownContractSet(address indexed windDownContract);
+    event Frozen(uint256 frozenAt);
 
     // ============ Constructor ============
 
@@ -58,6 +72,7 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     ///      since the last sync, scales USDC (6 decimals) to USD (18 decimals), and adds
     ///      to the cumulative counter.
     function syncStablecoinRevenue() external {
+        require(!frozen, "RevenueCounter: frozen");
         require(feeCollector != address(0), "RevenueCounter: no fee collector");
 
         uint256 currentCumulative = IFeeCollector(feeCollector).cumulativeFeesCollected();
@@ -80,6 +95,7 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     ///      revenue sources or corrections. Same value is a no-op.
     /// @param newCumulativeUsd New cumulative revenue in 18-decimal USD.
     function attestRevenue(uint256 newCumulativeUsd) external onlyOwner {
+        require(!frozen, "RevenueCounter: frozen");
         require(newCumulativeUsd >= recognizedRevenueUsd, "RevenueCounter: not monotonic");
 
         if (newCumulativeUsd == recognizedRevenueUsd) return; // no-op
@@ -116,6 +132,31 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         }
     }
 
+    // ============ Wind-Down ============
+
+    /// @notice Register the wind-down contract. One-shot setter; locks after the
+    ///         first non-zero call. Permissionless because the lock + zero-address
+    ///         checks make a misregistration recoverable only via UUPS upgrade.
+    /// @param _windDownContract The wind-down contract authorized to call freeze().
+    function setWindDownContract(address _windDownContract) external {
+        require(!windDownContractSet, "RevenueCounter: wind-down already set");
+        require(_windDownContract != address(0), "RevenueCounter: zero address");
+        windDownContractSet = true;
+        windDownContract = _windDownContract;
+        emit WindDownContractSet(_windDownContract);
+    }
+
+    /// @notice Permanently freeze the counter at its current value. Wind-down only.
+    /// @dev Stops attestRevenue and syncStablecoinRevenue. Stabilizes the redemption
+    ///      denominator across the post-wind-down redemption window so claim/release
+    ///      timing cannot shift the unlock-percentage milestone state mid-redemption.
+    function freeze() external {
+        require(msg.sender == windDownContract, "RevenueCounter: not wind-down");
+        require(!frozen, "RevenueCounter: already frozen");
+        frozen = true;
+        emit Frozen(recognizedRevenueUsd);
+    }
+
     // ============ UUPS ============
 
     /// @dev Only the owner (timelock) can authorize upgrades.
@@ -123,10 +164,10 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     // ============ Storage Gap ============
 
-    /// @dev Reserved storage for future upgrades. 3 state slots + 47 gap = 50 total.
+    /// @dev Reserved storage for future upgrades. 5 state slots + 45 gap = 50 total.
     ///      Matches the 50-slot reservation convention used by ArmadaGovernor. The
     ///      project deploys via raw ERC1967Proxy (no OZ upgrades-plugin layout-diff
     ///      tooling), so this gap is the only line of defense against a future upgrade
     ///      that adds state above lastSyncedCumulative silently shifting that slot.
-    uint256[47] private __gap;
+    uint256[45] private __gap;
 }

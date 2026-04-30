@@ -14,12 +14,28 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./helpers/GovernorDeployHelper.sol";
 
-/// @dev Mock RevenueCounter for testing
+/// @dev Mock RevenueCounter for testing. freeze() is a no-op stub so wind-down
+///      trigger flow can call into it without reverting.
 contract MockRevenueCounter {
     uint256 public recognizedRevenueUsd;
+    bool public frozen;
 
     function setRevenue(uint256 _revenue) external {
         recognizedRevenueUsd = _revenue;
+    }
+
+    function freeze() external {
+        frozen = true;
+    }
+}
+
+/// @dev Mock RevenueLock for testing the wind-down trigger flow. freezeAtWindDown
+///      is a no-op stub.
+contract MockRevenueLock {
+    bool public frozenAtWindDown;
+
+    function freezeAtWindDown() external {
+        frozenAtWindDown = true;
     }
 }
 
@@ -50,7 +66,8 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     address public deployer = address(this);
     address public alice = address(0xA11CE);
     address public randomUser = address(0xCAFE);
-    address public revenueLock = address(0xABCD);
+    MockRevenueLock public revenueLockMock;
+    address public revenueLock; // set to revenueLockMock address in setUp
     address public crowdfund = address(0xCF00);
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
@@ -76,6 +93,8 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         );
         pauseController = new ShieldPauseController(address(governor), address(timelock));
         revenueCounter = new MockRevenueCounter();
+        revenueLockMock = new MockRevenueLock();
+        revenueLock = address(revenueLockMock);
         usdc = new MockUSDCWindDown();
 
         // Deploy redemption (needs ARM token + excluded addresses)
@@ -94,6 +113,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
             address(redemption),
             address(pauseController),
             address(revenueCounter),
+            revenueLock,
             address(timelock),
             REVENUE_THRESHOLD,
             WIND_DOWN_DEADLINE
@@ -419,7 +439,16 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero armToken");
         new ArmadaWindDown(
             address(0), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
+            REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
+        );
+    }
+
+    function test_constructorRejectsZeroRevenueLock() public {
+        vm.expectRevert("ArmadaWindDown: zero revenueLock");
+        new ArmadaWindDown(
+            address(armToken), address(treasury), address(governor), address(redemption),
+            address(pauseController), address(revenueCounter), address(0), address(timelock),
             REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
         );
     }
@@ -428,7 +457,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: deadline in past");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
             REVENUE_THRESHOLD, block.timestamp - 1
         );
     }
@@ -437,7 +466,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero threshold");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
             0, WIND_DOWN_DEADLINE
         );
     }

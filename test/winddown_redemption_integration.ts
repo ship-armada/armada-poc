@@ -86,7 +86,18 @@ describe("Wind-Down & Redemption Integration", function () {
   }
 
   beforeEach(async function () {
-    [deployer, alice, bob, carol, revenueLockAddr, crowdfundAddr] = await ethers.getSigners();
+    [deployer, alice, bob, carol] = await ethers.getSigners();
+    // Mock contract instances — ArmadaRedemption queries lockedAtWindDown() and
+    // armStillOwed() on these for the circulatingSupply denominator. ArmadaWindDown
+    // also calls freezeAtWindDown() on the RevenueLock mock at trigger.
+    const MockRL = await ethers.getContractFactory("MockRevenueLockRedemption");
+    const rlMock = await MockRL.deploy();
+    await rlMock.waitForDeployment();
+    const MockCF = await ethers.getContractFactory("MockCrowdfundRedemption");
+    const cfMock = await MockCF.deploy();
+    await cfMock.waitForDeployment();
+    revenueLockAddr = { address: await rlMock.getAddress() } as any;
+    crowdfundAddr = { address: await cfMock.getAddress() } as any;
 
     // --- Deploy base contracts ---
 
@@ -156,6 +167,7 @@ describe("Wind-Down & Redemption Integration", function () {
       await redemption.getAddress(),
       await shieldPauseController.getAddress(),
       await revenueCounter.getAddress(),
+      revenueLockAddr.address,
       timelockAddr,
       REVENUE_THRESHOLD,
       windDownDeadline,
@@ -166,6 +178,9 @@ describe("Wind-Down & Redemption Integration", function () {
 
     // ARM token: set wind-down contract (deployer-only)
     await armToken.setWindDownContract(await windDown.getAddress());
+
+    // RevenueCounter: set wind-down contract for freeze() at trigger time.
+    await revenueCounter.setWindDownContract(await windDown.getAddress());
 
     // Redemption: wire wind-down reference (deployer-only one-time setter).
     // ArmadaRedemption reads windDown.triggerTime() to enforce REDEMPTION_DELAY.
@@ -213,6 +228,15 @@ describe("Wind-Down & Redemption Integration", function () {
     await armToken.transfer(crowdfundAddr.address, CROWDFUND_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
+
+    // Configure mocks to mirror the old "subtract full balance" behavior so tests
+    // that don't model the entitled-unclaimed bug see the same denominator as before.
+    // Tests that DO model the bug (issue #90) set these explicitly.
+    const rlMockContract = await ethers.getContractAt(
+      "MockRevenueLockRedemption", revenueLockAddr.address
+    );
+    await rlMockContract.setLocked(REVENUE_LOCK_AMOUNT);
+    // Crowdfund mock default armStillOwed = 0 → full balance subtracted (matches old).
 
     // Delegate for governance
     await armToken.connect(alice).delegate(alice.address);
@@ -479,6 +503,7 @@ describe("Wind-Down & Redemption Integration", function () {
         await redemption.getAddress(),
         await shieldPauseController.getAddress(),
         await revenueCounter.getAddress(),
+        revenueLockAddr.address,
         deployer.address, // use deployer as fake timelock
         REVENUE_THRESHOLD,
         freshDeadline,
@@ -941,8 +966,17 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
   // ═══════════════════════════════════════════════════════════════════
 
   before(async function () {
-    [deployer, alice, bob, carol, revenueLockAddr, crowdfundAddr] = await ethers.getSigners();
+    [deployer, alice, bob, carol] = await ethers.getSigners();
     aliceAddress = await alice.getAddress();
+    // Mock contracts (see top describe block for the same pattern).
+    const MockRL = await ethers.getContractFactory("MockRevenueLockRedemption");
+    const rlMock = await MockRL.deploy();
+    await rlMock.waitForDeployment();
+    const MockCF = await ethers.getContractFactory("MockCrowdfundRedemption");
+    const cfMock = await MockCF.deploy();
+    await cfMock.waitForDeployment();
+    revenueLockAddr = { address: await rlMock.getAddress() } as any;
+    crowdfundAddr = { address: await cfMock.getAddress() } as any;
 
     poseidon = await buildPoseidon();
     F = poseidon.F;
@@ -1003,6 +1037,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
       await redemption.getAddress(),
       await shieldPauseController.getAddress(),
       await revenueCounter.getAddress(),
+      revenueLockAddr.address,
       timelockAddr,
       REVENUE_THRESHOLD,
       windDownDeadline,
@@ -1011,6 +1046,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     // Wire governance contracts
     await armToken.setWindDownContract(await windDown.getAddress());
     await redemption.setWindDown(await windDown.getAddress());
+    await revenueCounter.setWindDownContract(await windDown.getAddress());
 
     const timelockSigner = await asTimelock();
     await governor.connect(timelockSigner).setSecurityCouncil(carol.address);

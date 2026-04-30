@@ -17,6 +17,20 @@ interface IArmadaWindDownRedemption {
     function triggerTime() external view returns (uint256);
 }
 
+/// @notice Minimal interface for reading the locked (unvested) portion of RevenueLock.
+///         Pre-freeze the live ratchet is used; post-freeze (after wind-down trigger)
+///         this returns the value frozen at trigger time.
+interface IRevenueLockRedemption {
+    function lockedAtWindDown() external view returns (uint256);
+}
+
+/// @notice Minimal interface for reading entitled-but-unclaimed ARM in the crowdfund.
+///         `armStillOwed` returns the dynamic amount the contract owes participants
+///         (zero pre-finalize / on cancel / refundMode / post-claim-deadline).
+interface IArmadaCrowdfundRedemption {
+    function armStillOwed() external view returns (uint256);
+}
+
 /// @title ArmadaRedemption — Pro-rata treasury redemption for ARM holders
 /// @notice Not upgradeable. Permissionless. No admin functions. No deadline.
 ///
@@ -193,14 +207,46 @@ contract ArmadaRedemption is ReentrancyGuard {
 
     // ============ View Functions ============
 
-    /// @notice Circulating ARM supply, excluding non-redeemable addresses.
-    ///         Denominator = totalSupply - treasury - revenueLock - crowdfund - this contract
+    /// @notice Circulating ARM supply for the redemption denominator.
+    /// @dev Includes entitled-but-unclaimed ARM in RevenueLock and ArmadaCrowdfund —
+    ///      otherwise late releasers/claimers would be denominator-exempt and early
+    ///      redeemers would consume the treasury at their expense (see PoC #90).
+    ///
+    ///      Subtracted from totalSupply:
+    ///      1. Treasury balance — ARM the treasury holds is never circulating.
+    ///      2. Redemption contract balance — deposited ARM is locked here permanently.
+    ///      3. RevenueLock LOCKED portion only — `lockedAtWindDown()` returns the
+    ///         unvested portion (totalAllocation × (10000 − unlockBps) / 10000).
+    ///         Entitled-unreleased ARM stays in circulating: beneficiaries can call
+    ///         release() and then redeem.
+    ///      4. Crowdfund UNSOLD-IN-CONTRACT portion only — balance minus armStillOwed.
+    ///         Entitled-unclaimed ARM stays in circulating: participants can call
+    ///         claim() and then redeem.
+    ///
+    ///      The crowdfund portion is computed dynamically (balance − armStillOwed)
+    ///      rather than as a constant (totalArmSupply − totalAllocatedArm). When
+    ///      withdrawUnallocatedArm runs and moves the unsold portion to treasury,
+    ///      the dynamic computation goes to 0 (balance and armStillOwed both fall
+    ///      by the swept amount), and the treasury balance subtraction picks it up.
+    ///      A constant subtraction would double-count the swept portion.
     function circulatingSupply() public view returns (uint256) {
         uint256 total = armToken.totalSupply();
         total -= armToken.balanceOf(treasury);
-        total -= armToken.balanceOf(revenueLock);
-        total -= armToken.balanceOf(crowdfundContract);
         total -= armToken.balanceOf(address(this));
+
+        // RevenueLock locked portion (unvested). Pre-freeze: live ratchet value.
+        // Post-freeze: stable across the redemption window.
+        total -= IRevenueLockRedemption(revenueLock).lockedAtWindDown();
+
+        // Crowdfund unsold-in-contract: balance - armStillOwed. Goes to 0 once the
+        // unsold portion is swept to treasury.
+        uint256 cfBalance = armToken.balanceOf(crowdfundContract);
+        uint256 cfStillOwed = IArmadaCrowdfundRedemption(crowdfundContract).armStillOwed();
+        // Defensive: cfStillOwed should never exceed cfBalance, but clamp to avoid
+        // underflow if the crowdfund's accounting ever becomes inconsistent.
+        uint256 cfUnsold = cfStillOwed >= cfBalance ? 0 : cfBalance - cfStillOwed;
+        total -= cfUnsold;
+
         return total;
     }
 

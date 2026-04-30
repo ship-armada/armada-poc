@@ -24,7 +24,14 @@ contract MockPauseWD {
 
 contract MockRevenueWD {
     uint256 public recognizedRevenueUsd;
+    bool public frozen;
     function setRevenue(uint256 r) external { recognizedRevenueUsd = r; }
+    function freeze() external { frozen = true; }
+}
+
+contract MockRevenueLockWD {
+    bool public frozenAtWindDown;
+    function freezeAtWindDown() external { frozenAtWindDown = true; }
 }
 
 contract MockTreasuryWD {
@@ -85,6 +92,7 @@ contract ArmadaWindDownInvariantTest is Test {
     MockGovernorWD public governor;
     MockPauseWD public pauseCtrl;
     MockRevenueWD public revenueCounter;
+    MockRevenueLockWD public revenueLock;
     MockTreasuryWD public treasury;
     WindDownHandler public handler;
 
@@ -99,6 +107,7 @@ contract ArmadaWindDownInvariantTest is Test {
         governor = new MockGovernorWD();
         pauseCtrl = new MockPauseWD();
         revenueCounter = new MockRevenueWD();
+        revenueLock = new MockRevenueLockWD();
         treasury = new MockTreasuryWD();
 
         windDown = new ArmadaWindDown(
@@ -108,6 +117,7 @@ contract ArmadaWindDownInvariantTest is Test {
             redemption,
             address(pauseCtrl),
             address(revenueCounter),
+            address(revenueLock),
             timelock,
             THRESHOLD,
             block.timestamp + DEADLINE

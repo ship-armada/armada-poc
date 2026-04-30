@@ -297,7 +297,7 @@ async function main() {
   const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
   const windDownContract = await ArmadaWindDown.deploy(
     armTokenAddress, treasuryAddress, governorAddress, redemptionAddress,
-    shieldPauseAddress, revenueCounterAddress, timelockAddress,
+    shieldPauseAddress, revenueCounterAddress, revenueLockAddress, timelockAddress,
     revenueThreshold, windDownDeadline, nm.override()
   );
   await windDownContract.deploymentTransaction()!.wait();
@@ -314,6 +314,16 @@ async function main() {
   console.log("11b. Wiring wind-down to redemption...");
   await (await redemption.setWindDown(windDownAddress, nm.override())).wait();
   console.log(`   redemption.setWindDown(${windDownAddress})`);
+
+  // 11c. Wire wind-down to RevenueCounter and RevenueLock for the trigger-time
+  // freeze hooks (issue #90 fix). Both are permissionless one-shot setters.
+  console.log("11c. Wiring wind-down to RevenueCounter + RevenueLock...");
+  const revenueCounterContract = await ethers.getContractAt("RevenueCounter", revenueCounterAddress);
+  await (await revenueCounterContract.setWindDownContract(windDownAddress, nm.override())).wait();
+  console.log(`   revenueCounter.setWindDownContract(${windDownAddress})`);
+  const revenueLockContract = await ethers.getContractAt("RevenueLock", revenueLockAddress);
+  await (await revenueLockContract.setWindDownContract(windDownAddress, nm.override())).wait();
+  console.log(`   revenueLock.setWindDownContract(${windDownAddress})`);
 
   // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
   // On local: uses Anvil impersonation to execute as the timelock directly.

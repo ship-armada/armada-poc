@@ -72,6 +72,19 @@ contract RevenueLock {
     ///         indefinitely during quiet periods.
     uint256 public lastSyncTimestamp;
 
+    /// @notice Wind-down contract authorized to freeze the lock at trigger time.
+    ///         Set once via setWindDownContract.
+    address public windDownContract;
+    /// @notice One-time setter lock for windDownContract.
+    bool public windDownContractSet;
+
+    /// @notice Whether the ratchet is permanently frozen. Set by the wind-down contract
+    ///         at trigger time. Once frozen, _updateMaxObservedRevenue is a no-op so
+    ///         maxObservedRevenue is fixed. ArmadaRedemption.circulatingSupply uses
+    ///         lockedAtWindDown() to read the frozen locked-portion deterministically
+    ///         across the post-wind-down redemption window.
+    bool public frozenAtWindDown;
+
     /// @notice Whether the contract has been verified as fully funded. Releases are
     ///         blocked until activation. Set once via the permissionless `activate()`.
     bool public activated;
@@ -99,6 +112,9 @@ contract RevenueLock {
         uint256 newMax,
         uint256 reportedByCounter
     );
+
+    event WindDownContractSet(address indexed windDownContract);
+    event FrozenAtWindDown(uint256 maxObservedRevenue, uint256 unlockBps);
 
     // ============ Constructor ============
 
@@ -256,6 +272,51 @@ contract RevenueLock {
         return _beneficiaries.length;
     }
 
+    /// @notice Locked (unvested) ARM portion at this point in time, used by
+    ///         ArmadaRedemption.circulatingSupply as the non-circulating share of
+    ///         this contract.
+    /// @dev Pre-freeze: computed from the live (rate-limited) ratchet — useful for
+    ///      monitoring. Post-freeze: returns the value frozen at wind-down trigger.
+    ///      The frozen value remains stable across the redemption window so the
+    ///      denominator does not shift between sequential redemptions.
+    function lockedAtWindDown() external view returns (uint256) {
+        // unlockBps is uniform across all beneficiaries (single milestone schedule),
+        // so total entitled = totalAllocation * unlockBps / 10000 and locked is the
+        // complement against the constant totalAllocation.
+        uint256 unlockBps = _unlockBpsForRevenue(maxObservedRevenue);
+        return totalAllocation - (totalAllocation * unlockBps) / BPS_100;
+    }
+
+    // ============ Wind-Down ============
+
+    /// @notice Register the wind-down contract. One-shot setter; locks after the
+    ///         first non-zero call. Permissionless (no admin on RevenueLock).
+    function setWindDownContract(address _windDownContract) external {
+        require(!windDownContractSet, "RevenueLock: wind-down already set");
+        require(_windDownContract != address(0), "RevenueLock: zero windDown");
+        windDownContractSet = true;
+        windDownContract = _windDownContract;
+        emit WindDownContractSet(_windDownContract);
+    }
+
+    /// @notice Freeze the ratchet at the current state. Wind-down only; one-shot.
+    /// @dev Performs one final ratchet update to absorb whatever value the (just
+    ///      frozen) RevenueCounter currently reports, then sets frozenAtWindDown.
+    ///      After this, _updateMaxObservedRevenue is a no-op and lockedAtWindDown
+    ///      returns a stable value. The wind-down contract is responsible for
+    ///      freezing the RevenueCounter BEFORE calling this so the final ratchet
+    ///      update reads a stable upstream value.
+    function freezeAtWindDown() external {
+        require(msg.sender == windDownContract, "RevenueLock: not wind-down");
+        require(!frozenAtWindDown, "RevenueLock: already frozen");
+
+        // One last ratchet update against the frozen counter.
+        _updateMaxObservedRevenue();
+
+        frozenAtWindDown = true;
+        emit FrozenAtWindDown(maxObservedRevenue, _unlockBpsForRevenue(maxObservedRevenue));
+    }
+
     // ============ Internal ============
 
     /// @dev Advance `maxObservedRevenue` to the minimum of (reported, prev + budget),
@@ -266,6 +327,12 @@ contract RevenueLock {
     ///      flat-revenue periods would fail to bound the cumulative budget and the
     ///      rate cap would become meaningless over time.
     function _updateMaxObservedRevenue() internal {
+        // Post-freeze: ratchet is permanently fixed. release() must still work for
+        // beneficiaries holding entitled-unreleased ARM, so we silently no-op here
+        // rather than revert. lastSyncTimestamp is also frozen — there is no
+        // budget to consume once the ratchet is locked.
+        if (frozenAtWindDown) return;
+
         uint256 reported = revenueCounter.recognizedRevenueUsd();
 
         uint256 elapsed = block.timestamp - lastSyncTimestamp;

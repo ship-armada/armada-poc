@@ -563,22 +563,27 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         );
 
         uint256 armBalance = armToken.balanceOf(address(this));
-        uint256 armStillOwed;
-        if (phase == Phase.Canceled || refundMode) {
-            armStillOwed = 0;
-        } else if (block.timestamp > claimDeadline) {
-            // Post-3yr: all unclaimed ARM is forfeited
-            armStillOwed = 0;
-        } else {
-            // Pre-3yr: owe the difference between allocated and already transferred
-            armStillOwed = totalAllocatedArm - totalArmTransferred;
-        }
-        uint256 sweepable = armBalance - armStillOwed;
+        uint256 stillOwed = armStillOwed();
+        uint256 sweepable = armBalance - stillOwed;
         require(sweepable > 0, "ArmadaCrowdfund: nothing to sweep");
 
         armToken.safeTransfer(treasury, sweepable);
 
         emit UnallocatedArmWithdrawn(treasury, sweepable);
+    }
+
+    /// @notice ARM still owed to participants (allocated minus already transferred).
+    /// @dev Pre-finalize / Cancel / refundMode / post-claim-deadline all return 0 —
+    ///      no participant has a live ARM claim against the contract in those states.
+    ///      Used by ArmadaRedemption.circulatingSupply to count entitled-unclaimed
+    ///      ARM as circulating: subtract `balance - armStillOwed()` (the unsold
+    ///      portion still in this contract that will be swept to treasury), not the
+    ///      full balance.
+    function armStillOwed() public view returns (uint256) {
+        if (phase != Phase.Finalized) return 0; // Active or Canceled
+        if (refundMode) return 0;
+        if (block.timestamp > claimDeadline) return 0;
+        return totalAllocatedArm - totalArmTransferred;
     }
 
     // ============ View Functions ============

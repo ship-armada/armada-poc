@@ -23,6 +23,25 @@ contract MockWindDownRedemption {
     function setTriggerTime(uint256 _t) external { triggerTime = _t; }
 }
 
+/// @dev Mock of RevenueLock exposing only the `lockedAtWindDown()` view that
+///      ArmadaRedemption reads. Tests can configure the locked value directly
+///      to model various pre/post-freeze scenarios. Default is "fully locked"
+///      (= balance) for tests that just hold ARM here as a placeholder and
+///      want the old behavior of subtracting the full balance from circulating.
+contract MockRevenueLockRedemption {
+    uint256 public lockedAtWindDown;
+    function setLocked(uint256 v) external { lockedAtWindDown = v; }
+}
+
+/// @dev Mock of ArmadaCrowdfund exposing only the `armStillOwed()` view that
+///      ArmadaRedemption reads. Default is 0 (no participant owed anything),
+///      which models pre-finalize / refund-mode / post-claim-deadline. Tests
+///      that want to model entitled-unclaimed crowdfund balance set a value here.
+contract MockCrowdfundRedemption {
+    uint256 public armStillOwed;
+    function setStillOwed(uint256 v) external { armStillOwed = v; }
+}
+
 contract ArmadaRedemptionTest is Test {
     // Mirror events
     event Redeemed(address indexed redeemer, uint256 armAmount, address[] tokens, uint256 ethAmount);
@@ -39,8 +58,10 @@ contract ArmadaRedemptionTest is Test {
     address public alice = address(0xA11CE);
     address public bob = address(0xB0B);
     address public treasuryAddr = address(0x7777);
-    address public revenueLock = address(0xABCD);
-    address public crowdfund = address(0xCF00);
+    MockRevenueLockRedemption public revenueLockMock;
+    MockCrowdfundRedemption public crowdfundMock;
+    address public revenueLock; // = address(revenueLockMock)
+    address public crowdfund;   // = address(crowdfundMock)
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
@@ -56,6 +77,16 @@ contract ArmadaRedemptionTest is Test {
         // Deploy a mock wind-down contract. Tests use this to simulate the triggerTime
         // that ArmadaRedemption reads via the IArmadaWindDownRedemption interface.
         windDown = new MockWindDownRedemption();
+
+        // Mock the contracts ArmadaRedemption queries for the circulatingSupply
+        // denominator. Defaults: fully-locked RevenueLock (= old behavior of
+        // subtract-balance) and zero-owed Crowdfund (= old behavior of
+        // subtract-balance). Tests that model entitled-unclaimed scenarios can
+        // override these.
+        revenueLockMock = new MockRevenueLockRedemption();
+        crowdfundMock = new MockCrowdfundRedemption();
+        revenueLock = address(revenueLockMock);
+        crowdfund = address(crowdfundMock);
 
         // Enable transfers (simulating wind-down having triggered)
         armToken.setWindDownContract(address(windDown));
@@ -88,6 +119,13 @@ contract ArmadaRedemptionTest is Test {
         armToken.transfer(crowdfund, TOTAL_SUPPLY * 10 / 100);      // 1.2M
         armToken.transfer(alice, TOTAL_SUPPLY * 5 / 100);           // 600K
         armToken.transfer(bob, TOTAL_SUPPLY * 5 / 100);             // 600K
+
+        // Default mock state: RevenueLock fully locked (lockedAtWindDown = balance),
+        // Crowdfund zero-owed (armStillOwed = 0). This preserves the OLD circulatingSupply
+        // formula's effective behavior (subtract full balance of each), so existing
+        // tests that don't model the bug see the same denominator as before.
+        revenueLockMock.setLocked(armToken.balanceOf(revenueLock));
+        crowdfundMock.setStillOwed(0);
 
         // Deploy mock tokens and fund redemption (simulating post-sweep)
         usdc = new MockTokenRedemption("Mock USDC", "USDC");
@@ -737,5 +775,137 @@ contract ArmadaRedemptionTest is Test {
     function test_constructorRejectsZeroCrowdfund() public {
         vm.expectRevert("ArmadaRedemption: zero crowdfund");
         new ArmadaRedemption(address(armToken), treasuryAddr, revenueLock, address(0));
+    }
+
+    // ======== Entitled-but-unclaimed denominator (issue #90) ========
+
+    // WHY: Auditor PoC variant A. Pre-fix, balance(revenueLock) was subtracted in
+    // full from circulating, regardless of how much was already entitled to
+    // beneficiaries. Slow beneficiaries who released ARM AFTER early redeemers
+    // had already drained the treasury would find no assets and revert. Post-fix,
+    // lockedAtWindDown reflects only the unvested portion; the entitled portion
+    // is in circulating, so the denominator stays stable across release/claim
+    // timing and the early redeemer's pro-rata share is correctly bounded.
+    //
+    // Setup: $500k USDC. carol has 1.8M ARM entitled in revenueLock (vested but
+    // unreleased). alice + bob have 600k ARM each in their wallets. Total
+    // entitled circulating = 1.2M + 1.8M = 3M. Fair carol share = $300k.
+    function test_issue90_revenueLock_slowReleaseDoesNotForfeitShare() public {
+        // Reset to a controlled distribution. Existing setUp transfers ARM and
+        // configures mocks with "fully locked" revenueLock — we re-distribute
+        // here for the bug scenario where 1.8M is ENTITLED to carol but still
+        // sitting in the lock contract (not released yet).
+        // First, rebalance ARM holdings to fit the PoC.
+        // alice: 600k (existing). bob: 600k (existing). carol: 0 (will receive on release).
+        // revenueLock: holds 1.8M for carol (entitled-unreleased).
+        // crowdfund: holds 1.2M (treat as fully unsold for this test — armStillOwed=0).
+
+        address carol = address(0xCA401);
+        usdc.mint(address(redemption), 500_000e6 - 500_000e6); // re-zero, will refund
+        // Reset USDC: redemption already has 500k from setUp. Keep it.
+
+        // Configure lockedAtWindDown to model: 0 of revenueLock balance is locked
+        // (carol's 1.8M is fully entitled). So we subtract 0 for revenueLock.
+        revenueLockMock.setLocked(0);
+        // Crowdfund: model 1.2M as fully unsold (armStillOwed=0, so balance is
+        // entirely subtracted as "non-circulating"). This matches a hypothetical
+        // crowdfund that hasn't allocated to participants.
+        crowdfundMock.setStillOwed(0);
+
+        // Circulating: 12M total - treasury(7.8M) - revenueLock_locked(0)
+        //                       - crowdfund_unsold(1.2M) - redemption(0) = 3M
+        assertEq(redemption.circulatingSupply(), 3_000_000e18, "denominator includes carol's entitled");
+
+        // alice redeems 600k → expect $100k (600k / 3M * $500k).
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        uint256 aliceArm = armToken.balanceOf(alice);
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, false);
+        assertEq(usdc.balanceOf(alice), 100_000e6, "alice gets fair $100k, not over-share");
+
+        // bob redeems 600k. circulating now = 3M - 600k(alice) = 2.4M (alice's
+        // ARM is in redemption contract, subtracted via balance). Treasury USDC
+        // remaining = $400k. Bob's share = (600k * 400k) / 2.4M = $100k.
+        uint256 bobArm = armToken.balanceOf(bob);
+        vm.prank(bob);
+        redemption.redeem(bobArm, tokens, false);
+        assertEq(usdc.balanceOf(bob), 100_000e6, "bob gets fair $100k");
+
+        // Treasury still holds $300k for carol's eventual claim. Pre-fix, this
+        // would be 0 (alice and bob over-received against an artificially small
+        // denominator).
+        assertEq(usdc.balanceOf(address(redemption)), 300_000e6, "carol's $300k still available");
+
+        // Carol receives her 1.8M from revenueLock release (atomic transfer).
+        vm.prank(revenueLock);
+        armToken.transfer(carol, 1_800_000e18);
+        vm.prank(carol);
+        armToken.approve(address(redemption), type(uint256).max);
+
+        // Carol's circulating is now: previous 2.4M - bob 600k = 1.8M (only carol's).
+        assertEq(redemption.circulatingSupply(), 1_800_000e18, "denominator down to carol only");
+
+        // Carol redeems 1.8M against $300k remaining → gets the full $300k.
+        vm.prank(carol);
+        redemption.redeem(1_800_000e18, tokens, false);
+        assertEq(usdc.balanceOf(carol), 300_000e6, "carol receives her fair $300k");
+    }
+
+    // WHY: Auditor PoC variant B. Same pattern for crowdfund late-claim. Pre-fix,
+    // crowdfund's full balance was subtracted from circulating, leaving late
+    // claimers with nothing. Post-fix, balance - armStillOwed is subtracted, so
+    // entitled-unclaimed stays in the denominator.
+    //
+    // Setup: 1.2M of crowdfund's balance is entitled (totalAllocatedArm) to carol
+    // who hasn't called claim() yet. armStillOwed = 1.2M. The contract's full
+    // 1.2M balance is in circulating (subtract 0 from balance via the unsold check).
+    function test_issue90_crowdfund_lateClaimDoesNotForfeitShare() public {
+        address carol = address(0xCA401);
+
+        // RevenueLock: nothing entitled (treat as fully locked = balance subtract).
+        revenueLockMock.setLocked(armToken.balanceOf(revenueLock));
+        // Crowdfund: 1.2M owed to carol (armStillOwed = 1.2M). All of crowdfund's
+        // balance is "owed to participants," so unsold-in-contract = 0 → full
+        // balance counts as circulating.
+        crowdfundMock.setStillOwed(armToken.balanceOf(crowdfund));
+
+        // Circulating: 12M - treasury(7.8M) - revenueLock_locked(1.8M)
+        //                       - crowdfund_unsold(0) - redemption(0) = 2.4M
+        // (1.2M holders + 1.2M crowdfund-entitled)
+        assertEq(redemption.circulatingSupply(), 2_400_000e18, "denominator includes carol's crowdfund");
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, false);
+        // alice fair share: 600k / 2.4M * $500k = $125k
+        assertEq(usdc.balanceOf(alice), 125_000e6, "alice gets fair $125k");
+
+        uint256 bobArm = armToken.balanceOf(bob);
+        vm.prank(bob);
+        redemption.redeem(bobArm, tokens, false);
+        // bob: circulating now 2.4M - 600k = 1.8M, USDC = $375k. Share = (600k * 375k) / 1.8M = $125k
+        assertEq(usdc.balanceOf(bob), 125_000e6, "bob gets fair $125k");
+
+        // $250k held for carol (1.2M / 2.4M of $500k). Pre-fix, this would be 0.
+        assertEq(usdc.balanceOf(address(redemption)), 250_000e6, "carol's $250k still available");
+
+        // Carol claims her 1.2M from the crowdfund (atomic transfer). After this,
+        // armStillOwed should drop to 0 in the real contract; we model that here
+        // by updating the mock.
+        vm.prank(crowdfund);
+        armToken.transfer(carol, 1_200_000e18);
+        crowdfundMock.setStillOwed(0); // 1.2M was claimed; nothing more owed
+        vm.prank(carol);
+        armToken.approve(address(redemption), type(uint256).max);
+
+        // Carol redeems against the $250k remaining. Circulating is now 1.2M
+        // (carol's 1.2M only). Full $250k comes back to her.
+        vm.prank(carol);
+        redemption.redeem(1_200_000e18, tokens, false);
+        assertEq(usdc.balanceOf(carol), 250_000e6, "carol receives her fair $250k");
     }
 }

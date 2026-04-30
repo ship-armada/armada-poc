@@ -377,10 +377,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("removeTier(uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setYieldFee(uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)"))] = true;
-        // Steward budget token management (on ArmadaTreasuryGov)
+        // Steward budget token management (on ArmadaTreasuryGov). addStewardBudgetToken
+        // is always loosening (grants a new spending authority) → Extended.
+        // updateStewardBudgetToken is direction-dependent (a smaller limit / shorter
+        // window is tightening; a larger limit / longer window is loosening) — until
+        // directional classification lands it stays flat-Extended, which over-gates
+        // the tightening direction but is fail-safe.
         extendedSelectors[bytes4(keccak256("addStewardBudgetToken(address,uint256,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("updateStewardBudgetToken(address,uint256,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
         // Treasury outflow limit parameters
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
@@ -427,6 +431,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Non-stablecoin revenue attestation (on RevenueCounter) — governance attests
         // USD value of non-stablecoin fees (e.g. ETH). Operational governance task.
         standardSelectors[bytes4(keccak256("attestRevenue(uint256)"))] = true;
+        // removeStewardBudgetToken — always tightening (revokes a spending authority,
+        // no parameter to interpret either way). Standard quorum/timing matches the
+        // spec's "tightening is easy" directional principle and prevents a 14-day
+        // frontrun window between Extended-cut activation and the 9-day steward
+        // proposal cycle.
+        standardSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
     }
 
     // ============ Quorum Exclusion ============

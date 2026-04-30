@@ -630,7 +630,12 @@ describe("Governance Parameter Updates", function () {
       expect(proposalType).to.equal(ProposalType.Extended);
     });
 
-    it("removeStewardBudgetToken is auto-classified as Extended", async function () {
+    // WHY: removeStewardBudgetToken is unconditionally tightening — it revokes a
+    // spending authority with no parameter to interpret either way. Per the spec's
+    // "tightening is easy, loosening is hard" directional principle, it belongs at
+    // the Standard bar. Pinning Standard here also closes the frontrun window where
+    // an Extended-classified cut (23 days) lagged the steward's 9-day proposal cycle.
+    it("removeStewardBudgetToken stays Standard (always tightening)", async function () {
       const calldata = treasury.interface.encodeFunctionData(
         "removeStewardBudgetToken",
         [carol.address]
@@ -645,7 +650,7 @@ describe("Governance Parameter Updates", function () {
       );
       const proposalId = await governor.proposalCount();
       const [, proposalType] = await governor.getProposal(proposalId);
-      expect(proposalType).to.equal(ProposalType.Extended);
+      expect(proposalType).to.equal(ProposalType.Standard);
     });
 
     it("setProposalTypeParams rejects Steward type", async function () {

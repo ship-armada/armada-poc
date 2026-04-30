@@ -144,10 +144,20 @@ contract ShieldPauseController is IShieldPauseController {
 
     /// @notice Called by the wind-down contract to activate withdraw-only mode.
     ///         Shields are permanently disabled; unshields remain available indefinitely.
+    /// @dev If a pre-trigger SC pause is still active when wind-down fires, that pause
+    ///      consumes the single post-wind-down pause budget. Without this, an SC pause
+    ///      issued just before triggerWindDown would block unshields via emergencyPaused
+    ///      for its remaining 24h AND leave the post-trigger pause untouched, enabling
+    ///      a chained ~48h unshield block. With this, total continuous unshield blocking
+    ///      across the trigger is bounded by the residual of the active pre-trigger
+    ///      pause (≤24h).
     function setWindDownActive() external {
         require(msg.sender == windDownContract, "ShieldPauseController: not wind-down contract");
         require(!windDownActive, "ShieldPauseController: wind-down already active");
         windDownActive = true;
+        if (_isPaused()) {
+            windDownPauseUsed = true;
+        }
         emit WindDownActivated();
     }
 

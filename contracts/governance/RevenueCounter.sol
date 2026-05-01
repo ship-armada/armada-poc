@@ -71,15 +71,30 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     /// @dev Reads cumulativeFeesCollected() from the fee collector, computes the delta
     ///      since the last sync, scales USDC (6 decimals) to USD (18 decimals), and adds
     ///      to the cumulative counter.
+    ///
+    ///      Defense-in-depth: if the fee collector reports a value below
+    ///      lastSyncedCumulative (only reachable via collector replacement or
+    ///      storage corruption — the live ArmadaFeeModule is monotonic by
+    ///      construction), the recognizedRevenueUsd counter is left unchanged
+    ///      (it is monotonic by spec) and lastSyncedCumulative is advanced to
+    ///      the collector's current view so future legitimate increments are
+    ///      captured from the new baseline. Without this guard, a regressed
+    ///      collector would brick all permissionless syncs and the
+    ///      setFeeCollector recovery path via 0.8.x subtraction underflow.
     function syncStablecoinRevenue() external {
         require(!frozen, "RevenueCounter: frozen");
         require(feeCollector != address(0), "RevenueCounter: no fee collector");
 
         uint256 currentCumulative = IFeeCollector(feeCollector).cumulativeFeesCollected();
+        if (currentCumulative == lastSyncedCumulative) return; // no new fees (common path)
+
+        if (currentCumulative < lastSyncedCumulative) {
+            // Collector regression — track the new baseline; recognized counter unchanged.
+            lastSyncedCumulative = currentCumulative;
+            return;
+        }
+
         uint256 delta = currentCumulative - lastSyncedCumulative;
-
-        if (delta == 0) return; // no new fees
-
         lastSyncedCumulative = currentCumulative;
 
         uint256 previousRevenue = recognizedRevenueUsd;
@@ -141,11 +156,16 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     ///      to the new collector's current value for correct delta computation.
     /// @param _feeCollector Address of a contract implementing IFeeCollector, or address(0) to clear.
     function setFeeCollector(address _feeCollector) external onlyOwner {
-        // Sync pending revenue from the old collector before switching
+        // Sync pending revenue from the old collector before switching.
+        // Saturate delta to zero on regression so a misbehaving old collector
+        // does not block its own replacement (this function IS the recovery
+        // path). recognizedRevenueUsd is monotonic by spec — never decreased.
+        // lastSyncedCumulative is reset to the new collector's value below
+        // regardless, so we don't update it here.
         if (feeCollector != address(0)) {
             uint256 currentCumulative = IFeeCollector(feeCollector).cumulativeFeesCollected();
-            uint256 delta = currentCumulative - lastSyncedCumulative;
-            if (delta > 0) {
+            if (currentCumulative > lastSyncedCumulative) {
+                uint256 delta = currentCumulative - lastSyncedCumulative;
                 uint256 previousRevenue = recognizedRevenueUsd;
                 recognizedRevenueUsd += delta * USDC_TO_USD_SCALE;
                 emit RevenueUpdated(recognizedRevenueUsd, previousRevenue);

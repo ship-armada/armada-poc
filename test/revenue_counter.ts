@@ -185,6 +185,59 @@ describe("RevenueCounter", function () {
         .to.emit(revenueCounter, "RevenueUpdated")
         .withArgs(ethers.parseUnits("50000", 18), 0);
     });
+
+    // WHY: audit-18 — the live ArmadaFeeModule is monotonic by construction,
+    // but the contract still subtracts unguarded. A regressed collector
+    // (replacement implementation, storage corruption) would brick all
+    // permissionless syncs via 0.8.x underflow revert. The saturating-delta
+    // guard advances the baseline to track the new (lower) collector value
+    // without decreasing recognizedRevenueUsd (still monotonic by spec) and
+    // without reverting.
+    it("should not revert when collector reports a lower cumulative (regression)", async function () {
+      // Establish a baseline at 100K.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("100000", 6));
+      await revenueCounter.syncStablecoinRevenue();
+      expect(await revenueCounter.lastSyncedCumulative()).to.equal(
+        ethers.parseUnits("100000", 6)
+      );
+
+      // Collector regresses to 80K (e.g. replacement collector that hasn't
+      // accumulated as much yet). The previous behavior would underflow.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("80000", 6));
+      await expect(revenueCounter.syncStablecoinRevenue()).to.not.be.reverted;
+
+      // Baseline tracks the new lower value; recognized counter unchanged.
+      expect(await revenueCounter.lastSyncedCumulative()).to.equal(
+        ethers.parseUnits("80000", 6)
+      );
+      expect(await revenueCounter.recognizedRevenueUsd()).to.equal(
+        ethers.parseUnits("100000", 18)
+      );
+    });
+
+    // WHY: After a regression resets the baseline, future legitimate increments
+    // from the new (lower) baseline must be captured correctly. Verifies the
+    // baseline-reset path doesn't strand future revenue.
+    it("should capture future increments correctly after a regression", async function () {
+      // Sync to 100K.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("100000", 6));
+      await revenueCounter.syncStablecoinRevenue();
+
+      // Regression to 80K — recognized stays at 100K, baseline resets to 80K.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("80000", 6));
+      await revenueCounter.syncStablecoinRevenue();
+      expect(await revenueCounter.recognizedRevenueUsd()).to.equal(
+        ethers.parseUnits("100000", 18)
+      );
+
+      // New collector (or recovering collector) accrues to 110K. Delta from
+      // the 80K baseline is 30K, which adds to recognized → 130K total.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("110000", 6));
+      await revenueCounter.syncStablecoinRevenue();
+      expect(await revenueCounter.recognizedRevenueUsd()).to.equal(
+        ethers.parseUnits("130000", 18)
+      );
+    });
   });
 
   // ============================================================
@@ -370,6 +423,41 @@ describe("RevenueCounter", function () {
 
       await revenueCounter.setFeeCollector(await secondCollector.getAddress());
       expect(await revenueCounter.feeCollector()).to.equal(await secondCollector.getAddress());
+    });
+
+    // WHY: audit-18 — setFeeCollector exists specifically to recover from a
+    // compromised or misbehaving collector. If the old collector regresses,
+    // the inline sync inside setFeeCollector previously underflowed and blocked
+    // the recovery itself. The saturating-delta guard ensures the function
+    // always succeeds; recognizedRevenueUsd is left unchanged on regression
+    // (monotonic by spec) and lastSyncedCumulative resets to the new
+    // collector's value on the next line below the guard.
+    it("should not revert when rotating away from a regressed collector", async function () {
+      // Establish a baseline: old collector at 100K, recognized = 100K.
+      await revenueCounter.setFeeCollector(await mockFeeCollector.getAddress());
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("100000", 6));
+      await revenueCounter.syncStablecoinRevenue();
+
+      // Old collector regresses (e.g. malicious upgrade resets its counter).
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("60000", 6));
+
+      // Deploy fresh replacement collector at 0.
+      const MockFeeCollector = await ethers.getContractFactory("MockFeeCollector");
+      const replacement = await MockFeeCollector.deploy();
+      await replacement.waitForDeployment();
+
+      // Rotation must succeed despite the old collector's regression.
+      await expect(
+        revenueCounter.setFeeCollector(await replacement.getAddress())
+      ).to.not.be.reverted;
+
+      // recognizedRevenueUsd is preserved (monotonic).
+      expect(await revenueCounter.recognizedRevenueUsd()).to.equal(
+        ethers.parseUnits("100000", 18)
+      );
+      // Baseline is set from the new collector's current value (0).
+      expect(await revenueCounter.lastSyncedCumulative()).to.equal(0);
+      expect(await revenueCounter.feeCollector()).to.equal(await replacement.getAddress());
     });
   });
 

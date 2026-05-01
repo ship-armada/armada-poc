@@ -122,6 +122,7 @@ function createRecord(
     fetchedAt: timestamp,
     verifiedAt: status === 'verified' ? timestamp : null,
     lastError,
+    nextRetryAt: null,
   }
 }
 
@@ -186,6 +187,7 @@ export async function stageRange(input: StageRangeInput): Promise<IngestRangeRec
       fetchedAt: timestamp,
       verifiedAt: null,
       lastError: message,
+      nextRetryAt: null,
     }
     await input.store.upsertRange(record)
     await input.store.update((data) => ({
@@ -237,6 +239,7 @@ export async function verifyRange(input: VerifyRangeInput): Promise<IngestRangeR
       provider: auditProviderName,
       verifiedAt: null,
       lastError: message,
+      nextRetryAt: null,
     }
     await input.store.upsertRange(record)
     await input.store.update((data) => ({

@@ -23,6 +23,16 @@ function sortRanges(ranges: readonly IngestRangeRecord[]): IngestRangeRecord[] {
   })
 }
 
+// Backfills fields that were added to IngestRangeRecord after a store may have been
+// written. Without this, ranges loaded from older on-disk JSON would have undefined
+// values where the type promises null, breaking strict equality checks downstream.
+function migrateRange(range: IngestRangeRecord): IngestRangeRecord {
+  return {
+    ...range,
+    nextRetryAt: range.nextRetryAt ?? null,
+  }
+}
+
 function sortLogs(logs: readonly IndexedRawLog[]): IndexedRawLog[] {
   return [...logs].sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber
@@ -64,7 +74,7 @@ export class FileIndexerStore implements IndexerStore {
       const parsed = JSON.parse(raw) as IndexerStoreData
       return {
         ...parsed,
-        ranges: sortRanges(parsed.ranges),
+        ranges: sortRanges((parsed.ranges ?? []).map(migrateRange)),
         rawLogs: sortLogs(parsed.rawLogs ?? []),
       }
     } catch (err) {

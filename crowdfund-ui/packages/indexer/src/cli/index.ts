@@ -71,6 +71,33 @@ async function main(): Promise<void> {
     const provider = createJsonRpcRangeProvider(readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL'))
     const auditRpcUrl = process.env.CROWDFUND_AUDIT_RPC_URL
     const auditProvider = auditRpcUrl ? createJsonRpcRangeProvider(auditRpcUrl) : undefined
+    const config = {
+      chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
+      contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
+      providerName: 'primary',
+    }
+
+    // `repair` with no --from/--to means "repair everything currently failed or
+    // suspicious". This bypasses auto-reconcile's backoff/attempt limits — the
+    // operator is explicitly asking for an immediate retry of every gap.
+    if (args.command === 'repair' && args.fromBlock === null && args.toBlock === null) {
+      const records = await repairRanges({
+        ...config,
+        store,
+        provider,
+        auditProvider,
+        auditProviderName: auditProvider ? 'audit' : undefined,
+      })
+      if (records.length === 0) {
+        process.stdout.write('No failed or suspicious ranges to repair.\n')
+        return
+      }
+      process.stdout.write(
+        records.map((record) => `${record.status}: ${record.fromBlock}-${record.toBlock} (${record.logCount} logs)`).join('\n') + '\n',
+      )
+      return
+    }
+
     const toBlock = await resolveToBlock(args.toBlock, provider, data.cursor.confirmationDepth)
     const fromBlock = args.fromBlock ?? data.cursor.verifiedCursor + 1
     if (fromBlock > toBlock) {
@@ -78,11 +105,6 @@ async function main(): Promise<void> {
       return
     }
 
-    const config = {
-      chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
-      contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
-      providerName: 'primary',
-    }
     if (args.command === 'backfill') {
       const result = await backfillVerifiedRanges({
         ...config,

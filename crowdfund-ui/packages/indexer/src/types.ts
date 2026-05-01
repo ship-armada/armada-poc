@@ -45,6 +45,10 @@ export interface IngestRangeRecord extends BlockRange {
   fetchedAt: string | null
   verifiedAt: string | null
   lastError: string | null
+  // ISO timestamp at which this range becomes eligible for the next auto-repair attempt.
+  // Null means "no constraint, retry now". Set by the auto-reconcile loop after a failed
+  // or suspicious verification to enforce exponential backoff.
+  nextRetryAt: string | null
 }
 
 export interface CursorState {
@@ -95,6 +99,10 @@ export interface IndexerHealth {
   lastReconciledAt: string | null
   hasGaps: boolean
   gapRanges: readonly BlockRange[]
+  // Subset of gapRanges that have hit the auto-repair attempt limit and require
+  // operator intervention (e.g. `npm run crowdfund:indexer:cli -- repair`).
+  // Empty array does NOT mean no gaps — auto-repair may still be retrying them.
+  gapsRequiringIntervention: readonly BlockRange[]
   lastError: string | null
   latestSnapshotHash: string | null
   latestStaticSnapshotUrl: string | null

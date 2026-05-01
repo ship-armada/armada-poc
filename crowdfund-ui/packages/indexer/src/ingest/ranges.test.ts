@@ -37,6 +37,7 @@ function makeRange(overrides: Partial<IngestRangeRecord>): IngestRangeRecord {
     fetchedAt: '2026-04-28T00:00:00.000Z',
     verifiedAt: '2026-04-28T00:00:01.000Z',
     lastError: null,
+    nextRetryAt: null,
     ...overrides,
   }
 }

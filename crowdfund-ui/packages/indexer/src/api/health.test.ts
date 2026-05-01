@@ -81,4 +81,38 @@ describe('buildHealth', () => {
     expect(health.status).toBe('unhealthy')
     expect(health.lastError).toBe('RPC timeout')
   })
+
+  it('reports unhealthy when any gap has hit the auto-repair attempt limit', () => {
+    const health = buildHealth({
+      cursor,
+      gapRanges: [{ fromBlock: 120, toBlock: 125 }],
+      gapsRequiringIntervention: [{ fromBlock: 120, toBlock: 125 }],
+      lastIngestedAt: null,
+      lastVerifiedAt: null,
+      lastReconciledAt: null,
+      lastError: null,
+      latestSnapshotHash: null,
+      latestStaticSnapshotUrl: null,
+    })
+
+    expect(health.status).toBe('unhealthy')
+    expect(health.gapsRequiringIntervention).toEqual([{ fromBlock: 120, toBlock: 125 }])
+  })
+
+  it('keeps degraded (transient) status when gaps exist but none have exhausted auto-repair', () => {
+    const health = buildHealth({
+      cursor,
+      gapRanges: [{ fromBlock: 120, toBlock: 125 }],
+      gapsRequiringIntervention: [],
+      lastIngestedAt: null,
+      lastVerifiedAt: null,
+      lastReconciledAt: null,
+      lastError: null,
+      latestSnapshotHash: null,
+      latestStaticSnapshotUrl: null,
+    })
+
+    expect(health.status).toBe('degraded')
+    expect(health.gapsRequiringIntervention).toEqual([])
+  })
 })

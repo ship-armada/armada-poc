@@ -80,6 +80,9 @@ export CROWDFUND_RPC_RETRY_BASE_DELAY_MS=1000
 export CROWDFUND_RPC_RETRY_JITTER_MS=250
 export CROWDFUND_PUBLISH_ON_POLL=true
 export CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS=60000
+export CROWDFUND_REPAIR_MAX_ATTEMPTS=6
+export CROWDFUND_REPAIR_BACKOFF_BASE_MS=30000
+export CROWDFUND_REPAIR_BACKOFF_MAX_MS=1800000
 ```
 
 Frontend:
@@ -135,6 +138,9 @@ API and polling variables:
 | `CROWDFUND_RPC_RETRY_JITTER_MS` | `250` | Random jitter added to retry delay. |
 | `CROWDFUND_PUBLISH_ON_POLL` | `false` | Publishes a static snapshot after successful poll cycles when `true`. |
 | `CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS` | `60000` | Minimum interval between automatic snapshot publishes. |
+| `CROWDFUND_REPAIR_MAX_ATTEMPTS` | `6` | Total attempts (initial + auto-repair retries) before a range is exhausted and surfaced in `gapsRequiringIntervention`. Set to `0` to disable auto-reconcile entirely. |
+| `CROWDFUND_REPAIR_BACKOFF_BASE_MS` | `30000` | Base delay for exponential backoff between auto-repair attempts. The Nth attempt waits `base * 2^(attempts-1)`, capped by `BACKOFF_MAX_MS`. |
+| `CROWDFUND_REPAIR_BACKOFF_MAX_MS` | `1800000` | Cap on the backoff delay between auto-repair attempts (default 30 minutes). |
 
 Snapshot publication variables:
 
@@ -282,6 +288,13 @@ Repair a known failed or suspicious range:
 npm run crowdfund:indexer:cli -- repair --from 123456 --to 123999
 ```
 
+Or repair every currently failed/suspicious range, bypassing the auto-reconcile
+attempt limit and backoff window:
+
+```bash
+npm run crowdfund:indexer:cli -- repair
+```
+
 Rebuild snapshot metadata from verified raw logs:
 
 ```bash
@@ -342,19 +355,33 @@ Symptoms:
 
 - `status` shows gaps.
 - A range has `failed` or `suspicious` status.
-- `verifiedCursor` stops before the problematic range.
+- `/health` reports `degraded` (transient — auto-reconcile is still retrying)
+  or `unhealthy` with non-empty `gapsRequiringIntervention` (auto-reconcile gave up).
 
 Actions:
 
 1. Do not manually advance `verifiedCursor`.
-2. Run:
+2. The polling worker auto-reconciles failed/suspicious ranges with exponential
+   backoff. Tunable via `CROWDFUND_REPAIR_MAX_ATTEMPTS` (default 6),
+   `CROWDFUND_REPAIR_BACKOFF_BASE_MS` (default 30000),
+   `CROWDFUND_REPAIR_BACKOFF_MAX_MS` (default 1800000). Set
+   `CROWDFUND_REPAIR_MAX_ATTEMPTS=0` to disable auto-reconcile entirely.
+3. If a range is reported in `gapsRequiringIntervention` (auto-reconcile exhausted),
+   force an immediate retry:
+
+```bash
+npm run crowdfund:indexer:cli -- repair
+```
+
+   Or target one range manually:
 
 ```bash
 npm run crowdfund:indexer:cli -- repair --from <range-start> --to <range-end>
 npm run crowdfund:indexer:cli -- backfill latest
 ```
 
-3. If the range remains suspicious, compare primary and audit RPC logs manually before publishing.
+4. If the range remains suspicious after a manual retry, compare primary and audit
+   RPC logs manually before publishing.
 
 ### Indexer Process Crash
 

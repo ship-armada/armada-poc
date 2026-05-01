@@ -38,6 +38,10 @@ export interface IndexerHealth {
   lastReconciledAt: string | null
   hasGaps: boolean
   gapRanges: readonly { fromBlock: number; toBlock: number }[]
+  // Subset of gapRanges that the indexer's auto-repair loop has given up on.
+  // When non-empty, an operator must run `crowdfund:indexer:cli -- repair`.
+  // Optional in the type so older indexer responses (pre-field) still parse.
+  gapsRequiringIntervention?: readonly { fromBlock: number; toBlock: number }[]
   lastError: string | null
   latestSnapshotHash: string | null
   latestStaticSnapshotUrl: string | null

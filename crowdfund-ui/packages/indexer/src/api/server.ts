@@ -9,6 +9,7 @@ import { createIndexerStore } from '../db/createStore.js'
 import type { IndexerStore } from '../db/store.js'
 import { CrowdfundIndexerPoller } from '../ingest/poller.js'
 import { getRepairRanges } from '../ingest/ranges.js'
+import { getExhaustedRepairRanges } from '../ingest/reconcile.js'
 import { createJsonRpcRangeProvider } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot } from '../snapshots/build.js'
@@ -20,6 +21,7 @@ export interface CreateIndexerApiOptions {
   store: IndexerStore
   chainId: number
   contractAddress: string
+  repairMaxAttempts: number
 }
 
 function readNumberEnv(name: string, fallback: number): number {
@@ -59,10 +61,11 @@ function getInitialCursor(): CursorState {
   }
 }
 
-function buildHealthFromStore(data: IndexerStoreData) {
+function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number) {
   return buildHealth({
     cursor: data.cursor,
     gapRanges: getRepairRanges(data.ranges),
+    gapsRequiringIntervention: getExhaustedRepairRanges(data.ranges, repairMaxAttempts),
     lastIngestedAt: data.lastIngestedAt,
     lastVerifiedAt: data.lastVerifiedAt,
     lastReconciledAt: data.lastReconciledAt,
@@ -141,7 +144,7 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
   app.get('/health', async (_req, res, next) => {
     try {
       const data = await options.store.read()
-      res.json(buildHealthFromStore(data))
+      res.json(buildHealthFromStore(data, options.repairMaxAttempts))
     } catch (err) {
       next(err)
     }
@@ -201,11 +204,14 @@ async function main(): Promise<void> {
   const pollOnStart = readBooleanEnv('CROWDFUND_POLL_ON_START', false)
   const backfillOnStart = readBooleanEnv('CROWDFUND_BACKFILL_ON_START', false)
   const publishOnPoll = readBooleanEnv('CROWDFUND_PUBLISH_ON_POLL', false)
+  const repairMaxAttempts = readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6)
+  const repairBackoffBaseMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_BASE_MS', 30_000)
+  const repairBackoffMaxMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_MAX_MS', 1_800_000)
   const store = createIndexerStore({
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
-  const app = createIndexerApi({ store, chainId, contractAddress })
+  const app = createIndexerApi({ store, chainId, contractAddress, repairMaxAttempts })
   app.listen(port, () => {
     process.stdout.write(`Crowdfund indexer API listening on ${port}\n`)
   })
@@ -228,6 +234,11 @@ async function main(): Promise<void> {
       rpcMaxRetries: readNumberEnv('CROWDFUND_RPC_MAX_RETRIES', 3),
       retryBaseDelayMs: readNumberEnv('CROWDFUND_RPC_RETRY_BASE_DELAY_MS', 1_000),
       retryJitterMs: readNumberEnv('CROWDFUND_RPC_RETRY_JITTER_MS', 250),
+      reconcileOptions: {
+        maxAttempts: repairMaxAttempts,
+        backoffBaseMs: repairBackoffBaseMs,
+        backoffMaxMs: repairBackoffMaxMs,
+      },
       publishOnPoll,
       snapshotPublishIntervalMs: readNumberEnv('CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS', 60_000),
       publishSnapshot: publishOnPoll

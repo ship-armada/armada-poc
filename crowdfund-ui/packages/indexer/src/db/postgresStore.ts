@@ -39,6 +39,7 @@ interface RangeRow {
   fetched_at: Date | string | null
   verified_at: Date | string | null
   last_error: string | null
+  next_retry_at: Date | string | null
 }
 
 interface RawLogRow {
@@ -85,10 +86,14 @@ CREATE TABLE IF NOT EXISTS crowdfund_indexer_ranges (
   fetched_at timestamptz,
   verified_at timestamptz,
   last_error text,
+  next_retry_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (from_block, to_block),
   CHECK (from_block <= to_block)
 );
+
+-- Idempotent additions for upgrades when the table already exists.
+ALTER TABLE crowdfund_indexer_ranges ADD COLUMN IF NOT EXISTS next_retry_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS crowdfund_indexer_raw_logs (
   chain_id integer NOT NULL,
@@ -163,6 +168,7 @@ function toRange(row: RangeRow): IngestRangeRecord {
     fetchedAt: toIso(row.fetched_at),
     verifiedAt: toIso(row.verified_at),
     lastError: row.last_error,
+    nextRetryAt: toIso(row.next_retry_at),
   }
 }
 
@@ -378,9 +384,9 @@ export class PostgresIndexerStore implements IndexerStore {
     for (const range of sortRanges(data.ranges)) {
       await client.query(
         `INSERT INTO crowdfund_indexer_ranges (
-          from_block, to_block, status, provider, attempts, log_count, digest, fetched_at, verified_at, last_error
+          from_block, to_block, status, provider, attempts, log_count, digest, fetched_at, verified_at, last_error, next_retry_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (from_block, to_block) DO UPDATE SET
           status = EXCLUDED.status,
           provider = EXCLUDED.provider,
@@ -390,6 +396,7 @@ export class PostgresIndexerStore implements IndexerStore {
           fetched_at = EXCLUDED.fetched_at,
           verified_at = EXCLUDED.verified_at,
           last_error = EXCLUDED.last_error,
+          next_retry_at = EXCLUDED.next_retry_at,
           updated_at = now()`,
         [
           range.fromBlock,
@@ -402,6 +409,7 @@ export class PostgresIndexerStore implements IndexerStore {
           range.fetchedAt,
           range.verifiedAt,
           range.lastError,
+          range.nextRetryAt,
         ],
       )
     }

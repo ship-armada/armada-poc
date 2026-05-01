@@ -6,6 +6,9 @@ import type { BlockRange, CursorState, IndexerHealth, IndexerHealthStatus } from
 export interface BuildHealthInput {
   cursor: CursorState
   gapRanges: readonly BlockRange[]
+  // Subset of gapRanges that have hit the auto-repair attempt limit. When empty,
+  // any gaps are considered transient (still being retried by the poll loop).
+  gapsRequiringIntervention?: readonly BlockRange[]
   lastIngestedAt: string | null
   lastVerifiedAt: string | null
   lastReconciledAt: string | null
@@ -16,6 +19,10 @@ export interface BuildHealthInput {
 }
 
 function getHealthStatus(input: BuildHealthInput, lagBlocks: number): IndexerHealthStatus {
+  const exhausted = input.gapsRequiringIntervention?.length ?? 0
+  // Surface unhealthy whenever auto-repair has given up on a gap, regardless of
+  // whether a fresh transient error is currently pending.
+  if (exhausted > 0) return 'unhealthy'
   if (input.lastError && input.gapRanges.length > 0) return 'unhealthy'
   if (input.gapRanges.length > 0) return 'degraded'
   if (lagBlocks > (input.staleAfterBlocks ?? 25)) return 'stale'
@@ -38,6 +45,7 @@ export function buildHealth(input: BuildHealthInput): IndexerHealth {
     lastReconciledAt: input.lastReconciledAt,
     hasGaps: input.gapRanges.length > 0,
     gapRanges: input.gapRanges,
+    gapsRequiringIntervention: input.gapsRequiringIntervention ?? [],
     lastError: input.lastError,
     latestSnapshotHash: input.latestSnapshotHash,
     latestStaticSnapshotUrl: input.latestStaticSnapshotUrl,

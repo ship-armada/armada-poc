@@ -4,6 +4,8 @@
 import type { IndexerStore } from '../db/store.js'
 import { backfillVerifiedRanges } from './backfill.js'
 import type { BackfillResult } from './backfill.js'
+import { autoReconcileGaps } from './reconcile.js'
+import type { AutoReconcileOptions, AutoReconcileResult } from './reconcile.js'
 import type { RangeLogProvider, RangePipelineConfig } from './rpc.js'
 
 export type RpcErrorKind = 'timeout' | 'rate_limited' | 'network' | 'malformed_response' | 'unknown'
@@ -34,6 +36,9 @@ export interface CrowdfundIndexerPollerOptions extends RangePipelineConfig {
   rpcMaxRetries: number
   retryBaseDelayMs?: number
   retryJitterMs?: number
+  // When provided, each poll cycle runs auto-reconcile against any failed/suspicious
+  // ranges before backfill advances the verified cursor. Omit to disable auto-repair.
+  reconcileOptions?: AutoReconcileOptions
   publishSnapshot?: () => Promise<void>
   publishOnPoll?: boolean
   snapshotPublishIntervalMs?: number
@@ -43,6 +48,7 @@ export interface CrowdfundIndexerPollerOptions extends RangePipelineConfig {
 export interface PollCycleResult {
   status: PollCycleStatus
   backfill?: BackfillResult
+  reconcile?: AutoReconcileResult
   error?: string
 }
 
@@ -176,22 +182,50 @@ export class CrowdfundIndexerPoller {
         retryBaseDelayMs: this.options.retryBaseDelayMs ?? 1_000,
         jitterMs: this.options.retryJitterMs ?? 250,
       }
+      const resilientProvider = createResilientRangeProvider(this.options.provider, resilientOptions)
+      const resilientAuditProvider = this.options.auditProvider
+        ? createResilientRangeProvider(this.options.auditProvider, resilientOptions)
+        : undefined
+
+      // Repair any known gaps before advancing. Failures here are logged but do not
+      // block backfill — a transient repair miss should not stall fresh ingest.
+      let reconcile: AutoReconcileResult | undefined
+      if (this.options.reconcileOptions && this.options.reconcileOptions.maxAttempts > 0) {
+        try {
+          reconcile = await autoReconcileGaps({
+            chainId: this.options.chainId,
+            contractAddress: this.options.contractAddress,
+            providerName: this.options.providerName,
+            store: this.options.store,
+            provider: resilientProvider,
+            auditProvider: resilientAuditProvider,
+            auditProviderName: this.options.auditProviderName,
+            options: this.options.reconcileOptions,
+          })
+          if (reconcile.attempted.length > 0 || reconcile.exhaustedCount > 0) {
+            this.logger.info(
+              `Crowdfund indexer reconcile attempted ${reconcile.attempted.length}; deferred ${reconcile.deferredCount}; exhausted ${reconcile.exhaustedCount}`,
+            )
+          }
+        } catch (err) {
+          this.logger.warn(`Crowdfund indexer reconcile failed: ${getErrorMessage(err)}`)
+        }
+      }
+
       const result = await backfillVerifiedRanges({
         chainId: this.options.chainId,
         contractAddress: this.options.contractAddress,
         providerName: this.options.providerName,
         store: this.options.store,
-        provider: createResilientRangeProvider(this.options.provider, resilientOptions),
-        auditProvider: this.options.auditProvider
-          ? createResilientRangeProvider(this.options.auditProvider, resilientOptions)
-          : undefined,
+        provider: resilientProvider,
+        auditProvider: resilientAuditProvider,
         auditProviderName: this.options.auditProviderName,
         maxBlockRange: this.options.maxBlockRange,
       })
 
       this.logger.info(`Crowdfund indexer poll checked ${result.ranges.length} chunks; stoppedEarly=${result.stoppedEarly ? 'yes' : 'no'}`)
       await this.maybePublish(result)
-      return { status: 'completed', backfill: result }
+      return { status: 'completed', backfill: result, reconcile }
     } catch (err) {
       const message = getErrorMessage(err)
       await this.options.store.update((data) => ({

@@ -32,6 +32,7 @@ function makeRange(overrides: Partial<IngestRangeRecord>): IngestRangeRecord {
     fetchedAt: null,
     verifiedAt: null,
     lastError: null,
+    nextRetryAt: null,
     ...overrides,
   }
 }

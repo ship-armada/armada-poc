@@ -64,6 +64,7 @@ describe('indexer API', () => {
       store: await makeStore(),
       chainId: 11155111,
       contractAddress,
+      repairMaxAttempts: 6,
     })
     const server = app.listen(0)
     try {

@@ -122,6 +122,99 @@ describe('CrowdfundIndexerPoller', () => {
     expect(data.lastError).toContain('RPC timeout')
   })
 
+  it('auto-reconciles failed ranges before backfilling new ones', async () => {
+    const store = await makeStore()
+
+    // Seed a pre-existing failed range that auto-reconcile should pick up.
+    await store.upsertRange({
+      fromBlock: 100,
+      toBlock: 100,
+      status: 'failed',
+      provider: 'primary',
+      attempts: 1,
+      logCount: 0,
+      digest: null,
+      fetchedAt: '2026-05-01T00:00:00.000Z',
+      verifiedAt: null,
+      lastError: 'RPC timeout',
+      nextRetryAt: null,
+    })
+
+    const provider: RangeLogProvider = {
+      getBlockNumber: async () => 100,
+      // Returns consistent logs so reconcile (and backfill) both succeed.
+      getLogs: async ({ fromBlock }) => [makeLog(fromBlock)],
+    }
+
+    const poller = new CrowdfundIndexerPoller({
+      ...config,
+      store,
+      provider,
+      auditProvider: provider,
+      auditProviderName: 'audit',
+      maxBlockRange: 5,
+      rpcTimeoutMs: 50,
+      rpcMaxRetries: 0,
+      retryBaseDelayMs: 1,
+      pollIntervalMs: 1000,
+      errorBackoffMs: 1000,
+      reconcileOptions: { maxAttempts: 3, backoffBaseMs: 1, backoffMaxMs: 10 },
+    })
+
+    const result = await poller.runOnce()
+    const data = await store.read()
+
+    expect(result.status).toBe('completed')
+    expect(result.reconcile?.attempted).toHaveLength(1)
+    expect(result.reconcile?.attempted[0].status).toBe('verified')
+    expect(data.cursor.verifiedCursor).toBeGreaterThanOrEqual(100)
+    expect(data.lastReconciledAt).not.toBeNull()
+  })
+
+  it('skips auto-reconcile when reconcileOptions is omitted', async () => {
+    const store = await makeStore()
+    await store.upsertRange({
+      fromBlock: 100,
+      toBlock: 100,
+      status: 'failed',
+      provider: 'primary',
+      attempts: 1,
+      logCount: 0,
+      digest: null,
+      fetchedAt: '2026-05-01T00:00:00.000Z',
+      verifiedAt: null,
+      lastError: 'RPC timeout',
+      nextRetryAt: null,
+    })
+
+    const provider: RangeLogProvider = {
+      getBlockNumber: async () => 100,
+      getLogs: async ({ fromBlock }) => [makeLog(fromBlock)],
+    }
+
+    const poller = new CrowdfundIndexerPoller({
+      ...config,
+      store,
+      provider,
+      auditProvider: provider,
+      auditProviderName: 'audit',
+      maxBlockRange: 5,
+      rpcTimeoutMs: 50,
+      rpcMaxRetries: 0,
+      retryBaseDelayMs: 1,
+      pollIntervalMs: 1000,
+      errorBackoffMs: 1000,
+    })
+
+    const result = await poller.runOnce()
+    const data = await store.read()
+
+    expect(result.reconcile).toBeUndefined()
+    // The pre-existing failed range stays failed because no auto-reconcile was attempted.
+    const seeded = data.ranges.find((range) => range.fromBlock === 100 && range.toBlock === 100)
+    expect(seeded?.status).toBe('failed')
+  })
+
   it('does not run overlapping poll cycles', async () => {
     const store = await makeStore()
     const controls: { releaseBlockNumber?: () => void } = {}

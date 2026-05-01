@@ -117,18 +117,12 @@ export function formatStatus(data: IndexerStoreData): string {
   ].join('\n')
 }
 
+// Handles the read-only `status` command. RPC-backed commands (verify/repair/backfill,
+// rebuild-snapshot, publish-snapshot) are dispatched in cli/index.ts before reaching here,
+// so this function intentionally accepts only `status`.
 export function runReadOnlyCommand(args: ParsedCliArgs, data: IndexerStoreData): CliCommandResult {
-  if (args.command === 'status') {
-    return { exitCode: 0, output: formatStatus(data) }
+  if (args.command !== 'status') {
+    throw new Error(`runReadOnlyCommand received non-status command: ${args.command}`)
   }
-
-  const rangeSuffix =
-    args.fromBlock !== null || args.toBlock !== null
-      ? ` for range ${args.fromBlock ?? 'auto'}-${args.toBlock ?? 'auto'}`
-      : ''
-
-  return {
-    exitCode: 0,
-    output: `${args.command} command accepted${rangeSuffix}; RPC-backed implementation will run in the next indexer slice.`,
-  }
+  return { exitCode: 0, output: formatStatus(data) }
 }

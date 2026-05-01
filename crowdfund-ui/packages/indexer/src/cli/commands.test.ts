@@ -27,6 +27,7 @@ function makeRange(overrides: Partial<IngestRangeRecord>): IngestRangeRecord {
     fetchedAt: null,
     verifiedAt: null,
     lastError: 'RPC timeout',
+    nextRetryAt: null,
     ...overrides,
   }
 }
@@ -60,6 +61,14 @@ describe('CLI commands', () => {
     })
   })
 
+  it('parses repair with no range bounds (operator-driven repair-everything mode)', () => {
+    expect(parseCliArgs(['repair'])).toEqual({
+      command: 'repair',
+      fromBlock: null,
+      toBlock: null,
+    })
+  })
+
   it('formats status with cursor, gap, and snapshot details', () => {
     expect(formatStatus(storeData)).toContain('status: unhealthy')
     expect(formatStatus(storeData)).toContain('verifiedCursor: 110')
@@ -67,13 +76,13 @@ describe('CLI commands', () => {
     expect(formatStatus(storeData)).toContain('latestSnapshotHash: 0xabc')
   })
 
-  it('accepts repair workflow commands before RPC implementations are wired', () => {
-    const result = runReadOnlyCommand(parseCliArgs(['publish-snapshot', '--from', '120', '--to', '129']), storeData)
+  it('runs the status command and rejects others (which are dispatched in cli/index.ts)', () => {
+    const status = runReadOnlyCommand(parseCliArgs([]), storeData)
+    expect(status.exitCode).toBe(0)
+    expect(status.output).toContain('status:')
 
-    expect(result.exitCode).toBe(0)
-    expect(result.output).toBe(
-      'publish-snapshot command accepted for range 120-129; RPC-backed implementation will run in the next indexer slice.',
-    )
+    expect(() => runReadOnlyCommand(parseCliArgs(['repair', '--from', '120', '--to', '129']), storeData))
+      .toThrow(/non-status command/)
   })
 
   it('parses backfill command', () => {

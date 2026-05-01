@@ -213,16 +213,28 @@ If `triggerWindDown()` is called on the wind-down contract:
 
 ---
 
-## 11. Custom Grants (Future)
+## 11. Custom Grants (Post-Launch)
 
-**The revenue-gated lock mechanism is a one-time launch construct.** There are no future custom lock contracts with revenue gating or independent milestone tables.
+**Two grant paths exist post-launch.** Choice is policy, not a constraint of the lock mechanism.
 
-After governance enables global transfers, custom grants are standard treasury transfers via governance proposal. The recipient receives ARM in their wallet and delegates via standard `delegate()`. No lock contract, no atomic delegation, no whitelisting needed.
+### 11.1 Standard treasury transfer (default)
 
-This simplifies the system:
-- No registry of lock contracts for wind-down denominator calculations
-- No need to extend `delegateOnBehalf` authorization beyond the two launch contracts
-- The wind-down redemption denominator can hardcode the four known excluded addresses (treasury, shared revenue-lock, crowdfund, redemption contract) permanently
+The simple path. After governance enables global transfers, a treasury transfer via governance proposal sends ARM directly to a recipient wallet; the recipient delegates via standard `delegate()`. No lock contract, no atomic delegation, no whitelisting needed. Use this for grants that should vest immediately on disbursement.
+
+### 11.2 Follow-on RevenueLock cohort (revenue-gated)
+
+When a grant should vest against future protocol revenue (new teammembers, ecosystem contributors, airdrops with performance gating), governance can deploy an additional RevenueLock contract reusing the launch RevenueCounter. The `scripts/deploy_revenue_lock_cohort.ts` deploy script handles cohort deployment; a follow-up governance proposal must:
+
+1. `armToken.addToWhitelist(cohortAddress)` — make the cohort eligible for ARM transfers in
+2. `armToken.addAuthorizedDelegator(cohortAddress)` — let the cohort call `delegateOnBehalf` for atomic delegation on release
+3. `treasury.distribute(armToken, cohortAddress, totalAllocation)` — fund the cohort
+4. `governor.addExcludedAddress(cohortAddress)` — register the cohort's holdings as non-voteable so they don't inflate the quorum denominator
+
+Step 4 is load-bearing: cohort ARM is held in escrow against future revenue and cannot vote, so excluding it from quorum keeps the threshold honest. `addExcludedAddress` is timelock-only (see GOVERNANCE.md).
+
+### Implications
+- The wind-down redemption denominator hardcodes the four known launch addresses (treasury, launch revenue-lock, crowdfund, redemption contract); follow-on cohorts are NOT included in the denominator. Cohort beneficiaries who have released ARM still redeem from the same denominator pool — the cohort's still-locked balance remains in circulating supply, slightly diluting redemption shares for everyone. This is accepted as the tradeoff for post-launch flexibility; cohorts are expected to be small relative to total supply.
+- `delegateOnBehalf` authorization extends beyond the two launch contracts as cohorts come online. Each cohort gets its own one-shot authorization via `addAuthorizedDelegator`.
 
 ---
 

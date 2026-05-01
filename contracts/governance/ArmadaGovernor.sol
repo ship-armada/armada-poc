@@ -265,6 +265,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
     event ExcludedAddressesSet(address[] addresses);
+    event ExcludedAddressAdded(address indexed addr);
     event DeployerCleared(address indexed previousDeployer);
 
     // ============ Constructor & Initializer ============
@@ -446,31 +447,47 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice One-time setter: register addresses whose ARM balances are excluded from quorum.
     /// Deployer-only; locks permanently after the first call.
-    /// Intended for contracts holding non-voteable ARM (e.g. crowdfund).
+    /// Intended for contracts holding non-voteable ARM (e.g. crowdfund, RevenueLock).
+    /// Post-bootstrap additions go through the timelock-gated addExcludedAddress.
     function setExcludedAddresses(address[] calldata addrs) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
         if (excludedAddressesLocked) revert Gov_AlreadyLocked();
 
         excludedAddressesLocked = true;
-        // Duplicate detection. _initProposal sums balanceOf across this list, so a
-        // duplicate would double-count its balance into excludedBalance and lower
-        // the quorum threshold below the spec value. The treasury is implicitly
-        // excluded by the quorum-denominator math (its balance is subtracted
-        // separately at proposal creation), so listing it here would be an explicit
-        // duplicate of the implicit exclusion. excludedAddressesLocked makes any
-        // bootstrap mistake permanent, so detection happens here. Realistic input
-        // is 2-5 addresses; O(n^2) is gas-trivial at that size.
+        // Duplicate detection lives in _registerExcludedAddress, which checks the
+        // candidate against the (growing) _excludedFromQuorum list. _initProposal
+        // sums balanceOf across this list, so a duplicate would double-count its
+        // balance into excludedBalance and lower the quorum threshold below the
+        // spec value. The treasury is implicitly excluded by the quorum-denominator
+        // math (its balance is subtracted separately at proposal creation), so
+        // listing it here would be an explicit duplicate of the implicit exclusion.
+        // Realistic input is 2-5 addresses; O(n^2) is gas-trivial at that size.
         for (uint256 i = 0; i < addrs.length; i++) {
-            address candidate = addrs[i];
-            if (candidate == address(0)) revert Gov_ZeroAddress();
-            if (candidate == treasuryAddress) revert Gov_DuplicateExcludedAddress();
-            for (uint256 j = 0; j < i; j++) {
-                if (addrs[j] == candidate) revert Gov_DuplicateExcludedAddress();
-            }
-            _excludedFromQuorum.push(candidate);
+            _registerExcludedAddress(addrs[i]);
         }
 
         emit ExcludedAddressesSet(addrs);
+    }
+
+    /// @notice Append a single address to the quorum-exclusion list. Timelock-only.
+    /// Used post-launch to register follow-on RevenueLock cohorts (revenue-gated grants
+    /// for new teammembers / airdrops) or replacement Crowdfund instances whose ARM
+    /// holdings would otherwise inflate the quorum denominator. Same dedup + treasury
+    /// + zero-address checks as the bootstrap setter.
+    function addExcludedAddress(address candidate) external {
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        _registerExcludedAddress(candidate);
+        emit ExcludedAddressAdded(candidate);
+    }
+
+    /// @dev Shared validation+push for both bootstrap and post-launch addition paths.
+    function _registerExcludedAddress(address candidate) internal {
+        if (candidate == address(0)) revert Gov_ZeroAddress();
+        if (candidate == treasuryAddress) revert Gov_DuplicateExcludedAddress();
+        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+            if (_excludedFromQuorum[i] == candidate) revert Gov_DuplicateExcludedAddress();
+        }
+        _excludedFromQuorum.push(candidate);
     }
 
     /// @notice View excluded addresses for transparency

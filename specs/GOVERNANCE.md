@@ -299,7 +299,7 @@ All reusable governance parameters listed above are themselves governable — lo
 | **Upgrades** | Governor contract upgrade (UUPS, governance-gated) | Extended |
 | **Upgrades** | Fee module upgrade (UUPS, governance-gated) | Extended |
 | **Upgrades** | Revenue counter upgrade (UUPS, governance-gated) | Extended |
-| **Revenue** | Non-stablecoin revenue attestation (`attestRevenue`) | Standard |
+| **Revenue** | Non-stablecoin revenue attestation (`addRevenue` increment, routine; `attestRevenue` SET, confirmed-error correction) | Standard |
 | **Revenue** | Expand qualifying revenue definition | Extended |
 | **ARM token** | Add address to transfer whitelist (add-only, no removal) | Extended |
 | **Signaling** | Non-executable preference vote (no execution, no bond) | Standard |
@@ -522,11 +522,13 @@ function recognizedRevenueUsd() external view returns (uint256)
 | Revenue type | Update path | Authority |
 |---|---|---|
 | Stablecoin fees (USDC) | Permissionless `syncStablecoinRevenue()` — reads a monotonic cumulative-receipts counter on the **fee-collector contract** (the contract that receives shield fees and yield fees). This is NOT a treasury balance read — treasury outflows would corrupt the count. The fee-collector exposes `cumulativeFeesCollected() returns uint256` and only increments when fees are received. `syncStablecoinRevenue()` reads this value and updates the revenue counter accordingly. | Anyone can call |
-| Non-stablecoin fees (ETH, etc.) | Governance proposal attests a new cumulative total via `attestRevenue(uint256 newCumulativeUsd)` | Governance (standard proposal) |
+| Non-stablecoin fees (ETH, etc.) — routine | Governance proposal increments the counter via `addRevenue(uint256 deltaUsd)`. Increment semantics are commutative with concurrent `syncStablecoinRevenue()` calls during the proposal lifecycle, so stable accrual that lands between proposal creation and execution is preserved. | Governance (standard proposal) |
+| Non-stablecoin fees (ETH, etc.) — error correction | Governance proposal SETs the counter to a known cumulative total via `attestRevenue(uint256 newCumulativeUsd)`. **HAZARD:** SET races against permissionless `syncStablecoinRevenue()` — any stable accrual synced between proposal creation and execution is silently overwritten and is NOT re-credited by future syncs. Reserved for confirmed-error correction (e.g. snapping the counter to a known total after audit reconciliation), not routine attestation. | Governance (standard proposal) |
 
 **Properties:**
-- **Monotonic by contract.** `attestRevenue(newValue)` requires `newValue >= recognizedRevenueUsd`. The counter can never decrease. A governance mistake that attests the same value twice is harmless (no-op).
-- **Cumulative, not delta.** Governance attests a new total, not an increment. This is idempotent — attesting "$50,000" twice doesn't double-count.
+- **Monotonic by contract.** Both `addRevenue` and `attestRevenue` only increase the counter. `attestRevenue(newValue)` requires `newValue >= recognizedRevenueUsd`. The counter can never decrease.
+- **Routine path is increment-style.** `addRevenue(deltaUsd)` adds to the counter and is safe under concurrent permissionless stable-fee syncs. Use this for routine non-stable revenue attestation.
+- **SET path is reserved.** `attestRevenue(newCumulativeUsd)` is preserved for confirmed-error correction. The SET semantics race with concurrent `syncStablecoinRevenue` and silently overwrite stable accrual that lands during the proposal lifecycle — see HAZARD note above. Avoid for routine ops.
 - **Attestations must reference verifiable on-chain receipts.** Non-stablecoin revenue attestation proposals should include the transaction hashes of the fee receipts being credited and use the observable market price at transaction time (e.g., ETH/USD price at the block the fee was received). The attested value must be auditable and grounded in market data — not a subjective interpretation.
 - **Expanding the qualifying revenue definition requires an extended proposal** (14-day vote, 30% quorum, 7-day execution delay). This is treated as quasi-monetary policy because revenue unlocks control team token supply timing.
 - **The revenue-lock contract reads this counter.** The lock has an immutable reference to the `RevenueCounter` address, set at deployment. It calls `recognizedRevenueUsd()` when a beneficiary requests release, compares against the milestone table, and releases the entitled percentage.
@@ -536,7 +538,7 @@ function recognizedRevenueUsd() external view returns (uint256)
 ```
 RevenueUpdated(uint256 cumulativeRevenue, uint256 previousRevenue)
 ```
-Emitted on every update — both `syncStablecoinRevenue()` and `attestRevenue()`. Monitoring reads this event from the RevenueCounter contract address, not from the ARM token.
+Emitted on every update — `syncStablecoinRevenue()`, `addRevenue()`, and `attestRevenue()`. Monitoring reads this event from the RevenueCounter contract address, not from the ARM token.
 
 **Revenue counter appears in the Contract Upgrade Scope table as a governance-upgradeable module.**
 

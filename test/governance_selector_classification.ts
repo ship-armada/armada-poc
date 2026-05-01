@@ -52,7 +52,8 @@ describe("Governance Selector Classification", function () {
       ["fullDeauthorizeAdapter(address)", "tightening — fully removes adapter"],
       ["setRevenueThreshold(uint256)", "operational wind-down parameter"],
       ["setWindDownDeadline(uint256)", "operational wind-down parameter"],
-      ["attestRevenue(uint256)", "operational non-stablecoin revenue attestation"],
+      ["addRevenue(uint256)", "routine non-stablecoin revenue attestation (increment)"],
+      ["attestRevenue(uint256)", "non-stablecoin revenue attestation (SET, error correction)"],
       ["distributeETH(address,uint256)", "ETH distribution mirrors distribute() classification"],
       ["removeStewardBudgetToken(address)", "tightening — revokes a steward spending authority"],
     ];

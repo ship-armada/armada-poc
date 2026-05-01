@@ -430,6 +430,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         standardSelectors[bytes4(keccak256("setWindDownDeadline(uint256)"))] = true;
         // Non-stablecoin revenue attestation (on RevenueCounter) — governance attests
         // USD value of non-stablecoin fees (e.g. ETH). Operational governance task.
+        // addRevenue is the routine increment-style path; attestRevenue (SET) is
+        // reserved for confirmed-error correction (see RevenueCounter natspec).
+        standardSelectors[bytes4(keccak256("addRevenue(uint256)"))] = true;
         standardSelectors[bytes4(keccak256("attestRevenue(uint256)"))] = true;
         // removeStewardBudgetToken — always tightening (revokes a spending authority,
         // no parameter to interpret either way). Standard quorum/timing matches the

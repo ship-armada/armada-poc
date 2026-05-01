@@ -247,6 +247,104 @@ describe("RevenueCounter", function () {
   });
 
   // ============================================================
+  // 3b. addRevenue (increment-style, routine non-stable path)
+  // ============================================================
+
+  describe("addRevenue", function () {
+    // WHY: addRevenue is the routine non-stable revenue path. Increment semantics
+    // mean the proposer commits a delta they can verify against on-chain receipts;
+    // the contract integrates it without overwriting concurrent stable accrual.
+    it("should increment recognizedRevenueUsd by deltaUsd", async function () {
+      await revenueCounter.addRevenue(ethers.parseUnits("100", 18));
+      expect(await revenueCounter.recognizedRevenueUsd())
+        .to.equal(ethers.parseUnits("100", 18));
+
+      await revenueCounter.addRevenue(ethers.parseUnits("50", 18));
+      expect(await revenueCounter.recognizedRevenueUsd())
+        .to.equal(ethers.parseUnits("150", 18));
+    });
+
+    // WHY: Zero-delta no-op matches the attestRevenue same-value early-return —
+    // gas-cheap and avoids spurious RevenueUpdated events.
+    it("should be a no-op for zero delta (no event emitted)", async function () {
+      await revenueCounter.addRevenue(ethers.parseUnits("200", 18));
+
+      await expect(revenueCounter.addRevenue(0))
+        .to.not.emit(revenueCounter, "RevenueUpdated");
+
+      expect(await revenueCounter.recognizedRevenueUsd())
+        .to.equal(ethers.parseUnits("200", 18));
+    });
+
+    it("should reject calls from non-owner", async function () {
+      await expect(
+        revenueCounter.connect(alice).addRevenue(ethers.parseUnits("100", 18))
+      ).to.be.revertedWith("Ownable: caller is not the owner");
+    });
+
+    it("should emit RevenueUpdated event with correct values", async function () {
+      await revenueCounter.addRevenue(ethers.parseUnits("100", 18));
+
+      await expect(revenueCounter.addRevenue(ethers.parseUnits("50", 18)))
+        .to.emit(revenueCounter, "RevenueUpdated")
+        .withArgs(ethers.parseUnits("150", 18), ethers.parseUnits("100", 18));
+    });
+
+    // WHY: The core bug-fix property. attestRevenue's SET semantics race against
+    // permissionless syncStablecoinRevenue: any stable accrual synced during a
+    // proposal's lifecycle is silently overwritten by the SET, and is NOT
+    // re-credited because lastSyncedCumulative is not touched. addRevenue's
+    // increment semantics commute with concurrent syncs — stable and non-stable
+    // streams integrate independently into the same counter without loss.
+    // (See audit-80 PoC test_attestRevenue_permanently_overwrites_concurrent_stable_sync.)
+    it("should be commutative with concurrent syncStablecoinRevenue (no leak)", async function () {
+      await revenueCounter.setFeeCollector(await mockFeeCollector.getAddress());
+
+      // Step 1: stable accrues to $800, sync.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("800", 6));
+      await revenueCounter.syncStablecoinRevenue();
+      // counter = $800, lastSync = $800.
+
+      // Step 2: non-stable attestation +$200 (e.g. ETH receipt).
+      await revenueCounter.addRevenue(ethers.parseUnits("200", 18));
+      // counter = $1000, lastSync = $800 (unchanged — addRevenue doesn't touch sync).
+
+      // Step 3: stable advances to $850 during a future proposal's window. Sync.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("850", 6));
+      await revenueCounter.syncStablecoinRevenue();
+      // counter = $1050, lastSync = $850.
+
+      // Step 4: another non-stable attestation +$100.
+      await revenueCounter.addRevenue(ethers.parseUnits("100", 18));
+      // counter = $1150.
+
+      // Step 5: stable advances to $950, sync.
+      await mockFeeCollector.setCumulativeFees(ethers.parseUnits("950", 6));
+      await revenueCounter.syncStablecoinRevenue();
+      // counter = $1250 ($1150 + $100 stable delta).
+
+      // Truth check: stable contributed $950, non-stable $300 → expected $1250.
+      expect(await revenueCounter.recognizedRevenueUsd())
+        .to.equal(ethers.parseUnits("1250", 18));
+      // Compare against the audit-80 PoC: under attestRevenue (SET), an
+      // analogous interleave would have leaked the inter-attestation stable
+      // accrual permanently. addRevenue does not.
+    });
+
+    // WHY: After wind-down trigger, the counter is frozen. addRevenue must
+    // respect the same gate as attestRevenue / syncStablecoinRevenue.
+    it("should revert when counter is frozen", async function () {
+      // Bootstrap a wind-down contract authorized to call freeze.
+      await revenueCounter.setWindDownContract(alice.address);
+      await revenueCounter.connect(alice).freeze();
+
+      await expect(
+        revenueCounter.addRevenue(ethers.parseUnits("100", 18))
+      ).to.be.revertedWith("RevenueCounter: frozen");
+    });
+  });
+
+  // ============================================================
   // 4. setFeeCollector
   // ============================================================
 

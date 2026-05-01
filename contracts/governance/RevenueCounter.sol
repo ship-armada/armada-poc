@@ -90,9 +90,38 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     // ============ Governance Functions ============
 
+    /// @notice Increment cumulative revenue by deltaUsd. Governance-only (timelock).
+    ///         Routine path for non-stablecoin revenue attestation (ETH, etc.).
+    ///
+    ///         Increment semantics are commutative with concurrent permissionless
+    ///         syncStablecoinRevenue() calls during the proposal's lifecycle —
+    ///         stable accrual that lands between proposal creation and execution
+    ///         is preserved, not overwritten. Use this in preference to
+    ///         attestRevenue for routine non-stable attestations.
+    /// @param deltaUsd Amount of new revenue to credit, in 18-decimal USD.
+    function addRevenue(uint256 deltaUsd) external onlyOwner {
+        require(!frozen, "RevenueCounter: frozen");
+        if (deltaUsd == 0) return; // no-op
+
+        uint256 previousRevenue = recognizedRevenueUsd;
+        recognizedRevenueUsd = previousRevenue + deltaUsd;
+
+        emit RevenueUpdated(recognizedRevenueUsd, previousRevenue);
+    }
+
     /// @notice Attest to a new cumulative revenue value. Governance-only (timelock).
-    /// @dev Must be >= current recognizedRevenueUsd (monotonic). Used for off-chain
-    ///      revenue sources or corrections. Same value is a no-op.
+    /// @dev Must be >= current recognizedRevenueUsd (monotonic). Same value is a no-op.
+    ///
+    ///      Reserved for confirmed-error correction (e.g. snapping the counter to a
+    ///      known cumulative total after an audit reconciliation). NOT for routine
+    ///      non-stable revenue attestation — use addRevenue for that.
+    ///
+    ///      HAZARD: SET semantics race against permissionless syncStablecoinRevenue
+    ///      during the proposal lifecycle. Any stable accrual synced between
+    ///      proposal creation and execution is silently overwritten by this call,
+    ///      and is NOT re-credited by future syncs (lastSyncedCumulative is
+    ///      unchanged here, so future delta computation flows above the stale
+    ///      baseline). Avoid for routine ops; addRevenue is the safe path.
     /// @param newCumulativeUsd New cumulative revenue in 18-decimal USD.
     function attestRevenue(uint256 newCumulativeUsd) external onlyOwner {
         require(!frozen, "RevenueCounter: frozen");

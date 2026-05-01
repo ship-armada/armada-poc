@@ -208,6 +208,33 @@ describe("Wind-Down & Redemption Integration", function () {
 
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
+
+    // Initialize ARM outflow config on the treasury so that proposals
+    // distributing ARM can pass the queue-time outflow feasibility check.
+    // Required by the post-wind-down freeze tests below; harmless for tests
+    // that don't queue treasury proposals.
+    await timelockController.grantRole(PROPOSER_ROLE, deployer.address);
+    await timelockController.grantRole(EXECUTOR_ROLE, deployer.address);
+    {
+      const tgts = [await treasuryContract.getAddress()];
+      const vals = [0n];
+      const cdatas = [
+        treasuryContract.interface.encodeFunctionData("initOutflowConfig", [
+          await armToken.getAddress(),
+          30 * ONE_DAY,                  // window
+          5000,                          // 50% bps
+          TREASURY_AMOUNT,               // ceiling
+          ethers.parseUnits("1000", 18), // floor
+        ]),
+      ];
+      const salt = ethers.id("outflow-config-arm");
+      await timelockController.scheduleBatch(tgts, vals, cdatas, ethers.ZeroHash, salt, TWO_DAYS);
+      await time.increase(TWO_DAYS + 1);
+      await timelockController.executeBatch(tgts, vals, cdatas, ethers.ZeroHash, salt);
+    }
+    await timelockController.revokeRole(PROPOSER_ROLE, deployer.address);
+    await timelockController.revokeRole(EXECUTOR_ROLE, deployer.address);
+
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // --- Configure ARM token and distribute ---
@@ -446,6 +473,107 @@ describe("Wind-Down & Redemption Integration", function () {
         windDown.connect(timelockSigner).setWindDownDeadline(0n)
       ).to.be.revertedWith("ArmadaWindDown: already triggered");
       await stopImpersonatingTimelock();
+    });
+  });
+
+  // ============================================================
+  // Proposal lifecycle freeze (post-wind-down)
+  // ============================================================
+
+  describe("Proposal lifecycle freeze (post-wind-down)", function () {
+    // Standard proposal timing — must match the governor's defaults so we can
+    // advance the clock the right amount to reach Succeeded / Queued states.
+    const STANDARD_VOTING_PERIOD = 7 * ONE_DAY;
+    const STANDARD_EXECUTION_DELAY = 2 * ONE_DAY;
+    const ProposalType = { Standard: 0 };
+    const ProposalState = {
+      Pending: 0, Active: 1, Defeated: 2, Succeeded: 3,
+      Queued: 4, Executed: 5, Canceled: 6,
+    };
+    const Vote = { Against: 0, For: 1, Abstain: 2 };
+
+    // Build a Standard treasury-distribute proposal that would move ARM out of
+    // the treasury — the exact mutation the wind-down freeze is meant to block.
+    async function createTreasuryArmProposal(description: string) {
+      const distributeAmount = ethers.parseUnits("1000", ARM_DECIMALS);
+      const targets = [await treasuryContract.getAddress()];
+      const values = [0n];
+      const calldatas = [treasuryContract.interface.encodeFunctionData("distribute", [
+        await armToken.getAddress(), carol.address, distributeAmount,
+      ])];
+      await governor.connect(alice).propose(
+        ProposalType.Standard, targets, values, calldatas, description
+      );
+    }
+
+    // Drive a freshly-created proposal (id=1) through voting to Succeeded.
+    async function advanceToSucceeded() {
+      await time.increase(TWO_DAYS + 1); // past voting delay
+      await governor.connect(alice).castVote(1, Vote.For);
+      await governor.connect(bob).castVote(1, Vote.For);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
+    }
+
+    // WHY: A Succeeded proposal that exists at trigger time must not be
+    // queueable afterward. Without the gate, a pre-trigger distribute /
+    // stewardSpend proposal could move treasury ARM mid-redemption and
+    // break the redemption contract's pro-rata invariant
+    // (GOVERNANCE.md §11). Audit findings #99 and #100.
+    it("queue reverts after wind-down (pre-trigger Succeeded proposal)", async function () {
+      await createTreasuryArmProposal("Standard treasury distribute");
+      await advanceToSucceeded();
+
+      // Trigger wind-down with the proposal sitting in Succeeded state.
+      await time.increaseTo(windDownDeadline + 1);
+      await windDown.triggerWindDown();
+      expect(await governor.windDownActive()).to.be.true;
+
+      // queue() must reject — the proposal cannot progress.
+      await expect(governor.queue(1)).to.be.revertedWithCustomError(
+        governor, "Gov_GovernanceEnded"
+      );
+
+      // Treasury ARM balance is unchanged (no distribution happened).
+      expect(await armToken.balanceOf(await treasuryContract.getAddress()))
+        .to.equal(TREASURY_AMOUNT);
+    });
+
+    // WHY: Mirrors the queue gate at the execute boundary. A proposal that
+    // was already queued in the timelock at the moment of trigger must not
+    // be executable post-trigger; otherwise the timelock-scheduled action
+    // would still mutate treasury ARM after redemption opens.
+    it("execute reverts after wind-down (pre-trigger Queued proposal)", async function () {
+      await createTreasuryArmProposal("Standard treasury distribute");
+      await advanceToSucceeded();
+
+      // Queue while still pre-trigger.
+      await governor.queue(1);
+      expect(await governor.state(1)).to.equal(ProposalState.Queued);
+
+      // Advance past the execution delay so the timelock would otherwise
+      // permit execution — this isolates the wind-down gate as the only
+      // remaining barrier.
+      await time.increase(STANDARD_EXECUTION_DELAY + 1);
+
+      // Trigger wind-down with the proposal sitting in Queued state.
+      // (windDownDeadline is 365 days out and we have only advanced by ~12
+      // days of voting + 2 days of execution delay, so we're still
+      // pre-deadline; advance past it before triggering.)
+      if ((await time.latest()) <= windDownDeadline) {
+        await time.increaseTo(windDownDeadline + 1);
+      }
+      await windDown.triggerWindDown();
+      expect(await governor.windDownActive()).to.be.true;
+
+      // execute() must reject.
+      await expect(governor.execute(1)).to.be.revertedWithCustomError(
+        governor, "Gov_GovernanceEnded"
+      );
+
+      // Treasury ARM balance is unchanged.
+      expect(await armToken.balanceOf(await treasuryContract.getAddress()))
+        .to.equal(TREASURY_AMOUNT);
     });
   });
 

@@ -793,8 +793,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Called by the wind-down contract to permanently disable governance.
-    /// Once active, no new proposals can be created. Existing proposals in flight
-    /// (Active, Succeeded, Queued) can still complete their lifecycle.
+    /// Once active, the entire proposal lifecycle freezes:
+    ///   - propose / proposeStewardSpend reject new proposals.
+    ///   - queue rejects pre-trigger Succeeded proposals.
+    ///   - execute rejects pre-trigger Queued proposals.
+    /// Voting on already-Active proposals can complete (no on-chain harm: the
+    /// resulting Succeeded state simply cannot progress past queue).
     function setWindDownActive() external {
         if (msg.sender != windDownContract) revert Gov_NotWindDownContract();
         if (windDownContract == address(0)) revert Gov_WindDownContractNotSet();
@@ -947,6 +951,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Queue a succeeded proposal to the timelock
     function queue(uint256 proposalId) external {
+        // Wind-down freezes the entire governance lifecycle, not just new proposals.
+        // Pre-trigger Succeeded proposals must not progress; otherwise a queued
+        // distribute / stewardSpend would mutate treasury ARM mid-redemption window
+        // and break the redemption contract's pro-rata invariant (GOVERNANCE.md §11).
+        if (windDownActive) revert Gov_GovernanceEnded();
         if (state(proposalId) != ProposalState.Succeeded) revert Gov_NotSucceeded();
 
         Proposal storage p = _proposals[proposalId];
@@ -987,6 +996,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Execute a queued proposal after timelock delay
     function execute(uint256 proposalId) external payable nonReentrant {
+        // Mirror the queue()-time wind-down gate. A proposal queued just before
+        // trigger must not execute afterward — same redemption-fairness reason.
+        if (windDownActive) revert Gov_GovernanceEnded();
         if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];

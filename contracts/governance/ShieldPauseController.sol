@@ -105,8 +105,11 @@ contract ShieldPauseController is IShieldPauseController {
     ///         Pre-wind-down: SC can re-invoke after expiry (unlimited).
     ///         Post-wind-down: exactly one invocation allowed.
     function pauseShields() external {
+        // sc != address(0) check is redundant: msg.sender is never address(0) in
+        // EVM, so msg.sender == sc already implies sc != address(0). Pre-launch
+        // (governor.securityCouncil() == 0) is rejected by the first conjunct alone.
         address sc = governor.securityCouncil();
-        require(msg.sender == sc && sc != address(0), "ShieldPauseController: not SC");
+        require(msg.sender == sc, "ShieldPauseController: not SC");
         require(!_isPaused(), "ShieldPauseController: already paused");
 
         if (windDownActive) {

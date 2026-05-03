@@ -397,34 +397,33 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function _lazyActivate(address token) internal {
         OutflowConfig storage config = _outflowConfigs[token];
 
+        // Emits fire before SSTOREs so the optimizer doesn't hold the prior
+        // active value in a stack slot across the write — see audit-91.
         if (config.pendingLimitAbsoluteActivation > 0 &&
             block.timestamp >= config.pendingLimitAbsoluteActivation) {
-            uint256 oldActive = config.limitAbsolute;
             uint256 newActive = config.pendingLimitAbsolute;
+            emit OutflowLimitAbsoluteActivated(token, config.limitAbsolute, newActive);
             config.limitAbsolute = newActive;
             config.pendingLimitAbsolute = 0;
             config.pendingLimitAbsoluteActivation = 0;
-            emit OutflowLimitAbsoluteActivated(token, oldActive, newActive);
         }
 
         if (config.pendingLimitBpsActivation > 0 &&
             block.timestamp >= config.pendingLimitBpsActivation) {
-            uint256 oldActive = config.limitBps;
             uint256 newActive = config.pendingLimitBps;
+            emit OutflowLimitBpsActivated(token, config.limitBps, newActive);
             config.limitBps = newActive;
             config.pendingLimitBps = 0;
             config.pendingLimitBpsActivation = 0;
-            emit OutflowLimitBpsActivated(token, oldActive, newActive);
         }
 
         if (config.pendingWindowDurationActivation > 0 &&
             block.timestamp >= config.pendingWindowDurationActivation) {
-            uint256 oldActive = config.windowDuration;
             uint256 newActive = config.pendingWindowDuration;
+            emit OutflowWindowDurationActivated(token, config.windowDuration, newActive);
             config.windowDuration = newActive;
             config.pendingWindowDuration = 0;
             config.pendingWindowDurationActivation = 0;
-            emit OutflowWindowDurationActivated(token, oldActive, newActive);
         }
     }
 

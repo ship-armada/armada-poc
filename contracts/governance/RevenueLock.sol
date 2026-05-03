@@ -341,9 +341,10 @@ contract RevenueLock {
         uint256 capped = _min(reported, maxObservedRevenue + maxAllowedIncrease);
 
         if (capped > maxObservedRevenue) {
-            uint256 oldMax = maxObservedRevenue;
+            // Emit before SSTORE so the optimizer doesn't hold the prior value in
+            // a stack slot across the write — see audit-91.
+            emit ObservedRevenueUpdated(maxObservedRevenue, capped, reported);
             maxObservedRevenue = capped;
-            emit ObservedRevenueUpdated(oldMax, capped, reported);
         }
 
         lastSyncTimestamp = block.timestamp;

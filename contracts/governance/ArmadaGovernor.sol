@@ -526,10 +526,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// preventing future UUPS upgrades from inheriting deployer-gated privileges.
     function clearDeployer() external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
-        address previousDeployer = deployer;
+        // Emit before SSTORE — avoids a dead stack slot across the write (audit-91).
+        emit DeployerCleared(deployer);
         deployer = address(0);
-
-        emit DeployerCleared(previousDeployer);
     }
 
     // ============ Governance-Updatable Parameters ============

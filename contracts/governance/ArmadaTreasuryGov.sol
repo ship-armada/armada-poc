@@ -161,7 +161,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
         _checkAndRecordOutflow(address(0), amount);
-        (bool ok,) = recipient.call{value: amount}("");
+        // Assembly call with retSize=0 skips return-data copy and protects against
+        // a return-bomb griefing attack from a captured-governance recipient. See audit-86.
+        bool ok;
+        assembly {
+            ok := call(gas(), recipient, amount, 0, 0, 0, 0)
+        }
         require(ok, "ArmadaTreasuryGov: ETH transfer failed");
         emit DirectDistribution(address(0), recipient, amount);
     }
@@ -525,7 +530,13 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
         require(amount > 0, "ArmadaTreasuryGov: zero amount");
-        (bool success,) = recipient.call{value: amount}("");
+        // Assembly call with retSize=0 skips return-data copy. The recipient here
+        // is the immutable redemption contract (no return-bomb risk), but matches
+        // the pattern used elsewhere in the codebase. See audit-86.
+        bool success;
+        assembly {
+            success := call(gas(), recipient, amount, 0, 0, 0, 0)
+        }
         require(success, "ArmadaTreasuryGov: ETH transfer failed");
         emit WindDownETHTransfer(recipient, amount);
     }

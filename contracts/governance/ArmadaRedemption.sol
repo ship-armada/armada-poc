@@ -205,7 +205,17 @@ contract ArmadaRedemption is ReentrancyGuard {
             require(ethRecipient != address(0), "ArmadaRedemption: zero ETH recipient");
             ethPayout = (ethBalance * armAmount) / circulating;
             require(ethPayout > 0, "ArmadaRedemption: zero share for ETH");
-            (bool success,) = ethRecipient.call{value: ethPayout}("");
+            // Assembly call with retSize=0 skips the return-data copy. ethRecipient
+            // is user-supplied and could be a contract returning a maximally-sized
+            // payload to grief the redeemer's gas — the high-level .call form
+            // copies that payload into memory regardless of whether we read it.
+            // See audit-86.
+            bool success;
+            address recipient = ethRecipient;
+            uint256 value = ethPayout;
+            assembly {
+                success := call(gas(), recipient, value, 0, 0, 0, 0)
+            }
             require(success, "ArmadaRedemption: ETH transfer failed");
             anyPayout = true;
         }

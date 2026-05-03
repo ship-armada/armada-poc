@@ -707,8 +707,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function _createRatificationProposal(
         uint256 vetoedProposalId,
         bytes32 rationaleHash
-    ) internal returns (uint256) {
-        uint256 ratId = ++proposalCount;
+    ) internal returns (uint256 ratId) {
+        ratId = ++proposalCount;
 
         // Description is generic; vetoedProposalId and rationaleHash are queryable
         // on-chain via ratificationOf() mapping and ProposalVetoed event.
@@ -728,8 +728,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             ratId, msg.sender, ProposalType.VetoRatification,
             p.voteStart, p.voteEnd, desc
         );
-
-        return ratId;
     }
 
     // ============ Steward Proposals ============
@@ -747,7 +745,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         address[] memory recipients,
         uint256[] memory amounts,
         string memory description
-    ) external returns (uint256) {
+    ) external returns (uint256 proposalId) {
         if (windDownActive) revert Gov_GovernanceEnded();
         if (stewardContract == address(0)) revert Gov_StewardContractNotSet();
         // Combined accessor: one CALL fetches both the elected address and the
@@ -783,7 +781,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // operations to bypass Extended classification via the pass-by-default path.
         if (_classifyProposal(ProposalType.Standard, targets, calldatas) == ProposalType.Extended) revert Gov_StewardCalldataClassifiedAsExtended();
 
-        uint256 proposalId = ++proposalCount;
+        proposalId = ++proposalCount;
         _initProposal(proposalId, ProposalType.Steward, description);
 
         Proposal storage p = _proposals[proposalId];
@@ -795,7 +793,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             proposalId, msg.sender, ProposalType.Steward,
             p.voteStart, p.voteEnd, description
         );
-        return proposalId;
     }
 
     // ============ Wind-Down ============
@@ -845,7 +842,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256[] memory values,
         bytes[] memory calldatas,
         string memory description
-    ) external returns (uint256) {
+    ) external returns (uint256 proposalId) {
         if (windDownActive) revert Gov_GovernanceEnded();
         if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward) revert Gov_AutoCreatedOnly();
         _checkQuietPeriod();
@@ -874,7 +871,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             ? ProposalType.Signaling
             : _classifyProposal(proposalType, targets, calldatas);
 
-        uint256 proposalId = ++proposalCount;
+        proposalId = ++proposalCount;
         _initProposal(proposalId, effectiveType, description);
 
         Proposal storage p = _proposals[proposalId];
@@ -886,7 +883,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             proposalId, msg.sender, effectiveType,
             p.voteStart, p.voteEnd, description
         );
-        return proposalId;
     }
 
     /// @dev Check that proposer has at least PROPOSAL_THRESHOLD delegated voting power

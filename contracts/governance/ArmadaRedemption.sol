@@ -252,7 +252,7 @@ contract ArmadaRedemption is ReentrancyGuard {
     ///      the dynamic computation goes to 0 (balance and armStillOwed both fall
     ///      by the swept amount), and the treasury balance subtraction picks it up.
     ///      A constant subtraction would double-count the swept portion.
-    function circulatingSupply() public view returns (uint256) {
+    function circulatingSupply() public view returns (uint256 total) {
         // Batch the totalSupply + treasury/this balanceOf reads into one external
         // CALL via circulatingSupplyOf. Crowdfund balance stays separate so the
         // defensive clamp below (cfStillOwed >= cfBalance) can still surface an
@@ -260,7 +260,7 @@ contract ArmadaRedemption is ReentrancyGuard {
         address[] memory excluded = new address[](2);
         excluded[0] = treasury;
         excluded[1] = address(this);
-        uint256 total = IArmadaTokenRedemption(address(armToken)).circulatingSupplyOf(excluded);
+        total = IArmadaTokenRedemption(address(armToken)).circulatingSupplyOf(excluded);
 
         // RevenueLock locked portion (unvested). Pre-freeze: live ratchet value.
         // Post-freeze: stable across the redemption window.
@@ -274,8 +274,6 @@ contract ArmadaRedemption is ReentrancyGuard {
         // underflow if the crowdfund's accounting ever becomes inconsistent.
         uint256 cfUnsold = cfStillOwed >= cfBalance ? 0 : cfBalance - cfStillOwed;
         total -= cfUnsold;
-
-        return total;
     }
 
     /// @notice Accept ETH (from wind-down sweeps)

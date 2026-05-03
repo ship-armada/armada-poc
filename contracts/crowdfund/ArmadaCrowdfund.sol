@@ -455,16 +455,28 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Push net proceeds to treasury. Retain a rounding buffer so the contract
         // never runs short on refund payouts: lazy per-participant floor divisions
         // can sum to slightly less than totalAllocatedUsdc, making the aggregate
-        // refund slightly larger. Buffer = participantNodes.length * NUM_HOPS
-        // (max 1 USDC unit per participant per hop). Residual dust stays in contract.
+        // refund slightly larger.
+        //
+        // Buffer = participantNodes.length (one USDC unit per participantNode entry).
+        //
+        // Tight upper bound on dust:
+        //   For each oversubscribed hop with N committers, per-participant alloc =
+        //   floor(cappedCommitted_i * finalCeilings[h] / finalDemands[h]). The exact
+        //   rational sum across the hop's committers equals finalCeilings[h]; each
+        //   floor loses < 1 unit, so actual_sum > finalCeilings[h] - N. Hop dust < N.
+        //   Under-subscribed hops do no floor division, dust = 0.
+        //   Total dust < (committers across all oversubscribed hops) ≤ participantNodes.length.
+        //   participantNodes.length is one entry per (address, hop) registration, which
+        //   is robust to any future refactor that allows multi-hop commits per address —
+        //   each (address, hop) tuple corresponds to at most one floor-division call.
         //
         // Invariant note: the spec requires netProceeds + sum(refunds) == totalCommitted
         // as a settlement-completion identity. The rounding buffer means the treasury
         // receives slightly less than totalAllocatedUsdc, with the difference (at most
-        // participantNodes.length * NUM_HOPS USDC units) stranded in the contract as
-        // unrecoverable dust. The identity still holds at the contract level:
+        // participantNodes.length USDC units) stranded in the contract as unrecoverable
+        // dust. The identity still holds at the contract level:
         // treasuryReceived + contractDust + sum(refunds) == totalCommitted.
-        uint256 roundingBuffer = participantNodes.length * NUM_HOPS;
+        uint256 roundingBuffer = participantNodes.length;
         uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
             ? totalAllocUsdc_ - roundingBuffer
             : 0;

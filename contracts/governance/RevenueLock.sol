@@ -12,6 +12,7 @@ interface IArmadaTokenRevenueLock {
     function transfer(address to, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
     function delegateOnBehalf(address delegator, address delegatee) external;
+    function transferAndDelegate(address to, uint256 amount, address delegatee) external;
 }
 
 /// @title RevenueLock — Revenue-gated token release for team and airdrop ARM
@@ -203,8 +204,8 @@ contract RevenueLock {
 
         released[msg.sender] = alreadyReleased + amount;
 
-        require(armToken.transfer(msg.sender, amount), "RevenueLock: transfer failed");
-        armToken.delegateOnBehalf(msg.sender, delegatee);
+        // Combined transfer + delegateOnBehalf — atomic by construction, one CALL.
+        armToken.transferAndDelegate(msg.sender, amount, delegatee);
 
         emit Released(msg.sender, amount, delegatee, released[msg.sender]);
     }

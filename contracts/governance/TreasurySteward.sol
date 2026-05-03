@@ -67,6 +67,16 @@ contract TreasurySteward {
         return currentSteward != address(0) && block.timestamp < termStart + TERM_DURATION;
     }
 
+    /// @notice Combined accessor for the active-steward state. Callers that need both
+    ///         the address and the active flag (e.g. ArmadaGovernor's steward-proposal
+    ///         gates) should use this to avoid a second external call and a duplicate
+    ///         currentSteward SLOAD inside isStewardActive(). Returns the elected
+    ///         address (or zero if none) and whether they are within the active term.
+    function getCurrentSteward() external view returns (address steward, bool isActive) {
+        steward = currentSteward;
+        isActive = steward != address(0) && block.timestamp < termStart + TERM_DURATION;
+    }
+
     function termEnd() external view returns (uint256) {
         if (currentSteward == address(0)) return 0;
         return termStart + TERM_DURATION;

@@ -175,6 +175,31 @@ contract ArmadaToken is ERC20Votes {
         _delegate(delegator, delegatee);
     }
 
+    /// @notice Combined transfer + delegateOnBehalf for atomic credit + delegation.
+    ///         Replaces the paired (transfer, delegateOnBehalf) sequence in
+    ///         RevenueLock.release and ArmadaCrowdfund.claim. Restricted to authorized
+    ///         delegators (the same gate as delegateOnBehalf), since the underlying
+    ///         delegation step is privileged.
+    /// @param to Recipient of the ARM transfer (also the delegator whose voting power moves)
+    /// @param amount ARM amount to transfer from msg.sender to `to`
+    /// @param delegatee Address to delegate `to`'s voting power to
+    function transferAndDelegate(address to, uint256 amount, address delegatee) external {
+        require(authorizedDelegator[msg.sender], "ArmadaToken: not authorized delegator");
+        _transfer(msg.sender, to, amount);
+        _delegate(to, delegatee);
+    }
+
+    /// @notice Helper for redemption denominator math: returns totalSupply minus the
+    ///         sum of balanceOf(excluded[i]). Collapses the (1 totalSupply + N balanceOf)
+    ///         multi-call pattern in ArmadaRedemption.circulatingSupply to a single CALL.
+    /// @param excluded Addresses whose ARM is non-circulating (treasury, redemption contract, etc.)
+    function circulatingSupplyOf(address[] calldata excluded) external view returns (uint256 result) {
+        result = totalSupply();
+        for (uint256 i; i < excluded.length; i++) {
+            result -= balanceOf(excluded[i]);
+        }
+    }
+
     // ============ Transfer Restriction ============
 
     /// @dev Restrict transfers when transferable is false: only whitelisted senders

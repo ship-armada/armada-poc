@@ -7,9 +7,11 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-/// @notice Minimal interface for ARM token transferable flag
+/// @notice Minimal interface for ARM token: transferable flag and the
+/// circulatingSupplyOf batch helper used by circulatingSupply().
 interface IArmadaTokenRedemption {
     function transferable() external view returns (bool);
+    function circulatingSupplyOf(address[] calldata excluded) external view returns (uint256);
 }
 
 /// @notice Minimal interface for reading wind-down trigger timestamp
@@ -241,9 +243,14 @@ contract ArmadaRedemption is ReentrancyGuard {
     ///      by the swept amount), and the treasury balance subtraction picks it up.
     ///      A constant subtraction would double-count the swept portion.
     function circulatingSupply() public view returns (uint256) {
-        uint256 total = armToken.totalSupply();
-        total -= armToken.balanceOf(treasury);
-        total -= armToken.balanceOf(address(this));
+        // Batch the totalSupply + treasury/this balanceOf reads into one external
+        // CALL via circulatingSupplyOf. Crowdfund balance stays separate so the
+        // defensive clamp below (cfStillOwed >= cfBalance) can still surface an
+        // accounting inconsistency without underflowing.
+        address[] memory excluded = new address[](2);
+        excluded[0] = treasury;
+        excluded[1] = address(this);
+        uint256 total = IArmadaTokenRedemption(address(armToken)).circulatingSupplyOf(excluded);
 
         // RevenueLock locked portion (unvested). Pre-freeze: live ratchet value.
         // Post-freeze: stable across the redemption window.

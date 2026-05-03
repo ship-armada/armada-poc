@@ -14,6 +14,7 @@ import "./IArmadaCrowdfund.sol";
 /// @notice Minimal ArmadaToken interface for atomic delegation on claim.
 interface IArmadaTokenCrowdfund {
     function delegateOnBehalf(address delegator, address delegatee) external;
+    function transferAndDelegate(address to, uint256 amount, address delegatee) external;
 }
 
 /// @title ArmadaCrowdfund — Word-of-mouth whitelist crowdfund with hop-based allocation
@@ -523,8 +524,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             require(delegate != address(0), "ArmadaCrowdfund: delegate required");
             armTransferred = totalAllocArm;
             totalArmTransferred += armTransferred;
-            armToken.safeTransfer(msg.sender, armTransferred);
-            IArmadaTokenCrowdfund(address(armToken)).delegateOnBehalf(msg.sender, delegate);
+            // Combined transfer + delegateOnBehalf — atomic by construction, one CALL.
+            IArmadaTokenCrowdfund(address(armToken)).transferAndDelegate(msg.sender, armTransferred, delegate);
         }
 
         // Refund: always transfer (no expiry)

@@ -751,8 +751,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ) external returns (uint256) {
         if (windDownActive) revert Gov_GovernanceEnded();
         if (stewardContract == address(0)) revert Gov_StewardContractNotSet();
-        if (msg.sender != ITreasurySteward(stewardContract).currentSteward()) revert Gov_NotCurrentSteward();
-        if (!ITreasurySteward(stewardContract).isStewardActive()) revert Gov_StewardNotActive();
+        // Combined accessor: one CALL fetches both the elected address and the
+        // active flag, avoiding a duplicate currentSteward SLOAD inside isStewardActive.
+        (address steward, bool isActive) = ITreasurySteward(stewardContract).getCurrentSteward();
+        if (msg.sender != steward) revert Gov_NotCurrentSteward();
+        if (!isActive) revert Gov_StewardNotActive();
 
         if (tokens.length == 0) revert Gov_EmptyProposal();
         if (tokens.length != recipients.length || tokens.length != amounts.length) revert Gov_LengthMismatch();
@@ -985,12 +988,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Steward proposals must not be queueable after steward removal or term expiry.
         // Creation-time checks in proposeStewardSpend() verify steward status at proposal
         // time, but a steward can be removed while their proposal is still in voting.
+        // getCurrentSteward returns (address, bool) in one CALL.
         if (p.proposalType == ProposalType.Steward) {
-            if (stewardContract == address(0)
-                || p.proposer != ITreasurySteward(stewardContract).currentSteward()
-                || !ITreasurySteward(stewardContract).isStewardActive()) {
-                revert Gov_StewardProposerNoLongerActive();
-            }
+            if (stewardContract == address(0)) revert Gov_StewardProposerNoLongerActive();
+            (address steward, bool isActive) = ITreasurySteward(stewardContract).getCurrentSteward();
+            if (p.proposer != steward || !isActive) revert Gov_StewardProposerNoLongerActive();
         }
 
         // Queue-time outflow feasibility check: reject proposals whose aggregate
@@ -1029,11 +1031,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // execution delay must not have their proposal execute. Without this, the SC veto
         // would be the only backstop for the term-expiry edge case.
         if (p.proposalType == ProposalType.Steward) {
-            if (stewardContract == address(0)
-                || p.proposer != ITreasurySteward(stewardContract).currentSteward()
-                || !ITreasurySteward(stewardContract).isStewardActive()) {
-                revert Gov_StewardProposerNoLongerActive();
-            }
+            if (stewardContract == address(0)) revert Gov_StewardProposerNoLongerActive();
+            (address steward, bool isActive) = ITreasurySteward(stewardContract).getCurrentSteward();
+            if (p.proposer != steward || !isActive) revert Gov_StewardProposerNoLongerActive();
         }
 
         p.executed = true;

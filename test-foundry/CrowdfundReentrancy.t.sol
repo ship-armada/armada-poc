@@ -47,6 +47,13 @@ contract MaliciousERC20 is ERC20 {
     /// @notice Stub for IArmadaTokenCrowdfund — claim() calls delegateOnBehalf after transfer.
     function delegateOnBehalf(address, address) external {}
 
+    /// @notice Stub for IArmadaTokenCrowdfund.transferAndDelegate — combined entry point
+    ///         that claim() now uses (audit-93). Routes the transfer through _transfer so
+    ///         the attack callback still fires; ignores the delegatee arg (mock).
+    function transferAndDelegate(address to, uint256 amount, address /*delegatee*/) external {
+        _transfer(msg.sender, to, amount);
+    }
+
     /// @notice Arm the attack. On the next transfer, the contract will call
     ///         attackTarget with attackCalldata. The attackFired flag is set
     ///         BEFORE the callback to prevent infinite recursion.
@@ -104,6 +111,11 @@ contract MaliciousERC20Propagating is ERC20 {
 
     /// @notice Stub for IArmadaTokenCrowdfund — claim() calls delegateOnBehalf after transfer.
     function delegateOnBehalf(address, address) external {}
+
+    /// @notice Stub for IArmadaTokenCrowdfund.transferAndDelegate (audit-93).
+    function transferAndDelegate(address to, uint256 amount, address /*delegatee*/) external {
+        _transfer(msg.sender, to, amount);
+    }
 
     function setAttack(address target, bytes calldata data) external {
         attackTarget = target;

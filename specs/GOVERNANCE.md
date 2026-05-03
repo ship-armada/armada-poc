@@ -311,10 +311,23 @@ All reusable governance parameters listed above are themselves governable — lo
 | **Note structure** | Commitment format, nullifier derivation |
 | **Privacy guarantees** | Shielded set membership, unlinkability |
 | **Shielded pool** | Core pool contracts (inherited from Railgun) |
+| **Pool access conditions** | No mandatory disclosure, attestation, or provenance proof as a condition of pool use absent an explicit Extended proposal amending this Immutable scope. See §Pool access conditions. |
 | **Crowdfund contract** | All parameters (see PARAMETER_MANIFEST.md §12) |
 | **ARM token contract** | Non-upgradeable. No proxy. All invariants in ARM_TOKEN.md §12 are unconditional. |
 | **Revenue-lock contract** | Milestone schedule and release logic. Beneficiaries must trust these cannot change. |
 | **Wind-down contract** | Trigger mechanism (conditions are deterministic), treasury sweep authority, `setTransferable(true)` authority, and `windDownActive` flag on pause contract. Parameters (threshold, deadline) are governable but the trigger logic itself is immutable. |
+
+### Pool access conditions
+
+Armada governance proposals MUST NOT make access to the shielded pool conditional on disclosure, attestation, allowlist membership, blocklist non-membership, identity verification, source-of-funds proof, dissociation proof, viewing-key disclosure, or any other proof of provenance.
+
+Armada may support voluntary disclosure, audit, provenance, receipt, viewing-key, or dissociation tooling at the application or integrator layer. Such tooling must remain optional and must not become a protocol-level precondition for depositing, transferring, or withdrawing through the shielded pool.
+
+A proposal that introduces mandatory disclosure or attestation as a condition of shielded pool use is incompatible with this protocol's stated architecture unless governance first passes an Extended proposal amending this section and the corresponding row in the Immutable table.
+
+**Rationale.** Armada is designed as infrastructure where access to shielded privacy is unconditional. Voluntary disclosure tooling and mandatory disclosure gates look superficially similar but produce structurally different protocols: the first preserves a neutral private settlement layer with optional integrator-layer attestations; the second recreates the discretionary-gatekeeper failure mode that ASP-conditional and KYC-gated privacy pools exhibit. This section establishes that distinction as a constitutional invariant rather than a current-team convention.
+
+This does not bind governance metaphysically. It forces any future override to be explicit, classified Extended, and visible as an amendment to the Immutable scope, rather than slipping through as a parameter change, adapter authorization, or operational policy.
 
 ---
 

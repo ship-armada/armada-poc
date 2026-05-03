@@ -677,7 +677,7 @@ describe("Wind-Down & Redemption Integration", function () {
       expect(circulating).to.equal(TOTAL_SUPPLY * 10n / 100n); // 1.2M
 
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       // Alice has 600K / 1.2M = 50% → $250k
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
@@ -685,7 +685,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
     it("pro-rata ETH redemption", async function () {
       const tokens: string[] = [];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       // 50% of 10 ETH = 5 ETH
       expect(await ethers.provider.getBalance(await redemption.getAddress())).to.equal(
@@ -695,7 +695,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
     it("combined ERC20 + ETH in one deposit", async function () {
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
       // Alice's ETH balance increased (exact check is hard due to gas, check contract balance)
@@ -707,11 +707,11 @@ describe("Wind-Down & Redemption Integration", function () {
       const tokens = [await usdc.getAddress()];
 
       // Alice redeems first
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
       const aliceUsdc = await usdc.balanceOf(alice.address);
 
       // Bob redeems second — should get the same share
-      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, true);
+      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, bob.address);
       const bobUsdc = await usdc.balanceOf(bob.address);
 
       expect(aliceUsdc).to.equal(bobUsdc);
@@ -720,7 +720,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
     it("ARM is permanently locked after redemption", async function () {
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       expect(await armToken.balanceOf(alice.address)).to.equal(0n);
       expect(await armToken.balanceOf(await redemption.getAddress())).to.equal(ALICE_AMOUNT);
@@ -729,7 +729,7 @@ describe("Wind-Down & Redemption Integration", function () {
     it("rejects ARM token in tokens array", async function () {
       const tokens = [await armToken.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: cannot redeem ARM");
     });
 
@@ -737,7 +737,7 @@ describe("Wind-Down & Redemption Integration", function () {
       const usdcAddr = await usdc.getAddress();
       const tokens = [usdcAddr, usdcAddr];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: tokens not sorted/unique");
     });
 
@@ -771,14 +771,14 @@ describe("Wind-Down & Redemption Integration", function () {
       const tokens = addr1.toLowerCase() > addr2.toLowerCase()
         ? [addr1, addr2] : [addr2, addr1];
       await expect(
-        redemption.connect(alice).redeem(redeemAmount, tokens, false)
+        redemption.connect(alice).redeem(redeemAmount, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: tokens not sorted/unique");
     });
 
     it("rejects zero ARM amount", async function () {
       const tokens = [await usdc.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(0n, tokens, false)
+        redemption.connect(alice).redeem(0n, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: zero amount");
     });
 
@@ -786,7 +786,7 @@ describe("Wind-Down & Redemption Integration", function () {
       const circulatingBefore = await redemption.circulatingSupply();
 
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       const circulatingAfter = await redemption.circulatingSupply();
       expect(circulatingAfter).to.equal(circulatingBefore - ALICE_AMOUNT);
@@ -819,7 +819,7 @@ describe("Wind-Down & Redemption Integration", function () {
     it("reverts if redeem is attempted before the delay elapses", async function () {
       const tokens = [await usdc.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: redemption delay not elapsed");
     });
 
@@ -830,14 +830,14 @@ describe("Wind-Down & Redemption Integration", function () {
       await time.increaseTo(Number(triggeredAt) + ONE_WEEK - 2);
       const tokens = [await usdc.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: redemption delay not elapsed");
     });
 
     it("succeeds once the delay has elapsed", async function () {
       await advancePastRedemptionDelay();
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
     });
   });
@@ -885,8 +885,8 @@ describe("Wind-Down & Redemption Integration", function () {
       // Delay gate: social-coordination window between trigger and redemptions (issue #254)
       await advancePastRedemptionDelay();
 
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
-      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
+      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, bob.address);
 
       // Both get 50% of USDC
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
@@ -932,7 +932,7 @@ describe("Wind-Down & Redemption Integration", function () {
       await advancePastRedemptionDelay();
 
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
     });
   });

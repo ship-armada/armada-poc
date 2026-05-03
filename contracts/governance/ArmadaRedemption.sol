@@ -128,11 +128,16 @@ contract ArmadaRedemption is ReentrancyGuard {
     /// @param armAmount Amount of ARM to deposit
     /// @param tokens Array of ERC20 token addresses to redeem (must be sorted ascending, no
     ///        duplicates, and must not include the ARM token)
-    /// @param includeETH If true, also redeem pro-rata share of ETH held by this contract
+    /// @param ethRecipient Recipient for the pro-rata ETH share. Must be non-zero when this
+    ///        contract holds ETH; passing address(0) reverts in that case so a redeemer
+    ///        cannot silently forfeit their ETH share. When the contract holds zero ETH,
+    ///        ethRecipient is ignored — allowing ERC20-only redemption against an ETH-less
+    ///        treasury. Smart-contract redeemers that cannot receive ETH should pass an EOA
+    ///        address they control rather than address(0).
     function redeem(
         uint256 armAmount,
         address[] calldata tokens,
-        bool includeETH
+        address ethRecipient
     ) external nonReentrant {
         require(armAmount > 0, "ArmadaRedemption: zero amount");
         // Defense-in-depth: ARM transfers are enabled by the wind-down contract via
@@ -186,20 +191,26 @@ contract ArmadaRedemption is ReentrancyGuard {
             anyPayout = true;
         }
 
-        // Distribute pro-rata share of ETH if requested
+        // Distribute pro-rata share of ETH if the pool has any. The ethRecipient
+        // parameter prevents silent forfeit (audit-81): a smart-contract redeemer
+        // unable to receive ETH must route to an EOA explicitly rather than passing
+        // a flag that drops their share. When the pool holds zero ETH (legitimate
+        // for a USDC-only protocol), ethRecipient is ignored — redemption proceeds
+        // against ERC20s alone.
         uint256 ethPayout;
-        if (includeETH) {
-            uint256 ethBalance = address(this).balance;
+        uint256 ethBalance = address(this).balance;
+        if (ethBalance > 0) {
+            require(ethRecipient != address(0), "ArmadaRedemption: zero ETH recipient");
             ethPayout = (ethBalance * armAmount) / circulating;
             require(ethPayout > 0, "ArmadaRedemption: zero share for ETH");
-            (bool success,) = msg.sender.call{value: ethPayout}("");
+            (bool success,) = ethRecipient.call{value: ethPayout}("");
             require(success, "ArmadaRedemption: ETH transfer failed");
             anyPayout = true;
         }
 
-        // Belt-and-suspenders for the empty-input case (tokens.length == 0 && !includeETH).
-        // The per-asset checks above don't fire on empty input, so this preserves ARM if
-        // a caller requests nothing.
+        // Belt-and-suspenders for the empty-input case (tokens.length == 0 and the
+        // ETH pool is empty). The per-asset checks above don't fire on empty input,
+        // so this preserves ARM if a caller requests nothing.
         require(anyPayout, "ArmadaRedemption: must request at least one asset");
 
         emit Redeemed(msg.sender, armAmount, tokens, ethPayout);

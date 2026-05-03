@@ -154,7 +154,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         // Alice has 600K out of 1.2M circulating = 50% → $250k USDC
         assertEq(usdc.balanceOf(alice), 250_000e6);
@@ -173,7 +173,7 @@ contract ArmadaRedemptionTest is Test {
         }
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         // 50% of each
         assertEq(usdc.balanceOf(alice), 250_000e6);
@@ -186,7 +186,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         // ARM is in the redemption contract
         assertEq(armToken.balanceOf(address(redemption)), aliceArm);
@@ -205,7 +205,7 @@ contract ArmadaRedemptionTest is Test {
 
         // Alice redeems first (600K out of 1.2M = 50%)
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
         assertEq(usdc.balanceOf(alice), 250_000e6); // 50% of $500k
 
         // After Alice's redemption:
@@ -214,7 +214,7 @@ contract ArmadaRedemptionTest is Test {
         // - USDC remaining = 250k
         // Bob redeems (600K out of 600K = 100%)
         vm.prank(bob);
-        redemption.redeem(bobArm, tokens, false);
+        redemption.redeem(bobArm, tokens, address(0));
         assertEq(usdc.balanceOf(bob), 250_000e6); // 100% of remaining $250k
 
         // Both got equal shares: $250k each
@@ -228,13 +228,13 @@ contract ArmadaRedemptionTest is Test {
 
         // Alice redeems half her ARM (300K out of 1.2M = 25%)
         vm.prank(alice);
-        redemption.redeem(halfArm, tokens, false);
+        redemption.redeem(halfArm, tokens, address(0));
         assertEq(usdc.balanceOf(alice), 125_000e6); // 25% of $500k
 
         // Alice redeems other half (300K out of 900K remaining circulating)
         // 300K / 900K = 33.3% of remaining $375k = $125k
         vm.prank(alice);
-        redemption.redeem(halfArm, tokens, false);
+        redemption.redeem(halfArm, tokens, address(0));
         assertEq(usdc.balanceOf(alice), 250_000e6); // Total still $250k
     }
 
@@ -248,7 +248,7 @@ contract ArmadaRedemptionTest is Test {
         address[] memory tokens = new address[](0);
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, true);
+        redemption.redeem(aliceArm, tokens, alice);
 
         assertEq(alice.balance, 5 ether); // 50% of 10 ETH
     }
@@ -262,7 +262,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, true);
+        redemption.redeem(aliceArm, tokens, alice);
 
         // Gets 50% of both in one deposit
         assertEq(usdc.balanceOf(alice), 250_000e6);
@@ -281,13 +281,13 @@ contract ArmadaRedemptionTest is Test {
 
         // Alice redeems all assets in one call
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, true);
+        redemption.redeem(aliceArm, tokens, alice);
         assertEq(usdc.balanceOf(alice), 250_000e6);
         assertEq(alice.balance, 5 ether);
 
         // Bob redeems — gets 100% of remaining
         vm.prank(bob);
-        redemption.redeem(bobArm, tokens, true);
+        redemption.redeem(bobArm, tokens, bob);
         assertEq(usdc.balanceOf(bob), 250_000e6);
         assertEq(bob.balance, 5 ether);
     }
@@ -301,7 +301,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: cannot redeem ARM");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     function test_revert_cannotRedeemARMInMultiTokenList() public {
@@ -318,7 +318,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: cannot redeem ARM");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     // ======== Duplicate Token Guard ========
@@ -331,7 +331,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: tokens not sorted/unique");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     function test_revert_unsortedTokens() public {
@@ -348,7 +348,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: tokens not sorted/unique");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     // ======== Circulating Supply ========
@@ -372,7 +372,7 @@ contract ArmadaRedemptionTest is Test {
 
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         uint256 circulatingAfter = redemption.circulatingSupply();
         assertTrue(circulatingAfter < circulatingBefore);
@@ -387,7 +387,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero amount");
-        redemption.redeem(0, tokens, false);
+        redemption.redeem(0, tokens, address(0));
     }
 
     function test_revert_zeroArmAmount_eth() public {
@@ -395,7 +395,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero amount");
-        redemption.redeem(0, tokens, true);
+        redemption.redeem(0, tokens, alice);
     }
 
     function test_revert_redeem_emptyTokenListNoETH() public {
@@ -408,7 +408,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: must request at least one asset");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         // ARM is NOT locked — the revert rolled back safeTransferFrom
         assertEq(armToken.balanceOf(alice), aliceArmBefore);
@@ -426,7 +426,7 @@ contract ArmadaRedemptionTest is Test {
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero token");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     function test_revert_redeem_tokenWithZeroBalance() public {
@@ -442,7 +442,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero share for token");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         assertEq(emptyToken.balanceOf(alice), 0);
         assertEq(armToken.balanceOf(alice), aliceArmBefore);
@@ -476,7 +476,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero share for token");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         // ARM rolled back; Alice received nothing.
         assertEq(armToken.balanceOf(alice), aliceArmBefore);
@@ -484,27 +484,32 @@ contract ArmadaRedemptionTest is Test {
         assertEq(other.balanceOf(alice), 0);
     }
 
-    // WHY: ETH path mirrors the per-token rule. A redeemer with includeETH=true but
-    // no ETH yet swept used to get tokens, mark anyPayout, and silently forfeit
-    // their ETH share. Same sequential-correctness violation as the token case.
-    function test_revert_redeem_includeETH_butNoETHSwept() public {
-        // ERC20 sweep landed; ETH sweep has not run.
+    // WHY: audit-81 — when the redemption pool holds no ETH, ethRecipient is
+    // ignored and redemption proceeds against ERC20s alone. This handles the
+    // legitimate case of an ETH-less treasury (USDC-only protocol). Behavior
+    // change vs pre-fix: under the old `includeETH=true` semantics this case
+    // reverted as a partial-sweep guard; under the new ethRecipient design the
+    // strict-wait-for-sweep ETH semantics are dropped in exchange for empty-pool
+    // resilience and silent-forfeit prevention. Sweep timing is enforced via the
+    // 7-day REDEMPTION_DELAY rather than per-call strict checks for ETH.
+    function test_redeem_emptyEthPool_recipientIgnored() public {
+        // setUp() already minted 500_000e6 USDC to redemption. Top up to model
+        // the post-sweep state. address(redemption).balance is 0 (no ETH swept).
         usdc.mint(address(redemption), 1_000_000e6);
-        // address(redemption).balance is 0 (no ETH swept).
+        // Total USDC in redemption: 500_000e6 + 1_000_000e6 = 1_500_000e6.
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
 
         uint256 aliceArm = armToken.balanceOf(alice);
-        uint256 aliceArmBefore = aliceArm;
 
+        // Passing a recipient when the pool is empty: recipient is ignored,
+        // ERC20 redemption succeeds, no ETH transfer attempted.
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: zero share for ETH");
-        redemption.redeem(aliceArm, tokens, true);
+        redemption.redeem(aliceArm, tokens, alice);
 
-        // ARM rolled back; Alice received nothing.
-        assertEq(armToken.balanceOf(alice), aliceArmBefore);
-        assertEq(usdc.balanceOf(alice), 0);
+        // Alice has 50% of circulating → 50% of 1_500_000e6 USDC.
+        assertEq(usdc.balanceOf(alice), 750_000e6);
         assertEq(alice.balance, 0);
     }
 
@@ -514,27 +519,57 @@ contract ArmadaRedemptionTest is Test {
 
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, true);
+        redemption.redeem(aliceArm, tokens, alice);
 
         assertEq(alice.balance, 5 ether);
         // No USDC should have been touched
         assertEq(usdc.balanceOf(alice), 0);
     }
 
-    function test_redeem_includeETHFalse_noETHSent() public {
+    // WHY: audit-81 — primary fix. Pre-fix `includeETH=false` while the pool
+    // held ETH silently forfeited the caller's pro-rata ETH share to subsequent
+    // redeemers. Under the new ethRecipient design, passing address(0) when the
+    // pool holds ETH must revert so the forfeit cannot happen accidentally —
+    // a contract-caller unable to receive ETH must explicitly route to an EOA.
+    function test_revert_redeem_zeroEthRecipient_whenEthPoolHasBalance() public {
         vm.deal(address(redemption), 10 ether);
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
 
         uint256 aliceArm = armToken.balanceOf(alice);
-        vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        uint256 aliceArmBefore = aliceArm;
 
-        // Got USDC but no ETH
+        vm.prank(alice);
+        vm.expectRevert("ArmadaRedemption: zero ETH recipient");
+        redemption.redeem(aliceArm, tokens, address(0));
+
+        // ARM rolled back; ETH still in contract; Alice received nothing.
+        assertEq(armToken.balanceOf(alice), aliceArmBefore);
+        assertEq(usdc.balanceOf(alice), 0);
+        assertEq(alice.balance, 0);
+        assertEq(address(redemption).balance, 10 ether);
+    }
+
+    // WHY: audit-81 — verify the ethRecipient parameter routes ETH to a third
+    // party. The intended use case is a contract caller (smart wallet, multisig)
+    // that cannot receive ETH directly: it routes to an EOA it controls. The
+    // ARM transfer comes from the caller (alice here); the ETH lands at the
+    // independent recipient (bob).
+    function test_redeem_routesEthToThirdPartyRecipient() public {
+        vm.deal(address(redemption), 10 ether);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        uint256 aliceArm = armToken.balanceOf(alice);
+        uint256 bobBalanceBefore = bob.balance;
+
+        vm.prank(alice);
+        redemption.redeem(aliceArm, tokens, bob);
+
+        // Alice gets her USDC share; Bob gets the ETH share Alice was entitled to.
         assertEq(usdc.balanceOf(alice), 250_000e6);
         assertEq(alice.balance, 0);
-        // ETH still in contract
-        assertEq(address(redemption).balance, 10 ether);
+        assertEq(bob.balance, bobBalanceBefore + 5 ether);
     }
 
     function test_redemptionCanReceiveETH() public {
@@ -569,7 +604,7 @@ contract ArmadaRedemptionTest is Test {
         address[] memory tokens = new address[](0);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: wind-down not triggered");
-        freshRedemption.redeem(1000e18, tokens, false);
+        freshRedemption.redeem(1000e18, tokens, address(0));
     }
 
     // ======== setWindDown Guard ========
@@ -634,7 +669,7 @@ contract ArmadaRedemptionTest is Test {
         vm.warp(block.timestamp + 7 days - 1);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: redemption delay not elapsed");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     function test_redeemAtDelayBoundary() public {
@@ -647,7 +682,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.warp(block.timestamp + 7 days);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
         assertEq(usdc.balanceOf(alice), 250_000e6);
     }
 
@@ -662,7 +697,7 @@ contract ArmadaRedemptionTest is Test {
         address[] memory tokens = new address[](0);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: wind-down not set");
-        fresh.redeem(100e18, tokens, true);
+        fresh.redeem(100e18, tokens, alice);
     }
 
     function test_revert_redeemIfTriggerTimeZero() public {
@@ -680,7 +715,7 @@ contract ArmadaRedemptionTest is Test {
         address[] memory tokens = new address[](0);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: wind-down not triggered");
-        fresh.redeem(100e18, tokens, true);
+        fresh.redeem(100e18, tokens, alice);
     }
 
     // ======== anyPayout Guard (issue #254) ========
@@ -708,7 +743,7 @@ contract ArmadaRedemptionTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero share for token");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
 
         // Critical invariant: ARM must stay with Alice after the revert
         assertEq(armToken.balanceOf(alice), aliceArmBefore);
@@ -740,19 +775,21 @@ contract ArmadaRedemptionTest is Test {
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: zero share for token");
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
     }
 
     function test_revert_includeETH_noEth_noTokens() public {
-        // WHY: includeETH=true with no ETH in the contract and an empty tokens list
-        // must revert. Covers the ETH-only variant of the zero-payout footgun.
+        // WHY: ETH recipient passed but no ETH in the contract and empty tokens
+        // list. Under the audit-81 fix, the ETH branch is gated by ethBalance > 0
+        // (so a non-zero recipient is ignored when the pool is empty), and the
+        // empty-input guard fires to prevent a zero-payout ARM lock-in.
         address[] memory tokens = new address[](0);
         uint256 aliceArm = armToken.balanceOf(alice);
         assertEq(address(redemption).balance, 0);
 
         vm.prank(alice);
-        vm.expectRevert("ArmadaRedemption: zero share for ETH");
-        redemption.redeem(aliceArm, tokens, true);
+        vm.expectRevert("ArmadaRedemption: must request at least one asset");
+        redemption.redeem(aliceArm, tokens, alice);
     }
 
     // ======== Constructor Validation ========
@@ -821,7 +858,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
         assertEq(usdc.balanceOf(alice), 100_000e6, "alice gets fair $100k, not over-share");
 
         // bob redeems 600k. circulating now = 3M - 600k(alice) = 2.4M (alice's
@@ -829,7 +866,7 @@ contract ArmadaRedemptionTest is Test {
         // remaining = $400k. Bob's share = (600k * 400k) / 2.4M = $100k.
         uint256 bobArm = armToken.balanceOf(bob);
         vm.prank(bob);
-        redemption.redeem(bobArm, tokens, false);
+        redemption.redeem(bobArm, tokens, address(0));
         assertEq(usdc.balanceOf(bob), 100_000e6, "bob gets fair $100k");
 
         // Treasury still holds $300k for carol's eventual claim. Pre-fix, this
@@ -848,7 +885,7 @@ contract ArmadaRedemptionTest is Test {
 
         // Carol redeems 1.8M against $300k remaining → gets the full $300k.
         vm.prank(carol);
-        redemption.redeem(1_800_000e18, tokens, false);
+        redemption.redeem(1_800_000e18, tokens, address(0));
         assertEq(usdc.balanceOf(carol), 300_000e6, "carol receives her fair $300k");
     }
 
@@ -880,13 +917,13 @@ contract ArmadaRedemptionTest is Test {
 
         uint256 aliceArm = armToken.balanceOf(alice);
         vm.prank(alice);
-        redemption.redeem(aliceArm, tokens, false);
+        redemption.redeem(aliceArm, tokens, address(0));
         // alice fair share: 600k / 2.4M * $500k = $125k
         assertEq(usdc.balanceOf(alice), 125_000e6, "alice gets fair $125k");
 
         uint256 bobArm = armToken.balanceOf(bob);
         vm.prank(bob);
-        redemption.redeem(bobArm, tokens, false);
+        redemption.redeem(bobArm, tokens, address(0));
         // bob: circulating now 2.4M - 600k = 1.8M, USDC = $375k. Share = (600k * 375k) / 1.8M = $125k
         assertEq(usdc.balanceOf(bob), 125_000e6, "bob gets fair $125k");
 
@@ -905,7 +942,7 @@ contract ArmadaRedemptionTest is Test {
         // Carol redeems against the $250k remaining. Circulating is now 1.2M
         // (carol's 1.2M only). Full $250k comes back to her.
         vm.prank(carol);
-        redemption.redeem(1_200_000e18, tokens, false);
+        redemption.redeem(1_200_000e18, tokens, address(0));
         assertEq(usdc.balanceOf(carol), 250_000e6, "carol receives her fair $250k");
     }
 }

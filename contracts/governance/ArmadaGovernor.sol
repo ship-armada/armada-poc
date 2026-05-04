@@ -71,6 +71,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_QuorumBpsOutOfBounds();
     error Gov_SameVote();
     error Gov_SelectorAlreadyExtended();
+    error Gov_SelectorAlreadyStandard();
     error Gov_SelectorNotExtended();
     error Gov_SelfPaymentNotAllowed();
     error Gov_StewardCalldataClassifiedAsExtended();
@@ -579,6 +580,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function addExtendedSelector(bytes4 selector) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
         if (extendedSelectors[selector]) revert Gov_SelectorAlreadyExtended();
+        // Mutual-exclusion guard (audit-96): reject if the selector is already
+        // registered as Standard. Without this, a selector can be true in both
+        // maps; Extended wins at classification time but a later removeExtendedSelector
+        // would silently downgrade to Standard via the latent entry.
+        if (standardSelectors[selector]) revert Gov_SelectorAlreadyStandard();
 
         extendedSelectors[selector] = true;
         emit ExtendedSelectorAdded(selector);
@@ -599,6 +605,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      that should pass at Standard quorum. Without this, new selectors default to Extended.
     function addStandardSelector(bytes4 selector) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        // Mutual-exclusion guards (audit-96): the two classification maps must
+        // stay disjoint. Reject double-add into Standard, and reject if the
+        // selector is already registered as Extended (a latent dual-state would
+        // mask a later removeStandardSelector as a real change while runtime
+        // classification still flows through Extended).
+        if (standardSelectors[selector]) revert Gov_SelectorAlreadyStandard();
+        if (extendedSelectors[selector]) revert Gov_SelectorAlreadyExtended();
         standardSelectors[selector] = true;
         emit StandardSelectorAdded(selector);
     }

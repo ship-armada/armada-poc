@@ -675,8 +675,12 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_proposeStewardSpend_revertsIfCalldataClassifiesAsExtended() public {
-        // Register stewardSpend's selector as extended (simulates future expansion)
+        // Register stewardSpend's selector as extended (simulates future expansion).
+        // First remove the existing Standard registration — audit-96 enforces mutual
+        // exclusion between extendedSelectors and standardSelectors.
         bytes4 stewardSpendSelector = bytes4(keccak256("stewardSpend(address,address,uint256)"));
+        vm.prank(address(timelock));
+        governor.removeStandardSelector(stewardSpendSelector);
         vm.prank(address(timelock));
         governor.addExtendedSelector(stewardSpendSelector);
 

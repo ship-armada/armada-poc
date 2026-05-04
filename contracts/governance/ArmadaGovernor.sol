@@ -635,8 +635,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param proposalId The queued proposal to veto
     /// @param rationaleHash Off-chain rationale hash for verifiability
     function veto(uint256 proposalId, bytes32 rationaleHash) external {
-        if (msg.sender != securityCouncil) revert Gov_NotSecurityCouncil();
-        if (securityCouncil == address(0)) revert Gov_SCEjected();
+        // Cache securityCouncil and timelock — each read twice below (audit-76).
+        address sc = securityCouncil;
+        if (msg.sender != sc) revert Gov_NotSecurityCouncil();
+        if (sc == address(0)) revert Gov_SCEjected();
         if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];
@@ -648,10 +650,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.canceled = true;
 
         // Cancel the timelock operation
-        bytes32 timelockId = timelock.hashOperationBatch(
+        TimelockController tl = timelock;
+        bytes32 timelockId = tl.hashOperationBatch(
             p.targets, p.values, p.calldatas, 0, _proposalSalt(proposalId)
         );
-        timelock.cancel(timelockId);
+        tl.cancel(timelockId);
 
         // Auto-create ratification vote
         uint256 ratId = _createRatificationProposal(proposalId, rationaleHash);
@@ -688,11 +691,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
             // Re-queue in timelock with fresh minimum delay.
             // cancel() cleared _timestamps[id] so scheduleBatch() accepts the same operation ID.
-            timelock.scheduleBatch(
+            // Cache timelock: read twice (audit-76).
+            TimelockController tl = timelock;
+            tl.scheduleBatch(
                 orig.targets, orig.values, orig.calldatas,
                 0, // no predecessor
                 _proposalSalt(vetoedId),
-                timelock.getMinDelay()
+                tl.getMinDelay()
             );
 
             emit ProposalRestored(vetoedId);
@@ -749,10 +754,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         string memory description
     ) external returns (uint256 proposalId) {
         if (windDownActive) revert Gov_GovernanceEnded();
-        if (stewardContract == address(0)) revert Gov_StewardContractNotSet();
+        // Cache stewardContract: read 3 times (zero check, getCurrentSteward call) (audit-76).
+        address sc = stewardContract;
+        if (sc == address(0)) revert Gov_StewardContractNotSet();
         // Combined accessor: one CALL fetches both the elected address and the
         // active flag, avoiding a duplicate currentSteward SLOAD inside isStewardActive.
-        (address steward, bool isActive) = ITreasurySteward(stewardContract).getCurrentSteward();
+        (address steward, bool isActive) = ITreasurySteward(sc).getCurrentSteward();
         if (msg.sender != steward) revert Gov_NotCurrentSteward();
         if (!isActive) revert Gov_StewardNotActive();
 
@@ -765,12 +772,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             if (recipients[i] == msg.sender) revert Gov_SelfPaymentNotAllowed();
         }
 
-        // Governor constructs the calldata — steward only provides structured spend params
+        // Governor constructs the calldata — steward only provides structured spend params.
+        // Cache treasuryAddress: read on every iteration of the per-token loop (audit-76).
+        address treasury_ = treasuryAddress;
         address[] memory targets = new address[](tokens.length);
         uint256[] memory values = new uint256[](tokens.length);
         bytes[] memory calldatas = new bytes[](tokens.length);
         for (uint256 i = 0; i < tokens.length; i++) {
-            targets[i] = treasuryAddress;
+            targets[i] = treasury_;
             calldatas[i] = abi.encodeWithSignature(
                 "stewardSpend(address,address,uint256)",
                 tokens[i], recipients[i], amounts[i]
@@ -822,8 +831,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Voting on already-Active proposals can complete (no on-chain harm: the
     /// resulting Succeeded state simply cannot progress past queue).
     function setWindDownActive() external {
-        if (msg.sender != windDownContract) revert Gov_NotWindDownContract();
-        if (windDownContract == address(0)) revert Gov_WindDownContractNotSet();
+        // Cache windDownContract: read twice (audit-76).
+        address wd = windDownContract;
+        if (msg.sender != wd) revert Gov_NotWindDownContract();
+        if (wd == address(0)) revert Gov_WindDownContractNotSet();
         if (windDownActive) revert Gov_WindDownAlreadyActive();
 
         windDownActive = true;
@@ -905,9 +916,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.id = proposalId;
         p.proposer = msg.sender;
         p.proposalType = proposalType;
-        p.snapshotBlock = block.number - 1;
-        p.voteStart = block.timestamp + params.votingDelay;
-        p.voteEnd = p.voteStart + params.votingPeriod;
+        // Cache snapshot block / vote-start so the storage writes don't re-SLOAD
+        // when computing dependent fields (audit-76).
+        uint256 snapshotBlock_ = block.number - 1;
+        uint256 voteStart_ = block.timestamp + params.votingDelay;
+        p.snapshotBlock = snapshotBlock_;
+        p.voteStart = voteStart_;
+        p.voteEnd = voteStart_ + params.votingPeriod;
         p.executionDelay = params.executionDelay;
         p.description = description;
 
@@ -922,11 +937,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // one block. Treasury and crowdfund balances change only via governance actions,
         // so the practical impact is negligible.
         p.snapshotQuorumBps = params.quorumBps;
-        uint256 totalSupply = armToken.getPastTotalSupply(p.snapshotBlock);
-        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
+        // Cache armToken once: read on every iteration of the excluded-list loop (audit-76).
+        ArmadaToken token = armToken;
+        uint256 totalSupply = token.getPastTotalSupply(snapshotBlock_);
+        uint256 excludedBalance = token.balanceOf(treasuryAddress);
         uint256 excludedLen = _excludedFromQuorum.length;
         for (uint256 i = 0; i < excludedLen; i++) {
-            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+            excludedBalance += token.balanceOf(_excludedFromQuorum[i]);
         }
         // Cap excludedBalance to prevent underflow if tokens moved into excluded
         // addresses between the snapshot block and now.
@@ -980,16 +997,20 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (state(proposalId) != ProposalState.Succeeded) revert Gov_NotSucceeded();
 
         Proposal storage p = _proposals[proposalId];
-        if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
-        if (p.proposalType == ProposalType.Signaling) revert Gov_SignalingNoExecution();
+        // Cache p.proposalType: read 3 times below (audit-76).
+        ProposalType ptype = p.proposalType;
+        if (ptype == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+        if (ptype == ProposalType.Signaling) revert Gov_SignalingNoExecution();
 
         // Steward proposals must not be queueable after steward removal or term expiry.
         // Creation-time checks in proposeStewardSpend() verify steward status at proposal
         // time, but a steward can be removed while their proposal is still in voting.
         // getCurrentSteward returns (address, bool) in one CALL.
-        if (p.proposalType == ProposalType.Steward) {
-            if (stewardContract == address(0)) revert Gov_StewardProposerNoLongerActive();
-            (address steward, bool isActive) = ITreasurySteward(stewardContract).getCurrentSteward();
+        if (ptype == ProposalType.Steward) {
+            // Cache stewardContract: read twice (zero check + getCurrentSteward) (audit-76).
+            address sc = stewardContract;
+            if (sc == address(0)) revert Gov_StewardProposerNoLongerActive();
+            (address steward, bool isActive) = ITreasurySteward(sc).getCurrentSteward();
             if (p.proposer != steward || !isActive) revert Gov_StewardProposerNoLongerActive();
         }
 
@@ -1000,14 +1021,23 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         p.queued = true;
 
-        bytes32 timelockId = timelock.hashOperationBatch(
-            p.targets, p.values, p.calldatas, 0, _proposalSalt(proposalId)
-        );
+        // Copy storage arrays into memory once: passed to two cross-contract calls
+        // below (hashOperationBatch + scheduleBatch). Without the copy each call
+        // ABI-encodes from storage independently — duplicate per-element SLOADs.
+        // Net win for any non-trivial batch (audit-76).
+        address[] memory tgts = p.targets;
+        uint256[] memory vals = p.values;
+        bytes[] memory cdatas = p.calldatas;
+        // Cache timelock: read twice (audit-76).
+        TimelockController tl = timelock;
+        bytes32 salt = _proposalSalt(proposalId);
 
-        timelock.scheduleBatch(
-            p.targets, p.values, p.calldatas,
+        bytes32 timelockId = tl.hashOperationBatch(tgts, vals, cdatas, 0, salt);
+
+        tl.scheduleBatch(
+            tgts, vals, cdatas,
             0, // no predecessor
-            _proposalSalt(proposalId),
+            salt,
             p.executionDelay
         );
 
@@ -1022,15 +1052,19 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];
-        if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
-        if (p.proposalType == ProposalType.Signaling) revert Gov_SignalingNoExecution();
+        // Cache p.proposalType: read 3 times below (audit-76).
+        ProposalType ptype = p.proposalType;
+        if (ptype == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+        if (ptype == ProposalType.Signaling) revert Gov_SignalingNoExecution();
 
         // Mirror the queue()-time steward check: a steward removed or expired during the
         // execution delay must not have their proposal execute. Without this, the SC veto
         // would be the only backstop for the term-expiry edge case.
-        if (p.proposalType == ProposalType.Steward) {
-            if (stewardContract == address(0)) revert Gov_StewardProposerNoLongerActive();
-            (address steward, bool isActive) = ITreasurySteward(stewardContract).getCurrentSteward();
+        if (ptype == ProposalType.Steward) {
+            // Cache stewardContract: read twice (audit-76).
+            address sc = stewardContract;
+            if (sc == address(0)) revert Gov_StewardProposerNoLongerActive();
+            (address steward, bool isActive) = ITreasurySteward(sc).getCurrentSteward();
             if (p.proposer != steward || !isActive) revert Gov_StewardProposerNoLongerActive();
         }
 
@@ -1075,10 +1109,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (p.canceled) return ProposalState.Canceled;
         if (p.executed) return ProposalState.Executed;
         if (block.timestamp < p.voteStart) return ProposalState.Pending;
-        if (block.timestamp <= p.voteEnd) return ProposalState.Active;
+        // Cache p.voteEnd and p.proposalType — each read twice on different paths (audit-76).
+        uint256 voteEnd_ = p.voteEnd;
+        if (block.timestamp <= voteEnd_) return ProposalState.Active;
+        ProposalType ptype = p.proposalType;
 
         // After voting ends: check quorum and majority
-        if (p.proposalType == ProposalType.Steward) {
+        if (ptype == ProposalType.Steward) {
             // Pass-by-default: defeated ONLY if quorum met AND strict majority votes against
             if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
                 return ProposalState.Defeated;
@@ -1091,12 +1128,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         // Signaling proposals are terminal at outcome — no queue/execute phase.
         // Succeeded is permanent (no grace period expiry).
-        if (p.proposalType == ProposalType.Signaling) return ProposalState.Succeeded;
+        if (ptype == ProposalType.Signaling) return ProposalState.Succeeded;
 
         if (p.queued) return ProposalState.Queued;
 
         // Succeeded proposals expire if not queued within the grace period
-        if (block.timestamp > p.voteEnd + QUEUE_GRACE_PERIOD) {
+        if (block.timestamp > voteEnd_ + QUEUE_GRACE_PERIOD) {
             return ProposalState.Defeated;
         }
 
@@ -1356,8 +1393,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256[] memory stewardSums = new uint256[](calldatas.length);
         uint256 stewardTokenCount;
 
+        // Cache treasuryAddress once: read on every iteration of all three loops below (audit-76).
+        address treasury_ = treasuryAddress;
+
         for (uint256 i = 0; i < calldatas.length; i++) {
-            if (targets[i] != treasuryAddress) continue;
+            if (targets[i] != treasury_) continue;
             if (calldatas[i].length < 4) continue;
             bytes4 selector = bytes4(calldatas[i]);
             if (selector != DISTRIBUTE_SELECTOR &&
@@ -1402,12 +1442,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         }
 
         for (uint256 k = 0; k < outflowTokenCount; k++) {
-            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasuryAddress).getOutflowStatus(outflowTokens[k]);
+            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasury_).getOutflowStatus(outflowTokens[k]);
             if (outflowSums[k] > effectiveLimit) revert Gov_OutflowInfeasible();
         }
 
         for (uint256 k = 0; k < stewardTokenCount; k++) {
-            (uint256 budget,,) = IArmadaTreasuryOutflow(treasuryAddress).getStewardBudget(stewardTokens[k]);
+            (uint256 budget,,) = IArmadaTreasuryOutflow(treasury_).getStewardBudget(stewardTokens[k]);
             if (stewardSums[k] > budget) revert Gov_StewardBudgetInfeasible();
         }
     }
@@ -1418,8 +1458,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      Malformed calldata (< 4B selector, or < 36B = selector + uint256) is skipped;
     ///      it would revert later at the timelock anyway and is not a minDelay escalation.
     function _validateTimelockCalldata(address[] memory targets, bytes[] memory calldatas) internal view {
+        // Hoist timelock address out of the loop (audit-76).
+        address tl = address(timelock);
         for (uint256 i = 0; i < targets.length; i++) {
-            if (targets[i] != address(timelock)) continue;
+            if (targets[i] != tl) continue;
             if (calldatas[i].length < 36) continue;
             if (bytes4(calldatas[i]) != UPDATE_DELAY_SELECTOR) continue;
 
@@ -1439,9 +1481,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      Reads finalizedAt from the crowdfund contract. Skips gracefully if no
     ///      crowdfund is registered or crowdfund isn't finalized.
     function _checkQuietPeriod() internal view {
-        if (crowdfundAddress == address(0)) return;
+        // Cache crowdfundAddress: read twice (audit-76).
+        address cf = crowdfundAddress;
+        if (cf == address(0)) return;
 
-        uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
+        uint256 _finalizedAt = IArmadaCrowdfundReadable(cf).finalizedAt();
         if (_finalizedAt == 0) return;
 
         if (block.timestamp < _finalizedAt + QUIET_PERIOD_DURATION) revert Gov_QuietPeriodActive();

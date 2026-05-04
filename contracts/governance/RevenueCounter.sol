@@ -83,9 +83,11 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     ///      setFeeCollector recovery path via 0.8.x subtraction underflow.
     function syncStablecoinRevenue() external {
         require(!frozen, "RevenueCounter: frozen");
-        require(feeCollector != address(0), "RevenueCounter: no fee collector");
+        // Cache feeCollector: read twice (audit-76).
+        address fc = feeCollector;
+        require(fc != address(0), "RevenueCounter: no fee collector");
 
-        uint256 currentCumulative = IFeeCollector(feeCollector).cumulativeFeesCollected();
+        uint256 currentCumulative = IFeeCollector(fc).cumulativeFeesCollected();
         if (currentCumulative == lastSyncedCumulative) return; // no new fees (common path)
 
         if (currentCumulative < lastSyncedCumulative) {
@@ -97,10 +99,12 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         uint256 delta = currentCumulative - lastSyncedCumulative;
         lastSyncedCumulative = currentCumulative;
 
+        // Compute new revenue into a local first to avoid SLOAD in the emit (audit-76).
         uint256 previousRevenue = recognizedRevenueUsd;
-        recognizedRevenueUsd += delta * USDC_TO_USD_SCALE;
+        uint256 newRevenue = previousRevenue + delta * USDC_TO_USD_SCALE;
+        recognizedRevenueUsd = newRevenue;
 
-        emit RevenueUpdated(recognizedRevenueUsd, previousRevenue);
+        emit RevenueUpdated(newRevenue, previousRevenue);
     }
 
     // ============ Governance Functions ============
@@ -140,14 +144,15 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     /// @param newCumulativeUsd New cumulative revenue in 18-decimal USD.
     function attestRevenue(uint256 newCumulativeUsd) external onlyOwner {
         require(!frozen, "RevenueCounter: frozen");
-        require(newCumulativeUsd >= recognizedRevenueUsd, "RevenueCounter: not monotonic");
-
-        if (newCumulativeUsd == recognizedRevenueUsd) return; // no-op
-
+        // Cache recognizedRevenueUsd: read 4 times across require/no-op/emit (audit-76).
         uint256 previousRevenue = recognizedRevenueUsd;
+        require(newCumulativeUsd >= previousRevenue, "RevenueCounter: not monotonic");
+
+        if (newCumulativeUsd == previousRevenue) return; // no-op
+
         recognizedRevenueUsd = newCumulativeUsd;
 
-        emit RevenueUpdated(recognizedRevenueUsd, previousRevenue);
+        emit RevenueUpdated(newCumulativeUsd, previousRevenue);
     }
 
     /// @notice Set the fee collector address. Governance-only (timelock).
@@ -162,17 +167,20 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         // path). recognizedRevenueUsd is monotonic by spec — never decreased.
         // lastSyncedCumulative is reset to the new collector's value below
         // regardless, so we don't update it here.
-        if (feeCollector != address(0)) {
-            uint256 currentCumulative = IFeeCollector(feeCollector).cumulativeFeesCollected();
+        // Cache feeCollector: read 3 times across this function (audit-76).
+        address oldCollector = feeCollector;
+        if (oldCollector != address(0)) {
+            uint256 currentCumulative = IFeeCollector(oldCollector).cumulativeFeesCollected();
             if (currentCumulative > lastSyncedCumulative) {
                 uint256 delta = currentCumulative - lastSyncedCumulative;
                 uint256 previousRevenue = recognizedRevenueUsd;
-                recognizedRevenueUsd += delta * USDC_TO_USD_SCALE;
-                emit RevenueUpdated(recognizedRevenueUsd, previousRevenue);
+                uint256 newRevenue = previousRevenue + delta * USDC_TO_USD_SCALE;
+                recognizedRevenueUsd = newRevenue;
+                emit RevenueUpdated(newRevenue, previousRevenue);
             }
         }
 
-        emit FeeCollectorUpdated(feeCollector, _feeCollector);
+        emit FeeCollectorUpdated(oldCollector, _feeCollector);
         feeCollector = _feeCollector;
         if (_feeCollector != address(0)) {
             lastSyncedCumulative = IFeeCollector(_feeCollector).cumulativeFeesCollected();

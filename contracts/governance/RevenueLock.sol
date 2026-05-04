@@ -202,12 +202,14 @@ contract RevenueLock {
         uint256 amount = entitled - alreadyReleased;
         require(amount > 0, "RevenueLock: nothing to release");
 
-        released[msg.sender] = alreadyReleased + amount;
+        // Compute new released into a local first to avoid SLOAD in the emit (audit-76).
+        uint256 newReleased = alreadyReleased + amount;
+        released[msg.sender] = newReleased;
 
         // Combined transfer + delegateOnBehalf — atomic by construction, one CALL.
         armToken.transferAndDelegate(msg.sender, amount, delegatee);
 
-        emit Released(msg.sender, amount, delegatee, released[msg.sender]);
+        emit Released(msg.sender, amount, delegatee, newReleased);
     }
 
     /// @notice Permissionless: advance the observed-revenue ratchet without claiming.
@@ -261,11 +263,13 @@ contract RevenueLock {
     /// @dev Mirrors `_updateMaxObservedRevenue()` exactly. Monitoring bots should use
     ///      this instead of re-implementing the cap math off-chain.
     function getCappedObservedRevenue() public view returns (uint256) {
+        // Cache maxObservedRevenue: read twice (audit-76).
+        uint256 maxObs = maxObservedRevenue;
         uint256 reported = revenueCounter.recognizedRevenueUsd();
         uint256 elapsed = block.timestamp - lastSyncTimestamp;
         uint256 maxAllowedIncrease = (elapsed * MAX_REVENUE_INCREASE_PER_DAY) / 1 days;
-        uint256 capped = _min(reported, maxObservedRevenue + maxAllowedIncrease);
-        return capped > maxObservedRevenue ? capped : maxObservedRevenue;
+        uint256 capped = _min(reported, maxObs + maxAllowedIncrease);
+        return capped > maxObs ? capped : maxObs;
     }
 
     /// @notice Number of beneficiaries in the list.
@@ -336,14 +340,16 @@ contract RevenueLock {
 
         uint256 reported = revenueCounter.recognizedRevenueUsd();
 
+        // Cache maxObservedRevenue: read 3 times below (audit-76).
+        uint256 maxObs = maxObservedRevenue;
         uint256 elapsed = block.timestamp - lastSyncTimestamp;
         uint256 maxAllowedIncrease = (elapsed * MAX_REVENUE_INCREASE_PER_DAY) / 1 days;
-        uint256 capped = _min(reported, maxObservedRevenue + maxAllowedIncrease);
+        uint256 capped = _min(reported, maxObs + maxAllowedIncrease);
 
-        if (capped > maxObservedRevenue) {
+        if (capped > maxObs) {
             // Emit before SSTORE so the optimizer doesn't hold the prior value in
             // a stack slot across the write — see audit-91.
-            emit ObservedRevenueUpdated(maxObservedRevenue, capped, reported);
+            emit ObservedRevenueUpdated(maxObs, capped, reported);
             maxObservedRevenue = capped;
         }
 

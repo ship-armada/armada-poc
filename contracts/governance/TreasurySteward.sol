@@ -47,8 +47,9 @@ contract TreasurySteward {
     function electSteward(address _steward) external onlyTimelock {
         require(_steward != address(0), "TreasurySteward: zero address");
         currentSteward = _steward;
+        // Use block.timestamp directly in the emit instead of re-SLOADing termStart (audit-76).
         termStart = block.timestamp;
-        emit StewardElected(_steward, termStart, termStart + TERM_DURATION);
+        emit StewardElected(_steward, block.timestamp, block.timestamp + TERM_DURATION);
     }
 
     /// @notice Remove the current steward (called by timelock after governance proposal)

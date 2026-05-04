@@ -153,8 +153,10 @@ contract ArmadaRedemption is ReentrancyGuard {
 
         // Enforce the post-trigger redemption delay. Provides a social-coordination window
         // for sweepToken/sweepETH to run before any redemption can execute. See issue #254.
-        require(windDown != address(0), "ArmadaRedemption: wind-down not set");
-        uint256 triggeredAt = IArmadaWindDownRedemption(windDown).triggerTime();
+        // Cache windDown: read twice (audit-76).
+        address wd = windDown;
+        require(wd != address(0), "ArmadaRedemption: wind-down not set");
+        uint256 triggeredAt = IArmadaWindDownRedemption(wd).triggerTime();
         require(triggeredAt > 0, "ArmadaRedemption: wind-down not triggered");
         require(
             block.timestamp >= triggeredAt + REDEMPTION_DELAY,

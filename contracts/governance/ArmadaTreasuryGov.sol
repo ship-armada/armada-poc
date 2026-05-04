@@ -184,10 +184,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         StewardBudget storage budget = stewardBudgets[token];
         require(budget.authorized, "ArmadaTreasuryGov: token not authorized for steward");
 
+        // Cache budget.limit: read again in the require check below (audit-76).
+        uint256 budgetLimit = budget.limit;
         // Rolling window: sum all steward spends within the trailing window
         uint256 recentSpend = _sumRecentRecords(_stewardSpendHistory[token], budget.window);
         require(
-            recentSpend + amount <= budget.limit,
+            recentSpend + amount <= budgetLimit,
             "ArmadaTreasuryGov: exceeds steward budget"
         );
 
@@ -404,8 +406,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
         // Emits fire before SSTOREs so the optimizer doesn't hold the prior
         // active value in a stack slot across the write — see audit-91.
-        if (config.pendingLimitAbsoluteActivation > 0 &&
-            block.timestamp >= config.pendingLimitAbsoluteActivation) {
+        // Activation slots are cached to avoid the (>0 && >= activation) double SLOAD pattern (audit-76).
+        uint256 absActivation = config.pendingLimitAbsoluteActivation;
+        if (absActivation > 0 && block.timestamp >= absActivation) {
             uint256 newActive = config.pendingLimitAbsolute;
             emit OutflowLimitAbsoluteActivated(token, config.limitAbsolute, newActive);
             config.limitAbsolute = newActive;
@@ -413,8 +416,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
             config.pendingLimitAbsoluteActivation = 0;
         }
 
-        if (config.pendingLimitBpsActivation > 0 &&
-            block.timestamp >= config.pendingLimitBpsActivation) {
+        uint256 bpsActivation = config.pendingLimitBpsActivation;
+        if (bpsActivation > 0 && block.timestamp >= bpsActivation) {
             uint256 newActive = config.pendingLimitBps;
             emit OutflowLimitBpsActivated(token, config.limitBps, newActive);
             config.limitBps = newActive;
@@ -422,8 +425,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
             config.pendingLimitBpsActivation = 0;
         }
 
-        if (config.pendingWindowDurationActivation > 0 &&
-            block.timestamp >= config.pendingWindowDurationActivation) {
+        uint256 winActivation = config.pendingWindowDurationActivation;
+        if (winActivation > 0 && block.timestamp >= winActivation) {
             uint256 newActive = config.pendingWindowDuration;
             emit OutflowWindowDurationActivated(token, config.windowDuration, newActive);
             config.windowDuration = newActive;
@@ -498,9 +501,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     /// @dev Calculate effective outflow limit: max(pct of balance, absolute), then max(result, floor).
     function _effectiveLimit(OutflowConfig storage config, uint256 treasuryBalance) internal view returns (uint256) {
+        // Cache slots read twice each in the ternaries (audit-76).
+        uint256 absLimit = config.limitAbsolute;
+        uint256 floor = config.floorAbsolute;
         uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
-        uint256 limit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
-        return limit > config.floorAbsolute ? limit : config.floorAbsolute;
+        uint256 limit = pctLimit > absLimit ? pctLimit : absLimit;
+        return limit > floor ? limit : floor;
     }
 
     // ============ Wind-Down Sweep Authority ============
@@ -647,16 +653,17 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         uint256 effLimitBps,
         uint256 effLimitAbsolute
     ) {
-        effLimitAbsolute = (config.pendingLimitAbsoluteActivation > 0 &&
-            block.timestamp >= config.pendingLimitAbsoluteActivation)
+        // Cache each activation slot — read twice in the (>0 && >=) pattern (audit-76).
+        uint256 absActivation = config.pendingLimitAbsoluteActivation;
+        effLimitAbsolute = (absActivation > 0 && block.timestamp >= absActivation)
             ? config.pendingLimitAbsolute : config.limitAbsolute;
 
-        effLimitBps = (config.pendingLimitBpsActivation > 0 &&
-            block.timestamp >= config.pendingLimitBpsActivation)
+        uint256 bpsActivation = config.pendingLimitBpsActivation;
+        effLimitBps = (bpsActivation > 0 && block.timestamp >= bpsActivation)
             ? config.pendingLimitBps : config.limitBps;
 
-        effWindowDuration = (config.pendingWindowDurationActivation > 0 &&
-            block.timestamp >= config.pendingWindowDurationActivation)
+        uint256 winActivation = config.pendingWindowDurationActivation;
+        effWindowDuration = (winActivation > 0 && block.timestamp >= winActivation)
             ? config.pendingWindowDuration : config.windowDuration;
     }
 }

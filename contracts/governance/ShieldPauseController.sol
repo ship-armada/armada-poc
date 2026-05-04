@@ -118,8 +118,10 @@ contract ShieldPauseController is IShieldPauseController {
         }
 
         _paused = true;
-        pauseExpiry = block.timestamp + MAX_PAUSE_DURATION;
-        emit ShieldsPaused(msg.sender, pauseExpiry);
+        // Compute expiry into a local first to avoid SLOAD in the emit (audit-76).
+        uint256 expiry = block.timestamp + MAX_PAUSE_DURATION;
+        pauseExpiry = expiry;
+        emit ShieldsPaused(msg.sender, expiry);
     }
 
     // ============ Governance Functions ============

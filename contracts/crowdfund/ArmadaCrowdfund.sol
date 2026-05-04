@@ -662,12 +662,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @notice Compute aggregate allocation across all hops (only after finalization).
     ///         Purely derived from hop-level data — no stored per-address state.
+    ///         In refundMode the deterministic answer is (0 ARM, sum of committed USDC).
     function computeAllocation(address addr) public view returns (
         uint256 armAmount,
         uint256 refundUsdc
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
+        bool refundModeCache = refundMode;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             Participant storage p = participants[addr][h];
@@ -675,6 +676,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             uint256 committed = p.committed;
             if (committed == 0) continue;
 
+            if (refundModeCache) {
+                refundUsdc += committed;
+                continue;
+            }
             (uint256 allocArm, , uint256 hopRefund) = _computeAllocation(committed, h, _effectiveCap(p, h));
             armAmount += allocArm;
             refundUsdc += hopRefund;
@@ -682,14 +687,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @notice Compute allocation at a specific hop (only after finalization).
+    ///         In refundMode the deterministic answer is (0 ARM, p.committed).
     function computeAllocationAtHop(address addr, uint8 hop) external view returns (
         uint256 armAmount,
         uint256 refundUsdc
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         Participant storage p = participants[addr][hop];
 
+        if (refundMode) {
+            return (0, p.committed);
+        }
         (armAmount, , refundUsdc) = _computeAllocation(p.committed, hop, _effectiveCap(p, hop));
     }
 

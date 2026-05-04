@@ -1139,6 +1139,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
                 return ProposalState.Defeated;
             }
+        } else if (ptype == ProposalType.VetoRatification) {
+            // Pass-by-default like Steward (audit-82). Returns directly because
+            // VetoRatification has no queue/execute phase — resolution flows through
+            // resolveRatification, which sets p.executed and is caught by the earlier
+            // Executed branch. The QUEUE_GRACE_PERIOD expiry below must not apply here.
+            if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
+                return ProposalState.Defeated;
+            }
+            return ProposalState.Succeeded;
         } else {
             if (!_quorumReached(proposalId) || !_voteSucceeded(proposalId)) {
                 return ProposalState.Defeated;

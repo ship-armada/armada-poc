@@ -721,7 +721,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // on-chain via ratificationOf() mapping and ProposalVetoed event.
         string memory desc = "Veto ratification";
 
-        _initProposal(ratId, ProposalType.VetoRatification, desc);
+        // _initProposal returns voteStart/voteEnd so the emit below doesn't SLOAD them (audit-75).
+        (uint256 voteStart_, uint256 voteEnd_) = _initProposal(ratId, ProposalType.VetoRatification, desc);
 
         // Ratification has no execution calldata — consequences handled by resolveRatification()
         // (targets, values, calldatas arrays remain empty/default)
@@ -730,10 +731,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         ratificationOf[ratId] = vetoedProposalId;
         vetoRatificationId[vetoedProposalId] = ratId;
 
-        Proposal storage p = _proposals[ratId];
         emit ProposalCreated(
             ratId, msg.sender, ProposalType.VetoRatification,
-            p.voteStart, p.voteEnd, desc
+            voteStart_, voteEnd_, desc
         );
     }
 
@@ -793,6 +793,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (_classifyProposal(ProposalType.Standard, targets, calldatas) == ProposalType.Extended) revert Gov_StewardCalldataClassifiedAsExtended();
 
         proposalId = ++proposalCount;
+        // NOTE: would prefer to consume _initProposal's tuple return per audit-75,
+        // but propose() and proposeStewardSpend() both push stack-too-deep when
+        // capturing voteStart_/voteEnd_ locals (Foundry compiles without viaIR).
+        // _createRatificationProposal has shorter stack and DOES consume the tuple.
         _initProposal(proposalId, ProposalType.Steward, description);
 
         Proposal storage p = _proposals[proposalId];
@@ -886,6 +890,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             : _classifyProposal(proposalType, targets, calldatas);
 
         proposalId = ++proposalCount;
+        // NOTE: would prefer to consume _initProposal's tuple return per audit-75,
+        // but capturing voteStart_/voteEnd_ locals here pushes propose() over the
+        // stack-too-deep limit when compiled without viaIR (Foundry's config). The
+        // other two _initProposal callers (_createRatificationProposal,
+        // proposeStewardSpend) have shorter local lists and DO consume the tuple.
         _initProposal(proposalId, effectiveType, description);
 
         Proposal storage p = _proposals[proposalId];
@@ -905,24 +914,26 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (proposerVotes < PROPOSAL_THRESHOLD) revert Gov_BelowProposalThreshold();
     }
 
-    /// @dev Initialize proposal scalar fields
+    /// @dev Initialize proposal scalar fields. Returns (voteStart, voteEnd) so the
+    ///      caller's ProposalCreated emit doesn't re-SLOAD them (audit-75).
     function _initProposal(
         uint256 proposalId,
         ProposalType proposalType,
         string memory description
-    ) internal {
+    ) internal returns (uint256 voteStart_, uint256 voteEnd_) {
         ProposalParams storage params = proposalTypeParams[proposalType];
         Proposal storage p = _proposals[proposalId];
         p.id = proposalId;
         p.proposer = msg.sender;
         p.proposalType = proposalType;
-        // Cache snapshot block / vote-start so the storage writes don't re-SLOAD
-        // when computing dependent fields (audit-76).
+        // Compute vote-start once (also avoids the storage write→read pattern
+        // for dependent vote-end calculation, audit-76).
         uint256 snapshotBlock_ = block.number - 1;
-        uint256 voteStart_ = block.timestamp + params.votingDelay;
+        voteStart_ = block.timestamp + params.votingDelay;
+        voteEnd_ = voteStart_ + params.votingPeriod;
         p.snapshotBlock = snapshotBlock_;
         p.voteStart = voteStart_;
-        p.voteEnd = voteStart_ + params.votingPeriod;
+        p.voteEnd = voteEnd_;
         p.executionDelay = params.executionDelay;
         p.description = description;
 

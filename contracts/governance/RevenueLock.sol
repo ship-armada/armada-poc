@@ -194,9 +194,11 @@ contract RevenueLock {
         require(alloc > 0, "RevenueLock: not a beneficiary");
 
         // Advance the ratchet first so entitlement math uses the current capped value.
-        _updateMaxObservedRevenue();
+        // _updateMaxObservedRevenue returns the effective post-update value to avoid
+        // re-SLOADing maxObservedRevenue right after it was just written (audit-75).
+        uint256 effectiveMax = _updateMaxObservedRevenue();
 
-        uint256 unlockBps = _unlockBpsForRevenue(maxObservedRevenue);
+        uint256 unlockBps = _unlockBpsForRevenue(effectiveMax);
         uint256 entitled = (alloc * unlockBps) / BPS_100;
         uint256 alreadyReleased = released[msg.sender];
         uint256 amount = entitled - alreadyReleased;
@@ -331,26 +333,32 @@ contract RevenueLock {
     ///      elapsed-time allowance on every sync — without it, daily syncs during
     ///      flat-revenue periods would fail to bound the cumulative budget and the
     ///      rate cap would become meaningless over time.
-    function _updateMaxObservedRevenue() internal {
+    /// @return effectiveMax The post-update maxObservedRevenue. Equals the prior
+    ///         value when no advance occurs (no-op or frozen). Returned so callers
+    ///         like release() don't have to SLOAD maxObservedRevenue right back (audit-75).
+    function _updateMaxObservedRevenue() internal returns (uint256 effectiveMax) {
+        // Cache maxObservedRevenue: read 3 times below (audit-76) and returned
+        // as the effective post-update value (audit-75).
+        effectiveMax = maxObservedRevenue;
+
         // Post-freeze: ratchet is permanently fixed. release() must still work for
         // beneficiaries holding entitled-unreleased ARM, so we silently no-op here
         // rather than revert. lastSyncTimestamp is also frozen — there is no
         // budget to consume once the ratchet is locked.
-        if (frozenAtWindDown) return;
+        if (frozenAtWindDown) return effectiveMax;
 
         uint256 reported = revenueCounter.recognizedRevenueUsd();
 
-        // Cache maxObservedRevenue: read 3 times below (audit-76).
-        uint256 maxObs = maxObservedRevenue;
         uint256 elapsed = block.timestamp - lastSyncTimestamp;
         uint256 maxAllowedIncrease = (elapsed * MAX_REVENUE_INCREASE_PER_DAY) / 1 days;
-        uint256 capped = _min(reported, maxObs + maxAllowedIncrease);
+        uint256 capped = _min(reported, effectiveMax + maxAllowedIncrease);
 
-        if (capped > maxObs) {
+        if (capped > effectiveMax) {
             // Emit before SSTORE so the optimizer doesn't hold the prior value in
             // a stack slot across the write — see audit-91.
-            emit ObservedRevenueUpdated(maxObs, capped, reported);
+            emit ObservedRevenueUpdated(effectiveMax, capped, reported);
             maxObservedRevenue = capped;
+            effectiveMax = capped;
         }
 
         lastSyncTimestamp = block.timestamp;

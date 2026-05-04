@@ -401,10 +401,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Compute capped demand by iterating all participant nodes. Over-cap
         // deposits are accepted during commit() but only capped amounts count
         // toward minimum raise, expansion trigger, and hop-level allocation.
-        // _computeCappedDemand writes cappedDemand storage; cache locally to avoid
-        // re-SLOADing it three times below (audit-76).
-        _computeCappedDemand();
-        uint256 capped = cappedDemand;
+        // _computeCappedDemand returns the values it just wrote so we don't
+        // SLOAD cappedDemand or hopStats[*].cappedCommitted right back (audit-75).
+        (uint256 capped, uint256[3] memory perHopCapped) = _computeCappedDemand();
 
         // If capped demand is below minimum raise, enter refund mode immediately.
         // No allocations to compute — all participants get full USDC refunds.
@@ -431,7 +430,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         // _computeHopAllocations sets finalCeilings/finalDemands needed by _computeAllocation
         // and returns the hop-level USDC estimate for the refundMode pre-check below.
-        uint256 totalAllocUsdc_ = _computeHopAllocations(saleSize_);
+        // perHopCapped is passed in to avoid re-SLOADing hopStats[h].cappedCommitted (audit-75).
+        uint256 totalAllocUsdc_ = _computeHopAllocations(saleSize_, perHopCapped);
 
         // Post-allocation minimum raise check: if net proceeds (allocated USDC) fall
         // below MIN_SALE, enter refundMode. Participants get full USDC refunds via
@@ -786,8 +786,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @dev Compute hop-level allocations and store results in finalCeilings/finalDemands.
-    ///      Extracted from finalize() to avoid stack-too-deep.
-    function _computeHopAllocations(uint256 saleSize_) internal returns (uint256 totalAllocUsdc_) {
+    ///      Extracted from finalize() to avoid stack-too-deep. Takes the per-hop
+    ///      capped totals as a parameter so it doesn't have to re-SLOAD
+    ///      hopStats[h].cappedCommitted that _computeCappedDemand just wrote (audit-75).
+    function _computeHopAllocations(uint256 saleSize_, uint256[3] memory perHopCapped) internal returns (uint256 totalAllocUsdc_) {
         uint256 hop2Floor = (saleSize_ * HOP2_FLOOR_BPS) / 10000;
         uint256 available = saleSize_ - hop2Floor;
 
@@ -797,7 +799,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         // --- Hop-0: allocate from available pool ---
         // Uses cappedCommitted (set by _computeCappedDemand) — over-cap deposits excluded
-        uint256 demand = hopStats[0].cappedCommitted;
+        uint256 demand = perHopCapped[0];
         uint256 alloc = demand <= hop0Ceiling ? demand : hop0Ceiling;
         uint256 leftover = hop0Ceiling - alloc;
         uint256 remainingAvailable = available - alloc;
@@ -807,7 +809,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         totalAllocUsdc_ = alloc;
 
         // --- Hop-1: allocate from remaining available, ceiling boosted by hop-0 leftover ---
-        demand = hopStats[1].cappedCommitted;
+        demand = perHopCapped[1];
         uint256 hop1EffCeiling = hop1Ceiling + leftover;
         if (hop1EffCeiling > remainingAvailable) {
             hop1EffCeiling = remainingAvailable;
@@ -820,7 +822,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         totalAllocUsdc_ += alloc;
 
         // --- Hop-2: allocate from floor + hop-1 leftover (no BPS ceiling) ---
-        demand = hopStats[2].cappedCommitted;
+        demand = perHopCapped[2];
         uint256 hop2EffCeiling = hop2Floor + leftover;
         alloc = demand <= hop2EffCeiling ? demand : hop2EffCeiling;
 
@@ -886,9 +888,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @dev Compute capped demand and write results to hopStats and cappedDemand.
-    ///      Matches spec finalization pseudocode step 1-2.
-    function _computeCappedDemand() internal {
-        (uint256 globalCapped, uint256[3] memory perHopCapped) = _iterateCappedDemand();
+    ///      Matches spec finalization pseudocode step 1-2. Also returns the
+    ///      computed values so callers don't have to SLOAD them right back
+    ///      (audit-75); state writes preserved for external readers.
+    function _computeCappedDemand() internal returns (uint256 globalCapped, uint256[3] memory perHopCapped) {
+        (globalCapped, perHopCapped) = _iterateCappedDemand();
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             hopStats[h].cappedCommitted = perHopCapped[h];
         }

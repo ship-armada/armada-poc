@@ -312,9 +312,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(newWindow >= 1 days, "ArmadaTreasuryGov: window too short");
         require(newWindow <= MAX_OUTFLOW_WINDOW, "ArmadaTreasuryGov: window too long");
 
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values; we only need windowDuration here (audit-75).
+        (uint256 activeWindow, , ) = _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 activeWindow = config.windowDuration;
 
         if (newWindow < activeWindow) {
             // Loosening: shorter lookback would drop records and free budget faster — delay.
@@ -341,9 +341,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(newBps > 0, "ArmadaTreasuryGov: zero bps");
         require(newBps <= 10000, "ArmadaTreasuryGov: bps out of range");
 
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values; we only need limitBps here (audit-75).
+        ( , uint256 activeBps, ) = _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 activeBps = config.limitBps;
 
         if (newBps > activeBps) {
             uint256 activatesAt = block.timestamp + LIMIT_ACTIVATION_DELAY;
@@ -367,9 +367,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
         require(newAbsolute >= _outflowConfigs[token].floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
 
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values; we only need limitAbsolute here (audit-75).
+        ( , , uint256 activeAbsolute) = _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 activeAbsolute = config.limitAbsolute;
 
         if (newAbsolute > activeAbsolute) {
             uint256 activatesAt = block.timestamp + LIMIT_ACTIVATION_DELAY;
@@ -401,7 +401,18 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ///      parameter for enforcement (currently: _checkAndRecordOutflow and the three
     ///      setOutflow* setters). Missing this call in a future code path would silently
     ///      enforce stale values — the single most important correctness check.
-    function _lazyActivate(address token) internal {
+    /// @return windowDuration_ Post-activation rolling-window duration.
+    /// @return limitBps_ Post-activation percentage limit.
+    /// @return limitAbsolute_ Post-activation absolute limit.
+    /// @dev Returns the effective values so callers don't have to SLOAD them
+    ///      right after activation (audit-75). For the no-op path (most common
+    ///      in steady state) this trades 3 SLOADs here for 1 SLOAD avoided in
+    ///      each caller; net savings depend on call mix.
+    function _lazyActivate(address token) internal returns (
+        uint256 windowDuration_,
+        uint256 limitBps_,
+        uint256 limitAbsolute_
+    ) {
         OutflowConfig storage config = _outflowConfigs[token];
 
         // Emits fire before SSTOREs so the optimizer doesn't hold the prior
@@ -414,6 +425,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
             config.limitAbsolute = newActive;
             config.pendingLimitAbsolute = 0;
             config.pendingLimitAbsoluteActivation = 0;
+            limitAbsolute_ = newActive;
+        } else {
+            limitAbsolute_ = config.limitAbsolute;
         }
 
         uint256 bpsActivation = config.pendingLimitBpsActivation;
@@ -423,6 +437,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
             config.limitBps = newActive;
             config.pendingLimitBps = 0;
             config.pendingLimitBpsActivation = 0;
+            limitBps_ = newActive;
+        } else {
+            limitBps_ = config.limitBps;
         }
 
         uint256 winActivation = config.pendingWindowDurationActivation;
@@ -432,6 +449,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
             config.windowDuration = newActive;
             config.pendingWindowDuration = 0;
             config.pendingWindowDurationActivation = 0;
+            windowDuration_ = newActive;
+        } else {
+            windowDuration_ = config.windowDuration;
         }
     }
 
@@ -453,7 +473,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         // Promote any pending loosenings whose timers have elapsed BEFORE enforcement reads
         // the parameters. Without this, a drain executed in the same block as a just-activated
         // loosening would still enforce the stale pre-loosening limit.
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values so we don't re-SLOAD windowDuration below (audit-75).
+        (uint256 windowDur, , ) = _lazyActivate(token);
 
         OutflowConfig storage config = _outflowConfigs[token];
         // address(0) sentinel routes balance lookup to native ETH; IERC20 calls on the
@@ -464,7 +485,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         uint256 effectiveLimit = _effectiveLimit(config, treasuryBalance);
 
         // Sum recent outflows within the rolling window
-        uint256 recentOutflow = _sumRecentRecords(_outflowHistory[token], config.windowDuration);
+        uint256 recentOutflow = _sumRecentRecords(_outflowHistory[token], windowDur);
 
         require(
             recentOutflow + amount <= effectiveLimit,

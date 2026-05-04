@@ -503,8 +503,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         claimed[msg.sender] = true;
 
         // Compute allocation on the fly
-        uint256 totalAllocArm = 0;
-        uint256 totalRefundUsdc = 0;
+        uint256 totalAllocArm;
+        uint256 totalRefundUsdc;
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             Participant storage p = participants[msg.sender][h];
             // Cache p.committed: read again below in _computeAllocation (audit-76).
@@ -519,7 +519,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         }
 
         // ARM: only transfer if within claim deadline
-        uint256 armTransferred = 0;
+        uint256 armTransferred;
         if (block.timestamp <= claimDeadline && totalAllocArm > 0) {
             require(delegate != address(0), "ArmadaCrowdfund: delegate required");
             armTransferred = totalAllocArm;
@@ -594,11 +594,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     ///      ARM as circulating: subtract `balance - armStillOwed()` (the unsold
     ///      portion still in this contract that will be swept to treasury), not the
     ///      full balance.
-    function armStillOwed() public view returns (uint256) {
-        if (phase != Phase.Finalized) return 0; // Active or Canceled
-        if (refundMode) return 0;
-        if (block.timestamp > claimDeadline) return 0;
-        return totalAllocatedArm - totalArmTransferred;
+    function armStillOwed() public view returns (uint256 owed) {
+        // Named return defaults to 0 — fall-through covers Active/Canceled,
+        // refundMode, and post-claim-deadline (audit-64).
+        if (phase == Phase.Finalized && !refundMode && block.timestamp <= claimDeadline) {
+            owed = totalAllocatedArm - totalArmTransferred;
+        }
     }
 
     // ============ View Functions ============
@@ -759,7 +760,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @dev Reverts if msg.sender has zero committed USDC across all hops.
     function _requireHasCommitment() internal view {
-        bool hasCommitment = false;
+        bool hasCommitment;
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             if (participants[msg.sender][h].committed > 0) {
                 hasCommitment = true;

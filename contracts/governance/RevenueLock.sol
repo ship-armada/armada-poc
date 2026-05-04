@@ -149,7 +149,7 @@ contract RevenueLock {
         // malicious initial counter implementation could start the ratchet high.
         lastSyncTimestamp = block.timestamp;
 
-        uint256 total = 0;
+        uint256 total;
         for (uint256 i = 0; i < beneficiaries.length; i++) {
             require(beneficiaries[i] != address(0), "RevenueLock: zero beneficiary");
             require(amounts[i] > 0, "RevenueLock: zero amount");

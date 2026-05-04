@@ -17,31 +17,38 @@ contract ArmadaToken is ERC20Votes {
     address public immutable timelock;
     address public immutable tokenDeployer;
 
-    // ============ Transfer Restriction State ============
-
+    // ============ Packed Flag/Address Slot ============
+    // Pack 5 bools + address into one slot (audit-68): 5 + 20 = 25 bytes. Declared
+    // ahead of the mappings so the small fields stay contiguous; mapping slots
+    // (one each, hash-derived storage location) are unaffected by ordering.
     /// @notice When false, only whitelisted senders can transfer. Starts false.
     bool public transferable;
+    /// @notice Whitelist init lock (one-shot deployer setter).
+    bool public whitelistInitialized;
+    /// @notice noDelegation init lock (one-shot deployer setter).
+    bool public noDelegationSet;
+    /// @notice authorizedDelegator init lock (one-shot deployer setter).
+    bool public authorizedDelegatorsInitialized;
+    /// @notice windDownContract one-time setter lock.
+    bool public windDownContractSet;
+    /// @notice The wind-down contract is the only address that can call setTransferable.
+    address public windDownContract;
+
+    // ============ Transfer Restriction State ============
 
     /// @notice Addresses exempt from transfer restrictions (add-only, no removal).
     mapping(address => bool) public transferWhitelist;
-    bool public whitelistInitialized;
-
-    /// @notice The wind-down contract is the only address that can call setTransferable.
-    address public windDownContract;
-    bool public windDownContractSet;
 
     // ============ Delegation Restriction State ============
 
     /// @notice Addresses blocked from delegating (e.g. treasury). Their ARM never enters
     ///         the voting power denominator.
     mapping(address => bool) public noDelegation;
-    bool public noDelegationSet;
 
     // ============ Authorized Delegator State ============
 
     /// @notice Contracts authorized to call delegateOnBehalf (e.g. RevenueLock, Crowdfund).
     mapping(address => bool) public authorizedDelegator;
-    bool public authorizedDelegatorsInitialized;
 
     // ============ Events ============
 

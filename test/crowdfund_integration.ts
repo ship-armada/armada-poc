@@ -139,18 +139,20 @@ describe("Crowdfund Integration", function () {
       expect(we - ws).to.equal(THREE_WEEKS);
       expect(ltie - ws).to.equal(ONE_WEEK);
 
-      // Check hop configs (overlapping ceilings: 70/45/0 — hop-2 uses floor+rollover, not BPS)
-      const [ceilingBps0, cap0, maxInv0] = await crowdfund.hopConfigs(0);
+      // Check hop configs (overlapping ceilings: 70/45/0 — hop-2 uses floor+rollover, not BPS).
+      // Tuple order matches struct field order after audit-68 packing reorder:
+      // (ceilingBps, maxInvites, maxInvitesReceived, capUsdc).
+      const [ceilingBps0, maxInv0, , cap0] = await crowdfund.hopConfigs(0);
       expect(ceilingBps0).to.equal(7000);
       expect(cap0).to.equal(USDC(15_000));
       expect(maxInv0).to.equal(3);
 
-      const [ceilingBps1, cap1, maxInv1] = await crowdfund.hopConfigs(1);
+      const [ceilingBps1, maxInv1, , cap1] = await crowdfund.hopConfigs(1);
       expect(ceilingBps1).to.equal(4500);
       expect(cap1).to.equal(USDC(4_000));
       expect(maxInv1).to.equal(2);
 
-      const [ceilingBps2, cap2, maxInv2] = await crowdfund.hopConfigs(2);
+      const [ceilingBps2, maxInv2, , cap2] = await crowdfund.hopConfigs(2);
       expect(ceilingBps2).to.equal(0);
       expect(cap2).to.equal(USDC(1_000));
       expect(maxInv2).to.equal(0);

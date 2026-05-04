@@ -60,7 +60,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     address public immutable securityCouncil;
 
     // ============ State ============
+    // Pack 5-byte run into one slot (audit-68): Phase (1) + 2×uint8 (2) + 2×bool (2) = 5 bytes.
     Phase public phase;
+    uint8 public launchTeamHop1Used;     // launch-team invite budget tracking (hop-1)
+    uint8 public launchTeamHop2Used;     // launch-team invite budget tracking (hop-2)
+    bool public armLoaded;               // ARM pre-load verification
+    bool public refundMode;              // true when finalize() entered refund mode (proceeds < MIN_SALE)
 
     // Timing (set once in constructor, never modified)
     uint256 public immutable windowStart;
@@ -90,17 +95,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     // Claim deadline — set at finalization, after which unclaimed ARM is sweepable
     uint256 public claimDeadline;
-
-    // Launch team invite budget tracking
-    uint8 public launchTeamHop1Used;
-    uint8 public launchTeamHop2Used;
-
-    // ARM pre-load verification
-    bool public armLoaded;
-
-    // Post-allocation minimum raise check: true when finalize() ran but
-    // net proceeds fell below MIN_SALE. All USDC is refundable via claimRefund().
-    bool public refundMode;
 
     // Timestamp when finalize() was called — used by ArmadaGovernor for the
     // 7-day governance quiet period. Set on both normal and refundMode paths.

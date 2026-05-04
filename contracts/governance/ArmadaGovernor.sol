@@ -98,10 +98,21 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // ============ Types ============
 
+    // Field order packs proposer (20) + proposalType (1) + 4 bools (4) into one
+    // 25-byte slot (audit-68). Reordering lives in this struct definition because
+    // Proposal is stored in a mapping (`_proposals[id]`), so the struct's internal
+    // layout determines per-instance slot offsets — must land pre-mainnet (any
+    // change after deploy corrupts every existing proposal's stored fields).
     struct Proposal {
         uint256 id;
+
+        // Packed slot: 20 + 1 + 1 + 1 + 1 + 1 = 25 bytes
         address proposer;
         ProposalType proposalType;
+        bool executed;
+        bool canceled;
+        bool queued;
+        bool vetoRatificationDenied; // prevents re-veto of a proposal restored after community denied a veto
 
         // Timing (timestamps)
         uint256 voteStart;
@@ -124,12 +135,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256 againstVotes;
         uint256 abstainVotes;
 
-        // State tracking
-        bool executed;
-        bool canceled;
-        bool queued;
-        bool vetoRatificationDenied; // prevents re-veto of a proposal restored after community denied a veto
-
         // Execution data
         address[] targets;
         uint256[] values;
@@ -150,7 +155,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Addresses excluded from quorum denominator (e.g. crowdfund contract).
     /// ARM held by these addresses is non-voteable and should not inflate quorum requirements.
     address[] private _excludedFromQuorum;
-    bool public excludedAddressesLocked;
+    // excludedAddressesLocked moved into the packed lock-flag slot below (audit-68).
 
     // Voter tracking per proposal
     mapping(uint256 => mapping(address => bool)) public hasVoted;
@@ -193,9 +198,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.
+    // Packed lock-flag slot (audit-68): 3 bools + address = 23 bytes in one slot,
+    // also absorbs `excludedAddressesLocked` (relocated from earlier in the file).
+    bool public excludedAddressesLocked;
     bool public windDownActive;
-    address public windDownContract;
     bool public windDownContractSet;
+    address public windDownContract;
 
     // Steward contract: registered via one-time setter. The governor calls it to verify
     // that msg.sender is the elected steward when creating steward proposals.

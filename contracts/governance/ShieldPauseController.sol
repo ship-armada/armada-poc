@@ -36,23 +36,20 @@ contract ShieldPauseController is IShieldPauseController {
     /// @notice Maximum pause duration (24 hours)
     uint256 public constant MAX_PAUSE_DURATION = 24 hours;
 
+    // Pack 4 bools + address into one slot (audit-68): 4 + 20 = 24 bytes.
     /// @notice Whether shields are paused (internal flag — use shieldsPaused() for auto-expiry)
     bool private _paused;
-
-    /// @notice Timestamp when the current pause expires (0 if not paused)
-    uint256 public pauseExpiry;
-
     /// @notice Whether the wind-down has been activated
     bool public windDownActive;
-
+    /// @notice Whether the wind-down contract has been set (one-time setter lock)
+    bool public windDownContractSet;
+    /// @notice Whether the single post-wind-down pause has been consumed
+    bool public windDownPauseUsed;
     /// @notice Wind-down contract address (only this address can call setWindDownActive)
     address public windDownContract;
 
-    /// @notice Whether the wind-down contract has been set (one-time setter lock)
-    bool public windDownContractSet;
-
-    /// @notice Whether the single post-wind-down pause has been consumed
-    bool public windDownPauseUsed;
+    /// @notice Timestamp when the current pause expires (0 if not paused)
+    uint256 public pauseExpiry;
 
     // ============ Events ============
 

@@ -166,6 +166,7 @@ loosens constraints, or increases risk exposure:
 * Bond decreases
 * Quorum floor decreases
 * Steward budget increases (add token, increase per-token limit, extend window)
+* Governance-initiated wind-down trigger (irreversible terminal state transition; the conditional, permissionless trigger path is governance-bypass and not in scope for this classification)
 
 A proposal is **standard** if it revokes authority, tightens
 constraints, or reduces risk exposure:
@@ -213,6 +214,7 @@ principle to the full proposal classification system.
 | Contract upgrade | Always extended | — |
 | SC replacement | Always extended | — |
 | Revenue definition expansion | Always extended | — |
+| Wind-down trigger (governance-initiated) | Always extended | — (permissionless conditional trigger is non-governance) |
 
 Classification is determined mechanically by calldata and, where
 direction matters, comparison of proposed values against current
@@ -619,7 +621,7 @@ Large treasury proposals (especially those approaching outflow limits) should be
 
 1. **Automatic (permissionless):** Anyone can call `triggerWindDown()`. The contract checks: `block.timestamp > windDownDeadline && cumulativeRevenue < revenueThreshold`. If both conditions are true, wind-down activates. If either is false, the call reverts. No privileged caller needed — the conditions are deterministic.
 
-2. **Governance vote:** Governance can trigger wind-down at any time via standard proposal, regardless of revenue or deadline.
+2. **Governance vote:** Governance can trigger wind-down at any time via extended proposal, regardless of revenue or deadline. Wind-down is an irreversible terminal state transition (governance ends, shielded pool enters withdraw-only mode, treasury is committed to redemption); it warrants the higher consensus bar (30% quorum / 14d voting / 7d execution delay) of an extended proposal even though the conditional, permissionless `triggerWindDown()` path remains available without governance involvement.
 
 | Parameter | Default | Governable |
 |-----------|---------|------------|

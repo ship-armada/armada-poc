@@ -499,8 +499,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Deployer-only; locks permanently after the first call.
     function setCrowdfundAddress(address _crowdfund) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
-        if (crowdfundAddressLocked) revert Gov_AlreadyLocked();
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         if (_crowdfund == address(0)) revert Gov_ZeroAddress();
+        if (crowdfundAddressLocked) revert Gov_AlreadyLocked();
 
         crowdfundAddressLocked = true;
         crowdfundAddress = _crowdfund;
@@ -512,8 +513,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Deployer-only; locks permanently after the first call.
     function setStewardContract(address _steward) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
-        if (stewardContractLocked) revert Gov_AlreadyLocked();
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         if (_steward == address(0)) revert Gov_ZeroAddress();
+        if (stewardContractLocked) revert Gov_AlreadyLocked();
 
         stewardContractLocked = true;
         stewardContract = _steward;
@@ -802,8 +804,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// after the governor and needs a governance-approved registration.
     function setWindDownContract(address _windDownContract) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
-        if (windDownContractSet) revert Gov_WindDownContractAlreadySet();
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         if (_windDownContract == address(0)) revert Gov_ZeroAddress();
+        if (windDownContractSet) revert Gov_WindDownContractAlreadySet();
 
         windDownContractSet = true;
         windDownContract = _windDownContract;

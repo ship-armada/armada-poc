@@ -465,12 +465,16 @@ describe("Wind-Down & Redemption Integration", function () {
     });
 
     it("parameter setters frozen after trigger", async function () {
+      // Pass valid params so the post-trigger guard fires (post-audit-79 the
+      // parameter checks run first; passing 0/past-timestamp would revert on
+      // those guards instead, masking the post-trigger lock check).
       const timelockSigner = await asTimelock();
+      const futureDeadline = (await time.latest()) + 30 * ONE_DAY;
       await expect(
-        windDown.connect(timelockSigner).setRevenueThreshold(0n)
+        windDown.connect(timelockSigner).setRevenueThreshold(1n)
       ).to.be.revertedWith("ArmadaWindDown: already triggered");
       await expect(
-        windDown.connect(timelockSigner).setWindDownDeadline(0n)
+        windDown.connect(timelockSigner).setWindDownDeadline(futureDeadline)
       ).to.be.revertedWith("ArmadaWindDown: already triggered");
       await stopImpersonatingTimelock();
     });

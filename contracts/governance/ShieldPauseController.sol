@@ -136,8 +136,9 @@ contract ShieldPauseController is IShieldPauseController {
     /// @notice Set the wind-down contract address. One-time setter, timelock-only.
     function setWindDownContract(address _windDownContract) external {
         require(msg.sender == pauseTimelock, "ShieldPauseController: not timelock");
-        require(!windDownContractSet, "ShieldPauseController: wind-down already set");
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         require(_windDownContract != address(0), "ShieldPauseController: zero address");
+        require(!windDownContractSet, "ShieldPauseController: wind-down already set");
         windDownContractSet = true;
         windDownContract = _windDownContract;
         emit WindDownContractSet(_windDownContract);

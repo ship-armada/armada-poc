@@ -87,8 +87,9 @@ contract ArmadaToken is ERC20Votes {
     /// @notice Set the wind-down contract address. Callable once by deployer.
     function setWindDownContract(address _windDownContract) external {
         require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
-        require(!windDownContractSet, "ArmadaToken: wind-down already set");
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         require(_windDownContract != address(0), "ArmadaToken: zero address");
+        require(!windDownContractSet, "ArmadaToken: wind-down already set");
         windDownContractSet = true;
         windDownContract = _windDownContract;
         emit WindDownContractSet(_windDownContract);

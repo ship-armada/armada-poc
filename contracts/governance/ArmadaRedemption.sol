@@ -116,8 +116,9 @@ contract ArmadaRedemption is ReentrancyGuard {
     /// @param _windDown ArmadaWindDown contract address
     function setWindDown(address _windDown) external {
         require(msg.sender == admin, "ArmadaRedemption: not admin");
-        require(windDown == address(0), "ArmadaRedemption: wind-down already set");
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         require(_windDown != address(0), "ArmadaRedemption: zero windDown");
+        require(windDown == address(0), "ArmadaRedemption: wind-down already set");
         windDown = _windDown;
         emit WindDownSet(_windDown);
     }

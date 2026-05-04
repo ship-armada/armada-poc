@@ -211,8 +211,9 @@ contract ArmadaWindDown {
     ///         trigger (setting 0 would make `recognizedRevenue < 0` always false for uint256).
     function setRevenueThreshold(uint256 _newThreshold) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
-        require(!triggered, "ArmadaWindDown: already triggered");
+        // Parameter check before cold SLOAD on `triggered` (audit-79).
         require(_newThreshold > 0, "ArmadaWindDown: zero threshold");
+        require(!triggered, "ArmadaWindDown: already triggered");
         emit RevenueThresholdUpdated(revenueThreshold, _newThreshold);
         revenueThreshold = _newThreshold;
     }
@@ -232,8 +233,9 @@ contract ArmadaWindDown {
     // comment above the standard setWindDownDeadline registration).
     function setWindDownDeadline(uint256 _newDeadline) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
-        require(!triggered, "ArmadaWindDown: already triggered");
+        // Parameter check before cold SLOAD on `triggered` (audit-79).
         require(_newDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
+        require(!triggered, "ArmadaWindDown: already triggered");
         emit WindDownDeadlineUpdated(windDownDeadline, _newDeadline);
         windDownDeadline = _newDeadline;
     }

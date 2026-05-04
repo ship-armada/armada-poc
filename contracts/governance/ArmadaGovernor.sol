@@ -497,7 +497,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function _registerExcludedAddress(address candidate) internal {
         if (candidate == address(0)) revert Gov_ZeroAddress();
         if (candidate == treasuryAddress) revert Gov_DuplicateExcludedAddress();
-        for (uint256 i = 0; i < _excludedFromQuorum.length; i++) {
+        uint256 len = _excludedFromQuorum.length;
+        for (uint256 i = 0; i < len; i++) {
             if (_excludedFromQuorum[i] == candidate) revert Gov_DuplicateExcludedAddress();
         }
         _excludedFromQuorum.push(candidate);
@@ -1007,17 +1008,20 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256 weight = armToken.getPastVotes(msg.sender, p.snapshotBlock);
         if (weight == 0) revert Gov_NoVotingPower();
 
-        if (hasVoted[proposalId][msg.sender]) {
+        mapping(address => bool) storage voted = hasVoted[proposalId];
+        mapping(address => uint8) storage choices = voteChoice[proposalId];
+
+        if (voted[msg.sender]) {
             // Vote change: subtract from old bucket, add to new bucket
-            uint8 oldSupport = voteChoice[proposalId][msg.sender];
+            uint8 oldSupport = choices[msg.sender];
             if (oldSupport == support) revert Gov_SameVote();
             _removeVoteBucket(p, oldSupport, weight);
             _addVoteBucket(p, support, weight);
-            voteChoice[proposalId][msg.sender] = support;
+            choices[msg.sender] = support;
             emit VoteChanged(msg.sender, proposalId, oldSupport, support, weight);
         } else {
-            hasVoted[proposalId][msg.sender] = true;
-            voteChoice[proposalId][msg.sender] = support;
+            voted[msg.sender] = true;
+            choices[msg.sender] = support;
             _addVoteBucket(p, support, weight);
             emit VoteCast(msg.sender, proposalId, support, weight);
         }
@@ -1354,12 +1358,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // (2) USDC lacks checkpointing so snapshot-based alternatives are not
         // available, and (3) the Security Council can veto any suspicious proposal
         // regardless of classification.
+        address treasury_ = treasuryAddress;
         address[] memory tokens = new address[](calldatas.length);
         uint256[] memory sums = new uint256[](calldatas.length);
         uint256 tokenCount;
 
         for (uint256 i = 0; i < calldatas.length; i++) {
-            if (targets[i] != treasuryAddress) continue;
+            if (targets[i] != treasury_) continue;
             if (calldatas[i].length < 4) continue;
             bytes4 selector = bytes4(calldatas[i]);
             if (selector != DISTRIBUTE_SELECTOR && selector != DISTRIBUTE_ETH_SELECTOR) continue;
@@ -1384,8 +1389,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         for (uint256 k = 0; k < tokenCount; k++) {
             uint256 treasuryBalance = tokens[k] == address(0)
-                ? treasuryAddress.balance
-                : IERC20(tokens[k]).balanceOf(treasuryAddress);
+                ? treasury_.balance
+                : IERC20(tokens[k]).balanceOf(treasury_);
             if (treasuryBalance > 0 &&
                 sums[k] > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
                 return ProposalType.Extended;

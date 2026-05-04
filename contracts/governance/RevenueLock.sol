@@ -267,6 +267,12 @@ contract RevenueLock {
     function getCappedObservedRevenue() public view returns (uint256) {
         // Cache maxObservedRevenue: read twice (audit-76).
         uint256 maxObs = maxObservedRevenue;
+        // Post-freeze: mirror _updateMaxObservedRevenue's no-op behavior. Without
+        // this check, elapsed-driven maxAllowedIncrease causes the view to drift
+        // above storage as time passes post-trigger — contradicting the natspec's
+        // "mirrors exactly" contract and over-reporting `releasable()` to
+        // beneficiaries vs. what `release()` will actually deliver (audit-90 follow-up).
+        if (frozenAtWindDown) return maxObs;
         uint256 reported = revenueCounter.recognizedRevenueUsd();
         uint256 elapsed = block.timestamp - lastSyncTimestamp;
         uint256 maxAllowedIncrease = (elapsed * MAX_REVENUE_INCREASE_PER_DAY) / 1 days;

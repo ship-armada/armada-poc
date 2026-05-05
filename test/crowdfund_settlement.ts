@@ -328,9 +328,10 @@ describe("Crowdfund Settlement Rework", function () {
       await time.increase(THREE_WEEKS + 1);
 
       // saleSize is BASE_SALE ($1.2M) — capped demand $1.2M < ELASTIC_TRIGGER
+      // 80 seeds × $15K each = $1.2M committed; capped to $1.2M (within slot caps)
       await expect(crowdfund.finalize())
         .to.emit(crowdfund, "Finalized")
-        .withArgs(USDC(1_200_000), 0, 0, true);
+        .withArgs(USDC(1_200_000), 0, 0, true, USDC(1_200_000), USDC(1_200_000));
     });
   });
 

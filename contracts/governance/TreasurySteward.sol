@@ -57,9 +57,11 @@ contract TreasurySteward {
     ///      short-circuit on currentSteward == address(0) today, but clearing termStart
     ///      defends against future readers that consume it without the address guard.
     function removeSteward() external onlyTimelock {
-        emit StewardRemoved(currentSteward);
+        address removed = currentSteward;
+        require(removed != address(0), "TreasurySteward: no current steward");
         currentSteward = address(0);
         delete termStart;
+        emit StewardRemoved(removed);
     }
 
     // ============ View Functions ============

@@ -725,9 +725,12 @@ describe("Crowdfund Full Lifecycle", function () {
       // Window expires
       await time.increase(THREE_WEEKS + 1);
 
-      // finalize() enters refundMode (below MIN_SALE)
+      // finalize() enters refundMode (below MIN_SALE — capped < MIN_SALE branch).
+      // 3 seeds × $15K = $45K committed; capped to $45K (well within slot caps).
       const finalizeTx = await crowdfund.finalize();
-      await expect(finalizeTx).to.emit(crowdfund, "Finalized").withArgs(0, 0, 0, true);
+      await expect(finalizeTx)
+        .to.emit(crowdfund, "Finalized")
+        .withArgs(0, 0, 0, true, USDC(45_000), USDC(45_000));
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.refundMode()).to.be.true;
 

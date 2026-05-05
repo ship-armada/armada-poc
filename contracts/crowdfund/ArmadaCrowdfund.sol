@@ -109,11 +109,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
-    event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce);
+    event Invited(address indexed inviter, address indexed invitee, uint8 indexed hop, uint256 nonce);
     event LaunchTeamInvited(address indexed invitee, uint8 hop);
-    event Committed(address indexed participant, uint8 hop, uint256 amount);
-    event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode);
-    event Cancelled();
+    event Committed(address indexed participant, uint8 indexed hop, uint256 amount);
+    event Finalized(
+        uint256 saleSize,
+        uint256 allocatedArm,
+        uint256 netProceeds,
+        bool refundMode,
+        uint256 cappedDemand,
+        uint256 totalCommitted
+    );
+    event Cancelled(address indexed caller, uint256 timestamp);
     event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded();
@@ -382,7 +389,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(phase != Phase.Finalized, "ArmadaCrowdfund: already finalized");
         require(phase != Phase.Canceled, "ArmadaCrowdfund: already canceled");
         phase = Phase.Canceled;
-        emit Cancelled();
+        emit Cancelled(msg.sender, block.timestamp);
     }
 
     /// @notice Finalize the crowdfund: compute allocations or enter refund mode.
@@ -405,7 +412,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             refundMode = true;
             phase = Phase.Finalized;
             finalizedAt = block.timestamp;
-            emit Finalized(0, 0, 0, true);
+            emit Finalized(0, 0, 0, true, capped, totalCommitted);
             return;
         }
 
@@ -436,7 +443,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             refundMode = true;
             phase = Phase.Finalized;
             finalizedAt = block.timestamp;
-            emit Finalized(saleSize_, 0, 0, true);
+            emit Finalized(saleSize_, 0, 0, true, capped, totalCommitted);
             return;
         }
 
@@ -481,7 +488,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             : 0;
         usdc.safeTransfer(treasury, proceedsPush);
 
-        emit Finalized(saleSize_, allocatedArm, totalAllocUsdc_, false);
+        emit Finalized(saleSize_, allocatedArm, totalAllocUsdc_, false, capped, totalCommitted);
     }
 
     // ============ Claims & Withdrawals ============

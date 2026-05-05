@@ -791,15 +791,29 @@ contract RevenueLockTest is Test {
         revenueLock.syncObservedRevenue();
     }
 
-    /// @dev WHY: converse to the event test — the event must NOT fire on a no-op
-    ///      sync. Otherwise monitoring would be flooded with non-events and real
-    ///      advances would be harder to spot. `ObservedRevenueUpdated` is reserved
-    ///      for *actual* state changes of maxObservedRevenue.
+    /// @dev WHY: `ObservedRevenueUpdated` must NOT fire on a no-op sync —
+    ///      otherwise advance-detection consumers would be flooded with non-events.
+    ///      The event is reserved for *actual* state changes of maxObservedRevenue.
+    ///      Per audit-30 the `Synced` event was added to fire on every non-frozen
+    ///      call (advance or no-op) so consumers wanting full sync observability
+    ///      have a separate signal. This test pins the asymmetric pattern: a
+    ///      no-op sync emits `Synced` exactly once and `ObservedRevenueUpdated`
+    ///      zero times.
     function test_ratchet_noEventOnNoOpSync() public {
         vm.recordLogs();
         revenueLock.syncObservedRevenue();
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertEq(logs.length, 0, "no-op sync must not emit ObservedRevenueUpdated");
+        bytes32 advanceTopic = keccak256("ObservedRevenueUpdated(uint256,uint256,uint256)");
+        bytes32 syncedTopic = keccak256("Synced(uint256,uint256,uint256)");
+        uint256 advanceCount;
+        uint256 syncedCount;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length == 0) continue;
+            if (logs[i].topics[0] == advanceTopic) advanceCount++;
+            if (logs[i].topics[0] == syncedTopic) syncedCount++;
+        }
+        assertEq(advanceCount, 0, "no-op sync must not emit ObservedRevenueUpdated");
+        assertEq(syncedCount, 1, "no-op sync must emit Synced exactly once");
     }
 
     /// @dev WHY: the primary bug from issue #225 — `release()` previously computed

@@ -96,7 +96,7 @@ contract ArmadaWindDown {
 
     // ============ Events ============
 
-    event WindDownTriggered(address indexed caller, uint256 timestamp);
+    event WindDownTriggered(address indexed caller, uint256 timestamp, bool governanceForced);
     event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
     event ETHSwept(address indexed recipient, uint256 amount);
     event RevenueThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
@@ -170,14 +170,14 @@ contract ArmadaWindDown {
             revenueCounter.recognizedRevenueUsd() < revenueThreshold,
             "ArmadaWindDown: revenue meets threshold"
         );
-        _executeWindDown();
+        _executeWindDown(false);
     }
 
     /// @notice Governance trigger. Timelock can trigger at any time, no conditions required.
     function governanceTriggerWindDown() external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
         require(!triggered, "ArmadaWindDown: already triggered");
-        _executeWindDown();
+        _executeWindDown(true);
     }
 
     // ============ Sweep Functions ============
@@ -242,7 +242,7 @@ contract ArmadaWindDown {
 
     // ============ Internal ============
 
-    function _executeWindDown() internal {
+    function _executeWindDown(bool governanceForced) internal {
         triggered = true;
         triggerTime = block.timestamp;
 
@@ -272,6 +272,6 @@ contract ArmadaWindDown {
         // Activate post-wind-down pause restrictions (single-pause only)
         pauseContract.setWindDownActive();
 
-        emit WindDownTriggered(msg.sender, block.timestamp);
+        emit WindDownTriggered(msg.sender, block.timestamp, governanceForced);
     }
 }

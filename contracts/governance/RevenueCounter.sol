@@ -180,13 +180,13 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
             }
         }
 
-        emit FeeCollectorUpdated(oldCollector, _feeCollector);
         feeCollector = _feeCollector;
         if (_feeCollector != address(0)) {
             lastSyncedCumulative = IFeeCollector(_feeCollector).cumulativeFeesCollected();
         } else {
             lastSyncedCumulative = 0;
         }
+        emit FeeCollectorUpdated(oldCollector, _feeCollector);
     }
 
     // ============ Wind-Down ============

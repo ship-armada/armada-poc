@@ -134,6 +134,7 @@ contract ArmadaToken is ERC20Votes {
     function addToWhitelist(address account) external {
         require(msg.sender == timelock, "ArmadaToken: not timelock");
         require(account != address(0), "ArmadaToken: zero address");
+        if (transferWhitelist[account]) return;
         transferWhitelist[account] = true;
         emit WhitelistAdded(account);
     }
@@ -145,6 +146,7 @@ contract ArmadaToken is ERC20Votes {
     function addAuthorizedDelegator(address delegator) external {
         require(msg.sender == timelock, "ArmadaToken: not timelock");
         require(delegator != address(0), "ArmadaToken: zero address");
+        if (authorizedDelegator[delegator]) return;
         authorizedDelegator[delegator] = true;
         emit AuthorizedDelegatorAdded(delegator);
     }

@@ -67,7 +67,7 @@ contract MockUSDCWindDown is ERC20 {
 
 contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     // Mirror events
-    event WindDownTriggered(address indexed caller, uint256 timestamp);
+    event WindDownTriggered(address indexed caller, uint256 timestamp, bool governanceForced);
     event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
     event ETHSwept(address indexed recipient, uint256 amount);
     event RevenueThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
@@ -176,7 +176,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         revenueCounter.setRevenue(REVENUE_THRESHOLD - 1);
 
         vm.expectEmit(true, false, false, true);
-        emit WindDownTriggered(randomUser, block.timestamp);
+        emit WindDownTriggered(randomUser, block.timestamp, false);
         vm.prank(randomUser);
         windDown.triggerWindDown();
 
@@ -250,7 +250,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         // Timelock can trigger at any time
         vm.prank(address(timelock));
         vm.expectEmit(true, false, false, true);
-        emit WindDownTriggered(address(timelock), block.timestamp);
+        emit WindDownTriggered(address(timelock), block.timestamp, true);
         windDown.governanceTriggerWindDown();
 
         assertTrue(windDown.triggered());

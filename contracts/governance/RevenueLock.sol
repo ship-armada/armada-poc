@@ -114,6 +114,21 @@ contract RevenueLock {
         uint256 reportedByCounter
     );
 
+    /// @notice Emitted on every non-frozen call to _updateMaxObservedRevenue, including
+    ///         no-op syncs that consume elapsed-time budget without advancing the ratchet.
+    ///         Distinct from ObservedRevenueUpdated, which fires only when maxObservedRevenue
+    ///         actually advances. Subscribers wanting advance-detection should use
+    ///         ObservedRevenueUpdated; subscribers wanting full sync observability (e.g. to
+    ///         detect budget consumption during flat-revenue periods) should use Synced.
+    /// @param syncedAt              block.timestamp at sync.
+    /// @param reportedByCounter     Raw value returned by RevenueCounter at the time of sync.
+    /// @param maxObservedRevenue_   Post-call maxObservedRevenue (equals oldMax on no-op).
+    event Synced(
+        uint256 syncedAt,
+        uint256 reportedByCounter,
+        uint256 maxObservedRevenue_
+    );
+
     event WindDownContractSet(address indexed windDownContract);
     event FrozenAtWindDown(uint256 maxObservedRevenue, uint256 unlockBps);
 
@@ -368,6 +383,7 @@ contract RevenueLock {
         }
 
         lastSyncTimestamp = block.timestamp;
+        emit Synced(block.timestamp, reported, effectiveMax);
     }
 
     /// @dev Step function: returns the unlock bps for a given cumulative revenue.

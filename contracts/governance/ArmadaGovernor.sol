@@ -249,7 +249,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event ProposalCreated(
         uint256 indexed proposalId,
         address indexed proposer,
-        ProposalType proposalType,
+        ProposalType indexed proposalType,
         uint256 voteStart,
         uint256 voteEnd,
         string description
@@ -651,8 +651,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (msg.sender != address(timelock) && (msg.sender != d || d == address(0))) {
             revert Gov_NotTimelock();
         }
-        emit SecurityCouncilUpdated(securityCouncil, newSC);
+        address oldSC = securityCouncil;
         securityCouncil = newSC;
+        emit SecurityCouncilUpdated(oldSC, newSC);
     }
 
     // ============ Veto Mechanism ============

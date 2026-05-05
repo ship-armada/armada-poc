@@ -720,6 +720,32 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
     }
 
+    // WHY: stewardSpend() routes via IERC20(token).safeTransfer, which
+    // EXTCODESIZE-reverts on address(0). Without this guard, governance could
+    // pass an Extended proposal authorizing ETH as a steward-spendable token,
+    // burning a 14-day cycle to install a budget that can never be spent (the
+    // subsequent stewardSpend(address(0), …) reverts at execution). Failing
+    // fast at config time prevents that wasted cycle. Spec: GOVERNANCE.md
+    // §Treasury Steward §Cannot — "Spend native ETH … pre-wind-down ETH
+    // spending is governance-direct via distributeETH(), not through
+    // stewardSpend()."
+    function test_addStewardBudgetToken_rejectsETHSentinel() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaTreasuryGov: ETH not steward-spendable");
+        treasury.addStewardBudgetToken(address(0), BUDGET_LIMIT, BUDGET_WINDOW);
+    }
+
+    // WHY: Defense-in-depth. `updateStewardBudgetToken` requires the token to
+    // be already authorized, so the `add` gate transitively closes this path.
+    // The explicit guard pins the symmetry — a refactor that loosens `add`
+    // (e.g. for a future feature) cannot silently expose an ETH path through
+    // `update`.
+    function test_updateStewardBudgetToken_rejectsETHSentinel() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaTreasuryGov: ETH not steward-spendable");
+        treasury.updateStewardBudgetToken(address(0), BUDGET_LIMIT, BUDGET_WINDOW);
+    }
+
     function test_updateStewardBudgetToken_success() public {
         vm.prank(address(timelock));
         treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);

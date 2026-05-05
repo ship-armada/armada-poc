@@ -350,6 +350,7 @@ The steward operates within a **per-token budget table** — a governance-manage
 
 **Cannot:**
 - Distribute tokens not in the budget table — these require full governance proposals regardless of amount
+- Spend native ETH — the steward channel is restricted to ERC-20 tokens. Pre-wind-down ETH spending is governance-direct via `distributeETH()`, not through `stewardSpend()`. The treasury enforces this at config time: `addStewardBudgetToken(address(0), …)` reverts.
 - Exceed any per-token rolling limit
 - Change fee rates or protocol parameters
 - Grant custom integrator terms (requires governance)

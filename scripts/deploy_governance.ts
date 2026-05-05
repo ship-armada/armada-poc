@@ -341,7 +341,7 @@ async function main() {
   console.log(`\nDeployment saved to: deployments/${outputFile}`);
   console.log("\n=== Governance deployment complete ===");
   console.log("\nPost-launch TODO:");
-  console.log("  1. Configure treasury outflow limits for USDC and ARM (via governance proposal)");
+  console.log("  1. Configure treasury outflow limits for USDC, ARM, and ETH (address(0)) (via governance proposal)");
   console.log("  2. Set shieldPauseContract on PrivacyPool (owner calls setShieldPauseContract)");
   console.log("\nNext deployment step: run deploy_crowdfund.ts to complete:")
   console.log("  - Crowdfund deployment + ARM distribution");

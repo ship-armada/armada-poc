@@ -214,6 +214,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @param limit Maximum spend per window in token units
     /// @param window Window duration in seconds (minimum 1 day)
     function addStewardBudgetToken(address token, uint256 limit, uint256 window) external onlyOwner {
+        require(token != address(0), "ArmadaTreasuryGov: ETH not steward-spendable");
         require(!stewardBudgets[token].authorized, "ArmadaTreasuryGov: token already authorized");
         require(limit > 0, "ArmadaTreasuryGov: zero limit");
         require(window >= 1 days, "ArmadaTreasuryGov: window too short");
@@ -232,6 +233,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @param limit New maximum spend per window in token units
     /// @param window New window duration in seconds (minimum 1 day)
     function updateStewardBudgetToken(address token, uint256 limit, uint256 window) external onlyOwner {
+        require(token != address(0), "ArmadaTreasuryGov: ETH not steward-spendable");
         require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
         require(limit > 0, "ArmadaTreasuryGov: zero limit");
         require(window >= 1 days, "ArmadaTreasuryGov: window too short");

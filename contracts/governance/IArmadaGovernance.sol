@@ -46,6 +46,7 @@ interface IArmadaGovernorTiming {
 interface ITreasurySteward {
     function currentSteward() external view returns (address);
     function isStewardActive() external view returns (bool);
+    function getCurrentSteward() external view returns (address steward, bool isActive);
 }
 
 interface IAdapterRegistry {

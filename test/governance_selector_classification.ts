@@ -52,7 +52,10 @@ describe("Governance Selector Classification", function () {
       ["fullDeauthorizeAdapter(address)", "tightening — fully removes adapter"],
       ["setRevenueThreshold(uint256)", "operational wind-down parameter"],
       ["setWindDownDeadline(uint256)", "operational wind-down parameter"],
-      ["attestRevenue(uint256)", "operational non-stablecoin revenue attestation"],
+      ["addRevenue(uint256)", "routine non-stablecoin revenue attestation (increment)"],
+      ["attestRevenue(uint256)", "non-stablecoin revenue attestation (SET, error correction)"],
+      ["distributeETH(address,uint256)", "ETH distribution mirrors distribute() classification"],
+      ["removeStewardBudgetToken(address)", "tightening — revokes a steward spending authority"],
     ];
 
     for (const [sig, reason] of standardSelectors) {
@@ -73,6 +76,43 @@ describe("Governance Selector Classification", function () {
       const s = sel("authorizeAdapter(address)");
       expect(await governor.extendedSelectors(s)).to.equal(true);
       expect(await governor.standardSelectors(s)).to.equal(false);
+    });
+  });
+
+  // WHY: transferTo / transferETHTo on ArmadaTreasuryGov are wind-down-only
+  // (require msg.sender == windDownContract). A governance proposal calling
+  // them via the timelock would always revert. Listing them in standardSelectors
+  // would advertise a governance path that doesn't exist. They're intentionally
+  // un-registered so fail-closed promotes any such proposal to Extended.
+  describe("Wind-down-only selectors (un-registered, fail-closed Extended)", function () {
+    const windDownOnlySelectors = [
+      "transferTo(address,address,uint256)",
+      "transferETHTo(address,uint256)",
+    ];
+
+    for (const sig of windDownOnlySelectors) {
+      it(`leaves ${sig} un-registered`, async function () {
+        const s = sel(sig);
+        expect(await governor.standardSelectors(s)).to.equal(false);
+        expect(await governor.extendedSelectors(s)).to.equal(false);
+      });
+    }
+  });
+
+  // WHY: governanceTriggerWindDown() is the irreversible terminal state
+  // transition (governance ends, shielded pool becomes withdraw-only,
+  // treasury commits to redemption). Per spec it is Extended (30%/14d/7d) —
+  // see specs/GOVERNANCE.md §Wind-Down §Trigger and §Standard vs. extended
+  // classification. Implementation: the selector is intentionally un-registered
+  // in initialize() so the fail-closed default classifies it Extended. Pin
+  // un-registration so a refactor can't accidentally place it in
+  // standardSelectors and silently lower the bar on the protocol's most
+  // consequential single proposal.
+  describe("Wind-down trigger selector (un-registered, fail-closed Extended)", function () {
+    it("leaves governanceTriggerWindDown() un-registered", async function () {
+      const s = sel("governanceTriggerWindDown()");
+      expect(await governor.standardSelectors(s)).to.equal(false);
+      expect(await governor.extendedSelectors(s)).to.equal(false);
     });
   });
 });

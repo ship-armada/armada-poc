@@ -107,6 +107,17 @@ contract TreasurySweepAuthorityTest is Test {
         treasury.transferTo(address(usdc), address(0), 100e6);
     }
 
+    // WHY: A zero-amount call has no economic effect but still emits a misleading
+    // WindDownTransfer event and runs an empty IERC20 transfer. Cross-function
+    // symmetry with distribute/distributeETH which both reject zero amounts.
+    function test_transferTo_revertsZeroAmount() public {
+        _setupWindDown();
+
+        vm.prank(windDown);
+        vm.expectRevert("ArmadaTreasuryGov: zero amount");
+        treasury.transferTo(address(usdc), recipient, 0);
+    }
+
     function test_transferTo_bypassesOutflowLimits() public {
         _setupWindDown();
 
@@ -180,6 +191,18 @@ contract TreasurySweepAuthorityTest is Test {
         vm.prank(windDown);
         vm.expectRevert("ArmadaTreasuryGov: zero recipient");
         treasury.transferETHTo(payable(address(0)), 5 ether);
+    }
+
+    // WHY: A zero-amount call still invokes recipient.call{value: 0}(""), triggering
+    // the recipient's fallback for no economic reason and emitting a misleading event.
+    // Symmetric with the transferTo zero-amount guard.
+    function test_transferETHTo_revertsZeroAmount() public {
+        _setupWindDown();
+        _fundTreasuryETH(5 ether);
+
+        vm.prank(windDown);
+        vm.expectRevert("ArmadaTreasuryGov: zero amount");
+        treasury.transferETHTo(payable(recipient), 0);
     }
 
     // ======== Treasury can receive ETH ========

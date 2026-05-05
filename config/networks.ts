@@ -90,7 +90,10 @@ export interface NetworkConfig {
   revenueLockBeneficiaries: RevenueLockBeneficiary[];
   /** Security council address for crowdfund cancel authority. Required for non-local. */
   securityCouncilAddress: string;
-  /** Crowdfund open delay in seconds from deployment time. Default 60 for local. */
+  /** Crowdfund open delay in seconds from deployment time. Default 600 (10 minutes) —
+   *  an operational buffer that lets the post-deploy verification checklist complete
+   *  before commits can flow. Production deploys should set this explicitly via
+   *  CROWDFUND_OPEN_DELAY; the default is the conservative fallback. */
   crowdfundOpenDelay: number;
   /** Wind-down deadline as ISO 8601 date string. Default "2026-12-31T00:00:00Z". */
   windDownDeadline: string;
@@ -280,7 +283,7 @@ export function getNetworkConfig(): NetworkConfig {
     },
     revenueLockBeneficiaries,
     securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
-    crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 60),
+    crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 600),
     windDownDeadline: optionalEnv("WINDDOWN_DEADLINE", "2026-12-31T00:00:00Z"),
     windDownRevenueThreshold: optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",

@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // Minimal interfaces for cross-contract calls during wind-down
 interface IArmadaTokenWindDown {
     function setTransferable(bool _transferable) external;
+    function transferable() external view returns (bool);
 }
 
 interface IArmadaGovernorWindDown {
@@ -20,6 +21,12 @@ interface IShieldPauseControllerWindDown {
 
 interface IRevenueCounterWindDown {
     function recognizedRevenueUsd() external view returns (uint256);
+    function freeze() external;
+    function syncStablecoinRevenue() external;
+}
+
+interface IRevenueLockWindDown {
+    function freezeAtWindDown() external;
 }
 
 interface ITreasuryWindDown {
@@ -60,8 +67,11 @@ contract ArmadaWindDown {
     /// @notice Shield pause controller
     IShieldPauseControllerWindDown public immutable pauseContract;
 
-    /// @notice Revenue counter (reads cumulative recognized revenue)
+    /// @notice Revenue counter (reads cumulative recognized revenue, frozen at trigger)
     IRevenueCounterWindDown public immutable revenueCounter;
+
+    /// @notice Revenue lock (frozen at trigger so circulatingSupply is stable)
+    IRevenueLockWindDown public immutable revenueLock;
 
     /// @notice Timelock address (governance authority for direct trigger and parameter changes)
     address public immutable timelock;
@@ -86,7 +96,7 @@ contract ArmadaWindDown {
 
     // ============ Events ============
 
-    event WindDownTriggered(address indexed caller, uint256 timestamp);
+    event WindDownTriggered(address indexed caller, uint256 timestamp, bool governanceForced);
     event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
     event ETHSwept(address indexed recipient, uint256 amount);
     event RevenueThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
@@ -110,6 +120,7 @@ contract ArmadaWindDown {
         address _redemptionContract,
         address _pauseContract,
         address _revenueCounter,
+        address _revenueLock,
         address _timelock,
         uint256 _revenueThreshold,
         uint256 _windDownDeadline
@@ -120,6 +131,7 @@ contract ArmadaWindDown {
         require(_redemptionContract != address(0), "ArmadaWindDown: zero redemption");
         require(_pauseContract != address(0), "ArmadaWindDown: zero pauseContract");
         require(_revenueCounter != address(0), "ArmadaWindDown: zero revenueCounter");
+        require(_revenueLock != address(0), "ArmadaWindDown: zero revenueLock");
         require(_timelock != address(0), "ArmadaWindDown: zero timelock");
         require(_windDownDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
         require(_revenueThreshold > 0, "ArmadaWindDown: zero threshold");
@@ -130,6 +142,7 @@ contract ArmadaWindDown {
         redemptionContract = _redemptionContract;
         pauseContract = IShieldPauseControllerWindDown(_pauseContract);
         revenueCounter = IRevenueCounterWindDown(_revenueCounter);
+        revenueLock = IRevenueLockWindDown(_revenueLock);
         timelock = _timelock;
         revenueThreshold = _revenueThreshold;
         windDownDeadline = _windDownDeadline;
@@ -143,18 +156,28 @@ contract ArmadaWindDown {
     function triggerWindDown() external {
         require(!triggered, "ArmadaWindDown: already triggered");
         require(block.timestamp > windDownDeadline, "ArmadaWindDown: deadline not passed");
+
+        // Best-effort sync from the fee collector before reading the threshold.
+        // Without this, a stale recognizedRevenueUsd could let wind-down trigger
+        // when the actual fee balance is already above threshold (no one called
+        // syncStablecoinRevenue recently). Wrapped in try/catch so wind-down stays
+        // permissionless even if sync reverts (no fee collector configured, fee
+        // collector itself reverts, etc.) — the threshold check then runs against
+        // whatever value the counter currently has.
+        try revenueCounter.syncStablecoinRevenue() {} catch {}
+
         require(
             revenueCounter.recognizedRevenueUsd() < revenueThreshold,
             "ArmadaWindDown: revenue meets threshold"
         );
-        _executeWindDown();
+        _executeWindDown(false);
     }
 
     /// @notice Governance trigger. Timelock can trigger at any time, no conditions required.
     function governanceTriggerWindDown() external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
         require(!triggered, "ArmadaWindDown: already triggered");
-        _executeWindDown();
+        _executeWindDown(true);
     }
 
     // ============ Sweep Functions ============
@@ -188,8 +211,9 @@ contract ArmadaWindDown {
     ///         trigger (setting 0 would make `recognizedRevenue < 0` always false for uint256).
     function setRevenueThreshold(uint256 _newThreshold) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
-        require(!triggered, "ArmadaWindDown: already triggered");
+        // Parameter check before cold SLOAD on `triggered` (audit-79).
         require(_newThreshold > 0, "ArmadaWindDown: zero threshold");
+        require(!triggered, "ArmadaWindDown: already triggered");
         emit RevenueThresholdUpdated(revenueThreshold, _newThreshold);
         revenueThreshold = _newThreshold;
     }
@@ -209,20 +233,38 @@ contract ArmadaWindDown {
     // comment above the standard setWindDownDeadline registration).
     function setWindDownDeadline(uint256 _newDeadline) external {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
-        require(!triggered, "ArmadaWindDown: already triggered");
+        // Parameter check before cold SLOAD on `triggered` (audit-79).
         require(_newDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
+        require(!triggered, "ArmadaWindDown: already triggered");
         emit WindDownDeadlineUpdated(windDownDeadline, _newDeadline);
         windDownDeadline = _newDeadline;
     }
 
     // ============ Internal ============
 
-    function _executeWindDown() internal {
+    function _executeWindDown(bool governanceForced) internal {
         triggered = true;
         triggerTime = block.timestamp;
 
-        // Enable ARM transfers (users need to move ARM to redeem)
-        IArmadaTokenWindDown(armToken).setTransferable(true);
+        // Freeze the revenue counter FIRST so that the RevenueLock final-ratchet-update
+        // below reads a stable upstream value. After freeze, no further attestRevenue
+        // or syncStablecoinRevenue can advance the counter — the unlock-percentage
+        // milestone state at trigger time becomes the permanent fixed point.
+        revenueCounter.freeze();
+
+        // Then freeze the RevenueLock ratchet. freezeAtWindDown performs one final
+        // _updateMaxObservedRevenue against the (just frozen) counter and locks
+        // maxObservedRevenue. After this, ArmadaRedemption.lockedAtWindDown returns
+        // a stable value across the redemption window.
+        revenueLock.freezeAtWindDown();
+
+        // Enable ARM transfers (users need to move ARM to redeem). The post-condition
+        // is "transfers are enabled" — not "transfers were flipped here". Governance
+        // can independently enable transfers via a separate proposal, so we only call
+        // setTransferable when needed; the token's setter reverts on already-enabled.
+        if (!IArmadaTokenWindDown(armToken).transferable()) {
+            IArmadaTokenWindDown(armToken).setTransferable(true);
+        }
 
         // Permanently disable governance (no new proposals)
         governor.setWindDownActive();
@@ -230,6 +272,6 @@ contract ArmadaWindDown {
         // Activate post-wind-down pause restrictions (single-pause only)
         pauseContract.setWindDownActive();
 
-        emit WindDownTriggered(msg.sender, block.timestamp);
+        emit WindDownTriggered(msg.sender, block.timestamp, governanceForced);
     }
 }

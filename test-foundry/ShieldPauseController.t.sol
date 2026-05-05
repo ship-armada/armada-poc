@@ -290,6 +290,75 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         pauseController.pauseShields();
     }
 
+    // WHY: A pre-trigger SC pause that is still active when wind-down fires used to
+    // bleed across the trigger without consuming the single post-wind-down pause
+    // budget. The SC could then issue a fresh 24h post-trigger pause once the first
+    // expired, chaining ~48h of continuous unshield blocking against the spec's 24h.
+    // setWindDownActive now consumes the budget (windDownPauseUsed = true) when an
+    // active pause is bleeding through, so any post-trigger pause attempt reverts.
+    function test_preTriggerPauseBleed_consumesPostWindDownBudget() public {
+        // Pre-trigger SC pause
+        vm.prank(securityCouncil);
+        pauseController.pauseShields();
+        assertTrue(pauseController.shieldsPaused());
+        assertFalse(pauseController.windDownPauseUsed());
+
+        // Wind-down activates while the pause is still active.
+        vm.prank(address(timelock));
+        pauseController.setWindDownContract(windDown);
+        vm.prank(windDown);
+        pauseController.setWindDownActive();
+
+        // The active pre-trigger pause now counts as the post-wind-down pause.
+        assertTrue(pauseController.windDownPauseUsed());
+
+        // After it expires, SC cannot issue a fresh post-trigger pause.
+        vm.warp(block.timestamp + TWENTY_FOUR_HOURS);
+        vm.prank(securityCouncil);
+        vm.expectRevert("ShieldPauseController: post-wind-down pause already used");
+        pauseController.pauseShields();
+    }
+
+    // WHY: Regression — wind-down with no active pre-trigger pause must leave the
+    // single post-trigger pause budget intact. The new bleed-through guard must not
+    // over-consume the budget when there's nothing to bleed.
+    function test_setWindDownActive_noActivePause_preservesPauseBudget() public {
+        vm.prank(address(timelock));
+        pauseController.setWindDownContract(windDown);
+        vm.prank(windDown);
+        pauseController.setWindDownActive();
+
+        assertFalse(pauseController.windDownPauseUsed());
+
+        // SC can use the full single post-trigger pause.
+        vm.prank(securityCouncil);
+        pauseController.pauseShields();
+        assertTrue(pauseController.windDownPauseUsed());
+    }
+
+    // WHY: A pre-trigger pause that EXPIRED before wind-down trigger must NOT
+    // consume the post-trigger budget. Pins the strict-active check (_isPaused
+    // must include the timestamp gate, not just _paused alone).
+    function test_expiredPreTriggerPause_doesNotConsumeBudget() public {
+        // Pre-trigger pause + expire fully
+        vm.prank(securityCouncil);
+        pauseController.pauseShields();
+        vm.warp(block.timestamp + TWENTY_FOUR_HOURS);
+        assertFalse(pauseController.shieldsPaused());
+
+        // Wind-down activates AFTER the pause expired
+        vm.prank(address(timelock));
+        pauseController.setWindDownContract(windDown);
+        vm.prank(windDown);
+        pauseController.setWindDownActive();
+
+        // Budget still untouched — SC retains the single post-trigger pause
+        assertFalse(pauseController.windDownPauseUsed());
+        vm.prank(securityCouncil);
+        pauseController.pauseShields();
+        assertTrue(pauseController.windDownPauseUsed());
+    }
+
     function test_preWindDown_unlimitedPauses() public {
         // Multiple pause/expire cycles before wind-down
         for (uint256 i = 0; i < 5; i++) {

@@ -133,6 +133,9 @@ describe("RevenueLock", function () {
     // 6. Fund RevenueLock with ARM
     await armToken.transfer(await revenueLock.getAddress(), TOTAL_LOCK);
 
+    // 7. Activate — release() reverts before activation. Permissionless one-shot.
+    await revenueLock.activate();
+
     // Mine a block so voting checkpoints work
     await mine(1);
   }

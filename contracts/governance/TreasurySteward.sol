@@ -47,20 +47,37 @@ contract TreasurySteward {
     function electSteward(address _steward) external onlyTimelock {
         require(_steward != address(0), "TreasurySteward: zero address");
         currentSteward = _steward;
+        // Use block.timestamp directly in the emit instead of re-SLOADing termStart (audit-76).
         termStart = block.timestamp;
-        emit StewardElected(_steward, termStart, termStart + TERM_DURATION);
+        emit StewardElected(_steward, block.timestamp, block.timestamp + TERM_DURATION);
     }
 
     /// @notice Remove the current steward (called by timelock after governance proposal)
+    /// @dev Clears both currentSteward and termStart. isStewardActive and termEnd both
+    ///      short-circuit on currentSteward == address(0) today, but clearing termStart
+    ///      defends against future readers that consume it without the address guard.
     function removeSteward() external onlyTimelock {
-        emit StewardRemoved(currentSteward);
+        address removed = currentSteward;
+        require(removed != address(0), "TreasurySteward: no current steward");
         currentSteward = address(0);
+        delete termStart;
+        emit StewardRemoved(removed);
     }
 
     // ============ View Functions ============
 
     function isStewardActive() external view returns (bool) {
         return currentSteward != address(0) && block.timestamp < termStart + TERM_DURATION;
+    }
+
+    /// @notice Combined accessor for the active-steward state. Callers that need both
+    ///         the address and the active flag (e.g. ArmadaGovernor's steward-proposal
+    ///         gates) should use this to avoid a second external call and a duplicate
+    ///         currentSteward SLOAD inside isStewardActive(). Returns the elected
+    ///         address (or zero if none) and whether they are within the active term.
+    function getCurrentSteward() external view returns (address steward, bool isActive) {
+        steward = currentSteward;
+        isActive = steward != address(0) && block.timestamp < termStart + TERM_DURATION;
     }
 
     function termEnd() external view returns (uint256) {

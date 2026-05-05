@@ -14,12 +14,48 @@ import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./helpers/GovernorDeployHelper.sol";
 
-/// @dev Mock RevenueCounter for testing
+/// @dev Mock RevenueCounter for testing. freeze() is a no-op stub so wind-down
+///      trigger flow can call into it without reverting. syncStablecoinRevenue
+///      reads from a settable pendingSyncedValue — tests can simulate a fee
+///      collector that has accumulated value but hasn't been synced. If
+///      shouldRevertOnSync is set, the call reverts so try/catch can be tested.
 contract MockRevenueCounter {
     uint256 public recognizedRevenueUsd;
+    uint256 public pendingSyncedValue;
+    bool public frozen;
+    bool public shouldRevertOnSync;
 
     function setRevenue(uint256 _revenue) external {
         recognizedRevenueUsd = _revenue;
+    }
+
+    function setPendingSyncedValue(uint256 _v) external {
+        pendingSyncedValue = _v;
+    }
+
+    function setShouldRevertOnSync(bool _b) external {
+        shouldRevertOnSync = _b;
+    }
+
+    function syncStablecoinRevenue() external {
+        require(!shouldRevertOnSync, "MockRevenueCounter: sync revert");
+        if (pendingSyncedValue > recognizedRevenueUsd) {
+            recognizedRevenueUsd = pendingSyncedValue;
+        }
+    }
+
+    function freeze() external {
+        frozen = true;
+    }
+}
+
+/// @dev Mock RevenueLock for testing the wind-down trigger flow. freezeAtWindDown
+///      is a no-op stub.
+contract MockRevenueLock {
+    bool public frozenAtWindDown;
+
+    function freezeAtWindDown() external {
+        frozenAtWindDown = true;
     }
 }
 
@@ -31,7 +67,7 @@ contract MockUSDCWindDown is ERC20 {
 
 contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     // Mirror events
-    event WindDownTriggered(address indexed caller, uint256 timestamp);
+    event WindDownTriggered(address indexed caller, uint256 timestamp, bool governanceForced);
     event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
     event ETHSwept(address indexed recipient, uint256 amount);
     event RevenueThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
@@ -50,7 +86,8 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     address public deployer = address(this);
     address public alice = address(0xA11CE);
     address public randomUser = address(0xCAFE);
-    address public revenueLock = address(0xABCD);
+    MockRevenueLock public revenueLockMock;
+    address public revenueLock; // set to revenueLockMock address in setUp
     address public crowdfund = address(0xCF00);
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
@@ -76,6 +113,8 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         );
         pauseController = new ShieldPauseController(address(governor), address(timelock));
         revenueCounter = new MockRevenueCounter();
+        revenueLockMock = new MockRevenueLock();
+        revenueLock = address(revenueLockMock);
         usdc = new MockUSDCWindDown();
 
         // Deploy redemption (needs ARM token + excluded addresses)
@@ -94,6 +133,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
             address(redemption),
             address(pauseController),
             address(revenueCounter),
+            revenueLock,
             address(timelock),
             REVENUE_THRESHOLD,
             WIND_DOWN_DEADLINE
@@ -136,7 +176,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         revenueCounter.setRevenue(REVENUE_THRESHOLD - 1);
 
         vm.expectEmit(true, false, false, true);
-        emit WindDownTriggered(randomUser, block.timestamp);
+        emit WindDownTriggered(randomUser, block.timestamp, false);
         vm.prank(randomUser);
         windDown.triggerWindDown();
 
@@ -171,13 +211,46 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         windDown.triggerWindDown();
     }
 
+    // WHY: Without a best-effort sync before the threshold check, a stale
+    // recognizedRevenueUsd lets wind-down trigger when the actual fee balance
+    // is already above threshold (no one called syncStablecoinRevenue recently).
+    // The sync inside triggerWindDown pulls the pending value forward; the
+    // expectRevert proves the threshold check saw the post-sync value (without
+    // the sync, the stale below-threshold value would have let trigger succeed).
+    function test_permissionlessTrigger_syncsBeforeThresholdCheck() public {
+        // Counter shows below threshold (stale).
+        revenueCounter.setRevenue(REVENUE_THRESHOLD / 2);
+        // Pending sync would push the value to at-threshold, so the check should fail.
+        revenueCounter.setPendingSyncedValue(REVENUE_THRESHOLD);
+
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        vm.prank(randomUser);
+        vm.expectRevert("ArmadaWindDown: revenue meets threshold");
+        windDown.triggerWindDown();
+    }
+
+    // WHY: Best-effort sync must not block wind-down on its own failure. If the
+    // sync reverts (no fee collector, fee collector itself reverts, etc.), the
+    // try/catch swallows it and the threshold check runs against whatever value
+    // the counter currently has. Pin permissionless trigger as fail-open.
+    function test_permissionlessTrigger_succeedsWhenSyncReverts() public {
+        revenueCounter.setRevenue(REVENUE_THRESHOLD - 1); // below threshold
+        revenueCounter.setShouldRevertOnSync(true); // sync would revert
+
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        vm.prank(randomUser);
+        windDown.triggerWindDown();
+
+        assertTrue(windDown.triggered(), "trigger succeeded despite sync revert");
+    }
+
     // ======== Governance Trigger ========
 
     function test_governanceTrigger_succeeds() public {
         // Timelock can trigger at any time
         vm.prank(address(timelock));
         vm.expectEmit(true, false, false, true);
-        emit WindDownTriggered(address(timelock), block.timestamp);
+        emit WindDownTriggered(address(timelock), block.timestamp, true);
         windDown.governanceTriggerWindDown();
 
         assertTrue(windDown.triggered());
@@ -238,6 +311,49 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.prank(address(timelock));
         windDown.governanceTriggerWindDown();
 
+        assertTrue(armToken.transferable());
+    }
+
+    // WHY: The two paths to enabling ARM transfers — governance proposal and
+    // wind-down trigger — are independent. The spec-expected post-crowdfund global
+    // unlock runs through the governance path long before any wind-down trigger.
+    // _executeWindDown must therefore tolerate transfers being already enabled and
+    // not fail on the token's "already enabled" revert. Without this guard, the
+    // entire wind-down + redemption surface (sweepToken, sweepETH, redeem, treasury
+    // wind-down sweep) becomes permanently unreachable.
+    function test_executeWindDown_governanceTriggerSucceedsWhenTransfersAlreadyEnabled() public {
+        // Pre-enable transfers via the governance path (timelock acts as the executor).
+        vm.prank(address(timelock));
+        armToken.setTransferable(true);
+        assertTrue(armToken.transferable());
+
+        // Wind-down trigger must succeed despite transfers already being on.
+        vm.prank(address(timelock));
+        windDown.governanceTriggerWindDown();
+
+        assertTrue(windDown.triggered());
+        assertEq(windDown.triggerTime(), block.timestamp);
+        assertTrue(armToken.transferable());
+    }
+
+    // WHY: Same scenario via the permissionless trigger path. Both code paths
+    // converge on _executeWindDown, but covering both pins the contract guarantee
+    // that the bricking failure mode cannot recur on either path after a refactor.
+    function test_executeWindDown_permissionlessTriggerSucceedsWhenTransfersAlreadyEnabled() public {
+        // Pre-enable transfers via governance.
+        vm.prank(address(timelock));
+        armToken.setTransferable(true);
+        assertTrue(armToken.transferable());
+
+        // Satisfy permissionless trigger conditions.
+        vm.warp(WIND_DOWN_DEADLINE + 1);
+        revenueCounter.setRevenue(REVENUE_THRESHOLD - 1);
+
+        vm.prank(randomUser);
+        windDown.triggerWindDown();
+
+        assertTrue(windDown.triggered());
+        assertEq(windDown.triggerTime(), block.timestamp);
         assertTrue(armToken.transferable());
     }
 
@@ -376,7 +492,16 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero armToken");
         new ArmadaWindDown(
             address(0), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
+            REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
+        );
+    }
+
+    function test_constructorRejectsZeroRevenueLock() public {
+        vm.expectRevert("ArmadaWindDown: zero revenueLock");
+        new ArmadaWindDown(
+            address(armToken), address(treasury), address(governor), address(redemption),
+            address(pauseController), address(revenueCounter), address(0), address(timelock),
             REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
         );
     }
@@ -385,7 +510,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: deadline in past");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
             REVENUE_THRESHOLD, block.timestamp - 1
         );
     }
@@ -394,7 +519,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero threshold");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
             0, WIND_DOWN_DEADLINE
         );
     }

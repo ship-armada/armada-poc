@@ -372,6 +372,164 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Standard));
     }
 
+    // WHY: distributeETH must mirror the >5% auto-promotion that distribute() has, or
+    // governance could drain ETH at the Standard quorum/timing threshold while ERC20
+    // drains require Extended. Treasury balance is read via address.balance for the
+    // ETH path.
+    function test_classify_distributeETHLargeAmountForcesExtended() public {
+        vm.deal(address(treasury), 100 ether);
+
+        // 6 ETH > 5% of 100 ETH → Extended
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("distributeETH(address,uint256)")),
+            alice,
+            6 ether
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(treasury), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // WHY: Counterpart to the small-distribute test — sub-threshold ETH distributions
+    // must stay Standard so routine operational ETH spends use the lower-cost path.
+    function test_classify_distributeETHSmallAmountStaysStandard() public {
+        vm.deal(address(treasury), 100 ether);
+
+        // 4 ETH < 5% of 100 ETH → Standard
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("distributeETH(address,uint256)")),
+            alice,
+            4 ether
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(treasury), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Standard));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // BATCH-SPLIT BYPASS: per-token aggregation across the proposal batch
+    // ═══════════════════════════════════════════════════════════════
+
+    // WHY: A proposer could otherwise split a single >5% drain into N sub-threshold
+    // calls, each individually under the per-call gate, and ride Standard quorum/timing
+    // (20% / 7d) for an aggregate that should require Extended (30% / 14d). Two
+    // 30k USDC calls against a 1M treasury sum to 60k (6%) and must force Extended.
+    function test_classify_batchSplitDistributeAggregateForcesExtended() public {
+        usdc.mint(address(treasury), 1_000_000e6);
+
+        bytes4 distSel = bytes4(keccak256("distribute(address,address,uint256)"));
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(distSel, address(usdc), alice, 30_000e6);
+        calldatas[1] = abi.encodeWithSelector(distSel, address(usdc), bob, 30_000e6);
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "split usdc");
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // WHY: Same batch-split bypass applies to the ETH path (different selector,
+    // address(0) sentinel). 4 + 4 = 8 ETH against a 100 ETH treasury exceeds the
+    // 5% threshold and must force Extended.
+    function test_classify_batchSplitDistributeETHAggregateForcesExtended() public {
+        vm.deal(address(treasury), 100 ether);
+
+        bytes4 ethSel = bytes4(keccak256("distributeETH(address,uint256)"));
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(ethSel, alice, 4 ether);
+        calldatas[1] = abi.encodeWithSelector(ethSel, bob, 4 ether);
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "split eth");
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // WHY: Negative case — aggregation is not over-promoting. Two 20k calls sum to
+    // 40k against a 1M treasury (4%), below the 5% threshold; must stay Standard.
+    function test_classify_batchedDistributeBelowAggregateStaysStandard() public {
+        usdc.mint(address(treasury), 1_000_000e6);
+
+        bytes4 distSel = bytes4(keccak256("distribute(address,address,uint256)"));
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(distSel, address(usdc), alice, 20_000e6);
+        calldatas[1] = abi.encodeWithSelector(distSel, address(usdc), bob, 20_000e6);
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "below threshold");
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Standard));
+    }
+
+    // WHY: Aggregation must be per-token, not cross-token. Two distributes targeting
+    // different tokens — each below its own 5% threshold — must not be summed together.
+    // Without this, a legitimate multi-token proposal could be falsely promoted to
+    // Extended because totals across unrelated tokens happened to exceed any one token's
+    // ceiling.
+    function test_classify_perTokenAggregationIsIndependent() public {
+        MockUSDC dai = new MockUSDC();
+        usdc.mint(address(treasury), 1_000_000e6);
+        dai.mint(address(treasury), 1_000_000e6);
+
+        bytes4 distSel = bytes4(keccak256("distribute(address,address,uint256)"));
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(distSel, address(usdc), alice, 40_000e6); // 4% of USDC
+        calldatas[1] = abi.encodeWithSelector(distSel, address(dai), alice, 40_000e6);  // 4% of DAI
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "two tokens");
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Standard));
+    }
+
+    // WHY: The 5% rule guards treasury drains. distribute() calldata aimed at a
+    // non-treasury target is not a treasury drain — its amount must not contribute
+    // to the aggregation. Without target filtering, an attacker could pad a Standard
+    // proposal with non-treasury "distribute"-shaped calls to DOS classification into
+    // Extended timing, or otherwise distort the per-token sums.
+    function test_classify_nonTreasuryTargetsExcludedFromAggregation() public {
+        usdc.mint(address(treasury), 1_000_000e6);
+
+        bytes4 distSel = bytes4(keccak256("distribute(address,address,uint256)"));
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(0xDECAF); // not the treasury
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        // Treasury-targeted call is below the 5% threshold (4%).
+        calldatas[0] = abi.encodeWithSelector(distSel, address(usdc), alice, 40_000e6);
+        // Non-treasury call: would push the aggregate above 5% if mistakenly counted.
+        calldatas[1] = abi.encodeWithSelector(distSel, address(usdc), alice, 100_000e6);
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "mixed targets");
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Standard));
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ARMADA FEE MODULE SELECTOR CLASSIFICATION
     // ═══════════════════════════════════════════════════════════════
@@ -471,6 +629,51 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         vm.prank(address(timelock));
         governor.setSecurityCouncil(address(0));
         assertEq(governor.securityCouncil(), address(0));
+    }
+
+    // WHY: The default-zero SC creates a launch-window in which no proposal can be
+    // vetoed and the 100k-ARM quorum floor may not yet be meetable via delegations.
+    // Allowing the deployer to bootstrap the SC before clearDeployer() closes that
+    // window. Matches the asymmetric-bootstrap pattern used for setCrowdfundAddress
+    // and setStewardContract. After clearDeployer(), only the timelock can set.
+    function test_securityCouncil_deployerCanBootstrap() public {
+        // The test contract IS the deployer (governor was deployed by address(this)).
+        assertEq(governor.deployer(), address(this));
+
+        governor.setSecurityCouncil(securityCouncil);
+        assertEq(governor.securityCouncil(), securityCouncil);
+    }
+
+    // WHY: During the bootstrap window, the deployer may need to correct an initial
+    // SC before clearDeployer() locks the role. Pin that overwrite is permitted.
+    function test_securityCouncil_deployerCanReplaceDuringBootstrap() public {
+        governor.setSecurityCouncil(securityCouncil);
+        assertEq(governor.securityCouncil(), securityCouncil);
+
+        address replacement = address(0xCAFE);
+        governor.setSecurityCouncil(replacement);
+        assertEq(governor.securityCouncil(), replacement);
+    }
+
+    // WHY: clearDeployer() permanently closes the deployer-bootstrap path. Any later
+    // attempt by the (now-cleared) original deployer EOA must revert. Ensures the
+    // bootstrap path is one-shot relative to the deploy lifecycle.
+    function test_securityCouncil_deployerLockedAfterClearDeployer() public {
+        governor.clearDeployer();
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
+        governor.setSecurityCouncil(securityCouncil);
+    }
+
+    // WHY: After clearDeployer() the timelock remains the sole governance authority
+    // for SC replacement / ejection / re-installation. Regression guard: the new
+    // deployer branch must not break the existing timelock path.
+    function test_securityCouncil_timelockCanSetAfterClearDeployer() public {
+        governor.clearDeployer();
+
+        vm.prank(address(timelock));
+        governor.setSecurityCouncil(securityCouncil);
+        assertEq(governor.securityCouncil(), securityCouncil);
     }
 
 }

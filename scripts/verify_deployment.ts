@@ -308,16 +308,38 @@ async function checkGovernanceWiring(govManifest: any) {
   }
 
   // Deployer cleared
+  let deployerCleared = false;
   try {
     const currentDeployer = await governor.deployer();
     if (currentDeployer === ethers.ZeroAddress) {
       pass(GROUP, "Governor deployer cleared");
+      deployerCleared = true;
     } else {
       warn(GROUP, "Governor deployer cleared",
         `deployer() = ${currentDeployer} (expected if crowdfund not yet deployed)`);
     }
   } catch {
     fail(GROUP, "Governor deployer cleared", "Error reading deployer");
+  }
+
+  // Security council bootstrap. After clearDeployer, the SC must be set — otherwise
+  // vetoes revert and the SC-gated emergency pause is inert until governance can
+  // meet quorum (which itself may not be possible until enough delegations land).
+  try {
+    const sc = await governor.securityCouncil();
+    if (sc === ethers.ZeroAddress) {
+      if (deployerCleared) {
+        fail(GROUP, "Governor securityCouncil set",
+          "securityCouncil() == 0 with deployer cleared — launch-window vulnerability");
+      } else {
+        warn(GROUP, "Governor securityCouncil set",
+          "securityCouncil() == 0 (expected if crowdfund not yet deployed)");
+      }
+    } else {
+      pass(GROUP, "Governor securityCouncil set", sc);
+    }
+  } catch {
+    fail(GROUP, "Governor securityCouncil set", "Error reading securityCouncil");
   }
 }
 
@@ -474,6 +496,34 @@ async function checkArmTokenCrowdfund(govManifest: any, crowdfundManifest: any) 
         `Expected ${govManifest.config.treasuryAllocation}, got ${ethers.formatUnits(treasuryBalance, 18)}`);
     }
   }
+
+  // Whitelist + delegator one-shot init flags. Both are set during deploy_crowdfund
+  // and lock permanently. Catches a deploy that finalized clearDeployer without
+  // running the bootstraps that depend on the deployer-only role.
+  try {
+    const whitelistInitialized = await armToken.whitelistInitialized();
+    if (whitelistInitialized) {
+      pass(GROUP, "ARM token whitelistInitialized");
+    } else {
+      fail(GROUP, "ARM token whitelistInitialized",
+        "whitelistInitialized() == false — initWhitelist was never called");
+    }
+  } catch {
+    fail(GROUP, "ARM token whitelistInitialized", "Error reading whitelistInitialized");
+  }
+
+  try {
+    const delegatorsInitialized = await armToken.authorizedDelegatorsInitialized();
+    if (delegatorsInitialized) {
+      pass(GROUP, "ARM token authorizedDelegatorsInitialized");
+    } else {
+      fail(GROUP, "ARM token authorizedDelegatorsInitialized",
+        "authorizedDelegatorsInitialized() == false — initAuthorizedDelegators was never called");
+    }
+  } catch {
+    fail(GROUP, "ARM token authorizedDelegatorsInitialized",
+      "Error reading authorizedDelegatorsInitialized");
+  }
 }
 
 // ============================================================================
@@ -549,6 +599,73 @@ async function checkWindDownWiring(govManifest: any) {
 }
 
 // ============================================================================
+// Check Group 8: Treasury Outflow + Steward Budget Config
+// ============================================================================
+
+async function checkTreasuryConfig(govManifest: any, hubCCTP: any | null) {
+  const GROUP = "Treasury Config";
+  const treasuryAddr = govManifest.contracts.treasury;
+  const treasury = await ethers.getContractAt("ArmadaTreasuryGov", treasuryAddr);
+  const armTokenAddr = govManifest.contracts.armToken;
+
+  // Token candidates to inspect: USDC (if known), ARM, and ETH sentinel address(0).
+  // The deploy script comment notes outflow + steward budgets are seeded "via
+  // governance proposal post-launch" — at fresh deploy, these are expected to be
+  // uninitialized. The verifier warns then; once governance has run, it should pass.
+  const candidates: { label: string; address: string }[] = [];
+  if (hubCCTP?.contracts?.usdc) {
+    candidates.push({ label: "USDC", address: hubCCTP.contracts.usdc });
+  }
+  candidates.push({ label: "ARM", address: armTokenAddr });
+  candidates.push({ label: "ETH", address: ethers.ZeroAddress });
+
+  for (const { label, address } of candidates) {
+    // Outflow config
+    try {
+      const cfg = await treasury.getOutflowConfig(address);
+      const initialized =
+        cfg.windowDuration !== 0n ||
+        cfg.limitBps !== 0n ||
+        cfg.limitAbsolute !== 0n ||
+        cfg.floorAbsolute !== 0n;
+      if (!initialized) {
+        warn(GROUP, `${label} outflow config initialized`,
+          "uninitialized — expected pre-governance, must be set before distribute() works");
+        continue;
+      }
+      // Initialized: verify no in-flight pending activation timestamps.
+      const pending = await treasury.getPendingOutflowConfig(address);
+      const stuckPending =
+        pending.pendingWindowDurationActivation !== 0n ||
+        pending.pendingLimitBpsActivation !== 0n ||
+        pending.pendingLimitAbsoluteActivation !== 0n;
+      if (stuckPending) {
+        fail(GROUP, `${label} outflow has no pending activations`,
+          `pending activations non-zero — windowAct=${pending.pendingWindowDurationActivation} ` +
+          `bpsAct=${pending.pendingLimitBpsActivation} absAct=${pending.pendingLimitAbsoluteActivation}`);
+      } else {
+        pass(GROUP, `${label} outflow config initialized + no pending activations`);
+      }
+    } catch {
+      fail(GROUP, `${label} outflow config readable`, "Error reading getOutflowConfig");
+    }
+
+    // Steward budget. Same fresh-deploy expectation: empty, seeded via governance.
+    try {
+      const budget = await treasury.stewardBudgets(address);
+      if (budget.authorized) {
+        warn(GROUP, `${label} steward budget initial state`,
+          `unexpectedly authorized at deploy time — limit=${budget.limit} window=${budget.window}`);
+      } else {
+        pass(GROUP, `${label} steward budget unauthorized at deploy`);
+      }
+    } catch {
+      fail(GROUP, `${label} steward budget readable`, "Error reading stewardBudgets");
+    }
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -591,6 +708,7 @@ async function main() {
   if (govManifest) {
     await checkGovernanceWiring(govManifest);
     await checkWindDownWiring(govManifest);
+    await checkTreasuryConfig(govManifest, hubCCTP);
   }
 
   if (yieldManifest) {

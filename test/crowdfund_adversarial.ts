@@ -776,15 +776,54 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: not finalized or canceled");
     });
 
-    it("launch team cannot commit via commit()", async function () {
-      // deployer IS launchTeam in this file's beforeEach
-      await crowdfund.addSeeds([deployer.address]);
+    // WHY: launchTeam is specified as a sentinel that "is not a participant and makes
+    // no commitment" (specs/CROWDFUND.md §Word-of-Mouth Whitelist). The four guards
+    // below enforce that invariant by closing every path that could place launchTeam
+    // into the participant graph. Without them, launchTeam could self-register at
+    // hop-0 via addSeed, self-invite at hop-1/hop-2 via launchTeamInvite, originate
+    // hop-2 invites via the regular invite() path after week 1, or be invited by
+    // any participant — all of which contradict the spec.
+    describe("launchTeam excluded from participant graph", function () {
+      it("addSeed rejects launchTeam as a seed", async function () {
+        await expect(
+          crowdfund.addSeeds([deployer.address])
+        ).to.be.revertedWith("ArmadaCrowdfund: launchTeam cannot be a seed");
+      });
 
-      await fundAndApprove(deployer, USDC(1_000));
+      it("launchTeamInvite rejects launchTeam as invitee at hop-1", async function () {
+        await expect(
+          crowdfund.launchTeamInvite(deployer.address, 0)
+        ).to.be.revertedWith("ArmadaCrowdfund: launchTeam cannot be invitee");
+      });
 
-      await expect(
-        crowdfund.connect(deployer).commit(0, USDC(1_000))
-      ).to.be.revertedWith("ArmadaCrowdfund: launch team cannot commit");
+      it("launchTeamInvite rejects launchTeam as invitee at hop-2", async function () {
+        await expect(
+          crowdfund.launchTeamInvite(deployer.address, 1)
+        ).to.be.revertedWith("ArmadaCrowdfund: launchTeam cannot be invitee");
+      });
+
+      // WHY: Defense in depth. With the addSeed/launchTeamInvite guards above, launchTeam
+      // can never become whitelisted to even reach this check. The guard ensures that
+      // even if a future code path introduced another whitelist route, launchTeam still
+      // cannot use the regular invite() path to issue invites after the week-1 window.
+      it("invite rejects launchTeam as msg.sender", async function () {
+        await expect(
+          crowdfund.connect(deployer).invite(allSigners[1].address, 0)
+        ).to.be.revertedWith("ArmadaCrowdfund: launchTeam cannot invite via regular path");
+      });
+
+      // WHY: Closes the remaining route — a regular participant inviting launchTeam.
+      // launchTeam is already blocked from committing and from originating invites
+      // under the guards above, so this is not exploitable, but a regular invite of
+      // launchTeam would still pollute the participant graph (whitelist a sentinel
+      // address as a hop node, increment invitesReceived on re-invite). The spec
+      // says launchTeam is not a participant; this guard makes the contract enforce it.
+      it("invite rejects launchTeam as invitee (called by a regular participant)", async function () {
+        await crowdfund.addSeeds([allSigners[1].address]);
+        await expect(
+          crowdfund.connect(allSigners[1]).invite(deployer.address, 0)
+        ).to.be.revertedWith("ArmadaCrowdfund: launchTeam cannot be invitee");
+      });
     });
 
     it("constructor rejects zero treasury address", async function () {
@@ -837,16 +876,6 @@ describe("Crowdfund Adversarial", function () {
       await expect(
         crowdfund.connect(allSigners[199]).claim(ethers.ZeroAddress)
       ).to.be.revertedWith("ArmadaCrowdfund: no commitment");
-    });
-
-    it("launch team cannot commit via commit()", async function () {
-      // deployer IS launchTeam in this file's beforeEach
-      await crowdfund.addSeeds([deployer.address]);
-      await fundAndApprove(deployer, USDC(15_000));
-
-      await expect(
-        crowdfund.connect(deployer).commit(0, USDC(1_000))
-      ).to.be.revertedWith("ArmadaCrowdfund: launch team cannot commit");
     });
 
     it("whitelisted-but-uncommitted participant cannot claim", async function () {

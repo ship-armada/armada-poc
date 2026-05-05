@@ -92,6 +92,9 @@ contract RevenueLockTest is Test {
         // Fund RevenueLock with ARM
         armToken.transfer(address(revenueLock), TOTAL_LOCK);
 
+        // Activate the contract — release() requires this. Permissionless one-shot.
+        revenueLock.activate();
+
         // Mine a block so getPastVotes works
         vm.roll(block.number + 1);
     }
@@ -253,6 +256,101 @@ contract RevenueLockTest is Test {
 
     function test_constructor_maxIncreasePerDaySet() public {
         assertEq(revenueLock.MAX_REVENUE_INCREASE_PER_DAY(), MAX_INCREASE_PER_DAY);
+    }
+
+    // ============ Activation Tests ============
+
+    /// @dev Helper: deploy a fresh RevenueLock with the same params as setUp() but
+    ///      do NOT fund or activate. Used by activation-gate tests to inspect the
+    ///      pre-activation state, which the main `revenueLock` instance never has
+    ///      because setUp() activates it.
+    function _deployFresh() internal returns (RevenueLock) {
+        address[] memory b = new address[](3);
+        b[0] = beneficiaryA;
+        b[1] = beneficiaryB;
+        b[2] = beneficiaryC;
+        uint256[] memory a = new uint256[](3);
+        a[0] = ALLOC_A;
+        a[1] = ALLOC_B;
+        a[2] = ALLOC_C;
+        return new RevenueLock(
+            address(armToken),
+            address(revenueCounter),
+            MAX_INCREASE_PER_DAY,
+            b,
+            a
+        );
+    }
+
+    // WHY: The contract is immutable with no admin/sweep — an underfunded deployment
+    // produces order-dependent claims (early beneficiaries get ARM, later ones revert
+    // at transfer) with no recovery path. The activate() gate fails fast for ALL
+    // beneficiaries when balance < totalAllocation, forcing full funding before any
+    // claim can settle.
+    function test_activate_revertsWhenUnderfunded() public {
+        RevenueLock fresh = _deployFresh();
+        // Send less than totalAllocation
+        armToken.transfer(address(fresh), TOTAL_LOCK - 1);
+        vm.expectRevert("RevenueLock: underfunded");
+        fresh.activate();
+    }
+
+    // WHY: A fully-funded deployment must be activatable. Pins the happy path so a
+    // future refactor can't tighten the check past the spec's funding threshold.
+    function test_activate_succeedsWhenExactlyFunded() public {
+        RevenueLock fresh = _deployFresh();
+        armToken.transfer(address(fresh), TOTAL_LOCK);
+        fresh.activate();
+        assertTrue(fresh.activated());
+    }
+
+    // WHY: Top-up beyond totalAllocation should still activate. Treasury or governance
+    // may overfund (defense-in-depth or to cover future cohort additions); the gate
+    // must not require an exact match.
+    function test_activate_succeedsWhenOverfunded() public {
+        RevenueLock fresh = _deployFresh();
+        armToken.transfer(address(fresh), TOTAL_LOCK + 1e18);
+        fresh.activate();
+        assertTrue(fresh.activated());
+    }
+
+    // WHY: One-shot semantics. Once activated, the gate cannot be re-armed — there is
+    // no path to disable releases. Pins this invariant against any future refactor
+    // that might add toggle behavior.
+    function test_activate_revertsWhenAlreadyActivated() public {
+        // setUp's revenueLock is already activated.
+        vm.expectRevert("RevenueLock: already activated");
+        revenueLock.activate();
+    }
+
+    // WHY: Permissionless. Anyone can verify funding and activate — not gated to
+    // deployer/governance. This is intentional: the deployer may be a multisig with
+    // process delays, but the verification step is purely on-chain (balance read).
+    // Locking it to a privileged caller would add a deploy-time race condition.
+    function test_activate_permissionless() public {
+        RevenueLock fresh = _deployFresh();
+        armToken.transfer(address(fresh), TOTAL_LOCK);
+
+        address randomCaller = address(0xCAFE);
+        vm.prank(randomCaller);
+        fresh.activate();
+
+        assertTrue(fresh.activated());
+    }
+
+    // WHY: The release() gate. Without activation, no beneficiary can claim — fails
+    // fast for ALL beneficiaries until full funding is verified.
+    function test_release_revertsBeforeActivation() public {
+        RevenueLock fresh = _deployFresh();
+        armToken.transfer(address(fresh), TOTAL_LOCK);
+        // Note: NOT calling activate()
+
+        // Need to set revenue so the milestone check would otherwise pass.
+        revenueCounter.setRevenue(1_000_000e18);
+
+        vm.prank(beneficiaryA);
+        vm.expectRevert("RevenueLock: not activated");
+        fresh.release(beneficiaryA);
     }
 
     // ============ View Function Tests ============
@@ -693,15 +791,29 @@ contract RevenueLockTest is Test {
         revenueLock.syncObservedRevenue();
     }
 
-    /// @dev WHY: converse to the event test — the event must NOT fire on a no-op
-    ///      sync. Otherwise monitoring would be flooded with non-events and real
-    ///      advances would be harder to spot. `ObservedRevenueUpdated` is reserved
-    ///      for *actual* state changes of maxObservedRevenue.
+    /// @dev WHY: `ObservedRevenueUpdated` must NOT fire on a no-op sync —
+    ///      otherwise advance-detection consumers would be flooded with non-events.
+    ///      The event is reserved for *actual* state changes of maxObservedRevenue.
+    ///      Per audit-30 the `Synced` event was added to fire on every non-frozen
+    ///      call (advance or no-op) so consumers wanting full sync observability
+    ///      have a separate signal. This test pins the asymmetric pattern: a
+    ///      no-op sync emits `Synced` exactly once and `ObservedRevenueUpdated`
+    ///      zero times.
     function test_ratchet_noEventOnNoOpSync() public {
         vm.recordLogs();
         revenueLock.syncObservedRevenue();
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertEq(logs.length, 0, "no-op sync must not emit ObservedRevenueUpdated");
+        bytes32 advanceTopic = keccak256("ObservedRevenueUpdated(uint256,uint256,uint256)");
+        bytes32 syncedTopic = keccak256("Synced(uint256,uint256,uint256)");
+        uint256 advanceCount;
+        uint256 syncedCount;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length == 0) continue;
+            if (logs[i].topics[0] == advanceTopic) advanceCount++;
+            if (logs[i].topics[0] == syncedTopic) syncedCount++;
+        }
+        assertEq(advanceCount, 0, "no-op sync must not emit ObservedRevenueUpdated");
+        assertEq(syncedCount, 1, "no-op sync must emit Synced exactly once");
     }
 
     /// @dev WHY: the primary bug from issue #225 — `release()` previously computed

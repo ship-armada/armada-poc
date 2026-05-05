@@ -151,24 +151,74 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertEq(treasuryAfter - treasuryBefore, ARM_FUNDING, "All ARM should be swept");
     }
 
-    /// @notice computeAllocation reverts in refundMode
-    function test_computeAllocation_revertsInRefundMode() public {
+    // WHY: Spec (CROWDFUND.md §"computeAllocation()" + Events table) requires
+    // the canonical post-finalization view to "always return the theoretical
+    // entitlement regardless of timing or claim status". In refundMode the
+    // deterministic answer is well-defined: 0 ARM, sum of committed USDC.
+    // Audit-101 dropped the previous refundMode revert; pin the new positive
+    // behavior so a future refactor cannot reintroduce the canonical-view gap.
+
+    /// @notice computeAllocation returns (0 ARM, sum of committed USDC) in refundMode
+    function test_computeAllocation_returnsFullRefundUsdc_inRefundMode() public {
         _allSeedsCommitFull();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
-        vm.expectRevert("ArmadaCrowdfund: sale in refund mode");
-        crowdfund.computeAllocation(seeds[0]);
+        assertTrue(crowdfund.refundMode(), "should be in refund mode");
+        (uint256 armAmount, uint256 refundUsdc) = crowdfund.computeAllocation(seeds[0]);
+        assertEq(armAmount, 0, "ARM entitlement is zero in refundMode");
+        assertEq(refundUsdc, 15_000 * 1e6, "refund equals full committed USDC across all hops");
     }
 
-    /// @notice computeAllocationAtHop reverts in refundMode
-    function test_computeAllocationAtHop_revertsInRefundMode() public {
+    /// @notice computeAllocation matches participants[].committed sum across hops in refundMode
+    ///         — equivalence with the spec's events-only fallback path.
+    function test_computeAllocation_matchesCommittedSum_inRefundMode() public {
         _allSeedsCommitFull();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
-        vm.expectRevert("ArmadaCrowdfund: sale in refund mode");
-        crowdfund.computeAllocationAtHop(seeds[0], 0);
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 expectedRefund;
+            for (uint8 h = 0; h < 3; h++) {
+                expectedRefund += crowdfund.getCommitment(seeds[i], h);
+            }
+            (uint256 armAmount, uint256 refundUsdc) = crowdfund.computeAllocation(seeds[i]);
+            assertEq(armAmount, 0, "ARM entitlement is zero in refundMode");
+            assertEq(refundUsdc, expectedRefund, "view matches per-hop committed sum");
+        }
+    }
+
+    /// @notice computeAllocationAtHop returns (0, p.committed) in refundMode
+    function test_computeAllocationAtHop_returnsHopCommitted_inRefundMode() public {
+        _allSeedsCommitFull();
+        vm.warp(crowdfund.windowEnd() + 1);
+        crowdfund.finalize();
+
+        assertTrue(crowdfund.refundMode(), "should be in refund mode");
+        (uint256 armAmount, uint256 refundUsdc) = crowdfund.computeAllocationAtHop(seeds[0], 0);
+        assertEq(armAmount, 0, "ARM entitlement is zero in refundMode");
+        assertEq(refundUsdc, 15_000 * 1e6, "refund equals committed amount at this hop");
+
+        // Hop with no commitment → zero refund (no synthetic entitlement)
+        (armAmount, refundUsdc) = crowdfund.computeAllocationAtHop(seeds[0], 1);
+        assertEq(armAmount, 0, "ARM is zero for un-committed hop");
+        assertEq(refundUsdc, 0, "refund is zero for un-committed hop");
+    }
+
+    /// @notice The canonical view is stable across claimRefund — "regardless of claim status".
+    function test_computeAllocation_unchangedAfterClaimRefund_inRefundMode() public {
+        _allSeedsCommitFull();
+        vm.warp(crowdfund.windowEnd() + 1);
+        crowdfund.finalize();
+
+        (uint256 armBefore, uint256 refundBefore) = crowdfund.computeAllocation(seeds[0]);
+
+        vm.prank(seeds[0]);
+        crowdfund.claimRefund();
+
+        (uint256 armAfter, uint256 refundAfter) = crowdfund.computeAllocation(seeds[0]);
+        assertEq(armAfter, armBefore, "ARM entitlement is invariant across claim");
+        assertEq(refundAfter, refundBefore, "refund entitlement is invariant across claim");
     }
 
     // ============ RefundMode cannot happen after expansion ============

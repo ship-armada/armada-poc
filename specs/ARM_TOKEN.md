@@ -162,9 +162,9 @@ These addresses can send ARM even while transfers are globally restricted. **The
 Two paths, both irreversible:
 
 1. **Governance proposal.** ARM holders vote to enable transfers. There are no predeclared conditions — holders decide when.
-2. **Wind-down trigger.** `triggerWindDown()` automatically calls `setTransferable(true)` as a side effect. Holders must be able to move ARM to claim their pro-rata share of treasury assets — they may hold ARM on an exchange, in a multisig, or in a contract that isn't their claim address.
+2. **Wind-down trigger.** `triggerWindDown()` ensures transfers are enabled as a side effect. Holders must be able to move ARM to claim their pro-rata share of treasury assets — they may hold ARM on an exchange, in a multisig, or in a contract that isn't their claim address.
 
-Both paths call the same `setTransferable(true)`. Once called, it cannot be reversed.
+Both paths converge on the same `transferable = true` end-state. The two paths are independent — neither requires the other to fire first, and either can fire first. **The wind-down trigger treats "transfers enabled" as a post-condition, not a precondition:** if governance has already enabled transfers, wind-down skips the redundant `setTransferable(true)` call (the token's setter reverts on already-enabled, so wind-down checks first). Once `transferable` is `true`, it cannot be reversed regardless of which path set it.
 
 **Authorization:** `setTransferable(true)` is callable only by two addresses, both set immutably in the constructor:
 - **Governor executor** (the timelock contract that executes passed governance proposals)

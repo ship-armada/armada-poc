@@ -7,14 +7,30 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-/// @notice Minimal interface for ARM token transferable flag
+/// @notice Minimal interface for ARM token: transferable flag and the
+/// circulatingSupplyOf batch helper used by circulatingSupply().
 interface IArmadaTokenRedemption {
     function transferable() external view returns (bool);
+    function circulatingSupplyOf(address[] calldata excluded) external view returns (uint256);
 }
 
 /// @notice Minimal interface for reading wind-down trigger timestamp
 interface IArmadaWindDownRedemption {
     function triggerTime() external view returns (uint256);
+}
+
+/// @notice Minimal interface for reading the locked (unvested) portion of RevenueLock.
+///         Pre-freeze the live ratchet is used; post-freeze (after wind-down trigger)
+///         this returns the value frozen at trigger time.
+interface IRevenueLockRedemption {
+    function lockedAtWindDown() external view returns (uint256);
+}
+
+/// @notice Minimal interface for reading entitled-but-unclaimed ARM in the crowdfund.
+///         `armStillOwed` returns the dynamic amount the contract owes participants
+///         (zero pre-finalize / on cancel / refundMode / post-claim-deadline).
+interface IArmadaCrowdfundRedemption {
+    function armStillOwed() external view returns (uint256);
 }
 
 /// @title ArmadaRedemption — Pro-rata treasury redemption for ARM holders
@@ -100,8 +116,9 @@ contract ArmadaRedemption is ReentrancyGuard {
     /// @param _windDown ArmadaWindDown contract address
     function setWindDown(address _windDown) external {
         require(msg.sender == admin, "ArmadaRedemption: not admin");
-        require(windDown == address(0), "ArmadaRedemption: wind-down already set");
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         require(_windDown != address(0), "ArmadaRedemption: zero windDown");
+        require(windDown == address(0), "ArmadaRedemption: wind-down already set");
         windDown = _windDown;
         emit WindDownSet(_windDown);
     }
@@ -114,11 +131,16 @@ contract ArmadaRedemption is ReentrancyGuard {
     /// @param armAmount Amount of ARM to deposit
     /// @param tokens Array of ERC20 token addresses to redeem (must be sorted ascending, no
     ///        duplicates, and must not include the ARM token)
-    /// @param includeETH If true, also redeem pro-rata share of ETH held by this contract
+    /// @param ethRecipient Recipient for the pro-rata ETH share. Must be non-zero when this
+    ///        contract holds ETH; passing address(0) reverts in that case so a redeemer
+    ///        cannot silently forfeit their ETH share. When the contract holds zero ETH,
+    ///        ethRecipient is ignored — allowing ERC20-only redemption against an ETH-less
+    ///        treasury. Smart-contract redeemers that cannot receive ETH should pass an EOA
+    ///        address they control rather than address(0).
     function redeem(
         uint256 armAmount,
         address[] calldata tokens,
-        bool includeETH
+        address ethRecipient
     ) external nonReentrant {
         require(armAmount > 0, "ArmadaRedemption: zero amount");
         // Defense-in-depth: ARM transfers are enabled by the wind-down contract via
@@ -131,8 +153,10 @@ contract ArmadaRedemption is ReentrancyGuard {
 
         // Enforce the post-trigger redemption delay. Provides a social-coordination window
         // for sweepToken/sweepETH to run before any redemption can execute. See issue #254.
-        require(windDown != address(0), "ArmadaRedemption: wind-down not set");
-        uint256 triggeredAt = IArmadaWindDownRedemption(windDown).triggerTime();
+        // Cache windDown: read twice (audit-76).
+        address wd = windDown;
+        require(wd != address(0), "ArmadaRedemption: wind-down not set");
+        uint256 triggeredAt = IArmadaWindDownRedemption(wd).triggerTime();
         require(triggeredAt > 0, "ArmadaRedemption: wind-down not triggered");
         require(
             block.timestamp >= triggeredAt + REDEMPTION_DELAY,
@@ -147,12 +171,17 @@ contract ArmadaRedemption is ReentrancyGuard {
         // Transfer ARM from redeemer to this contract (locked permanently)
         armToken.safeTransferFrom(msg.sender, address(this), armAmount);
 
-        // Distribute pro-rata share of each requested ERC20 token. Track whether any
-        // payout occurred so we can revert if the caller would lock ARM for zero return
-        // (e.g. redeeming before sweeps have populated the contract — see issue #254).
+        // Distribute pro-rata share of each requested ERC20 token. Each requested asset
+        // must yield a non-zero share — partial sweeps that leave some balances at zero
+        // would otherwise silently forfeit the redeemer's claim on the un-swept assets,
+        // shifting that value to later redeemers (sequential-correctness violation per
+        // GOVERNANCE.md §Redemption mechanism). The strict check forces redeemers to
+        // wait until all requested assets are swept (or to call again with only the
+        // swept subset). Same rule applies to ETH below.
         bool anyPayout;
         for (uint256 i = 0; i < tokens.length; i++) {
             // ARM deposited in this contract is locked permanently — never distributable
+            require(tokens[i] != address(0), "ArmadaRedemption: zero token");
             require(tokens[i] != address(armToken), "ArmadaRedemption: cannot redeem ARM");
 
             // Tokens must be sorted ascending with no duplicates to prevent double-claiming
@@ -162,44 +191,92 @@ contract ArmadaRedemption is ReentrancyGuard {
 
             uint256 available = IERC20(tokens[i]).balanceOf(address(this));
             uint256 share = (available * armAmount) / circulating;
-            if (share > 0) {
-                IERC20(tokens[i]).safeTransfer(msg.sender, share);
-                anyPayout = true;
-            }
+            require(share > 0, "ArmadaRedemption: zero share for token");
+            IERC20(tokens[i]).safeTransfer(msg.sender, share);
+            anyPayout = true;
         }
 
-        // Distribute pro-rata share of ETH if requested
+        // Distribute pro-rata share of ETH if the pool has any. The ethRecipient
+        // parameter prevents silent forfeit (audit-81): a smart-contract redeemer
+        // unable to receive ETH must route to an EOA explicitly rather than passing
+        // a flag that drops their share. When the pool holds zero ETH (legitimate
+        // for a USDC-only protocol), ethRecipient is ignored — redemption proceeds
+        // against ERC20s alone.
         uint256 ethPayout;
-        if (includeETH) {
-            uint256 ethBalance = address(this).balance;
+        uint256 ethBalance = address(this).balance;
+        if (ethBalance > 0) {
+            require(ethRecipient != address(0), "ArmadaRedemption: zero ETH recipient");
             ethPayout = (ethBalance * armAmount) / circulating;
-            if (ethPayout > 0) {
-                (bool success,) = msg.sender.call{value: ethPayout}("");
-                require(success, "ArmadaRedemption: ETH transfer failed");
-                anyPayout = true;
+            require(ethPayout > 0, "ArmadaRedemption: zero share for ETH");
+            // Assembly call with retSize=0 skips the return-data copy. ethRecipient
+            // is user-supplied and could be a contract returning a maximally-sized
+            // payload to grief the redeemer's gas — the high-level .call form
+            // copies that payload into memory regardless of whether we read it.
+            // See audit-86.
+            bool success;
+            address recipient = ethRecipient;
+            uint256 value = ethPayout;
+            assembly {
+                success := call(gas(), recipient, value, 0, 0, 0, 0)
             }
+            require(success, "ArmadaRedemption: ETH transfer failed");
+            anyPayout = true;
         }
 
-        // Prevent ARM lock-in with zero return (issue #254). This closes the catastrophic
-        // all-zero-payout case that the REDEMPTION_DELAY cannot guarantee against — the
-        // delay gives sweeps a chance to run but does not force them. If no sweep ever
-        // ran, or the caller requested only un-swept assets, this revert preserves ARM.
-        require(anyPayout, "ArmadaRedemption: no assets available - call sweep first");
+        // Belt-and-suspenders for the empty-input case (tokens.length == 0 and the
+        // ETH pool is empty). The per-asset checks above don't fire on empty input,
+        // so this preserves ARM if a caller requests nothing.
+        require(anyPayout, "ArmadaRedemption: must request at least one asset");
 
         emit Redeemed(msg.sender, armAmount, tokens, ethPayout);
     }
 
     // ============ View Functions ============
 
-    /// @notice Circulating ARM supply, excluding non-redeemable addresses.
-    ///         Denominator = totalSupply - treasury - revenueLock - crowdfund - this contract
-    function circulatingSupply() public view returns (uint256) {
-        uint256 total = armToken.totalSupply();
-        total -= armToken.balanceOf(treasury);
-        total -= armToken.balanceOf(revenueLock);
-        total -= armToken.balanceOf(crowdfundContract);
-        total -= armToken.balanceOf(address(this));
-        return total;
+    /// @notice Circulating ARM supply for the redemption denominator.
+    /// @dev Includes entitled-but-unclaimed ARM in RevenueLock and ArmadaCrowdfund —
+    ///      otherwise late releasers/claimers would be denominator-exempt and early
+    ///      redeemers would consume the treasury at their expense (see PoC #90).
+    ///
+    ///      Subtracted from totalSupply:
+    ///      1. Treasury balance — ARM the treasury holds is never circulating.
+    ///      2. Redemption contract balance — deposited ARM is locked here permanently.
+    ///      3. RevenueLock LOCKED portion only — `lockedAtWindDown()` returns the
+    ///         unvested portion (totalAllocation × (10000 − unlockBps) / 10000).
+    ///         Entitled-unreleased ARM stays in circulating: beneficiaries can call
+    ///         release() and then redeem.
+    ///      4. Crowdfund UNSOLD-IN-CONTRACT portion only — balance minus armStillOwed.
+    ///         Entitled-unclaimed ARM stays in circulating: participants can call
+    ///         claim() and then redeem.
+    ///
+    ///      The crowdfund portion is computed dynamically (balance − armStillOwed)
+    ///      rather than as a constant (totalArmSupply − totalAllocatedArm). When
+    ///      withdrawUnallocatedArm runs and moves the unsold portion to treasury,
+    ///      the dynamic computation goes to 0 (balance and armStillOwed both fall
+    ///      by the swept amount), and the treasury balance subtraction picks it up.
+    ///      A constant subtraction would double-count the swept portion.
+    function circulatingSupply() public view returns (uint256 total) {
+        // Batch the totalSupply + treasury/this balanceOf reads into one external
+        // CALL via circulatingSupplyOf. Crowdfund balance stays separate so the
+        // defensive clamp below (cfStillOwed >= cfBalance) can still surface an
+        // accounting inconsistency without underflowing.
+        address[] memory excluded = new address[](2);
+        excluded[0] = treasury;
+        excluded[1] = address(this);
+        total = IArmadaTokenRedemption(address(armToken)).circulatingSupplyOf(excluded);
+
+        // RevenueLock locked portion (unvested). Pre-freeze: live ratchet value.
+        // Post-freeze: stable across the redemption window.
+        total -= IRevenueLockRedemption(revenueLock).lockedAtWindDown();
+
+        // Crowdfund unsold-in-contract: balance - armStillOwed. Goes to 0 once the
+        // unsold portion is swept to treasury.
+        uint256 cfBalance = armToken.balanceOf(crowdfundContract);
+        uint256 cfStillOwed = IArmadaCrowdfundRedemption(crowdfundContract).armStillOwed();
+        // Defensive: cfStillOwed should never exceed cfBalance, but clamp to avoid
+        // underflow if the crowdfund's accounting ever becomes inconsistent.
+        uint256 cfUnsold = cfStillOwed >= cfBalance ? 0 : cfBalance - cfStillOwed;
+        total -= cfUnsold;
     }
 
     /// @notice Accept ETH (from wind-down sweeps)

@@ -36,23 +36,20 @@ contract ShieldPauseController is IShieldPauseController {
     /// @notice Maximum pause duration (24 hours)
     uint256 public constant MAX_PAUSE_DURATION = 24 hours;
 
+    // Pack 4 bools + address into one slot (audit-68): 4 + 20 = 24 bytes.
     /// @notice Whether shields are paused (internal flag — use shieldsPaused() for auto-expiry)
     bool private _paused;
-
-    /// @notice Timestamp when the current pause expires (0 if not paused)
-    uint256 public pauseExpiry;
-
     /// @notice Whether the wind-down has been activated
     bool public windDownActive;
-
+    /// @notice Whether the wind-down contract has been set (one-time setter lock)
+    bool public windDownContractSet;
+    /// @notice Whether the single post-wind-down pause has been consumed
+    bool public windDownPauseUsed;
     /// @notice Wind-down contract address (only this address can call setWindDownActive)
     address public windDownContract;
 
-    /// @notice Whether the wind-down contract has been set (one-time setter lock)
-    bool public windDownContractSet;
-
-    /// @notice Whether the single post-wind-down pause has been consumed
-    bool public windDownPauseUsed;
+    /// @notice Timestamp when the current pause expires (0 if not paused)
+    uint256 public pauseExpiry;
 
     // ============ Events ============
 
@@ -105,8 +102,11 @@ contract ShieldPauseController is IShieldPauseController {
     ///         Pre-wind-down: SC can re-invoke after expiry (unlimited).
     ///         Post-wind-down: exactly one invocation allowed.
     function pauseShields() external {
+        // sc != address(0) check is redundant: msg.sender is never address(0) in
+        // EVM, so msg.sender == sc already implies sc != address(0). Pre-launch
+        // (governor.securityCouncil() == 0) is rejected by the first conjunct alone.
         address sc = governor.securityCouncil();
-        require(msg.sender == sc && sc != address(0), "ShieldPauseController: not SC");
+        require(msg.sender == sc, "ShieldPauseController: not SC");
         require(!_isPaused(), "ShieldPauseController: already paused");
 
         if (windDownActive) {
@@ -115,8 +115,10 @@ contract ShieldPauseController is IShieldPauseController {
         }
 
         _paused = true;
-        pauseExpiry = block.timestamp + MAX_PAUSE_DURATION;
-        emit ShieldsPaused(msg.sender, pauseExpiry);
+        // Compute expiry into a local first to avoid SLOAD in the emit (audit-76).
+        uint256 expiry = block.timestamp + MAX_PAUSE_DURATION;
+        pauseExpiry = expiry;
+        emit ShieldsPaused(msg.sender, expiry);
     }
 
     // ============ Governance Functions ============
@@ -133,8 +135,9 @@ contract ShieldPauseController is IShieldPauseController {
     /// @notice Set the wind-down contract address. One-time setter, timelock-only.
     function setWindDownContract(address _windDownContract) external {
         require(msg.sender == pauseTimelock, "ShieldPauseController: not timelock");
-        require(!windDownContractSet, "ShieldPauseController: wind-down already set");
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         require(_windDownContract != address(0), "ShieldPauseController: zero address");
+        require(!windDownContractSet, "ShieldPauseController: wind-down already set");
         windDownContractSet = true;
         windDownContract = _windDownContract;
         emit WindDownContractSet(_windDownContract);
@@ -144,10 +147,20 @@ contract ShieldPauseController is IShieldPauseController {
 
     /// @notice Called by the wind-down contract to activate withdraw-only mode.
     ///         Shields are permanently disabled; unshields remain available indefinitely.
+    /// @dev If a pre-trigger SC pause is still active when wind-down fires, that pause
+    ///      consumes the single post-wind-down pause budget. Without this, an SC pause
+    ///      issued just before triggerWindDown would block unshields via emergencyPaused
+    ///      for its remaining 24h AND leave the post-trigger pause untouched, enabling
+    ///      a chained ~48h unshield block. With this, total continuous unshield blocking
+    ///      across the trigger is bounded by the residual of the active pre-trigger
+    ///      pause (≤24h).
     function setWindDownActive() external {
         require(msg.sender == windDownContract, "ShieldPauseController: not wind-down contract");
         require(!windDownActive, "ShieldPauseController: wind-down already active");
         windDownActive = true;
+        if (_isPaused()) {
+            windDownPauseUsed = true;
+        }
         emit WindDownActivated();
     }
 

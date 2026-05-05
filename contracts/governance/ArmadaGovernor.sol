@@ -13,13 +13,20 @@ import "./IArmadaGovernance.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
 
-/// @dev Minimal interface for reading treasury outflow limits at queue time.
-///      Matches the signature of ArmadaTreasuryGov.getOutflowStatus.
+/// @dev Minimal interface for reading treasury limits at queue time.
+///      Matches the signatures of ArmadaTreasuryGov.getOutflowStatus and getStewardBudget.
+///      The `Outflow` name is retained because the queue-time gates collectively guard
+///      treasury outflow paths (rolling-window outflow ceiling + per-token steward budget).
 interface IArmadaTreasuryOutflow {
     function getOutflowStatus(address token) external view returns (
         uint256 effectiveLimit,
         uint256 recentOutflow,
         uint256 available
+    );
+    function getStewardBudget(address token) external view returns (
+        uint256 budget,
+        uint256 spent,
+        uint256 remaining
     );
 }
 
@@ -64,6 +71,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_QuorumBpsOutOfBounds();
     error Gov_SameVote();
     error Gov_SelectorAlreadyExtended();
+    error Gov_SelectorAlreadyStandard();
     error Gov_SelectorNotExtended();
     error Gov_SelfPaymentNotAllowed();
     error Gov_StewardCalldataClassifiedAsExtended();
@@ -85,15 +93,27 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_SCEjected();
     error Gov_SignalingMustBeEmpty();
     error Gov_SignalingNoExecution();
-    error Gov_TreasuryAlreadyExcluded();
+    error Gov_DuplicateExcludedAddress();
     error Gov_OutflowInfeasible();
+    error Gov_StewardBudgetInfeasible();
 
     // ============ Types ============
 
+    // Field order packs proposer (20) + proposalType (1) + 4 bools (4) into one
+    // 25-byte slot (audit-68). Reordering lives in this struct definition because
+    // Proposal is stored in a mapping (`_proposals[id]`), so the struct's internal
+    // layout determines per-instance slot offsets — must land pre-mainnet (any
+    // change after deploy corrupts every existing proposal's stored fields).
     struct Proposal {
         uint256 id;
+
+        // Packed slot: 20 + 1 + 1 + 1 + 1 + 1 = 25 bytes
         address proposer;
         ProposalType proposalType;
+        bool executed;
+        bool canceled;
+        bool queued;
+        bool vetoRatificationDenied; // prevents re-veto of a proposal restored after community denied a veto
 
         // Timing (timestamps)
         uint256 voteStart;
@@ -116,12 +136,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256 againstVotes;
         uint256 abstainVotes;
 
-        // State tracking
-        bool executed;
-        bool canceled;
-        bool queued;
-        bool vetoRatificationDenied; // prevents re-veto of a proposal restored after community denied a veto
-
         // Execution data
         address[] targets;
         uint256[] values;
@@ -142,7 +156,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @notice Addresses excluded from quorum denominator (e.g. crowdfund contract).
     /// ARM held by these addresses is non-voteable and should not inflate quorum requirements.
     address[] private _excludedFromQuorum;
-    bool public excludedAddressesLocked;
+    // excludedAddressesLocked moved into the packed lock-flag slot below (audit-68).
 
     // Voter tracking per proposal
     mapping(uint256 => mapping(address => bool)) public hasVoted;
@@ -185,9 +199,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.
+    // Packed lock-flag slot (audit-68): 3 bools + address = 23 bytes in one slot,
+    // also absorbs `excludedAddressesLocked` (relocated from earlier in the file).
+    bool public excludedAddressesLocked;
     bool public windDownActive;
-    address public windDownContract;
     bool public windDownContractSet;
+    address public windDownContract;
 
     // Steward contract: registered via one-time setter. The governor calls it to verify
     // that msg.sender is the elected steward when creating steward proposals.
@@ -202,6 +219,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // Treasury >5% threshold for automatic extended classification of distribute() calls.
     // The distribute selector is checked specially: if amount > 5% of treasury balance, Extended.
     bytes4 public constant DISTRIBUTE_SELECTOR = bytes4(keccak256("distribute(address,address,uint256)"));
+    bytes4 public constant DISTRIBUTE_ETH_SELECTOR = bytes4(keccak256("distributeETH(address,uint256)"));
     bytes4 public constant STEWARD_SPEND_SELECTOR = bytes4(keccak256("stewardSpend(address,address,uint256)"));
     uint256 public constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
 
@@ -231,7 +249,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event ProposalCreated(
         uint256 indexed proposalId,
         address indexed proposer,
-        ProposalType proposalType,
+        ProposalType indexed proposalType,
         uint256 voteStart,
         uint256 voteEnd,
         string description
@@ -256,6 +274,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld);
     event SecurityCouncilEjected(uint256 indexed ratificationId);
     event ExcludedAddressesSet(address[] addresses);
+    event ExcludedAddressAdded(address indexed addr);
     event DeployerCleared(address indexed previousDeployer);
 
     // ============ Constructor & Initializer ============
@@ -368,10 +387,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("removeTier(uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setYieldFee(uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setIntegratorTerms(address,uint256,uint256,bool)"))] = true;
-        // Steward budget token management (on ArmadaTreasuryGov)
+        // Steward budget token management (on ArmadaTreasuryGov). addStewardBudgetToken
+        // is always loosening (grants a new spending authority) → Extended.
+        // updateStewardBudgetToken is direction-dependent (a smaller limit / shorter
+        // window is tightening; a larger limit / longer window is loosening) — until
+        // directional classification lands it stays flat-Extended, which over-gates
+        // the tightening direction but is fail-safe.
         extendedSelectors[bytes4(keccak256("addStewardBudgetToken(address,uint256,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("updateStewardBudgetToken(address,uint256,uint256)"))] = true;
-        extendedSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
         // Treasury outflow limit parameters
         extendedSelectors[bytes4(keccak256("setOutflowWindow(address,uint256)"))] = true;
         extendedSelectors[bytes4(keccak256("setOutflowLimitBps(address,uint256)"))] = true;
@@ -393,9 +416,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // Fail-closed default: selectors explicitly permitted at Standard classification.
         // Any selector NOT in extendedSelectors AND NOT in standardSelectors defaults to Extended.
         standardSelectors[DISTRIBUTE_SELECTOR] = true;  // distribute() below the 5% threshold
+        standardSelectors[DISTRIBUTE_ETH_SELECTOR] = true; // distributeETH() below the 5% threshold
         standardSelectors[bytes4(keccak256("stewardSpend(address,address,uint256)"))] = true;
-        standardSelectors[bytes4(keccak256("transferTo(address,address,uint256)"))] = true;
-        standardSelectors[bytes4(keccak256("transferETHTo(address,uint256)"))] = true;
+        // transferTo / transferETHTo are intentionally NOT registered. They are
+        // wind-down-only on the treasury (require msg.sender == windDownContract),
+        // so any governance proposal calling them via the timelock would revert.
+        // Leaving them un-registered makes them fail-closed to Extended — a more
+        // honest signal to proposers that these are not governance paths.
         // ARM token transfer enable — one-way, irreversible, callable via governance or wind-down
         standardSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Steward removal — defensive/emergency action, lower bar per spec
@@ -411,28 +438,70 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // loosening) is not yet enforced in code; tracked separately for future work.
         standardSelectors[bytes4(keccak256("setRevenueThreshold(uint256)"))] = true;
         standardSelectors[bytes4(keccak256("setWindDownDeadline(uint256)"))] = true;
+        // governanceTriggerWindDown() is intentionally NOT registered here. Per spec
+        // it is Extended (irreversible terminal state transition). The fail-closed
+        // default (unregistered selectors classify as Extended) carries this
+        // classification; do not move it into standardSelectors.
         // Non-stablecoin revenue attestation (on RevenueCounter) — governance attests
         // USD value of non-stablecoin fees (e.g. ETH). Operational governance task.
+        // addRevenue is the routine increment-style path; attestRevenue (SET) is
+        // reserved for confirmed-error correction (see RevenueCounter natspec).
+        standardSelectors[bytes4(keccak256("addRevenue(uint256)"))] = true;
         standardSelectors[bytes4(keccak256("attestRevenue(uint256)"))] = true;
+        // removeStewardBudgetToken — always tightening (revokes a spending authority,
+        // no parameter to interpret either way). Standard quorum/timing matches the
+        // spec's "tightening is easy" directional principle and prevents a 14-day
+        // frontrun window between Extended-cut activation and the 9-day steward
+        // proposal cycle.
+        standardSelectors[bytes4(keccak256("removeStewardBudgetToken(address)"))] = true;
     }
 
     // ============ Quorum Exclusion ============
 
     /// @notice One-time setter: register addresses whose ARM balances are excluded from quorum.
     /// Deployer-only; locks permanently after the first call.
-    /// Intended for contracts holding non-voteable ARM (e.g. crowdfund).
+    /// Intended for contracts holding non-voteable ARM (e.g. crowdfund, RevenueLock).
+    /// Post-bootstrap additions go through the timelock-gated addExcludedAddress.
     function setExcludedAddresses(address[] calldata addrs) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
         if (excludedAddressesLocked) revert Gov_AlreadyLocked();
 
         excludedAddressesLocked = true;
+        // Duplicate detection lives in _registerExcludedAddress, which checks the
+        // candidate against the (growing) _excludedFromQuorum list. _initProposal
+        // sums balanceOf across this list, so a duplicate would double-count its
+        // balance into excludedBalance and lower the quorum threshold below the
+        // spec value. The treasury is implicitly excluded by the quorum-denominator
+        // math (its balance is subtracted separately at proposal creation), so
+        // listing it here would be an explicit duplicate of the implicit exclusion.
+        // Realistic input is 2-5 addresses; O(n^2) is gas-trivial at that size.
         for (uint256 i = 0; i < addrs.length; i++) {
-            if (addrs[i] == address(0)) revert Gov_ZeroAddress();
-            if (addrs[i] == treasuryAddress) revert Gov_TreasuryAlreadyExcluded();
-            _excludedFromQuorum.push(addrs[i]);
+            _registerExcludedAddress(addrs[i]);
         }
 
         emit ExcludedAddressesSet(addrs);
+    }
+
+    /// @notice Append a single address to the quorum-exclusion list. Timelock-only.
+    /// Used post-launch to register follow-on RevenueLock cohorts (revenue-gated grants
+    /// for new teammembers / airdrops) or replacement Crowdfund instances whose ARM
+    /// holdings would otherwise inflate the quorum denominator. Same dedup + treasury
+    /// + zero-address checks as the bootstrap setter.
+    function addExcludedAddress(address candidate) external {
+        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        _registerExcludedAddress(candidate);
+        emit ExcludedAddressAdded(candidate);
+    }
+
+    /// @dev Shared validation+push for both bootstrap and post-launch addition paths.
+    function _registerExcludedAddress(address candidate) internal {
+        if (candidate == address(0)) revert Gov_ZeroAddress();
+        if (candidate == treasuryAddress) revert Gov_DuplicateExcludedAddress();
+        uint256 len = _excludedFromQuorum.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (_excludedFromQuorum[i] == candidate) revert Gov_DuplicateExcludedAddress();
+        }
+        _excludedFromQuorum.push(candidate);
     }
 
     /// @notice View excluded addresses for transparency
@@ -444,8 +513,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Deployer-only; locks permanently after the first call.
     function setCrowdfundAddress(address _crowdfund) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
-        if (crowdfundAddressLocked) revert Gov_AlreadyLocked();
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         if (_crowdfund == address(0)) revert Gov_ZeroAddress();
+        if (crowdfundAddressLocked) revert Gov_AlreadyLocked();
 
         crowdfundAddressLocked = true;
         crowdfundAddress = _crowdfund;
@@ -457,8 +527,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// Deployer-only; locks permanently after the first call.
     function setStewardContract(address _steward) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
-        if (stewardContractLocked) revert Gov_AlreadyLocked();
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         if (_steward == address(0)) revert Gov_ZeroAddress();
+        if (stewardContractLocked) revert Gov_AlreadyLocked();
 
         stewardContractLocked = true;
         stewardContract = _steward;
@@ -471,10 +542,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// preventing future UUPS upgrades from inheriting deployer-gated privileges.
     function clearDeployer() external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
-        address previousDeployer = deployer;
+        // Emit before SSTORE — avoids a dead stack slot across the write (audit-91).
+        emit DeployerCleared(deployer);
         deployer = address(0);
-
-        emit DeployerCleared(previousDeployer);
     }
 
     // ============ Governance-Updatable Parameters ============
@@ -515,6 +585,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function addExtendedSelector(bytes4 selector) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
         if (extendedSelectors[selector]) revert Gov_SelectorAlreadyExtended();
+        // Mutual-exclusion guard (audit-96): reject if the selector is already
+        // registered as Standard. Without this, a selector can be true in both
+        // maps; Extended wins at classification time but a later removeExtendedSelector
+        // would silently downgrade to Standard via the latent entry.
+        if (standardSelectors[selector]) revert Gov_SelectorAlreadyStandard();
 
         extendedSelectors[selector] = true;
         emit ExtendedSelectorAdded(selector);
@@ -535,6 +610,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      that should pass at Standard quorum. Without this, new selectors default to Extended.
     function addStandardSelector(bytes4 selector) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
+        // Mutual-exclusion guards (audit-96): the two classification maps must
+        // stay disjoint. Reject double-add into Standard, and reject if the
+        // selector is already registered as Extended (a latent dual-state would
+        // mask a later removeStandardSelector as a real change while runtime
+        // classification still flows through Extended).
+        if (standardSelectors[selector]) revert Gov_SelectorAlreadyStandard();
+        if (extendedSelectors[selector]) revert Gov_SelectorAlreadyExtended();
         standardSelectors[selector] = true;
         emit StandardSelectorAdded(selector);
     }
@@ -554,12 +636,24 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     event SecurityCouncilUpdated(address indexed oldSC, address indexed newSC);
 
-    /// @notice Set or replace the Security Council address. Governance-only (timelock).
-    /// Setting to address(0) disables all SC powers (ejection state).
+    /// @notice Set or replace the Security Council address.
+    /// @dev Two callers: (1) the timelock — the post-bootstrap governance path, used
+    ///      for replacements, ejection (newSC == address(0)), and re-install after
+    ///      ejection; (2) the deployer, but only while the deployer role is still
+    ///      held (deployer != address(0)) — the bootstrap path. clearDeployer()
+    ///      permanently closes the deployer path. This matches the asymmetric-
+    ///      bootstrap pattern used for setCrowdfundAddress / setStewardContract,
+    ///      and avoids a launch-window in which no SC exists because governance
+    ///      cannot meet quorum yet.
     function setSecurityCouncil(address newSC) external {
-        if (msg.sender != address(timelock)) revert Gov_NotTimelock();
-        emit SecurityCouncilUpdated(securityCouncil, newSC);
+        // Authorized: timelock (governance), or deployer pre-clearDeployer (bootstrap).
+        address d = deployer;
+        if (msg.sender != address(timelock) && (msg.sender != d || d == address(0))) {
+            revert Gov_NotTimelock();
+        }
+        address oldSC = securityCouncil;
         securityCouncil = newSC;
+        emit SecurityCouncilUpdated(oldSC, newSC);
     }
 
     // ============ Veto Mechanism ============
@@ -568,8 +662,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @param proposalId The queued proposal to veto
     /// @param rationaleHash Off-chain rationale hash for verifiability
     function veto(uint256 proposalId, bytes32 rationaleHash) external {
-        if (msg.sender != securityCouncil) revert Gov_NotSecurityCouncil();
-        if (securityCouncil == address(0)) revert Gov_SCEjected();
+        // Cache securityCouncil and timelock — each read twice below (audit-76).
+        address sc = securityCouncil;
+        if (msg.sender != sc) revert Gov_NotSecurityCouncil();
+        if (sc == address(0)) revert Gov_SCEjected();
         if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];
@@ -581,10 +677,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.canceled = true;
 
         // Cancel the timelock operation
-        bytes32 timelockId = timelock.hashOperationBatch(
+        TimelockController tl = timelock;
+        bytes32 timelockId = tl.hashOperationBatch(
             p.targets, p.values, p.calldatas, 0, _proposalSalt(proposalId)
         );
-        timelock.cancel(timelockId);
+        tl.cancel(timelockId);
 
         // Auto-create ratification vote
         uint256 ratId = _createRatificationProposal(proposalId, rationaleHash);
@@ -621,11 +718,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
             // Re-queue in timelock with fresh minimum delay.
             // cancel() cleared _timestamps[id] so scheduleBatch() accepts the same operation ID.
-            timelock.scheduleBatch(
+            // Cache timelock: read twice (audit-76).
+            TimelockController tl = timelock;
+            tl.scheduleBatch(
                 orig.targets, orig.values, orig.calldatas,
                 0, // no predecessor
                 _proposalSalt(vetoedId),
-                timelock.getMinDelay()
+                tl.getMinDelay()
             );
 
             emit ProposalRestored(vetoedId);
@@ -642,14 +741,15 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     function _createRatificationProposal(
         uint256 vetoedProposalId,
         bytes32 rationaleHash
-    ) internal returns (uint256) {
-        uint256 ratId = ++proposalCount;
+    ) internal returns (uint256 ratId) {
+        ratId = ++proposalCount;
 
         // Description is generic; vetoedProposalId and rationaleHash are queryable
         // on-chain via ratificationOf() mapping and ProposalVetoed event.
         string memory desc = "Veto ratification";
 
-        _initProposal(ratId, ProposalType.VetoRatification, desc);
+        // _initProposal returns voteStart/voteEnd so the emit below doesn't SLOAD them (audit-75).
+        (uint256 voteStart_, uint256 voteEnd_) = _initProposal(ratId, ProposalType.VetoRatification, desc);
 
         // Ratification has no execution calldata — consequences handled by resolveRatification()
         // (targets, values, calldatas arrays remain empty/default)
@@ -658,13 +758,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         ratificationOf[ratId] = vetoedProposalId;
         vetoRatificationId[vetoedProposalId] = ratId;
 
-        Proposal storage p = _proposals[ratId];
         emit ProposalCreated(
             ratId, msg.sender, ProposalType.VetoRatification,
-            p.voteStart, p.voteEnd, desc
+            voteStart_, voteEnd_, desc
         );
-
-        return ratId;
     }
 
     // ============ Steward Proposals ============
@@ -682,11 +779,16 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         address[] memory recipients,
         uint256[] memory amounts,
         string memory description
-    ) external returns (uint256) {
+    ) external returns (uint256 proposalId) {
         if (windDownActive) revert Gov_GovernanceEnded();
-        if (stewardContract == address(0)) revert Gov_StewardContractNotSet();
-        if (msg.sender != ITreasurySteward(stewardContract).currentSteward()) revert Gov_NotCurrentSteward();
-        if (!ITreasurySteward(stewardContract).isStewardActive()) revert Gov_StewardNotActive();
+        // Cache stewardContract: read 3 times (zero check, getCurrentSteward call) (audit-76).
+        address sc = stewardContract;
+        if (sc == address(0)) revert Gov_StewardContractNotSet();
+        // Combined accessor: one CALL fetches both the elected address and the
+        // active flag, avoiding a duplicate currentSteward SLOAD inside isStewardActive.
+        (address steward, bool isActive) = ITreasurySteward(sc).getCurrentSteward();
+        if (msg.sender != steward) revert Gov_NotCurrentSteward();
+        if (!isActive) revert Gov_StewardNotActive();
 
         if (tokens.length == 0) revert Gov_EmptyProposal();
         if (tokens.length != recipients.length || tokens.length != amounts.length) revert Gov_LengthMismatch();
@@ -697,12 +799,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             if (recipients[i] == msg.sender) revert Gov_SelfPaymentNotAllowed();
         }
 
-        // Governor constructs the calldata — steward only provides structured spend params
+        // Governor constructs the calldata — steward only provides structured spend params.
+        // Cache treasuryAddress: read on every iteration of the per-token loop (audit-76).
+        address treasury_ = treasuryAddress;
         address[] memory targets = new address[](tokens.length);
         uint256[] memory values = new uint256[](tokens.length);
         bytes[] memory calldatas = new bytes[](tokens.length);
         for (uint256 i = 0; i < tokens.length; i++) {
-            targets[i] = treasuryAddress;
+            targets[i] = treasury_;
             calldatas[i] = abi.encodeWithSignature(
                 "stewardSpend(address,address,uint256)",
                 tokens[i], recipients[i], amounts[i]
@@ -715,7 +819,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // operations to bypass Extended classification via the pass-by-default path.
         if (_classifyProposal(ProposalType.Standard, targets, calldatas) == ProposalType.Extended) revert Gov_StewardCalldataClassifiedAsExtended();
 
-        uint256 proposalId = ++proposalCount;
+        proposalId = ++proposalCount;
+        // NOTE: would prefer to consume _initProposal's tuple return per audit-75,
+        // but propose() and proposeStewardSpend() both push stack-too-deep when
+        // capturing voteStart_/voteEnd_ locals (Foundry compiles without viaIR).
+        // _createRatificationProposal has shorter stack and DOES consume the tuple.
         _initProposal(proposalId, ProposalType.Steward, description);
 
         Proposal storage p = _proposals[proposalId];
@@ -727,7 +835,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             proposalId, msg.sender, ProposalType.Steward,
             p.voteStart, p.voteEnd, description
         );
-        return proposalId;
     }
 
     // ============ Wind-Down ============
@@ -737,8 +844,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// after the governor and needs a governance-approved registration.
     function setWindDownContract(address _windDownContract) external {
         if (msg.sender != address(timelock)) revert Gov_NotTimelock();
-        if (windDownContractSet) revert Gov_WindDownContractAlreadySet();
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         if (_windDownContract == address(0)) revert Gov_ZeroAddress();
+        if (windDownContractSet) revert Gov_WindDownContractAlreadySet();
 
         windDownContractSet = true;
         windDownContract = _windDownContract;
@@ -747,11 +855,17 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Called by the wind-down contract to permanently disable governance.
-    /// Once active, no new proposals can be created. Existing proposals in flight
-    /// (Active, Succeeded, Queued) can still complete their lifecycle.
+    /// Once active, the entire proposal lifecycle freezes:
+    ///   - propose / proposeStewardSpend reject new proposals.
+    ///   - queue rejects pre-trigger Succeeded proposals.
+    ///   - execute rejects pre-trigger Queued proposals.
+    /// Voting on already-Active proposals can complete (no on-chain harm: the
+    /// resulting Succeeded state simply cannot progress past queue).
     function setWindDownActive() external {
-        if (msg.sender != windDownContract) revert Gov_NotWindDownContract();
-        if (windDownContract == address(0)) revert Gov_WindDownContractNotSet();
+        // Cache windDownContract: read twice (audit-76).
+        address wd = windDownContract;
+        if (msg.sender != wd) revert Gov_NotWindDownContract();
+        if (wd == address(0)) revert Gov_WindDownContractNotSet();
         if (windDownActive) revert Gov_WindDownAlreadyActive();
 
         windDownActive = true;
@@ -773,7 +887,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256[] memory values,
         bytes[] memory calldatas,
         string memory description
-    ) external returns (uint256) {
+    ) external returns (uint256 proposalId) {
         if (windDownActive) revert Gov_GovernanceEnded();
         if (proposalType == ProposalType.VetoRatification || proposalType == ProposalType.Steward) revert Gov_AutoCreatedOnly();
         _checkQuietPeriod();
@@ -802,7 +916,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             ? ProposalType.Signaling
             : _classifyProposal(proposalType, targets, calldatas);
 
-        uint256 proposalId = ++proposalCount;
+        proposalId = ++proposalCount;
+        // NOTE: would prefer to consume _initProposal's tuple return per audit-75,
+        // but capturing voteStart_/voteEnd_ locals here pushes propose() over the
+        // stack-too-deep limit when compiled without viaIR (Foundry's config). The
+        // other two _initProposal callers (_createRatificationProposal,
+        // proposeStewardSpend) have shorter local lists and DO consume the tuple.
         _initProposal(proposalId, effectiveType, description);
 
         Proposal storage p = _proposals[proposalId];
@@ -814,7 +933,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             proposalId, msg.sender, effectiveType,
             p.voteStart, p.voteEnd, description
         );
-        return proposalId;
     }
 
     /// @dev Check that proposer has at least PROPOSAL_THRESHOLD delegated voting power
@@ -823,20 +941,26 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (proposerVotes < PROPOSAL_THRESHOLD) revert Gov_BelowProposalThreshold();
     }
 
-    /// @dev Initialize proposal scalar fields
+    /// @dev Initialize proposal scalar fields. Returns (voteStart, voteEnd) so the
+    ///      caller's ProposalCreated emit doesn't re-SLOAD them (audit-75).
     function _initProposal(
         uint256 proposalId,
         ProposalType proposalType,
         string memory description
-    ) internal {
+    ) internal returns (uint256 voteStart_, uint256 voteEnd_) {
         ProposalParams storage params = proposalTypeParams[proposalType];
         Proposal storage p = _proposals[proposalId];
         p.id = proposalId;
         p.proposer = msg.sender;
         p.proposalType = proposalType;
-        p.snapshotBlock = block.number - 1;
-        p.voteStart = block.timestamp + params.votingDelay;
-        p.voteEnd = p.voteStart + params.votingPeriod;
+        // Compute vote-start once (also avoids the storage write→read pattern
+        // for dependent vote-end calculation, audit-76).
+        uint256 snapshotBlock_ = block.number - 1;
+        voteStart_ = block.timestamp + params.votingDelay;
+        voteEnd_ = voteStart_ + params.votingPeriod;
+        p.snapshotBlock = snapshotBlock_;
+        p.voteStart = voteStart_;
+        p.voteEnd = voteEnd_;
         p.executionDelay = params.executionDelay;
         p.description = description;
 
@@ -851,11 +975,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // one block. Treasury and crowdfund balances change only via governance actions,
         // so the practical impact is negligible.
         p.snapshotQuorumBps = params.quorumBps;
-        uint256 totalSupply = armToken.getPastTotalSupply(p.snapshotBlock);
-        uint256 excludedBalance = armToken.balanceOf(treasuryAddress);
+        // Cache armToken once: read on every iteration of the excluded-list loop (audit-76).
+        ArmadaToken token = armToken;
+        uint256 totalSupply = token.getPastTotalSupply(snapshotBlock_);
+        uint256 excludedBalance = token.balanceOf(treasuryAddress);
         uint256 excludedLen = _excludedFromQuorum.length;
         for (uint256 i = 0; i < excludedLen; i++) {
-            excludedBalance += armToken.balanceOf(_excludedFromQuorum[i]);
+            excludedBalance += token.balanceOf(_excludedFromQuorum[i]);
         }
         // Cap excludedBalance to prevent underflow if tokens moved into excluded
         // addresses between the snapshot block and now.
@@ -883,17 +1009,20 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         uint256 weight = armToken.getPastVotes(msg.sender, p.snapshotBlock);
         if (weight == 0) revert Gov_NoVotingPower();
 
-        if (hasVoted[proposalId][msg.sender]) {
+        mapping(address => bool) storage voted = hasVoted[proposalId];
+        mapping(address => uint8) storage choices = voteChoice[proposalId];
+
+        if (voted[msg.sender]) {
             // Vote change: subtract from old bucket, add to new bucket
-            uint8 oldSupport = voteChoice[proposalId][msg.sender];
+            uint8 oldSupport = choices[msg.sender];
             if (oldSupport == support) revert Gov_SameVote();
             _removeVoteBucket(p, oldSupport, weight);
             _addVoteBucket(p, support, weight);
-            voteChoice[proposalId][msg.sender] = support;
+            choices[msg.sender] = support;
             emit VoteChanged(msg.sender, proposalId, oldSupport, support, weight);
         } else {
-            hasVoted[proposalId][msg.sender] = true;
-            voteChoice[proposalId][msg.sender] = support;
+            voted[msg.sender] = true;
+            choices[msg.sender] = support;
             _addVoteBucket(p, support, weight);
             emit VoteCast(msg.sender, proposalId, support, weight);
         }
@@ -901,21 +1030,29 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Queue a succeeded proposal to the timelock
     function queue(uint256 proposalId) external {
+        // Wind-down freezes the entire governance lifecycle, not just new proposals.
+        // Pre-trigger Succeeded proposals must not progress; otherwise a queued
+        // distribute / stewardSpend would mutate treasury ARM mid-redemption window
+        // and break the redemption contract's pro-rata invariant (GOVERNANCE.md §11).
+        if (windDownActive) revert Gov_GovernanceEnded();
         if (state(proposalId) != ProposalState.Succeeded) revert Gov_NotSucceeded();
 
         Proposal storage p = _proposals[proposalId];
-        if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
-        if (p.proposalType == ProposalType.Signaling) revert Gov_SignalingNoExecution();
+        // Cache p.proposalType: read 3 times below (audit-76).
+        ProposalType ptype = p.proposalType;
+        if (ptype == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+        if (ptype == ProposalType.Signaling) revert Gov_SignalingNoExecution();
 
         // Steward proposals must not be queueable after steward removal or term expiry.
         // Creation-time checks in proposeStewardSpend() verify steward status at proposal
         // time, but a steward can be removed while their proposal is still in voting.
-        if (p.proposalType == ProposalType.Steward) {
-            if (stewardContract == address(0)
-                || p.proposer != ITreasurySteward(stewardContract).currentSteward()
-                || !ITreasurySteward(stewardContract).isStewardActive()) {
-                revert Gov_StewardProposerNoLongerActive();
-            }
+        // getCurrentSteward returns (address, bool) in one CALL.
+        if (ptype == ProposalType.Steward) {
+            // Cache stewardContract: read twice (zero check + getCurrentSteward) (audit-76).
+            address sc = stewardContract;
+            if (sc == address(0)) revert Gov_StewardProposerNoLongerActive();
+            (address steward, bool isActive) = ITreasurySteward(sc).getCurrentSteward();
+            if (p.proposer != steward || !isActive) revert Gov_StewardProposerNoLongerActive();
         }
 
         // Queue-time outflow feasibility check: reject proposals whose aggregate
@@ -925,14 +1062,23 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         p.queued = true;
 
-        bytes32 timelockId = timelock.hashOperationBatch(
-            p.targets, p.values, p.calldatas, 0, _proposalSalt(proposalId)
-        );
+        // Copy storage arrays into memory once: passed to two cross-contract calls
+        // below (hashOperationBatch + scheduleBatch). Without the copy each call
+        // ABI-encodes from storage independently — duplicate per-element SLOADs.
+        // Net win for any non-trivial batch (audit-76).
+        address[] memory tgts = p.targets;
+        uint256[] memory vals = p.values;
+        bytes[] memory cdatas = p.calldatas;
+        // Cache timelock: read twice (audit-76).
+        TimelockController tl = timelock;
+        bytes32 salt = _proposalSalt(proposalId);
 
-        timelock.scheduleBatch(
-            p.targets, p.values, p.calldatas,
+        bytes32 timelockId = tl.hashOperationBatch(tgts, vals, cdatas, 0, salt);
+
+        tl.scheduleBatch(
+            tgts, vals, cdatas,
             0, // no predecessor
-            _proposalSalt(proposalId),
+            salt,
             p.executionDelay
         );
 
@@ -941,21 +1087,26 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     /// @notice Execute a queued proposal after timelock delay
     function execute(uint256 proposalId) external payable nonReentrant {
+        // Mirror the queue()-time wind-down gate. A proposal queued just before
+        // trigger must not execute afterward — same redemption-fairness reason.
+        if (windDownActive) revert Gov_GovernanceEnded();
         if (state(proposalId) != ProposalState.Queued) revert Gov_NotQueued();
 
         Proposal storage p = _proposals[proposalId];
-        if (p.proposalType == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
-        if (p.proposalType == ProposalType.Signaling) revert Gov_SignalingNoExecution();
+        // Cache p.proposalType: read 3 times below (audit-76).
+        ProposalType ptype = p.proposalType;
+        if (ptype == ProposalType.VetoRatification) revert Gov_UseResolveRatification();
+        if (ptype == ProposalType.Signaling) revert Gov_SignalingNoExecution();
 
         // Mirror the queue()-time steward check: a steward removed or expired during the
         // execution delay must not have their proposal execute. Without this, the SC veto
         // would be the only backstop for the term-expiry edge case.
-        if (p.proposalType == ProposalType.Steward) {
-            if (stewardContract == address(0)
-                || p.proposer != ITreasurySteward(stewardContract).currentSteward()
-                || !ITreasurySteward(stewardContract).isStewardActive()) {
-                revert Gov_StewardProposerNoLongerActive();
-            }
+        if (ptype == ProposalType.Steward) {
+            // Cache stewardContract: read twice (audit-76).
+            address sc = stewardContract;
+            if (sc == address(0)) revert Gov_StewardProposerNoLongerActive();
+            (address steward, bool isActive) = ITreasurySteward(sc).getCurrentSteward();
+            if (p.proposer != steward || !isActive) revert Gov_StewardProposerNoLongerActive();
         }
 
         p.executed = true;
@@ -999,14 +1150,26 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         if (p.canceled) return ProposalState.Canceled;
         if (p.executed) return ProposalState.Executed;
         if (block.timestamp < p.voteStart) return ProposalState.Pending;
-        if (block.timestamp <= p.voteEnd) return ProposalState.Active;
+        // Cache p.voteEnd and p.proposalType — each read twice on different paths (audit-76).
+        uint256 voteEnd_ = p.voteEnd;
+        if (block.timestamp <= voteEnd_) return ProposalState.Active;
+        ProposalType ptype = p.proposalType;
 
         // After voting ends: check quorum and majority
-        if (p.proposalType == ProposalType.Steward) {
+        if (ptype == ProposalType.Steward) {
             // Pass-by-default: defeated ONLY if quorum met AND strict majority votes against
             if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
                 return ProposalState.Defeated;
             }
+        } else if (ptype == ProposalType.VetoRatification) {
+            // Pass-by-default like Steward (audit-82). Returns directly because
+            // VetoRatification has no queue/execute phase — resolution flows through
+            // resolveRatification, which sets p.executed and is caught by the earlier
+            // Executed branch. The QUEUE_GRACE_PERIOD expiry below must not apply here.
+            if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
+                return ProposalState.Defeated;
+            }
+            return ProposalState.Succeeded;
         } else {
             if (!_quorumReached(proposalId) || !_voteSucceeded(proposalId)) {
                 return ProposalState.Defeated;
@@ -1015,12 +1178,12 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         // Signaling proposals are terminal at outcome — no queue/execute phase.
         // Succeeded is permanent (no grace period expiry).
-        if (p.proposalType == ProposalType.Signaling) return ProposalState.Succeeded;
+        if (ptype == ProposalType.Signaling) return ProposalState.Succeeded;
 
         if (p.queued) return ProposalState.Queued;
 
         // Succeeded proposals expire if not queued within the grace period
-        if (block.timestamp > p.voteEnd + QUEUE_GRACE_PERIOD) {
+        if (block.timestamp > voteEnd_ + QUEUE_GRACE_PERIOD) {
             return ProposalState.Defeated;
         }
 
@@ -1113,99 +1276,102 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         return bytes32(proposalId);
     }
 
+    /// @dev Decode the parameters of a treasury-outflow selector calldata into the
+    ///      (token, amount) tuple used for aggregation. Handles distribute(),
+    ///      distributeETH(), and stewardSpend(). For distributeETH(), token is set to
+    ///      address(0) — the ETH sentinel used by ArmadaTreasuryGov's outflow accounting.
+    ///      Returns ok=false if the selector is unrecognized or the calldata is too
+    ///      short to decode the expected layout.
+    ///
+    ///      Shared by _classifyProposal (5% threshold gate) and _checkOutflowFeasibility
+    ///      (queue-time effective-limit gate) so the two checks can never disagree on
+    ///      how a given calldata is interpreted.
+    function _decodeTreasuryDistribute(bytes memory data)
+        internal pure returns (address token, uint256 amount, bool ok)
+    {
+        if (data.length < 4) return (address(0), 0, false);
+        bytes4 selector = bytes4(data);
+
+        if (selector == DISTRIBUTE_SELECTOR || selector == STEWARD_SPEND_SELECTOR) {
+            // distribute(address token, address recipient, uint256 amount)
+            // stewardSpend(address token, address recipient, uint256 amount)
+            // 4 selector bytes + 3 * 32 param bytes = 100
+            if (data.length < 100) return (address(0), 0, false);
+            bytes memory params = new bytes(data.length - 4);
+            for (uint256 j = 0; j < params.length; j++) {
+                params[j] = data[j + 4];
+            }
+            (token, , amount) = abi.decode(params, (address, address, uint256));
+            return (token, amount, true);
+        }
+
+        if (selector == DISTRIBUTE_ETH_SELECTOR) {
+            // distributeETH(address recipient, uint256 amount)
+            // 4 selector bytes + 2 * 32 param bytes = 68
+            if (data.length < 68) return (address(0), 0, false);
+            bytes memory params = new bytes(data.length - 4);
+            for (uint256 j = 0; j < params.length; j++) {
+                params[j] = data[j + 4];
+            }
+            (, amount) = abi.decode(params, (address, uint256));
+            return (address(0), amount, true);
+        }
+
+        return (address(0), 0, false);
+    }
+
     /// @dev Classify a proposal based on its calldata. Fail-closed: any selector not
     ///      explicitly registered as Extended or Standard defaults to Extended.
     ///      If any action targets an extended selector, the entire proposal is Extended.
-    ///      If a distribute() call would move >5% of treasury balance, force Extended.
+    ///      Treasury-targeted distribute() and distributeETH() amounts are aggregated
+    ///      per token across the entire proposal; if any token's aggregate exceeds 5%
+    ///      of the spot treasury balance, force Extended. Per-token aggregation
+    ///      prevents a proposer from batch-splitting one large drain into many
+    ///      sub-threshold calls.
     function _classifyProposal(
         ProposalType declaredType,
-        address[] memory, /* targets — reserved for future target-specific checks */
+        address[] memory targets,
         bytes[] memory calldatas
     ) internal view returns (ProposalType) {
         // If already Extended, no need to check further
         if (declaredType == ProposalType.Extended) return ProposalType.Extended;
 
+        // Pass 1: per-call selector classification.
+        // Any extended selector forces Extended; any unrecognized selector forces
+        // Extended (fail-closed) — guarding against wrapper/forwarder bypass and
+        // newly added protocol functions that haven't been classified yet.
         for (uint256 i = 0; i < calldatas.length; i++) {
             if (calldatas[i].length < 4) continue;
-
             bytes4 selector = bytes4(calldatas[i]);
-
-            // Check registered extended selectors
             if (extendedSelectors[selector]) return ProposalType.Extended;
-
-            // Special case: distribute() calls exceeding 5% of treasury balance.
-            // DESIGN NOTE: This uses a spot balanceOf() check. An attacker could inflate the
-            // treasury balance (by donating tokens) to make a large distribution appear to be
-            // below the 5% threshold. This is accepted because: (1) donated tokens are lost to
-            // the attacker, making the attack economically irrational, (2) USDC lacks
-            // checkpointing so snapshot-based alternatives are not available, and (3) the
-            // Security Council can veto any suspicious proposal regardless of classification.
-            if (selector == DISTRIBUTE_SELECTOR && calldatas[i].length >= 100) {
-                // Decode: distribute(address token, address recipient, uint256 amount)
-                // Skip the 4-byte selector by slicing from index 4 onward
-                bytes memory params = new bytes(calldatas[i].length - 4);
-                for (uint256 j = 0; j < params.length; j++) {
-                    params[j] = calldatas[i][j + 4];
-                }
-                (address token, , uint256 amount) = abi.decode(params, (address, address, uint256));
-                uint256 treasuryBalance = IERC20(token).balanceOf(treasuryAddress);
-                if (treasuryBalance > 0 && amount > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
-                    return ProposalType.Extended;
-                }
-            }
-
-            // Fail-closed: unrecognized selectors force Extended classification.
-            // This prevents bypass via wrapper/forwarder contracts or newly added
-            // protocol functions that haven't been classified yet.
             if (!standardSelectors[selector]) return ProposalType.Extended;
         }
 
-        return declaredType;
-    }
-
-    /// @dev Queue-time sanity check: reject a proposal whose aggregate per-token
-    ///      treasury spend exceeds that token's current effective outflow limit.
-    ///      Such a proposal can never execute under current parameters and should
-    ///      not occupy the timelock queue indefinitely.
-    ///
-    ///      Compares against the effective limit (the ceiling), not the available
-    ///      budget (ceiling minus recent outflows). Proposals that fit the limit
-    ///      but exceed the current available budget are allowed to queue and retry
-    ///      once the rolling window has created room.
-    ///
-    ///      Only distribute() and stewardSpend() actions targeting the treasury are
-    ///      checked — both share the (address token, address recipient, uint256 amount)
-    ///      layout. transferTo()/transferETHTo() are wind-down-only paths that bypass
-    ///      outflow limits and are intentionally excluded.
-    ///
-    ///      Reuses the calldata slice + abi.decode pattern from _classifyProposal.
-    ///      View-only; reverts before any governor or timelock state is written.
-    function _checkOutflowFeasibility(
-        address[] memory targets,
-        bytes[] memory calldatas
-    ) internal view {
-        // Aggregate amounts per token using parallel arrays in memory. Proposal
-        // batches are small (bounded by block gas), so O(n^2) is acceptable and
-        // avoids needing a mapping or a storage slot.
+        // Pass 2: per-token aggregation of treasury-targeted distribute() /
+        // distributeETH() amounts; force Extended if any token's aggregate exceeds
+        // the 5% threshold. stewardSpend() is excluded — it is governed separately
+        // by the per-token steward budget table, not by the 5% rule.
+        //
+        // DESIGN NOTE: Uses a spot balanceOf() check. An attacker could inflate the
+        // treasury balance (by donating tokens) to make a large distribution appear
+        // to be below the 5% threshold. This is accepted because: (1) donated tokens
+        // are lost to the attacker, making the attack economically irrational,
+        // (2) USDC lacks checkpointing so snapshot-based alternatives are not
+        // available, and (3) the Security Council can veto any suspicious proposal
+        // regardless of classification.
+        address treasury_ = treasuryAddress;
         address[] memory tokens = new address[](calldatas.length);
         uint256[] memory sums = new uint256[](calldatas.length);
         uint256 tokenCount;
 
         for (uint256 i = 0; i < calldatas.length; i++) {
-            if (targets[i] != treasuryAddress) continue;
-            // 4 selector bytes + 3 * 32 param bytes = 100
-            if (calldatas[i].length < 100) continue;
-
+            if (targets[i] != treasury_) continue;
+            if (calldatas[i].length < 4) continue;
             bytes4 selector = bytes4(calldatas[i]);
-            if (selector != DISTRIBUTE_SELECTOR && selector != STEWARD_SPEND_SELECTOR) continue;
+            if (selector != DISTRIBUTE_SELECTOR && selector != DISTRIBUTE_ETH_SELECTOR) continue;
 
-            // Decode: (address token, address recipient, uint256 amount).
-            // Same slice pattern as _classifyProposal — skip 4-byte selector.
-            bytes memory params = new bytes(calldatas[i].length - 4);
-            for (uint256 j = 0; j < params.length; j++) {
-                params[j] = calldatas[i][j + 4];
-            }
-            (address token, , uint256 amount) = abi.decode(params, (address, address, uint256));
+            (address token, uint256 amount, bool ok) = _decodeTreasuryDistribute(calldatas[i]);
+            if (!ok) continue;
 
             bool found;
             for (uint256 k = 0; k < tokenCount; k++) {
@@ -1223,8 +1389,117 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         }
 
         for (uint256 k = 0; k < tokenCount; k++) {
-            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasuryAddress).getOutflowStatus(tokens[k]);
-            if (sums[k] > effectiveLimit) revert Gov_OutflowInfeasible();
+            uint256 treasuryBalance = tokens[k] == address(0)
+                ? treasury_.balance
+                : IERC20(tokens[k]).balanceOf(treasury_);
+            if (treasuryBalance > 0 &&
+                sums[k] > (treasuryBalance * TREASURY_EXTENDED_THRESHOLD_BPS) / 10000) {
+                return ProposalType.Extended;
+            }
+        }
+
+        return declaredType;
+    }
+
+    /// @dev Queue-time sanity check: reject a proposal whose aggregate per-token
+    ///      treasury spend exceeds that token's current effective outflow limit, or
+    ///      whose aggregate per-token stewardSpend exceeds the per-token steward
+    ///      budget limit. Such a proposal can never execute under current parameters
+    ///      and should not occupy the timelock queue indefinitely.
+    ///
+    ///      Compares against the effective limit / budget limit (the ceiling), not the
+    ///      available (ceiling minus recent outflows / recent steward spending).
+    ///      Proposals that fit the limit but exceed the current available are allowed
+    ///      to queue and retry once the rolling window has created room.
+    ///
+    ///      Two independent gates run on the same iteration:
+    ///      1. Aggregate outflow check: distribute() + stewardSpend() + distributeETH()
+    ///         per-token sums vs treasury rolling-window outflow ceiling.
+    ///      2. Aggregate steward budget check: stewardSpend()-only per-token sums vs
+    ///         the per-token steward budget limit. Tokens not in the budget table
+    ///         return budget=0, so any positive aggregate fails — surfacing
+    ///         unauthorized-token steward proposals at queue time instead of execute.
+    ///
+    ///      The first two outflow selectors share the (address token, address
+    ///      recipient, uint256 amount) layout; distributeETH() drops the token argument
+    ///      and is aggregated under the address(0) sentinel. transferTo()/transferETHTo()
+    ///      are wind-down-only paths that bypass outflow limits and are intentionally excluded.
+    ///
+    ///      Shares the _decodeTreasuryDistribute helper with _classifyProposal so the
+    ///      classification gate and the feasibility gate cannot disagree on how a
+    ///      given calldata is interpreted. View-only; reverts before any governor or
+    ///      timelock state is written.
+    function _checkOutflowFeasibility(
+        address[] memory targets,
+        bytes[] memory calldatas
+    ) internal view {
+        // Aggregate amounts per token using parallel arrays in memory. Proposal
+        // batches are small (bounded by block gas), so O(n^2) is acceptable and
+        // avoids needing a mapping or a storage slot.
+        address[] memory outflowTokens = new address[](calldatas.length);
+        uint256[] memory outflowSums = new uint256[](calldatas.length);
+        uint256 outflowTokenCount;
+
+        address[] memory stewardTokens = new address[](calldatas.length);
+        uint256[] memory stewardSums = new uint256[](calldatas.length);
+        uint256 stewardTokenCount;
+
+        // Cache treasuryAddress once: read on every iteration of all three loops below (audit-76).
+        address treasury_ = treasuryAddress;
+
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            if (targets[i] != treasury_) continue;
+            if (calldatas[i].length < 4) continue;
+            bytes4 selector = bytes4(calldatas[i]);
+            if (selector != DISTRIBUTE_SELECTOR &&
+                selector != STEWARD_SPEND_SELECTOR &&
+                selector != DISTRIBUTE_ETH_SELECTOR) continue;
+
+            (address token, uint256 amount, bool ok) = _decodeTreasuryDistribute(calldatas[i]);
+            if (!ok) continue;
+
+            // Outflow aggregation covers all three treasury-outflow selectors.
+            bool found;
+            for (uint256 k = 0; k < outflowTokenCount; k++) {
+                if (outflowTokens[k] == token) {
+                    outflowSums[k] += amount;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                outflowTokens[outflowTokenCount] = token;
+                outflowSums[outflowTokenCount] = amount;
+                outflowTokenCount++;
+            }
+
+            // Steward-budget aggregation covers stewardSpend() only — distribute()
+            // and distributeETH() are not gated by the steward budget table.
+            if (selector == STEWARD_SPEND_SELECTOR) {
+                bool sFound;
+                for (uint256 k = 0; k < stewardTokenCount; k++) {
+                    if (stewardTokens[k] == token) {
+                        stewardSums[k] += amount;
+                        sFound = true;
+                        break;
+                    }
+                }
+                if (!sFound) {
+                    stewardTokens[stewardTokenCount] = token;
+                    stewardSums[stewardTokenCount] = amount;
+                    stewardTokenCount++;
+                }
+            }
+        }
+
+        for (uint256 k = 0; k < outflowTokenCount; k++) {
+            (uint256 effectiveLimit,,) = IArmadaTreasuryOutflow(treasury_).getOutflowStatus(outflowTokens[k]);
+            if (outflowSums[k] > effectiveLimit) revert Gov_OutflowInfeasible();
+        }
+
+        for (uint256 k = 0; k < stewardTokenCount; k++) {
+            (uint256 budget,,) = IArmadaTreasuryOutflow(treasury_).getStewardBudget(stewardTokens[k]);
+            if (stewardSums[k] > budget) revert Gov_StewardBudgetInfeasible();
         }
     }
 
@@ -1234,8 +1509,10 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      Malformed calldata (< 4B selector, or < 36B = selector + uint256) is skipped;
     ///      it would revert later at the timelock anyway and is not a minDelay escalation.
     function _validateTimelockCalldata(address[] memory targets, bytes[] memory calldatas) internal view {
+        // Hoist timelock address out of the loop (audit-76).
+        address tl = address(timelock);
         for (uint256 i = 0; i < targets.length; i++) {
-            if (targets[i] != address(timelock)) continue;
+            if (targets[i] != tl) continue;
             if (calldatas[i].length < 36) continue;
             if (bytes4(calldatas[i]) != UPDATE_DELAY_SELECTOR) continue;
 
@@ -1255,9 +1532,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     ///      Reads finalizedAt from the crowdfund contract. Skips gracefully if no
     ///      crowdfund is registered or crowdfund isn't finalized.
     function _checkQuietPeriod() internal view {
-        if (crowdfundAddress == address(0)) return;
+        // Cache crowdfundAddress: read twice (audit-76).
+        address cf = crowdfundAddress;
+        if (cf == address(0)) return;
 
-        uint256 _finalizedAt = IArmadaCrowdfundReadable(crowdfundAddress).finalizedAt();
+        uint256 _finalizedAt = IArmadaCrowdfundReadable(cf).finalizedAt();
         if (_finalizedAt == 0) return;
 
         if (block.timestamp < _finalizedAt + QUIET_PERIOD_DURATION) revert Gov_QuietPeriodActive();

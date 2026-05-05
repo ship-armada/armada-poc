@@ -472,6 +472,10 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // WHY: Verify that a still-active steward's proposals can still be queued normally.
     // Regression guard — the new check must not break the happy path.
     function test_queue_succeedsForActiveSteward() public {
+        // Authorize USDC for steward spending so the queue-time budget check is satisfied.
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         uint256 proposalId = _proposeStewardSpend(alice, 100 * 1e6);
 
         _passVotingPeriod(proposalId);
@@ -486,7 +490,10 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // M-10 (execute): Steward proposals blocked at execute() after removal/expiry
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @dev Helper: propose, pass voting, queue, and return proposalId
+    /// @dev Helper: propose, pass voting, queue, and return proposalId.
+    ///      Caller must seed the steward budget (via addStewardBudgetToken) before
+    ///      invoking — without it the queue-time budget feasibility check rejects
+    ///      stewardSpend on an unauthorized token.
     function _queueStewardProposal(uint256 amount) internal returns (uint256) {
         uint256 proposalId = _proposeStewardSpend(alice, amount);
         _passVotingPeriod(proposalId);
@@ -498,6 +505,9 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // must not have their proposal executed. Without the execute()-time check, the
     // queue()-time guard is insufficient — same TOCTOU class as M-10, one step later.
     function test_execute_revertsForRemovedSteward() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         uint256 proposalId = _queueStewardProposal(100 * 1e6);
 
         // Remove steward during the execution delay
@@ -514,6 +524,9 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // WHY: Same scenario but with term expiry. A steward whose term expires during
     // the execution delay must not have their proposal executed.
     function test_execute_revertsForExpiredStewardTerm() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         // Warp to near term end so term expires during the execution delay
         vm.warp(block.timestamp + 172 days);
         vm.roll(block.number + 1);
@@ -531,6 +544,9 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // WHY: If a new steward is elected during the execution delay, the old steward's
     // queued proposal must not execute — the proposer no longer matches currentSteward().
     function test_execute_revertsWhenDifferentStewardElected() public {
+        vm.prank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
         uint256 proposalId = _queueStewardProposal(100 * 1e6);
 
         // Elect a different steward during execution delay
@@ -659,8 +675,12 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_proposeStewardSpend_revertsIfCalldataClassifiesAsExtended() public {
-        // Register stewardSpend's selector as extended (simulates future expansion)
+        // Register stewardSpend's selector as extended (simulates future expansion).
+        // First remove the existing Standard registration — audit-96 enforces mutual
+        // exclusion between extendedSelectors and standardSelectors.
         bytes4 stewardSpendSelector = bytes4(keccak256("stewardSpend(address,address,uint256)"));
+        vm.prank(address(timelock));
+        governor.removeStandardSelector(stewardSpendSelector);
         vm.prank(address(timelock));
         governor.addExtendedSelector(stewardSpendSelector);
 
@@ -700,6 +720,32 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
         treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
     }
 
+    // WHY: stewardSpend() routes via IERC20(token).safeTransfer, which
+    // EXTCODESIZE-reverts on address(0). Without this guard, governance could
+    // pass an Extended proposal authorizing ETH as a steward-spendable token,
+    // burning a 14-day cycle to install a budget that can never be spent (the
+    // subsequent stewardSpend(address(0), …) reverts at execution). Failing
+    // fast at config time prevents that wasted cycle. Spec: GOVERNANCE.md
+    // §Treasury Steward §Cannot — "Spend native ETH … pre-wind-down ETH
+    // spending is governance-direct via distributeETH(), not through
+    // stewardSpend()."
+    function test_addStewardBudgetToken_rejectsETHSentinel() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaTreasuryGov: ETH not steward-spendable");
+        treasury.addStewardBudgetToken(address(0), BUDGET_LIMIT, BUDGET_WINDOW);
+    }
+
+    // WHY: Defense-in-depth. `updateStewardBudgetToken` requires the token to
+    // be already authorized, so the `add` gate transitively closes this path.
+    // The explicit guard pins the symmetry — a refactor that loosens `add`
+    // (e.g. for a future feature) cannot silently expose an ETH path through
+    // `update`.
+    function test_updateStewardBudgetToken_rejectsETHSentinel() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaTreasuryGov: ETH not steward-spendable");
+        treasury.updateStewardBudgetToken(address(0), BUDGET_LIMIT, BUDGET_WINDOW);
+    }
+
     function test_updateStewardBudgetToken_success() public {
         vm.prank(address(timelock));
         treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
@@ -721,6 +767,70 @@ contract GovernorStewardTest is Test, GovernorDeployHelper {
 
         (,, bool authorized) = treasury.stewardBudgets(address(usdc));
         assertFalse(authorized);
+    }
+
+    // WHY: `delete` on a dynamic storage array iterates and zeroes each element. Gas
+    // refunds are credited at end-of-transaction, so the iteration itself can OOG
+    // before any refund applies. If removeStewardBudgetToken cleared
+    // _stewardSpendHistory[token], it would become unreachable once the spend log
+    // grew large enough — at ~1 spend/day, several thousand entries accumulate over
+    // the lifetime of a long-lived protocol. Pin the contract behavior of NOT
+    // clearing history on removal so a future refactor cannot reintroduce the bug.
+    function test_removeStewardBudgetToken_succeedsWithLargeSpendHistory() public {
+        vm.startPrank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Generate 200 spend records across many advancing windows so each is in
+        // budget at the time it executes. 200 entries is well above the threshold
+        // where a per-element delete would meaningfully consume block gas, and
+        // dwarfs anything `_sumRecentRecords` will revisit at any single read.
+        uint256 spendsPerWindow = 5;
+        uint256 windows = 40;
+        for (uint256 w = 0; w < windows; w++) {
+            for (uint256 i = 0; i < spendsPerWindow; i++) {
+                treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT / spendsPerWindow);
+            }
+            vm.warp(block.timestamp + BUDGET_WINDOW + 1);
+        }
+
+        treasury.removeStewardBudgetToken(address(usdc));
+        vm.stopPrank();
+
+        (,, bool authorized) = treasury.stewardBudgets(address(usdc));
+        assertFalse(authorized, "budget was removed");
+    }
+
+    // WHY: Removing then re-adding a budget must not "reset the clock" on the
+    // rolling-window cap. A captured timelock would otherwise bypass the rate
+    // limit by toggling the budget. _stewardSpendHistory persists across removal
+    // and re-authorization; entries inside the new window count against the new
+    // budget at the next stewardSpend call.
+    function test_removeStewardBudgetToken_preservesSpendHistoryForRollingWindow() public {
+        vm.startPrank(address(timelock));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Spend the entire budget. Recent-spend counter should now equal BUDGET_LIMIT.
+        treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
+
+        // Remove and immediately re-add — without the fix, history would survive in
+        // storage but spec'd behavior was for it to be cleared. We now intentionally
+        // preserve it; verify by attempting another spend and observing the budget
+        // is still fully consumed within the same window.
+        treasury.removeStewardBudgetToken(address(usdc));
+        treasury.addStewardBudgetToken(address(usdc), BUDGET_LIMIT, BUDGET_WINDOW);
+
+        // Recent spending of BUDGET_LIMIT is still within the rolling window, so the
+        // re-authorized budget shows zero remaining headroom.
+        vm.expectRevert("ArmadaTreasuryGov: exceeds steward budget");
+        treasury.stewardSpend(address(usdc), alice, 1);
+
+        // Past the window, history naturally falls outside _sumRecentRecords' cutoff
+        // and the new budget is fully usable again.
+        vm.warp(block.timestamp + BUDGET_WINDOW + 1);
+        treasury.stewardSpend(address(usdc), alice, BUDGET_LIMIT);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(alice), BUDGET_LIMIT * 2);
     }
 
     function test_budgetFunctions_rejectNonOwner() public {

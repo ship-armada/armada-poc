@@ -63,6 +63,15 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ///      24 days > 23 days (current Extended default: 2d + 14d + 7d).
     uint256 public constant LIMIT_ACTIVATION_DELAY = 24 days;
 
+    /// @notice Upper bound on outflow window duration to prevent self-lockdown.
+    /// @dev A window of `type(uint256).max` (or any sufficiently large value) makes the
+    ///      rolling-window cap behave as a lifetime cap. Tightening is immediate, so
+    ///      bad/mistaken governance can lock down treasury outflows; recovery requires
+    ///      a loosening proposal that waits LIMIT_ACTIVATION_DELAY (24 days) — three
+    ///      weeks of unable-to-pay-anything. Realistic operational windows are 30 days;
+    ///      365 days is generous headroom while still bounding the lockdown blast radius.
+    uint256 public constant MAX_OUTFLOW_WINDOW = 365 days;
+
     // Per-token steward budget table (governance-managed via Extended proposals).
     // Each authorized token has an absolute spending limit per rolling window.
     // Unused budget does not carry over between windows.
@@ -138,9 +147,28 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @notice Direct distribution: send tokens to recipient immediately
     function distribute(address token, address recipient, uint256 amount) external onlyOwner {
         require(recipient != address(0), "ArmadaTreasuryGov: zero address");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
         _checkAndRecordOutflow(token, amount);
         IERC20(token).safeTransfer(recipient, amount);
         emit DirectDistribution(token, recipient, amount);
+    }
+
+    /// @notice Direct ETH distribution: send native ETH to recipient immediately.
+    /// @dev Uses address(0) as the token sentinel for outflow accounting. A separate
+    ///      OutflowConfig must be initialized for address(0) before this can be called;
+    ///      governance handles initialization via initOutflowConfig.
+    function distributeETH(address payable recipient, uint256 amount) external onlyOwner nonReentrant {
+        require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
+        _checkAndRecordOutflow(address(0), amount);
+        // Assembly call with retSize=0 skips return-data copy and protects against
+        // a return-bomb griefing attack from a captured-governance recipient. See audit-86.
+        bool ok;
+        assembly {
+            ok := call(gas(), recipient, amount, 0, 0, 0, 0)
+        }
+        require(ok, "ArmadaTreasuryGov: ETH transfer failed");
+        emit DirectDistribution(address(0), recipient, amount);
     }
 
     // ============ Steward Spending (executed by timelock via governor) ============
@@ -156,10 +184,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         StewardBudget storage budget = stewardBudgets[token];
         require(budget.authorized, "ArmadaTreasuryGov: token not authorized for steward");
 
+        // Cache budget.limit: read again in the require check below (audit-76).
+        uint256 budgetLimit = budget.limit;
         // Rolling window: sum all steward spends within the trailing window
         uint256 recentSpend = _sumRecentRecords(_stewardSpendHistory[token], budget.window);
         require(
-            recentSpend + amount <= budget.limit,
+            recentSpend + amount <= budgetLimit,
             "ArmadaTreasuryGov: exceeds steward budget"
         );
 
@@ -184,6 +214,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @param limit Maximum spend per window in token units
     /// @param window Window duration in seconds (minimum 1 day)
     function addStewardBudgetToken(address token, uint256 limit, uint256 window) external onlyOwner {
+        require(token != address(0), "ArmadaTreasuryGov: ETH not steward-spendable");
         require(!stewardBudgets[token].authorized, "ArmadaTreasuryGov: token already authorized");
         require(limit > 0, "ArmadaTreasuryGov: zero limit");
         require(window >= 1 days, "ArmadaTreasuryGov: window too short");
@@ -202,6 +233,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     /// @param limit New maximum spend per window in token units
     /// @param window New window duration in seconds (minimum 1 day)
     function updateStewardBudgetToken(address token, uint256 limit, uint256 window) external onlyOwner {
+        require(token != address(0), "ArmadaTreasuryGov: ETH not steward-spendable");
         require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
         require(limit > 0, "ArmadaTreasuryGov: zero limit");
         require(window >= 1 days, "ArmadaTreasuryGov: window too short");
@@ -214,11 +246,20 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     /// @notice Remove a token from the steward budget table, disabling steward spending.
     /// @param token Token address to deauthorize
+    /// @dev _stewardSpendHistory[token] is intentionally NOT cleared. Two reasons:
+    ///      (1) `delete` on a dynamic storage array iterates and zeroes each element;
+    ///      gas refunds are credited at end-of-transaction so the iteration itself can
+    ///      OOG before the refund applies, which would brick this function once the
+    ///      array grows large enough.
+    ///      (2) Preserving history defends against rolling-window evasion: a captured
+    ///      timelock cannot reset the recent-spend counter by removing and re-adding
+    ///      the budget. If the token is later re-authorized, entries within the new
+    ///      window still count against the new budget; older entries are naturally
+    ///      ignored by _sumRecentRecords' cutoff.
     function removeStewardBudgetToken(address token) external onlyOwner {
         require(stewardBudgets[token].authorized, "ArmadaTreasuryGov: token not authorized");
 
         delete stewardBudgets[token];
-        delete _stewardSpendHistory[token];
 
         emit StewardBudgetTokenRemoved(token);
     }
@@ -240,6 +281,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ) external onlyOwner {
         require(!_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow already initialized");
         require(windowDuration >= 1 days, "ArmadaTreasuryGov: window too short");
+        require(windowDuration <= MAX_OUTFLOW_WINDOW, "ArmadaTreasuryGov: window too long");
         require(limitBps > 0, "ArmadaTreasuryGov: zero bps");
         require(limitBps <= 10000, "ArmadaTreasuryGov: bps out of range");
         require(limitAbsolute >= floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
@@ -270,10 +312,11 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function setOutflowWindow(address token, uint256 newWindow) external onlyOwner {
         require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
         require(newWindow >= 1 days, "ArmadaTreasuryGov: window too short");
+        require(newWindow <= MAX_OUTFLOW_WINDOW, "ArmadaTreasuryGov: window too long");
 
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values; we only need windowDuration here (audit-75).
+        (uint256 activeWindow, , ) = _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 activeWindow = config.windowDuration;
 
         if (newWindow < activeWindow) {
             // Loosening: shorter lookback would drop records and free budget faster — delay.
@@ -300,9 +343,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(newBps > 0, "ArmadaTreasuryGov: zero bps");
         require(newBps <= 10000, "ArmadaTreasuryGov: bps out of range");
 
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values; we only need limitBps here (audit-75).
+        ( , uint256 activeBps, ) = _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 activeBps = config.limitBps;
 
         if (newBps > activeBps) {
             uint256 activatesAt = block.timestamp + LIMIT_ACTIVATION_DELAY;
@@ -326,9 +369,9 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         require(_outflowConfigs[token].initialized, "ArmadaTreasuryGov: outflow not initialized");
         require(newAbsolute >= _outflowConfigs[token].floorAbsolute, "ArmadaTreasuryGov: absolute below floor");
 
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values; we only need limitAbsolute here (audit-75).
+        ( , , uint256 activeAbsolute) = _lazyActivate(token);
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 activeAbsolute = config.limitAbsolute;
 
         if (newAbsolute > activeAbsolute) {
             uint256 activatesAt = block.timestamp + LIMIT_ACTIVATION_DELAY;
@@ -360,37 +403,57 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ///      parameter for enforcement (currently: _checkAndRecordOutflow and the three
     ///      setOutflow* setters). Missing this call in a future code path would silently
     ///      enforce stale values — the single most important correctness check.
-    function _lazyActivate(address token) internal {
+    /// @return windowDuration_ Post-activation rolling-window duration.
+    /// @return limitBps_ Post-activation percentage limit.
+    /// @return limitAbsolute_ Post-activation absolute limit.
+    /// @dev Returns the effective values so callers don't have to SLOAD them
+    ///      right after activation (audit-75). For the no-op path (most common
+    ///      in steady state) this trades 3 SLOADs here for 1 SLOAD avoided in
+    ///      each caller; net savings depend on call mix.
+    function _lazyActivate(address token) internal returns (
+        uint256 windowDuration_,
+        uint256 limitBps_,
+        uint256 limitAbsolute_
+    ) {
         OutflowConfig storage config = _outflowConfigs[token];
 
-        if (config.pendingLimitAbsoluteActivation > 0 &&
-            block.timestamp >= config.pendingLimitAbsoluteActivation) {
-            uint256 oldActive = config.limitAbsolute;
+        // Emits fire before SSTOREs so the optimizer doesn't hold the prior
+        // active value in a stack slot across the write — see audit-91.
+        // Activation slots are cached to avoid the (>0 && >= activation) double SLOAD pattern (audit-76).
+        uint256 absActivation = config.pendingLimitAbsoluteActivation;
+        if (absActivation > 0 && block.timestamp >= absActivation) {
             uint256 newActive = config.pendingLimitAbsolute;
+            emit OutflowLimitAbsoluteActivated(token, config.limitAbsolute, newActive);
             config.limitAbsolute = newActive;
             config.pendingLimitAbsolute = 0;
             config.pendingLimitAbsoluteActivation = 0;
-            emit OutflowLimitAbsoluteActivated(token, oldActive, newActive);
+            limitAbsolute_ = newActive;
+        } else {
+            limitAbsolute_ = config.limitAbsolute;
         }
 
-        if (config.pendingLimitBpsActivation > 0 &&
-            block.timestamp >= config.pendingLimitBpsActivation) {
-            uint256 oldActive = config.limitBps;
+        uint256 bpsActivation = config.pendingLimitBpsActivation;
+        if (bpsActivation > 0 && block.timestamp >= bpsActivation) {
             uint256 newActive = config.pendingLimitBps;
+            emit OutflowLimitBpsActivated(token, config.limitBps, newActive);
             config.limitBps = newActive;
             config.pendingLimitBps = 0;
             config.pendingLimitBpsActivation = 0;
-            emit OutflowLimitBpsActivated(token, oldActive, newActive);
+            limitBps_ = newActive;
+        } else {
+            limitBps_ = config.limitBps;
         }
 
-        if (config.pendingWindowDurationActivation > 0 &&
-            block.timestamp >= config.pendingWindowDurationActivation) {
-            uint256 oldActive = config.windowDuration;
+        uint256 winActivation = config.pendingWindowDurationActivation;
+        if (winActivation > 0 && block.timestamp >= winActivation) {
             uint256 newActive = config.pendingWindowDuration;
+            emit OutflowWindowDurationActivated(token, config.windowDuration, newActive);
             config.windowDuration = newActive;
             config.pendingWindowDuration = 0;
             config.pendingWindowDurationActivation = 0;
-            emit OutflowWindowDurationActivated(token, oldActive, newActive);
+            windowDuration_ = newActive;
+        } else {
+            windowDuration_ = config.windowDuration;
         }
     }
 
@@ -412,14 +475,19 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         // Promote any pending loosenings whose timers have elapsed BEFORE enforcement reads
         // the parameters. Without this, a drain executed in the same block as a just-activated
         // loosening would still enforce the stale pre-loosening limit.
-        _lazyActivate(token);
+        // _lazyActivate returns the post-activation values so we don't re-SLOAD windowDuration below (audit-75).
+        (uint256 windowDur, , ) = _lazyActivate(token);
 
         OutflowConfig storage config = _outflowConfigs[token];
-        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+        // address(0) sentinel routes balance lookup to native ETH; IERC20 calls on the
+        // zero address would revert at the high-level EXTCODESIZE check.
+        uint256 treasuryBalance = token == address(0)
+            ? address(this).balance
+            : IERC20(token).balanceOf(address(this));
         uint256 effectiveLimit = _effectiveLimit(config, treasuryBalance);
 
         // Sum recent outflows within the rolling window
-        uint256 recentOutflow = _sumRecentRecords(_outflowHistory[token], config.windowDuration);
+        uint256 recentOutflow = _sumRecentRecords(_outflowHistory[token], windowDur);
 
         require(
             recentOutflow + amount <= effectiveLimit,
@@ -456,9 +524,12 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
     /// @dev Calculate effective outflow limit: max(pct of balance, absolute), then max(result, floor).
     function _effectiveLimit(OutflowConfig storage config, uint256 treasuryBalance) internal view returns (uint256) {
+        // Cache slots read twice each in the ternaries (audit-76).
+        uint256 absLimit = config.limitAbsolute;
+        uint256 floor = config.floorAbsolute;
         uint256 pctLimit = (treasuryBalance * config.limitBps) / 10000;
-        uint256 limit = pctLimit > config.limitAbsolute ? pctLimit : config.limitAbsolute;
-        return limit > config.floorAbsolute ? limit : config.floorAbsolute;
+        uint256 limit = pctLimit > absLimit ? pctLimit : absLimit;
+        return limit > floor ? limit : floor;
     }
 
     // ============ Wind-Down Sweep Authority ============
@@ -477,6 +548,7 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function transferTo(address token, address recipient, uint256 amount) external {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
         IERC20(token).safeTransfer(recipient, amount);
         emit WindDownTransfer(token, recipient, amount);
     }
@@ -486,7 +558,14 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     function transferETHTo(address payable recipient, uint256 amount) external {
         require(msg.sender == windDownContract, "ArmadaTreasuryGov: not wind-down");
         require(recipient != address(0), "ArmadaTreasuryGov: zero recipient");
-        (bool success,) = recipient.call{value: amount}("");
+        require(amount > 0, "ArmadaTreasuryGov: zero amount");
+        // Assembly call with retSize=0 skips return-data copy. The recipient here
+        // is the immutable redemption contract (no return-bomb risk), but matches
+        // the pattern used elsewhere in the codebase. See audit-86.
+        bool success;
+        assembly {
+            success := call(gas(), recipient, amount, 0, 0, 0, 0)
+        }
         require(success, "ArmadaTreasuryGov: ETH transfer failed");
         emit WindDownETHTransfer(recipient, amount);
     }
@@ -497,7 +576,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     // ============ View Functions ============
 
     function getBalance(address token) external view returns (uint256) {
-        return IERC20(token).balanceOf(address(this));
+        // address(0) is the ETH sentinel — read native balance instead of an IERC20 call.
+        return token == address(0) ? address(this).balance : IERC20(token).balanceOf(address(this));
     }
 
     /// @notice View the steward's current budget status for a token
@@ -576,7 +656,10 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
 
         (uint256 effWindow, uint256 effBps, uint256 effAbsolute) = _effectiveParams(config);
 
-        uint256 treasuryBalance = IERC20(token).balanceOf(address(this));
+        // address(0) sentinel routes balance lookup to native ETH; mirrors _checkAndRecordOutflow.
+        uint256 treasuryBalance = token == address(0)
+            ? address(this).balance
+            : IERC20(token).balanceOf(address(this));
         uint256 pctLimit = (treasuryBalance * effBps) / 10000;
         uint256 limit = pctLimit > effAbsolute ? pctLimit : effAbsolute;
         effectiveLimit = limit > config.floorAbsolute ? limit : config.floorAbsolute;
@@ -593,16 +676,17 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
         uint256 effLimitBps,
         uint256 effLimitAbsolute
     ) {
-        effLimitAbsolute = (config.pendingLimitAbsoluteActivation > 0 &&
-            block.timestamp >= config.pendingLimitAbsoluteActivation)
+        // Cache each activation slot — read twice in the (>0 && >=) pattern (audit-76).
+        uint256 absActivation = config.pendingLimitAbsoluteActivation;
+        effLimitAbsolute = (absActivation > 0 && block.timestamp >= absActivation)
             ? config.pendingLimitAbsolute : config.limitAbsolute;
 
-        effLimitBps = (config.pendingLimitBpsActivation > 0 &&
-            block.timestamp >= config.pendingLimitBpsActivation)
+        uint256 bpsActivation = config.pendingLimitBpsActivation;
+        effLimitBps = (bpsActivation > 0 && block.timestamp >= bpsActivation)
             ? config.pendingLimitBps : config.limitBps;
 
-        effWindowDuration = (config.pendingWindowDurationActivation > 0 &&
-            block.timestamp >= config.pendingWindowDurationActivation)
+        uint256 winActivation = config.pendingWindowDurationActivation;
+        effWindowDuration = (winActivation > 0 && block.timestamp >= winActivation)
             ? config.pendingWindowDuration : config.windowDuration;
     }
 }

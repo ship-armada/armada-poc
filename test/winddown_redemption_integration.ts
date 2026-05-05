@@ -86,7 +86,18 @@ describe("Wind-Down & Redemption Integration", function () {
   }
 
   beforeEach(async function () {
-    [deployer, alice, bob, carol, revenueLockAddr, crowdfundAddr] = await ethers.getSigners();
+    [deployer, alice, bob, carol] = await ethers.getSigners();
+    // Mock contract instances — ArmadaRedemption queries lockedAtWindDown() and
+    // armStillOwed() on these for the circulatingSupply denominator. ArmadaWindDown
+    // also calls freezeAtWindDown() on the RevenueLock mock at trigger.
+    const MockRL = await ethers.getContractFactory("MockRevenueLockRedemption");
+    const rlMock = await MockRL.deploy();
+    await rlMock.waitForDeployment();
+    const MockCF = await ethers.getContractFactory("MockCrowdfundRedemption");
+    const cfMock = await MockCF.deploy();
+    await cfMock.waitForDeployment();
+    revenueLockAddr = { address: await rlMock.getAddress() } as any;
+    crowdfundAddr = { address: await cfMock.getAddress() } as any;
 
     // --- Deploy base contracts ---
 
@@ -156,6 +167,7 @@ describe("Wind-Down & Redemption Integration", function () {
       await redemption.getAddress(),
       await shieldPauseController.getAddress(),
       await revenueCounter.getAddress(),
+      revenueLockAddr.address,
       timelockAddr,
       REVENUE_THRESHOLD,
       windDownDeadline,
@@ -166,6 +178,9 @@ describe("Wind-Down & Redemption Integration", function () {
 
     // ARM token: set wind-down contract (deployer-only)
     await armToken.setWindDownContract(await windDown.getAddress());
+
+    // RevenueCounter: set wind-down contract for freeze() at trigger time.
+    await revenueCounter.setWindDownContract(await windDown.getAddress());
 
     // Redemption: wire wind-down reference (deployer-only one-time setter).
     // ArmadaRedemption reads windDown.triggerTime() to enforce REDEMPTION_DELAY.
@@ -193,6 +208,33 @@ describe("Wind-Down & Redemption Integration", function () {
 
     await timelockController.grantRole(PROPOSER_ROLE, await governor.getAddress());
     await timelockController.grantRole(EXECUTOR_ROLE, await governor.getAddress());
+
+    // Initialize ARM outflow config on the treasury so that proposals
+    // distributing ARM can pass the queue-time outflow feasibility check.
+    // Required by the post-wind-down freeze tests below; harmless for tests
+    // that don't queue treasury proposals.
+    await timelockController.grantRole(PROPOSER_ROLE, deployer.address);
+    await timelockController.grantRole(EXECUTOR_ROLE, deployer.address);
+    {
+      const tgts = [await treasuryContract.getAddress()];
+      const vals = [0n];
+      const cdatas = [
+        treasuryContract.interface.encodeFunctionData("initOutflowConfig", [
+          await armToken.getAddress(),
+          30 * ONE_DAY,                  // window
+          5000,                          // 50% bps
+          TREASURY_AMOUNT,               // ceiling
+          ethers.parseUnits("1000", 18), // floor
+        ]),
+      ];
+      const salt = ethers.id("outflow-config-arm");
+      await timelockController.scheduleBatch(tgts, vals, cdatas, ethers.ZeroHash, salt, TWO_DAYS);
+      await time.increase(TWO_DAYS + 1);
+      await timelockController.executeBatch(tgts, vals, cdatas, ethers.ZeroHash, salt);
+    }
+    await timelockController.revokeRole(PROPOSER_ROLE, deployer.address);
+    await timelockController.revokeRole(EXECUTOR_ROLE, deployer.address);
+
     await timelockController.renounceRole(ADMIN_ROLE, deployer.address);
 
     // --- Configure ARM token and distribute ---
@@ -213,6 +255,15 @@ describe("Wind-Down & Redemption Integration", function () {
     await armToken.transfer(crowdfundAddr.address, CROWDFUND_AMOUNT);
     await armToken.transfer(alice.address, ALICE_AMOUNT);
     await armToken.transfer(bob.address, BOB_AMOUNT);
+
+    // Configure mocks to mirror the old "subtract full balance" behavior so tests
+    // that don't model the entitled-unclaimed bug see the same denominator as before.
+    // Tests that DO model the bug (issue #90) set these explicitly.
+    const rlMockContract = await ethers.getContractAt(
+      "MockRevenueLockRedemption", revenueLockAddr.address
+    );
+    await rlMockContract.setLocked(REVENUE_LOCK_AMOUNT);
+    // Crowdfund mock default armStillOwed = 0 → full balance subtracted (matches old).
 
     // Delegate for governance
     await armToken.connect(alice).delegate(alice.address);
@@ -414,14 +465,119 @@ describe("Wind-Down & Redemption Integration", function () {
     });
 
     it("parameter setters frozen after trigger", async function () {
+      // Pass valid params so the post-trigger guard fires (post-audit-79 the
+      // parameter checks run first; passing 0/past-timestamp would revert on
+      // those guards instead, masking the post-trigger lock check).
       const timelockSigner = await asTimelock();
+      const futureDeadline = (await time.latest()) + 30 * ONE_DAY;
       await expect(
-        windDown.connect(timelockSigner).setRevenueThreshold(0n)
+        windDown.connect(timelockSigner).setRevenueThreshold(1n)
       ).to.be.revertedWith("ArmadaWindDown: already triggered");
       await expect(
-        windDown.connect(timelockSigner).setWindDownDeadline(0n)
+        windDown.connect(timelockSigner).setWindDownDeadline(futureDeadline)
       ).to.be.revertedWith("ArmadaWindDown: already triggered");
       await stopImpersonatingTimelock();
+    });
+  });
+
+  // ============================================================
+  // Proposal lifecycle freeze (post-wind-down)
+  // ============================================================
+
+  describe("Proposal lifecycle freeze (post-wind-down)", function () {
+    // Standard proposal timing — must match the governor's defaults so we can
+    // advance the clock the right amount to reach Succeeded / Queued states.
+    const STANDARD_VOTING_PERIOD = 7 * ONE_DAY;
+    const STANDARD_EXECUTION_DELAY = 2 * ONE_DAY;
+    const ProposalType = { Standard: 0 };
+    const ProposalState = {
+      Pending: 0, Active: 1, Defeated: 2, Succeeded: 3,
+      Queued: 4, Executed: 5, Canceled: 6,
+    };
+    const Vote = { Against: 0, For: 1, Abstain: 2 };
+
+    // Build a Standard treasury-distribute proposal that would move ARM out of
+    // the treasury — the exact mutation the wind-down freeze is meant to block.
+    async function createTreasuryArmProposal(description: string) {
+      const distributeAmount = ethers.parseUnits("1000", ARM_DECIMALS);
+      const targets = [await treasuryContract.getAddress()];
+      const values = [0n];
+      const calldatas = [treasuryContract.interface.encodeFunctionData("distribute", [
+        await armToken.getAddress(), carol.address, distributeAmount,
+      ])];
+      await governor.connect(alice).propose(
+        ProposalType.Standard, targets, values, calldatas, description
+      );
+    }
+
+    // Drive a freshly-created proposal (id=1) through voting to Succeeded.
+    async function advanceToSucceeded() {
+      await time.increase(TWO_DAYS + 1); // past voting delay
+      await governor.connect(alice).castVote(1, Vote.For);
+      await governor.connect(bob).castVote(1, Vote.For);
+      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
+    }
+
+    // WHY: A Succeeded proposal that exists at trigger time must not be
+    // queueable afterward. Without the gate, a pre-trigger distribute /
+    // stewardSpend proposal could move treasury ARM mid-redemption and
+    // break the redemption contract's pro-rata invariant
+    // (GOVERNANCE.md §11). Audit findings #99 and #100.
+    it("queue reverts after wind-down (pre-trigger Succeeded proposal)", async function () {
+      await createTreasuryArmProposal("Standard treasury distribute");
+      await advanceToSucceeded();
+
+      // Trigger wind-down with the proposal sitting in Succeeded state.
+      await time.increaseTo(windDownDeadline + 1);
+      await windDown.triggerWindDown();
+      expect(await governor.windDownActive()).to.be.true;
+
+      // queue() must reject — the proposal cannot progress.
+      await expect(governor.queue(1)).to.be.revertedWithCustomError(
+        governor, "Gov_GovernanceEnded"
+      );
+
+      // Treasury ARM balance is unchanged (no distribution happened).
+      expect(await armToken.balanceOf(await treasuryContract.getAddress()))
+        .to.equal(TREASURY_AMOUNT);
+    });
+
+    // WHY: Mirrors the queue gate at the execute boundary. A proposal that
+    // was already queued in the timelock at the moment of trigger must not
+    // be executable post-trigger; otherwise the timelock-scheduled action
+    // would still mutate treasury ARM after redemption opens.
+    it("execute reverts after wind-down (pre-trigger Queued proposal)", async function () {
+      await createTreasuryArmProposal("Standard treasury distribute");
+      await advanceToSucceeded();
+
+      // Queue while still pre-trigger.
+      await governor.queue(1);
+      expect(await governor.state(1)).to.equal(ProposalState.Queued);
+
+      // Advance past the execution delay so the timelock would otherwise
+      // permit execution — this isolates the wind-down gate as the only
+      // remaining barrier.
+      await time.increase(STANDARD_EXECUTION_DELAY + 1);
+
+      // Trigger wind-down with the proposal sitting in Queued state.
+      // (windDownDeadline is 365 days out and we have only advanced by ~12
+      // days of voting + 2 days of execution delay, so we're still
+      // pre-deadline; advance past it before triggering.)
+      if ((await time.latest()) <= windDownDeadline) {
+        await time.increaseTo(windDownDeadline + 1);
+      }
+      await windDown.triggerWindDown();
+      expect(await governor.windDownActive()).to.be.true;
+
+      // execute() must reject.
+      await expect(governor.execute(1)).to.be.revertedWithCustomError(
+        governor, "Gov_GovernanceEnded"
+      );
+
+      // Treasury ARM balance is unchanged.
+      expect(await armToken.balanceOf(await treasuryContract.getAddress()))
+        .to.equal(TREASURY_AMOUNT);
     });
   });
 
@@ -479,6 +635,7 @@ describe("Wind-Down & Redemption Integration", function () {
         await redemption.getAddress(),
         await shieldPauseController.getAddress(),
         await revenueCounter.getAddress(),
+        revenueLockAddr.address,
         deployer.address, // use deployer as fake timelock
         REVENUE_THRESHOLD,
         freshDeadline,
@@ -524,7 +681,7 @@ describe("Wind-Down & Redemption Integration", function () {
       expect(circulating).to.equal(TOTAL_SUPPLY * 10n / 100n); // 1.2M
 
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       // Alice has 600K / 1.2M = 50% → $250k
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
@@ -532,7 +689,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
     it("pro-rata ETH redemption", async function () {
       const tokens: string[] = [];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       // 50% of 10 ETH = 5 ETH
       expect(await ethers.provider.getBalance(await redemption.getAddress())).to.equal(
@@ -542,7 +699,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
     it("combined ERC20 + ETH in one deposit", async function () {
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
       // Alice's ETH balance increased (exact check is hard due to gas, check contract balance)
@@ -554,11 +711,11 @@ describe("Wind-Down & Redemption Integration", function () {
       const tokens = [await usdc.getAddress()];
 
       // Alice redeems first
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
       const aliceUsdc = await usdc.balanceOf(alice.address);
 
       // Bob redeems second — should get the same share
-      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, true);
+      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, bob.address);
       const bobUsdc = await usdc.balanceOf(bob.address);
 
       expect(aliceUsdc).to.equal(bobUsdc);
@@ -567,7 +724,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
     it("ARM is permanently locked after redemption", async function () {
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       expect(await armToken.balanceOf(alice.address)).to.equal(0n);
       expect(await armToken.balanceOf(await redemption.getAddress())).to.equal(ALICE_AMOUNT);
@@ -576,7 +733,7 @@ describe("Wind-Down & Redemption Integration", function () {
     it("rejects ARM token in tokens array", async function () {
       const tokens = [await armToken.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: cannot redeem ARM");
     });
 
@@ -584,7 +741,7 @@ describe("Wind-Down & Redemption Integration", function () {
       const usdcAddr = await usdc.getAddress();
       const tokens = [usdcAddr, usdcAddr];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: tokens not sorted/unique");
     });
 
@@ -593,6 +750,12 @@ describe("Wind-Down & Redemption Integration", function () {
       const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
       const weth = await MockUSDCV2.deploy("Wrapped ETH", "WETH");
       await weth.waitForDeployment();
+
+      // Fund the redemption contract with WETH so the per-asset share>0 check
+      // passes on index 0 and the loop reaches the sort check at index 1.
+      // Without this, the strict share-check would fire first on the empty token
+      // and we'd never test the sort path.
+      await weth.mint(await redemption.getAddress(), ethers.parseUnits("1000", 6));
 
       const addr1 = await usdc.getAddress();
       const addr2 = await weth.getAddress();
@@ -612,14 +775,14 @@ describe("Wind-Down & Redemption Integration", function () {
       const tokens = addr1.toLowerCase() > addr2.toLowerCase()
         ? [addr1, addr2] : [addr2, addr1];
       await expect(
-        redemption.connect(alice).redeem(redeemAmount, tokens, false)
+        redemption.connect(alice).redeem(redeemAmount, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: tokens not sorted/unique");
     });
 
     it("rejects zero ARM amount", async function () {
       const tokens = [await usdc.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(0n, tokens, false)
+        redemption.connect(alice).redeem(0n, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: zero amount");
     });
 
@@ -627,7 +790,7 @@ describe("Wind-Down & Redemption Integration", function () {
       const circulatingBefore = await redemption.circulatingSupply();
 
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
 
       const circulatingAfter = await redemption.circulatingSupply();
       expect(circulatingAfter).to.equal(circulatingBefore - ALICE_AMOUNT);
@@ -660,7 +823,7 @@ describe("Wind-Down & Redemption Integration", function () {
     it("reverts if redeem is attempted before the delay elapses", async function () {
       const tokens = [await usdc.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: redemption delay not elapsed");
     });
 
@@ -671,14 +834,14 @@ describe("Wind-Down & Redemption Integration", function () {
       await time.increaseTo(Number(triggeredAt) + ONE_WEEK - 2);
       const tokens = [await usdc.getAddress()];
       await expect(
-        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false)
+        redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
       ).to.be.revertedWith("ArmadaRedemption: redemption delay not elapsed");
     });
 
     it("succeeds once the delay has elapsed", async function () {
       await advancePastRedemptionDelay();
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
     });
   });
@@ -726,8 +889,8 @@ describe("Wind-Down & Redemption Integration", function () {
       // Delay gate: social-coordination window between trigger and redemptions (issue #254)
       await advancePastRedemptionDelay();
 
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, true);
-      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, true);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
+      await redemption.connect(bob).redeem(BOB_AMOUNT, tokens, bob.address);
 
       // Both get 50% of USDC
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
@@ -773,7 +936,7 @@ describe("Wind-Down & Redemption Integration", function () {
       await advancePastRedemptionDelay();
 
       const tokens = [await usdc.getAddress()];
-      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, false);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address);
       expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
     });
   });
@@ -935,8 +1098,17 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
   // ═══════════════════════════════════════════════════════════════════
 
   before(async function () {
-    [deployer, alice, bob, carol, revenueLockAddr, crowdfundAddr] = await ethers.getSigners();
+    [deployer, alice, bob, carol] = await ethers.getSigners();
     aliceAddress = await alice.getAddress();
+    // Mock contracts (see top describe block for the same pattern).
+    const MockRL = await ethers.getContractFactory("MockRevenueLockRedemption");
+    const rlMock = await MockRL.deploy();
+    await rlMock.waitForDeployment();
+    const MockCF = await ethers.getContractFactory("MockCrowdfundRedemption");
+    const cfMock = await MockCF.deploy();
+    await cfMock.waitForDeployment();
+    revenueLockAddr = { address: await rlMock.getAddress() } as any;
+    crowdfundAddr = { address: await cfMock.getAddress() } as any;
 
     poseidon = await buildPoseidon();
     F = poseidon.F;
@@ -997,6 +1169,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
       await redemption.getAddress(),
       await shieldPauseController.getAddress(),
       await revenueCounter.getAddress(),
+      revenueLockAddr.address,
       timelockAddr,
       REVENUE_THRESHOLD,
       windDownDeadline,
@@ -1005,6 +1178,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     // Wire governance contracts
     await armToken.setWindDownContract(await windDown.getAddress());
     await redemption.setWindDown(await windDown.getAddress());
+    await revenueCounter.setWindDownContract(await windDown.getAddress());
 
     const timelockSigner = await asTimelock();
     await governor.connect(timelockSigner).setSecurityCouncil(carol.address);

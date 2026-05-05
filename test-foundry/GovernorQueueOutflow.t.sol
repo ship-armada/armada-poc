@@ -75,6 +75,15 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
     uint256 constant OTHER_LIMIT_ABS = 10_000 * 1e18;
     uint256 constant OTHER_FLOOR = 5_000 * 1e18;
 
+    // ETH outflow parameters under the address(0) sentinel.
+    // Treasury balance 10000 ETH → 5% (500 ETH) stays above the 100 ETH effective limit
+    // and our test amounts, so proposals stay on the Standard timing track.
+    uint256 constant ETH_TREASURY_BALANCE = 10_000 ether;
+    uint256 constant ETH_EFFECTIVE_LIMIT = 100 ether;
+    uint256 constant ETH_LIMIT_BPS = 100; // 1%
+    uint256 constant ETH_LIMIT_ABS = 100 ether;
+    uint256 constant ETH_FLOOR = 50 ether;
+
     function setUp() public {
         // Deploy timelock (governor will be added as proposer later)
         address[] memory proposers = new address[](0);
@@ -121,11 +130,13 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
         other = new QueueOutflowMockToken("Other Token", "OTHER", uint8(OTHER_DECIMALS_VAL));
         usdc.mint(address(treasury), USDC_TREASURY_BALANCE);
         other.mint(address(treasury), OTHER_TREASURY_BALANCE);
+        vm.deal(address(treasury), ETH_TREASURY_BALANCE);
 
         // Initialize outflow configs and steward budgets (timelock-owned).
         vm.startPrank(address(timelock));
         treasury.initOutflowConfig(address(usdc), USDC_WINDOW, USDC_LIMIT_BPS, USDC_LIMIT_ABS, USDC_FLOOR);
         treasury.initOutflowConfig(address(other), USDC_WINDOW, OTHER_LIMIT_BPS, OTHER_LIMIT_ABS, OTHER_FLOOR);
+        treasury.initOutflowConfig(address(0), USDC_WINDOW, ETH_LIMIT_BPS, ETH_LIMIT_ABS, ETH_FLOOR);
         // Steward budgets sized large enough that queue-time outflow limit is the binding constraint.
         treasury.addStewardBudgetToken(address(usdc), USDC_EFFECTIVE_LIMIT, USDC_WINDOW);
         treasury.addStewardBudgetToken(address(other), OTHER_EFFECTIVE_LIMIT, USDC_WINDOW);
@@ -145,6 +156,9 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
         (uint256 otherLimit,,) = treasury.getOutflowStatus(address(other));
         assertEq(usdcLimit, USDC_EFFECTIVE_LIMIT, "USDC effective limit sanity");
         assertEq(otherLimit, OTHER_EFFECTIVE_LIMIT, "OTHER effective limit sanity");
+        // ETH outflow status uses address(this).balance via the address(0) sentinel.
+        (uint256 ethLimit,,) = treasury.getOutflowStatus(address(0));
+        assertEq(ethLimit, ETH_EFFECTIVE_LIMIT, "ETH effective limit sanity");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -410,6 +424,179 @@ contract GovernorQueueOutflowTest is Test, GovernorDeployHelper {
 
         governor.queue(proposalId);
         assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ETH parity: queue-time feasibility for distributeETH (address(0) sentinel)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // WHY: distributeETH must obey the same queue-time feasibility check as distribute(),
+    // otherwise an infeasible ETH proposal would sit in the timelock indefinitely. The
+    // governor decodes (address recipient, uint256 amount) and aggregates against the
+    // address(0) bucket.
+    function test_queue_revertsWhenSingleDistributeETHExceedsEffectiveLimit() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(treasury);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature(
+            "distributeETH(address,uint256)", bob, ETH_EFFECTIVE_LIMIT + 1
+        );
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "exceed-limit eth");
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_OutflowInfeasible.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Two individually-feasible distributeETH calls together exceed the limit.
+    // Aggregation under the address(0) bucket must catch this.
+    function test_queue_revertsWhenBatchedDistributeETHAggregateExceedsLimit() public {
+        uint256 half = ETH_EFFECTIVE_LIMIT / 2 + 1;
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSignature("distributeETH(address,uint256)", alice, half);
+        calldatas[1] = abi.encodeWithSignature("distributeETH(address,uint256)", bob, half);
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "batched eth");
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_OutflowInfeasible.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Counterpart to the over-rejecting guard for distribute(). A distributeETH
+    // at exactly the effective limit must queue successfully — confirms the ETH path
+    // doesn't have an off-by-one.
+    function test_queue_succeedsWhenSingleDistributeETHAtLimit() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(treasury);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature(
+            "distributeETH(address,uint256)", alice, ETH_EFFECTIVE_LIMIT
+        );
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "eth at limit");
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Steward budget feasibility — per-token budget limit gate at queue time
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Tighten the USDC steward budget to a small value so it binds before the outflow
+    // ceiling. Used by the steward-budget tests below to construct cases where amount
+    // <= effective outflow limit but > steward budget limit.
+    uint256 constant TIGHT_STEWARD_BUDGET = 10_000 * 1e6;
+
+    function _tightenUsdcStewardBudget() internal {
+        vm.prank(address(timelock));
+        treasury.updateStewardBudgetToken(address(usdc), TIGHT_STEWARD_BUDGET, USDC_WINDOW);
+    }
+
+    // WHY: A stewardSpend exceeding the per-token steward budget can never execute,
+    // so it must be rejected at queue time rather than burn a 2-day timelock slot
+    // and revert at execute. Mirrors the existing rolling-outflow ceiling gate.
+    function test_queue_revertsWhenSingleStewardSpendExceedsBudget() public {
+        _tightenUsdcStewardBudget();
+
+        address[] memory tokens = new address[](1); tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1); recipients[0] = alice;
+        // 50k fits the 100k outflow ceiling but exceeds the 10k tightened budget.
+        uint256[] memory amounts = new uint256[](1); amounts[0] = 50_000 * 1e6;
+
+        uint256 proposalId = _proposeAndPassSteward(tokens, recipients, amounts);
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardBudgetInfeasible.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Two stewardSpend calls each within the per-token budget but summing above
+    // it must be rejected at queue. Per-token aggregation mirrors the outflow gate's
+    // pattern — single-call feasibility is not sufficient.
+    function test_queue_revertsWhenBatchedStewardSpendAggregateExceedsBudget() public {
+        _tightenUsdcStewardBudget();
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(usdc);
+        tokens[1] = address(usdc);
+        address[] memory recipients = new address[](2);
+        recipients[0] = alice;
+        recipients[1] = bob;
+        uint256[] memory amounts = new uint256[](2);
+        // Each 6k fits the 10k budget; aggregate 12k exceeds.
+        amounts[0] = 6_000 * 1e6;
+        amounts[1] = 6_000 * 1e6;
+
+        uint256 proposalId = _proposeAndPassSteward(tokens, recipients, amounts);
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardBudgetInfeasible.selector));
+        governor.queue(proposalId);
+    }
+
+    // WHY: Over-rejection guard — a stewardSpend at exactly the budget limit must
+    // queue successfully. Pins the strict-inequality semantics of the new check.
+    function test_queue_succeedsWhenStewardSpendAtBudgetLimit() public {
+        _tightenUsdcStewardBudget();
+
+        address[] memory tokens = new address[](1); tokens[0] = address(usdc);
+        address[] memory recipients = new address[](1); recipients[0] = alice;
+        uint256[] memory amounts = new uint256[](1); amounts[0] = TIGHT_STEWARD_BUDGET;
+
+        uint256 proposalId = _proposeAndPassSteward(tokens, recipients, amounts);
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    // WHY: The steward budget gate must apply to stewardSpend() only — distribute()
+    // and distributeETH() are governed by the per-tx 5% rule and the rolling outflow
+    // ceiling, not by the steward budget table. A distribute amount above the tightened
+    // budget but within the outflow limit must still queue.
+    function test_queue_distributeNotCheckedAgainstStewardBudget() public {
+        _tightenUsdcStewardBudget();
+
+        address[] memory targets = new address[](1); targets[0] = address(treasury);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        // 50k > 10k tightened steward budget, but well under the 100k outflow ceiling.
+        calldatas[0] = abi.encodeWithSignature(
+            "distribute(address,address,uint256)", address(usdc), alice, 50_000 * 1e6
+        );
+
+        uint256 proposalId = _proposeAndPassStandard(targets, values, calldatas, "distribute over budget");
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Queued));
+    }
+
+    // WHY: getStewardBudget returns (0, 0, 0) for tokens not in the steward budget
+    // table. The new gate therefore rejects stewardSpend on unauthorized tokens at
+    // queue (any positive aggregate exceeds budget=0) instead of letting them queue
+    // and revert at execute. Pins this side benefit so it cannot regress.
+    function test_queue_revertsWhenStewardSpendOnUnauthorizedToken() public {
+        // Deploy a new token, configure outflow so the outflow gate passes, but do
+        // NOT add it to the steward budget table. Without the budget gate, this would
+        // queue and revert at execute.
+        QueueOutflowMockToken unauth = new QueueOutflowMockToken("Unauth", "U", 18);
+        unauth.mint(address(treasury), 1_000_000 * 1e18);
+        vm.prank(address(timelock));
+        treasury.initOutflowConfig(address(unauth), USDC_WINDOW, 100, 100_000 * 1e18, 50_000 * 1e18);
+
+        address[] memory tokens = new address[](1); tokens[0] = address(unauth);
+        address[] memory recipients = new address[](1); recipients[0] = alice;
+        // Amount well under the outflow ceiling so the outflow gate passes first.
+        uint256[] memory amounts = new uint256[](1); amounts[0] = 1_000 * 1e18;
+
+        uint256 proposalId = _proposeAndPassSteward(tokens, recipients, amounts);
+
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_StewardBudgetInfeasible.selector));
+        governor.queue(proposalId);
     }
 }
 

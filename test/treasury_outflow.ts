@@ -103,6 +103,20 @@ describe("Treasury Outflow Rate Limits", function () {
       ).to.be.revertedWith("ArmadaTreasuryGov: window too short");
     });
 
+    // WHY: A multi-year window makes the per-window cap behave as a lifetime cap.
+    // initOutflowConfig is called once per token at deploy/onboarding; an unbounded
+    // input here would let a deployer mistake (or captured deployer) lock down a
+    // token's outflows for an effectively indefinite duration. 365 days is well
+    // above the realistic 30-day operational window.
+    it("should reject initOutflowConfig with window above MAX_OUTFLOW_WINDOW", async function () {
+      const maxWindow = await treasury.MAX_OUTFLOW_WINDOW();
+      await expect(
+        treasury.initOutflowConfig(
+          await usdc.getAddress(), maxWindow + 1n, 1000, USDC(100_000), USDC(50_000)
+        )
+      ).to.be.revertedWith("ArmadaTreasuryGov: window too long");
+    });
+
     it("should reject initOutflowConfig if already initialized for token", async function () {
       await initUsdcOutflow();
       await expect(
@@ -151,6 +165,28 @@ describe("Treasury Outflow Rate Limits", function () {
       await expect(
         treasury.setOutflowWindow(await usdc.getAddress(), ONE_DAY - 1)
       ).to.be.revertedWith("ArmadaTreasuryGov: window too short");
+    });
+
+    // WHY: A multi-year window makes the per-window cap behave as a lifetime cap.
+    // Tightening is immediate, but recovery via a loosening proposal must wait the
+    // 24-day LIMIT_ACTIVATION_DELAY — three weeks of unable-to-pay-anything if the
+    // input is not bounded.
+    it("should reject window above MAX_OUTFLOW_WINDOW", async function () {
+      const maxWindow = await treasury.MAX_OUTFLOW_WINDOW();
+      await expect(
+        treasury.setOutflowWindow(await usdc.getAddress(), maxWindow + 1n)
+      ).to.be.revertedWith("ArmadaTreasuryGov: window too long");
+    });
+
+    // WHY: Boundary case — exactly MAX_OUTFLOW_WINDOW must be accepted. Pins the
+    // strict-inequality semantics of the upper-bound check.
+    it("should accept window at exactly MAX_OUTFLOW_WINDOW", async function () {
+      const maxWindow = await treasury.MAX_OUTFLOW_WINDOW();
+      // setUp's window is 30 days; setting to 365 days is tightening (longer window
+      // sums more historical records), so it activates immediately.
+      await treasury.setOutflowWindow(await usdc.getAddress(), maxWindow);
+      const config = await treasury.getOutflowConfig(await usdc.getAddress());
+      expect(config.windowDuration).to.equal(maxWindow);
     });
 
     // WHY: Tightening direction (lower bps) takes effect immediately. The loosening
@@ -323,6 +359,18 @@ describe("Treasury Outflow Rate Limits", function () {
       await expect(
         treasury.distribute(await usdc.getAddress(), recipient.address, USDC(1_000_000))
       ).to.be.revertedWith("ArmadaTreasuryGov: outflow config required");
+    });
+
+    // WHY: stewardSpend already enforces amount > 0; distribute should match. A zero-
+    // amount call would otherwise insert a no-op record into the append-only outflow
+    // history and silently invoke the recipient's fallback — meaningless economically
+    // but pollutes storage and removes a defense-in-depth guard.
+    it("should revert distribute on zero amount", async function () {
+      await fundTreasury(USDC(1_000_000));
+      await initUsdcOutflow();
+      await expect(
+        treasury.distribute(await usdc.getAddress(), recipient.address, 0n)
+      ).to.be.revertedWith("ArmadaTreasuryGov: zero amount");
     });
   });
 

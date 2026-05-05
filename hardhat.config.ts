@@ -25,18 +25,51 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      {
+        // Audit-scope (governance + crowdfund) compiles with 0.8.20 + shanghai
+        // to enable PUSH0 codegen, freeing bytecode in the size-constrained governor.
+        // Out-of-scope contracts (Railgun internals, privacy pool, yield) remain on
+        // 0.8.17 per the project pin in CLAUDE.md.
+        version: "0.8.20",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+          evmVersion: "shanghai",
+        },
+      },
     ],
     overrides: {
       "contracts/governance/ArmadaGovernor.sol": {
-        version: "0.8.17",
+        version: "0.8.20",
         settings: {
           optimizer: {
             enabled: true,
             runs: 1,
           },
           viaIR: true,
+          evmVersion: "shanghai",
         },
       },
+      "contracts/governance/AdapterRegistry.sol":      { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/ArmadaRedemption.sol":     { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/ArmadaToken.sol":          { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/ArmadaTreasuryGov.sol":    { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/ArmadaWindDown.sol":       { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/IArmadaGovernance.sol":    { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/IFeeCollector.sol":        { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/IShieldPauseController.sol": { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/MockAdapterRegistry.sol":  { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/MockFeeCollector.sol":     { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/MockRedemptionDeps.sol":   { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/ProxyImports.sol":         { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/RevenueCounter.sol":       { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/RevenueLock.sol":          { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/ShieldPauseController.sol": { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/TreasurySteward.sol":      { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/crowdfund/ArmadaCrowdfund.sol":       { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/crowdfund/IArmadaCrowdfund.sol":      { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
     },
   },
   networks: {

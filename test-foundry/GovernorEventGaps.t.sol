@@ -76,4 +76,43 @@ contract GovernorEventGapsTest is Test, GovernorDeployHelper {
         vm.expectRevert(ArmadaGovernor.Gov_AlreadyLocked.selector);
         governor.setExcludedAddresses(addrs);
     }
+
+    // WHY: _initProposal sums balanceOf across the excluded list to derive
+    // excludedBalance. A duplicate would double-count its balance and lower the
+    // quorum threshold below the spec-defined value. excludedAddressesLocked makes
+    // any bootstrap mistake permanent without a UUPS upgrade, so detection happens
+    // at registration time.
+    function test_setExcludedAddresses_revertsOnDuplicate() public {
+        address[] memory addrs = new address[](2);
+        addrs[0] = address(0xCafe);
+        addrs[1] = address(0xCafe);
+
+        vm.expectRevert(ArmadaGovernor.Gov_DuplicateExcludedAddress.selector);
+        governor.setExcludedAddresses(addrs);
+    }
+
+    // WHY: Pin the multi-entry duplicate-anywhere case (not just adjacent). The
+    // n^2 inner loop must catch a duplicate against any earlier entry, not just
+    // the immediately preceding one.
+    function test_setExcludedAddresses_revertsOnNonAdjacentDuplicate() public {
+        address[] memory addrs = new address[](3);
+        addrs[0] = address(0xCafe);
+        addrs[1] = address(0xBabe);
+        addrs[2] = address(0xCafe); // duplicate of addrs[0], not addrs[1]
+
+        vm.expectRevert(ArmadaGovernor.Gov_DuplicateExcludedAddress.selector);
+        governor.setExcludedAddresses(addrs);
+    }
+
+    // WHY: Regression guard — happy path with unique addresses must still register
+    // and lock cleanly after the duplicate-detection loop was added.
+    function test_setExcludedAddresses_acceptsUniqueAddresses() public {
+        address[] memory addrs = new address[](3);
+        addrs[0] = address(0xCafe);
+        addrs[1] = address(0xBabe);
+        addrs[2] = address(0xFace);
+
+        governor.setExcludedAddresses(addrs);
+        assertTrue(governor.excludedAddressesLocked());
+    }
 }

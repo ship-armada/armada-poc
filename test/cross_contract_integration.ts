@@ -954,5 +954,95 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         freshGovernor.connect(nonDeployer).setExcludedAddresses([localDeployer.address])
       ).to.be.revertedWithCustomError(governor, "Gov_NotDeployer");
     });
+
+    // ============================================================
+    // addExcludedAddress (audit-98 — post-launch cohort registration)
+    // ============================================================
+
+    // Helper: impersonate the timelock for direct calls. The timelock is a
+    // contract, not an EOA — Hardhat's hardhat_impersonateAccount lets us send
+    // transactions as it for governance-gated state mutations in tests.
+    async function asLocalTimelock() {
+      const tlAddr = await localTimelockController.getAddress();
+      await ethers.provider.send("hardhat_impersonateAccount", [tlAddr]);
+      await localDeployer.sendTransaction({ to: tlAddr, value: ethers.parseEther("1") });
+      const signer = await ethers.getSigner(tlAddr);
+      return { signer, addr: tlAddr };
+    }
+    async function stopImpersonatingLocalTimelock() {
+      await ethers.provider.send("hardhat_stopImpersonatingAccount", [
+        await localTimelockController.getAddress(),
+      ]);
+    }
+
+    // WHY: The bootstrap setExcludedAddresses is one-shot and locks. A follow-on
+    // RevenueLock cohort or replacement Crowdfund deployed post-launch would have
+    // its ARM holdings count toward quorum's eligibleSupply unless added to the
+    // exclusion list — silently inflating the quorum threshold (audit-98). The
+    // timelock-only addExcludedAddress closes that drift between
+    // specs/REVENUE_LOCK.md §11 (cohorts permitted) and the previously-missing
+    // post-bootstrap exclusion path.
+    it("timelock can add a cohort address post-bootstrap", async function () {
+      const { signer: tl } = await asLocalTimelock();
+      const cohort = localSeeds[2].address;
+
+      await expect(localGovernor.connect(tl).addExcludedAddress(cohort))
+        .to.emit(localGovernor, "ExcludedAddressAdded")
+        .withArgs(cohort);
+
+      const excluded = await localGovernor.getExcludedFromQuorum();
+      expect(excluded).to.include(cohort);
+
+      await stopImpersonatingLocalTimelock();
+    });
+
+    it("non-timelock cannot call addExcludedAddress", async function () {
+      const cohort = localSeeds[2].address;
+      await expect(
+        localGovernor.connect(localSeeds[0]).addExcludedAddress(cohort)
+      ).to.be.revertedWithCustomError(governor, "Gov_NotTimelock");
+    });
+
+    it("addExcludedAddress rejects zero address", async function () {
+      const { signer: tl } = await asLocalTimelock();
+      await expect(
+        localGovernor.connect(tl).addExcludedAddress(ethers.ZeroAddress)
+      ).to.be.revertedWithCustomError(governor, "Gov_ZeroAddress");
+      await stopImpersonatingLocalTimelock();
+    });
+
+    // WHY: Treasury is implicitly excluded by quorum-denominator math
+    // (subtracted separately at proposal creation). Listing it explicitly would
+    // double-subtract its balance and lower the quorum threshold below the spec
+    // value. Same protection as the bootstrap path.
+    it("addExcludedAddress rejects treasury address", async function () {
+      const { signer: tl } = await asLocalTimelock();
+      const treasuryAddr = await localTreasury.getAddress();
+      await expect(
+        localGovernor.connect(tl).addExcludedAddress(treasuryAddr)
+      ).to.be.revertedWithCustomError(governor, "Gov_DuplicateExcludedAddress");
+      await stopImpersonatingLocalTimelock();
+    });
+
+    // WHY: Adding the same address twice would double-count its balance into
+    // excludedBalance, lowering the quorum threshold. Bootstrap and addition
+    // paths both share _registerExcludedAddress, so dedup is enforced on both.
+    it("addExcludedAddress rejects duplicate of existing entry", async function () {
+      const { signer: tl } = await asLocalTimelock();
+      const cohort = localSeeds[2].address;
+
+      await localGovernor.connect(tl).addExcludedAddress(cohort);
+      await expect(
+        localGovernor.connect(tl).addExcludedAddress(cohort)
+      ).to.be.revertedWithCustomError(governor, "Gov_DuplicateExcludedAddress");
+
+      // Also can't be added if it was in the bootstrap list (crowdfund here).
+      const bootstrapEntry = await localCrowdfund.getAddress();
+      await expect(
+        localGovernor.connect(tl).addExcludedAddress(bootstrapEntry)
+      ).to.be.revertedWithCustomError(governor, "Gov_DuplicateExcludedAddress");
+
+      await stopImpersonatingLocalTimelock();
+    });
   });
 });

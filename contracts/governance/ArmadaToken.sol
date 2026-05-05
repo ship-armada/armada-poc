@@ -17,31 +17,38 @@ contract ArmadaToken is ERC20Votes {
     address public immutable timelock;
     address public immutable tokenDeployer;
 
-    // ============ Transfer Restriction State ============
-
+    // ============ Packed Flag/Address Slot ============
+    // Pack 5 bools + address into one slot (audit-68): 5 + 20 = 25 bytes. Declared
+    // ahead of the mappings so the small fields stay contiguous; mapping slots
+    // (one each, hash-derived storage location) are unaffected by ordering.
     /// @notice When false, only whitelisted senders can transfer. Starts false.
     bool public transferable;
+    /// @notice Whitelist init lock (one-shot deployer setter).
+    bool public whitelistInitialized;
+    /// @notice noDelegation init lock (one-shot deployer setter).
+    bool public noDelegationSet;
+    /// @notice authorizedDelegator init lock (one-shot deployer setter).
+    bool public authorizedDelegatorsInitialized;
+    /// @notice windDownContract one-time setter lock.
+    bool public windDownContractSet;
+    /// @notice The wind-down contract is the only address that can call setTransferable.
+    address public windDownContract;
+
+    // ============ Transfer Restriction State ============
 
     /// @notice Addresses exempt from transfer restrictions (add-only, no removal).
     mapping(address => bool) public transferWhitelist;
-    bool public whitelistInitialized;
-
-    /// @notice The wind-down contract is the only address that can call setTransferable.
-    address public windDownContract;
-    bool public windDownContractSet;
 
     // ============ Delegation Restriction State ============
 
     /// @notice Addresses blocked from delegating (e.g. treasury). Their ARM never enters
     ///         the voting power denominator.
     mapping(address => bool) public noDelegation;
-    bool public noDelegationSet;
 
     // ============ Authorized Delegator State ============
 
     /// @notice Contracts authorized to call delegateOnBehalf (e.g. RevenueLock, Crowdfund).
     mapping(address => bool) public authorizedDelegator;
-    bool public authorizedDelegatorsInitialized;
 
     // ============ Events ============
 
@@ -87,8 +94,9 @@ contract ArmadaToken is ERC20Votes {
     /// @notice Set the wind-down contract address. Callable once by deployer.
     function setWindDownContract(address _windDownContract) external {
         require(msg.sender == tokenDeployer, "ArmadaToken: not deployer");
-        require(!windDownContractSet, "ArmadaToken: wind-down already set");
+        // Parameter check before cold SLOAD on the lock flag (audit-79).
         require(_windDownContract != address(0), "ArmadaToken: zero address");
+        require(!windDownContractSet, "ArmadaToken: wind-down already set");
         windDownContractSet = true;
         windDownContract = _windDownContract;
         emit WindDownContractSet(_windDownContract);
@@ -126,6 +134,7 @@ contract ArmadaToken is ERC20Votes {
     function addToWhitelist(address account) external {
         require(msg.sender == timelock, "ArmadaToken: not timelock");
         require(account != address(0), "ArmadaToken: zero address");
+        if (transferWhitelist[account]) return;
         transferWhitelist[account] = true;
         emit WhitelistAdded(account);
     }
@@ -137,6 +146,7 @@ contract ArmadaToken is ERC20Votes {
     function addAuthorizedDelegator(address delegator) external {
         require(msg.sender == timelock, "ArmadaToken: not timelock");
         require(delegator != address(0), "ArmadaToken: zero address");
+        if (authorizedDelegator[delegator]) return;
         authorizedDelegator[delegator] = true;
         emit AuthorizedDelegatorAdded(delegator);
     }
@@ -173,6 +183,31 @@ contract ArmadaToken is ERC20Votes {
     function delegateOnBehalf(address delegator, address delegatee) external {
         require(authorizedDelegator[msg.sender], "ArmadaToken: not authorized delegator");
         _delegate(delegator, delegatee);
+    }
+
+    /// @notice Combined transfer + delegateOnBehalf for atomic credit + delegation.
+    ///         Replaces the paired (transfer, delegateOnBehalf) sequence in
+    ///         RevenueLock.release and ArmadaCrowdfund.claim. Restricted to authorized
+    ///         delegators (the same gate as delegateOnBehalf), since the underlying
+    ///         delegation step is privileged.
+    /// @param to Recipient of the ARM transfer (also the delegator whose voting power moves)
+    /// @param amount ARM amount to transfer from msg.sender to `to`
+    /// @param delegatee Address to delegate `to`'s voting power to
+    function transferAndDelegate(address to, uint256 amount, address delegatee) external {
+        require(authorizedDelegator[msg.sender], "ArmadaToken: not authorized delegator");
+        _transfer(msg.sender, to, amount);
+        _delegate(to, delegatee);
+    }
+
+    /// @notice Helper for redemption denominator math: returns totalSupply minus the
+    ///         sum of balanceOf(excluded[i]). Collapses the (1 totalSupply + N balanceOf)
+    ///         multi-call pattern in ArmadaRedemption.circulatingSupply to a single CALL.
+    /// @param excluded Addresses whose ARM is non-circulating (treasury, redemption contract, etc.)
+    function circulatingSupplyOf(address[] calldata excluded) external view returns (uint256 result) {
+        result = totalSupply();
+        for (uint256 i; i < excluded.length; i++) {
+            result -= balanceOf(excluded[i]);
+        }
     }
 
     // ============ Transfer Restriction ============

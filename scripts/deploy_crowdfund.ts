@@ -243,6 +243,14 @@ async function main() {
   console.log("   Gate 3 passed: deployer ARM balance is zero");
   console.log("   Gate 4 passed: no residual deployer allowances to protocol contracts");
 
+  // 5e. Activate RevenueLock — required before any beneficiary can call release().
+  // Permissionless one-shot; the contract verifies its own ARM balance internally
+  // (must be >= totalAllocation). Fails fast if Gate 1 above somehow underfunded.
+  console.log("   Activating RevenueLock...");
+  const revenueLock = await ethers.getContractAt("RevenueLock", revenueLockAddress);
+  await (await revenueLock.activate(nm.override())).wait();
+  console.log(`   RevenueLock activated`);
+
   // 6. Register crowdfund as excluded from quorum denominator
   console.log("6. Registering crowdfund in governor quorum exclusion...");
   const governor = await ethers.getContractAt("ArmadaGovernor", governorAddress);
@@ -258,6 +266,14 @@ async function main() {
   console.log("8. Registering crowdfund in governor for quiet period...");
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
   console.log(`   Crowdfund registered for 7-day governance quiet period`);
+
+  // 8a. Bootstrap the governor's Security Council. Without this, the SC slot stays
+  // address(0) at launch — vetoes revert and the SC-gated emergency-pause is inert
+  // until a passed governance proposal sets it. Governance can replace or eject the
+  // SC later via timelock; this only sets the initial value.
+  console.log("   Bootstrapping governor security council...");
+  await (await governor.setSecurityCouncil(securityCouncilAddress, nm.override())).wait();
+  console.log(`   Governor security council set to ${securityCouncilAddress}`);
 
   // 8b. Clear deployer privilege on governor (all deployer-gated one-time setters are done)
   console.log("   Clearing deployer address on governor...");
@@ -281,7 +297,7 @@ async function main() {
   const ArmadaWindDown = await ethers.getContractFactory("ArmadaWindDown");
   const windDownContract = await ArmadaWindDown.deploy(
     armTokenAddress, treasuryAddress, governorAddress, redemptionAddress,
-    shieldPauseAddress, revenueCounterAddress, timelockAddress,
+    shieldPauseAddress, revenueCounterAddress, revenueLockAddress, timelockAddress,
     revenueThreshold, windDownDeadline, nm.override()
   );
   await windDownContract.deploymentTransaction()!.wait();
@@ -298,6 +314,16 @@ async function main() {
   console.log("11b. Wiring wind-down to redemption...");
   await (await redemption.setWindDown(windDownAddress, nm.override())).wait();
   console.log(`   redemption.setWindDown(${windDownAddress})`);
+
+  // 11c. Wire wind-down to RevenueCounter and RevenueLock for the trigger-time
+  // freeze hooks (issue #90 fix). Both are permissionless one-shot setters.
+  console.log("11c. Wiring wind-down to RevenueCounter + RevenueLock...");
+  const revenueCounterContract = await ethers.getContractAt("RevenueCounter", revenueCounterAddress);
+  await (await revenueCounterContract.setWindDownContract(windDownAddress, nm.override())).wait();
+  console.log(`   revenueCounter.setWindDownContract(${windDownAddress})`);
+  const revenueLockContract = await ethers.getContractAt("RevenueLock", revenueLockAddress);
+  await (await revenueLockContract.setWindDownContract(windDownAddress, nm.override())).wait();
+  console.log(`   revenueLock.setWindDownContract(${windDownAddress})`);
 
   // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
   // On local: uses Anvil impersonation to execute as the timelock directly.

@@ -14,6 +14,7 @@ import "./IArmadaCrowdfund.sol";
 /// @notice Minimal ArmadaToken interface for atomic delegation on claim.
 interface IArmadaTokenCrowdfund {
     function delegateOnBehalf(address delegator, address delegatee) external;
+    function transferAndDelegate(address to, uint256 amount, address delegatee) external;
 }
 
 /// @title ArmadaCrowdfund — Word-of-mouth whitelist crowdfund with hop-based allocation
@@ -59,7 +60,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     address public immutable securityCouncil;
 
     // ============ State ============
+    // Pack 5-byte run into one slot (audit-68): Phase (1) + 2×uint8 (2) + 2×bool (2) = 5 bytes.
     Phase public phase;
+    uint8 public launchTeamHop1Used;     // launch-team invite budget tracking (hop-1)
+    uint8 public launchTeamHop2Used;     // launch-team invite budget tracking (hop-2)
+    bool public armLoaded;               // ARM pre-load verification
+    bool public refundMode;              // true when finalize() entered refund mode (proceeds < MIN_SALE)
 
     // Timing (set once in constructor, never modified)
     uint256 public immutable windowStart;
@@ -90,17 +96,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // Claim deadline — set at finalization, after which unclaimed ARM is sweepable
     uint256 public claimDeadline;
 
-    // Launch team invite budget tracking
-    uint8 public launchTeamHop1Used;
-    uint8 public launchTeamHop2Used;
-
-    // ARM pre-load verification
-    bool public armLoaded;
-
-    // Post-allocation minimum raise check: true when finalize() ran but
-    // net proceeds fell below MIN_SALE. All USDC is refundable via claimRefund().
-    bool public refundMode;
-
     // Timestamp when finalize() was called — used by ArmadaGovernor for the
     // 7-day governance quiet period. Set on both normal and refundMode paths.
     uint256 public finalizedAt;
@@ -114,11 +109,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // ============ Events ============
 
     event SeedAdded(address indexed seed);
-    event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce);
+    event Invited(address indexed inviter, address indexed invitee, uint8 indexed hop, uint256 nonce);
     event LaunchTeamInvited(address indexed invitee, uint8 hop);
-    event Committed(address indexed participant, uint8 hop, uint256 amount);
-    event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode);
-    event Cancelled();
+    event Committed(address indexed participant, uint8 indexed hop, uint256 amount);
+    event Finalized(
+        uint256 saleSize,
+        uint256 allocatedArm,
+        uint256 netProceeds,
+        bool refundMode,
+        uint256 cappedDemand,
+        uint256 totalCommitted
+    );
+    event Cancelled(address indexed caller, uint256 timestamp);
     event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded();
@@ -184,6 +186,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     function _addSeed(address seed) internal {
         require(seed != address(0), "ArmadaCrowdfund: zero address");
+        require(seed != launchTeam, "ArmadaCrowdfund: launchTeam cannot be a seed");
         require(hopStats[0].whitelistCount < MAX_SEEDS, "ArmadaCrowdfund: seed cap reached");
         require(!participants[seed][0].isWhitelisted, "ArmadaCrowdfund: already whitelisted");
 
@@ -225,6 +228,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(block.timestamp <= windowEnd, "ArmadaCrowdfund: window closed");
+        require(msg.sender != launchTeam, "ArmadaCrowdfund: launchTeam cannot invite via regular path");
+        require(invitee != launchTeam, "ArmadaCrowdfund: launchTeam cannot be invitee");
 
         Participant storage inviter = participants[msg.sender][inviterHop];
         require(inviter.isWhitelisted, "ArmadaCrowdfund: not whitelisted");
@@ -259,6 +264,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         );
         require(fromHop == 0 || fromHop == 1, "ArmadaCrowdfund: invalid hop for launch team");
         require(invitee != address(0), "ArmadaCrowdfund: zero address");
+        require(invitee != launchTeam, "ArmadaCrowdfund: launchTeam cannot be invitee");
 
         uint8 inviteeHop = fromHop + 1;
 
@@ -383,7 +389,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         require(phase != Phase.Finalized, "ArmadaCrowdfund: already finalized");
         require(phase != Phase.Canceled, "ArmadaCrowdfund: already canceled");
         phase = Phase.Canceled;
-        emit Cancelled();
+        emit Cancelled(msg.sender, block.timestamp);
     }
 
     /// @notice Finalize the crowdfund: compute allocations or enter refund mode.
@@ -396,24 +402,24 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Compute capped demand by iterating all participant nodes. Over-cap
         // deposits are accepted during commit() but only capped amounts count
         // toward minimum raise, expansion trigger, and hop-level allocation.
-        _computeCappedDemand();
+        // _computeCappedDemand returns the values it just wrote so we don't
+        // SLOAD cappedDemand or hopStats[*].cappedCommitted right back (audit-75).
+        (uint256 capped, uint256[3] memory perHopCapped) = _computeCappedDemand();
 
         // If capped demand is below minimum raise, enter refund mode immediately.
         // No allocations to compute — all participants get full USDC refunds.
-        if (cappedDemand < MIN_SALE) {
+        if (capped < MIN_SALE) {
             refundMode = true;
             phase = Phase.Finalized;
             finalizedAt = block.timestamp;
-            emit Finalized(0, 0, 0, true);
+            emit Finalized(0, 0, 0, true, capped, totalCommitted);
             return;
         }
 
-        // Step 1: Elastic expansion (based on capped demand)
-        if (cappedDemand >= ELASTIC_TRIGGER) {
-            saleSize = MAX_SALE;
-        } else {
-            saleSize = BASE_SALE;
-        }
+        // Step 1: Elastic expansion (based on capped demand). Compute into a local
+        // and store once, avoiding re-SLOADs of saleSize in the steps below (audit-76).
+        uint256 saleSize_ = capped >= ELASTIC_TRIGGER ? MAX_SALE : BASE_SALE;
+        saleSize = saleSize_;
 
         // Step 2: Per-hop allocation (matches spec pseudocode steps 3–6)
         //
@@ -425,7 +431,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         // _computeHopAllocations sets finalCeilings/finalDemands needed by _computeAllocation
         // and returns the hop-level USDC estimate for the refundMode pre-check below.
-        uint256 totalAllocUsdc_ = _computeHopAllocations(saleSize);
+        // perHopCapped is passed in to avoid re-SLOADing hopStats[h].cappedCommitted (audit-75).
+        uint256 totalAllocUsdc_ = _computeHopAllocations(saleSize_, perHopCapped);
 
         // Post-allocation minimum raise check: if net proceeds (allocated USDC) fall
         // below MIN_SALE, enter refundMode. Participants get full USDC refunds via
@@ -436,14 +443,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             refundMode = true;
             phase = Phase.Finalized;
             finalizedAt = block.timestamp;
-            emit Finalized(saleSize, 0, 0, true);
+            emit Finalized(saleSize_, 0, 0, true, capped, totalCommitted);
             return;
         }
 
         // Step 3: Store aggregate hop-level results. Per-participant allocations
         // are computed lazily at claim() time (user-borne gas).
+        // Compute totalAllocatedArm into a local first to avoid re-SLOAD in the
+        // Finalized emit at the end of the function (audit-76).
+        uint256 allocatedArm = (totalAllocUsdc_ * 1e18) / ARM_PRICE;
         totalAllocatedUsdc = totalAllocUsdc_;
-        totalAllocatedArm = (totalAllocUsdc_ * 1e18) / ARM_PRICE;
+        totalAllocatedArm = allocatedArm;
         claimDeadline = block.timestamp + CLAIM_DEADLINE_DURATION;
         phase = Phase.Finalized;
         finalizedAt = block.timestamp;
@@ -451,22 +461,34 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         // Push net proceeds to treasury. Retain a rounding buffer so the contract
         // never runs short on refund payouts: lazy per-participant floor divisions
         // can sum to slightly less than totalAllocatedUsdc, making the aggregate
-        // refund slightly larger. Buffer = participantNodes.length * NUM_HOPS
-        // (max 1 USDC unit per participant per hop). Residual dust stays in contract.
+        // refund slightly larger.
+        //
+        // Buffer = participantNodes.length (one USDC unit per participantNode entry).
+        //
+        // Tight upper bound on dust:
+        //   For each oversubscribed hop with N committers, per-participant alloc =
+        //   floor(cappedCommitted_i * finalCeilings[h] / finalDemands[h]). The exact
+        //   rational sum across the hop's committers equals finalCeilings[h]; each
+        //   floor loses < 1 unit, so actual_sum > finalCeilings[h] - N. Hop dust < N.
+        //   Under-subscribed hops do no floor division, dust = 0.
+        //   Total dust < (committers across all oversubscribed hops) ≤ participantNodes.length.
+        //   participantNodes.length is one entry per (address, hop) registration, which
+        //   is robust to any future refactor that allows multi-hop commits per address —
+        //   each (address, hop) tuple corresponds to at most one floor-division call.
         //
         // Invariant note: the spec requires netProceeds + sum(refunds) == totalCommitted
         // as a settlement-completion identity. The rounding buffer means the treasury
         // receives slightly less than totalAllocatedUsdc, with the difference (at most
-        // participantNodes.length * NUM_HOPS USDC units) stranded in the contract as
-        // unrecoverable dust. The identity still holds at the contract level:
+        // participantNodes.length USDC units) stranded in the contract as unrecoverable
+        // dust. The identity still holds at the contract level:
         // treasuryReceived + contractDust + sum(refunds) == totalCommitted.
-        uint256 roundingBuffer = participantNodes.length * NUM_HOPS;
+        uint256 roundingBuffer = participantNodes.length;
         uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
             ? totalAllocUsdc_ - roundingBuffer
             : 0;
         usdc.safeTransfer(treasury, proceedsPush);
 
-        emit Finalized(saleSize, totalAllocatedArm, totalAllocUsdc_, false);
+        emit Finalized(saleSize_, allocatedArm, totalAllocUsdc_, false, capped, totalCommitted);
     }
 
     // ============ Claims & Withdrawals ============
@@ -488,13 +510,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         claimed[msg.sender] = true;
 
         // Compute allocation on the fly
-        uint256 totalAllocArm = 0;
-        uint256 totalRefundUsdc = 0;
+        uint256 totalAllocArm;
+        uint256 totalRefundUsdc;
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             Participant storage p = participants[msg.sender][h];
-            if (p.committed == 0) continue;
+            // Cache p.committed: read again below in _computeAllocation (audit-76).
+            uint256 committed = p.committed;
+            if (committed == 0) continue;
 
-            (uint256 allocArm, uint256 allocUsdc, uint256 hopRefund) = _computeAllocation(p.committed, h, _effectiveCap(p, h));
+            (uint256 allocArm, uint256 allocUsdc, uint256 hopRefund) = _computeAllocation(committed, h, _effectiveCap(p, h));
             totalAllocArm += allocArm;
             totalRefundUsdc += hopRefund;
 
@@ -502,13 +526,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         }
 
         // ARM: only transfer if within claim deadline
-        uint256 armTransferred = 0;
+        uint256 armTransferred;
         if (block.timestamp <= claimDeadline && totalAllocArm > 0) {
             require(delegate != address(0), "ArmadaCrowdfund: delegate required");
             armTransferred = totalAllocArm;
             totalArmTransferred += armTransferred;
-            armToken.safeTransfer(msg.sender, armTransferred);
-            IArmadaTokenCrowdfund(address(armToken)).delegateOnBehalf(msg.sender, delegate);
+            // Combined transfer + delegateOnBehalf — atomic by construction, one CALL.
+            IArmadaTokenCrowdfund(address(armToken)).transferAndDelegate(msg.sender, armTransferred, delegate);
         }
 
         // Refund: always transfer (no expiry)
@@ -553,28 +577,36 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     ///         2. Post-claim-deadline: sweeps all remaining ARM (unclaimed participant ARM forfeited)
     ///         3. Post-cancel/refundMode: sweeps all ARM (nothing owed)
     function withdrawUnallocatedArm() external nonReentrant {
+        // Cache phase: read twice in the require check (audit-76).
+        Phase ph = phase;
         require(
-            phase == Phase.Finalized || phase == Phase.Canceled,
+            ph == Phase.Finalized || ph == Phase.Canceled,
             "ArmadaCrowdfund: not finalized or canceled"
         );
 
         uint256 armBalance = armToken.balanceOf(address(this));
-        uint256 armStillOwed;
-        if (phase == Phase.Canceled || refundMode) {
-            armStillOwed = 0;
-        } else if (block.timestamp > claimDeadline) {
-            // Post-3yr: all unclaimed ARM is forfeited
-            armStillOwed = 0;
-        } else {
-            // Pre-3yr: owe the difference between allocated and already transferred
-            armStillOwed = totalAllocatedArm - totalArmTransferred;
-        }
-        uint256 sweepable = armBalance - armStillOwed;
+        uint256 stillOwed = armStillOwed();
+        uint256 sweepable = armBalance - stillOwed;
         require(sweepable > 0, "ArmadaCrowdfund: nothing to sweep");
 
         armToken.safeTransfer(treasury, sweepable);
 
         emit UnallocatedArmWithdrawn(treasury, sweepable);
+    }
+
+    /// @notice ARM still owed to participants (allocated minus already transferred).
+    /// @dev Pre-finalize / Cancel / refundMode / post-claim-deadline all return 0 —
+    ///      no participant has a live ARM claim against the contract in those states.
+    ///      Used by ArmadaRedemption.circulatingSupply to count entitled-unclaimed
+    ///      ARM as circulating: subtract `balance - armStillOwed()` (the unsold
+    ///      portion still in this contract that will be swept to treasury), not the
+    ///      full balance.
+    function armStillOwed() public view returns (uint256 owed) {
+        // Named return defaults to 0 — fall-through covers Active/Canceled,
+        // refundMode, and post-claim-deadline (audit-64).
+        if (phase == Phase.Finalized && !refundMode && block.timestamp <= claimDeadline) {
+            owed = totalAllocatedArm - totalArmTransferred;
+        }
     }
 
     // ============ View Functions ============
@@ -637,32 +669,42 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @notice Compute aggregate allocation across all hops (only after finalization).
     ///         Purely derived from hop-level data — no stored per-address state.
+    ///         In refundMode the deterministic answer is (0 ARM, sum of committed USDC).
     function computeAllocation(address addr) public view returns (
         uint256 armAmount,
         uint256 refundUsdc
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
+        bool refundModeCache = refundMode;
 
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             Participant storage p = participants[addr][h];
-            if (p.committed == 0) continue;
+            // Cache p.committed: read again in _computeAllocation (audit-76).
+            uint256 committed = p.committed;
+            if (committed == 0) continue;
 
-            (uint256 allocArm, , uint256 hopRefund) = _computeAllocation(p.committed, h, _effectiveCap(p, h));
+            if (refundModeCache) {
+                refundUsdc += committed;
+                continue;
+            }
+            (uint256 allocArm, , uint256 hopRefund) = _computeAllocation(committed, h, _effectiveCap(p, h));
             armAmount += allocArm;
             refundUsdc += hopRefund;
         }
     }
 
     /// @notice Compute allocation at a specific hop (only after finalization).
+    ///         In refundMode the deterministic answer is (0 ARM, p.committed).
     function computeAllocationAtHop(address addr, uint8 hop) external view returns (
         uint256 armAmount,
         uint256 refundUsdc
     ) {
         require(phase == Phase.Finalized, "ArmadaCrowdfund: not finalized");
-        require(!refundMode, "ArmadaCrowdfund: sale in refund mode");
         Participant storage p = participants[addr][hop];
 
+        if (refundMode) {
+            return (0, p.committed);
+        }
         (armAmount, , refundUsdc) = _computeAllocation(p.committed, hop, _effectiveCap(p, hop));
     }
 
@@ -733,7 +775,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
     /// @dev Reverts if msg.sender has zero committed USDC across all hops.
     function _requireHasCommitment() internal view {
-        bool hasCommitment = false;
+        bool hasCommitment;
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             if (participants[msg.sender][h].committed > 0) {
                 hasCommitment = true;
@@ -754,8 +796,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @dev Compute hop-level allocations and store results in finalCeilings/finalDemands.
-    ///      Extracted from finalize() to avoid stack-too-deep.
-    function _computeHopAllocations(uint256 saleSize_) internal returns (uint256 totalAllocUsdc_) {
+    ///      Extracted from finalize() to avoid stack-too-deep. Takes the per-hop
+    ///      capped totals as a parameter so it doesn't have to re-SLOAD
+    ///      hopStats[h].cappedCommitted that _computeCappedDemand just wrote (audit-75).
+    function _computeHopAllocations(uint256 saleSize_, uint256[3] memory perHopCapped) internal returns (uint256 totalAllocUsdc_) {
         uint256 hop2Floor = (saleSize_ * HOP2_FLOOR_BPS) / 10000;
         uint256 available = saleSize_ - hop2Floor;
 
@@ -765,7 +809,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         // --- Hop-0: allocate from available pool ---
         // Uses cappedCommitted (set by _computeCappedDemand) — over-cap deposits excluded
-        uint256 demand = hopStats[0].cappedCommitted;
+        uint256 demand = perHopCapped[0];
         uint256 alloc = demand <= hop0Ceiling ? demand : hop0Ceiling;
         uint256 leftover = hop0Ceiling - alloc;
         uint256 remainingAvailable = available - alloc;
@@ -775,7 +819,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         totalAllocUsdc_ = alloc;
 
         // --- Hop-1: allocate from remaining available, ceiling boosted by hop-0 leftover ---
-        demand = hopStats[1].cappedCommitted;
+        demand = perHopCapped[1];
         uint256 hop1EffCeiling = hop1Ceiling + leftover;
         if (hop1EffCeiling > remainingAvailable) {
             hop1EffCeiling = remainingAvailable;
@@ -788,7 +832,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         totalAllocUsdc_ += alloc;
 
         // --- Hop-2: allocate from floor + hop-1 leftover (no BPS ceiling) ---
-        demand = hopStats[2].cappedCommitted;
+        demand = perHopCapped[2];
         uint256 hop2EffCeiling = hop2Floor + leftover;
         alloc = demand <= hop2EffCeiling ? demand : hop2EffCeiling;
 
@@ -809,12 +853,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
 
         uint256 cappedCommitted = committed < effectiveCap ? committed : effectiveCap;
 
-        if (finalDemands[hop] <= finalCeilings[hop]) {
+        // Cache hop-indexed slots — each is read in the branch below (audit-76).
+        uint256 demand = finalDemands[hop];
+        uint256 ceiling = finalCeilings[hop];
+        if (demand <= ceiling) {
             // Under-subscribed: full allocation of capped amount
             allocUsdc = cappedCommitted;
         } else {
             // Over-subscribed: pro-rata of capped amount
-            allocUsdc = (cappedCommitted * finalCeilings[hop]) / finalDemands[hop];
+            allocUsdc = (cappedCommitted * ceiling) / demand;
         }
         allocArm = (allocUsdc * 1e18) / ARM_PRICE;
         // Refund = raw committed minus allocated (includes over-cap excess + pro-rata excess)
@@ -836,20 +883,26 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
         uint256 len = participantNodes.length;
         for (uint256 i = 0; i < len; i++) {
             ParticipantNode storage node = participantNodes[i];
-            Participant storage p = participants[node.addr][node.hop];
-            if (p.committed == 0) continue;
+            // Cache storage-pointer fields once per iteration (audit-76).
+            address addr = node.addr;
+            uint8 hop = node.hop;
+            Participant storage p = participants[addr][hop];
+            uint256 committed = p.committed;
+            if (committed == 0) continue;
 
-            uint256 cap = _effectiveCap(p, node.hop);
-            uint256 capped = p.committed < cap ? p.committed : cap;
-            perHopCapped[node.hop] += capped;
+            uint256 cap = _effectiveCap(p, hop);
+            uint256 capped = committed < cap ? committed : cap;
+            perHopCapped[hop] += capped;
             globalCapped += capped;
         }
     }
 
     /// @dev Compute capped demand and write results to hopStats and cappedDemand.
-    ///      Matches spec finalization pseudocode step 1-2.
-    function _computeCappedDemand() internal {
-        (uint256 globalCapped, uint256[3] memory perHopCapped) = _iterateCappedDemand();
+    ///      Matches spec finalization pseudocode step 1-2. Also returns the
+    ///      computed values so callers don't have to SLOAD them right back
+    ///      (audit-75); state writes preserved for external readers.
+    function _computeCappedDemand() internal returns (uint256 globalCapped, uint256[3] memory perHopCapped) {
+        (globalCapped, perHopCapped) = _iterateCappedDemand();
         for (uint8 h = 0; h < NUM_HOPS; h++) {
             hopStats[h].cappedCommitted = perHopCapped[h];
         }

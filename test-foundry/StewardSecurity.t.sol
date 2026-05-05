@@ -92,6 +92,16 @@ contract StewardSecurityTest is Test {
         assertFalse(steward.isStewardActive());
     }
 
+    // WHY: termStart is cleared alongside currentSteward to defend against future
+    // readers that consume termStart without the currentSteward != address(0) guard.
+    // isStewardActive / termEnd short-circuit today, so the stale value is inert,
+    // but a refactor reading raw termStart in isolation would regress without this.
+    function test_removeSteward_clearsTermStart() public {
+        assertGt(steward.termStart(), 0, "term started in setUp");
+        steward.removeSteward();
+        assertEq(steward.termStart(), 0);
+    }
+
     function test_removeSteward_emitsEvent() public {
         vm.expectEmit(true, false, false, false);
         emit StewardRemoved(stewardPerson);

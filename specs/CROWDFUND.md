@@ -294,7 +294,9 @@ No CREATE2 is used — the crowdfund address is resolved at conventional deploy 
 
 ### Finalization
 
-After the commitment window closes, finalization is permissionless — anyone may call `finalize()` once the commitment deadline has passed. There is no minimum raise precondition on `finalize()` itself — the contract always runs the allocation math and determines the outcome:
+After the commitment window closes, finalization is permissionless — anyone may call `finalize()` once the commitment deadline has passed. As a liveness fallback for the case where one-shot iteration over participants is operationally infeasible (e.g. extreme block-gas congestion at very high participant counts), the contract additionally exposes `finalizeStep(uint256 maxIterations)`. Both entry points are permissionless and produce the same final state; `finalizeStep` simply allows splitting the iteration across multiple transactions. The settlement logic, accounting, and treasury transfer are identical regardless of which entry point is used. While iteration is in progress (`finalizeInProgress == true`), participant mutations (`commit`, `invite`, `addSeed`, etc.) are blocked so accumulators stay consistent with the snapshot.
+
+There is no minimum raise precondition on `finalize()` itself — the contract always runs the allocation math and determines the outcome:
 
 - If `totalAllocatedUsdc >= MINIMUM_RAISE`: success path (ARM allocated, proceeds to treasury)
 - If `totalAllocatedUsdc < MINIMUM_RAISE`: sets `refundMode = true` (full refunds, no ARM allocated)

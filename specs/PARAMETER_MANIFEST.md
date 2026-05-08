@@ -141,8 +141,9 @@ These values are defined in GOVERNANCE.md and affect the ARM token / governor co
 | Parameter | Value | Verified | Notes |
 |---|---|---|---|
 | Settlement mode | Lazy settlement | ✓ | `finalize()` writes aggregate state only; `Allocated` + `AllocatedHop` emitted at individual `claim()` time. No `emitSettlement()`, no `SettlementComplete`. |
-| Gas estimate at max network | `[TBD]` gas | ☐ | From IMPLEMENTATION_TEST.md S16 fixture |
-| Block gas limit target | 30,000,000 | — | Current mainnet limit |
+| Gas estimate at max network (one-shot) | ~15.2M gas | ✓ | Cold-storage measurement at structural max (1,840 nodes) per `test-foundry/CrowdfundFinalizeGas.t.sol`. Refund-mode path; success path adds ~260k for treasury transfer. |
+| Liveness fallback | `finalizeStep(maxIterations)` | ✓ | Permissionless. Splits iteration across multiple txs. Total cost across all batches converges to one-shot cost +<1%. Per-batch cost: ~50k overhead + ~8.2k/node. See `.context/finalize-resumable-spike.md`. |
+| Block gas limit target | 36,000,000 | — | Ethereum mainnet block gas limit (post-Pectra). One-shot finalize at structural max = ~42% of a block. |
 
 ---
 

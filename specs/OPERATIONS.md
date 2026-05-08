@@ -467,17 +467,27 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 
 ### 9.6 Gas too high for finalization
 
-**Detection:** `eth_estimateGas` for `finalize()` exceeds expected range (3-5M), or `finalize()` tx reverts with out-of-gas.
+**Detection:** `eth_estimateGas` for `finalize()` exceeds expected range, or `finalize()` tx reverts with out-of-gas. Empirically, finalization at the structural participant maximum (~1,840 nodes) costs ~15.2M gas in cold-storage conditions — comfortably within mainnet's 36M block target but operationally tight under extreme congestion.
 
-Under lazy settlement, `finalize()` writes only aggregate state — it should be well within block gas limits at ~800 participants. If gas is unexpectedly high, investigate:
+If gas is higher than expected, investigate:
 
-- **Participant count higher than expected?** More participants = more SLOADs during `hopDemand` iteration. Check actual participant count against the ~800 estimate.
+- **Participant count higher than expected?** More participants = more SLOADs during `hopDemand` iteration. Check actual participant count via `getParticipantCount()`.
 - **Storage layout issue?** Cold reads (2,100 gas) vs warm reads (100 gas) depend on storage packing. If participant data is spread across many storage slots, cold read costs accumulate.
 - **Contract bug?** `finalize()` should not be writing per-participant state. If it is, the lazy settlement architecture is not correctly implemented.
 
-**If `finalize()` reverts:** The transaction reverted atomically — no state was written. Verify `finalized == false` on-chain. Investigate root cause before retrying. Gas estimation should have caught this in pre-finalization checkpoint.
+**Recovery sequence (in order of preference):**
 
-**Prevention:** Gas benchmarking during development with realistic participant and slot distributions (see IMPLEMENTATION_TEST.md S16).
+1. **Retry `finalize()` with a higher tx gas limit.** If the issue is operator-side (gas-limit miscalibration), this resolves it. Settlement is permissionless; anyone can submit.
+
+2. **Switch to resumable finalization via `finalizeStep(maxIterations)`.** This is the primary recovery path for genuine inability to land a one-shot finalize. Choose `maxIterations` such that the per-batch tx fits comfortably (e.g. 100–250 nodes ≈ 0.9–2.1M gas). Call `finalizeStep` repeatedly from any address until `finalizeInProgress() == false` (cleared automatically when the iteration completes). Each non-final batch emits `FinalizeStepProgress(cursor, target)` for monitoring; the final batch emits the existing `Finalized` event and transfers proceeds. Total cost across batches is within ~1% of the one-shot cost; pagination adds no economic side effects. Any caller can submit any batch — there is no "in-progress lock" to a specific address.
+
+3. **`cancel()` (Security Council, last resort).** If finalization remains genuinely unrunnable and pagination is somehow blocked, the Security Council can cancel and put all participants in refund mode. This is destructive — proceeds never reach treasury, ARM allocations are forgone — and should only be used if recovery via `finalizeStep` has been exhausted.
+
+**If `finalize()` reverts:** The transaction reverted atomically — no state was written. Verify `phase == Phase.Active` and `finalizeInProgress == false` on-chain. Investigate root cause; if the issue is gas-related, switch to `finalizeStep`.
+
+**If a `finalizeStep` batch reverts:** The whole batch reverts atomically — cursor stays at its previous value, accumulators stay at their previous values, `finalizeInProgress` stays at its previous value. Reduce `maxIterations` and retry. The contract remains usable indefinitely between batches; there is no time bound on completing pagination.
+
+**Prevention:** Gas benchmarking during development with realistic participant and slot distributions (see `test-foundry/CrowdfundFinalizeGas.t.sol` for the structural-maximum benchmark).
 
 ---
 

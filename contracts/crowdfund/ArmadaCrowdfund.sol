@@ -126,6 +126,35 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     ///         including refundMode).
     uint256 public finalizedAt;
 
+    // ---- Resumable finalization state ----
+    // finalize() iterates participantNodes in a single tx; finalizeStep(maxIterations)
+    // splits the same iteration across multiple txs as a liveness fallback for the
+    // case where one-shot iteration is operationally infeasible (e.g. mainnet block
+    // congestion at very high participant counts). Once iteration starts, participant
+    // mutations (commits, invites, seed adds) are blocked so accumulators stay
+    // consistent with the snapshot. Aggregate accounting is unchanged: the values
+    // accumulated across batches must equal the values a one-shot finalize would have
+    // produced. Pack: bool(1) + uint32(4) + uint32(4) + uint128(16) = 25 bytes in slot 1;
+    // uint128[3] occupies the next 1.5 slots (Solidity allocates 3 full slots for
+    // fixed-size arrays of uint128 since each element gets its own slot).
+    //
+    // Bound assumption (uint128 accumulators): max realistic globalCapped is
+    //   N_max × per_node_cap_max
+    //   = 1840 × (HOP*_MAX_INVITES_RECEIVED_max × HOP*_CAP_USDC_max)
+    //   = 1840 × (20 × 15_000 × 1e6)
+    //   ≈ 5.5e14
+    // uint128 max is ~3.4e38 — 23 orders of magnitude headroom. Each per-hop
+    // accumulator is strictly bounded by globalCapped, so the same bound applies.
+    // The uint128 cast at end-of-batch persistence cannot truncate under any
+    // configuration that keeps per-hop caps and stacking limits within 4–5 orders
+    // of magnitude of current values. Future forks that raise caps dramatically
+    // should re-derive this bound and either widen the type or add a runtime check.
+    bool public finalizeInProgress;
+    uint32 public finalizeCursor;
+    uint32 public finalizeTargetLength;
+    uint128 public finalizeGlobalCapped;
+    uint128[3] public finalizePerHopCapped;
+
     // EIP-712 invite nonce tracking — used/revoked nonces per inviter
     mapping(address => mapping(uint256 => bool)) public usedNonces;
 
@@ -153,6 +182,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     event InviteNonceRevoked(address indexed inviter, uint256 nonce);
     event Allocated(address indexed participant, uint256 armTransferred, uint256 refundUsdc, address delegate);
     event AllocatedHop(address indexed participant, uint8 indexed hop, uint256 acceptedUsdc);
+    /// @notice Emitted on the first call that begins finalize iteration (one-shot or stepped).
+    event FinalizeStarted(uint256 targetLength);
+    /// @notice Emitted after each finalizeStep() call that does not yet complete iteration.
+    event FinalizeStepProgress(uint256 cursor, uint256 targetLength);
 
     // ============ Modifiers ============
 
@@ -252,6 +285,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     /// @param inviterHop Which of the caller's hop-level nodes is doing the inviting
     function invite(address invitee, uint8 inviterHop) external {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(!finalizeInProgress, "ArmadaCrowdfund: finalize in progress");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(block.timestamp <= windowEnd, "ArmadaCrowdfund: window closed");
         require(msg.sender != launchTeam, "ArmadaCrowdfund: launchTeam cannot invite via regular path");
@@ -283,6 +317,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     function launchTeamInvite(address invitee, uint8 fromHop) external {
         require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(!finalizeInProgress, "ArmadaCrowdfund: finalize in progress");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
@@ -409,29 +444,147 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // ============ Finalization ============
 
     /// @notice Security council emergency cancel. Immediate and irreversible.
-    ///         Available during Active phase (pre- or post-window).
+    ///         Available during Active phase (pre- or post-window). If a paginated
+    ///         finalize was in progress, the iteration state is observably reset so
+    ///         external readers don't see a stale `finalizeInProgress` flag — the
+    ///         partial accumulators become inert because phase is now Canceled and
+    ///         no further finalize can occur. Refunds use claimRefund() with full
+    ///         deposit amounts (no allocations were ever published).
     function cancel() external {
         require(msg.sender == securityCouncil, "ArmadaCrowdfund: not security council");
         require(phase != Phase.Finalized, "ArmadaCrowdfund: already finalized");
         require(phase != Phase.Canceled, "ArmadaCrowdfund: already canceled");
         phase = Phase.Canceled;
+        finalizeInProgress = false;
         emit Cancelled(msg.sender, block.timestamp);
     }
 
     /// @notice Finalize the crowdfund: compute allocations or enter refund mode.
     ///         Permissionless — anyone may call once the window has ended.
     ///         If capped demand is below MIN_SALE, sets refundMode and returns.
+    /// @dev Wrapper that attempts full one-shot finalization. If iteration over
+    ///      participantNodes fits in a single transaction's gas budget, this completes
+    ///      in one call and matches pre-resumable behaviour exactly. If a single tx
+    ///      is operationally infeasible, callers can use finalizeStep(maxIterations)
+    ///      to spread iteration across multiple transactions.
     function finalize() external nonReentrant {
+        _finalize(type(uint256).max);
+    }
+
+    /// @notice Resumable variant of finalize(): processes up to `maxIterations` participant
+    ///         nodes per call. Permissionless. Multiple calls advance a stored cursor until
+    ///         the iteration completes, at which point the same settlement logic that
+    ///         finalize() runs is executed atomically with the final batch's state writes.
+    /// @dev Equivalence: the accumulated capped demand after the last batch equals exactly
+    ///      the value finalize() would have produced in a single tx. Per-iteration arithmetic
+    ///      is identical; only loop scheduling differs.
+    /// @param maxIterations Maximum participantNodes entries to process in this call.
+    function finalizeStep(uint256 maxIterations) external nonReentrant {
+        require(maxIterations > 0, "ArmadaCrowdfund: zero iterations");
+        _finalize(maxIterations);
+    }
+
+    /// @dev Shared resumable-finalize implementation. Loop body and settlement logic are
+    ///      preserved verbatim from the original one-shot finalize(); only the iteration
+    ///      bounds (cursor → cursor + maxIterations) and the persistence of running
+    ///      accumulators are new. Loaded into memory locals once per batch and persisted
+    ///      to storage at the end so per-iteration cost matches the original tight loop.
+    function _finalize(uint256 maxIterations) internal {
         require(block.timestamp > windowEnd, "ArmadaCrowdfund: window not ended");
         require(phase == Phase.Active, "ArmadaCrowdfund: already finalized");
 
-        // Compute capped demand by iterating all participant nodes. Over-cap
-        // deposits are accepted during commit() but only capped amounts count
-        // toward minimum raise, expansion trigger, and hop-level allocation.
-        // _computeCappedDemand returns the values it just wrote so we don't
-        // SLOAD cappedDemand or hopStats[*].cappedCommitted right back (audit-75).
-        (uint256 capped, uint256[3] memory perHopCapped) = _computeCappedDemand();
+        uint256 target;
+        if (!finalizeInProgress) {
+            // First call: snapshot iteration bounds. participantNodes.length cannot grow
+            // past this point because: (a) phase == Active still holds (commits/invites
+            // require Active), (b) all mutation paths additionally check
+            // !finalizeInProgress as defence-in-depth, and (c) we set finalizeInProgress
+            // to true here.
+            //
+            // Defensive uint32 bound: the structural maximum is ~1,840 nodes (160 +
+            // 540 + 1,140 derived from MAX_SEEDS and per-hop invite budgets). uint32
+            // holds 4.3e9 — vast headroom. The require makes the truncation-safety
+            // assumption explicit so a future fork that raises caps cannot silently
+            // truncate finalizeTargetLength and skip nodes from iteration.
+            target = participantNodes.length;
+            require(target <= type(uint32).max, "ArmadaCrowdfund: too many nodes");
+            finalizeInProgress = true;
+            finalizeTargetLength = uint32(target);
+            emit FinalizeStarted(target);
+        } else {
+            target = finalizeTargetLength;
+        }
 
+        uint256 cursor = finalizeCursor;
+        // Compute end = min(cursor + maxIterations, target) without risking uint256
+        // overflow on the addition. cursor <= target is an invariant: every batch
+        // clamps end to target before persisting, so target - cursor never underflows.
+        // Callers (including finalize() itself) routinely pass type(uint256).max to
+        // mean "process everything remaining"; this avoids reverting on that idiom
+        // when cursor > 0.
+        uint256 remaining = target - cursor;
+        uint256 batchSize = maxIterations < remaining ? maxIterations : remaining;
+        uint256 end = cursor + batchSize;
+
+        // Load running accumulators into memory so the inner loop matches the original
+        // tight-loop cost. Persisted back to storage once at the end of the batch.
+        uint256 globalCapped = finalizeGlobalCapped;
+        uint256[3] memory perHopCapped;
+        perHopCapped[0] = finalizePerHopCapped[0];
+        perHopCapped[1] = finalizePerHopCapped[1];
+        perHopCapped[2] = finalizePerHopCapped[2];
+
+        // Iteration body — preserved verbatim from the original _iterateCappedDemand.
+        // Over-cap deposits are accepted during commit() but only capped amounts count
+        // toward minimum raise, expansion trigger, and hop-level allocation.
+        for (uint256 i = cursor; i < end; ++i) {
+            ParticipantNode storage node = participantNodes[i];
+            // Cache storage-pointer fields once per iteration (audit-76).
+            address addr = node.addr;
+            uint8 hop = node.hop;
+            Participant storage p = participants[addr][hop];
+            uint256 committed = p.committed;
+            if (committed == 0) continue;
+
+            uint256 cap = _effectiveCap(p, hop);
+            uint256 capped = committed < cap ? committed : cap;
+            perHopCapped[hop] += capped;
+            globalCapped += capped;
+        }
+
+        // Persist progress.
+        finalizeCursor = uint32(end);
+        finalizeGlobalCapped = uint128(globalCapped);
+        finalizePerHopCapped[0] = uint128(perHopCapped[0]);
+        finalizePerHopCapped[1] = uint128(perHopCapped[1]);
+        finalizePerHopCapped[2] = uint128(perHopCapped[2]);
+
+        if (end < target) {
+            emit FinalizeStepProgress(end, target);
+            return;
+        }
+
+        // Iteration complete — commit the aggregate values that the original
+        // _computeCappedDemand wrote in one shot, then run the same settlement logic
+        // the original finalize() ran (extracted into _completeFinalization for clarity;
+        // semantics unchanged).
+        for (uint8 h = 0; h < NUM_HOPS; h++) {
+            hopStats[h].cappedCommitted = perHopCapped[h];
+        }
+        cappedDemand = globalCapped;
+        // Clear the in-progress flag for observability. Phase.Finalized (set inside
+        // _completeFinalization) is what gates re-entry; clearing this is purely
+        // cosmetic so external readers don't see a stale "in progress" indicator.
+        finalizeInProgress = false;
+
+        _completeFinalization(globalCapped, perHopCapped);
+    }
+
+    /// @dev Settlement logic extracted verbatim from the original finalize() body
+    ///      (former lines starting at the `if (capped < MIN_SALE)` check). Inputs are
+    ///      the values produced by the iteration phase. Side effects, branches, event
+    ///      emissions, and the rounding-buffer treasury push are preserved exactly.
+    function _completeFinalization(uint256 capped, uint256[3] memory perHopCapped) internal {
         // If capped demand is below minimum raise, enter refund mode immediately.
         // No allocations to compute — all participants get full USDC refunds.
         if (capped < MIN_SALE) {
@@ -760,8 +913,14 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     // ============ Internal ============
 
     /// @dev Enforces that seeds can only be added during week 1 (requires ARM loaded).
+    ///      The !finalizeInProgress check is defence-in-depth: the time gate below
+    ///      (block.timestamp < launchTeamInviteEnd) already excludes the finalization
+    ///      window (which starts after windowEnd > launchTeamInviteEnd), but the
+    ///      explicit guard preserves the invariant under any future change to the
+    ///      time-gate logic.
     function _requireArmLoadedAndPreInviteEnd() internal view {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(!finalizeInProgress, "ArmadaCrowdfund: finalize in progress");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
@@ -812,8 +971,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @dev Enforces the active commit window (phase, ARM loaded, within 3-week window).
+    ///      The !finalizeInProgress check is defence-in-depth: finalize iteration cannot
+    ///      begin until block.timestamp > windowEnd, so the time gate below already
+    ///      excludes any in-progress-finalize state. The explicit guard preserves the
+    ///      invariant under any future change to the time-gate logic.
     function _requireActiveCommitWindow() internal view {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        require(!finalizeInProgress, "ArmadaCrowdfund: finalize in progress");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp <= windowEnd,
@@ -895,13 +1059,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
     }
 
     /// @dev Pure iteration: compute capped demand per hop and globally without writing state.
-    ///      DESIGN NOTE: This iterates the full participantNodes array — O(n) where n is total
-    ///      participants across all hops. The array is bounded by invite chain limits:
-    ///      MAX_SEEDS (160) at hop-0, with invitesPerPerson limits at each subsequent hop.
-    ///      Practical maximum is ~1,500 nodes, costing ~6.3M gas (well within 30M block limit).
-    ///      An incremental tracking approach was considered but rejected to avoid
-    ///      changing the accounting flow. If invite limits are ever significantly increased,
-    ///      this should be revisited.
+    ///      Used only by the off-chain-friendly view function getEstimatedCappedDemand().
+    ///      The on-chain finalization path (_finalize) inlines the same per-iteration body
+    ///      with a cursor for batched execution; it does not call this helper because the
+    ///      cursor-bounded iteration must accumulate into running storage between batches.
     function _iterateCappedDemand() internal view returns (
         uint256 globalCapped,
         uint256[3] memory perHopCapped
@@ -921,18 +1082,6 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
             perHopCapped[hop] += capped;
             globalCapped += capped;
         }
-    }
-
-    /// @dev Compute capped demand and write results to hopStats and cappedDemand.
-    ///      Matches spec finalization pseudocode step 1-2. Also returns the
-    ///      computed values so callers don't have to SLOAD them right back
-    ///      (audit-75); state writes preserved for external readers.
-    function _computeCappedDemand() internal returns (uint256 globalCapped, uint256[3] memory perHopCapped) {
-        (globalCapped, perHopCapped) = _iterateCappedDemand();
-        for (uint8 h = 0; h < NUM_HOPS; h++) {
-            hopStats[h].cappedCommitted = perHopCapped[h];
-        }
-        cappedDemand = globalCapped;
     }
 
 }

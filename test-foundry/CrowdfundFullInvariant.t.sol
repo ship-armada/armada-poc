@@ -172,6 +172,27 @@ contract CrowdfundFullHandler is Test {
         } catch {}
     }
 
+    /// @dev Resumable finalize step. WHY: exercises the new finalizeStep entry point
+    ///      under fuzz alongside commit/invite/finalize calls. Verifies the same
+    ///      USDC-conservation invariant holds when iteration is split across batches
+    ///      with arbitrary sizes interleaved with other handler calls (which will
+    ///      revert during pagination — itself a useful invariant to fuzz).
+    function finalizeStep(uint256 maxIterations) external {
+        if (ghost_finalized || ghost_canceled) return;
+        // Bound the size to a useful range. Keeping the upper end well above the
+        // total participant count exercises the clamp-to-target path; the lower
+        // end (1) exercises tiny-batch griefing patterns.
+        maxIterations = bound(maxIterations, 1, 500);
+
+        try crowdfund.finalizeStep(maxIterations) {
+            Phase p = crowdfund.phase();
+            if (p == Phase.Finalized) {
+                ghost_finalized = true;
+                ghost_refundMode = crowdfund.refundMode();
+            }
+        } catch {}
+    }
+
     function getCommittersCount() external view returns (uint256) {
         return allCommitters.length;
     }

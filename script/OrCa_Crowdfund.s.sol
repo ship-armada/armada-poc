@@ -113,9 +113,9 @@ contract OrCaCrowdfundDeploy is Script {
         armToken.removeDeployerFromWhitelist();
 
         // Mint USDC + fund ETH to every actor. The ETH stipend lets each actor
-        // pay gas for the upcoming approve broadcast (and any fuzzer-driven
-        // txs after). vm.deal would not propagate to anvil under --broadcast,
-        // so use a real value-bearing call from the deployer.
+        // pay gas for fuzzer-driven txs (approve / commit / etc.). vm.deal
+        // would not propagate to anvil under --broadcast, so use a real
+        // value-bearing call from the deployer.
         for (uint256 i = 0; i < ACTOR_COUNT; i++) {
             usdc.mint(actors[i], USER_USDC_FUND);
             (bool ok, ) = actors[i].call{value: 1 ether}("");
@@ -127,13 +127,11 @@ contract OrCaCrowdfundDeploy is Script {
 
         vm.stopBroadcast();
 
-        // ===== Phase 2: per-actor approvals (must be broadcast as the actor) =====
-        // Cheatcode-only approvals (vm.prank + approve outside broadcast) would
-        // not be replayed to Orca's chain, so each approval rides its own broadcast.
-        for (uint256 i = 0; i < ACTOR_COUNT; i++) {
-            vm.startBroadcast(i + 1); // private key = i + 1
-            usdc.approve(address(crowdfund), type(uint256).max);
-            vm.stopBroadcast();
-        }
+        // No per-actor approve broadcasts: AuditHub's Orca runs forge in
+        // server-signing mode (anvil-unlocked accounts only), so broadcasting
+        // as a non-default account fails with "No Signer available". The
+        // fuzzer handles the approve -> commit chain as part of its
+        // coverage-guided exploration; pre-funding USDC + ETH is enough to
+        // make that chain reachable in two transactions.
     }
 }

@@ -14,6 +14,7 @@ ALLOWED_FILES=(
   "scripts/check-secrets.sh"        # This script (contains patterns, not secrets)
   "scripts/derive_relayer_railgun_address.ts"  # Local-dev relayer key derivation
   "relayer/config.ts"               # Anvil default key for local relayer
+  "script/OrCa_Crowdfund.s.sol"     # Anvil default key for Orca fuzz harness deploy
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

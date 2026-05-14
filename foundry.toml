@@ -18,3 +18,22 @@ remappings = [
 runs = 256
 depth = 50
 fail_on_revert = false
+
+# Orca / AuditHub fuzzing profile. Activate via FOUNDRY_PROFILE=orca.
+# Mirrors the production hardhat.config.ts compile settings for governance/
+# crowdfund contracts so Orca fuzzes the same bytecode that ships to mainnet.
+# The default profile is preserved for the existing test:forge / invariant
+# suite to keep historical gas snapshots and counterexamples stable.
+[profile.orca]
+src = "contracts"
+test = "test-foundry"
+out = "forge-out-orca"
+libs = ["node_modules", "lib"]
+script = "script"
+solc_version = "0.8.20"
+evm_version = "shanghai"
+optimizer = true
+optimizer_runs = 200
+remappings = [
+    "@openzeppelin/=node_modules/@openzeppelin/",
+]

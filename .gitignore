@@ -10,6 +10,7 @@ typechain-types/
 # Foundry
 out/
 forge-out/
+forge-out-orca/
 broadcast/
 
 # Build output

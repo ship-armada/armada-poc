@@ -66,12 +66,30 @@ export function App() {
     // Start the tx execution engine. Idempotent + module-scope, so this runs
     // safely under StrictMode's double-mount and never spawns a second engine.
     startEngine()
-    // Opportunistically pre-warm the Railgun engine — loads the WASM proving stack + IDB DB +
-    // artifact store in the background while the user is still onboarding or browsing. Without
-    // this, the first proof-generating tx pays a 1-2s warmup before the SDK can do anything.
-    // Idempotent: a later enroll/unlock call also goes through ensureRailgunReady() which is a
-    // no-op once initialized.
-    void initRailgunEngine()
+    // Pre-warm the Railgun engine — loads the WASM proving stack + IDB DB + artifact store
+    // AFTER first paint so the initial render isn't competing with the multi-megabyte WASM
+    // download + compile. The unlock path will await `ensureRailgunReady()` regardless, so
+    // correctness is independent of this scheduling — this is purely a paint-latency win.
+    //
+    // requestIdleCallback waits for browser idle (after paint + layout); setTimeout(0) is the
+    // fallback for Safari < 16.4 which still ships without it. The 2-second timeout cap on
+    // requestIdleCallback ensures we don't wait forever if the browser stays busy.
+    const scheduleInit = () => { void initRailgunEngine() }
+    const win = window as typeof window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    let idleId: number | null = null
+    let timeoutId: number | null = null
+    if (typeof win.requestIdleCallback === 'function') {
+      idleId = win.requestIdleCallback(scheduleInit, { timeout: 2000 })
+    } else {
+      timeoutId = window.setTimeout(scheduleInit, 0)
+    }
+    return () => {
+      if (idleId !== null && win.cancelIdleCallback) win.cancelIdleCallback(idleId)
+      if (timeoutId !== null) clearTimeout(timeoutId)
+    }
   }, [])
 
   const wallet = useAtomValue(shieldedWalletAtom)

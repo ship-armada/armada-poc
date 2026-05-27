@@ -2,11 +2,13 @@
 // ABOUTME: Re-signing was explored but removed (specs/TX_SIGNING.md §"Recovery"): non-deterministic wallets produce a different identity each time. Paste / backup are the canonical paths.
 
 import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useAtomValue } from 'jotai'
 import { Lock } from 'lucide-react'
 import { OnboardingShell } from './OnboardingShell'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { Tabs } from '@/components/ui'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
+import { railgunEngineAtom } from '@/state/wallet'
 import styles from './UnlockFlow.module.css'
 
 export interface UnlockFlowProps {
@@ -32,9 +34,16 @@ const MODES: ReadonlyArray<{ id: Mode; label: string }> = [
 
 export function UnlockFlow({ onUnlocked, onCreateNew }: UnlockFlowProps) {
   const { unlockByPaste, unlockByBackup } = useShieldedWallet()
+  const engine = useAtomValue(railgunEngineAtom)
   const [mode, setMode] = useState<Mode>('backup')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // While a click is in flight and the engine hasn't finished warming, surface a distinct
+  // "Warming engine…" label so the user understands why the button is busy. Mirrors the same
+  // pattern in SignEnrollmentStep. Post-paint deferral of `initRailgunEngine()` (App.tsx) means
+  // a user clicking Unlock before the idle-callback fires will see this state briefly.
+  const warming = submitting && engine.state !== 'ready'
+  const submittingLabel = warming ? 'Warming engine…' : 'Unlocking…'
 
   // Per-mode form state. Kept separate so switching tabs doesn't carry data across modes
   // (especially the paste field — we don't want a hex secret lingering in the file-mode tab).
@@ -134,7 +143,7 @@ export function UnlockFlow({ onUnlocked, onCreateNew }: UnlockFlowProps) {
             <FlowFooter
               className={styles.footer}
               primary={{
-                label: submitting ? 'Unlocking…' : 'Unlock',
+                label: submitting ? submittingLabel : 'Unlock',
                 type: 'submit',
                 disabled: !pasteValue || submitting,
               }}
@@ -184,7 +193,7 @@ export function UnlockFlow({ onUnlocked, onCreateNew }: UnlockFlowProps) {
             <FlowFooter
               className={styles.footer}
               primary={{
-                label: submitting ? 'Unlocking…' : 'Unlock',
+                label: submitting ? submittingLabel : 'Unlock',
                 type: 'submit',
                 disabled: !backupFile || !backupPassphrase || submitting,
               }}

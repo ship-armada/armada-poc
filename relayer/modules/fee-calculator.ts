@@ -52,6 +52,7 @@ export class FeeCalculator {
   private ethUsdcPrice: number;
   private feeTtlSeconds: number;
   private feeVarianceBufferBps: number;
+  private broadcasterRailgunAddress: string;
 
   private cctpFastMode: boolean;
 
@@ -61,7 +62,18 @@ export class FeeCalculator {
     this.ethUsdcPrice = armadaRelayerSettings.ethUsdcPrice;
     this.feeTtlSeconds = armadaRelayerSettings.feeTtlSeconds;
     this.feeVarianceBufferBps = armadaRelayerSettings.feeVarianceBufferBps;
+    this.broadcasterRailgunAddress = armadaRelayerSettings.broadcasterRailgunAddress;
     this.cctpFastMode = armadaRelayerSettings.cctpFinalityMode === "fast";
+
+    if (!this.broadcasterRailgunAddress) {
+      // Loud but non-fatal in A1: /fees still responds, the field is just empty. A2 will tighten
+      // this to a startup throw because broadcaster-fee verification needs the address to know
+      // which commitment ciphertext to decrypt.
+      console.warn(
+        "[fee-calculator] BROADCASTER_RAILGUN_ADDRESS is unset — /fees will return an empty " +
+          "broadcasterRailgunAddress. Required before relayer-mediated submit is wired (Phase A2/A3)."
+      );
+    }
   }
 
   /**
@@ -139,6 +151,7 @@ export class FeeCalculator {
       cacheId,
       expiresAt: Date.now() + this.feeTtlSeconds * 1000,
       chainId: hubChain.chainId,
+      broadcasterRailgunAddress: this.broadcasterRailgunAddress,
       fees: {
         transfer: transferFee.toString(),
         unshield: unshieldFee.toString(),

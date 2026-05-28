@@ -16,6 +16,8 @@ ALLOWED_FILES=(
   "relayer/config.ts"               # Anvil default key for local relayer
   "apps/armada-interface/src/lib/crypto/boundary-vectors.test.ts"   # BN254 field-order constant + spec test vectors (publicly known math)
   "apps/armada-interface/vite.config.ts"  # Anvil deployer key for local dev /api/fund-gas endpoint
+  "apps/armada-interface/src/lib/relayer.test.ts"  # Fake 0xdeadbeef-padded tx hash fixture for mocked /relay responses
+  "apps/armada-interface/src/lib/tx/poller.test.ts"  # Fake 0xaaaa... tx hash fixture for mocked /status polling
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

@@ -1,5 +1,5 @@
 // ABOUTME: HTTP client for the Armada relayer — typed fees / relay / status requests with structured error handling.
-// ABOUTME: `submitRelay` is deferred (relayer-mediated submit path is a separate commit); fetchFees + pollStatus are wired.
+// ABOUTME: All three endpoints wired; handler-side adoption of submitRelay is staged in per-kind under Phase A.
 
 import { RELAYER_ENDPOINTS, RELAYER_STATUS_CODES, relayerEndpoint, type RelayerErrorCode } from '@/config/relayer'
 import type { TxKind } from '@/lib/tx/types'
@@ -8,6 +8,14 @@ export interface FeeSchedule {
   cacheId: string
   expiresAt: number
   chainId: number
+  /**
+   * Relayer's Railgun (`0zk...`) address. Clients direct the broadcaster-fee output of their
+   * SNARK proof here so the relayer is paid in the same atomic tx. Sourced verbatim from the
+   * relayer's `BROADCASTER_RAILGUN_ADDRESS` env var. Empty string is allowed in Phase A1 (no
+   * handler consumes this yet); the build-proof stage will start asserting non-empty once
+   * relayer-mediated submit ships in A3.
+   */
+  broadcasterRailgunAddress: string
   /** USDC raw values (6 decimals) as strings — JSON can't carry bigints. Callers BigInt() on use. */
   fees: {
     transfer: string
@@ -131,12 +139,26 @@ export async function fetchFees(signal?: AbortSignal): Promise<FeeSchedule> {
 }
 
 /**
- * Submit a relay request. Reserved for the relayer-mediated submit path (separate commit) —
- * currently throws. The xchain unshield handler reads `fetchFees` for its `maxFee` but submits
- * its hub tx via the user's wallet, not via this endpoint.
+ * POST a populated transaction (relayer's `Transaction` struct, ABI-encoded into `data`) to the
+ * relayer for execution. The relayer pays gas on-chain and returns the tx hash so the caller can
+ * poll `/status` for confirmation. The fee quote attached as `feesCacheId` MUST be current — the
+ * relayer rejects stale quotes with `FEE_EXPIRED`.
+ *
+ * Status semantics: success here means the relayer accepted the request and broadcast the tx —
+ * NOT that the tx is on-chain. Use `pollStatus(txHash)` / `pollRelayStatusOnce` to track inclusion.
+ *
+ * Dormant in A1: no handler calls this yet. Handlers migrate in A3 (`unshield-local` first), then
+ * A4 (transfer + yield), then A5 (`unshield-xchain` hub burn). See `.claude/RELAYER_MEDIATION_PLAN.md`.
  */
-export async function submitRelay(_req: RelayRequest, _signal?: AbortSignal): Promise<RelayResponse> {
-  throw new Error('relayer.submitRelay: not implemented — relayer-mediated submit is a future commit.')
+export async function submitRelay(req: RelayRequest, signal?: AbortSignal): Promise<RelayResponse> {
+  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.relay), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(req),
+    signal,
+  })
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as RelayResponse
 }
 
 /** Poll a previously-submitted relay tx's status. */

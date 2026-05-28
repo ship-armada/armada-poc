@@ -8,6 +8,14 @@ export interface FeeSchedule {
   cacheId: string;
   expiresAt: number; // Unix timestamp ms
   chainId: number;
+  /**
+   * The relayer's Railgun (`0zk...`) address. Clients direct the broadcaster-fee output of their
+   * SNARK proof to this address so the relayer can sweep its gas reimbursement on the same tx.
+   * Sourced verbatim from `BROADCASTER_RAILGUN_ADDRESS` in the relayer env — empty string until
+   * configured (Phase A1 ships the publishing path; the relayer does not yet enroll or spend on
+   * this wallet, that comes with A2's server-side fee verification).
+   */
+  broadcasterRailgunAddress: string;
   fees: {
     /** Fee in USDC raw units (6 decimals) for private transfers */
     transfer: string;

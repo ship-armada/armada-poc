@@ -228,6 +228,14 @@ export const armadaRelayerSettings = {
   iris: netConfig.iris,
   /** CCTP finality mode: "fast" (~8-20s, 1-1.3 bps fee) or "standard" (~15-19 min, free) */
   cctpFinalityMode: getCCTPFinalityMode(),
+  /**
+   * Relayer's Railgun `0zk...` address, published verbatim on `/fees` so clients can route the
+   * broadcaster-fee output of their SNARK proof here. Empty string is allowed in Phase A1 (the
+   * /fees response is the only consumer and no handler calls submitRelay yet); Phase A2 will
+   * tighten this to a startup requirement once server-side fee verification needs to decrypt the
+   * matching commitment ciphertext.
+   */
+  broadcasterRailgunAddress: process.env.BROADCASTER_RAILGUN_ADDRESS ?? "",
 };
 
 // Legacy config export for backward compatibility

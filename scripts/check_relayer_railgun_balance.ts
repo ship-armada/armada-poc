@@ -31,6 +31,7 @@ import {
   fullWalletForID,
   loadProvider,
   awaitWalletScan,
+  refreshBalances,
   balanceForERC20Token,
   setOnUTXOMerkletreeScanCallback,
 } from "@railgun-community/wallet";
@@ -209,9 +210,17 @@ async function main(): Promise<void> {
     isSepolia ? 15_000 : 2_000,
   );
 
-  console.log("[check-balance] Awaiting merkletree scan (this may take minutes on Sepolia)...");
+  console.log("[check-balance] Kicking merkletree scan + awaiting completion...");
+  console.log("  (Sepolia first-run can take minutes — progress lines tick every ~10%)");
   const chain = { type: ChainType.EVM, id: hubChainId };
-  await awaitWalletScan(walletId, chain);
+  // refreshBalances → engine.scanContractHistory: actually starts the scan. `loadProvider`
+  // alone only registers the network; without this call there's nothing scanning and the
+  // `awaitWalletScan` promise sits forever waiting for an event that never fires.
+  // Race-safe order matters: subscribe to the wallet-scan-complete event BEFORE kicking the
+  // scan, so a fast scan that completes before we register the listener doesn't slip past.
+  const walletScanPromise = awaitWalletScan(walletId, chain);
+  void refreshBalances(chain, [walletId]);
+  await walletScanPromise;
 
   console.log("[check-balance] Reading USDC balance...");
   const wallet = fullWalletForID(walletId);

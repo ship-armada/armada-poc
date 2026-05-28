@@ -17,6 +17,8 @@ contract ArmadaFeeModuleHandler is Test {
     address public privacyPool;
     address public yieldVault;
     address public integrator;
+    /// @dev Placeholder asset address — invariant tests don't deploy a real ERC20.
+    address public constant ASSET = address(0xA55E7);
 
     uint256 public ghost_totalArmadaFees;
     uint256 public ghost_totalIntegratorVolume;
@@ -35,7 +37,7 @@ contract ArmadaFeeModuleHandler is Test {
         uint256 integratorFee = bound(amount / 100, 0, amount - armadaTake);
 
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator, amount, armadaTake, integratorFee);
+        feeModule.recordShieldFee(ASSET, integrator, amount, armadaTake, integratorFee);
 
         ghost_totalArmadaFees += armadaTake;
         ghost_totalIntegratorVolume += amount;

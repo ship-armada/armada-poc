@@ -8,6 +8,12 @@
  * decrypts tells us the value of the broadcaster output destined for this wallet, which we
  * then compare against the advertised fee.
  *
+ * Secret-handling invariant: the mnemonic is NEVER logged, returned in error messages, or
+ * persisted to disk anywhere outside the engine's own encrypted LevelDB state. Console output
+ * here is limited to the derived `walletId` (sha256 of the viewing key) and the derived
+ * `0zk` address — both publicly derivable from the mnemonic but neither leaks it. If you add
+ * console output below, keep it to these two safe-to-log primitives.
+ *
  * Boot sequence (called from `armada-relayer.ts::main`):
  *   1. assert RELAYER_RAILGUN_MNEMONIC env is set (refuse to boot otherwise — without it,
  *      the relayer cannot verify fees and would be exposed to free-relay attacks)
@@ -108,12 +114,23 @@ export class RelayerRailgunWallet {
     // to clients. Future SNARK proofs built against the published address would silently land
     // in some OTHER wallet's outbox, gas paid + no recovery.
     const advertised = armadaRelayerSettings.broadcasterRailgunAddress.trim();
-    if (advertised && advertised !== railgunAddress) {
-      throw new Error(
-        `[railgun-wallet] BROADCASTER_RAILGUN_ADDRESS (${advertised}) does not match the ` +
-          `address derived from RELAYER_RAILGUN_MNEMONIC (${railgunAddress}). Either unset the ` +
-          `env (the relayer will use the derived address) or fix the mnemonic / env entry.`,
-      );
+    if (advertised) {
+      // Format-check before the equality check so a typo (e.g. an 0x address pasted in) surfaces
+      // as "you put the wrong kind of address in this env" rather than a confusing mismatch.
+      if (!advertised.startsWith("0zk")) {
+        throw new Error(
+          `[railgun-wallet] BROADCASTER_RAILGUN_ADDRESS must be a Railgun address (0zk...), ` +
+            `got something starting with "${advertised.slice(0, 4)}". Either unset the env or ` +
+            `paste the relayer's derived 0zk address.`,
+        );
+      }
+      if (advertised !== railgunAddress) {
+        throw new Error(
+          `[railgun-wallet] BROADCASTER_RAILGUN_ADDRESS (${advertised}) does not match the ` +
+            `address derived from RELAYER_RAILGUN_MNEMONIC (${railgunAddress}). Either unset ` +
+            `the env (the relayer will use the derived address) or fix the mnemonic / env entry.`,
+        );
+      }
     }
 
     return { walletId: this.wallet.id, railgunAddress };

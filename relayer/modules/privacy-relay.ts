@@ -34,6 +34,11 @@ import { hubChain } from "../config";
 const ALLOWED_SELECTORS: Record<string, string> = {
   // PrivacyPool.transact(Transaction[]) — transfers and unshield-local
   "0xd8ae136a": "transact",
+  // Selectors temporarily off the allowlist (returning with the matching handler PRs that
+  // extend the verifier to decode their wrapper functions):
+  //   0xe484d408 atomicCrossChainUnshield → restored in A5 (unshield-xchain handler migration)
+  //   0xf2987ad1 lendAndShield            → restored in A4 (yield-deposit handler migration)
+  //   0x0793b70e redeemAndShield          → restored in A4 (yield-withdraw handler migration)
 };
 
 /**

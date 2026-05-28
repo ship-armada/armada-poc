@@ -30,11 +30,11 @@ import {
   createRailgunWallet,
   fullWalletForID,
   loadProvider,
-  awaitWalletScan,
   refreshBalances,
   balanceForERC20Token,
   setOnUTXOMerkletreeScanCallback,
 } from "@railgun-community/wallet";
+import { MerkletreeScanStatus } from "@railgun-community/shared-models";
 
 // Bisecting eth_getLogs patch — load BEFORE any ethers provider is constructed (the patch hits
 // JsonRpcProvider.prototype, so order isn't strictly required, but mounting at module top makes
@@ -178,14 +178,19 @@ async function main(): Promise<void> {
   console.log(`  RPC:              ${hubRpc}`);
   patchNetworkConfig(privacyPool, deployBlock, hubChainId, isSepolia);
 
-  // Wire a UTXO-scan progress callback. Two things to surface:
-  //   - Progress percentage every 5% (and always at 100%) — fine-grained enough to catch a
-  //     stuck-at-97% hang that a 10% filter would silently hide.
-  //   - Every scanStatus transition (Started / Updated / Complete / Incomplete) — the
-  //     'Incomplete' terminal status is the failure mode that leaves awaitWalletScan hanging
-  //     because the wallet-decrypt-complete event never fires after it.
+  // Wire a UTXO-scan callback that doubles as our completion signal. We DON'T use
+  // `awaitWalletScan` because that waits for `WalletDecryptBalancesComplete`, which is gated by
+  // `if (!deferCompletionEvent)` inside the SDK — and the scan path triggered by `refreshBalances`
+  // → `scanContractHistory` → `scanUTXOHistory` always passes `deferCompletionEvent=true`. The
+  // event we'd be waiting for cannot fire. Instead, we resolve when the merkletree scan reaches
+  // the `Complete` status, at which point all commitments are persisted and `balanceForERC20Token`
+  // returns the right value.
   let lastReportedPct = -5;
   let lastStatus = "";
+  let resolveScanComplete: ((reason: "complete" | "incomplete") => void) | null = null;
+  const scanSettled = new Promise<"complete" | "incomplete">((resolve) => {
+    resolveScanComplete = resolve;
+  });
   setOnUTXOMerkletreeScanCallback((evt) => {
     const pct = Math.floor(evt.progress * 100);
     const statusChanged = evt.scanStatus !== lastStatus;
@@ -194,6 +199,15 @@ async function main(): Promise<void> {
       if (statusChanged) lastStatus = evt.scanStatus;
       if (milestone) lastReportedPct = pct;
       console.log(`  scan ${pct}% (status=${evt.scanStatus})`);
+    }
+    if (evt.scanStatus === MerkletreeScanStatus.Complete && resolveScanComplete) {
+      resolveScanComplete("complete");
+      resolveScanComplete = null;
+    } else if (evt.scanStatus === MerkletreeScanStatus.Incomplete && resolveScanComplete) {
+      // Incomplete = scan threw mid-flight (RPC failure, validation issue). Balance reads may
+      // be partial but we resolve anyway so the operator sees something useful.
+      resolveScanComplete("incomplete");
+      resolveScanComplete = null;
     }
   });
 
@@ -220,28 +234,26 @@ async function main(): Promise<void> {
   const chain = { type: ChainType.EVM, id: hubChainId };
   // refreshBalances → engine.scanContractHistory: actually starts the scan. `loadProvider`
   // alone only registers the network; without this call there's nothing scanning and the
-  // `awaitWalletScan` promise sits forever waiting for an event that never fires.
-  // Race-safe order matters: subscribe to the wallet-scan-complete event BEFORE kicking the
-  // scan, so a fast scan that completes before we register the listener doesn't slip past.
-  const walletScanPromise = awaitWalletScan(walletId, chain);
+  // promise sits forever waiting for an event that never fires.
   void refreshBalances(chain, [walletId]);
 
-  // Race against a hard timeout. The wallet-decrypt-complete event that `awaitWalletScan`
-  // waits for ONLY fires after the merkletree scan reaches the `Complete` status. If the scan
-  // ends in `Incomplete` (RPC failures mid-scan, malformed events on a particular block) the
-  // listener hangs indefinitely. Falling through to a balance read after the timeout gives the
-  // user something useful — the balance as of whatever blocks DID get scanned — instead of an
-  // open-ended wait.
+  // Race against a hard timeout in case Complete never fires (RPC stuck on a single block,
+  // SDK internal error swallowed, etc.). On timeout we still read the balance from whatever
+  // got persisted — better than an open-ended wait.
   const SCAN_TIMEOUT_MS = isSepolia ? 15 * 60_000 : 60_000;
-  const timedOut = await Promise.race([
-    walletScanPromise.then(() => false),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), SCAN_TIMEOUT_MS)),
+  const result = await Promise.race([
+    scanSettled,
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), SCAN_TIMEOUT_MS)),
   ]);
-  if (timedOut) {
+  if (result === "timeout") {
     console.warn(
-      `[check-balance] Scan didn't reach Complete within ${SCAN_TIMEOUT_MS / 1000}s; reading ` +
-        `balance from whatever was scanned so far. Re-run to resume from the last persisted ` +
-        `cursor (LevelDB at data/relayer-balance-check-db/).`,
+      `[check-balance] Scan didn't settle within ${SCAN_TIMEOUT_MS / 1000}s; reading balance ` +
+        `from whatever was scanned so far. Re-run to resume from the last persisted cursor ` +
+        `(LevelDB at data/relayer-balance-check-db/).`,
+    );
+  } else if (result === "incomplete") {
+    console.warn(
+      "[check-balance] Scan ended in 'Incomplete' status — partial coverage. Re-run to resume.",
     );
   }
 

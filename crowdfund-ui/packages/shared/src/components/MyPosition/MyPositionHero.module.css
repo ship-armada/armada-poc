@@ -27,7 +27,7 @@
 .rightCorner {
   position: absolute;
   right: var(--primitives-spacing-6);
-  bottom: var(--primitives-spacing-6);
+  bottom: calc(var(--primitives-spacing-6) + 10px); /* +10px compensates for ~10px layout offset our committer AppShell introduces vs the designer's standalone Hero render; remove if upstream offset is diagnosed and fixed */
   z-index: 11;
   display: flex;
   flex-direction: column;

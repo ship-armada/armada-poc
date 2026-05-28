@@ -36,6 +36,15 @@ export type EventRegistry = {
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }
   'tx.expired':               { id: string; kind: TxKind }
   'tx.cancelled':             { id: string; kind: TxKind }
+
+  // Relayer-mediated submit (Phase A). Fired by handlers that delegate broadcast to the relayer
+  // instead of sending from the user's wallet. errorCode on `rejected` is the typed RelayerErrorCode
+  // (FEE_EXPIRED / FEE_TOO_LOW / etc.) so dashboards can split out fee-staleness from genuine
+  // submission errors. NO tx hashes here — those are emitted via `tx.transition` once the relayer
+  // returns a hash + the poller confirms inclusion.
+  'tx.relayer.submitted':     { id: string; kind: TxKind }
+  'tx.relayer.confirmed':     { id: string; kind: TxKind }
+  'tx.relayer.rejected':      { id: string; kind: TxKind; errorCode?: string }
   // Fired when an xchain handler enters runWaitForDelivery with less than the inner-poll floor
   // of lifecycle budget remaining. The handler clamps to a 10s minimum (rather than failing
   // immediately) but a sustained signal here indicates records being created with too little

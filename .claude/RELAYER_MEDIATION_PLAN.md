@@ -164,6 +164,24 @@ Long-term direction. Every user has either a smart-contract wallet (4337) or an 
 
 ---
 
+## Security & validation invariants
+
+Three properties are inherent to the design and worth being explicit about so they aren't re-derived; three are documented gaps with deferred remediation.
+
+### Inherent guarantees
+
+- **Atomicity of fee + main op (Phase A).** The broadcaster fee is encoded as one of the SNARK-proven output commitments in the same `transact()` call. The proof either verifies (and ALL outputs mint, including the relayer's fee output) or it reverts (and nothing happens). There is no "main op succeeds but fee payment fails" path — they are a single state transition gated by one SNARK check.
+- **Atomicity of fee + main op (Phase B).** The wrapper's `gaslessShield(...)` executes permit + transferFrom(fee) + transferFrom(remainder) + approve + `pool.shield(...)` in one tx. Any sub-step reverting reverts the whole tx. There is no "shield happens but fee transfer fails" path.
+- **Contract allowlist enforcement.** `relayer/modules/privacy-relay.ts::allowedTargets` is the existing whitelist (PrivacyPool + ArmadaYieldAdapter + the Phase B wrapper addresses once they land). Any submission to a target not in the set is rejected with `INVALID_TARGET` before gas estimation.
+
+### Documented gaps (future work)
+
+- **No rate limiting today.** The relayer accepts unbounded request volume per IP / per fees cache id. A malicious or buggy client can flood `/relay`, consuming the relayer's mempool slots and gas allowance even if individual submissions are valid. **Remediation**: per-IP token bucket + per-cache-id submit count cap in `relayer/modules/privacy-relay.ts`. Tracked as a follow-up; the existing 5-min fee cache TTL is a weak natural rate limit but not a real defense.
+- **Fee staleness within TTL.** `validateFeesCacheId` only checks expiry (`expiresAt + buffer`). It does NOT compare the quoted gas price against the live gas price at submission. A user can fetch a quote at gasPrice X, wait while gasPrice spikes to 2X within the 5-min TTL, and submit at the stale fee — the relayer eats the difference. **Loss is bounded to the margin compression**, not principal (fee verification still ensures the broadcaster output is at the advertised amount). **Remediation**: at submit time, re-fetch `feeData.gasPrice` and reject if it exceeds the quoted gasPrice by more than `feeVarianceBufferBps`. Trivial to add; not blocking for POC.
+- **Nonce contention with the CCTP relay.** The relayer's `wallet-manager.ts` shares its EOA with the iris-relay / cctp-relay modules. Today this is handled by fetching a fresh `getTransactionCount('pending')` per submit + the `locked` flag serializing privacy-relay submissions. Race risk: if iris-relay broadcasts `relayWithHook` between the privacy relayer's `getTransactionCount` and its own broadcast, the privacy relayer's tx gets a stale nonce and the network rejects it with "nonce too low." **Remediation**: separate EOAs per relay path (privacy-relay key vs cctp-relay key) so nonce streams don't collide. Materially cleaner than centralized nonce coordination; modest setup cost (one more key in `config/secrets.env` + the relayer config selecting per-module wallets).
+
+---
+
 ## Open questions (defer until A starts)
 
 - Does Railgun's broadcaster-fee mechanism handle a multi-output proof (e.g. transfer with change AND broadcaster fee = 3 commitments)? Need to verify the SDK populates `commitmentCiphertext` correctly and our vkey set covers `(N, 3)` shapes (it does after PR #301).

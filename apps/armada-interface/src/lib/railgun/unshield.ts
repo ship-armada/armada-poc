@@ -14,20 +14,33 @@ async function sharedModels(): Promise<SharedModels> {
 }
 
 /**
- * Gas details used for both proof generation (informs the proof of the gas estimate) and the
- * actual tx submission. Values mirror legacy/usdc-v2-frontend — EIP-1559 (Type2) because Hardhat
- * (and our patched Railgun NetworkName.Hardhat) require it.
+ * Gas details used for proof generation + tx population. The SDK selects the right structural
+ * shape based on (network, sendWithPublicWallet) via `getEVMGasTypeForTransaction`:
  *
- * 2 000 000 gas / 2 gwei max / 1 gwei priority — overkill for local but harmless; the user pays
- * actual usage. When Sepolia mode lands we'll likely sharpen these per chain.
+ *  - Direct user submit (`sendWithPublicWallet=true`) on Hardhat → Type2 (EIP-1559) — accepts
+ *    `maxFeePerGas` / `maxPriorityFeePerGas`. Matches what MetaMask sends.
+ *  - Broadcaster mode (`sendWithPublicWallet=false`) on Hardhat → Type1 (legacy) — accepts
+ *    `gasPrice` instead, because the broadcaster flow requires `overallBatchMinGasPrice` which
+ *    the SDK only supports on Type1. Trying to pass Type2 here surfaces the runtime error
+ *    `Invalid evmGasType for Hardhat (Broadcaster): expected Type1, received Type2`.
+ *
+ * Values: 2 000 000 gas / 1 gwei — overkill for Hardhat/Anvil; the relayer's on-chain submit
+ * pays actual usage. Sepolia tuning ships separately when we sharpen per-chain gas knobs.
  */
-async function buildGasDetails(): Promise<unknown> {
+async function buildGasDetails(sendWithPublicWallet: boolean): Promise<unknown> {
   const { EVMGasType } = await sharedModels()
+  if (sendWithPublicWallet) {
+    return {
+      evmGasType: EVMGasType.Type2,
+      gasEstimate: 2_000_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+    }
+  }
   return {
-    evmGasType: EVMGasType.Type2,
+    evmGasType: EVMGasType.Type1,
     gasEstimate: 2_000_000n,
-    maxFeePerGas: 2_000_000_000n,
-    maxPriorityFeePerGas: 1_000_000_000n,
+    gasPrice: 1_000_000_000n,
   }
 }
 
@@ -115,8 +128,8 @@ export async function populateUnshieldTransaction(opts: {
     railgunSdk(),
     sharedModels(),
   ])
-  const gasDetails = await buildGasDetails()
   const sendWithPublicWallet = opts.broadcasterFee === null
+  const gasDetails = await buildGasDetails(sendWithPublicWallet)
   const result = await populateProvedUnshield(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -206,7 +219,8 @@ export async function buildXchainUnshieldTransactionStruct(opts: {
   ])
   const { ethers } = await import('ethers')
 
-  const gasDetails = await buildGasDetails()
+  // Xchain hub burn is still user-submitted (A5 migrates it). sendWithPublicWallet=true → Type2.
+  const gasDetails = await buildGasDetails(true)
   const result = await populateProvedUnshield(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,

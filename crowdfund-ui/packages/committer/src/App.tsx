@@ -3,8 +3,9 @@
 
 import { useCallback, useState, useEffect, useMemo, type ReactNode } from 'react'
 import { type JsonRpcProvider } from 'ethers'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { ArrowRight, GitBranch, Loader2, UserPlus, Wallet } from 'lucide-react'
+import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
+import { useAccount, useDisconnect } from 'wagmi'
+import { ArrowRight, GitBranch, UserPlus, Wallet } from 'lucide-react'
 import {
   Button,
   createProvider,
@@ -36,10 +37,15 @@ import {
   useContractState,
   cn,
   estimateUserArmAllocation,
+  CrowdfundExperience,
+  toDashboardParticipantsFromGraph,
+  ParticipateFlowModal,
   type UserAllocation,
   type UserHopPosition,
+  type CrowdfundExperienceLiveData,
+  type CrowdfundExperienceMyPositionData,
 } from '@armada/crowdfund-shared'
-import { Button as ArmadaButton, NavBar, WalletButton, type NavBarItem } from '@armada/ui'
+import { Button as ArmadaButton, NavBar, WalletPillMenu, type NavBarItem } from '@armada/ui'
 import { getExplorerUrl, getHubRpcUrls, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
@@ -48,13 +54,18 @@ import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { CommitTab } from '@/components/CommitTab'
+import { NodeSpherePreview } from '@/components/NodeSpherePreview'
+import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
+import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
+import { InviteSlotsPage } from '@/components/InviteSlotsPage'
+import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { InviteTab } from '@/components/InviteTab'
 import { ClaimTab } from '@/components/ClaimTab'
 import { MyPositionPanel } from '@/components/MyPositionPanel'
 
 type ActionTab = 'commit' | 'invite'
 type ParticipateIntent = ActionTab | null
-type Page = 'network' | 'participate' | 'claim' | 'my-position'
+type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'invite-slots'
 
 /**
  * Master switch for the lifecycle progress bar (header strip + mobile body
@@ -64,7 +75,25 @@ type Page = 'network' | 'participate' | 'claim' | 'my-position'
  */
 const SHOW_LIFECYCLE_BAR = false
 
-const PAGE_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
+/**
+ * Desktop horizontal nav items (left side of header).
+ *
+ * Per the designer's Hero layout, only `The project` and `Crowdfund` live in
+ * the NavBar. `My position`, `Claim`, and `Invite` live as ghost action
+ * buttons on the right side instead — see `headerRightChrome` in `App()`.
+ *
+ * `The project` opens the marketing site in a new tab; Crowdfund stays within
+ * the SPA via `onChange`.
+ */
+const PROJECT_URL = 'https://armada.wtf'
+
+const HORIZONTAL_NAV_ITEMS: ReadonlyArray<{ id: Page | 'project'; label: string }> = [
+  { id: 'project', label: 'The project' },
+  { id: 'network', label: 'Crowdfund' },
+]
+
+/** Mobile sheet shows all destinations as a stacked list since the right-side action buttons are hidden below sm. */
+const MOBILE_NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
   { id: 'network', label: 'Crowdfund' },
   { id: 'my-position', label: 'My position' },
   { id: 'claim', label: 'Claim' },
@@ -73,12 +102,10 @@ const PAGE_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
 /**
  *  Page navigation — renders as header nav on desktop, stacked list on mobile.
  *
- *  Horizontal variant: pill nav from @armada/ui (NavBar + NavItem) matching the
- *  armada-crowdfund mockup. Vertical variant (mobile sheet) keeps a subtle bg
- *  fill on the active row.
- *
- *  The leading "The project" item is a placeholder — no onClick handler, so it
- *  renders but does not navigate. Reserved for a future project/landing page.
+ *  Horizontal variant: pill nav from @armada/ui (NavBar + NavItem) matching
+ *  the armada-crowdfund mockup's Hero layout (Project + Crowdfund only).
+ *  Vertical variant (mobile sheet) shows every destination since the desktop
+ *  right-side action buttons are hidden below sm.
  */
 function PageNav({
   current,
@@ -90,31 +117,41 @@ function PageNav({
   orientation?: 'horizontal' | 'vertical'
 }) {
   if (orientation === 'horizontal') {
-    const items: NavBarItem[] = [
-      { label: 'The project' },
-      ...PAGE_ITEMS.map((item) => ({
+    const items: NavBarItem[] = HORIZONTAL_NAV_ITEMS.map((item) => {
+      // Extract `id` to a local so the narrowed type carries through the
+      // closure passed to NavBar — narrowing inside `.map` doesn't propagate
+      // into onClick otherwise (TS sees the wider `Page | 'project'`).
+      const id = item.id
+      if (id === 'project') {
+        return {
+          label: item.label,
+          onClick: () => window.open(PROJECT_URL, '_blank', 'noopener,noreferrer'),
+        }
+      }
+      return {
         label: item.label,
-        active: item.id === current,
-        onClick: () => onChange(item.id),
-      })),
-    ]
+        active: id === current,
+        onClick: () => onChange(id),
+      }
+    })
     return <NavBar items={items} />
   }
 
   return (
     <ul className="flex flex-col items-stretch gap-1">
       <li>
-        <button
-          type="button"
-          aria-disabled="true"
+        <a
+          href={PROJECT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className={cn(
-            'w-full cursor-default rounded-md px-3 py-1.5 text-left text-muted-foreground opacity-60',
+            'block w-full rounded-md px-3 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground',
           )}
         >
           The project
-        </button>
+        </a>
       </li>
-      {PAGE_ITEMS.map((item) => {
+      {MOBILE_NAV_ITEMS.map((item) => {
         const active = item.id === current
         return (
           <li key={item.id}>
@@ -136,7 +173,40 @@ function PageNav({
   )
 }
 
-function HeaderWalletButton({ className }: { className?: string }) {
+/**
+ * Map a wagmi connector id to the `walletProvider` slug WalletPillMenu uses to
+ * pick the brand icon. Returns undefined for unknown connectors so the menu
+ * falls back to its generic wallet glyph.
+ */
+function detectWalletProvider(connectorId: string | undefined): string | undefined {
+  if (!connectorId) return undefined
+  const id = connectorId.toLowerCase()
+  if (id.includes('metamask')) return 'metamask'
+  if (id.includes('phantom')) return 'phantom'
+  if (id.includes('walletconnect')) return 'walletconnect'
+  return undefined
+}
+
+/**
+ * RainbowKit-aware wallet chrome. Pre-connect / connecting / wrong-network
+ * states render an `@armada/ui` `Button` (so the mobile sheet's `className`
+ * override applies). The connected state swaps in the designer's
+ * `WalletPillMenu` — provider icon + truncated address pill that expands into
+ * a card showing the full address, USDC balance, copy, and disconnect.
+ *
+ * The connected pill is a CSS-Module primitive that doesn't take a
+ * `className`; the `className` prop only forwards to the non-connected
+ * fallbacks (where the mobile sheet expects a full-width centered button).
+ */
+function HeaderWalletButton({
+  className,
+  usdcBalance,
+}: {
+  className?: string
+  usdcBalance?: bigint
+}) {
+  const { connector } = useAccount()
+  const { disconnect } = useDisconnect()
   return (
     <ConnectButton.Custom>
       {({
@@ -144,7 +214,6 @@ function HeaderWalletButton({ className }: { className?: string }) {
         chain,
         mounted,
         authenticationStatus,
-        openAccountModal,
         openChainModal,
         openConnectModal,
       }) => {
@@ -157,11 +226,12 @@ function HeaderWalletButton({ className }: { className?: string }) {
 
         if (!isReady) {
           return (
-            <WalletButton
+            <ArmadaButton
+              variant="secondary"
+              size="md"
               label="Connecting..."
-              icon={<Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+              showIcon={false}
               disabled
-              ariaLabel="Wallet connecting"
               className={className}
             />
           )
@@ -169,8 +239,11 @@ function HeaderWalletButton({ className }: { className?: string }) {
 
         if (!isConnected) {
           return (
-            <WalletButton
+            <ArmadaButton
+              variant="secondary"
+              size="md"
               label="Connect Wallet"
+              showIcon={false}
               onClick={openConnectModal}
               className={className}
             />
@@ -179,30 +252,35 @@ function HeaderWalletButton({ className }: { className?: string }) {
 
         if (chain.unsupported) {
           return (
-            <WalletButton
+            <ArmadaButton
+              variant="secondary"
+              size="md"
               label="Wrong network"
-              variant="destructive"
+              showIcon={false}
               onClick={openChainModal}
-              ariaLabel="Wrong network — click to switch"
               className={className}
             />
           )
         }
 
-        // RainbowKit's `displayName` truncates to 4 chars total ("0x12...abcd").
-        // The mockup convention is 6 chars before the ellipsis ("0x1234...abcd"),
-        // so prefer the raw address through our `truncateAddress` helper. If
-        // displayName isn't an address (ENS resolved), keep it as-is.
-        const label = account.displayName.startsWith('0x')
+        // Mockup convention is 6 chars before the ellipsis ("0x1234...abcd").
+        // RainbowKit's `displayName` truncates to 4, so reach through to the
+        // raw address. Preserve ENS resolutions (no leading "0x") as-is.
+        const displayAddress = account.displayName.startsWith('0x')
           ? truncateAddress(account.address)
           : account.displayName
 
+        // USDC is 6 decimals. WalletPillMenu renders a whole-number label
+        // ("123 USDC"), so the sub-cent dust is fine to drop here.
+        const balanceWhole = usdcBalance !== undefined ? Number(usdcBalance / 1_000_000n) : 0
+
         return (
-          <WalletButton
-            label={label}
-            onClick={openAccountModal}
-            ariaLabel={`Wallet ${label}`}
-            className={className}
+          <WalletPillMenu
+            displayAddress={displayAddress}
+            copyAddress={account.address}
+            walletProvider={detectWalletProvider(connector?.id)}
+            usdcBalance={balanceWhole}
+            onDisconnect={() => disconnect()}
           />
         )
       }}
@@ -524,6 +602,61 @@ if (typeof window ==='undefined') return 0
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
+/**
+ * Phase 3 design-refresh feature flag. Two ways to enable, URL wins:
+ *   - URL: `?design=v2` (or `?design=v1` to force off in a v2 build)
+ *   - Env: `VITE_DESIGN_V2=true` or `=1` in the committer's .env / shell
+ *
+ * When on, the Network and My Position pages render the new Hero shell
+ * (`<AppShell bare>` + `<CrowdfundExperience>`) with mock data. Participate
+ * and Claim continue using the v1 layout until their respective sub-phases
+ * (3.2, 3.3) land. When off, everything renders v1.
+ */
+function getDesignV2Mode(): boolean {
+  if (typeof window !== 'undefined') {
+    const p = new URLSearchParams(window.location.search).get('design')
+    if (p === 'v2') return true
+    if (p === 'v1') return false
+  }
+  const envFlag = import.meta.env.VITE_DESIGN_V2
+  return envFlag === 'true' || envFlag === '1'
+}
+
+type NodeSpherePreview =
+  | 'node-sphere'
+  | 'my-position'
+  | 'my-position-split'
+  | 'crowdfund-experience'
+  | null
+
+function getNodeSpherePreviewFromUrl(): NodeSpherePreview {
+  if (typeof window === 'undefined') return null
+  const p = new URLSearchParams(window.location.search).get('mock')
+  if (
+    p === 'node-sphere' ||
+    p === 'my-position' ||
+    p === 'my-position-split' ||
+    p === 'crowdfund-experience'
+  ) {
+    return p
+  }
+  return null
+}
+
+/** Format the Crowdfund hero Progress card's countdown tag from a remaining
+ *  duration in seconds. Mirrors the designer's "X DAYS LEFT" / "X HOURS LEFT"
+ *  aesthetic exactly, with sane singular vs. plural copy. Sub-minute / past
+ *  the deadline collapses to "EXPIRED". */
+function formatRemainingLabel(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'EXPIRED'
+  const days = Math.floor(seconds / 86400)
+  if (days >= 1) return `${days} ${days === 1 ? 'DAY' : 'DAYS'} LEFT`
+  const hours = Math.floor(seconds / 3600)
+  if (hours >= 1) return `${hours} ${hours === 1 ? 'HOUR' : 'HOURS'} LEFT`
+  const minutes = Math.max(1, Math.floor(seconds / 60))
+  return `${minutes} MIN LEFT`
+}
+
 /** Determine commit/invite tab enabled state + disabled message. Claim was
  *  promoted to its own page; see `getClaimAvailability` for that gating. */
 function getTabState(
@@ -600,12 +733,26 @@ export function App() {
   const [mockSize] = useState(getMockSizeFromUrl)
   if (mockSize > 0) return <MockCommitterApp size={mockSize} />
 
+  // Phase 4a debug surface — render NodeSphere / CrowdfundExperience / MyPosition*
+  // variants with the designer's mock data. Selected via `?mock=node-sphere` (etc.).
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [nodeSpherePreview] = useState(getNodeSpherePreviewFromUrl)
+  if (nodeSpherePreview) return <NodeSpherePreview variant={nodeSpherePreview} />
+
+  // Phase 3 design-refresh feature flag — captured once on mount; URL wins over env.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [isV2] = useState(getDesignV2Mode)
+
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
   const [intent, setIntent] = useState<ParticipateIntent>(null)
   const [page, setPage] = useState<Page>('network')
+  // Phase 6 — v2 Participate flow runs as a modal overlay; v1 fallback still
+  // uses the dedicated `?page=participate` page. `openParticipate()` routes
+  // based on the active design flag.
+  const [participateOpen, setParticipateOpen] = useState(false)
 
   const pollInterval = getPollIntervalMs()
   const indexerUrl = getIndexerUrl()
@@ -649,6 +796,47 @@ export function App() {
   const { resolve: resolveENS } = useENS({ provider, addresses })
   const summaryArray = useMemo(() => [...summaries.values()], [summaries])
 
+  // RainbowKit's programmatic connect-modal opener. Wired to the
+  // MyPositionEmptyState's "Connect wallet" CTA below.
+  const { openConnectModal } = useConnectModal()
+
+  // Phase 4b.2 — project the live graph into the CrowdfundExperience liveData
+  // shape. `loading` covers the initial fetch (no successful event load yet);
+  // `ready` is emitted as soon as events are available, even if the resulting
+  // participant set is empty (pre-launch). The empty-but-ready case falls
+  // through to HeroParticipantsPanel's built-in "be the first" copy.
+  //
+  // `totalCommitted` is the contract's `getEstimatedCappedDemand().globalCapped`
+  // (stored on `contractState.cappedDemand`). This is the on-chain authoritative
+  // capped demand — the demand that actually counts toward MIN_SALE. We
+  // intentionally DO NOT sum graph dashRow amounts here, because:
+  //   - The Crowdfund contract accepts over-cap deposits and refunds the excess
+  //     at finalization (see ArmadaCrowdfund.sol _escrowCommit + the "over-cap
+  //     deposits are accepted" comment at the top of commit()).
+  //   - Summing rawDeposited would over-count by the refund-bound portion;
+  //     summing graph-clamped values matches the contract only when the local
+  //     HOP_CONFIGS profile happens to match the deployed caps. Reading
+  //     getEstimatedCappedDemand() removes that profile-drift class of bug.
+  //
+  // `daysLeftLabel` derives the Progress card's countdown tag from the
+  // contract's commit window — replaces the Progress primitive's hardcoded
+  // "3 DAYS LEFT" default. Uppercased to match the designer's tag styling.
+  const crowdfundLiveData = useMemo<CrowdfundExperienceLiveData>(() => {
+    if (eventsLoading) return { status: 'loading' }
+    const dashRows = toDashboardParticipantsFromGraph(summaryArray)
+    const totalCommitted = Number(contractState.cappedDemand / 1_000_000n)
+    const windowEnd = Number(contractState.windowEnd)
+    const remaining = windowEnd - contractState.blockTimestamp
+    const daysLeftLabel = formatRemainingLabel(remaining)
+    return { status: 'ready', dashRows, totalCommitted, daysLeftLabel }
+  }, [
+    eventsLoading,
+    summaryArray,
+    contractState.cappedDemand,
+    contractState.windowEnd,
+    contractState.blockTimestamp,
+  ])
+
   // Wallet
   const wallet = useWallet()
 
@@ -656,6 +844,17 @@ export function App() {
   const eligibility = useEligibility(wallet.address, nodes)
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
+
+  // Phase 3.2.x — derive CrowdfundInviteSlotConfig from real eligibility + invite-link state.
+  // Single-source-of-truth adapter consumed by both the inline (CrowdfundExperience MyPosition
+  // view) and standalone (`page === 'invite-slots'`) surfaces.
+  const inviteSlots = useInviteSlots(
+    eligibility.positions[0] ?? null,
+    inviteLinks,
+    provider,
+    wallet.signer,
+    crowdfundAddress,
+  )
 
   // Compute the user's personal committed amount (not the global total)
   const userTotalCommitted = useMemo(
@@ -695,6 +894,31 @@ export function App() {
     contractState.cappedDemand,
     contractState.saleSize,
   ])
+
+  // Phase 4b.3 — project the connected wallet's primary hop position into the
+  // CrowdfundExperience MyPosition discriminated union. Three states:
+  //   - disconnected: no wallet → "Connect wallet" empty state
+  //   - no-position: wallet but no eligible hop → "Participate" empty state
+  //   - ready: wallet + position → live numbers
+  const myPositionData = useMemo<CrowdfundExperienceMyPositionData>(() => {
+    if (!wallet.address) return { status: 'disconnected' }
+    const walletDisplay = truncateAddress(wallet.address)
+    const primary = eligibility.positions[0]
+    if (!primary) return { status: 'no-position', walletDisplay }
+    const hop = primary.hop
+    if (hop !== 0 && hop !== 1 && hop !== 2) {
+      return { status: 'no-position', walletDisplay }
+    }
+    return {
+      status: 'ready',
+      walletAddress: wallet.address,
+      walletDisplay,
+      hop,
+      committedUsdc: primary.committed,
+      capUsdc: primary.effectiveCap,
+      armAllocation: userAllocation?.estArmAllocation ?? 0n,
+    }
+  }, [wallet.address, eligibility.positions, userAllocation])
 
   // Per-intent enabled state — drives the intent picker on the Participate
   // page and the soft-disabled flag on the participate nav item.
@@ -807,7 +1031,12 @@ export function App() {
     )
   }
 
-  if (!deployment || contractState.loading) {
+  // Phase 3.1: in v2 mode on a Hero page (Network or My Position), CrowdfundExperience
+  // renders with mock data — no contract state needed, so we skip the loading gate.
+  // Participate/Claim still wait on deployment because the v1 page bodies need it.
+  const isV2Hero = isV2 && (page === 'network' || page === 'my-position')
+
+  if ((!deployment || contractState.loading) && !isV2Hero) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center space-y-2">
@@ -820,16 +1049,72 @@ export function App() {
     )
   }
 
+  // Right-side action buttons, matching the designer's Hero header. Invite,
+  // My position, and Claim are ghost buttons grouped before the wallet pill;
+  // Participate is a gradient CTA on the far right. Claim swaps in when the
+  // claim phase is open, mirroring the mockup's `claimAvailable` toggle.
+  const claimReady = claimAvailability.state === 'available'
+  const myPositionActive = page === 'my-position'
+  // Mirrors @armada/ui Header.module.css `.myPositionActive`: highlight the
+  // My position pill when active using the same navitem-active tokens.
+  const myPositionActiveStyle: React.CSSProperties | undefined = myPositionActive
+    ? {
+        background: 'var(--semantic-component-navitem-active-bg)',
+        color: 'var(--semantic-component-navitem-active-text)',
+      }
+    : undefined
+
+  // Phase 6 — open/close helpers for the modal Participate flow. In v2 mode
+  // the flow runs as a modal overlay (mounted alongside whichever page the
+  // user is on); in v1 mode the legacy dedicated `?page=participate` page
+  // still renders, so we fall back to `setPage('participate')` there.
+  //
+  // Phase 7 — once the commit window closes, the on-chain `commit()` and
+  // `commitWithInvite()` calls revert. We short-circuit the opener as a
+  // defensive guard so a stale event handler (or a deep link fired mid-flight)
+  // can't drop the user into a modal whose only outcome is a wallet error.
+  // The hero / header CTAs that drive this are also hidden via
+  // `participationEnabled` below; this is belt-and-braces.
+  const openParticipate = () => {
+    if (!windowOpen) return
+    if (isV2) {
+      setParticipateOpen(true)
+    } else {
+      setPage('participate')
+    }
+  }
+  const closeParticipate = () => setParticipateOpen(false)
+
   const headerRightChrome = (
     <div className="flex items-center gap-3">
-      <HeaderWalletButton />
       <ArmadaButton
-        variant="gradient"
+        variant="ghost"
         size="md"
-        label="Participate"
-        showIcon
-        onClick={() => setPage('participate')}
+        label="My position"
+        showIcon={false}
+        onClick={() => setPage('my-position')}
+        style={myPositionActiveStyle}
       />
+      {claimReady && (
+        <ArmadaButton
+          variant="ghost"
+          size="md"
+          label="Claim"
+          showIcon={false}
+          onClick={() => setPage('claim')}
+        />
+      )}
+      <HeaderWalletButton usdcBalance={allowance.balance} />
+      {!claimReady && windowOpen && (
+        <ArmadaButton
+          variant="gradient"
+          size="md"
+          label="Participate"
+          showIcon
+          icon="arrow-right-micro"
+          onClick={openParticipate}
+        />
+      )}
     </div>
   )
 
@@ -849,7 +1134,7 @@ export function App() {
           <Separator className="my-2" />
         </div>
       ) : null}
-      <HeaderWalletButton className="w-full justify-center" />
+      <HeaderWalletButton className="w-full justify-center" usdcBalance={allowance.balance} />
     </div>
   )
 
@@ -940,7 +1225,7 @@ export function App() {
 // theme.css alongside the other animations.
 className="rounded-md bg-gradient-to-r from-primary to-hop-0 px-8 text-white sm:ml-24"
 style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
-        onClick={() => setPage('participate')}
+        onClick={openParticipate}
       >
         Participate
       </Button>
@@ -973,7 +1258,79 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
     />
   ) : undefined
 
+  const participateModal = (
+    <ParticipateFlowModal
+      open={isV2 && participateOpen}
+      onClose={closeParticipate}
+      ariaLabel="Participate in the Armada crowdfund"
+    >
+      {isV2 && participateOpen && (
+        <ParticipateFlowV2
+          walletConnected={wallet.connected}
+          walletAddress={wallet.address}
+          signer={wallet.signer}
+          positions={eligibility.positions}
+          balance={allowance.balance}
+          needsApproval={allowance.needsApproval}
+          refreshAllowance={allowance.refresh}
+          crowdfundAddress={crowdfundAddress}
+          usdcAddress={usdcAddress}
+          hopStats={contractState.hopStats}
+          saleSize={contractState.saleSize}
+          cappedDemand={contractState.cappedDemand}
+          windowOpen={windowOpen}
+          onGoToMyPosition={() => {
+            closeParticipate()
+            setPage('my-position')
+          }}
+          onGoToNetwork={() => {
+            closeParticipate()
+            setPage('network')
+          }}
+        />
+      )}
+    </ParticipateFlowModal>
+  )
+
+  // Phase 3.1 v2 hero shell — AppShell renders the single chrome header (via AppHeader),
+  // CrowdfundExperience renders the full-bleed body with its own header slot suppressed.
+  // Controlled `view` syncs to the committer's `page` state; transitions inside
+  // CrowdfundExperience notify back via `onViewChange`. Mock data; Phase 4b wires
+  // live CrowdfundGraph data into CrowdfundExperience.
+  if (isV2Hero) {
+    return (
+      <>
+        <AppShell
+          appName="Committer"
+          network={getNetworkMode()}
+          headerNav={headerNav}
+          headerStatus={lifecycleStatus}
+          headerRight={headerRightChrome}
+          mobileMenu={mobileMenu}
+          bare
+        >
+          <CrowdfundExperience
+            view={page === 'my-position' ? 'myposition' : 'crowdfund'}
+            onViewChange={(next) =>
+              setPage(next === 'myposition' ? 'my-position' : 'network')
+            }
+            header={null}
+            inviteSlotConfig={inviteSlots.empty ? undefined : inviteSlots.config}
+            liveData={crowdfundLiveData}
+            myPositionData={myPositionData}
+            onConnectWallet={openConnectModal}
+            onParticipate={openParticipate}
+            participationEnabled={windowOpen}
+            etherscanBaseUrl={getExplorerUrl()}
+          />
+        </AppShell>
+        {participateModal}
+      </>
+    )
+  }
+
   return (
+    <>
     <AppShell
       appName="Committer"
       network={getNetworkMode()}
@@ -1044,7 +1401,22 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
           </div>
         )}
 
-        {page === 'participate' && (
+        {page === 'invite-slots' && isV2 && (
+          <div key="page-invite-slots-v2" className="animate-page-enter">
+            <ErrorBoundary>
+              <InviteSlotsPage
+                walletConnected={wallet.connected}
+                empty={inviteSlots.empty}
+                hopLabel={inviteSlots.hopLabel}
+                config={inviteSlots.config}
+                onBack={() => setPage('network')}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+
+        {page === 'participate' && !isV2 && (
           <div key="page-participate" className="animate-page-enter">
            <ErrorBoundary>
             <PageWithHelp
@@ -1198,7 +1570,32 @@ onClick={() => setIntent('commit')}
           </div>
         )}
 
-        {page === 'claim' && (
+        {page === 'claim' && isV2 && (
+          <div key="page-claim-v2" className="animate-page-enter">
+            <ErrorBoundary>
+              <ClaimFlowV2
+                walletConnected={wallet.connected}
+                walletAddress={wallet.address}
+                signer={wallet.signer}
+                provider={provider}
+                crowdfundAddress={crowdfundAddress}
+                phase={contractState.phase}
+                refundMode={contractState.refundMode}
+                blockTimestamp={contractState.blockTimestamp}
+                claimDeadline={contractState.claimDeadline}
+                totalCommitted={userTotalCommitted}
+                windowEnd={contractState.windowEnd}
+                cappedDemand={contractState.cappedDemand}
+                claimAvailable={claimAvailability.state === 'available'}
+                claimCountdownSeconds={lifecycleCountdown}
+                onGoToMyPosition={() => setPage('my-position')}
+                onGoToNetwork={() => setPage('network')}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+        {page === 'claim' && !isV2 && (
           <div key="page-claim" className="animate-page-enter">
            <ErrorBoundary>
             <PageWithHelp
@@ -1312,5 +1709,7 @@ onClick={() => setIntent('commit')}
       </div>
      </ErrorBoundary>
     </AppShell>
+    {participateModal}
+    </>
   )
 }

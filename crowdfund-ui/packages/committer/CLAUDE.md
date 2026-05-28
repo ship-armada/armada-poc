@@ -30,6 +30,20 @@ npm run dev
 
 Requires deployed contracts (`npm run setup` from project root).
 
+### Targeting a named Sepolia deployment
+
+Local `setup:sepolia` overwrites `deployments/crowdfund-hub-sepolia.json` on every run, which is fine for ad-hoc deploys but disruptive when you want to test against a specific instance (e.g. `medi2` from the [armada-deployments](https://github.com/ship-armada/armada-deployments) repo).
+
+```bash
+# 1. Pull the named instance into deployments/instances/<name>/
+npm run fetch-deployment -- medi2
+
+# 2. Start the committer pointing at it
+VITE_NETWORK=sepolia VITE_DEPLOYMENT_INSTANCE=medi2 npm run dev
+```
+
+The committer's `getDeploymentFileName()` resolves to `instances/<name>/sepolia/crowdfund.json` when `VITE_DEPLOYMENT_INSTANCE` is set; otherwise it falls back to the legacy `crowdfund-hub-sepolia.json`. Pulled instance files are gitignored — re-run `fetch-deployment` to refresh them.
+
 ## Dependencies
 
 Most data-layer and view-component deps live in

@@ -1,23 +1,32 @@
 // ABOUTME: Crowdfund contract constants, hop configuration, and ABI fragments.
-// ABOUTME: Single source of truth for all magic numbers referenced across the UI apps.
+// ABOUTME: Single source of truth for the magic numbers referenced across the UI apps; selects between `mainnet` (default) and `medi` (Sepolia testnet) profiles via the `VITE_CROWDFUND_PROFILE` build-time env var.
 
-/** Sale size parameters (USDC, 6 decimals) */
-export const CROWDFUND_CONSTANTS = {
-  BASE_SALE: 1_200_000n * 10n ** 6n,
-  MAX_SALE: 1_800_000n * 10n ** 6n,
-  MIN_SALE: 1_000_000n * 10n ** 6n,
-  ELASTIC_TRIGGER: 1_500_000n * 10n ** 6n,
-  ARM_PRICE: 1_000_000n, // 1 USDC per ARM (6-decimal USDC = 1e6)
-  MAX_SEEDS: 160,
-  LAUNCH_TEAM_HOP1_BUDGET: 60,
-  LAUNCH_TEAM_HOP2_BUDGET: 60,
-  MIN_COMMIT: 10n * 10n ** 6n,
-  WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days in seconds
-  LAUNCH_TEAM_INVITE_PERIOD: 7 * 24 * 60 * 60, // 7 days in seconds
-  CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years in seconds
-  GOVERNANCE_QUIET_PERIOD: 7 * 24 * 60 * 60, // 7 days in seconds (matches ArmadaGovernor.QUIET_PERIOD_DURATION)
-  HOP2_FLOOR_BPS: 500, // 5%
-} as const
+/** Deployment profile — selects which set of contract constants the UI uses. */
+export type CrowdfundProfile = 'mainnet' | 'medi'
+
+/** Sale size + lifecycle parameters that vary between deployments. Mirrors
+ *  what the contracts were deployed with — must stay in lockstep with the
+ *  on-chain values for the active profile. */
+export interface CrowdfundConstants {
+  /** Sale size parameters (USDC, 6 decimals) */
+  readonly BASE_SALE: bigint
+  readonly MAX_SALE: bigint
+  readonly MIN_SALE: bigint
+  readonly ELASTIC_TRIGGER: bigint
+  /** USDC per ARM (6-decimal USDC = 1e6). */
+  readonly ARM_PRICE: bigint
+  readonly MAX_SEEDS: number
+  readonly LAUNCH_TEAM_HOP1_BUDGET: number
+  readonly LAUNCH_TEAM_HOP2_BUDGET: number
+  readonly MIN_COMMIT: bigint
+  /** Window / phase durations (seconds). */
+  readonly WINDOW_DURATION: number
+  readonly LAUNCH_TEAM_INVITE_PERIOD: number
+  readonly CLAIM_DEADLINE_DURATION: number
+  /** Matches ArmadaGovernor.QUIET_PERIOD_DURATION. */
+  readonly GOVERNANCE_QUIET_PERIOD: number
+  readonly HOP2_FLOOR_BPS: number
+}
 
 /** Per-hop configuration matching the contract's hopConfigs[3] */
 export interface HopConfig {
@@ -27,11 +36,78 @@ export interface HopConfig {
   readonly maxInvitesReceived: number
 }
 
-export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] = [
-  { ceilingBps: 7000, capUsdc: 15_000n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
-  { ceilingBps: 4500, capUsdc: 4_000n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
-  { ceilingBps: 0, capUsdc: 1_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
-] as const
+const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
+  mainnet: {
+    BASE_SALE: 1_200_000n * 10n ** 6n,
+    MAX_SALE: 1_800_000n * 10n ** 6n,
+    MIN_SALE: 1_000_000n * 10n ** 6n,
+    ELASTIC_TRIGGER: 1_500_000n * 10n ** 6n,
+    ARM_PRICE: 1_000_000n,
+    MAX_SEEDS: 160,
+    LAUNCH_TEAM_HOP1_BUDGET: 60,
+    LAUNCH_TEAM_HOP2_BUDGET: 60,
+    MIN_COMMIT: 10n * 10n ** 6n,
+    WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days
+    LAUNCH_TEAM_INVITE_PERIOD: 7 * 24 * 60 * 60, // 7 days
+    CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
+    GOVERNANCE_QUIET_PERIOD: 7 * 24 * 60 * 60, // 7 days
+    HOP2_FLOOR_BPS: 500, // 5%
+  },
+  medi: {
+    BASE_SALE: 1_000n * 10n ** 6n,
+    MAX_SALE: 1_500n * 10n ** 6n,
+    MIN_SALE: 800n * 10n ** 6n,
+    ELASTIC_TRIGGER: 1_250n * 10n ** 6n,
+    ARM_PRICE: 1_000_000n,
+    MAX_SEEDS: 25,
+    LAUNCH_TEAM_HOP1_BUDGET: 15,
+    LAUNCH_TEAM_HOP2_BUDGET: 15,
+    MIN_COMMIT: 1n * 10n ** 6n,
+    WINDOW_DURATION: 14 * 24 * 60 * 60, // 14 days
+    LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days (equal to WINDOW_DURATION on medi-Sepolia)
+    CLAIM_DEADLINE_DURATION: 60 * 24 * 60 * 60, // 60 days
+    GOVERNANCE_QUIET_PERIOD: 1 * 24 * 60 * 60, // 1 day
+    HOP2_FLOOR_BPS: 500, // 5%
+  },
+}
+
+const HOP_CONFIGS_BY_PROFILE: Record<
+  CrowdfundProfile,
+  readonly [HopConfig, HopConfig, HopConfig]
+> = {
+  mainnet: [
+    { ceilingBps: 7000, capUsdc: 15_000n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
+    { ceilingBps: 4500, capUsdc: 4_000n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
+    { ceilingBps: 0, capUsdc: 1_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
+  ],
+  medi: [
+    { ceilingBps: 7000, capUsdc: 50n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
+    { ceilingBps: 4500, capUsdc: 20n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
+    { ceilingBps: 0, capUsdc: 10n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
+  ],
+}
+
+/** Resolve the active profile from the `VITE_CROWDFUND_PROFILE` env var.
+ *  Vite replaces `import.meta.env.VITE_*` at build time in the consuming
+ *  apps; vitest exposes the same surface. We cast `import.meta` because
+ *  this package's tsconfig doesn't reference `vite/client` (kept Vite-free
+ *  so non-Vite consumers — say, future server-side tests — can import the
+ *  module without pulling vite types in). Unknown / unset values fall back
+ *  to `mainnet`, so existing mainnet-targeted builds need no env change. */
+function resolveCrowdfundProfile(): CrowdfundProfile {
+  const env = (import.meta as ImportMeta & { env?: { VITE_CROWDFUND_PROFILE?: string } }).env
+  const raw = env?.VITE_CROWDFUND_PROFILE
+  if (raw === 'medi') return 'medi'
+  return 'mainnet'
+}
+
+export const CROWDFUND_PROFILE: CrowdfundProfile = resolveCrowdfundProfile()
+
+export const CROWDFUND_CONSTANTS: CrowdfundConstants =
+  CONSTANTS_BY_PROFILE[CROWDFUND_PROFILE]
+
+export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] =
+  HOP_CONFIGS_BY_PROFILE[CROWDFUND_PROFILE]
 
 /** ABI fragments for event parsing and contract reads */
 export const CROWDFUND_ABI_FRAGMENTS = [

@@ -19,6 +19,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@armada/ui": "*",
+    "@heroicons/react": "^2.2.0",
+    "@web3icons/react": "^4.1.17",
     "@metamask/jazzicon": "^2.0.0",
     "@tanstack/react-table": "^8.21.3",
     "@types/d3-force": "^3.0.10",
@@ -38,12 +41,14 @@
     "lucide-react": "^0.552.0",
     "radix-ui": "^1.4.3",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "three": "0.128.0"
   },
   "devDependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.15.0",
+    "@types/three": "^0.184.0",
     "fake-indexeddb": "^6.2.5",
     "react-hook-form": "^7.73.1",
     "typescript": "~5.9.3",

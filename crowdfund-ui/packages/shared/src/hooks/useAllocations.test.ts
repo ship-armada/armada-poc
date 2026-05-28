@@ -33,6 +33,7 @@ function makeSummary(
     totalCommitted: 1000_000000n,
     perHop: new Map([[0, 1000_000000n]]),
     displayInviter: 'armada',
+    allInviters: ['armada'],
     allocatedArm: null,
     refundUsdc: null,
     allocatedPerHop: new Map(),

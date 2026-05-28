@@ -87,6 +87,7 @@
     "link:sepolia": "hardhat run scripts/link_privacy_pool.ts --network sepoliaHub",
     "relayer:sepolia": "npx ts-node relayer/armada-relayer.ts",
     "test:sepolia": "npx ts-node scripts/test_sepolia.ts",
+    "fetch-deployment": "npx ts-node scripts/fetch-deployment.ts",
     "verify:snark": "hardhat run scripts/verify_snark_mode.ts --network hub",
     "verify:snark:sepolia": "hardhat run scripts/verify_snark_mode.ts --network sepoliaHub",
     "prepare": "git config core.hooksPath .githooks",

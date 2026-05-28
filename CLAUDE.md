@@ -50,6 +50,11 @@ npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
 # Sepolia testnet
 npm run setup:sepolia       # Deploy to Sepolia (requires config/secrets.env)
 npm run relayer:sepolia     # Start relayer in real CCTP mode (Iris attestation)
+
+# Named deployment instances (pulls manifests from armada-deployments repo)
+npm run fetch-deployment -- medi2   # → deployments/instances/medi2/
+# Then point an app at it:
+VITE_NETWORK=sepolia VITE_DEPLOYMENT_INSTANCE=medi2 npm run crowdfund:committer
 ```
 
 ## Known POC Shortcuts (Do Not Replicate)

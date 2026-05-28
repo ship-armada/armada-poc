@@ -11,16 +11,23 @@ Primitives ported (byte-identical) from `/Volumes/T7/armada-crowdfund/src/compon
 | `Tag` | — |
 | `NavItem` | — |
 | `NavBar` | NavItem |
-| `Header` | ArmadaLogo, NavBar, Button |
+| `Header` | ArmadaLogo, NavBar, Button, WalletPillMenu |
+| `WalletPillMenu` | Button (CSS Module) + `@web3icons/react` + `@heroicons/react` |
 | `BarTrackTicks` | — |
 | `Progress` | BarTrackTicks, Tag |
 | `WalletButton` | — |
+| `Steps` | — |
+| `Tooltip` | — |
+| `WalletItem` | — |
 
 ## Approved deviations from byte-identical port
 
 - **`ArmadaLogo`** — the SVG markup was defined as a local helper inside the mockup's `Header.tsx`. We hoisted it into its own primitive so consumer apps can build their own header chrome (e.g. crowdfund-shared's `AppHeader`) without duplicating the SVG. `Header.tsx` now imports `ArmadaLogo` from a sibling instead of declaring it inline. The SVG markup itself is byte-identical to the mockup.
-- **`WalletButton`** — the mockup ships `.walletBtn` / `.walletIcon` / `.walletText` as inline rules inside `Header.module.css`, not as a standalone component. We extracted them into a `WalletButton` primitive so consuming apps can drop a styled wallet pill anywhere (header right slot, mobile sheet, future settings UI) without forking the gradient-border CSS. The button is **visual-only** — wallet provider logic (wagmi, RainbowKit, etc.) stays in the consuming app, which composes its own state machine and passes a `label` + `onClick` to `WalletButton`. This keeps `@armada/ui` free of wallet-stack dependencies. Adds a `disabled` prop + matching `:disabled` CSS (opacity 0.5, `cursor: not-allowed`) — not in the mockup, but needed for transient states like wagmi hydration where the button should be non-interactive.
+- **`WalletButton`** — at the original pin (commit `07e69bd`), the mockup shipped `.walletBtn` / `.walletIcon` / `.walletText` as inline rules inside `Header.module.css`. We extracted them into a standalone `WalletButton` primitive so consuming apps could drop a styled wallet pill anywhere (header right slot, mobile sheet, future settings UI) without forking the gradient-border CSS. The designer has since dropped those inline rules — the current mockup's `Header` renders the wallet pill as `<Button variant="secondary" label={walletAddress} showIcon={false} />`. The re-ported `Header` follows the mockup's current shape (no `WalletButton` in `Header`); the primitive stays in the package because `crowdfund-committer/src/App.tsx` imports it directly for the connected-wallet pill. The button is **visual-only** — wallet provider logic (wagmi, RainbowKit, etc.) stays in the consuming app, which composes its own state machine and passes a `label` + `onClick` to `WalletButton`. This keeps `@armada/ui` free of wallet-stack dependencies. Adds a `disabled` prop + matching `:disabled` CSS (opacity 0.5, `cursor: not-allowed`) — not in the mockup, but needed for transient states like wagmi hydration where the button should be non-interactive.
 - **`Header.tsx` value/type import split** — the mockup uses `import { NavBar, NavBarItem } from '../NavBar'`. Our consumers (`committer`, `observer`, `admin`) compile with `verbatimModuleSyntax: true`, which requires type-only imports to use `import type`. Header.tsx splits the import (`import { NavBar }` plus `import type { NavBarItem }`). Same runtime behaviour; satisfies stricter consumer tsconfigs that transitively type-check this source.
+- **Promoted prop interfaces** — `Steps`, `Tooltip`, and `WalletItem` declare their prop interfaces as `interface XProps {…}` (un-exported) in the mockup. We add the `export` keyword to those declarations so the per-component `index.ts` can re-export the type and downstream consumers can write `import { Steps, type StepsProps } from '@armada/ui'`, matching the surface of every other primitive in this package. No runtime change; one keyword added per interface.
+- **Default export preserved with named re-export at the barrel** — `Steps`, `Tooltip`, and `WalletItem` are `export default` in the mockup. We keep that in the component file (verbatim body) and re-export as a named symbol in the per-component `index.ts` (`export { default as Steps } from './Steps'`), so consumers always import via the package's named surface.
+- **`WalletPillMenu` co-located inside `Header/`** — the designer ships this as a sibling file in `Header/` (`Header/WalletPillMenu.tsx`) since it's only consumed by `Header`. We mirror that structure rather than hoisting to a top-level `WalletPillMenu/` folder. It is still re-exported from the package barrel (`@armada/ui`) so any future consumer can pull it independently — but no consumer does today. The committer's `AppHeader` uses RainbowKit's `ConnectButton.Custom` for its wallet pill instead of `WalletPillMenu`; the primitive is exercised by the showcase only.
 
 ## Layout convention
 

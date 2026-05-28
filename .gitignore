@@ -30,6 +30,11 @@ config/secrets.env
 deployments/*.json
 !deployments/*-sepolia*.json
 
+# Named deployment instances pulled from the armada-deployments repo by
+# `npm run fetch-deployment -- <name>`. Each instance is reproducible from the
+# upstream repo, so we never commit local copies.
+deployments/instances/
+
 # Build-time-fetched manifest copies (Netlify pulls these from armada-deployments
 # at build time per apps/armada-interface/netlify.toml; never commit them)
 apps/armada-interface/public/api/

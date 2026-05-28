@@ -35,8 +35,22 @@ export function getHubChainId(): number {
   return isLocalMode() ? 31337 : 11155111
 }
 
+/**
+ * Returns the path (relative to the Vite serveDeployments middleware) of the
+ * crowdfund deployment manifest to load.
+ *
+ * Local mode → `crowdfund-hub.json` (written by `npm run setup`).
+ * Sepolia + `VITE_DEPLOYMENT_INSTANCE=<name>` → mirrored path under
+ *   `instances/<name>/sepolia/crowdfund.json`, populated by
+ *   `npm run fetch-deployment -- <name>` from the armada-deployments repo.
+ * Sepolia, no instance set → legacy `crowdfund-hub-sepolia.json` (whatever the
+ *   local `deployments/` folder currently holds — overwritten by `setup:sepolia`).
+ */
 export function getDeploymentFileName(): string {
-  return isLocalMode() ? 'crowdfund-hub.json' : 'crowdfund-hub-sepolia.json'
+  if (isLocalMode()) return 'crowdfund-hub.json'
+  const instance = (import.meta.env.VITE_DEPLOYMENT_INSTANCE as string | undefined)?.trim()
+  if (instance) return `instances/${instance}/sepolia/crowdfund.json`
+  return 'crowdfund-hub-sepolia.json'
 }
 
 export function getPollIntervalMs(): number {

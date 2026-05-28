@@ -1,0 +1,133 @@
+/* ABOUTME: CSS Module for Step4Approve — see Step4Approve.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.shell {
+  width: 480px;
+  height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-8);
+  flex: 1;
+  justify-content: center;
+}
+
+.title {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: var(--primitives-lineHeight-snug);
+}
+
+/* ── Transaction card ── */
+.txCard {
+  width: 100%;
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  overflow: hidden;
+}
+
+.txRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.txLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-primary);
+}
+
+.txStatus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+/* Spinner */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid var(--semantic-color-border-lavender);
+  border-top-color: var(--semantic-color-brand-lavender);
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pending circle */
+.circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid var(--semantic-color-border-default);
+}
+
+/* Done check */
+.check {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--semantic-color-status-success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--semantic-color-surface-bg);
+}
+
+/* ── Footer ── */
+.footer {
+  display: flex;
+  justify-content: center;
+}
+
+.footerText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+}
+
+/* Visually hidden — accessible but not visible */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

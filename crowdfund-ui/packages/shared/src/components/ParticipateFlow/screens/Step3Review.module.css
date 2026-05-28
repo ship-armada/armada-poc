@@ -1,0 +1,151 @@
+/* ABOUTME: CSS Module for Step3Review — see Step3Review.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/*
+  Figma: 480x500px, 32px padding, space-between
+  Summary card: surface-raised bg, border-default, 20px padding, 8px radius
+  Warning block: amber border, 12px text, centered
+  Button row: Back (secondary) + Approve and commit (gradient), 48px, gap 12px
+*/
+
+.shell {
+  width: 480px;
+  height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  flex: 1;
+  padding-top: var(--primitives-spacing-8);
+}
+
+.title {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.4;
+  width: 100%;
+}
+
+/* ── Summary card ── */
+.summaryCard {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--primitives-spacing-3) 0;
+}
+
+.summaryRow:first-child {
+  padding-top: 0;
+}
+
+.summaryRow:last-child {
+  padding-bottom: 0;
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.summaryLabelGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.summaryLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+.summaryValue {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.summaryValueAccent {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: help;
+  line-height: 0;
+}
+
+.infoTrigger:hover .infoIcon {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+/* ── Warning block ── */
+.warningBlock {
+  background: rgba(196, 145, 229, 0.15);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+}
+
+.warningText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Button row ── */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+}

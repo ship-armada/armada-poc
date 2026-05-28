@@ -32,7 +32,13 @@ export interface AddressSummary {
   hops: number[]
   totalCommitted: bigint
   perHop: Map<number, bigint>
+  /** Single inviter chosen for compact UI surfaces (table cells, hover chips).
+   *  Multi-hop wallets prefer a real (non-root) inviter — see `computeDisplayInviter`. */
   displayInviter: string
+  /** Every unique inviter across all of the address's hop entries, including the
+   *  `'armada'` root sentinel where applicable. Drives the NodeSphere edge set —
+   *  a multi-hop seed gets BOTH its Armada edge and its human-inviter edge. */
+  allInviters: string[]
   allocatedArm: bigint | null
   refundUsdc: bigint | null
   allocatedPerHop: Map<number, bigint>
@@ -165,12 +171,21 @@ function buildSummaries(nodes: Map<string, GraphNode>): Map<string, AddressSumma
       }
     }
 
+    // Collect every distinct inviter across the address's hop entries. A
+    // multi-hop seed (hop-0 + hop-1) will end up with both the root sentinel
+    // and the human inviter present so the NodeSphere can render both edges.
+    const inviterSet = new Set<string>()
+    for (const node of addrNodes) {
+      for (const inv of node.invitedBy) inviterSet.add(inv)
+    }
+
     summaries.set(address, {
       address,
       hops,
       totalCommitted,
       perHop,
       displayInviter: computeDisplayInviter(address, nodes, hops),
+      allInviters: [...inviterSet],
       allocatedArm: hasAllocation ? addrNodes.reduce((sum, n) => sum + (n.allocatedArm ?? 0n), 0n) : null,
       refundUsdc: null,
       allocatedPerHop,

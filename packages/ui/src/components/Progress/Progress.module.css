@@ -1,12 +1,12 @@
 /* ABOUTME: CSS Module for Progress — card surface with blur, gradient-filled track, and threshold marker. */
-/* ABOUTME: Mixes --semantic-* tokens with a handful of hardcoded layout values inherited from the mockup. */
+/* ABOUTME: Ported byte-identical from the mockup; gradient + over-min shine animation included. */
 
 .card {
   position: relative;
   width: 582px;
   padding: var(--semantic-spacing-card-padding);
   border-radius: 15px;
-  border: none;
+  border: 1px solid var(--semantic-color-border-default);
   background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
   overflow: hidden;
   display: flex;
@@ -58,7 +58,7 @@
 .amountBlock {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--primitives-spacing-2);
   margin-bottom: 20px;
 }
 
@@ -66,9 +66,9 @@
   font-family: "Geist", sans-serif;
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   font-weight: 500;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--primitives-letterSpacing-widest);
   text-transform: uppercase;
-  color: var(--semantic-color-text-dim);
+  color: var(--semantic-color-text-muted);
 }
 
 .amount {
@@ -114,7 +114,7 @@
   overflow: visible;
 }
 
-.barFill {
+.barFillGradient {
   position: absolute;
   top: 0;
   left: 0;
@@ -130,14 +130,52 @@
   will-change: width;
 }
 
-/* Threshold — taller than bar, extends 4px above and below */
+.barFillOverMin {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 1;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    var(--semantic-color-brand-lavender) 0%,
+    var(--primitives-color-purple-600) 28%,
+    var(--primitives-color-purple-700) 50%,
+    var(--primitives-color-purple-600) 72%,
+    var(--semantic-color-brand-lavender) 100%
+  );
+  background-size: 280% 100%;
+  animation: barOverMinShine 2.2s ease-in-out infinite alternate;
+  pointer-events: none;
+  will-change: width, left;
+}
+
+@keyframes barOverMinShine {
+  from {
+    background-position: 0% 50%;
+  }
+
+  to {
+    background-position: 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barFillOverMin {
+    animation: none;
+    background: var(--semantic-color-brand-lavender);
+    background-size: auto;
+  }
+}
+
+/* Threshold — taller than bar, extends above and below track */
 .threshold {
   position: absolute;
-  top: -4px;
-  bottom: -4px;
+  top: calc(-1 * var(--primitives-spacing-2));
+  bottom: calc(-1 * var(--primitives-spacing-2));
   width: 1px;
   z-index: 2;
-  background: var(--semantic-color-brand-lavender);
+  background: var(--semantic-color-text-primary);
   pointer-events: none;
 }
 
@@ -146,41 +184,41 @@
   display: flex;
   justify-content: flex-start;
   align-items: flex-start;
-  margin-top: 8px;
+  margin-top: var(--primitives-spacing-5);
   height: 20px;
 }
 
 .labelLeft {
   display: flex;
   gap: 20px;
-  align-items: center;
+  align-items: baseline;
 }
 
 /* Pinned under the threshold line */
 .labelMinRaise {
   position: absolute;
   transform: translateX(0);
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
   white-space: nowrap;
 }
 
 .stat {
   display: flex;
   align-items: baseline;
+  gap: var(--primitives-spacing-1);
 }
 
 .statValue {
   font-family: "Geist", sans-serif;
-  font-size: 14px;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: 700;
+  line-height: var(--primitives-lineHeight-none);
   color: var(--semantic-color-text-primary);
 }
 
 .statKey {
   font-family: "Geist", sans-serif;
-  font-size: 14px;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: 300;
+  line-height: var(--primitives-lineHeight-none);
   color: var(--semantic-color-text-muted);
 }

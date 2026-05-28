@@ -1,0 +1,330 @@
+/* ABOUTME: CSS Module for SlotCard — see SlotCard.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/* ── Card shell ── */
+.card {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  transition: border-color 150ms ease;
+}
+
+.expanded {
+  border-color: var(--semantic-color-border-lavender);
+}
+
+/* ── Main row ── */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-4);
+}
+
+/* ── Badge ── */
+.badge {
+  width: 40px;
+  height: 40px;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badgeNumber {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+}
+
+.badgeAvailable {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 24%, var(--semantic-color-surface-default));
+  border-color: var(--semantic-color-border-lavender);
+}
+
+.badgeAvailable .badgeNumber {
+  color: var(--semantic-color-text-primary);
+}
+
+/* ── Available label ── */
+.availableLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+/* ── Right content ── */
+.right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* ── Empty actions ── */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+}
+
+/* ── Link active ── */
+.linkRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: var(--primitives-spacing-4);
+}
+
+.linkStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.linkText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.linkMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.pendingLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+}
+
+.dot {
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.expiry {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.linkButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.textBtn {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-brand-lavender);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+  white-space: nowrap;
+}
+
+.textBtn:not(.textBtnDanger):hover { opacity: 0.75; }
+
+.textBtnDanger { color: var(--semantic-color-text-muted); }
+.textBtnDanger:hover { color: var(--semantic-color-status-error); }
+
+/* ── Onchain / redeemed ── */
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: var(--primitives-spacing-3);
+}
+
+.addressStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.addressPrimary {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+}
+
+.addressSecondary {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+/* ── Expanded section ── */
+.expandedSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.hint {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.expandedAction {
+  display: flex;
+}
+
+.expandedAction > * { flex: 1; }
+
+/* ── Address input ── */
+.inputWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  height: 40px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: 0 var(--primitives-spacing-4);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 150ms ease;
+}
+
+.input::placeholder { color: var(--semantic-color-text-muted); }
+.input:focus { border-color: var(--semantic-color-border-lavender); }
+.inputError { border-color: var(--semantic-color-status-error) !important; }
+.inputResolved { border-color: var(--semantic-color-status-success); }
+
+.spinner {
+  position: absolute;
+  right: var(--primitives-spacing-4);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--semantic-color-border-lavender);
+  border-top-color: var(--semantic-color-brand-lavender);
+  animation: spin 700ms linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
+.inlineResolved {
+  position: absolute;
+  right: var(--primitives-spacing-4);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-success);
+  pointer-events: none;
+}
+
+.errorMsg {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+/* ── Revoke confirmation popover (anchored to Revoke button) ── */
+.revokePopover {
+  position: fixed;
+  z-index: 250;
+  width: 220px;
+  padding: var(--primitives-spacing-4);
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-component-button-secondary-border);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--semantic-color-surface-bg) 55%, transparent);
+  transform: translateX(-100%);
+  animation: revokePopoverIn 160ms ease;
+}
+
+@keyframes revokePopoverIn {
+  from {
+    opacity: 0;
+    transform: translateX(-100%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-100%) translateY(0);
+  }
+}
+
+.revokeTitle {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: 1.4;
+}
+
+.revokeBody {
+  margin: var(--primitives-spacing-2) 0 var(--primitives-spacing-4);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.45;
+}
+
+.revokeActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-2);
+}
+
+.revokeConfirmBtn {
+  width: 100%;
+  color: var(--semantic-color-status-error);
+  border-color: color-mix(in srgb, var(--semantic-color-status-error) 35%, transparent);
+  background: color-mix(in srgb, var(--semantic-color-status-error) 12%, transparent);
+}
+
+.revokeConfirmBtn:hover:not(:disabled) {
+  color: var(--semantic-color-status-error);
+  border-color: color-mix(in srgb, var(--semantic-color-status-error) 50%, transparent);
+  background: color-mix(in srgb, var(--semantic-color-status-error) 20%, transparent);
+}
+
+.revokeCancelBtn {
+  width: 100%;
+}

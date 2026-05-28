@@ -1,0 +1,132 @@
+/* ABOUTME: CSS Module for Hero — see Hero.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.page {
+  height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--semantic-color-surface-bg);
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.enter {
+  opacity: 0;
+  animation-name: fadeUp;
+  animation-duration: 520ms;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+}
+
+.enterHeader {
+  animation-delay: 0ms;
+}
+
+.enterProgress {
+  animation-delay: 140ms;
+}
+
+.enterParticipate {
+  animation-delay: 280ms;
+}
+
+.headerOverride {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: none !important;
+  position: fixed !important;
+  top: var(--primitives-spacing-6);
+  left: var(--primitives-spacing-6);
+  right: var(--primitives-spacing-6);
+  width: auto !important;
+  z-index: 100 !important;
+  --header-concealed-extra: var(--primitives-spacing-6);
+}
+
+.leftCorner {
+  --hero-expand-duration: 380ms;
+  --hero-expand-ease: cubic-bezier(0.32, 0, 0.15, 1);
+  --hero-stack-collapsed-height: 520px; /* fallback until JS measures on mount */
+  --hero-stack-expanded-max: calc(
+    100vh - var(--primitives-spacing-6) - var(--primitives-spacing-6) - 56px - var(--primitives-spacing-6)
+  );
+  position: absolute;
+  left: var(--primitives-spacing-6);
+  bottom: var(--primitives-spacing-6);
+  z-index: 10;
+  width: 582px;
+  max-width: calc(100vw - var(--primitives-spacing-6) * 2);
+  max-height: var(--hero-stack-expanded-max);
+}
+
+.leftCornerExpanded {
+  z-index: 20;
+}
+
+.rightCorner {
+  position: absolute;
+  right: var(--primitives-spacing-6);
+  bottom: var(--primitives-spacing-6);
+  z-index: 10;
+}
+
+.leftStack {
+  --hero-stack-gap: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hero-stack-gap);
+  align-items: stretch;
+  width: 582px;
+  flex: 0 0 auto;
+  overflow: visible;
+  min-height: 0;
+  max-height: var(--hero-stack-collapsed-height);
+  transition:
+    max-height var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1)),
+    min-height var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1));
+}
+
+.leftCornerExpanded .leftStack {
+  max-height: var(--hero-stack-expanded-max);
+  min-height: var(--hero-stack-expanded-max);
+}
+
+.leftStack > :first-child {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.participantsWrap {
+  flex: 0 0 auto;
+  display: flex;
+  overflow: hidden;
+}
+
+.leftCornerExpanded .participantsWrap {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.participantsWrap > * {
+  width: 100%;
+}
+
+.leftCornerExpanded .participantsWrap > * {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+}
+

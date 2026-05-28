@@ -1,0 +1,22 @@
+/* ABOUTME: Inline-presentation sizing for the Path 1 invite-link flow — slot + step keep the 480×500 footprint of Step0Invite while the user advances through the step machine. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteInline.module.css). */
+
+/* Fixed viewport matching Step 0 (480×500). Each step renders its own designed shell. */
+.slot {
+  width: 480px;
+  height: 500px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.step {
+  width: 480px;
+  height: 500px;
+}
+
+.invitesWrap {
+  width: 480px;
+  height: 500px;
+  flex-shrink: 0;
+  overflow: hidden;
+}

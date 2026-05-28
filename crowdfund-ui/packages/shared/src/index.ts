@@ -3,11 +3,12 @@
 
 export {
   CROWDFUND_CONSTANTS,
+  CROWDFUND_PROFILE,
   HOP_CONFIGS,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
 } from './lib/constants.js'
-export type { HopConfig } from './lib/constants.js'
+export type { HopConfig, CrowdfundConstants, CrowdfundProfile } from './lib/constants.js'
 
 export type { CrowdfundEvent, CrowdfundEventType, RawLog } from './lib/events.js'
 export { parseCrowdfundEvent, parseCrowdfundEvents } from './lib/events.js'
@@ -119,11 +120,124 @@ export type { TreeViewProps } from './components/TreeView.js'
 export type { RadialNode, RadialEdge, RadialGraph, AngleInfo } from './lib/radialLayout.js'
 export { buildRadialGraph, computeAngleMap } from './lib/radialLayout.js'
 
-export { AppShell, NetworkBadge } from './components/AppShell.js'
+export {
+  GRAPH_HOP_NODE_COLORS,
+  graphHopColorToCss,
+  heroListHopColor,
+  hopPillDotColor,
+} from './lib/graphHopColors.js'
+export type { GraphHopNodeKind } from './lib/graphHopColors.js'
+
+export { AppShell } from './components/AppShell.js'
 export type { AppShellProps, AppShellNetwork } from './components/AppShell.js'
 
 export { AppHeader } from './components/AppHeader.js'
 export type { AppHeaderProps, AppHeaderNetwork } from './components/AppHeader.js'
+
+export { HopPill } from './components/HopPill/index.js'
+export type { HopPillProps, HopVariant } from './components/HopPill/index.js'
+
+export { HopStatCard } from './components/HopStatCard/index.js'
+export type { HopStatCardProps, HopStatAccent } from './components/HopStatCard/index.js'
+
+export { JoinButton } from './components/JoinButton/index.js'
+export type { JoinButtonProps } from './components/JoinButton/index.js'
+
+export { ParticipantsTable } from './components/ParticipantsTable/index.js'
+export type {
+  ParticipantsTableProps,
+  ParticipantsTableFilter,
+  ParticipantRow,
+} from './components/ParticipantsTable/index.js'
+
+export { HeroParticipantsPanel } from './components/HeroParticipantsPanel/index.js'
+export type {
+  HeroParticipantsPanelProps,
+  HeroHopFilter,
+  HeroParticipant,
+} from './components/HeroParticipantsPanel/index.js'
+
+export { NodeSphere } from './components/NodeSphere/index.js'
+export type { NodeSphereProps, PinnedNode } from './components/NodeSphere/index.js'
+
+export { CrowdfundExperience } from './components/CrowdfundExperience/index.js'
+export type {
+  CrowdfundExperienceProps,
+  CrowdfundView,
+  CrowdfundInviteSlotConfig,
+  CrowdfundExperienceLiveData,
+  CrowdfundExperienceMyPositionData,
+} from './components/CrowdfundExperience/index.js'
+
+export { Participate } from './components/Participate/index.js'
+export type { ParticipateProps } from './components/Participate/index.js'
+
+export {
+  MyPosition,
+  MyPositionHero,
+  MyPositionSplit,
+  COMMITTED as MY_POSITION_COMMITTED,
+  CAP as MY_POSITION_CAP,
+  ARM_ALLOCATION as MY_POSITION_ARM_ALLOCATION,
+  FILL_PCT as MY_POSITION_FILL_PCT,
+  formatUsdcCommitted,
+  formatArmAllocation,
+  GRAPH_SEED as MY_POSITION_GRAPH_SEED,
+  GRAPH_PARTICIPANTS as MY_POSITION_GRAPH_PARTICIPANTS,
+  DEMO_WALLET as MY_POSITION_DEMO_WALLET,
+  DEMO_WALLET_DISPLAY as MY_POSITION_DEMO_WALLET_DISPLAY,
+  DEMO_SLOTS as MY_POSITION_DEMO_SLOTS,
+  buildInvitePinnedNodes,
+} from './components/MyPosition/index.js'
+export type { MyPositionProps, MyPositionSplitProps } from './components/MyPosition/index.js'
+
+export {
+  generateCrowdfund,
+  toDashboardParticipants,
+  toHeroParticipants,
+  toDashboardParticipantsFromGraph,
+  toParticipantsTableRows,
+} from './lib/mockParticipants.js'
+export type {
+  ScenarioParticipants,
+  Hop,
+  HeroParticipantRow,
+  DashboardParticipant,
+  ParticipantsTableRow,
+  Participant,
+  CrowdfundSnapshot,
+} from './lib/mockParticipants.js'
+
+export {
+  Step0Invite,
+  Step1Wallet,
+  Step1WalletNotWhitelisted,
+  Step2Commit,
+  Step3Review,
+  Step4Approve,
+  Step5Confirmation,
+  ParticipateFlowModal,
+  ParticipateFlowInviteSlots,
+  INVITE_LINK_STEPS,
+  CROWDFUND_MODAL_STEPS,
+} from './components/ParticipateFlow/index.js'
+export type {
+  Step0InviteProps,
+  Step4ApproveProps,
+  Step4Transaction,
+  Step4TransactionStatus,
+  ParticipateFlowModalProps,
+  ParticipateFlowInviteSlotsProps,
+  ParticipateStepsStatus,
+  ParticipateStepBarProps,
+} from './components/ParticipateFlow/index.js'
+
+export {
+  InviteSlots,
+  SlotCard,
+  truncateAddress as inviteSlotTruncateAddress,
+} from './components/InviteFlow/index.js'
+export type { SlotData, SlotStatus, SlotCardEnsResult } from './components/InviteFlow/index.js'
 
 export { CrowdfundToaster } from './components/CrowdfundToaster.js'
 

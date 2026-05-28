@@ -7,11 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc -b --force --noEmit",
+    "clean": "rm -f tsconfig.tsbuildinfo tsconfig.app.tsbuildinfo tsconfig.node.tsbuildinfo",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@armada/crowdfund-shared": "*",
+    "@armada/ui": "*",
+    "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.4",

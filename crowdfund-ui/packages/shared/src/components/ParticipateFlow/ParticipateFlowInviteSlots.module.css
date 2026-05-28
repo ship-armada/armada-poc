@@ -1,0 +1,32 @@
+/* ABOUTME: Layout + scroll container for the invite-slots step rendered inside the Participate modal. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteSlots.module.css). */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+}
+
+.shell {
+  width: 100%;
+  height: auto;
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--primitives-spacing-1);
+}

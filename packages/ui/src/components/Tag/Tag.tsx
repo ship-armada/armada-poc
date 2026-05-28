@@ -1,9 +1,9 @@
-// ABOUTME: Pill tag with optional status dot (active/warning/error/neutral).
+// ABOUTME: Pill tag with optional status dot (active/warning/error/neutral/lavender).
 // ABOUTME: Ported byte-identical from the armada-crowdfund mockup.
 
 import styles from './Tag.module.css'
 
-export type TagDot = 'active' | 'warning' | 'error' | 'neutral'
+export type TagDot = 'active' | 'warning' | 'error' | 'neutral' | 'lavender'
 
 export interface TagProps {
   label: string

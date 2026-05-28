@@ -1,0 +1,98 @@
+/* ABOUTME: CSS Module for CrowdfundExperience — see CrowdfundExperience.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/* Panel cross-fade / slide between crowdfund and my position views */
+.page {
+  --panel-transition-duration: 480ms;
+  --panel-transition-gap: 180ms;
+  --panel-transition-ease: cubic-bezier(0.32, 0, 0.15, 1);
+  --hero-corner-max-height: calc(
+    100vh - var(--primitives-spacing-6) - var(--primitives-spacing-6) - 56px - var(--primitives-spacing-6)
+  );
+}
+
+.leftCorner,
+.rightCorner {
+  pointer-events: none;
+}
+
+.leftCorner > .cornerLayerVisible,
+.rightCorner > .cornerLayerVisible {
+  pointer-events: auto;
+}
+
+.leftCorner {
+  --hero-progress-card-height: 520px;
+  display: grid;
+  align-items: end;
+  justify-items: stretch;
+}
+
+.rightCorner {
+  position: absolute;
+  right: var(--primitives-spacing-6);
+  bottom: var(--primitives-spacing-6);
+  z-index: 11;
+  width: 480px;
+  max-width: calc(100vw - var(--primitives-spacing-6) * 2);
+  display: grid;
+  align-items: end;
+  justify-items: stretch;
+}
+
+.cornerLayer {
+  grid-area: 1 / 1;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  transition:
+    opacity var(--panel-transition-duration) var(--panel-transition-ease),
+    transform var(--panel-transition-duration) var(--panel-transition-ease),
+    visibility 0s linear var(--panel-transition-duration);
+  will-change: opacity, transform;
+}
+
+.cornerLayerMotionOff,
+.cornerLayerNoMotion {
+  transition: none;
+}
+
+.cornerLayerVisible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  z-index: 1;
+  transition-delay: 0s;
+}
+
+.cornerLayerHidden {
+  opacity: 0;
+  transform: translateY(48px);
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Participate card is intrinsic width — keep it right-aligned in the wide column */
+.rightParticipateLayer {
+  align-items: flex-end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cornerLayer {
+    transition: opacity 120ms ease;
+  }
+
+  .cornerLayerHidden {
+    transform: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .rightCorner {
+    width: min(480px, calc(100vw - var(--primitives-spacing-6) * 2));
+  }
+}

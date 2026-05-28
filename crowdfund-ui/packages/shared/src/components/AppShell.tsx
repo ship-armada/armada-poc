@@ -3,7 +3,6 @@
 
 import { type ReactNode } from 'react'
 import { Diamond } from 'lucide-react'
-import { Badge } from './ui/badge.js'
 import { Separator } from './ui/separator.js'
 import { AppHeader } from './AppHeader.js'
 
@@ -38,27 +37,26 @@ export interface AppShellProps {
   mobileMenu?: ReactNode
   /** Override the default footer. Pass `null` to hide the footer altogether. */
   footer?: ReactNode
+  /**
+   * Full-bleed layout for Hero-style pages. Skips the `pt-20` clearance on
+   * `<main>` (the slotted page handles its own layout against the floating
+   * header) and omits the footer entirely. Use when wrapping CrowdfundExperience
+   * or any other component that positions its own internal full-viewport shell.
+   */
+  bare?: boolean
   children: ReactNode
-}
-
-function NetworkBadge({ network }: { network: AppShellNetwork }) {
-  const label = network.toUpperCase()
-  const variant: 'secondary' | 'outline' = network === 'sepolia' ? 'outline' : 'secondary'
-  return (
-    <Badge
-      variant={variant}
-      className="h-5 rounded-md border-border/60 bg-muted/45 px-2 text-foreground/85"
-    >
-      {label}
-    </Badge>
-  )
 }
 
 // Shared is a library package without a vite-env.d.ts, so `import.meta.env` is not typed.
 // Consuming apps (observer, committer) inject `VITE_APP_VERSION` via Vite's `define` block at build time.
 const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
 
-function DefaultFooter({
+// Currently unrendered — page-level footer is hidden across all apps (see
+// the commented-out call site in `AppShell` below). Kept in source so
+// flipping the footer back on is a one-line revert. Marked `export` purely
+// so `noUnusedLocals` doesn't flag the dormant helper; it isn't re-exported
+// from the package barrel and shouldn't be consumed externally.
+export function DefaultFooter({
   network,
   appName,
 }: {
@@ -102,6 +100,7 @@ headerStatus,
 headerRight,
 mobileMenu,
 footer,
+bare,
 children,
 }: AppShellProps) {
   return (
@@ -115,12 +114,26 @@ children,
         mobileMenu={mobileMenu}
       />
 
-      {/* pt-20 clears the inset AppHeader (top-6 + h-14 = 24 + 56 = 80px). */}
-      <main className="flex-1 pt-20">{children}</main>
+      {/* pt-20 clears the inset AppHeader (top-6 + h-14 = 24 + 56 = 80px). Bare
+          mode (Hero / CrowdfundExperience-style pages) drops the padding because
+          the child handles its own positioning relative to the floating header. */}
+      <main className={bare ? 'flex-1' : 'flex-1 pt-20'}>{children}</main>
 
-      {footer === undefined ? <DefaultFooter network={network} appName={appName} /> : footer}
+      {/*
+        Page-level footer is currently hidden across all apps. The
+        `DefaultFooter` helper is preserved below in this file (and the
+        consumer-provided `footer` slot still flows through `AppShellProps`),
+        so flipping this back on is a one-line revert. Restore by replacing
+        this block with:
+
+          {bare ? null : footer === undefined ? (
+            <DefaultFooter network={network} appName={appName} />
+          ) : (
+            footer
+          )}
+      */}
+      {/* eslint-disable-next-line @typescript-eslint/no-unused-expressions */}
+      {bare || footer === undefined ? null : footer}
     </div>
   )
 }
-
-export { NetworkBadge }

@@ -1,0 +1,95 @@
+/* ABOUTME: Layout for the /invite landing page — logo + Step0Invite card + project/crowdfund footer. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (pages/InviteLanding.module.css). */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--semantic-color-surface-bg);
+  padding: var(--primitives-spacing-16) var(--primitives-spacing-6);
+  box-sizing: border-box;
+}
+
+.logo {
+  flex-shrink: 0;
+  margin-bottom: var(--primitives-spacing-16);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 480px;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-5);
+  margin-top: var(--primitives-spacing-12);
+  width: 100%;
+}
+
+.footerPrompt {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  text-align: center;
+}
+
+.footerNav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  max-width: 400px;
+}
+
+.footerBtn {
+  width: 100%;
+}
+
+/* Pre-check failure / malformed URL — keeps the 480×500 landing footprint
+   so the page composition stays balanced regardless of branch. */
+.errorCard {
+  width: 480px;
+  min-width: 480px;
+  height: 500px;
+  flex-shrink: 0;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-4);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.errorTitle {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: 1.4;
+}
+
+.errorBody {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.5;
+  max-width: 36ch;
+}

@@ -1,0 +1,128 @@
+/* ABOUTME: Styles for the Participate modal backdrop, panel, close button, and step crossfade. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowModal.module.css). */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--primitives-spacing-8);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--semantic-color-surface-bg) 72%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: modalBackdropIn 280ms ease;
+}
+
+.backdropExit {
+  animation: modalBackdropOut 280ms ease forwards;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 480px;
+  max-width: 100%;
+  gap: var(--primitives-spacing-5);
+  animation: modalPanelIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.panelExit {
+  animation: modalPanelOut 280ms ease forwards;
+}
+
+.step {
+  width: 100%;
+  animation: modalStepIn 320ms ease;
+}
+
+.stepExit {
+  animation: modalStepOut 240ms ease forwards;
+}
+
+.close {
+  flex-shrink: 0;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--semantic-component-button-secondary-border);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.close:hover {
+  border-color: var(--semantic-component-button-secondary-border-hover);
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 40%, transparent);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+@keyframes modalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalBackdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modalPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modalPanelOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes modalStepIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalStepOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

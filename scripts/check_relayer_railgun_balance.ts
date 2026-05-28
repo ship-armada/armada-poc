@@ -178,17 +178,22 @@ async function main(): Promise<void> {
   console.log(`  RPC:              ${hubRpc}`);
   patchNetworkConfig(privacyPool, deployBlock, hubChainId, isSepolia);
 
-  // Wire a UTXO-scan progress callback so the user can watch the scan tick. The SDK emits
-  // updates with a [0, 1] progress fraction; we log every ~10% step to avoid flooding the
-  // console. Without this the long Sepolia first-run looks indistinguishable from a hang.
-  let lastReportedPct = -10;
+  // Wire a UTXO-scan progress callback. Two things to surface:
+  //   - Progress percentage every 5% (and always at 100%) — fine-grained enough to catch a
+  //     stuck-at-97% hang that a 10% filter would silently hide.
+  //   - Every scanStatus transition (Started / Updated / Complete / Incomplete) — the
+  //     'Incomplete' terminal status is the failure mode that leaves awaitWalletScan hanging
+  //     because the wallet-decrypt-complete event never fires after it.
+  let lastReportedPct = -5;
+  let lastStatus = "";
   setOnUTXOMerkletreeScanCallback((evt) => {
     const pct = Math.floor(evt.progress * 100);
-    if (pct - lastReportedPct >= 10) {
-      lastReportedPct = pct;
-      console.log(
-        `  scan ${pct}% (status=${evt.scanStatus}, chain=${evt.chain.type}:${evt.chain.id})`,
-      );
+    const statusChanged = evt.scanStatus !== lastStatus;
+    const milestone = pct === 100 || pct - lastReportedPct >= 5;
+    if (statusChanged || milestone) {
+      if (statusChanged) lastStatus = evt.scanStatus;
+      if (milestone) lastReportedPct = pct;
+      console.log(`  scan ${pct}% (status=${evt.scanStatus})`);
     }
   });
 
@@ -211,7 +216,7 @@ async function main(): Promise<void> {
   );
 
   console.log("[check-balance] Kicking merkletree scan + awaiting completion...");
-  console.log("  (Sepolia first-run can take minutes — progress lines tick every ~10%)");
+  console.log("  (Sepolia first-run can take minutes — progress lines tick every ~5%)");
   const chain = { type: ChainType.EVM, id: hubChainId };
   // refreshBalances → engine.scanContractHistory: actually starts the scan. `loadProvider`
   // alone only registers the network; without this call there's nothing scanning and the
@@ -220,7 +225,25 @@ async function main(): Promise<void> {
   // scan, so a fast scan that completes before we register the listener doesn't slip past.
   const walletScanPromise = awaitWalletScan(walletId, chain);
   void refreshBalances(chain, [walletId]);
-  await walletScanPromise;
+
+  // Race against a hard timeout. The wallet-decrypt-complete event that `awaitWalletScan`
+  // waits for ONLY fires after the merkletree scan reaches the `Complete` status. If the scan
+  // ends in `Incomplete` (RPC failures mid-scan, malformed events on a particular block) the
+  // listener hangs indefinitely. Falling through to a balance read after the timeout gives the
+  // user something useful — the balance as of whatever blocks DID get scanned — instead of an
+  // open-ended wait.
+  const SCAN_TIMEOUT_MS = isSepolia ? 15 * 60_000 : 60_000;
+  const timedOut = await Promise.race([
+    walletScanPromise.then(() => false),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), SCAN_TIMEOUT_MS)),
+  ]);
+  if (timedOut) {
+    console.warn(
+      `[check-balance] Scan didn't reach Complete within ${SCAN_TIMEOUT_MS / 1000}s; reading ` +
+        `balance from whatever was scanned so far. Re-run to resume from the last persisted ` +
+        `cursor (LevelDB at data/relayer-balance-check-db/).`,
+    );
+  }
 
   console.log("[check-balance] Reading USDC balance...");
   const wallet = fullWalletForID(walletId);

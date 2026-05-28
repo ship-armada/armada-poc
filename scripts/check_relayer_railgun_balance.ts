@@ -1,0 +1,186 @@
+/**
+ * Check the relayer's Railgun (0zk) wallet's shielded USDC balance — the running tally of
+ * broadcaster fees the relayer has collected via relayer-mediated submits (Phase A3+).
+ *
+ * Run:
+ *   source config/local.env && npx ts-node scripts/check_relayer_railgun_balance.ts
+ *   source config/sepolia.env && source config/secrets.env && npx ts-node scripts/check_relayer_railgun_balance.ts
+ *
+ * Why this is a separate script (not a relayer endpoint): the running relayer doesn't load a
+ * provider for its Railgun wallet — it only uses the wallet's viewing key for on-the-fly
+ * ciphertext decryption at /relay verify time. To READ the balance we need to load a provider,
+ * scan the merkletree, and await completion — which is heavy and unnecessary for the relayer's
+ * core duty. A scheduled job can wrap this script if you want continuous reporting.
+ *
+ * Uses a separate LevelDB at `data/relayer-balance-check-db/` so it doesn't fight the running
+ * relayer for the single-process lock on `relayer/state/railgun-db/`.
+ */
+
+import "dotenv/config";
+import * as fs from "fs";
+import * as path from "path";
+import { ethers } from "ethers";
+import { initializeEngine, shutdownEngine } from "../lib/sdk/init";
+import { DEFAULT_ENCRYPTION_KEY } from "../lib/sdk/wallet";
+import {
+  loadProvider,
+  awaitWalletScan,
+  balanceForERC20Token,
+} from "@railgun-community/wallet";
+import {
+  NETWORK_CONFIG,
+  NetworkName,
+  TXIDVersion,
+} from "@railgun-community/shared-models";
+import {
+  ChainType,
+  type RailgunWallet,
+} from "@railgun-community/engine";
+import { getNetworkConfig } from "../config/networks";
+
+// Wallet source — same tag the relayer itself uses, so logs identify this consistently.
+const ENGINE_WALLET_SOURCE = "armadarlcheck";
+
+interface Manifest {
+  contracts: { privacyPool: string };
+  cctp: { usdc: string };
+  deployBlock?: number;
+}
+
+function loadManifest(filename: string): Manifest {
+  const manifestPath = path.resolve(__dirname, "..", "deployments", filename);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Deployment manifest not found: ${manifestPath}`);
+  }
+  return JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as Manifest;
+}
+
+/**
+ * Mirror of the frontend's network-patching logic (apps/armada-interface/src/lib/railgun/
+ * network.ts). The SDK ships `NetworkName.Hardhat` as a placeholder; we point it at our
+ * actual deployment + real chain ID. On sepolia we also neutralise the canonical
+ * `Ethereum_Sepolia` entry so the SDK doesn't shadow ours with a QuickSync against
+ * real Railgun history.
+ */
+function patchNetworkConfig(
+  privacyPoolAddress: string,
+  deployBlock: number,
+  hubChainId: number,
+  isSepolia: boolean,
+): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const networkConfig = NETWORK_CONFIG as any;
+  const target = networkConfig[NetworkName.Hardhat];
+  if (!target) {
+    throw new Error("SDK NETWORK_CONFIG missing Hardhat entry");
+  }
+  target.proxyContract = privacyPoolAddress;
+  target.relayAdaptContract = ethers.ZeroAddress;
+  target.relayAdaptHistory = [""];
+  target.deploymentBlock = deployBlock;
+  target.poseidonMerkleAccumulatorV3Contract = ethers.ZeroAddress;
+  target.poseidonMerkleVerifierV3Contract = ethers.ZeroAddress;
+  target.tokenVaultV3Contract = ethers.ZeroAddress;
+  target.deploymentBlockPoseidonMerkleAccumulatorV3 = 0;
+  target.supportsV3 = false;
+  target.poi = undefined;
+  if (isSepolia) {
+    target.chain = { type: ChainType.EVM, id: hubChainId };
+    const sepoliaEntry = networkConfig["Ethereum_Sepolia"];
+    if (sepoliaEntry) sepoliaEntry.chain = { type: ChainType.EVM, id: -1 };
+  }
+}
+
+async function main(): Promise<void> {
+  const mnemonic = process.env.RELAYER_RAILGUN_MNEMONIC?.trim();
+  if (!mnemonic) {
+    throw new Error(
+      "RELAYER_RAILGUN_MNEMONIC is not set. Source the relayer's env (config/local.env or " +
+        "config/sepolia.env + config/secrets.env) before running.",
+    );
+  }
+
+  const netConfig = getNetworkConfig();
+  const isSepolia = netConfig.env === "sepolia";
+  const suffix = isSepolia ? "-sepolia" : "";
+  const hubManifest = loadManifest(`privacy-pool-hub${suffix}.json`);
+  const cctpManifest = loadManifest(`hub${suffix}-v3.json`);
+
+  const privacyPool = hubManifest.contracts.privacyPool;
+  const usdcAddress = cctpManifest.cctp?.usdc ?? hubManifest.cctp.usdc;
+  const deployBlock = hubManifest.deployBlock ?? 0;
+  const hubChainId = netConfig.hub.chainId;
+  const hubRpc = netConfig.hub.rpc;
+
+  console.log("[check-balance] Initializing engine (dedicated DB to avoid relayer lock)...");
+  const dbPath = path.resolve(__dirname, "..", "data", "relayer-balance-check-db");
+  if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
+  const engine = await initializeEngine(ENGINE_WALLET_SOURCE, dbPath);
+
+  console.log("[check-balance] Deriving relayer wallet from mnemonic...");
+  const wallet = (await engine.createWalletFromMnemonic(
+    DEFAULT_ENCRYPTION_KEY,
+    mnemonic,
+    0,
+    undefined,
+  )) as RailgunWallet;
+  console.log(`  Wallet ID: ${wallet.id.slice(0, 16)}...`);
+  console.log(`  Address:   ${wallet.getAddress()}`);
+
+  console.log("[check-balance] Patching SDK network config + loading hub provider...");
+  patchNetworkConfig(privacyPool, deployBlock, hubChainId, isSepolia);
+
+  // Single-provider fallback config — pollingInterval longer on testnet to be kind to public RPCs.
+  await loadProvider(
+    {
+      chainId: hubChainId,
+      providers: [
+        {
+          provider: hubRpc,
+          priority: 1,
+          weight: 2,
+          maxLogsPerBatch: 10,
+          stallTimeout: isSepolia ? 10_000 : 2_500,
+        },
+      ],
+    },
+    NetworkName.Hardhat,
+    isSepolia ? 15_000 : 2_000,
+  );
+
+  console.log("[check-balance] Awaiting merkletree scan (this may take minutes on Sepolia)...");
+  const chain = { type: ChainType.EVM, id: hubChainId };
+  await awaitWalletScan(wallet.id, chain);
+
+  console.log("[check-balance] Reading USDC balance...");
+  const balanceRaw = await balanceForERC20Token(
+    TXIDVersion.V2_PoseidonMerkle,
+    wallet,
+    NetworkName.Hardhat,
+    usdcAddress,
+    false, // onlySpendable: include non-spendable (POI-pending) too — closer to "accrued"
+  );
+
+  // 6-decimal USDC formatting without depending on ethers.formatUnits (clearer for an op script).
+  const USDC_DECIMALS = 6n;
+  const USDC_UNIT = 10n ** USDC_DECIMALS;
+  const whole = balanceRaw / USDC_UNIT;
+  const fraction = balanceRaw % USDC_UNIT;
+  const fractionPadded = fraction.toString().padStart(Number(USDC_DECIMALS), "0");
+
+  console.log("");
+  console.log("=".repeat(60));
+  console.log(`  RELAYER SHIELDED USDC BALANCE`);
+  console.log(`  Address:    ${wallet.getAddress()}`);
+  console.log(`  USDC token: ${usdcAddress}`);
+  console.log(`  Raw:        ${balanceRaw}`);
+  console.log(`  Formatted:  ${whole}.${fractionPadded} USDC`);
+  console.log("=".repeat(60));
+
+  await shutdownEngine();
+}
+
+main().catch((err) => {
+  console.error("[check-balance] FAILED:", err);
+  process.exit(1);
+});

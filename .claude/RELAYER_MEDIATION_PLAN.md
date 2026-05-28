@@ -169,3 +169,71 @@ Long-term direction. Every user has either a smart-contract wallet (4337) or an 
 - Does Railgun's broadcaster-fee mechanism handle a multi-output proof (e.g. transfer with change AND broadcaster fee = 3 commitments)? Need to verify the SDK populates `commitmentCiphertext` correctly and our vkey set covers `(N, 3)` shapes (it does after PR #301).
 - Does the relayer's `eth_estimateGas` pre-flight reject correctly when the broadcaster fee is below the advertised threshold? Should fail at the contract level on revert; we want it to fail in the relayer's verifier BEFORE submission to save gas.
 - How does the user signal their fee preference? Single quote today; might want "fast/standard/slow" tiers later. Out of scope for Phase A; the schema already supports cacheId-based selection.
+
+---
+
+## Implementation sequencing — PR-by-PR
+
+The per-item tables earlier in this doc describe WHAT needs to land. This section describes the order to land it in, sized as PR-shaped chunks. Two hard ordering constraints drive the rest:
+
+- **A2 must land before any handler is migrated.** Without server-side broadcaster-fee verification, a malicious client can submit a $0-fee proof and the relayer eats the gas. Any live handler call to `submitRelay` is exploitable until A2 ships.
+- **A1 unblocks both Phase A handlers AND the frontend pieces of Phase B.** The Phase B handler refactors (B3, B4) reuse the same `submitRelay` + status-polling plumbing.
+
+Phases A and B can overlap. Once A2 is in, B1–B4 can run in parallel with A3–A6 on a separate workstream — they share the relayer client surface but touch independent files.
+
+### Phase A — 6 PRs, ~5.5 days
+
+| PR | Scope | Size | Notes |
+|---|---|---|---|
+| **A1** Foundations | `/fees` carries `broadcasterRailgunAddress`; `lib/relayer.ts::submitRelay` implemented (remove the throw); new `pollRelayStatusOnce` adapter in `lib/tx/poller.ts`; telemetry keys `tx.relayer.{submitted,confirmed,rejected}` added to the registry; tests for the client + status adapter | M | Dormant until A3 — no handler calls it yet |
+| **A2** ⚠️ Server-side broadcaster-fee verification | `relayer/modules/privacy-relay.ts`: parse the Transaction struct's `commitmentCiphertext[]`, locate the output to the relayer's `0zk`, decode the value, validate `amount >= advertisedFee`. New `FEE_INSUFFICIENT` error code. Tests: well-formed accepted; tampered (no broadcaster, wrong amount, wrong recipient) rejected | M | **BLOCKING.** Security-critical. Land before any handler migration |
+| **A3** First handler: `unshield-local` | `lib/railgun/unshield.ts`: flip `sendWithPublicWallet: true → false`, pass `broadcasterFeeRecipient` + `overallBatchMinGasPrice` from the fee quote. `features/unshield/handler.ts::runSubmitAndConfirm`: replace `sendTransaction(...)` with `submitRelay(...)`, replace `waitForReceiptOrFail(...)` with status polling via A1's adapter. Cancel becomes "dismissed" once submitted. `UnshieldModal`'s `FeeSummary` shows the relayer's USDC fee | M | Establishes the pattern. Subsequent handlers are mechanical clones |
+| **A4** `transfer-shielded` + `yield-deposit` + `yield-withdraw` | Same shape as A3 applied to the three remaining hub-only handlers. Bundled because the diff per handler is small and the pattern is identical | M | Per-handler Sepolia validation. Could split into 3 separate PRs if reviews want it smaller |
+| **A5** `unshield-xchain` | Hub burn step submits via relayer; CCTP delivery polling is unchanged. `generateXchainUnshieldProof` + `populateProvedXchainUnshield` flip to non-public-wallet. The receipt-derived `cctpRef` now extracts from the relayer's tx receipt instead of the user's | M | Most complex Phase A handler because of the CCTP intersection |
+| **A6** Polish + observability | "Submit from my wallet" override (Settings + auto-exposed in modals when relayer `/health` is `stale`/`unhealthy`); relayer-side counters for fee-verification rejects + submit success/fail by kind; this doc updated with "Phase A shipped" | S | Optional escape hatch keeps the app usable during relayer outage |
+
+After A6: 5 of 7 kinds run gasless. Shield + shield-xchain still need ETH. Existing Sepolia deployment untouched throughout.
+
+### Phase B — 4 PRs, ~3.5 days
+
+Can start any time after **A1 + A2** land. Doesn't have to wait for A3–A6.
+
+| PR | Scope | Size | Notes |
+|---|---|---|---|
+| **B1** Wrapper contracts + tests | `contracts/GaslessShieldWrapper.sol` (hub) — `gaslessShield(permitSig, ShieldRequest, fee)`, `onlyRelayer`, `setRelayer(addr)` for key rotation, owner = deployer. `contracts/GaslessShieldWrapperClient.sol` — symmetric, calls `PrivacyPoolClient.crossChainShield(...)`. `contracts/mocks/MockUSDC.sol`: switch base from `ERC20` to `ERC20Permit` (local only; real Sepolia USDC already implements permit). Foundry fuzz tests: permit replay, deadline expiry, allowance race, `onlyRelayer` gate, front-run resistance. Hardhat integration: end-to-end gasless shield on Anvil | M | The contract surface is small (~80 lines per wrapper). Audit-worthy for mainnet; acceptable as-is for Sepolia POC |
+| **B2** Deploy + manifest + relayer config | `scripts/deploy_gasless_wrapper.ts` (hub) + per-client variant. Hooked into `setup_chains.sh` for local + one-shot Sepolia deploy. Hub + per-client deployment manifests gain `contracts.gaslessShieldWrapper`. Relayer: extend `ALLOWED_SELECTORS` with the wrapper's `gaslessShield` selector; load wrapper addresses at boot; add to the allowed-targets set; new fee-verification path that decodes the wrapper's calldata args | S | 3 new contracts deployed (1 hub + 2 clients on Sepolia). Existing addresses unchanged |
+| **B3** Frontend permit + `shield` handler gasless mode | `lib/wallet/permit.ts`: viem `signTypedData` helper for EIP-2612 USDC permits — `signUsdcPermit({owner, spender, amount, deadline})` → `{v, r, s}`. `features/shield/handler.ts` becomes dual-mode: gasless if `(wrapper address present && relayer health ∈ {healthy, degraded})`, direct submit otherwise. Build-proof stage unchanged. Submit stage forks: gasless path signs permit → POST to relayer → status poll | M | First time the user can fully transact without ETH |
+| **B4** `shield-xchain` gasless | Mirror of B3 for cross-chain shield. Per-client-chain wrapper invocation routing. Sepolia validation: shield from Base/Arb Sepolia using only USDC, no ETH on the source chain | M | Closes the gasless gap for fresh-account onboarding |
+
+After B4: every kind is gasless. User can onboard + transact holding only USDC. Phase B's relayer permissioning is the `onlyRelayer` gate as documented; trust-minimization upgrades (typed-data binding, Permit2-with-witness) tracked as future work.
+
+### Dependency graph
+
+```
+A1 ──┬── A2 ── A3 ── A4 ── A5 ── A6
+     │           ╲
+     │            ╲
+     └── B1 ── B2 ── B3 ── B4
+```
+
+- **A1** is a prerequisite for the frontend pieces of Phase B (`submitRelay`, status polling).
+- **A2** is a prerequisite for any live `submitRelay` call — both A3+ and B2+.
+- **B1** doesn't depend on Phase A — wrapper contracts are independent.
+- Beyond A2, the two phases can run on separate workstreams in parallel.
+
+### Sizing summary
+
+| Phase | PRs | Effort |
+|---|---|---|
+| Phase A | A1 → A6 | ~5.5 days |
+| Phase B | B1 → B4 | ~3.5 days |
+| **Total** | **10 PRs** | **~9 days** |
+
+Realistic calendar time (review cycles, manual Sepolia testing, fixups): ~2 weeks for one engineer doing both serially; ~1.5 weeks if A and B parallelise across two workstreams.
+
+### Things to lock before A3 / B1 start
+
+- **Bind `boundParams.broadcaster` to the relayer's EOA for Phase A txs?** Recommend yes — MEV protection, locks each tx to our one relayer. Trivial to lift later.
+- **Single relayer EOA vs. multi-allow for Phase B's wrapper?** Recommend `address public relayer` (single) for the POC; `mapping(address => bool) approvedRelayers` is a trivial upgrade if you ever want it.
+- **Fee surfacing in shield modals**: a 5 USDC shield with 0.1 USDC relayer fee actually shields 4.9 USDC. Decide the `FeeSummary` display copy before A6 + B3 ("You shield: 4.9 USDC / Relayer fee: 0.1 USDC" vs. "You pay: 5 USDC / Net shielded: 4.9").
+- **First-time approval for shield-xchain**: in Phase B users on a fresh client chain may have only USDC. Confirm the gasless path handles cold accounts (it should — permit needs no prior approval).

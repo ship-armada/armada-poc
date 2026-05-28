@@ -2,7 +2,7 @@
 // ABOUTME: whose embedded SNARK proof doesn't pay the relayer at the advertised rate.
 
 import { expect } from "chai";
-import { RailgunWallet, getTokenDataHashERC20 } from "@railgun-community/engine";
+import { RailgunWallet } from "@railgun-community/engine";
 import {
   verifyBroadcasterFee,
   type VerifierContext,
@@ -51,18 +51,20 @@ function ctxFor(wallet: RailgunWallet): VerifierContext {
 }
 
 describe("verifyBroadcasterFee", () => {
-  // Token hashes are derived once and pinned at the suite level so every test agrees on which
-  // map keys mean USDC vs other tokens — a regression that swapped the hash function would
-  // surface as cross-test divergence rather than per-test failures.
-  const USDC_TOKEN_HASH = getTokenDataHashERC20(USDC_ADDRESS).toLowerCase();
-  const OTHER_TOKEN_HASH = getTokenDataHashERC20(OTHER_TOKEN_ADDRESS).toLowerCase();
+  // The SDK keys its extracted-amount map by the lowercased token CONTRACT ADDRESS — that's the
+  // shape the wallet's `extractFirstNoteERC20AmountMap` returns and the shape the verifier
+  // looks up. A regression that switched the map key to a token-hash would silently make every
+  // verification return 0n; these constants pin "what the SDK actually returns" so the test
+  // shape mirrors production decryption.
+  const USDC_KEY = USDC_ADDRESS.toLowerCase();
+  const OTHER_TOKEN_KEY = OTHER_TOKEN_ADDRESS.toLowerCase();
 
   describe("accept path", () => {
     it("returns the paid amount when USDC entry is present and >= advertised", async () => {
       // WHY: the happy path is the most common branch — proves the verifier doesn't
       // throw spuriously when the SDK returns a properly-formed map. Also pins the return
       // value (the actual paid amount) so loggers/metrics can record it.
-      const wallet = stubWallet({ [USDC_TOKEN_HASH]: ADVERTISED_FEE * 2n });
+      const wallet = stubWallet({ [USDC_KEY]: ADVERTISED_FEE * 2n });
       const paid = await verifyBroadcasterFee(
         ctxFor(wallet),
         { to: PRIVACY_POOL_ADDRESS, data: FAKE_TRANSACT_DATA },
@@ -75,7 +77,7 @@ describe("verifyBroadcasterFee", () => {
       // WHY: pin the comparator. A regression that flipped `<` to `<=` would silently reject
       // every request that paid the EXACTLY-advertised amount — the most common path once
       // clients optimize their broadcaster fees to the displayed minimum.
-      const wallet = stubWallet({ [USDC_TOKEN_HASH]: ADVERTISED_FEE });
+      const wallet = stubWallet({ [USDC_KEY]: ADVERTISED_FEE });
       const paid = await verifyBroadcasterFee(
         ctxFor(wallet),
         { to: PRIVACY_POOL_ADDRESS, data: FAKE_TRANSACT_DATA },
@@ -91,7 +93,7 @@ describe("verifyBroadcasterFee", () => {
       // (say, ETH) into their proof — the SDK would decrypt it (we own the recipient key) but
       // it doesn't pay our gas reimbursement. Must reject. Defends against the "pay me in
       // shitcoins" exploit class.
-      const wallet = stubWallet({ [OTHER_TOKEN_HASH]: ADVERTISED_FEE * 10n });
+      const wallet = stubWallet({ [OTHER_TOKEN_KEY]: ADVERTISED_FEE * 10n });
       await expectRejectedAs(
         verifyBroadcasterFee(
           ctxFor(wallet),
@@ -123,7 +125,7 @@ describe("verifyBroadcasterFee", () => {
       // WHY: pin the lower-bound comparator. A client that quoted a fee 30 minutes ago and
       // built a proof against that quote would see the relayer's advertised fee drift upward.
       // The verifier MUST catch the shortfall; otherwise drift = free relays.
-      const wallet = stubWallet({ [USDC_TOKEN_HASH]: ADVERTISED_FEE - 1n });
+      const wallet = stubWallet({ [USDC_KEY]: ADVERTISED_FEE - 1n });
       await expectRejectedAs(
         verifyBroadcasterFee(
           ctxFor(wallet),

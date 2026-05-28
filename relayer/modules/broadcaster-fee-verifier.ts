@@ -31,7 +31,7 @@
  */
 
 import { ContractTransaction } from "ethers";
-import { RailgunWallet, getTokenDataHashERC20 } from "@railgun-community/engine";
+import { RailgunWallet } from "@railgun-community/engine";
 import { ChainType, TXIDVersion } from "@railgun-community/shared-models";
 import { RelayError } from "../types";
 
@@ -108,18 +108,18 @@ export async function verifyBroadcasterFee(
     );
   }
 
-  // Railgun maps tokens by an internal hash (sha256(serializeTokenData(address, ERC20, 0))) not
-  // the raw 0x address. Compute the expected key from our USDC address and look it up.
-  const usdcTokenHash = getTokenDataHashERC20(ctx.usdcAddress).toLowerCase();
-
-  // The map's keys come from the SDK pre-lower-cased (token hashes are deterministic from the
-  // contract address but the case can vary across SDK paths); normalise both sides defensively.
+  // The SDK's extractor returns a map keyed by the lowercased token CONTRACT ADDRESS
+  // (40 hex chars + 0x prefix), NOT the Railgun token-hash (32 bytes). See
+  // `extractERC20AmountFromTransactNote` in @railgun-community/engine — its return is
+  // `ByteUtils.formatToByteLength(tokenAddress, ByteLength.Address, true).toLowerCase()`.
+  // Normalise our USDC address to the same shape and look it up directly.
+  const usdcKey = ctx.usdcAddress.toLowerCase();
   const normalisedMap: Record<string, bigint> = {};
   for (const [k, v] of Object.entries(amountMap)) {
     normalisedMap[k.toLowerCase()] = v;
   }
 
-  const paidUsdc = normalisedMap[usdcTokenHash] ?? 0n;
+  const paidUsdc = normalisedMap[usdcKey] ?? 0n;
   if (paidUsdc < advertisedFee) {
     throw new RelayError(
       "FEE_INSUFFICIENT",

@@ -20,9 +20,14 @@ import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
 import { ethers } from "ethers";
-import { initializeEngine, shutdownEngine } from "../lib/sdk/init";
-import { DEFAULT_ENCRYPTION_KEY } from "../lib/sdk/wallet";
+// @ts-ignore — leveldown ships with implicit any types
+import leveldown from "leveldown";
 import {
+  ArtifactStore,
+  startRailgunEngine,
+  stopRailgunEngine,
+  createRailgunWallet,
+  fullWalletForID,
   loadProvider,
   awaitWalletScan,
   balanceForERC20Token,
@@ -34,9 +39,14 @@ import {
 } from "@railgun-community/shared-models";
 import {
   ChainType,
-  type RailgunWallet,
 } from "@railgun-community/engine";
 import { getNetworkConfig } from "../config/networks";
+
+// Same constant the rest of the relayer-side flow uses for engine-encrypted wallet ops. Not a
+// secret — it's the wrapping key for the engine's own at-rest wallet record, not the user's
+// material. (See `lib/sdk/wallet.ts::DEFAULT_ENCRYPTION_KEY` for the long-form rationale.)
+const DEFAULT_ENCRYPTION_KEY =
+  "0101010101010101010101010101010101010101010101010101010101010101";
 
 // Wallet source — same tag the relayer itself uses, so logs identify this consistently.
 const ENGINE_WALLET_SOURCE = "armadarlcheck";
@@ -112,20 +122,46 @@ async function main(): Promise<void> {
   const hubChainId = netConfig.hub.chainId;
   const hubRpc = netConfig.hub.rpc;
 
-  console.log("[check-balance] Initializing engine (dedicated DB to avoid relayer lock)...");
+  console.log("[check-balance] Initializing engine via wallet-package startRailgunEngine...");
   const dbPath = path.resolve(__dirname, "..", "data", "relayer-balance-check-db");
   if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
-  const engine = await initializeEngine(ENGINE_WALLET_SOURCE, dbPath);
+  const db = leveldown(dbPath);
+
+  // Stub artifact store — the wallet-package init requires one but balance reads + chain scans
+  // never trigger artifact lookups (those are proof-generation only). Callbacks throw loudly so
+  // any future code path that DOES need real artifacts surfaces the misuse immediately rather
+  // than failing later with a more confusing error.
+  const artifactStore = new ArtifactStore(
+    async () => {
+      throw new Error("balance-check: artifact get not supported (proof-gen disabled)");
+    },
+    async () => {
+      throw new Error("balance-check: artifact store not supported (proof-gen disabled)");
+    },
+    async () => false,
+  );
+
+  // startRailgunEngine sets the wallet-package's engine singleton — load-bearing for the later
+  // loadProvider call, which checks hasEngine() on the wallet package. Skipping this in favour
+  // of the engine-package's RailgunEngine.initForWallet alone produces the misleading
+  // "RAILGUN Engine not yet initialized" from loadProvider.
+  await startRailgunEngine(
+    ENGINE_WALLET_SOURCE,
+    db,
+    false, // shouldDebug
+    artifactStore,
+    false, // useNativeArtifacts
+    false, // skipMerkletreeScans — we WANT to scan so balanceForERC20Token has data
+  );
 
   console.log("[check-balance] Deriving relayer wallet from mnemonic...");
-  const wallet = (await engine.createWalletFromMnemonic(
+  const { id: walletId, railgunAddress } = await createRailgunWallet(
     DEFAULT_ENCRYPTION_KEY,
     mnemonic,
-    0,
-    undefined,
-  )) as RailgunWallet;
-  console.log(`  Wallet ID: ${wallet.id.slice(0, 16)}...`);
-  console.log(`  Address:   ${wallet.getAddress()}`);
+    undefined, // creationBlockNumbers — relayer doesn't need creation-block scoping
+  );
+  console.log(`  Wallet ID: ${walletId.slice(0, 16)}...`);
+  console.log(`  Address:   ${railgunAddress}`);
 
   console.log("[check-balance] Patching SDK network config + loading hub provider...");
   patchNetworkConfig(privacyPool, deployBlock, hubChainId, isSepolia);
@@ -150,9 +186,10 @@ async function main(): Promise<void> {
 
   console.log("[check-balance] Awaiting merkletree scan (this may take minutes on Sepolia)...");
   const chain = { type: ChainType.EVM, id: hubChainId };
-  await awaitWalletScan(wallet.id, chain);
+  await awaitWalletScan(walletId, chain);
 
   console.log("[check-balance] Reading USDC balance...");
+  const wallet = fullWalletForID(walletId);
   const balanceRaw = await balanceForERC20Token(
     TXIDVersion.V2_PoseidonMerkle,
     wallet,
@@ -171,13 +208,13 @@ async function main(): Promise<void> {
   console.log("");
   console.log("=".repeat(60));
   console.log(`  RELAYER SHIELDED USDC BALANCE`);
-  console.log(`  Address:    ${wallet.getAddress()}`);
+  console.log(`  Address:    ${railgunAddress}`);
   console.log(`  USDC token: ${usdcAddress}`);
   console.log(`  Raw:        ${balanceRaw}`);
   console.log(`  Formatted:  ${whole}.${fractionPadded} USDC`);
   console.log("=".repeat(60));
 
-  await shutdownEngine();
+  await stopRailgunEngine();
 }
 
 main().catch((err) => {

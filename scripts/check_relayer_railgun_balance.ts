@@ -22,6 +22,7 @@ import * as path from "path";
 import { ethers } from "ethers";
 // @ts-ignore — leveldown ships with implicit any types
 import leveldown from "leveldown";
+import { installBisectingGetLogs } from "../relayer/lib/rpc-bisecting";
 import {
   ArtifactStore,
   startRailgunEngine,
@@ -31,7 +32,15 @@ import {
   loadProvider,
   awaitWalletScan,
   balanceForERC20Token,
+  setOnUTXOMerkletreeScanCallback,
 } from "@railgun-community/wallet";
+
+// Bisecting eth_getLogs patch — load BEFORE any ethers provider is constructed (the patch hits
+// JsonRpcProvider.prototype, so order isn't strictly required, but mounting at module top makes
+// the intent obvious to anyone reading the file). On Sepolia public RPCs this is load-bearing —
+// the SDK's internal scan calls would otherwise fail outright when a getLogs window exceeds the
+// provider's cap (Alchemy free tier = 10 blocks; Infura = 10k).
+installBisectingGetLogs();
 import {
   NETWORK_CONFIG,
   NetworkName,
@@ -164,7 +173,23 @@ async function main(): Promise<void> {
   console.log(`  Address:   ${railgunAddress}`);
 
   console.log("[check-balance] Patching SDK network config + loading hub provider...");
+  console.log(`  Scan deployBlock: ${deployBlock}`);
+  console.log(`  RPC:              ${hubRpc}`);
   patchNetworkConfig(privacyPool, deployBlock, hubChainId, isSepolia);
+
+  // Wire a UTXO-scan progress callback so the user can watch the scan tick. The SDK emits
+  // updates with a [0, 1] progress fraction; we log every ~10% step to avoid flooding the
+  // console. Without this the long Sepolia first-run looks indistinguishable from a hang.
+  let lastReportedPct = -10;
+  setOnUTXOMerkletreeScanCallback((evt) => {
+    const pct = Math.floor(evt.progress * 100);
+    if (pct - lastReportedPct >= 10) {
+      lastReportedPct = pct;
+      console.log(
+        `  scan ${pct}% (status=${evt.scanStatus}, chain=${evt.chain.type}:${evt.chain.id})`,
+      );
+    }
+  });
 
   // Single-provider fallback config — pollingInterval longer on testnet to be kind to public RPCs.
   await loadProvider(

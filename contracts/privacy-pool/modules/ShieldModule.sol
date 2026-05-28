@@ -156,7 +156,13 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                 }
 
                 // Record fee in fee module
-                IArmadaFeeModule(feeModule).recordShieldFee(integrator, amount, armadaTake, integratorFee);
+                IArmadaFeeModule(feeModule).recordShieldFee(
+                    _request.preimage.token.tokenAddress,
+                    integrator,
+                    amount,
+                    armadaTake,
+                    integratorFee
+                );
             } else if (shieldFee > 0) {
                 // Flat fee fallback path (used when feeModule == address(0))
                 (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
@@ -289,7 +295,13 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             }
 
             // Record fee in fee module
-            IArmadaFeeModule(feeModule).recordShieldFee(integrator, amount, armadaTake, integratorFee);
+            IArmadaFeeModule(feeModule).recordShieldFee(
+                _note.token.tokenAddress,
+                integrator,
+                amount,
+                armadaTake,
+                integratorFee
+            );
         } else {
             // Flat fee fallback path (used when feeModule == address(0))
             (uint120 base, uint120 feeAmount) = _getFee(_note.value, true, shieldFee);

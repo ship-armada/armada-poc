@@ -296,7 +296,15 @@ async function main(): Promise<void> {
   await stopRailgunEngine();
 }
 
-main().catch((err) => {
-  console.error("[check-balance] FAILED:", err);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // `stopRailgunEngine` doesn't tear down the polling-provider's setInterval timer (or any
+    // POI batcher / merkletree listener that's still subscribed). Without an explicit exit the
+    // event loop has live handles and the process sits forever even though our work is done.
+    // Diagnostic script → exit 0 is the right answer.
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("[check-balance] FAILED:", err);
+    process.exit(1);
+  });

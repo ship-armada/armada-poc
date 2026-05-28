@@ -230,12 +230,20 @@ export const armadaRelayerSettings = {
   cctpFinalityMode: getCCTPFinalityMode(),
   /**
    * Relayer's Railgun `0zk...` address, published verbatim on `/fees` so clients can route the
-   * broadcaster-fee output of their SNARK proof here. Empty string is allowed in Phase A1 (the
-   * /fees response is the only consumer and no handler calls submitRelay yet); Phase A2 will
-   * tighten this to a startup requirement once server-side fee verification needs to decrypt the
-   * matching commitment ciphertext.
+   * broadcaster-fee output of their SNARK proof here. When empty, the relayer derives it from
+   * `RELAYER_RAILGUN_MNEMONIC` at boot; when set, the relayer asserts the derived address
+   * matches and fails boot otherwise (cheap misconfiguration detector).
    */
   broadcasterRailgunAddress: process.env.BROADCASTER_RAILGUN_ADDRESS ?? "",
+  /**
+   * BIP39 mnemonic used to derive the relayer's Railgun (0zk) wallet. Required — relayer
+   * refuses to boot without it because broadcaster-fee verification needs the wallet's
+   * viewing key to decrypt incoming commitment ciphertexts. Local default lives in
+   * `config/local.env` (Anvil's publicly-known test mnemonic); sepolia/prod sourced from
+   * gitignored `config/secrets.env`. Loaded at boot only — never logged, never persisted to
+   * relayer state (only the engine's leveldown sees derived keys).
+   */
+  railgunWalletMnemonic: process.env.RELAYER_RAILGUN_MNEMONIC ?? "",
 };
 
 // Legacy config export for backward compatibility

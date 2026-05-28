@@ -18,6 +18,7 @@ import { armadaRelayerSettings } from "./config";
 import { WalletManager } from "./modules/wallet-manager";
 import { FeeCalculator } from "./modules/fee-calculator";
 import { PrivacyRelay } from "./modules/privacy-relay";
+import { RelayerRailgunWallet } from "./modules/railgun-wallet";
 import { HttpApi } from "./modules/http-api";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
@@ -134,9 +135,21 @@ async function main() {
   await walletManager.initialize();
   console.log();
 
-  // Initialize fee calculator
+  // Initialize the relayer's Railgun (0zk) wallet — engine boot + mnemonic-derived wallet.
+  // MUST precede FeeCalculator so the derived address is published on `/fees` from the first
+  // request, and MUST precede PrivacyRelay so broadcaster-fee verification has a viewing key.
+  // Fail fast on misconfiguration (missing mnemonic, mismatching env address) — operators see
+  // a clear startup error rather than a silently-broken service.
+  console.log("[armada] Initializing relayer Railgun wallet...");
+  const railgunWallet = new RelayerRailgunWallet();
+  const { walletId: railgunWalletId, railgunAddress } = await railgunWallet.initialize();
+  console.log(`  Wallet ID: ${railgunWalletId.slice(0, 16)}...`);
+  console.log(`  Broadcaster address: ${railgunAddress}`);
+  console.log();
+
+  // Initialize fee calculator (now that we have the derived broadcaster address to publish)
   console.log("[armada] Initializing fee calculator...");
-  const feeCalculator = new FeeCalculator(walletManager);
+  const feeCalculator = new FeeCalculator(walletManager, railgunAddress);
   const initialFees = await feeCalculator.generateFeeSchedule();
   console.log("[armada] Initial fee schedule:");
   console.log(`  Transfer:           ${FeeCalculator.formatUsdcFee(initialFees.fees.transfer)}`);
@@ -148,12 +161,24 @@ async function main() {
   console.log(`  Expires:            ${new Date(initialFees.expiresAt).toISOString()}`);
   console.log();
 
-  // Initialize privacy relay
+  // Initialize privacy relay — verifier context binds the loaded Railgun wallet, hub chain ID,
+  // PrivacyPool address, and USDC address so per-request fee verification has everything it
+  // needs without re-reading config.
   console.log("[armada] Initializing privacy relay...");
-  const privacyRelay = new PrivacyRelay(walletManager, feeCalculator, {
-    privacyPool: contracts.privacyPool,
-    armadaYieldAdapter: contracts.armadaYieldAdapter,
-  });
+  const privacyRelay = new PrivacyRelay(
+    walletManager,
+    feeCalculator,
+    {
+      privacyPool: contracts.privacyPool,
+      armadaYieldAdapter: contracts.armadaYieldAdapter,
+    },
+    {
+      wallet: railgunWallet.getWallet(),
+      privacyPoolAddress: contracts.privacyPool,
+      hubChainId: netConfig.hub.chainId,
+      usdcAddress: contracts.usdc,
+    },
+  );
 
   // Initialize CCTP relay module — select based on CCTP mode. `getHealth` is the contract
   // surfaced to http-api for the /health endpoint; both iris and cctp modules implement it.
@@ -255,6 +280,13 @@ async function main() {
       httpApi.stop();
     } catch (err) {
       console.error("[armada] Error during HTTP API shutdown:", err);
+    }
+    try {
+      // Releases the LevelDB single-process lock so a subsequent boot (or test run) can open
+      // the engine without hitting "LOCK already held".
+      await railgunWallet.shutdown();
+    } catch (err) {
+      console.error("[armada] Error during Railgun engine shutdown:", err);
     }
     clearTimeout(forceExit);
     process.exit(0);

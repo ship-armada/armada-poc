@@ -28,7 +28,7 @@ fi
 # --- Check 3: .env file leak prevention ---
 # Only non-secret environment templates and committed public config envs are allowed.
 # All other .env files should be gitignored, but check as a safety net.
-ALLOWED_ENV_FILES="config/local.env config/sepolia.env sample.env.dev sample.env.production"
+ALLOWED_ENV_FILES="config/local.env config/sepolia.env config/secrets.env.template sample.env.dev sample.env.production"
 ENV_VIOLATIONS=""
 for f in $STAGED_FILES; do
   if [[ "$f" == *.env || "$f" == *.env.* ]]; then

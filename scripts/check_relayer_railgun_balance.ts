@@ -49,6 +49,7 @@ import {
 } from "@railgun-community/shared-models";
 import {
   ChainType,
+  POI,
 } from "@railgun-community/engine";
 import { getNetworkConfig } from "../config/networks";
 
@@ -258,6 +259,15 @@ async function main(): Promise<void> {
   }
 
   console.log("[check-balance] Reading USDC balance...");
+  // POI (Proof of Innocence) sanity-init. `startRailgunEngine` only calls `WalletPOI.init` when
+  // `poiNodeURLs` is provided; we don't pass any (we don't need POI for read-only balance work).
+  // The engine still calls into POI from `getTokenBalancesByTxidVersion` to bucket commitments;
+  // an uninitialized `POI.lists` (undefined) blows up there with "Cannot read properties of
+  // undefined (reading 'filter')". An empty list array + stub node interface satisfies the
+  // class invariant — bucketing falls into the no-active-list branch (MissingExternalPOI etc.)
+  // which is fine because we're just summing all token balances regardless of bucket.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  POI.init([], {} as any);
   const wallet = fullWalletForID(walletId);
   const balanceRaw = await balanceForERC20Token(
     TXIDVersion.V2_PoseidonMerkle,

@@ -56,24 +56,21 @@ export class FeeCalculator {
 
   private cctpFastMode: boolean;
 
-  constructor(walletManager: WalletManager) {
+  /**
+   * @param walletManager EVM hot wallet — supplies gas-price for fee computation.
+   * @param broadcasterRailgunAddress The relayer's `0zk` address, derived at boot from the
+   *        Railgun wallet (`relayer/modules/railgun-wallet.ts`). Published verbatim on `/fees`
+   *        so clients route their proof's broadcaster output here. Must be a non-empty string;
+   *        the relayer refuses to boot when the wallet derivation fails (see armada-relayer.ts).
+   */
+  constructor(walletManager: WalletManager, broadcasterRailgunAddress: string) {
     this.walletManager = walletManager;
     this.profitMarginBps = armadaRelayerSettings.profitMarginBps;
     this.ethUsdcPrice = armadaRelayerSettings.ethUsdcPrice;
     this.feeTtlSeconds = armadaRelayerSettings.feeTtlSeconds;
     this.feeVarianceBufferBps = armadaRelayerSettings.feeVarianceBufferBps;
-    this.broadcasterRailgunAddress = armadaRelayerSettings.broadcasterRailgunAddress;
+    this.broadcasterRailgunAddress = broadcasterRailgunAddress;
     this.cctpFastMode = armadaRelayerSettings.cctpFinalityMode === "fast";
-
-    if (!this.broadcasterRailgunAddress) {
-      // Loud but non-fatal in A1: /fees still responds, the field is just empty. A2 will tighten
-      // this to a startup throw because broadcaster-fee verification needs the address to know
-      // which commitment ciphertext to decrypt.
-      console.warn(
-        "[fee-calculator] BROADCASTER_RAILGUN_ADDRESS is unset — /fees will return an empty " +
-          "broadcasterRailgunAddress. Required before relayer-mediated submit is wired (Phase A2/A3)."
-      );
-    }
   }
 
   /**

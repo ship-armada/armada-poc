@@ -38,9 +38,10 @@ import { getArtifact } from 'railgun-circuit-test-artifacts';
 // ============ Storage Configuration ============
 
 const DATA_DIR = path.join(__dirname, '../../data');
-const DB_PATH = path.join(DATA_DIR, 'railgun-db');
+const DEFAULT_DB_PATH = path.join(DATA_DIR, 'railgun-db');
 
-// Ensure data directory exists
+// Ensure default data directory exists. Callers that pass a custom dbPath own their own
+// directory existence — see initializeEngine's `dbPath` parameter.
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -218,10 +219,16 @@ const engineDebugger = {
  * Initialize the Railgun Engine for local devnet
  *
  * @param walletSource - Name for wallet source (max 16 chars, lowercase)
+ * @param dbPath - Optional override for the LevelDB path. Defaults to `<repo>/data/railgun-db`.
+ *                 Callers should pass an explicit path when they need lifecycle isolation from
+ *                 the default (e.g. the relayer keeps its DB under `relayer/state/railgun-db/`
+ *                 so test runs and a long-running relayer don't compete for the same LevelDB
+ *                 single-process lock). The caller owns creating the directory if needed.
  * @returns Initialized RailgunEngine instance
  */
 export async function initializeEngine(
-  walletSource: string = 'cctppoc'
+  walletSource: string = 'cctppoc',
+  dbPath: string = DEFAULT_DB_PATH
 ): Promise<RailgunEngine> {
   if (engine) {
     console.log('Engine already initialized');
@@ -229,11 +236,11 @@ export async function initializeEngine(
   }
 
   console.log('Initializing Railgun Engine...');
-  console.log(`  Database: ${DB_PATH}`);
+  console.log(`  Database: ${dbPath}`);
   console.log(`  Wallet source: ${walletSource}`);
 
   // Create LevelDB instance
-  const db = leveldown(DB_PATH);
+  const db = leveldown(dbPath);
 
   // Initialize engine
   engine = await RailgunEngine.initForWallet(
@@ -310,11 +317,12 @@ export async function shutdownEngine(): Promise<void> {
 }
 
 /**
- * Clear the database (for fresh start)
+ * Clear the database (for fresh start). Operates on the default path only; callers that
+ * passed a custom `dbPath` to `initializeEngine` own their own teardown.
  */
 export function clearDatabase(): void {
-  if (fs.existsSync(DB_PATH)) {
-    fs.rmSync(DB_PATH, { recursive: true, force: true });
+  if (fs.existsSync(DEFAULT_DB_PATH)) {
+    fs.rmSync(DEFAULT_DB_PATH, { recursive: true, force: true });
     console.log('Database cleared');
   }
 }

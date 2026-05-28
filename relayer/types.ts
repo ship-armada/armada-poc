@@ -55,6 +55,11 @@ export interface TransactionStatus {
 export type RelayErrorCode =
   | "FEE_TOO_LOW"
   | "FEE_EXPIRED"
+  // The proof's broadcaster-fee output is missing, points at a different recipient/token, or
+  // pays less than the advertised fee. Distinct from FEE_TOO_LOW (which historically meant
+  // "the request body's declared fee is too low" — not used today since the fee comes from the
+  // cached schedule); FEE_INSUFFICIENT means "the SNARK itself doesn't pay us enough."
+  | "FEE_INSUFFICIENT"
   | "INVALID_TARGET"
   | "INVALID_CHAIN"
   | "INVALID_DATA"

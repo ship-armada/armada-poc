@@ -175,6 +175,7 @@ export class HttpApi {
         return 400;
       case "FEE_TOO_LOW":
       case "FEE_EXPIRED":
+      case "FEE_INSUFFICIENT":
         return 402; // Payment Required
       case "DUPLICATE_TX":
         return 409; // Conflict

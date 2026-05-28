@@ -8,9 +8,27 @@ import {
   cctpMaxFeeForKind,
   submitRelay,
   RelayerError,
+  type FeeSchedule,
   type RelayRequest,
   type RelayResponse,
 } from './relayer'
+
+function quoteWith(overrides: Partial<FeeSchedule['fees']> = {}): FeeSchedule {
+  return {
+    cacheId: 'test-cache',
+    expiresAt: Date.now() + 60_000,
+    chainId: 31337,
+    broadcasterRailgunAddress: '0zk1test',
+    fees: {
+      transfer: '0',
+      unshield: '0',
+      crossContract: '0',
+      crossChainShield: '0',
+      crossChainUnshield: '0',
+      ...overrides,
+    },
+  }
+}
 
 const ONE_USDC = 1_000_000n // 6 decimals
 const HUNDRED_USDC = 100n * ONE_USDC
@@ -18,12 +36,47 @@ const HUNDRED_USDC = 100n * ONE_USDC
 describe('userFeeForKind', () => {
   it.each([
     ['shield'],
-    ['unshield-local'],
     ['transfer-shielded'],
     ['yield-deposit'],
     ['yield-withdraw'],
-  ] as const)('returns 0n for %s (user pays own gas, no USDC deduction)', (kind) => {
+  ] as const)('returns 0n for %s (handler still user-submitted; migrates in A4)', (kind) => {
     expect(userFeeForKind(kind, HUNDRED_USDC)).toBe(0n)
+  })
+
+  describe('unshield-local — relayer-mediated (A3+)', () => {
+    it('returns 0n when no quote is provided (cold-load before useFees resolves)', () => {
+      // WHY: the modal renders fee summaries before the first /fees response lands. Returning 0n
+      // here lets the UI show "Loading…" copy via the modal's `isFeeRefreshing` flag without
+      // tripping a `NaN`/`undefined` render.
+      expect(userFeeForKind('unshield-local', HUNDRED_USDC)).toBe(0n)
+    })
+
+    it('returns the quote\'s unshield fee (raw USDC) regardless of amount', () => {
+      // WHY: pin the contract that A3's unshield-local fee is a flat per-op USDC amount sourced
+      // verbatim from the relayer's advertised quote, NOT proportional to the unshield amount.
+      // The relayer's pre-submit verifier checks the proof embeds this EXACT value.
+      const quote = quoteWith({ unshield: '50000' }) // 0.05 USDC raw
+      expect(userFeeForKind('unshield-local', HUNDRED_USDC, quote)).toBe(50_000n)
+      expect(userFeeForKind('unshield-local', ONE_USDC, quote)).toBe(50_000n)
+    })
+
+    it('coerces the quote\'s string fee back to bigint (JSON-on-the-wire shape)', () => {
+      // WHY: /fees ships fees as string-encoded bigints because JSON can't carry bigint natively.
+      // A regression that compared the raw string to a bigint or that dropped the BigInt()
+      // coercion would surface as a runtime TypeError (or worse, a silent string fee that the
+      // SDK rejects). Pin the coercion.
+      const quote = quoteWith({ unshield: '999999' })
+      const fee = userFeeForKind('unshield-local', HUNDRED_USDC, quote)
+      expect(typeof fee).toBe('bigint')
+      expect(fee).toBe(999_999n)
+    })
+
+    it('returns 0n on a null quote (defensive; matches the no-quote case)', () => {
+      // WHY: `useFees()` can return `quote: null` between refresh cycles; passing through null is
+      // semantically identical to "no quote available." Callers shouldn't have to guard
+      // independently.
+      expect(userFeeForKind('unshield-local', HUNDRED_USDC, null)).toBe(0n)
+    })
   })
 
   it('returns CCTP fast-fee (2 bps of amount) for shield-xchain', () => {

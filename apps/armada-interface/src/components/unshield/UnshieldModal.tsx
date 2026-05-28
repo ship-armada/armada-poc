@@ -66,9 +66,10 @@ export function UnshieldModal() {
   const record = activeTx?.record ?? null
 
   const computedKind: SubmittedKind = destChainId === hubChainId ? 'unshield-local' : 'unshield-xchain'
-  // Display fee is a pure function of (kind, amount). unshield-local = 0 (user submits via own
-  // wallet, gas paid in native); unshield-xchain = CCTP fast-fee estimate (~2 bps).
-  const fee: bigint = userFeeForKind(computedKind, amount)
+  // Display fee per (kind, amount, quote):
+  //   unshield-local  → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load.
+  //   unshield-xchain → CCTP fast-fee estimate (~2 bps, proportional to amount). Quote ignored.
+  const fee: bigint = userFeeForKind(computedKind, amount, quote)
   const netAmount = amount > fee ? amount - fee : 0n
 
   // Pre-fill recipient from the connected EVM wallet on the modal's rising edge only,
@@ -119,10 +120,15 @@ export function UnshieldModal() {
       const feeCacheId = activeQuote.cacheId
       if (computedKind === 'unshield-local') {
         setSubmittedKind('unshield-local')
+        // Freeze the broadcaster context with the rest of the submit state. The proof must embed
+        // these EXACT values to pass the relayer's verifier — re-deriving them at handler time
+        // would risk drift if the quote rolls over between submit and proof-build.
         await txLocal.submit({
           amount,
           feeCacheId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
         })
       } else {
         setSubmittedKind('unshield-xchain')

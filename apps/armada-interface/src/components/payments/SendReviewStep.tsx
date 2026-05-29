@@ -15,10 +15,11 @@ export interface SendReviewStepProps {
   recipient: string
   amount: bigint
   fee: bigint | null
-  recipientReceives: bigint
+  /** CCTP fast-fee for xchain. Surfaced as the FeeSummary secondary row when applicable. */
+  cctpFee: bigint
+  /** USDC deducted from the user's shielded balance — `amount + fee` across all three kinds. */
   totalDeducted: bigint
   isXchain: boolean
-  isLocalUnshield: boolean
   submitBlockedReason?: string | null
   onBack: () => void
   onConfirm: () => void
@@ -39,10 +40,9 @@ export function SendReviewStep({
   recipient,
   amount,
   fee,
-  recipientReceives,
+  cctpFee,
   totalDeducted,
   isXchain,
-  isLocalUnshield,
   submitBlockedReason,
   onBack,
   onConfirm,
@@ -80,9 +80,13 @@ export function SendReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
-        netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
-        feeLabel={isXchain ? 'CCTP fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        // Mirrors SendInputStep — single "Total deducted from balance" line across all kinds.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
+        // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
+        feeLabel="Relayer fee"
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
       />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

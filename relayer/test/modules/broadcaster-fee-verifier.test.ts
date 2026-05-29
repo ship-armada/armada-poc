@@ -2,11 +2,13 @@
 // ABOUTME: whose embedded SNARK proof doesn't pay the relayer at the advertised rate.
 
 import { expect } from "chai";
+import { ethers } from "ethers";
 import { RailgunWallet } from "@railgun-community/engine";
 import {
   verifyBroadcasterFee,
   type VerifierContext,
 } from "../../modules/broadcaster-fee-verifier";
+import { TRANSACT_ABI, WRAPPER_ABIS } from "../../lib/transact-shape";
 import { RelayError } from "../../types";
 
 // Fixed test addresses — no on-chain deployment, just shapes the verifier accepts.
@@ -39,6 +41,94 @@ function stubWalletThrowing(err: Error): RailgunWallet {
       throw err;
     },
   } as unknown as RailgunWallet;
+}
+
+/**
+ * Build a stub that captures the `transactionRequest` it was called with — lets wrapper-decoding
+ * tests assert that the request handed to the SDK was rewritten to a synthetic vanilla `transact`
+ * (not the original wrapper calldata).
+ */
+function recordingStubWallet(returnMap: Record<string, bigint>): {
+  wallet: RailgunWallet;
+  lastRequest: () => { to?: string; data?: string } | null;
+} {
+  let captured: { to?: string; data?: string } | null = null;
+  return {
+    wallet: {
+      extractFirstNoteERC20AmountMap: async (
+        _txidVersion: unknown,
+        _chain: unknown,
+        transactionRequest: { to?: string; data?: string },
+      ) => {
+        captured = { to: transactionRequest.to, data: transactionRequest.data };
+        return returnMap;
+      },
+    } as unknown as RailgunWallet,
+    lastRequest: () => captured,
+  };
+}
+
+/**
+ * Minimal-but-ABI-valid Transaction struct. The verifier doesn't inspect any of these fields
+ * (decryption is what extracts the broadcaster output — stubbed in unit tests); ethers' ABI
+ * decoder just needs every named field present with the right primitive shape.
+ */
+function emptyTransaction(): unknown {
+  return {
+    proof: {
+      a: { x: 0n, y: 0n },
+      b: { x: [0n, 0n], y: [0n, 0n] },
+      c: { x: 0n, y: 0n },
+    },
+    merkleRoot: "0x" + "00".repeat(32),
+    nullifiers: [],
+    commitments: [],
+    boundParams: {
+      treeNumber: 0,
+      minGasPrice: 0n,
+      unshield: 0,
+      chainID: 31337n,
+      adaptContract: ethers.ZeroAddress,
+      adaptParams: "0x" + "00".repeat(32),
+      commitmentCiphertext: [],
+    },
+    unshieldPreimage: {
+      npk: "0x" + "00".repeat(32),
+      token: { tokenType: 0, tokenAddress: ethers.ZeroAddress, tokenSubID: 0n },
+      value: 0n,
+    },
+  };
+}
+
+/** ShieldCiphertext filler — three bytes32 + a key. Not inspected; ethers just needs the shape. */
+function emptyShieldCiphertext(): unknown {
+  return {
+    encryptedBundle: ["0x" + "00".repeat(32), "0x" + "00".repeat(32), "0x" + "00".repeat(32)],
+    shieldKey: "0x" + "00".repeat(32),
+  };
+}
+
+function encodeWrapperCalldata(
+  fnName: "lendAndShield" | "redeemAndShield" | "atomicCrossChainUnshield",
+): string {
+  const iface = new ethers.Interface(WRAPPER_ABIS);
+  if (fnName === "atomicCrossChainUnshield") {
+    // A5 wrapper carries different surrounding args than the yield wrappers — Transaction in
+    // arg 0 stays the same shape (which is the only thing the verifier cares about), but the
+    // ABI encoder needs the trailing args present to round-trip.
+    return iface.encodeFunctionData(fnName, [
+      emptyTransaction(),
+      0, // destinationDomain (uint32)
+      ethers.ZeroAddress, // finalRecipient
+      "0x" + "00".repeat(32), // destinationCaller (bytes32)
+      0n, // maxFee (uint256)
+    ]);
+  }
+  return iface.encodeFunctionData(fnName, [
+    emptyTransaction(),
+    "0x" + "00".repeat(32),
+    emptyShieldCiphertext(),
+  ]);
 }
 
 function ctxFor(wallet: RailgunWallet): VerifierContext {
@@ -155,6 +245,143 @@ describe("verifyBroadcasterFee", () => {
         ),
         "FEE_INSUFFICIENT",
         /could not decode proof outputs|invalid: expected transact/,
+      );
+    });
+  });
+
+  describe("wrapper-function normalisation (A4 — lendAndShield / redeemAndShield)", () => {
+    it("decodes lendAndShield, extracts the embedded Transaction, and hands a synthetic transact to the SDK", async () => {
+      // WHY: A4 unblocks yield-deposit by accepting the wrapper selector that A2 had off-list.
+      // This test pins the load-bearing contract: the wallet helper receives calldata addressed
+      // to the PrivacyPool with the vanilla `transact` shape, NOT the original wrapper calldata.
+      // A regression that routed wrapper calldata straight to the SDK would surface as
+      // "Contract method lendAndShield invalid: expected transact" — the failure mode A2
+      // documented as the reason for the verifier's selector-narrowing decision.
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE * 2n });
+      const wrapperCalldata = encodeWrapperCalldata("lendAndShield");
+
+      const paid = await verifyBroadcasterFee(
+        ctxFor(rec.wallet),
+        // `to` here would normally be ArmadaYieldAdapter's address, NOT the PrivacyPool. The
+        // normaliser must rewrite the synthetic request's `to` to the PrivacyPool regardless.
+        { to: "0x4444444444444444444444444444444444444444", data: wrapperCalldata },
+        ADVERTISED_FEE,
+      );
+
+      expect(paid).to.equal(ADVERTISED_FEE * 2n);
+      const captured = rec.lastRequest();
+      expect(captured, "wallet helper must have been called").to.not.be.null;
+      expect(captured!.to).to.equal(PRIVACY_POOL_ADDRESS);
+      // Selector of the synthetic call MUST be vanilla transact, not the wrapper's selector.
+      expect(captured!.data?.slice(0, 10)).to.equal("0xd8ae136a");
+      // And the synthetic calldata must round-trip as a single-element transact[] (the embedded
+      // Transaction we lifted out of the wrapper).
+      const decoded = new ethers.Interface(TRANSACT_ABI).decodeFunctionData(
+        "transact",
+        captured!.data!,
+      );
+      expect(decoded[0].length).to.equal(1);
+    });
+
+    it("decodes redeemAndShield the same way", async () => {
+      // WHY: same selector category, symmetric path. Asserting both wrappers traverse the
+      // normaliser independently — a copy-paste bug that hard-coded one selector in the route
+      // would silently break the other.
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE });
+      const wrapperCalldata = encodeWrapperCalldata("redeemAndShield");
+
+      const paid = await verifyBroadcasterFee(
+        ctxFor(rec.wallet),
+        { to: "0x4444444444444444444444444444444444444444", data: wrapperCalldata },
+        ADVERTISED_FEE,
+      );
+
+      expect(paid).to.equal(ADVERTISED_FEE);
+      expect(rec.lastRequest()?.data?.slice(0, 10)).to.equal("0xd8ae136a");
+    });
+
+    it("rejects unknown selectors with INVALID_DATA (not FEE_INSUFFICIENT)", async () => {
+      // WHY: keep the security framing honest. FEE_INSUFFICIENT means "we tried to verify and
+      // came up short"; INVALID_DATA means "we won't even try." A selector we don't recognise
+      // is the latter — surfacing it as a fee problem would mislead operators tracking
+      // verifier rejections.
+      const wallet = stubWallet({});
+      const bogusSelector = "0xdeadbeef" + "00".repeat(32);
+      await expectRejectedAs(
+        verifyBroadcasterFee(
+          ctxFor(wallet),
+          { to: PRIVACY_POOL_ADDRESS, data: bogusSelector },
+          ADVERTISED_FEE,
+        ),
+        "INVALID_DATA",
+        /unsupported selector/i,
+      );
+    });
+
+    it("decodes atomicCrossChainUnshield (A5) by lifting the embedded Transaction the same way", async () => {
+      // WHY: A5 cross-chain unshield reuses the wrapper pattern — Transaction in arg 0, CCTP
+      // routing args trailing. The fee-verification surface MUST remain identical to the yield
+      // wrappers: same selector-set membership, same synthetic-transact rewrite, same fee floor.
+      // A regression that special-cased the yield wrappers without including the xchain wrapper
+      // would silently let cross-chain unshields skip fee verification entirely (FEE_INSUFFICIENT
+      // wouldn't fire because the selector would fall through to the unknown branch — INVALID_DATA
+      // — but privacy-relay's allowlist would have already gated this from the live path, leaving
+      // a confusing two-layer rejection rather than a clean "low fee" signal in tests).
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE * 3n });
+      const wrapperCalldata = encodeWrapperCalldata("atomicCrossChainUnshield");
+
+      const paid = await verifyBroadcasterFee(
+        ctxFor(rec.wallet),
+        // The `to` for this wrapper IS the PrivacyPool (unlike the yield wrappers which target
+        // the adapter); the normaliser must still rewrite to the PrivacyPool address regardless.
+        { to: PRIVACY_POOL_ADDRESS, data: wrapperCalldata },
+        ADVERTISED_FEE,
+      );
+
+      expect(paid).to.equal(ADVERTISED_FEE * 3n);
+      const captured = rec.lastRequest();
+      expect(captured, "wallet helper must have been called").to.not.be.null;
+      expect(captured!.to).to.equal(PRIVACY_POOL_ADDRESS);
+      expect(captured!.data?.slice(0, 10)).to.equal("0xd8ae136a");
+      const decoded = new ethers.Interface(TRANSACT_ABI).decodeFunctionData(
+        "transact",
+        captured!.data!,
+      );
+      expect(decoded[0].length).to.equal(1);
+    });
+
+    it("rejects atomicCrossChainUnshield with insufficient broadcaster fee", async () => {
+      // WHY: symmetric to the lendAndShield insufficient-fee test — A5's xchain path must
+      // enforce the same lower bound, otherwise cross-chain unshields become a free relay
+      // tier while every other kind keeps paying.
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE - 1n });
+      const wrapperCalldata = encodeWrapperCalldata("atomicCrossChainUnshield");
+      await expectRejectedAs(
+        verifyBroadcasterFee(
+          ctxFor(rec.wallet),
+          { to: PRIVACY_POOL_ADDRESS, data: wrapperCalldata },
+          ADVERTISED_FEE,
+        ),
+        "FEE_INSUFFICIENT",
+        new RegExp(`paid ${ADVERTISED_FEE - 1n} USDC raw, advertised ${ADVERTISED_FEE}`),
+      );
+    });
+
+    it("rejects wrapper calldata whose decoded broadcaster output is below advertised", async () => {
+      // WHY: the wrapper path must still enforce the same fee floor as vanilla — extracting
+      // the Transaction is normalisation, not exemption. A regression that bypassed the
+      // amount check on the wrapper branch would let yield ops pay $0 in broadcaster fees
+      // while transact() kept enforcing.
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE - 1n });
+      const wrapperCalldata = encodeWrapperCalldata("lendAndShield");
+      await expectRejectedAs(
+        verifyBroadcasterFee(
+          ctxFor(rec.wallet),
+          { to: "0x4444444444444444444444444444444444444444", data: wrapperCalldata },
+          ADVERTISED_FEE,
+        ),
+        "FEE_INSUFFICIENT",
+        new RegExp(`paid ${ADVERTISED_FEE - 1n} USDC raw, advertised ${ADVERTISED_FEE}`),
       );
     });
   });

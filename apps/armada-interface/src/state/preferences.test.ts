@@ -16,7 +16,7 @@ describe('preferencesAtom', () => {
 
   it('persists writes to localStorage', () => {
     const store = createStore()
-    store.set(preferencesAtom, { autoLockMinutes: 30, showTechnicalDetailsByDefault: true })
+    store.set(preferencesAtom, { autoLockMinutes: 30, showTechnicalDetailsByDefault: true, submitFromWallet: false })
     const persisted = window.localStorage.getItem('armada-interface.preferences')
     expect(persisted).not.toBeNull()
     const parsed = JSON.parse(persisted!) as { autoLockMinutes: number; showTechnicalDetailsByDefault: boolean }

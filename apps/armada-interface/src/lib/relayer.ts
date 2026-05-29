@@ -57,14 +57,29 @@ const CCTP_FAST_FEE_BPS = 2n
 export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule | null): bigint {
   switch (kind) {
     case 'shield-xchain':
-    case 'unshield-xchain':
       return (amount * CCTP_FAST_FEE_BPS) / 10_000n
+    case 'unshield-xchain':
+      // A5 — relayer-mediated hub burn. The visible "fee" is the relayer's broadcaster fee from
+      // the `crossChainUnshield` tier (covers proof verification + the CCTP burn). The CCTP
+      // fast-fee (~2 bps proportional to amount) still applies but is paid out of the
+      // destination-side mint, not the user's shielded balance — surface it via
+      // `cctpFastFeeForAmount` and let the modal show both fees as separate line items.
+      return quote ? BigInt(quote.fees.crossChainUnshield) : 0n
     case 'unshield-local':
       return quote ? BigInt(quote.fees.unshield) : 0n
-    case 'shield':
     case 'transfer-shielded':
+      // A4 — relayer-mediated. The relayer's transfer-tier fee covers a single transact() call
+      // (no cross-contract leg), so it's the cheapest tier in the schedule.
+      return quote ? BigInt(quote.fees.transfer) : 0n
     case 'yield-deposit':
     case 'yield-withdraw':
+      // A4 — relayer-mediated via ArmadaYieldAdapter's lendAndShield/redeemAndShield wrappers,
+      // which carry a Transaction struct that does the cross-contract spend + re-shield. The
+      // `crossContract` tier reflects the higher gas profile of that pattern (~2M gas vs ~500k).
+      return quote ? BigInt(quote.fees.crossContract) : 0n
+    case 'shield':
+      // Shield stays a user-wallet-signed direct submit through Phase A. Phase B replaces it
+      // with a gasless permit + wrapper-contract path; until then no relayer fee applies.
       return 0n
   }
 }
@@ -81,22 +96,34 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
  *  - `fee-on-top`        — fee is an extra output in the SNARK proof (relayer-mediated path).
  *                            Recipient receives the full entered amount; user is deducted
  *                            `amount + fee`. Input MAX must reserve room for the fee.
+ *  - `fee-on-top-and-from-recipient` — both apply (A5 cross-chain unshield). Primary `fee` is the
+ *                            broadcaster fee (on top); the optional `secondaryFee` is the CCTP
+ *                            fast-fee (from recipient). User pays `amount + fee`; recipient
+ *                            receives `amount - secondaryFee`.
  */
-export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top'
+export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top' | 'fee-on-top-and-from-recipient'
 
 export function feeModelForKind(kind: TxKind): FeeModel {
   switch (kind) {
     case 'shield-xchain':
-    case 'unshield-xchain':
       return 'fee-from-recipient'
+    case 'unshield-xchain':
+      // A5 — relayer-mediated AND cross-chain. Two fees apply:
+      //   - broadcaster fee (`crossChainUnshield` tier) is on top of `amount`, debited from
+      //     the user's shielded balance via an extra unshield output in the proof.
+      //   - CCTP fast-fee (~2 bps) is from-recipient — deducted from the destination mint.
+      // Modeled together so `computeFeeBreakdown` stays the single source of truth.
+      return 'fee-on-top-and-from-recipient'
     case 'unshield-local':
-      return 'fee-on-top'
-    case 'shield':
     case 'transfer-shielded':
     case 'yield-deposit':
     case 'yield-withdraw':
-      // Today: no fee. A4 migrates transfer + yield to relayer-mediated → `fee-on-top`; the
-      // single switch update here will flip the math everywhere those kinds display fees.
+      // A4 — all relayer-mediated. Recipient receives the entered amount; the broadcaster fee
+      // is an extra output in the proof, deducted on top of the entered amount.
+      return 'fee-on-top'
+    case 'shield':
+      // Direct user submit through Phase A. Phase B's gasless wrapper path also uses a separate
+      // permit-based mechanism, not the broadcaster-fee pattern — handled by its own model.
       return 'no-fee'
   }
 }
@@ -125,6 +152,7 @@ export function computeFeeBreakdown(
   amount: bigint,
   fee: bigint,
   max: bigint,
+  opts?: { secondaryFee?: bigint },
 ): FeeBreakdown {
   switch (feeModelForKind(kind)) {
     case 'no-fee':
@@ -141,17 +169,42 @@ export function computeFeeBreakdown(
         totalDeducted: amount + fee,
         inputMax: max > fee ? max - fee : 0n,
       }
+    case 'fee-on-top-and-from-recipient': {
+      const secondary = opts?.secondaryFee ?? 0n
+      return {
+        recipientReceives: amount > secondary ? amount - secondary : 0n,
+        totalDeducted: amount + fee,
+        inputMax: max > fee ? max - fee : 0n,
+      }
+    }
   }
 }
 
 /**
- * 2× multiple over `userFeeForKind` to use as CCTP V2's `maxFee` bound. The displayed fee is a
- * realistic estimate (matches the server's conservative bps buffer); the on-chain bound bumps it
- * to give Iris's `feeExecuted` headroom against per-chain variance and any future fee changes.
- * The contract enforces `feeExecuted ≤ maxFee`, so undersized bounds silently revert.
+ * CCTP V2 fast-transfer fee for an unshield-xchain amount. ~2 bps, deducted from the destination
+ * mint. Separate from `userFeeForKind` post-A5 since the relayer's broadcaster fee now occupies
+ * the "user-visible relayer fee" slot, and the CCTP fee is its own line item in the modal
+ * (different semantics — paid by the recipient, not the user). Use as `secondaryFee` when
+ * calling `computeFeeBreakdown` for `unshield-xchain` / `shield-xchain`.
+ */
+export function cctpFastFeeForAmount(amount: bigint): bigint {
+  return (amount * CCTP_FAST_FEE_BPS) / 10_000n
+}
+
+/**
+ * 2× multiple over the CCTP fast-fee to use as CCTP V2's on-chain `maxFee` bound. The displayed
+ * fee is a realistic estimate (matches the server's conservative bps buffer); the on-chain
+ * bound bumps it to give Iris's `feeExecuted` headroom against per-chain variance and any future
+ * fee changes. The contract enforces `feeExecuted ≤ maxFee`, so undersized bounds silently revert.
  */
 export function cctpMaxFeeForKind(kind: TxKind, amount: bigint): bigint {
-  return userFeeForKind(kind, amount) * 2n
+  switch (kind) {
+    case 'shield-xchain':
+    case 'unshield-xchain':
+      return cctpFastFeeForAmount(amount) * 2n
+    default:
+      return 0n
+  }
 }
 
 export interface RelayRequest {
@@ -239,6 +292,47 @@ export async function submitRelay(req: RelayRequest, signal?: AbortSignal): Prom
   })
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as RelayResponse
+}
+
+/**
+ * Relayer-side health status, mirrored on the frontend. The relayer reports the worst-status
+ * across all its chains plus optional in-process counters since the last restart.
+ */
+export type RelayerHealthStatus = 'healthy' | 'degraded' | 'stale' | 'unhealthy'
+
+export interface RelayerHealthResponse {
+  status: RelayerHealthStatus
+  /** Per-chain health rows. Shape mirrors `relayer/types.ts::ChainHealth`. */
+  chains: Array<{
+    chainName: string
+    domain: number
+    status: RelayerHealthStatus
+    lastProcessedBlock: number
+    chainHead: number
+    lagBlocks: number
+    lastScanAt: number
+    lastError: { message: string; at: number } | null
+    pendingCount: number
+  }>
+  generatedAt: number
+  /** In-process counters (A6). May be empty / undefined when no events have occurred. */
+  counters?: Record<string, number>
+}
+
+/**
+ * Fetch the relayer's /health snapshot. The relayer returns 200 for healthy/degraded and 503
+ * for stale/unhealthy; we treat the body the same in both cases — caller decides how to render
+ * the status. AbortSignal forwards to fetch so a hook can cancel on unmount.
+ */
+export async function fetchHealth(signal?: AbortSignal): Promise<RelayerHealthResponse> {
+  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.health), {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal,
+  })
+  // 503 still carries a JSON body — both status codes parse the same shape.
+  if (!res.ok && res.status !== 503) throw await parseError(res)
+  return (await res.json()) as RelayerHealthResponse
 }
 
 /** Poll a previously-submitted relay tx's status. */

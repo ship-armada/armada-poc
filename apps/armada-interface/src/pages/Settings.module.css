@@ -52,6 +52,12 @@
   color: var(--semantic-color-text-secondary);
 }
 
+.rowSubLabel {
+  color: var(--semantic-color-text-muted);
+  max-width: 48ch;
+  margin-top: var(--primitives-spacing-1);
+}
+
 .rowValue {
   color: var(--semantic-color-text-muted);
 }

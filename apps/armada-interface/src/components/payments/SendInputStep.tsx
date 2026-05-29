@@ -30,9 +30,12 @@ export interface SendInputStepProps {
    */
   max: bigint
   fee: bigint | null
-  /** USDC the recipient actually receives. Local + transfer: `amount`. Xchain: `amount - fee`. */
-  recipientReceives: bigint
-  /** USDC deducted from the user's shielded balance. Local: `amount + fee`. Others: `amount`. */
+  /**
+   * CCTP fast-fee (~2 bps) on xchain kinds — deducted from the destination mint, separate
+   * from `fee` (the relayer's broadcaster fee, paid by the user). Zero / ignored on local kinds.
+   */
+  cctpFee: bigint
+  /** USDC deducted from the user's shielded balance — `amount + fee` across all three SendModal kinds. */
   totalDeducted: bigint
   isXchain: boolean
   isLocalUnshield: boolean
@@ -54,7 +57,7 @@ export function SendInputStep({
   onAmountChange,
   max,
   fee,
-  recipientReceives,
+  cctpFee,
   totalDeducted,
   isXchain,
   isLocalUnshield,
@@ -65,10 +68,10 @@ export function SendInputStep({
 }: SendInputStepProps) {
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
-  // For unshield-local the user's typeable max is already shielded - fee; if they exceed it,
-  // the cause is that amount + fee would overflow. Spell that out so they don't think their
-  // balance number is wrong.
-  const overflowMessage = isLocalUnshield
+  // For unshield-local and unshield-xchain the user's typeable max is already shielded - fee;
+  // if they exceed it, the cause is that amount + fee would overflow. Spell that out so they
+  // don't think their balance number is wrong.
+  const overflowMessage = isLocalUnshield || isXchain
     ? 'Amount + relayer fee exceeds your private balance.'
     : 'Amount exceeds your private balance.'
   const amountError = usdcInputErrorMessage(parseError)
@@ -123,10 +126,16 @@ export function SendInputStep({
       />
       <FeeSummary
         fee={fee}
-        // Per-kind bottom line — see SendModal's per-kind comment.
-        netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
-        netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
-        feeLabel={isXchain ? 'CCTP fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        // Single "Total deducted from balance" line across all three SendModal kinds. For
+        // transfer-shielded the recipient gets exactly `amount`; for unshield kinds the
+        // recipient mint differs by the CCTP fast-fee already surfaced on its own row when
+        // xchain. The total-deducted number is the user's load-bearing commitment in every case.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
+        // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
+        feeLabel="Relayer fee"
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
         isRefreshing={isFeeRefreshing}
       />
       <FlowFooter

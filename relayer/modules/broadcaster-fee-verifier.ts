@@ -19,21 +19,35 @@
  *   4. We look up the USDC entry. If missing OR its amount < advertised, we reject with
  *      `FEE_INSUFFICIENT`.
  *
- * Scope (Phase A2):
- *   - Vanilla `transact(Transaction[])` calls only. The SDK's calldata decoder is hard-coded to
- *     the `transact` / `relay` function names, so wrapper functions (atomicCrossChainUnshield,
- *     lendAndShield, redeemAndShield) need their own extraction path. Those land alongside the
- *     handler PRs that need them (A4 for yield, A5 for xchain). The caller (privacy-relay) is
- *     responsible for routing only `transact` calls here; other selectors are rejected at the
- *     `INVALID_DATA` gate.
- *   - Phase A2 single-token (USDC). The map check is keyed by USDC token hash; any output to
- *     another token is ignored (treated as "no broadcaster fee paid for USDC").
+ * Selector support (extended through Phase A4 + A5):
+ *   - `transact(Transaction[])` — vanilla. SDK helper decodes directly.
+ *   - `lendAndShield(Transaction, bytes32, ShieldCiphertext)` on ArmadaYieldAdapter — wrapper.
+ *   - `redeemAndShield(Transaction, bytes32, ShieldCiphertext)` on ArmadaYieldAdapter — wrapper.
+ *   - `atomicCrossChainUnshield(Transaction, uint32, address, bytes32, uint256)` on the
+ *     PrivacyPool itself — A5 cross-chain unshield wrapper.
+ *
+ *   For all wrapper selectors the SDK's decoder doesn't know the function name (it expects
+ *   `transact` or `relay`), so we decode the wrapper ourselves, lift the embedded Transaction
+ *   struct (always the first argument), and ABI-re-encode it as a synthetic
+ *   `transact([transaction])` call against the PrivacyPool address. The broadcaster output
+ *   lives inside `Transaction.boundParams.commitmentCiphertext[]` regardless of which outer
+ *   contract carried it, so the same decryption pipeline applies. See `lib/transact-shape.ts`
+ *   for the ABI fragments and the `normaliseRequestToVanillaTransact` helper.
+ *
+ *   Single-token check (USDC only) is preserved across all paths — payments in any other
+ *   token are ignored.
  */
 
-import { ContractTransaction } from "ethers";
+import { ContractTransaction, ethers } from "ethers";
 import { RailgunWallet } from "@railgun-community/engine";
 import { ChainType, TXIDVersion } from "@railgun-community/shared-models";
 import { RelayError } from "../types";
+import {
+  TRANSACT_SELECTOR,
+  WRAPPER_SELECTORS,
+  TRANSACT_ABI,
+  WRAPPER_ABIS,
+} from "../lib/transact-shape";
 
 export interface VerifierContext {
   /** The relayer's loaded Railgun wallet — supplies the viewing key used for decryption. */
@@ -64,16 +78,63 @@ export interface BroadcasterFeeVerifyRequest {
  *
  * Returns the actual amount detected on success (the caller may log it; useful in tests).
  */
+/**
+ * For wrapper-function calldata (lendAndShield / redeemAndShield), ABI-decode the outer call to
+ * lift the embedded Transaction struct, then re-encode it as a synthetic
+ * `transact([transaction])` call against the PrivacyPool. The SDK's decoder can consume the
+ * synthetic shape directly. For vanilla `transact(...)` calls, returns the request unchanged.
+ *
+ * Throws `RelayError(INVALID_DATA)` on an unknown selector. (privacy-relay's allowlist gate
+ * should reject these before they reach us; defensive guard for direct-caller usage like tests.)
+ */
+function normaliseRequestToVanillaTransact(
+  request: BroadcasterFeeVerifyRequest,
+  privacyPoolAddress: string,
+): BroadcasterFeeVerifyRequest {
+  const selector = request.data.slice(0, 10).toLowerCase();
+  if (selector === TRANSACT_SELECTOR) {
+    return request;
+  }
+  if (!WRAPPER_SELECTORS.has(selector)) {
+    throw new RelayError(
+      "INVALID_DATA",
+      `Verifier received an unsupported selector: ${selector}.`,
+    );
+  }
+  // Wrapper path — ABI-decode the outer call, lift Transaction from arg 0, re-encode.
+  const wrapperIface = new ethers.Interface(WRAPPER_ABIS);
+  const decoded = wrapperIface.parseTransaction({ data: request.data });
+  if (!decoded) {
+    throw new RelayError(
+      "FEE_INSUFFICIENT",
+      `Could not decode wrapper-function calldata (selector ${selector}).`,
+    );
+  }
+  // Both wrappers carry Transaction at args[0] by convention. ethers v6 returns a `Result`
+  // proxy; passing it through encodeFunctionData below works because the encoder reads by
+  // structural shape, not by class identity.
+  const embeddedTransaction = decoded.args[0];
+  const transactIface = new ethers.Interface(TRANSACT_ABI);
+  const syntheticData = transactIface.encodeFunctionData("transact", [
+    [embeddedTransaction],
+  ]);
+  return { to: privacyPoolAddress, data: syntheticData };
+}
+
 export async function verifyBroadcasterFee(
   ctx: VerifierContext,
   request: BroadcasterFeeVerifyRequest,
   advertisedFee: bigint,
 ): Promise<bigint> {
+  // Normalise wrapper calls (lendAndShield / redeemAndShield) into synthetic vanilla transact
+  // calldata before handing to the SDK helper. Vanilla transact requests pass through unchanged.
+  const normalised = normaliseRequestToVanillaTransact(request, ctx.privacyPoolAddress);
+
   // The SDK helper signature wants an ethers `ContractTransaction`. Only `to` + `data` are
   // load-bearing for decoding; `value` defaults to 0 (Transaction structs don't carry ETH).
   const transactionRequest: ContractTransaction = {
-    to: request.to,
-    data: request.data,
+    to: normalised.to,
+    data: normalised.data,
   };
 
   // EVM hub chain — relayer only processes hub-chain submits (privacy-relay's INVALID_CHAIN gate

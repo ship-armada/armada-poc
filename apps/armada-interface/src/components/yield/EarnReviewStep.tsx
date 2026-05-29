@@ -14,7 +14,14 @@ export interface EarnReviewStepProps {
   amount: bigint
   rate: YieldRate | null
   fee: bigint | null
+  /**
+   * Bottom-line USDC number for the FeeSummary, computed by the modal per tab. For Add this is
+   * the private-balance debit (`amount + fee`); for Withdraw it's the net private-balance gain
+   * (`amount - fee`), matching the actual yield-withdraw balance flow.
+   */
   netAmount: bigint
+  /** Label paired with `netAmount` — also per-tab from the modal. */
+  netLabel: string
   submitBlockedReason?: string | null
   onBack: () => void
   onConfirm: () => void
@@ -33,6 +40,7 @@ export function EarnReviewStep({
   rate,
   fee,
   netAmount,
+  netLabel,
   submitBlockedReason,
   onBack,
   onConfirm,
@@ -59,13 +67,20 @@ export function EarnReviewStep({
       <FeeSummary
         fee={fee}
         netAmount={netAmount}
-        netLabel={tab === 'add' ? "You'll be earning on" : "You'll receive"}
+        netLabel={netLabel}
+        feeLabel="Relayer fee"
       />
       {tab === 'withdraw' ? (
-        <div className={styles.slippageNotice}>
-          The vault rate moves with each new block. Your final USDC may differ slightly from
-          this quote.
-        </div>
+        <>
+          <div className={styles.slippageNotice}>
+            The vault rate moves with each new block. Your final USDC may differ slightly from
+            this quote.
+          </div>
+          <div className={styles.slippageNotice}>
+            Withdrawals require a wallet signature and a small amount of ETH for gas. Relayer-
+            mediated withdraw is tracked as a follow-up.
+          </div>
+        </>
       ) : null}
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

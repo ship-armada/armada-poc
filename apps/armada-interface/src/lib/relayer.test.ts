@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { RELAYER_ENDPOINTS, relayerEndpoint } from '@/config/relayer'
 import {
   userFeeForKind,
+  cctpFastFeeForAmount,
   cctpMaxFeeForKind,
   computeFeeBreakdown,
   feeModelForKind,
@@ -36,13 +37,31 @@ const ONE_USDC = 1_000_000n // 6 decimals
 const HUNDRED_USDC = 100n * ONE_USDC
 
 describe('userFeeForKind', () => {
+  it('returns 0n for shield (user-submitted; no broadcaster fee path)', () => {
+    expect(userFeeForKind('shield', HUNDRED_USDC)).toBe(0n)
+  })
+
   it.each([
-    ['shield'],
+    ['transfer-shielded', 'transfer'],
+    ['yield-deposit', 'crossContract'],
+    ['yield-withdraw', 'crossContract'],
+  ] as const)(
+    '%s reads the flat per-op fee (raw USDC) from the quote\'s %s tier',
+    (kind, tier) => {
+      const quote = quoteWith({ [tier]: '75000' }) // 0.075 USDC raw
+      expect(userFeeForKind(kind, HUNDRED_USDC, quote)).toBe(75_000n)
+      // …and is amount-independent, same as unshield-local.
+      expect(userFeeForKind(kind, ONE_USDC, quote)).toBe(75_000n)
+    },
+  )
+
+  it.each([
     ['transfer-shielded'],
     ['yield-deposit'],
     ['yield-withdraw'],
-  ] as const)('returns 0n for %s (handler still user-submitted; migrates in A4)', (kind) => {
+  ] as const)('%s returns 0n when no quote is provided (cold-load)', (kind) => {
     expect(userFeeForKind(kind, HUNDRED_USDC)).toBe(0n)
+    expect(userFeeForKind(kind, HUNDRED_USDC, null)).toBe(0n)
   })
 
   describe('unshield-local — relayer-mediated (A3+)', () => {
@@ -86,11 +105,22 @@ describe('userFeeForKind', () => {
     expect(userFeeForKind('shield-xchain', HUNDRED_USDC)).toBe(20_000n)
   })
 
-  it('returns CCTP fast-fee (2 bps of amount) for unshield-xchain', () => {
-    expect(userFeeForKind('unshield-xchain', HUNDRED_USDC)).toBe(20_000n)
+  it('unshield-xchain (A5) reads the relayer\'s crossChainUnshield tier — independent of amount', () => {
+    // WHY: A5 changes the semantic of unshield-xchain's user-visible "fee" from a proportional
+    // CCTP estimate to the relayer's flat broadcaster fee. The CCTP fast-fee still applies but
+    // is surfaced separately via `cctpFastFeeForAmount` since it deducts from the destination
+    // mint rather than the user's shielded balance.
+    const quote = quoteWith({ crossChainUnshield: '200000' }) // 0.20 USDC raw
+    expect(userFeeForKind('unshield-xchain', HUNDRED_USDC, quote)).toBe(200_000n)
+    expect(userFeeForKind('unshield-xchain', ONE_USDC, quote)).toBe(200_000n)
   })
 
-  it('rounds toward zero for small amounts (bigint integer division)', () => {
+  it('unshield-xchain returns 0n when no quote is provided (cold-load)', () => {
+    expect(userFeeForKind('unshield-xchain', HUNDRED_USDC)).toBe(0n)
+    expect(userFeeForKind('unshield-xchain', HUNDRED_USDC, null)).toBe(0n)
+  })
+
+  it('shield-xchain rounds toward zero for small amounts (bigint integer division)', () => {
     // 2 bps of 1 USDC = 200 raw → no rounding issue here
     expect(userFeeForKind('shield-xchain', ONE_USDC)).toBe(200n)
     // 2 bps of 4999 raw = 9999 / 10000 = 0 (rounds down)
@@ -99,39 +129,58 @@ describe('userFeeForKind', () => {
     expect(userFeeForKind('shield-xchain', 5_000n)).toBe(1n)
   })
 
-  it('returns 0n when amount is 0n for cctp kinds (no rejection, just nothing to fee)', () => {
+  it('returns 0n when amount is 0n for shield-xchain (no rejection, just nothing to fee)', () => {
     expect(userFeeForKind('shield-xchain', 0n)).toBe(0n)
-    expect(userFeeForKind('unshield-xchain', 0n)).toBe(0n)
   })
 
-  it('scales linearly with amount for cctp kinds', () => {
+  it('shield-xchain scales linearly with amount', () => {
     const big = HUNDRED_USDC * 10_000n // 1M USDC
     expect(userFeeForKind('shield-xchain', big)).toBe(big * 2n / 10_000n)
   })
 })
 
+describe('cctpFastFeeForAmount', () => {
+  it('returns 2 bps of the amount (matches the server-side CCTP_FAST_FEE_BPS buffer)', () => {
+    // WHY: pin the bps constant. A regression that flipped it to 1 bps would silently underbound
+    // the on-chain maxFee and produce CCTP reverts; bumping to 3 bps would over-quote and confuse
+    // users about delivery cost. Lock the wire format.
+    expect(cctpFastFeeForAmount(HUNDRED_USDC)).toBe(20_000n)
+    expect(cctpFastFeeForAmount(ONE_USDC)).toBe(200n)
+    expect(cctpFastFeeForAmount(0n)).toBe(0n)
+  })
+})
+
 describe('feeModelForKind', () => {
-  it('classifies xchain kinds as fee-from-recipient (CCTP destination eats the fee)', () => {
-    // WHY: a regression that miscategorised xchain as `fee-on-top` would silently let the user
-    // type their full balance and then have the submit step fail when the proof tries to debit
-    // amount + fee.
+  it('classifies shield-xchain as fee-from-recipient (CCTP destination eats the only fee)', () => {
+    // WHY: shield-xchain is still direct-submitted (Phase B's gasless shield path). The only
+    // fee in flight is the CCTP fast-fee, which deducts from the destination mint. Misclassifying
+    // it as `fee-on-top` would silently let the user type their full client-chain balance and
+    // fail at submit when no extra USDC is available to cover a non-existent broadcaster output.
     expect(feeModelForKind('shield-xchain')).toBe('fee-from-recipient')
-    expect(feeModelForKind('unshield-xchain')).toBe('fee-from-recipient')
   })
 
-  it('classifies unshield-local as fee-on-top (relayer-mediated proof has extra broadcaster output)', () => {
-    // WHY: the load-bearing A3 distinction — getting this wrong inverts the recipient-receives /
-    // total-deducted math everywhere.
-    expect(feeModelForKind('unshield-local')).toBe('fee-on-top')
+  it('classifies unshield-xchain as fee-on-top-and-from-recipient (A5 — both fees apply)', () => {
+    // WHY: A5 makes unshield-xchain unique among the seven kinds — it pays a relayer broadcaster
+    // fee (on top of the entered amount, debited from shielded balance) AND a CCTP fast-fee
+    // (deducted from the destination mint). Modelling both in one slot lets `computeFeeBreakdown`
+    // emit the right `recipientReceives` AND `totalDeducted` AND `inputMax` numbers.
+    expect(feeModelForKind('unshield-xchain')).toBe('fee-on-top-and-from-recipient')
   })
 
   it.each([
-    ['shield'],
+    ['unshield-local'],
     ['transfer-shielded'],
     ['yield-deposit'],
     ['yield-withdraw'],
-  ] as const)('classifies %s as no-fee (today; A4 will flip yield + transfer to fee-on-top)', (kind) => {
-    expect(feeModelForKind(kind)).toBe('no-fee')
+  ] as const)('classifies %s as fee-on-top (relayer-mediated proof has extra broadcaster output)', (kind) => {
+    // WHY: every relayer-mediated kind pays the broadcaster from a fresh unshield output sitting
+    // alongside the user's primary spend, so the user is debited `amount + fee` and the recipient
+    // (or the vault, for yield) receives the full `amount`.
+    expect(feeModelForKind(kind)).toBe('fee-on-top')
+  })
+
+  it('classifies shield as no-fee (no broadcaster involvement; user submits directly)', () => {
+    expect(feeModelForKind('shield')).toBe('no-fee')
   })
 })
 
@@ -141,14 +190,16 @@ describe('computeFeeBreakdown', () => {
   const MAX = 10_000_000n // $10 shielded balance
 
   it('no-fee kinds: recipient = amount, total = amount, inputMax = max (no reservation)', () => {
-    const r = computeFeeBreakdown('transfer-shielded', AMOUNT, FEE, MAX)
+    const r = computeFeeBreakdown('shield', AMOUNT, FEE, MAX)
     expect(r.recipientReceives).toBe(AMOUNT)
     expect(r.totalDeducted).toBe(AMOUNT)
     expect(r.inputMax).toBe(MAX)
   })
 
   it('fee-from-recipient: recipient = amount - fee, total = amount, inputMax = max', () => {
-    const r = computeFeeBreakdown('unshield-xchain', AMOUNT, FEE, MAX)
+    // WHY: shield-xchain is the canonical fee-from-recipient kind post-A5. The only fee on this
+    // path is the CCTP fast-fee, which deducts from the destination mint.
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX)
     expect(r.recipientReceives).toBe(AMOUNT - FEE)
     expect(r.totalDeducted).toBe(AMOUNT)
     expect(r.inputMax).toBe(MAX)
@@ -164,10 +215,10 @@ describe('computeFeeBreakdown', () => {
   })
 
   it('fee-from-recipient floors at 0n when fee exceeds amount (no negative recipientReceives)', () => {
-    // WHY: defensive — a misconfigured CCTP fee that exceeds the unshield amount must NOT
+    // WHY: defensive — a misconfigured CCTP fee that exceeds the shield amount must NOT
     // produce a bigint underflow surfacing as "you'll receive 18446744073709551615 USDC".
     const tinyAmount = 100n
-    const r = computeFeeBreakdown('unshield-xchain', tinyAmount, FEE, MAX)
+    const r = computeFeeBreakdown('shield-xchain', tinyAmount, FEE, MAX)
     expect(r.recipientReceives).toBe(0n)
     expect(r.totalDeducted).toBe(tinyAmount)
   })
@@ -179,6 +230,39 @@ describe('computeFeeBreakdown', () => {
     const tinyMax = 100n
     const r = computeFeeBreakdown('unshield-local', AMOUNT, FEE, tinyMax)
     expect(r.inputMax).toBe(0n)
+  })
+
+  it('fee-on-top-and-from-recipient (A5 unshield-xchain): both fees applied independently', () => {
+    // WHY: A5's unique two-fee model. recipient gets `amount - secondaryFee` (CCTP), user is
+    // debited `amount + fee` (broadcaster), input cap reserves `fee` so user can't type past
+    // their shielded balance. A regression that ignored `secondaryFee` would over-quote the
+    // recipient's mint, a regression that double-counted it would under-quote.
+    const cctpFee = 10_000n // 0.01 USDC raw
+    const r = computeFeeBreakdown('unshield-xchain', AMOUNT, FEE, MAX, { secondaryFee: cctpFee })
+    expect(r.recipientReceives).toBe(AMOUNT - cctpFee)
+    expect(r.totalDeducted).toBe(AMOUNT + FEE)
+    expect(r.inputMax).toBe(MAX - FEE)
+  })
+
+  it('fee-on-top-and-from-recipient floors recipientReceives at 0n when CCTP fee exceeds amount', () => {
+    // WHY: defensive — same logic as the simple fee-from-recipient flooring. A misconfigured CCTP
+    // fee on a tiny xchain unshield must NOT underflow to 2^256 - 1.
+    const tinyAmount = 5n
+    const cctpFee = 10_000n
+    const r = computeFeeBreakdown('unshield-xchain', tinyAmount, FEE, MAX, { secondaryFee: cctpFee })
+    expect(r.recipientReceives).toBe(0n)
+    expect(r.totalDeducted).toBe(tinyAmount + FEE)
+  })
+
+  it('fee-on-top-and-from-recipient defaults secondaryFee to 0n when omitted', () => {
+    // WHY: backwards-compat for callers that don't pass `secondaryFee` — the helper should still
+    // produce a meaningful breakdown (recipient gets full amount). A regression that NaN'd or
+    // threw on missing secondaryFee would crash modals during the cold-load render before the
+    // CCTP fee is computed.
+    const r = computeFeeBreakdown('unshield-xchain', AMOUNT, FEE, MAX)
+    expect(r.recipientReceives).toBe(AMOUNT)
+    expect(r.totalDeducted).toBe(AMOUNT + FEE)
+    expect(r.inputMax).toBe(MAX - FEE)
   })
 })
 

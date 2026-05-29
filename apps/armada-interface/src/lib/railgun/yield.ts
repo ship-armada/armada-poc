@@ -1,4 +1,4 @@
-// ABOUTME: Yield adapt-proof generation — port of legacy yieldAdaptProof/. Single SDK proof of type CrossContractCalls binds the shield destination to the adapter's output via adaptParams.
+// ABOUTME: Yield adapt-proof generation — single SDK proof of type CrossContractCalls binds the shield destination to the adapter's output via adaptParams. Broadcaster-fee aware (relayer-mediated submit).
 // ABOUTME: Mode-parametric (lend / redeem); the on-chain entry point picks lendAndShield vs redeemAndShield. All dynamic-imports to dodge jsdom + circomlibjs at module-load.
 
 import { ethers } from 'ethers'
@@ -19,6 +19,20 @@ async function sharedModels(): Promise<SharedModels> {
 }
 
 export type YieldAdaptMode = 'lend' | 'redeem'
+
+/**
+ * One broadcaster output baked into the CrossContractCalls proof so the relayer is paid in the
+ * same atomic tx as the lend/redeem. Required for the relayer-mediated submit path; pass `null`
+ * to fall back to direct user submission (the Phase B wallet-fallback override).
+ *
+ * Same shape as the corresponding type in `transfer.ts` / `unshield.ts` — duplicated for
+ * locality so each SDK-helper file is self-contained.
+ */
+export interface BroadcasterFeeRecipient {
+  tokenAddress: string
+  amount: bigint
+  recipientAddress: string
+}
 
 /**
  * Bind the shield destination into adaptParams so the on-chain adapter can't redirect the
@@ -162,6 +176,13 @@ export async function buildYieldAdaptTransaction(opts: {
   railgunAddress: string
   adapterAddress: string
   hubChainId: number
+  /**
+   * Broadcaster output baked into the proof for relayer-mediated submission. When non-null,
+   * `sendWithPublicWallet` flips to false and the SDK adds the broadcaster payment leg to the
+   * CrossContractCalls proof — same mechanism as transfer.ts / unshield.ts, just inside the
+   * adapter-bound proof. Pass `null` for direct user submission (Phase B fallback only).
+   */
+  broadcasterFee: BroadcasterFeeRecipient | null
   onProgress?: (fraction: number) => void
 }): Promise<YieldAdaptProofResult> {
   await loadHubNetwork()
@@ -195,6 +216,7 @@ export async function buildYieldAdaptTransaction(opts: {
 
   // Generate the cross-contract-calls proof. The unshield recipient is the adapter address;
   // the proof binds via adaptContract + adaptParams so the adapter cannot redirect.
+  const sendWithPublicWallet = opts.broadcasterFee === null
   const { provedTransactions } = await generateProofTransactions(
     ProofType.CrossContractCalls,
     NetworkName.Hardhat,
@@ -211,8 +233,8 @@ export async function buildYieldAdaptTransaction(opts: {
       },
     ],
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeRecipient — direct user submit
-    true, // sendWithPublicWallet
+    opts.broadcasterFee ?? undefined,
+    sendWithPublicWallet,
     { contract: opts.adapterAddress, parameters: adaptParams },
     false, // useDummyProof
     undefined, // overallBatchMinGasPrice

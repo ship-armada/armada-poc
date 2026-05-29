@@ -1,13 +1,12 @@
-// ABOUTME: Transfer-shielded stage handler — 0zk → 0zk private send. Same shape as unshield-local; just different SDK fns + recipient kind.
-// ABOUTME: build-proof → submit-relayer → hub-confirmed, all direct user-submitted via wagmi.
+// ABOUTME: Transfer-shielded stage handler — 0zk → 0zk private send. Relayer-mediated submit (A4); zero EVM wallet prompts.
+// ABOUTME: Build-proof with broadcaster fee → POST /relay → poll /status → hub-confirmed. Mirrors features/unshield/handler.ts pattern.
 
-import {
-  sendTransaction,
-} from 'wagmi/actions'
-import { wagmiConfig } from '@/config/wagmi'
+import { sendTransaction } from 'wagmi/actions'
 import { loadDeployments } from '@/config/deployments'
 import { getNetworkConfig } from '@/config/network'
+import { wagmiConfig } from '@/config/wagmi'
 import { ensureChain } from '@/lib/network-switch'
+import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import {
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
@@ -17,22 +16,29 @@ import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   generateTransferProofForRecipient,
   populateTransferTransaction,
+  type BroadcasterFeeRecipient,
 } from '@/lib/railgun/transfer'
+import { submitRelay, RelayerError } from '@/lib/relayer'
 import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
-import { waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { createProofProgressWriter } from '@/lib/tx/progress'
+import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
-import type { TxRecord } from '@/lib/tx/types'
+import type { TxError, TxRecord } from '@/lib/tx/types'
 
 /**
- * `transfer-shielded` stages map onto:
- *   1. `build-proof`    — generate the Groth16 transfer proof (~20-30s on local).
- *   2. `submit-relayer` — populate via `populateProvedTransfer`, sign+submit via the user's wallet.
- *   3. `hub-confirmed`  — terminal; kick a balance refresh so the UI updates immediately.
+ * `transfer-shielded` stages (Phase A4 — relayer-mediated):
+ *   1. `build-proof`    — generate the Groth16 transfer proof with broadcaster fee baked in
+ *                          (~20-30s on local Anvil). The proof embeds a USDC output to the
+ *                          relayer's 0zk address at the advertised fee amount.
+ *   2. `submit-relayer` — populate `transact()` calldata, POST to relayer's `/relay`, poll
+ *                          `/status` until confirmed (or failed).
+ *   3. `hub-confirmed`  — terminal. Kicks a balance refresh.
  *
- * Recipient is a 0zk address; the SDK encrypts the UTXO bundle with the recipient's viewing key,
- * so no on-chain trace of who received what beyond the public commitment hash.
+ * No EVM wallet signature anywhere — proof generation uses the shielded wallet's spending key
+ * (`keyManager`); the relayer broadcasts and pays gas in ETH, claiming reimbursement via the
+ * embedded broadcaster output. Recipient is a 0zk address (encrypted UTXO bundle).
  */
 export const transferShieldedHandler: StageHandler<'transfer-shielded'> = {
   kind: 'transfer-shielded',
@@ -57,6 +63,19 @@ export const transferShieldedHandler: StageHandler<'transfer-shielded'> = {
   },
 }
 
+/** A6 — see comment in features/unshield/handler.ts::broadcasterFeeFromRecord. */
+function broadcasterFeeFromRecord(
+  record: TxRecord<'transfer-shielded'>,
+  tokenAddress: string,
+): BroadcasterFeeRecipient | null {
+  if (record.meta.useWalletOverride) return null
+  return {
+    tokenAddress,
+    amount: record.meta.broadcasterFeeAmount,
+    recipientAddress: record.meta.broadcasterRailgunAddress,
+  }
+}
+
 async function runBuildProof(
   record: TxRecord<'transfer-shielded'>,
   ctx: Parameters<typeof transferShieldedHandler.run>[1],
@@ -78,14 +97,12 @@ async function runBuildProof(
     tokenAddress,
     recipient: record.meta.recipient,
     amount: record.meta.amount,
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
     onProgress: progress.write,
   })
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Same deterministic-inputs argument as unshield-local — populate re-reads the token address
-  // from the same manifest, so no artifacts persistence needed. Advance from `progress.latest()`
-  // because the progress writes bumped updatedSeq.
   const next = advance(progress.latest(), 'submit-relayer')
   await ctx.upsert(next)
 }
@@ -100,37 +117,107 @@ async function runSubmitAndConfirm(
   const walletId = kmGetWalletId()
   const deployments = await loadDeployments()
   const tokenAddress = deployments.hub.cctp.usdc
+  const hubChainId = getNetworkConfig().hub.chainId
 
   const populated = await populateTransferTransaction({
     walletId,
     tokenAddress,
     recipient: record.meta.recipient,
     amount: record.meta.amount,
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Hub-side transact() — ensure the wallet is on the hub before signing.
-  await ensureChain(getNetworkConfig().hub.chainId)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  // A6 wallet-override path — submit through the user's EVM wallet instead of the relayer.
+  // The proof has no broadcaster output (sendWithPublicWallet=true on the SDK side), so the
+  // verifier would reject; we go direct. Terminal state is identical to the relayer path.
+  if (record.meta.useWalletOverride) {
+    await ensureChain(hubChainId)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    const hash = await sendTransaction(wagmiConfig, {
+      to: populated.to,
+      data: populated.data,
+      value: populated.value,
+    })
+    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+    await ctx.upsert(broadcastRecord)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    if (kmIsUnlocked()) {
+      void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+    }
+    const completed = advance(broadcastRecord, 'hub-confirmed', { sourceTxHash: hash })
+    await ctx.upsert(completed)
+    return
+  }
 
-  const hash = await sendTransaction(wagmiConfig, {
-    to: populated.to,
-    data: populated.data,
-    value: populated.value,
-  })
-  // Patched record MUST be threaded forward into the final advance — `record` is now stale
-  // (lower updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq
-  // write that OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+  let submitResponse
+  try {
+    submitResponse = await submitRelay(
+      {
+        chainId: hubChainId,
+        to: populated.to,
+        data: populated.data,
+        feesCacheId: record.meta.feeCacheId,
+      },
+      ctx.signal,
+    )
+  } catch (err) {
+    if (err instanceof RelayerError) {
+      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+    }
+    throw err
+  }
+
+  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
   await ctx.upsert(broadcastRecord)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  await waitForReceiptOrFail({ hash, signal: ctx.signal })
+  const pollResult = await poll(
+    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
+    { signal: ctx.signal },
+  )
+
+  if (pollResult.status === 'aborted') throw new Error('cancelled')
+  if (pollResult.status === 'timeout') {
+    const error: TxError = {
+      code: 'POLL_TIMEOUT',
+      message:
+        'The relayer hasn\'t reported a final status. The transaction may still complete on chain — check the explorer.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    const failed = markFailed(broadcastRecord, error)
+    await ctx.upsert(failed)
+    return
+  }
+
+  const final = pollResult.value
+  if (!final) {
+    throw new Error('poll returned done without a status value')
+  }
+
+  if (final.status === 'failed') {
+    track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: 'EXECUTION_FAILED' })
+    const error: TxError = {
+      code: 'TX_REVERTED',
+      message: final.error ?? 'Relayer-broadcast tx reverted on chain.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    const failed = markFailed(broadcastRecord, error)
+    await ctx.upsert(failed)
+    return
+  }
+
+  track('tx.relayer.confirmed', { id: record.id, kind: record.kind })
 
   if (kmIsUnlocked()) {
     void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
   }
 
-  const completed = advance(broadcastRecord, 'hub-confirmed', { sourceTxHash: hash })
+  const completed = advance(broadcastRecord, 'hub-confirmed', {
+    sourceTxHash: submitResponse.txHash as `0x${string}`,
+  })
   await ctx.upsert(completed)
 }

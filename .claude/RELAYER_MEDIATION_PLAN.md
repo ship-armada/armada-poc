@@ -199,18 +199,18 @@ The per-item tables earlier in this doc describe WHAT needs to land. This sectio
 
 Phases A and B can overlap. Once A2 is in, B1–B4 can run in parallel with A3–A6 on a separate workstream — they share the relayer client surface but touch independent files.
 
-### Phase A — 6 PRs, ~5.5 days
+### Phase A — SHIPPED
 
-| PR | Scope | Size | Notes |
-|---|---|---|---|
-| **A1** Foundations | `/fees` carries `broadcasterRailgunAddress`; `lib/relayer.ts::submitRelay` implemented (remove the throw); new `pollRelayStatusOnce` adapter in `lib/tx/poller.ts`; telemetry keys `tx.relayer.{submitted,confirmed,rejected}` added to the registry; tests for the client + status adapter | M | Dormant until A3 — no handler calls it yet |
-| **A2** ⚠️ Server-side broadcaster-fee verification | `relayer/modules/privacy-relay.ts`: parse the Transaction struct's `commitmentCiphertext[]`, locate the output to the relayer's `0zk`, decode the value, validate `amount >= advertisedFee`. New `FEE_INSUFFICIENT` error code. Tests: well-formed accepted; tampered (no broadcaster, wrong amount, wrong recipient) rejected | M | **BLOCKING.** Security-critical. Land before any handler migration |
-| **A3** First handler: `unshield-local` | `lib/railgun/unshield.ts`: flip `sendWithPublicWallet: true → false`, pass `broadcasterFeeRecipient` + `overallBatchMinGasPrice` from the fee quote. `features/unshield/handler.ts::runSubmitAndConfirm`: replace `sendTransaction(...)` with `submitRelay(...)`, replace `waitForReceiptOrFail(...)` with status polling via A1's adapter. Cancel becomes "dismissed" once submitted. `UnshieldModal`'s `FeeSummary` shows the relayer's USDC fee | M | Establishes the pattern. Subsequent handlers are mechanical clones |
-| **A4** `transfer-shielded` + `yield-deposit` + `yield-withdraw` | Same shape as A3 applied to the three remaining hub-only handlers. Bundled because the diff per handler is small and the pattern is identical | M | Per-handler Sepolia validation. Could split into 3 separate PRs if reviews want it smaller |
-| **A5** `unshield-xchain` | Hub burn step submits via relayer; CCTP delivery polling is unchanged. `generateXchainUnshieldProof` + `populateProvedXchainUnshield` flip to non-public-wallet. The receipt-derived `cctpRef` now extracts from the relayer's tx receipt instead of the user's | M | Most complex Phase A handler because of the CCTP intersection |
-| **A6** Polish + observability | "Submit from my wallet" override (Settings + auto-exposed in modals when relayer `/health` is `stale`/`unhealthy`); relayer-side counters for fee-verification rejects + submit success/fail by kind; this doc updated with "Phase A shipped" | S | Optional escape hatch keeps the app usable during relayer outage |
+All six PRs landed (A4 + A5 + A6 bundled into a single PR after the per-PR review of A1–A3). 5 of 7 tx kinds now run gasless via the relayer-mediated broadcaster path; shield + shield-xchain still need ETH and will move to the Phase B permit-wrapper path.
 
-After A6: 5 of 7 kinds run gasless. Shield + shield-xchain still need ETH. Existing Sepolia deployment untouched throughout.
+| PR | Scope | Status |
+|---|---|---|
+| **A1** Foundations | `/fees` carries `broadcasterRailgunAddress`; `submitRelay` + `pollRelayStatusOnce` wired; `tx.relayer.{submitted,confirmed,rejected}` telemetry registry entries | ✅ shipped |
+| **A2** Server-side fee verification | `broadcaster-fee-verifier.ts` decrypts the proof's commitment ciphertexts under the relayer's viewing key, looks up the USDC entry, rejects with `FEE_INSUFFICIENT` when below advertised. Tests cover tampered / missing / wrong-token cases | ✅ shipped |
+| **A3** `unshield-local` | First handler migrated. Pattern: `broadcasterFee` in proof + populate, `submitRelay` for hub broadcast, `pollRelayStatusOnce` for confirmation, Type1 gas details on Hardhat for broadcaster mode | ✅ shipped |
+| **A4** `transfer-shielded` + `yield-deposit` + `yield-withdraw` | Bundled. Verifier extended with `lendAndShield` + `redeemAndShield` wrapper-decoding (synthetic-transact rewrite lifts embedded Transaction from arg 0). All three handlers mirror the A3 pattern | ✅ shipped |
+| **A5** `unshield-xchain` | Hub burn moves to relayer-mediated. Verifier extended with `atomicCrossChainUnshield` wrapper. New `fee-on-top-and-from-recipient` model in `computeFeeBreakdown` for the dual-fee case (broadcaster fee on top + CCTP fast-fee from recipient). Destination polling unchanged | ✅ shipped |
+| **A6** Polish + observability | Persisted `submitFromWallet` preference + Settings toggle. `useRelayerHealth` + `RelayerStatusBanner` auto-surface a one-click override when `/health` ∈ {stale, unhealthy, unreachable}. Dual-path submit in all 5 relayer-mediated handlers gated on `meta.useWalletOverride`. Relayer-side `Counters` module surfaces `feeVerifierRejects.*` + `submitSuccess.*` + `submitFail.*` via `/health.counters` | ✅ shipped |
 
 ### Phase B — 4 PRs, ~3.5 days
 

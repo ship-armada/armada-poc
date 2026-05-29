@@ -7,6 +7,7 @@ export const RELAYER_ENDPOINTS = {
   fees: '/fees',
   relay: '/relay',
   status: '/status', // suffix: `/${txHash}`
+  health: '/health',
 } as const
 
 /** Error codes returned by the relayer (see `relayer/armada-relayer.ts`). */

@@ -147,6 +147,18 @@ export interface RelayerHealth {
   chains: ChainHealth[];
   /** Unix ms when this health snapshot was generated (server side, not cached). */
   generatedAt: number;
+  /**
+   * In-process counters since the relayer last started — fee-verifier rejects + submit
+   * success/fail by kind. See `relayer/modules/counters.ts` for the key scheme. Operators read
+   * these to triage misbehaving clients ("are we rejecting a lot of FEE_INSUFFICIENT?") and
+   * relayer outages ("is submitFail.*.SUBMISSION_FAILED climbing?"). Resets on restart.
+   *
+   * Optional in the type because counters are an http-api overlay — the cctp/iris relay
+   * modules' own `getHealth()` impls don't carry this field, http-api injects it at response
+   * time so we don't have to thread the Counters instance through every module that cares
+   * about chain health.
+   */
+  counters?: Record<string, number>;
 }
 
 // ============ Deployment Types ============

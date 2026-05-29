@@ -108,8 +108,22 @@ function emptyShieldCiphertext(): unknown {
   };
 }
 
-function encodeWrapperCalldata(fnName: "lendAndShield" | "redeemAndShield"): string {
+function encodeWrapperCalldata(
+  fnName: "lendAndShield" | "redeemAndShield" | "atomicCrossChainUnshield",
+): string {
   const iface = new ethers.Interface(WRAPPER_ABIS);
+  if (fnName === "atomicCrossChainUnshield") {
+    // A5 wrapper carries different surrounding args than the yield wrappers — Transaction in
+    // arg 0 stays the same shape (which is the only thing the verifier cares about), but the
+    // ABI encoder needs the trailing args present to round-trip.
+    return iface.encodeFunctionData(fnName, [
+      emptyTransaction(),
+      0, // destinationDomain (uint32)
+      ethers.ZeroAddress, // finalRecipient
+      "0x" + "00".repeat(32), // destinationCaller (bytes32)
+      0n, // maxFee (uint256)
+    ]);
+  }
   return iface.encodeFunctionData(fnName, [
     emptyTransaction(),
     "0x" + "00".repeat(32),
@@ -301,6 +315,55 @@ describe("verifyBroadcasterFee", () => {
         ),
         "INVALID_DATA",
         /unsupported selector/i,
+      );
+    });
+
+    it("decodes atomicCrossChainUnshield (A5) by lifting the embedded Transaction the same way", async () => {
+      // WHY: A5 cross-chain unshield reuses the wrapper pattern — Transaction in arg 0, CCTP
+      // routing args trailing. The fee-verification surface MUST remain identical to the yield
+      // wrappers: same selector-set membership, same synthetic-transact rewrite, same fee floor.
+      // A regression that special-cased the yield wrappers without including the xchain wrapper
+      // would silently let cross-chain unshields skip fee verification entirely (FEE_INSUFFICIENT
+      // wouldn't fire because the selector would fall through to the unknown branch — INVALID_DATA
+      // — but privacy-relay's allowlist would have already gated this from the live path, leaving
+      // a confusing two-layer rejection rather than a clean "low fee" signal in tests).
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE * 3n });
+      const wrapperCalldata = encodeWrapperCalldata("atomicCrossChainUnshield");
+
+      const paid = await verifyBroadcasterFee(
+        ctxFor(rec.wallet),
+        // The `to` for this wrapper IS the PrivacyPool (unlike the yield wrappers which target
+        // the adapter); the normaliser must still rewrite to the PrivacyPool address regardless.
+        { to: PRIVACY_POOL_ADDRESS, data: wrapperCalldata },
+        ADVERTISED_FEE,
+      );
+
+      expect(paid).to.equal(ADVERTISED_FEE * 3n);
+      const captured = rec.lastRequest();
+      expect(captured, "wallet helper must have been called").to.not.be.null;
+      expect(captured!.to).to.equal(PRIVACY_POOL_ADDRESS);
+      expect(captured!.data?.slice(0, 10)).to.equal("0xd8ae136a");
+      const decoded = new ethers.Interface(TRANSACT_ABI).decodeFunctionData(
+        "transact",
+        captured!.data!,
+      );
+      expect(decoded[0].length).to.equal(1);
+    });
+
+    it("rejects atomicCrossChainUnshield with insufficient broadcaster fee", async () => {
+      // WHY: symmetric to the lendAndShield insufficient-fee test — A5's xchain path must
+      // enforce the same lower bound, otherwise cross-chain unshields become a free relay
+      // tier while every other kind keeps paying.
+      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE - 1n });
+      const wrapperCalldata = encodeWrapperCalldata("atomicCrossChainUnshield");
+      await expectRejectedAs(
+        verifyBroadcasterFee(
+          ctxFor(rec.wallet),
+          { to: PRIVACY_POOL_ADDRESS, data: wrapperCalldata },
+          ADVERTISED_FEE,
+        ),
+        "FEE_INSUFFICIENT",
+        new RegExp(`paid ${ADVERTISED_FEE - 1n} USDC raw, advertised ${ADVERTISED_FEE}`),
       );
     });
 

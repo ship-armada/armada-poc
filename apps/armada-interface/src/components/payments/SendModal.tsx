@@ -15,7 +15,8 @@ import {
   type ResolvedDeployments,
 } from '@/config/deployments'
 import { parseUsdcInput } from '@/lib/format'
-import { userFeeForKind } from '@/lib/relayer'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { trackError } from '@/lib/telemetry'
 import {
@@ -107,10 +108,21 @@ export function SendModal() {
 
   const computedKind: SubmittedKind = computeKind(tab, destChainId, hubChainId)
   const isXchain = computedKind === 'unshield-xchain'
-  // Display fee is a pure function of (kind, amount). transfer-shielded + unshield-local = 0
-  // (user submits via own wallet); unshield-xchain = CCTP fast-fee estimate (~2 bps).
-  const fee: bigint = userFeeForKind(computedKind, amount)
-  const netAmount = amount > fee ? amount - fee : 0n
+  const isLocalUnshield = computedKind === 'unshield-local'
+  // Display fee per (kind, amount, quote):
+  //   transfer-shielded → 0n (handler migrates to relayer-mediated in A4)
+  //   unshield-local    → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load
+  //   unshield-xchain   → CCTP fast-fee estimate (~2 bps, proportional to amount)
+  const fee: bigint = userFeeForKind(computedKind, amount, quote)
+  // Per-kind fee math (recipient gets / user is debited / how much they can type) lives in one
+  // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. Adding a new kind or flipping a
+  // kind's fee model (e.g., A4 moves yield kinds to fee-on-top) is a single-site change there.
+  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+  )
 
   // Reset local state on close.
   useEffect(() => {
@@ -158,11 +170,24 @@ export function SendModal() {
           recipient,
         })
       } else if (computedKind === 'unshield-local') {
+        // Fail fast if the relayer published a malformed broadcaster address — see UnshieldModal's
+        // version of this check for the rationale (avoid a 20-30s proof gen that's doomed to
+        // surface an opaque SDK throw deep in the pipeline).
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('unshield-local')
+        // Freeze the broadcaster context with the rest of the submit state — same rationale as
+        // UnshieldModal: the proof must embed these EXACT values to pass the relayer's verifier.
         await txUnshieldLocal.submit({
           amount,
           feeCacheId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
         })
       } else {
         setSubmittedKind('unshield-xchain')
@@ -205,9 +230,12 @@ export function SendModal() {
           onRecipientChange={setRecipient}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           fee={fee}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
+          isLocalUnshield={isLocalUnshield}
           isFeeRefreshing={isStale}
           destDeploymentError={destDeploymentError}
           onCancel={close}
@@ -221,8 +249,10 @@ export function SendModal() {
           recipient={recipient}
           amount={amount}
           fee={fee}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
           isXchain={isXchain}
+          isLocalUnshield={isLocalUnshield}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
@@ -234,7 +264,11 @@ export function SendModal() {
           tab={tab}
           destChainId={destChainId}
           recipient={recipient}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          // Hub-chain explorer link for the on-chain submission. The destination delivery for
+          // xchain is a separate event tracked elsewhere; this is the source-chain action.
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}
         />
       )}

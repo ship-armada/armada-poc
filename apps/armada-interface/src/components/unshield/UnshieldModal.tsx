@@ -11,7 +11,8 @@ import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { getNetworkConfig } from '@/config/network'
 import { parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
-import { userFeeForKind } from '@/lib/relayer'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { isShieldedAddress } from '@/lib/address'
 import {
   ActionFlowShell,
   ProgressStep,
@@ -66,10 +67,20 @@ export function UnshieldModal() {
   const record = activeTx?.record ?? null
 
   const computedKind: SubmittedKind = destChainId === hubChainId ? 'unshield-local' : 'unshield-xchain'
-  // Display fee is a pure function of (kind, amount). unshield-local = 0 (user submits via own
-  // wallet, gas paid in native); unshield-xchain = CCTP fast-fee estimate (~2 bps).
-  const fee: bigint = userFeeForKind(computedKind, amount)
-  const netAmount = amount > fee ? amount - fee : 0n
+  const isXchain = computedKind === 'unshield-xchain'
+  // Display fee per (kind, amount, quote):
+  //   unshield-local  → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load.
+  //   unshield-xchain → CCTP fast-fee estimate (~2 bps, proportional to amount). Quote ignored.
+  const fee: bigint = userFeeForKind(computedKind, amount, quote)
+  // Per-kind fee math (recipient gets / user is debited / how much they can type) lives in one
+  // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. Keeps UnshieldModal + SendModal
+  // in lockstep when a kind's fee model flips (e.g., A4 moves yield kinds to fee-on-top).
+  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+  )
 
   // Pre-fill recipient from the connected EVM wallet on the modal's rising edge only,
   // so the user can clear the field afterwards without it getting repopulated.
@@ -118,11 +129,27 @@ export function UnshieldModal() {
       }
       const feeCacheId = activeQuote.cacheId
       if (computedKind === 'unshield-local') {
+        // Defensive shape-check on the relayer-published broadcaster address before we bake it
+        // into a 20–30s ZK proof. An empty / malformed value (relayer misconfigured, /fees
+        // response truncated by a proxy, etc.) would otherwise surface as an opaque SDK throw
+        // deep in proof gen. Fail fast with a clear message so the user knows it's a relayer-
+        // side problem rather than a wallet / amount issue.
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('unshield-local')
+        // Freeze the broadcaster context with the rest of the submit state. The proof must embed
+        // these EXACT values to pass the relayer's verifier — re-deriving them at handler time
+        // would risk drift if the quote rolls over between submit and proof-build.
         await txLocal.submit({
           amount,
           feeCacheId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
         })
       } else {
         setSubmittedKind('unshield-xchain')
@@ -160,9 +187,11 @@ export function UnshieldModal() {
           onRecipientChange={setRecipient}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           fee={fee}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
           isFeeRefreshing={isStale}
           onCancel={close}
           onContinue={() => setStep('review')}
@@ -174,8 +203,9 @@ export function UnshieldModal() {
           recipient={recipient}
           amount={amount}
           fee={fee}
-          netAmount={netAmount}
-          isXchain={computedKind === 'unshield-xchain'}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
@@ -186,7 +216,11 @@ export function UnshieldModal() {
         <UnshieldCompleteStep
           destChainId={destChainId}
           recipient={recipient}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          // The hub-chain explorer link — the relayer's submission happened on hub regardless of
+          // local vs xchain (xchain's destination delivery is a separate event we don't link here).
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}
         />
       )}

@@ -36,31 +36,111 @@ export interface FeeSchedule {
 const CCTP_FAST_FEE_BPS = 2n
 
 /**
- * Compute the USDC fee the user will actually pay for `kind` at `amount`. Today, while every
- * stage handler submits via the user's own wallet, the only on-chain USDC fee is CCTP V2's
- * fast-transfer fee (charged on cross-chain kinds, deducted from the minted amount at the
- * destination). All other kinds charge $0 in USDC — the user pays gas in native token via their
- * wallet.
+ * Compute the USDC fee the user will actually pay for `kind` at `amount`. Two contributing
+ * sources today:
  *
- * When the relayer-mediated submit path lands (see `submitRelay`), this function evolves to add
- * the relayer's gas-cost reimbursement on top of the CCTP fee for hub-tx kinds. Until then,
- * displaying the relayer's gas quote would be a lie — the relayer isn't paid by the user today.
+ *  - CCTP V2 fast-transfer fee (~2 bps) on cross-chain kinds, deducted from the destination mint.
+ *  - Relayer broadcaster fee on relayer-mediated kinds (Phase A3+), advertised verbatim in the
+ *    FeeSchedule's per-op entries. Encoded into the SNARK proof as a broadcaster output to the
+ *    relayer's `0zk` address; the relayer's pre-submit verifier rejects the request if the
+ *    proof's broadcaster output is below the advertised amount (`FEE_INSUFFICIENT`).
  *
- * Pure function of `(kind, amount)`. The relayer's `FeeSchedule` quote is currently unused on
- * the display path but remains plumbed through modals as `feeCacheId` so the relayer-submit
- * wire-up doesn't require a second refactor.
+ * Migration table — flips a kind's USDC fee on as its handler migrates to `submitRelay`:
+ *   - A3: unshield-local → reads `quote.fees.unshield`
+ *   - A4: transfer-shielded / yield-deposit / yield-withdraw (still `0n` here until A4 ships)
+ *   - A5: unshield-xchain hub burn — separate; today's CCTP fee path is unchanged
+ *
+ * `quote` is optional: pre-quote-load the modal renders `0n`, which is also the right answer
+ * for kinds that don't consume the quote. Modals pass the live `useFees()` quote when they have
+ * one.
  */
-export function userFeeForKind(kind: TxKind, amount: bigint): bigint {
+export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule | null): bigint {
   switch (kind) {
     case 'shield-xchain':
     case 'unshield-xchain':
       return (amount * CCTP_FAST_FEE_BPS) / 10_000n
-    case 'shield':
     case 'unshield-local':
+      return quote ? BigInt(quote.fees.unshield) : 0n
+    case 'shield':
     case 'transfer-shielded':
     case 'yield-deposit':
     case 'yield-withdraw':
       return 0n
+  }
+}
+
+/**
+ * Per-kind fee semantics — which side of the recipient line the fee sits on. Decoupled from
+ * `userFeeForKind` (which computes the fee amount) so a single-site refactor when a kind's fee
+ * model flips (e.g., A4 moves yield kinds to relayer-mediated → `fee-on-top`) doesn't ripple
+ * through every modal.
+ *
+ *  - `no-fee`            — recipient receives the entered amount; nothing extra is deducted.
+ *  - `fee-from-recipient` — fee is taken out of the destination mint (CCTP V2's path). The user
+ *                            spends the entered amount; the recipient receives `amount - fee`.
+ *  - `fee-on-top`        — fee is an extra output in the SNARK proof (relayer-mediated path).
+ *                            Recipient receives the full entered amount; user is deducted
+ *                            `amount + fee`. Input MAX must reserve room for the fee.
+ */
+export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top'
+
+export function feeModelForKind(kind: TxKind): FeeModel {
+  switch (kind) {
+    case 'shield-xchain':
+    case 'unshield-xchain':
+      return 'fee-from-recipient'
+    case 'unshield-local':
+      return 'fee-on-top'
+    case 'shield':
+    case 'transfer-shielded':
+    case 'yield-deposit':
+    case 'yield-withdraw':
+      // Today: no fee. A4 migrates transfer + yield to relayer-mediated → `fee-on-top`; the
+      // single switch update here will flip the math everywhere those kinds display fees.
+      return 'no-fee'
+  }
+}
+
+/**
+ * The three numbers every kind-aware modal needs from `(kind, amount, fee, max)`:
+ *
+ *  - `recipientReceives` — what the on-chain recipient gets. For history, success copy, etc.
+ *  - `totalDeducted`     — what's debited from the user's shielded balance. Shown as the
+ *                          "Total deducted" line on the fee-on-top path; equals
+ *                          `recipientReceives` on the other two.
+ *  - `inputMax`          — the cap the AmountInput should accept so `totalDeducted ≤ max` always
+ *                          holds. Differs from `max` only on `fee-on-top` (must reserve fee).
+ *
+ * Single source of truth. UnshieldModal + SendModal call this; the per-step components just
+ * receive the three numbers as props.
+ */
+export interface FeeBreakdown {
+  recipientReceives: bigint
+  totalDeducted: bigint
+  inputMax: bigint
+}
+
+export function computeFeeBreakdown(
+  kind: TxKind,
+  amount: bigint,
+  fee: bigint,
+  max: bigint,
+): FeeBreakdown {
+  switch (feeModelForKind(kind)) {
+    case 'no-fee':
+      return { recipientReceives: amount, totalDeducted: amount, inputMax: max }
+    case 'fee-from-recipient':
+      return {
+        recipientReceives: amount > fee ? amount - fee : 0n,
+        totalDeducted: amount,
+        inputMax: max,
+      }
+    case 'fee-on-top':
+      return {
+        recipientReceives: amount,
+        totalDeducted: amount + fee,
+        inputMax: max > fee ? max - fee : 0n,
+      }
   }
 }
 

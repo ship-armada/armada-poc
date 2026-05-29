@@ -15,8 +15,10 @@ export interface SendReviewStepProps {
   recipient: string
   amount: bigint
   fee: bigint | null
-  netAmount: bigint
+  recipientReceives: bigint
+  totalDeducted: bigint
   isXchain: boolean
+  isLocalUnshield: boolean
   submitBlockedReason?: string | null
   onBack: () => void
   onConfirm: () => void
@@ -37,8 +39,10 @@ export function SendReviewStep({
   recipient,
   amount,
   fee,
-  netAmount,
+  recipientReceives,
+  totalDeducted,
   isXchain,
+  isLocalUnshield,
   submitBlockedReason,
   onBack,
   onConfirm,
@@ -74,7 +78,12 @@ export function SendReviewStep({
           </dd>
         </div>
       </dl>
-      <FeeSummary fee={fee} netAmount={netAmount} netLabel="They'll receive" />
+      <FeeSummary
+        fee={fee}
+        netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
+        netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
+        feeLabel={isXchain ? 'CCTP fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+      />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">
           {submitBlockedReason}

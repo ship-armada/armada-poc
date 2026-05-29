@@ -137,6 +137,20 @@ export interface MetaShieldXchain extends MetaCommon {
 export interface MetaUnshieldLocal extends MetaCommon {
   /** EVM recipient on the hub chain. */
   recipient: string
+  /**
+   * Broadcaster-fee amount (USDC raw) that the SNARK proof embeds as a payment to the relayer.
+   * Captured from the FeeSchedule at submit-time; immutable for the record's lifetime. The
+   * relayer's server-side verifier (Phase A2) compares this against its advertised fee and
+   * rejects mismatches with `FEE_INSUFFICIENT`.
+   */
+  broadcasterFeeAmount: bigint
+  /**
+   * Relayer's Railgun (`0zk`) address that the SNARK proof's broadcaster output pays. Captured
+   * from the FeeSchedule alongside the amount; if the operator rotates the relayer wallet
+   * between submit and proof-build the proof would land in some OTHER wallet's outbox, so we
+   * freeze the address with the rest of the submit state.
+   */
+  broadcasterRailgunAddress: string
 }
 
 export interface MetaUnshieldXchain extends MetaCommon {

@@ -16,7 +16,8 @@ const FAKE_QUOTE = {
   cacheId: 'test-cache',
   expiresAt: Date.now() + 5 * 60_000,
   chainId: 31337,
-  broadcasterRailgunAddress: '',
+  // Shape-valid 0zk for the submit-time isShieldedAddress() check on the external-tab→hub path.
+  broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
   fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
 }
 

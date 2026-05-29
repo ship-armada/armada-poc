@@ -12,7 +12,10 @@ export interface UnshieldReviewStepProps {
   recipient: string
   amount: bigint
   fee: bigint | null
-  netAmount: bigint
+  /** USDC the on-chain recipient will receive. Local: `amount`. Xchain: `amount - fee`. */
+  recipientReceives: bigint
+  /** USDC actually deducted from the user's shielded balance. Local: `amount + fee`. Xchain: `amount`. */
+  totalDeducted: bigint
   isXchain: boolean
   /** When set, Confirm is disabled and the reason is shown inline. Used to gate the submit
    *  while the shielded-balance sync is still in progress. */
@@ -26,7 +29,8 @@ export function UnshieldReviewStep({
   recipient,
   amount,
   fee,
-  netAmount,
+  recipientReceives,
+  totalDeducted,
   isXchain,
   submitBlockedReason,
   onBack,
@@ -55,7 +59,15 @@ export function UnshieldReviewStep({
           </dd>
         </div>
       </dl>
-      <FeeSummary fee={fee} netAmount={netAmount} netLabel="You'll receive" />
+      <FeeSummary
+        fee={fee}
+        // Mirrors UnshieldInputStep — bottom line is "Total deducted" on the local path so the
+        // user sees the full balance impact, "Recipient receives" on xchain so they see the
+        // CCTP-net amount the destination address will land.
+        netAmount={isXchain ? recipientReceives : totalDeducted}
+        netLabel={isXchain ? "Recipient receives" : 'Total deducted from balance'}
+        feeLabel={isXchain ? 'CCTP fee' : 'Relayer fee'}
+      />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">
           {submitBlockedReason}

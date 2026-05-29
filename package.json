@@ -32,6 +32,7 @@
     "vkeys:register": "hardhat run scripts/register_missing_vkeys.ts --network hub",
     "vkeys:register:sepolia": "hardhat run scripts/register_missing_vkeys.ts --network sepoliaHub",
     "derive:relayer-railgun": "npx ts-node scripts/derive_relayer_railgun_address.ts",
+    "check:relayer-balance": "npx ts-node scripts/check_relayer_railgun_balance.ts",
     "relayer": "npx ts-node relayer/armada-relayer.ts",
     "armada-relayer": "npx ts-node relayer/armada-relayer.ts",
     "deploy:governance": "hardhat run scripts/deploy_governance.ts --network hub",

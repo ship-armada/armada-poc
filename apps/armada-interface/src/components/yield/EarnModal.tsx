@@ -73,12 +73,20 @@ export function EarnModal() {
   //     fee comes from a SEPARATE unshield of user's pre-existing private USDC (see
   //     adapter.redeemAndShield + SDK CrossContractCalls broadcaster handling). Net private
   //     balance change is +(amount - fee); vault balance drops by `amount`-worth of shares.
-  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+  const { recipientReceives, totalDeducted, inputMax: feeOnTopInputMax } = computeFeeBreakdown(
     yieldKind,
     amount,
     fee,
     max,
   )
+  // For withdraw the fee doesn't come from the vault — it's debited from private USDC via a
+  // separate unshield in the same proof. Reserving `fee` against the vault `max` would collapse
+  // the typeable cap to 0 whenever `fee >= vault balance` (e.g. a $0.50 fee on a $0.40 vault
+  // balance), even though the user can perfectly well withdraw the full $0.40 as long as their
+  // private balance covers the fee. The private-USDC sufficiency check is enforced via the
+  // pre-flight `continueBlockedReason` below; here we just expose the full vault balance as
+  // typeable.
+  const inputMax: bigint = tab === 'add' ? feeOnTopInputMax : max
   // Honest withdraw-display: the user nets `amount - fee` into their private balance. Clamped
   // at 0 for the edge case where fee > amount (shouldn't happen in practice — small typed
   // withdraw amount + larger flat fee — but defensive).

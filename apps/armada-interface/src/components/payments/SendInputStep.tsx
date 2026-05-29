@@ -129,14 +129,14 @@ export function SendInputStep({
       />
       <FeeSummary
         fee={fee}
-        // Xchain has two fees with different semantics: broadcaster (paid by user, on top) +
-        // CCTP fast-fee (deducted from recipient mint). Render both via the secondary slot so
-        // the user can reason about the breakdown. The extra-net row shows `totalDeducted` on
-        // xchain so the user also sees the on-balance debit alongside the recipient mint.
-        netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
-        netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
-        extraNetAmount={isXchain ? totalDeducted : undefined}
-        extraNetLabel={isXchain ? 'Total deducted from balance' : undefined}
+        // Net-line policy per kind:
+        //   - transfer-shielded (private): "They'll receive" = amount (recipient gets exactly
+        //     what was typed; broadcaster fee comes off the user's balance on top).
+        //   - unshield-local + unshield-xchain: "Total deducted from balance" — load-bearing
+        //     number for the user; xchain recipient mint differs only by the CCTP fast-fee
+        //     already surfaced on its own row.
+        netAmount={isLocalUnshield || isXchain ? totalDeducted : recipientReceives}
+        netLabel={isLocalUnshield || isXchain ? 'Total deducted from balance' : "They'll receive"}
         // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}

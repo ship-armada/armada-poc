@@ -64,41 +64,6 @@ describe('<FeeSummary>', () => {
     expect(screen.queryByText('No fee')).toBeNull()
   })
 
-  it('renders the extra-net row below the main net amount when provided', () => {
-    // WHY: xchain unshield needs to surface BOTH "Recipient receives" (the destination mint) AND
-    // "Total deducted from balance" (the on-balance debit) — they are different numbers because
-    // CCTP fee comes out of recipient, broadcaster fee comes off the user's balance. The extra
-    // slot wins back parity with the local-unshield experience (which only ever shows total
-    // deducted). A regression that dropped the slot would force users to back-compute the debit
-    // from amount + relayer fee, which is exactly the cognitive load this panel exists to remove.
-    render(
-      <FeeSummary
-        fee={50_000n}
-        netAmount={49_990_000n}
-        netLabel="Recipient receives"
-        extraNetAmount={50_050_000n}
-        extraNetLabel="Total deducted from balance"
-      />,
-    )
-    expect(screen.getByText('Recipient receives')).toBeInTheDocument()
-    expect(screen.getByText('Total deducted from balance')).toBeInTheDocument()
-    expect(screen.getByText(/49\.99/)).toBeInTheDocument()
-    expect(screen.getByText(/50\.05/)).toBeInTheDocument()
-  })
-
-  it('hides the extra-net row when extraNetAmount is omitted (local unshield path)', () => {
-    // WHY: pinning the negative — local unshield must keep its single-net look and not start
-    // showing a phantom second row just because the FeeSummary primitive grew the capability.
-    render(
-      <FeeSummary
-        fee={50_000n}
-        netAmount={50_050_000n}
-        netLabel="Total deducted from balance"
-      />,
-    )
-    expect(screen.queryByText('Recipient receives')).toBeNull()
-  })
-
   it('applies the "<0.01" rule to the secondary fee row too (A5 xchain CCTP slot)', () => {
     // WHY: the secondary row exists specifically for unshield-xchain, where the CCTP fast-fee is
     // proportional to amount and the most common amounts in testing surface as sub-cent. Both

@@ -22,7 +22,6 @@ function setup(extras?: {
     max: extras?.max ?? 5_000_000n,
     fee: null as bigint | null,
     cctpFee: 0n,
-    recipientReceives: 0n,
     totalDeducted: 0n,
     isXchain: (extras?.destChainId ?? 31337) !== 31337,
     onCancel: vi.fn(),
@@ -66,7 +65,6 @@ describe('<UnshieldInputStep>', () => {
         max={1_000_000n}
         fee={null}
         cctpFee={0n}
-        recipientReceives={0n}
         totalDeducted={0n}
         isXchain={false}
         onCancel={vi.fn()}
@@ -85,7 +83,6 @@ describe('<UnshieldInputStep>', () => {
         max={1_000_000n}
         fee={null}
         cctpFee={0n}
-        recipientReceives={0n}
         totalDeducted={0n}
         isXchain
         onCancel={vi.fn()}

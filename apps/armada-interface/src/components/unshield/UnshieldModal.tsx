@@ -215,7 +215,6 @@ export function UnshieldModal() {
           max={inputMax}
           fee={fee}
           cctpFee={cctpFee}
-          recipientReceives={recipientReceives}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
           isFeeRefreshing={isStale}
@@ -230,7 +229,6 @@ export function UnshieldModal() {
           amount={amount}
           fee={fee}
           cctpFee={cctpFee}
-          recipientReceives={recipientReceives}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}

@@ -23,8 +23,6 @@ export interface UnshieldInputStepProps {
   fee: bigint | null
   /** CCTP fast-fee on xchain. Surfaced as the FeeSummary secondary row when xchain. */
   cctpFee: bigint
-  /** USDC the on-chain recipient will receive. Local: `amount`. Xchain: `amount - cctpFee`. */
-  recipientReceives: bigint
   /** USDC deducted from the user's shielded balance. Both kinds post-A5: `amount + fee`. */
   totalDeducted: bigint
   isXchain: boolean
@@ -43,7 +41,6 @@ export function UnshieldInputStep({
   max,
   fee,
   cctpFee,
-  recipientReceives,
   totalDeducted,
   isXchain,
   isFeeRefreshing,
@@ -100,17 +97,12 @@ export function UnshieldInputStep({
       <FeeSummary
         fee={fee}
         // Both kinds pay a relayer broadcaster fee; xchain ALSO pays a CCTP fast-fee from the
-        // destination mint. Surface the CCTP fee as the secondary row so the user can reason
-        // about why their recipient-receives differs from the entered amount.
-        //
-        // Net layout:
-        //   - local : emphasised line is `totalDeducted` (the only number that matters).
-        //   - xchain: emphasised line is `recipientReceives` (what arrives on dest); the extra
-        //             row surfaces `totalDeducted` so the user also sees the on-balance debit.
-        netAmount={isXchain ? recipientReceives : totalDeducted}
-        netLabel={isXchain ? 'Recipient receives' : 'Total deducted from balance'}
-        extraNetAmount={isXchain ? totalDeducted : undefined}
-        extraNetLabel={isXchain ? 'Total deducted from balance' : undefined}
+        // destination mint. Surface the CCTP fee as the secondary row so the user can see the
+        // breakdown. Bottom line is `Total deducted from balance` on both paths — that's the
+        // load-bearing number the user is committing to. Recipient mint differs only by the
+        // CCTP fast-fee already shown on its own row above.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}
         secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}

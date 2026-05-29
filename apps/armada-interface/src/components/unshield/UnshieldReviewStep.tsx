@@ -14,8 +14,6 @@ export interface UnshieldReviewStepProps {
   fee: bigint | null
   /** CCTP fast-fee on xchain. Surfaced as the FeeSummary secondary row when applicable. */
   cctpFee: bigint
-  /** USDC the on-chain recipient will receive. Local: `amount`. Xchain: `amount - cctpFee`. */
-  recipientReceives: bigint
   /** USDC deducted from the user's shielded balance. Both kinds post-A5: `amount + fee`. */
   totalDeducted: bigint
   isXchain: boolean
@@ -32,7 +30,6 @@ export function UnshieldReviewStep({
   amount,
   fee,
   cctpFee,
-  recipientReceives,
   totalDeducted,
   isXchain,
   submitBlockedReason,
@@ -64,14 +61,11 @@ export function UnshieldReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        // Mirrors UnshieldInputStep — bottom line is "Total deducted" on the local path; on
-        // xchain it's "Recipient receives" (the CCTP-net amount), with "Total deducted from
-        // balance" rendered as an extra row so the user also sees the on-balance debit. CCTP
-        // fee is surfaced as the secondary row.
-        netAmount={isXchain ? recipientReceives : totalDeducted}
-        netLabel={isXchain ? 'Recipient receives' : 'Total deducted from balance'}
-        extraNetAmount={isXchain ? totalDeducted : undefined}
-        extraNetLabel={isXchain ? 'Total deducted from balance' : undefined}
+        // Mirrors UnshieldInputStep — single "Total deducted from balance" net line on both
+        // paths. Recipient mint on xchain differs by the CCTP fast-fee, already broken out as
+        // the secondary fee row above.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}
         secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}

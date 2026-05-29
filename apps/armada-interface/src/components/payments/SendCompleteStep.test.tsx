@@ -15,6 +15,7 @@ describe('<SendCompleteStep>', () => {
         destChainId={31337}
         recipient={VALID_0ZK}
         recipientReceives={100_000_000n}
+        totalDeducted={100_000_000n}
         onDone={() => {}}
       />,
     )
@@ -29,6 +30,7 @@ describe('<SendCompleteStep>', () => {
         destChainId={31337}
         recipient={VALID_EVM}
         recipientReceives={50_000_000n}
+        totalDeducted={50_000_000n}
         onDone={() => {}}
       />,
     )
@@ -44,6 +46,7 @@ describe('<SendCompleteStep>', () => {
         destChainId={31337}
         recipient={VALID_0ZK}
         recipientReceives={1_000_000n}
+        totalDeducted={1_000_000n}
         onDone={onDone}
       />,
     )

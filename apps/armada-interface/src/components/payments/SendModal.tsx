@@ -255,6 +255,10 @@ export function SendModal() {
           destChainId={destChainId}
           recipient={recipient}
           recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          // Hub-chain explorer link for the on-chain submission. The destination delivery for
+          // xchain is a separate event tracked elsewhere; this is the source-chain action.
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}
         />
       )}

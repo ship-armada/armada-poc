@@ -207,6 +207,10 @@ export function UnshieldModal() {
           destChainId={destChainId}
           recipient={recipient}
           recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          // The hub-chain explorer link — the relayer's submission happened on hub regardless of
+          // local vs xchain (xchain's destination delivery is a separate event we don't link here).
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}
         />
       )}

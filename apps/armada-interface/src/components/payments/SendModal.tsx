@@ -163,11 +163,21 @@ export function SendModal() {
       }
       const feeCacheId = activeQuote.cacheId
       if (computedKind === 'transfer-shielded') {
+        // Same address-shape guard as unshield-local — both paths now embed a broadcaster
+        // output, so a malformed published address would doom proof gen the same way.
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('transfer-shielded')
         await txTransfer.submit({
           amount,
           feeCacheId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.transfer),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
         })
       } else if (computedKind === 'unshield-local') {
         // Fail fast if the relayer published a malformed broadcaster address — see UnshieldModal's

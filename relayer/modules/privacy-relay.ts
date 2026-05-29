@@ -19,26 +19,19 @@ import { hubChain } from "../config";
 /**
  * Known function selectors for allowed operations.
  *
- * Phase A2 scope (Option I — see `.claude/RELAYER_MEDIATION_PLAN.md`): vanilla `transact(...)`
- * only. The broadcaster-fee verifier consumes the SDK's decoder which is hard-coded to the
- * canonical `transact` / `relay` function names. Wrapper functions (atomicCrossChainUnshield,
- * lendAndShield, redeemAndShield) carry an embedded Transaction struct but the SDK won't
- * decode their outer signature — extending the verifier with extraction logic for each wrapper
- * ships alongside the handler PR that needs it (A4 for yield, A5 for atomicCrossChainUnshield).
+ * Verifier coverage:
+ *   - `transact(Transaction[])` — vanilla. SDK decoder handles it directly.
+ *   - `lendAndShield(Transaction, ...)` — yield deposit. A4 wrapper-decoder synthesises
+ *     a vanilla `transact([txn])` from the embedded Transaction before the SDK decrypts.
+ *   - `redeemAndShield(Transaction, ...)` — yield withdraw. Same wrapper path.
  *
- * Until then, the wrapper selectors are off the allowlist so the relayer cannot accept a
- * request it cannot verify. This intentionally drops the legacy `usdc-v2-frontend` paths that
- * used those selectors; the active app (armada-interface) hasn't migrated any handler to
- * `submitRelay` yet (A3 starts that), so there's no live consumer to break.
+ * Off-allowlist until the matching handler PR lands:
+ *   - 0xe484d408 atomicCrossChainUnshield → restored in A5 (unshield-xchain handler migration)
  */
 const ALLOWED_SELECTORS: Record<string, string> = {
-  // PrivacyPool.transact(Transaction[]) — transfers and unshield-local
   "0xd8ae136a": "transact",
-  // Selectors temporarily off the allowlist (returning with the matching handler PRs that
-  // extend the verifier to decode their wrapper functions):
-  //   0xe484d408 atomicCrossChainUnshield → restored in A5 (unshield-xchain handler migration)
-  //   0xf2987ad1 lendAndShield            → restored in A4 (yield-deposit handler migration)
-  //   0x0793b70e redeemAndShield          → restored in A4 (yield-withdraw handler migration)
+  "0xf2987ad1": "lendAndShield",
+  "0x0793b70e": "redeemAndShield",
 };
 
 /**
@@ -47,6 +40,10 @@ const ALLOWED_SELECTORS: Record<string, string> = {
  * MIN as the lower bound: the relayer accepts the smaller-quoted fee for either op type. In
  * practice transfer and unshield are quoted identically today (both gas-estimated at 500k),
  * so this is a robustness hedge, not a functional gap.
+ *
+ * Both yield wrappers map to `crossContract` — the fee schedule's tier for relay-adapt-style
+ * cross-contract calls. This is a single tier because lendAndShield and redeemAndShield have
+ * comparable gas profiles (both spend a UTXO, call a vault, re-shield the result).
  */
 function advertisedFeeForSelector(
   selector: string,
@@ -58,6 +55,9 @@ function advertisedFeeForSelector(
       const u = BigInt(fees.unshield);
       return t < u ? t : u;
     }
+    case "0xf2987ad1":
+    case "0x0793b70e":
+      return BigInt(fees.crossContract);
     default:
       // Defensive — the caller already gated on ALLOWED_SELECTORS, so this branch is unreachable.
       throw new RelayError(

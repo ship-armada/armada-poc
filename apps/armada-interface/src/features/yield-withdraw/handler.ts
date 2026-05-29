@@ -1,10 +1,6 @@
-// ABOUTME: Yield-withdraw (redeem) handler — single atomic adapt-proof tx unshields ayUSDC shares, redeems from Aave, re-shields the resulting USDC back into the user's 0zk wallet.
+// ABOUTME: Yield-withdraw (redeem) handler — single atomic adapt-proof tx with broadcaster fee → POST /relay → poll status. Relayer-mediated (A4).
 // ABOUTME: Symmetric with yield-deposit; only the adapter entry point + token roles flip.
 
-import {
-  sendTransaction,
-} from 'wagmi/actions'
-import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments, loadYieldDeployment } from '@/config/deployments'
 import { getNetworkConfig } from '@/config/network'
 import {
@@ -15,19 +11,20 @@ import {
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import { buildYieldAdaptTransaction } from '@/lib/railgun/yield'
-import { ensureChain } from '@/lib/network-switch'
+import { submitRelay, RelayerError } from '@/lib/relayer'
 import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
-import { waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { createProofProgressWriter } from '@/lib/tx/progress'
+import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
-import type { TxRecord } from '@/lib/tx/types'
+import type { TxError, TxRecord } from '@/lib/tx/types'
 
 /**
- * Lifecycle mirrors yield-deposit. The amount field on the meta is the SHARES count (ayUSDC),
- * computed by the modal as `requestedUsdc × 1e18 / rate` where rate comes from `useYieldRate()`.
- * If rate moves between quote and execution the user receives slightly more or less than
- * requested — out of scope to slippage-protect for v1.
+ * Lifecycle mirrors yield-deposit. `meta.amount` is the SHARES count (ayUSDC), computed by the
+ * modal as `requestedUsdc × 1e18 / rate` where rate comes from `useYieldRate()`. If rate moves
+ * between quote and execution the user receives slightly more or less than requested — out of
+ * scope to slippage-protect for v1.
  */
 export const yieldWithdrawHandler: StageHandler<'yield-withdraw'> = {
   kind: 'yield-withdraw',
@@ -68,6 +65,7 @@ async function runBuildProof(
   if (record.meta.shares <= 0n) {
     throw new Error('Withdraw shares is zero — the vault rate may not have synced yet. Try again in a moment.')
   }
+  const usdcAddress = deployments.hub.cctp.usdc
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
@@ -79,16 +77,22 @@ async function runBuildProof(
     // Redeem flips the token roles: we unshield SHARES (ayUSDC, the vault token) and receive
     // USDC (the underlying) back into the shielded pool.
     unshieldToken: yieldDeployment.contracts.armadaYieldVault,
-    shieldOutputToken: deployments.hub.cctp.usdc,
+    shieldOutputToken: usdcAddress,
     amount: record.meta.shares,
     railgunAddress,
     adapterAddress: yieldDeployment.contracts.armadaYieldAdapter,
     hubChainId: getNetworkConfig().hub.chainId,
+    // Broadcaster fee is paid in USDC (the unshielded output token), same as deposit. The
+    // SDK includes the broadcaster output alongside the cross-contract spend in one proof.
+    broadcasterFee: {
+      tokenAddress: usdcAddress,
+      amount: record.meta.broadcasterFeeAmount,
+      recipientAddress: record.meta.broadcasterRailgunAddress,
+    },
     onProgress: progress.write,
   })
 
   if (ctx.signal.aborted) throw new Error('cancelled')
-  // Stash the populated calldata — see yield-deposit handler for the proof-cache rationale.
   await ctx.upsert(advance(progress.latest(), 'submit-relayer', {
     yieldTx: {
       to: built.transaction.to,
@@ -106,28 +110,72 @@ async function runSubmitAndConfirm(
   if (!yieldTx) {
     throw new Error('Yield adapt-proof tx missing — re-run build-proof stage.')
   }
+  const hubChainId = getNetworkConfig().hub.chainId
 
-  // Adapter call lives on the hub.
-  await ensureChain(getNetworkConfig().hub.chainId)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  let submitResponse
+  try {
+    submitResponse = await submitRelay(
+      {
+        chainId: hubChainId,
+        to: yieldTx.to,
+        data: yieldTx.data,
+        feesCacheId: record.meta.feeCacheId,
+      },
+      ctx.signal,
+    )
+  } catch (err) {
+    if (err instanceof RelayerError) {
+      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+    }
+    throw err
+  }
 
-  const hash = await sendTransaction(wagmiConfig, {
-    to: yieldTx.to,
-    data: yieldTx.data,
-    value: BigInt(yieldTx.value),
-  })
-  // Patched record MUST be threaded forward into the final advance — `record` is now stale
-  // (lower updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq
-  // write that OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
   await ctx.upsert(broadcastRecord)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  await waitForReceiptOrFail({ hash, signal: ctx.signal })
+  const pollResult = await poll(
+    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
+    { signal: ctx.signal },
+  )
+
+  if (pollResult.status === 'aborted') throw new Error('cancelled')
+  if (pollResult.status === 'timeout') {
+    const error: TxError = {
+      code: 'POLL_TIMEOUT',
+      message:
+        'The relayer hasn\'t reported a final status. The transaction may still complete on chain — check the explorer.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    await ctx.upsert(markFailed(broadcastRecord, error))
+    return
+  }
+
+  const final = pollResult.value
+  if (!final) {
+    throw new Error('poll returned done without a status value')
+  }
+
+  if (final.status === 'failed') {
+    track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: 'EXECUTION_FAILED' })
+    const error: TxError = {
+      code: 'TX_REVERTED',
+      message: final.error ?? 'Relayer-broadcast tx reverted on chain.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    await ctx.upsert(markFailed(broadcastRecord, error))
+    return
+  }
+
+  track('tx.relayer.confirmed', { id: record.id, kind: record.kind })
 
   if (kmIsUnlocked()) {
     void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
   }
 
-  await ctx.upsert(advance(broadcastRecord, 'hub-confirmed', { sourceTxHash: hash }))
+  await ctx.upsert(advance(broadcastRecord, 'hub-confirmed', {
+    sourceTxHash: submitResponse.txHash as `0x${string}`,
+  }))
 }

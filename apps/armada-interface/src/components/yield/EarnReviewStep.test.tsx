@@ -13,7 +13,7 @@ function setupAdd() {
       amount={100_000_000n}
       rate={null}
       fee={null}
-      netAmount={100_000_000n}
+      totalDeducted={100_000_000n}
       onBack={onBack}
       onConfirm={onConfirm}
     />,
@@ -35,7 +35,7 @@ describe('<EarnReviewStep>', () => {
         amount={50_000_000n}
         rate={null}
         fee={null}
-        netAmount={50_000_000n}
+        totalDeducted={50_000_000n}
         onBack={() => {}}
         onConfirm={() => {}}
       />,

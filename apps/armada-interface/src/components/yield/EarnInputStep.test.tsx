@@ -19,7 +19,7 @@ function setup(extras?: {
     max: extras?.max ?? 5_000_000n,
     rate: extras?.rate ?? null as YieldRate | null,
     fee: null as bigint | null,
-    netAmount: 0n,
+    totalDeducted: 0n,
     onCancel: vi.fn(),
     onContinue: vi.fn(),
   }

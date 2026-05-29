@@ -10,7 +10,8 @@ import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { useYieldRate } from '@/hooks/useYieldRate'
 import { parseUsdcInput } from '@/lib/format'
-import { userFeeForKind } from '@/lib/relayer'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { sharesToUsdc } from '@/lib/yield'
 import {
@@ -58,10 +59,17 @@ export function EarnModal() {
   // Yield ops spend the user's shielded USDC (deposit) or shielded yield shares (withdraw).
   // Either way, we need a successful first sync before letting the user submit.
   const syncGate = useSpendableSyncGate()
-  // Display fee for yield ops is 0 today — user submits via own wallet, no relayer leg.
+  // A4 — yield ops are relayer-mediated. Fee comes from the quote's crossContract tier.
   const yieldKind: 'yield-deposit' | 'yield-withdraw' = tab === 'add' ? 'yield-deposit' : 'yield-withdraw'
-  const fee: bigint = userFeeForKind(yieldKind, amount)
-  const netAmount = amount > fee ? amount - fee : 0n
+  const fee: bigint = userFeeForKind(yieldKind, amount, quote)
+  // Both yield ops are fee-on-top: the broadcaster output sits alongside the vault spend in
+  // the same proof; user's shielded USDC pays the fee on top of the deposit/withdraw amount.
+  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+    yieldKind,
+    amount,
+    fee,
+    max,
+  )
 
   // Two useTx hooks; only one gets a record per flow.
   const txDeposit = useTx({ kind: 'yield-deposit' })
@@ -120,11 +128,23 @@ export function EarnModal() {
         throw new Error('Could not fetch a current fee quote — please try again.')
       }
       const feeCacheId = activeQuote.cacheId
+      // Same broadcaster address guard as Send / Unshield — fail fast if the relayer published
+      // a malformed value rather than paying 20-30s of proof gen for a doomed submission.
+      if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+        throw new Error(
+          'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+            'problem persists, the relayer may be misconfigured.',
+        )
+      }
+      const broadcasterFeeAmount = BigInt(activeQuote.fees.crossContract)
+      const broadcasterRailgunAddress = activeQuote.broadcasterRailgunAddress
       if (tab === 'add') {
         setSubmittedKind('yield-deposit')
         await txDeposit.submit({
           amount,
           feeCacheId,
+          broadcasterFeeAmount,
+          broadcasterRailgunAddress,
         })
       } else {
         setSubmittedKind('yield-withdraw')
@@ -142,6 +162,8 @@ export function EarnModal() {
           amount,
           feeCacheId,
           shares,
+          broadcasterFeeAmount,
+          broadcasterRailgunAddress,
         })
       }
       setStep('progress')
@@ -172,10 +194,10 @@ export function EarnModal() {
           }}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           rate={yieldRate}
           fee={fee}
-          netAmount={netAmount}
+          totalDeducted={totalDeducted}
           isFeeRefreshing={isStale}
           onCancel={close}
           onContinue={() => setStep('review')}
@@ -187,7 +209,7 @@ export function EarnModal() {
           amount={amount}
           rate={yieldRate}
           fee={fee}
-          netAmount={netAmount}
+          totalDeducted={totalDeducted}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
@@ -195,7 +217,13 @@ export function EarnModal() {
       )}
       {step === 'progress' && <ProgressStep record={record} />}
       {step === 'complete' && (
-        <EarnCompleteStep tab={tab} netAmount={netAmount} onDone={close} />
+        <EarnCompleteStep
+          tab={tab}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          onDone={close}
+        />
       )}
       {step === 'error' && (
         <ErrorStep

@@ -36,13 +36,31 @@ const ONE_USDC = 1_000_000n // 6 decimals
 const HUNDRED_USDC = 100n * ONE_USDC
 
 describe('userFeeForKind', () => {
+  it('returns 0n for shield (user-submitted; no broadcaster fee path)', () => {
+    expect(userFeeForKind('shield', HUNDRED_USDC)).toBe(0n)
+  })
+
   it.each([
-    ['shield'],
+    ['transfer-shielded', 'transfer'],
+    ['yield-deposit', 'crossContract'],
+    ['yield-withdraw', 'crossContract'],
+  ] as const)(
+    '%s reads the flat per-op fee (raw USDC) from the quote\'s %s tier',
+    (kind, tier) => {
+      const quote = quoteWith({ [tier]: '75000' }) // 0.075 USDC raw
+      expect(userFeeForKind(kind, HUNDRED_USDC, quote)).toBe(75_000n)
+      // …and is amount-independent, same as unshield-local.
+      expect(userFeeForKind(kind, ONE_USDC, quote)).toBe(75_000n)
+    },
+  )
+
+  it.each([
     ['transfer-shielded'],
     ['yield-deposit'],
     ['yield-withdraw'],
-  ] as const)('returns 0n for %s (handler still user-submitted; migrates in A4)', (kind) => {
+  ] as const)('%s returns 0n when no quote is provided (cold-load)', (kind) => {
     expect(userFeeForKind(kind, HUNDRED_USDC)).toBe(0n)
+    expect(userFeeForKind(kind, HUNDRED_USDC, null)).toBe(0n)
   })
 
   describe('unshield-local — relayer-mediated (A3+)', () => {
@@ -119,19 +137,20 @@ describe('feeModelForKind', () => {
     expect(feeModelForKind('unshield-xchain')).toBe('fee-from-recipient')
   })
 
-  it('classifies unshield-local as fee-on-top (relayer-mediated proof has extra broadcaster output)', () => {
-    // WHY: the load-bearing A3 distinction — getting this wrong inverts the recipient-receives /
-    // total-deducted math everywhere.
-    expect(feeModelForKind('unshield-local')).toBe('fee-on-top')
-  })
-
   it.each([
-    ['shield'],
+    ['unshield-local'],
     ['transfer-shielded'],
     ['yield-deposit'],
     ['yield-withdraw'],
-  ] as const)('classifies %s as no-fee (today; A4 will flip yield + transfer to fee-on-top)', (kind) => {
-    expect(feeModelForKind(kind)).toBe('no-fee')
+  ] as const)('classifies %s as fee-on-top (relayer-mediated proof has extra broadcaster output)', (kind) => {
+    // WHY: every relayer-mediated kind pays the broadcaster from a fresh unshield output sitting
+    // alongside the user's primary spend, so the user is debited `amount + fee` and the recipient
+    // (or the vault, for yield) receives the full `amount`.
+    expect(feeModelForKind(kind)).toBe('fee-on-top')
+  })
+
+  it('classifies shield as no-fee (no broadcaster involvement; user submits directly)', () => {
+    expect(feeModelForKind('shield')).toBe('no-fee')
   })
 })
 
@@ -141,7 +160,7 @@ describe('computeFeeBreakdown', () => {
   const MAX = 10_000_000n // $10 shielded balance
 
   it('no-fee kinds: recipient = amount, total = amount, inputMax = max (no reservation)', () => {
-    const r = computeFeeBreakdown('transfer-shielded', AMOUNT, FEE, MAX)
+    const r = computeFeeBreakdown('shield', AMOUNT, FEE, MAX)
     expect(r.recipientReceives).toBe(AMOUNT)
     expect(r.totalDeducted).toBe(AMOUNT)
     expect(r.inputMax).toBe(MAX)

@@ -134,23 +134,9 @@ export interface MetaShieldXchain extends MetaCommon {
   fromChainId: number
 }
 
-export interface MetaUnshieldLocal extends MetaCommon {
+export interface MetaUnshieldLocal extends MetaCommon, MetaBroadcaster {
   /** EVM recipient on the hub chain. */
   recipient: string
-  /**
-   * Broadcaster-fee amount (USDC raw) that the SNARK proof embeds as a payment to the relayer.
-   * Captured from the FeeSchedule at submit-time; immutable for the record's lifetime. The
-   * relayer's server-side verifier (Phase A2) compares this against its advertised fee and
-   * rejects mismatches with `FEE_INSUFFICIENT`.
-   */
-  broadcasterFeeAmount: bigint
-  /**
-   * Relayer's Railgun (`0zk`) address that the SNARK proof's broadcaster output pays. Captured
-   * from the FeeSchedule alongside the amount; if the operator rotates the relayer wallet
-   * between submit and proof-build the proof would land in some OTHER wallet's outbox, so we
-   * freeze the address with the rest of the submit state.
-   */
-  broadcasterRailgunAddress: string
 }
 
 export interface MetaUnshieldXchain extends MetaCommon {
@@ -160,13 +146,26 @@ export interface MetaUnshieldXchain extends MetaCommon {
   recipient: string
 }
 
-export interface MetaTransferShielded extends MetaCommon {
+/**
+ * Broadcaster context captured at submit-time from the FeeSchedule the modal used. The proof
+ * embeds these EXACT values; the relayer's server-side verifier (Phase A2) rejects requests
+ * whose decrypted broadcaster output doesn't match. Frozen for the record's lifetime — the
+ * cacheId already gates against the relayer rotating the schedule mid-flight.
+ */
+interface MetaBroadcaster {
+  /** USDC raw amount paid to the relayer's broadcaster output. */
+  broadcasterFeeAmount: bigint
+  /** Relayer's Railgun (`0zk`) address that the broadcaster output pays. */
+  broadcasterRailgunAddress: string
+}
+
+export interface MetaTransferShielded extends MetaCommon, MetaBroadcaster {
   /** 0zk recipient. */
   recipient: string
 }
 
-export interface MetaYieldDeposit extends MetaCommon {}
-export interface MetaYieldWithdraw extends MetaCommon {
+export type MetaYieldDeposit = MetaCommon & MetaBroadcaster
+export interface MetaYieldWithdraw extends MetaCommon, MetaBroadcaster {
   /** Yield share amount to redeem; `amount` is the expected USDC output. */
   shares: bigint
 }

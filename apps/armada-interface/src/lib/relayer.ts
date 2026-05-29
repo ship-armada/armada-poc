@@ -61,10 +61,19 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
       return (amount * CCTP_FAST_FEE_BPS) / 10_000n
     case 'unshield-local':
       return quote ? BigInt(quote.fees.unshield) : 0n
-    case 'shield':
     case 'transfer-shielded':
+      // A4 — relayer-mediated. The relayer's transfer-tier fee covers a single transact() call
+      // (no cross-contract leg), so it's the cheapest tier in the schedule.
+      return quote ? BigInt(quote.fees.transfer) : 0n
     case 'yield-deposit':
     case 'yield-withdraw':
+      // A4 — relayer-mediated via ArmadaYieldAdapter's lendAndShield/redeemAndShield wrappers,
+      // which carry a Transaction struct that does the cross-contract spend + re-shield. The
+      // `crossContract` tier reflects the higher gas profile of that pattern (~2M gas vs ~500k).
+      return quote ? BigInt(quote.fees.crossContract) : 0n
+    case 'shield':
+      // Shield stays a user-wallet-signed direct submit through Phase A. Phase B replaces it
+      // with a gasless permit + wrapper-contract path; until then no relayer fee applies.
       return 0n
   }
 }
@@ -90,13 +99,15 @@ export function feeModelForKind(kind: TxKind): FeeModel {
     case 'unshield-xchain':
       return 'fee-from-recipient'
     case 'unshield-local':
-      return 'fee-on-top'
-    case 'shield':
     case 'transfer-shielded':
     case 'yield-deposit':
     case 'yield-withdraw':
-      // Today: no fee. A4 migrates transfer + yield to relayer-mediated → `fee-on-top`; the
-      // single switch update here will flip the math everywhere those kinds display fees.
+      // A4 — all relayer-mediated. Recipient receives the entered amount; the broadcaster fee
+      // is an extra output in the proof, deducted on top of the entered amount.
+      return 'fee-on-top'
+    case 'shield':
+      // Direct user submit through Phase A. Phase B's gasless wrapper path also uses a separate
+      // permit-based mechanism, not the broadcaster-fee pattern — handled by its own model.
       return 'no-fee'
   }
 }

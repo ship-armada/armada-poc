@@ -14,7 +14,8 @@ export interface EarnReviewStepProps {
   amount: bigint
   rate: YieldRate | null
   fee: bigint | null
-  netAmount: bigint
+  /** USDC actually deducted from the user's shielded balance — `amount + fee` for both kinds. */
+  totalDeducted: bigint
   submitBlockedReason?: string | null
   onBack: () => void
   onConfirm: () => void
@@ -32,7 +33,7 @@ export function EarnReviewStep({
   amount,
   rate,
   fee,
-  netAmount,
+  totalDeducted,
   submitBlockedReason,
   onBack,
   onConfirm,
@@ -58,8 +59,9 @@ export function EarnReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        netAmount={netAmount}
-        netLabel={tab === 'add' ? "You'll be earning on" : "You'll receive"}
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
+        feeLabel="Relayer fee"
       />
       {tab === 'withdraw' ? (
         <div className={styles.slippageNotice}>

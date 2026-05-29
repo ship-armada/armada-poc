@@ -20,12 +20,17 @@ export interface EarnInputStepProps {
   onTabChange: (next: EarnTab) => void
   amountStr: string
   onAmountChange: (next: string) => void
-  /** Max amount for the active tab — shieldedUsdc for Add, earning balance for Withdraw. */
+  /**
+   * Maximum typeable amount with the fee already reserved. Both yield kinds are fee-on-top, so
+   * Add → `shieldedUsdc - fee`, Withdraw → `earningUsdc` (fee paid from shielded USDC, not vault
+   * shares). Keeps `totalDeducted ≤ shielded` enforceable here without leaking per-kind math.
+   */
   max: bigint
   /** Current yield rate; null while syncing. Drives the APY hint copy. */
   rate: YieldRate | null
   fee: bigint | null
-  netAmount: bigint
+  /** USDC actually deducted from the user's shielded balance — `amount + fee` for both kinds. */
+  totalDeducted: bigint
   isFeeRefreshing?: boolean
   onCancel: () => void
   onContinue: () => void
@@ -46,20 +51,21 @@ export function EarnInputStep({
   max,
   rate,
   fee,
-  netAmount,
+  totalDeducted,
   isFeeRefreshing,
   onCancel,
   onContinue,
 }: EarnInputStepProps) {
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
+  // Add tab caps the typeable max at `shieldedUsdc - fee`; an overflow there means amount + fee
+  // would exceed the shielded balance. Spell that out so users don't think their balance is wrong.
+  const overflowMessage =
+    tab === 'add'
+      ? 'Amount + relayer fee exceeds your private balance.'
+      : 'Amount exceeds your earning balance.'
   const amountError =
-    usdcInputErrorMessage(parseError)
-    ?? (tooMuch
-      ? tab === 'add'
-        ? 'Amount exceeds your private balance.'
-        : 'Amount exceeds your earning balance.'
-      : undefined)
+    usdcInputErrorMessage(parseError) ?? (tooMuch ? overflowMessage : undefined)
 
   const isValid = amount > 0n && !tooMuch && !parseError
 
@@ -83,8 +89,9 @@ export function EarnInputStep({
       </div>
       <FeeSummary
         fee={fee}
-        netAmount={netAmount}
-        netLabel={tab === 'add' ? "You'll be earning on" : "You'll receive"}
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
+        feeLabel="Relayer fee"
         isRefreshing={isFeeRefreshing}
       />
       <FlowFooter

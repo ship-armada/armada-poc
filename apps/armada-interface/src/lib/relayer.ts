@@ -70,6 +70,81 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
 }
 
 /**
+ * Per-kind fee semantics — which side of the recipient line the fee sits on. Decoupled from
+ * `userFeeForKind` (which computes the fee amount) so a single-site refactor when a kind's fee
+ * model flips (e.g., A4 moves yield kinds to relayer-mediated → `fee-on-top`) doesn't ripple
+ * through every modal.
+ *
+ *  - `no-fee`            — recipient receives the entered amount; nothing extra is deducted.
+ *  - `fee-from-recipient` — fee is taken out of the destination mint (CCTP V2's path). The user
+ *                            spends the entered amount; the recipient receives `amount - fee`.
+ *  - `fee-on-top`        — fee is an extra output in the SNARK proof (relayer-mediated path).
+ *                            Recipient receives the full entered amount; user is deducted
+ *                            `amount + fee`. Input MAX must reserve room for the fee.
+ */
+export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top'
+
+export function feeModelForKind(kind: TxKind): FeeModel {
+  switch (kind) {
+    case 'shield-xchain':
+    case 'unshield-xchain':
+      return 'fee-from-recipient'
+    case 'unshield-local':
+      return 'fee-on-top'
+    case 'shield':
+    case 'transfer-shielded':
+    case 'yield-deposit':
+    case 'yield-withdraw':
+      // Today: no fee. A4 migrates transfer + yield to relayer-mediated → `fee-on-top`; the
+      // single switch update here will flip the math everywhere those kinds display fees.
+      return 'no-fee'
+  }
+}
+
+/**
+ * The three numbers every kind-aware modal needs from `(kind, amount, fee, max)`:
+ *
+ *  - `recipientReceives` — what the on-chain recipient gets. For history, success copy, etc.
+ *  - `totalDeducted`     — what's debited from the user's shielded balance. Shown as the
+ *                          "Total deducted" line on the fee-on-top path; equals
+ *                          `recipientReceives` on the other two.
+ *  - `inputMax`          — the cap the AmountInput should accept so `totalDeducted ≤ max` always
+ *                          holds. Differs from `max` only on `fee-on-top` (must reserve fee).
+ *
+ * Single source of truth. UnshieldModal + SendModal call this; the per-step components just
+ * receive the three numbers as props.
+ */
+export interface FeeBreakdown {
+  recipientReceives: bigint
+  totalDeducted: bigint
+  inputMax: bigint
+}
+
+export function computeFeeBreakdown(
+  kind: TxKind,
+  amount: bigint,
+  fee: bigint,
+  max: bigint,
+): FeeBreakdown {
+  switch (feeModelForKind(kind)) {
+    case 'no-fee':
+      return { recipientReceives: amount, totalDeducted: amount, inputMax: max }
+    case 'fee-from-recipient':
+      return {
+        recipientReceives: amount > fee ? amount - fee : 0n,
+        totalDeducted: amount,
+        inputMax: max,
+      }
+    case 'fee-on-top':
+      return {
+        recipientReceives: amount,
+        totalDeducted: amount + fee,
+        inputMax: max > fee ? max - fee : 0n,
+      }
+  }
+}
+
+/**
  * 2× multiple over `userFeeForKind` to use as CCTP V2's `maxFee` bound. The displayed fee is a
  * realistic estimate (matches the server's conservative bps buffer); the on-chain bound bumps it
  * to give Iris's `feeExecuted` headroom against per-chain variance and any future fee changes.

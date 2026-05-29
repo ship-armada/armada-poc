@@ -6,6 +6,8 @@ import { RELAYER_ENDPOINTS, relayerEndpoint } from '@/config/relayer'
 import {
   userFeeForKind,
   cctpMaxFeeForKind,
+  computeFeeBreakdown,
+  feeModelForKind,
   submitRelay,
   RelayerError,
   type FeeSchedule,
@@ -105,6 +107,78 @@ describe('userFeeForKind', () => {
   it('scales linearly with amount for cctp kinds', () => {
     const big = HUNDRED_USDC * 10_000n // 1M USDC
     expect(userFeeForKind('shield-xchain', big)).toBe(big * 2n / 10_000n)
+  })
+})
+
+describe('feeModelForKind', () => {
+  it('classifies xchain kinds as fee-from-recipient (CCTP destination eats the fee)', () => {
+    // WHY: a regression that miscategorised xchain as `fee-on-top` would silently let the user
+    // type their full balance and then have the submit step fail when the proof tries to debit
+    // amount + fee.
+    expect(feeModelForKind('shield-xchain')).toBe('fee-from-recipient')
+    expect(feeModelForKind('unshield-xchain')).toBe('fee-from-recipient')
+  })
+
+  it('classifies unshield-local as fee-on-top (relayer-mediated proof has extra broadcaster output)', () => {
+    // WHY: the load-bearing A3 distinction — getting this wrong inverts the recipient-receives /
+    // total-deducted math everywhere.
+    expect(feeModelForKind('unshield-local')).toBe('fee-on-top')
+  })
+
+  it.each([
+    ['shield'],
+    ['transfer-shielded'],
+    ['yield-deposit'],
+    ['yield-withdraw'],
+  ] as const)('classifies %s as no-fee (today; A4 will flip yield + transfer to fee-on-top)', (kind) => {
+    expect(feeModelForKind(kind)).toBe('no-fee')
+  })
+})
+
+describe('computeFeeBreakdown', () => {
+  const AMOUNT = 5_000_000n // $5
+  const FEE = 1_220_000n // $1.22
+  const MAX = 10_000_000n // $10 shielded balance
+
+  it('no-fee kinds: recipient = amount, total = amount, inputMax = max (no reservation)', () => {
+    const r = computeFeeBreakdown('transfer-shielded', AMOUNT, FEE, MAX)
+    expect(r.recipientReceives).toBe(AMOUNT)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('fee-from-recipient: recipient = amount - fee, total = amount, inputMax = max', () => {
+    const r = computeFeeBreakdown('unshield-xchain', AMOUNT, FEE, MAX)
+    expect(r.recipientReceives).toBe(AMOUNT - FEE)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('fee-on-top: recipient = amount, total = amount + fee, inputMax = max - fee', () => {
+    // WHY: pins the load-bearing A3 invariant. recipient gets the full amount; total deducted
+    // shows the user the real spend; inputMax reserves the fee so amount + fee ≤ shielded.
+    const r = computeFeeBreakdown('unshield-local', AMOUNT, FEE, MAX)
+    expect(r.recipientReceives).toBe(AMOUNT)
+    expect(r.totalDeducted).toBe(AMOUNT + FEE)
+    expect(r.inputMax).toBe(MAX - FEE)
+  })
+
+  it('fee-from-recipient floors at 0n when fee exceeds amount (no negative recipientReceives)', () => {
+    // WHY: defensive — a misconfigured CCTP fee that exceeds the unshield amount must NOT
+    // produce a bigint underflow surfacing as "you'll receive 18446744073709551615 USDC".
+    const tinyAmount = 100n
+    const r = computeFeeBreakdown('unshield-xchain', tinyAmount, FEE, MAX)
+    expect(r.recipientReceives).toBe(0n)
+    expect(r.totalDeducted).toBe(tinyAmount)
+  })
+
+  it('fee-on-top floors inputMax at 0n when fee exceeds shielded balance', () => {
+    // WHY: same defensive bound on the input side. If the relayer fee exceeds the user's
+    // entire shielded balance, the input should accept 0n (and Continue stays disabled),
+    // not wrap around.
+    const tinyMax = 100n
+    const r = computeFeeBreakdown('unshield-local', AMOUNT, FEE, tinyMax)
+    expect(r.inputMax).toBe(0n)
   })
 })
 

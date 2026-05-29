@@ -11,7 +11,8 @@ import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { getNetworkConfig } from '@/config/network'
 import { parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
-import { userFeeForKind } from '@/lib/relayer'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { isShieldedAddress } from '@/lib/address'
 import {
   ActionFlowShell,
   ProgressStep,
@@ -71,17 +72,15 @@ export function UnshieldModal() {
   //   unshield-local  → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load.
   //   unshield-xchain → CCTP fast-fee estimate (~2 bps, proportional to amount). Quote ignored.
   const fee: bigint = userFeeForKind(computedKind, amount, quote)
-  // Two different fee semantics depending on kind — match the displayed math to what actually
-  // happens on chain:
-  //   unshield-local  (relayer-mediated) — the SNARK proof has an EXTRA broadcaster output paying
-  //     the relayer. Recipient receives the full entered amount; total deducted = amount + fee.
-  //   unshield-xchain (CCTP fast)        — the destination Iris transfer deducts its fee from
-  //     the minted amount. Recipient receives amount - fee; total deducted = amount.
-  const recipientReceives = isXchain ? (amount > fee ? amount - fee : 0n) : amount
-  const totalDeducted = isXchain ? amount : amount + fee
-  // Effective max the user is allowed to type — keeps `totalDeducted ≤ shielded` enforceable
-  // regardless of whether the fee comes from the proof (local) or the destination (xchain).
-  const inputMax = isXchain ? max : (max > fee ? max - fee : 0n)
+  // Per-kind fee math (recipient gets / user is debited / how much they can type) lives in one
+  // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. Keeps UnshieldModal + SendModal
+  // in lockstep when a kind's fee model flips (e.g., A4 moves yield kinds to fee-on-top).
+  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+  )
 
   // Pre-fill recipient from the connected EVM wallet on the modal's rising edge only,
   // so the user can clear the field afterwards without it getting repopulated.
@@ -130,6 +129,17 @@ export function UnshieldModal() {
       }
       const feeCacheId = activeQuote.cacheId
       if (computedKind === 'unshield-local') {
+        // Defensive shape-check on the relayer-published broadcaster address before we bake it
+        // into a 20–30s ZK proof. An empty / malformed value (relayer misconfigured, /fees
+        // response truncated by a proxy, etc.) would otherwise surface as an opaque SDK throw
+        // deep in proof gen. Fail fast with a clear message so the user knows it's a relayer-
+        // side problem rather than a wallet / amount issue.
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('unshield-local')
         // Freeze the broadcaster context with the rest of the submit state. The proof must embed
         // these EXACT values to pass the relayer's verifier — re-deriving them at handler time

@@ -15,7 +15,8 @@ import {
   type ResolvedDeployments,
 } from '@/config/deployments'
 import { parseUsdcInput } from '@/lib/format'
-import { userFeeForKind } from '@/lib/relayer'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { trackError } from '@/lib/telemetry'
 import {
@@ -113,15 +114,15 @@ export function SendModal() {
   //   unshield-local    → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load
   //   unshield-xchain   → CCTP fast-fee estimate (~2 bps, proportional to amount)
   const fee: bigint = userFeeForKind(computedKind, amount, quote)
-  // Per-kind fee semantics — same model as UnshieldModal:
-  //   transfer-shielded — no fee; recipient receives `amount`, total deducted is `amount`.
-  //   unshield-local    — relayer fee is an EXTRA broadcaster output in the proof. Recipient
-  //                       receives `amount`; total deducted is `amount + fee`.
-  //   unshield-xchain   — CCTP destination fee deducts from the mint. Recipient receives
-  //                       `amount - fee`; total deducted is `amount`.
-  const recipientReceives = isXchain ? (amount > fee ? amount - fee : 0n) : amount
-  const totalDeducted = isLocalUnshield ? amount + fee : amount
-  const inputMax = isLocalUnshield ? (max > fee ? max - fee : 0n) : max
+  // Per-kind fee math (recipient gets / user is debited / how much they can type) lives in one
+  // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. Adding a new kind or flipping a
+  // kind's fee model (e.g., A4 moves yield kinds to fee-on-top) is a single-site change there.
+  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+  )
 
   // Reset local state on close.
   useEffect(() => {
@@ -169,6 +170,15 @@ export function SendModal() {
           recipient,
         })
       } else if (computedKind === 'unshield-local') {
+        // Fail fast if the relayer published a malformed broadcaster address — see UnshieldModal's
+        // version of this check for the rationale (avoid a 20-30s proof gen that's doomed to
+        // surface an opaque SDK throw deep in the pipeline).
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('unshield-local')
         // Freeze the broadcaster context with the rest of the submit state — same rationale as
         // UnshieldModal: the proof must embed these EXACT values to pass the relayer's verifier.

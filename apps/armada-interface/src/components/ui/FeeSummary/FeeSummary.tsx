@@ -4,6 +4,20 @@
 import { formatUsdcAmount } from '@/lib/format'
 import styles from './FeeSummary.module.css'
 
+/**
+ * Format a positive USDC fee for the summary row. `formatUsdcAmount` clamps to 2 decimals, so
+ * sub-cent fees (e.g. CCTP fast-fee on a $5 unshield is 0.001 USDC) display as "0.00 USDC" —
+ * indistinguishable from a no-fee row even though the fee IS being applied on chain. Surface
+ * "<0.01 USDC" in that range so the user sees something non-zero.
+ *
+ * The threshold is one cent: 10_000 raw with USDC's 6-decimal precision. Caller is responsible
+ * for the `value > 0n` guard since we still want to render "No fee" for true zero.
+ */
+function formatFeeForRow(value: bigint): string {
+  if (value < 10_000n) return '<0.01'
+  return formatUsdcAmount(value)
+}
+
 export interface FeeSummaryProps {
   /** Estimated fee in raw 6-decimal USDC. null while a quote is being fetched. */
   fee: bigint | null
@@ -49,7 +63,7 @@ export function FeeSummary({
             <span className={styles.zeroFee}>No fee</span>
           ) : (
             <>
-              {formatUsdcAmount(fee)} <span className={styles.unit}>USDC</span>
+              {formatFeeForRow(fee)} <span className={styles.unit}>USDC</span>
             </>
           )}
           {isRefreshing && fee !== null && fee !== 0n ? (
@@ -65,7 +79,7 @@ export function FeeSummary({
               <span className={styles.zeroFee}>No fee</span>
             ) : (
               <>
-                {formatUsdcAmount(secondaryFee)} <span className={styles.unit}>USDC</span>
+                {formatFeeForRow(secondaryFee)} <span className={styles.unit}>USDC</span>
               </>
             )}
           </dd>

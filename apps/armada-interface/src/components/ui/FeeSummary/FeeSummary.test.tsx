@@ -52,4 +52,32 @@ describe('<FeeSummary>', () => {
     expect(screen.getByText('No fee')).toBeInTheDocument()
     expect(screen.queryByText(/0\.00 USDC/)).toBeNull()
   })
+
+  it('renders "<0.01" for a non-zero fee that rounds below the 2dp display threshold', () => {
+    // WHY: the CCTP fast-fee on a small xchain unshield is sub-cent (2 bps of $5 = 0.001 USDC).
+    // `formatUsdcAmount` clamps to 2 decimals and would render that as "0.00 USDC" —
+    // indistinguishable from "No fee" even though the fee IS deducted from the destination mint
+    // on chain. The "<0.01" surface tells the user "yes there's a fee, just very small" without
+    // changing the recipient-receives math.
+    render(<FeeSummary fee={1_000n} netAmount={99_999_000n} />)
+    expect(screen.getByText(/<0\.01/)).toBeInTheDocument()
+    expect(screen.queryByText('No fee')).toBeNull()
+  })
+
+  it('applies the "<0.01" rule to the secondary fee row too (A5 xchain CCTP slot)', () => {
+    // WHY: the secondary row exists specifically for unshield-xchain, where the CCTP fast-fee is
+    // proportional to amount and the most common amounts in testing surface as sub-cent. Both
+    // rows must use the same formatter so the user sees consistent semantics across the panel.
+    render(
+      <FeeSummary
+        fee={100_000n}
+        secondaryFee={1_000n}
+        secondaryFeeLabel="CCTP delivery fee"
+        netAmount={50_000_000n}
+      />,
+    )
+    // Primary row renders normally; secondary row uses the sub-cent surface.
+    expect(screen.getByText(/0\.10/)).toBeInTheDocument()
+    expect(screen.getByText(/<0\.01/)).toBeInTheDocument()
+  })
 })

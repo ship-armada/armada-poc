@@ -13,7 +13,6 @@ import { accounts, hubChain } from "../config";
 
 interface SubmitResult {
   txHash: string;
-  receipt: ethers.TransactionReceipt;
 }
 
 // ============ Wallet Manager ============
@@ -148,25 +147,39 @@ export class WalletManager {
 
       console.log(`[wallet-manager] Tx submitted: ${tx.hash}`);
 
-      // Wait for receipt
-      const receipt = await tx.wait();
-      if (!receipt) {
-        throw new Error("No receipt received");
-      }
-
-      if (receipt.status === 0) {
-        console.error(`[wallet-manager] Tx reverted: ${tx.hash}`);
-        throw new Error(`Transaction reverted (${tx.hash})`);
-      }
-
-      console.log(
-        `[wallet-manager] Tx confirmed in block ${receipt.blockNumber} (gas used: ${receipt.gasUsed})`
-      );
-
-      // Cache for dedup
+      // Cache for dedup at broadcast — a future identical request hits the cache instead of
+      // re-broadcasting with a fresh nonce. The mempool already has the tx; we don't need
+      // confirmation to know it's "ours".
       this.txCache.set(dataHash, { txHash: tx.hash, timestamp: Date.now() });
 
-      return { txHash: tx.hash, receipt };
+      // Track the receipt in the background for operator-side revert logging. The HTTP response
+      // doesn't wait on this — the frontend polls /status/:txHash, which observes the receipt
+      // directly via provider.getTransactionReceipt. Waiting on tx.wait() inside the /relay
+      // handler used to keep the HTTP connection open for the full block time, which intermediary
+      // proxies (Cloudflare etc.) often cut at 60-100s — surfacing in the browser as a "Failed to
+      // fetch" / no-CORS error even though the broadcast itself succeeded.
+      void tx
+        .wait()
+        .then((receipt) => {
+          if (!receipt) {
+            console.warn(`[wallet-manager] Tx ${tx.hash} confirmed without receipt`);
+            return;
+          }
+          if (receipt.status === 0) {
+            console.error(`[wallet-manager] Tx reverted: ${tx.hash}`);
+            return;
+          }
+          console.log(
+            `[wallet-manager] Tx confirmed in block ${receipt.blockNumber} (gas used: ${receipt.gasUsed})`
+          );
+        })
+        .catch((err) => {
+          console.warn(
+            `[wallet-manager] Background receipt tracking failed for ${tx.hash}: ${err?.message ?? err}`
+          );
+        });
+
+      return { txHash: tx.hash };
     } catch (e: any) {
       if (
         e.message?.includes("nonce") ||
@@ -179,6 +192,9 @@ export class WalletManager {
       }
       throw e;
     } finally {
+      // Released as soon as broadcast returns. The nonce is committed to the mempool, so the next
+      // request's `getTransactionCount(..., "pending")` will see nonce+1. Concurrent /relay
+      // requests serialise through this lock during broadcast, then proceed in parallel after.
       this.locked = false;
     }
   }

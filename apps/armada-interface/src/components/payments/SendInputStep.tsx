@@ -5,7 +5,6 @@ import { AmountInput, ChainSelect, FeeSummary, RecipientInput, Tabs } from '@/co
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { isEvmAddress, isShieldedAddress } from '@/lib/address'
-import { getNetworkConfig } from '@/config/network'
 import styles from './SendInputStep.module.css'
 
 export type SendTab = 'private' | 'external'
@@ -24,9 +23,19 @@ export interface SendInputStepProps {
   onRecipientChange: (next: string) => void
   amountStr: string
   onAmountChange: (next: string) => void
+  /**
+   * Maximum typeable amount with the fee already reserved for relayer-mediated kinds.
+   * Modal-side: `shielded - fee` for unshield-local, `shielded` for transfer-shielded + xchain.
+   * Keeps `totalDeducted ≤ shielded` enforceable here without leaking per-kind math.
+   */
   max: bigint
   fee: bigint | null
-  netAmount: bigint
+  /** USDC the recipient actually receives. Local + transfer: `amount`. Xchain: `amount - fee`. */
+  recipientReceives: bigint
+  /** USDC deducted from the user's shielded balance. Local: `amount + fee`. Others: `amount`. */
+  totalDeducted: bigint
+  isXchain: boolean
+  isLocalUnshield: boolean
   isFeeRefreshing?: boolean
   /** When set, the destination chain has no deployment manifest — block Continue and explain inline. */
   destDeploymentError?: string
@@ -45,19 +54,25 @@ export function SendInputStep({
   onAmountChange,
   max,
   fee,
-  netAmount,
+  recipientReceives,
+  totalDeducted,
+  isXchain,
+  isLocalUnshield,
   isFeeRefreshing,
   destDeploymentError,
   onCancel,
   onContinue,
 }: SendInputStepProps) {
-  const hubChainId = getNetworkConfig().hub.chainId
-  const isXchain = tab === 'external' && destChainId !== hubChainId
-
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
+  // For unshield-local the user's typeable max is already shielded - fee; if they exceed it,
+  // the cause is that amount + fee would overflow. Spell that out so they don't think their
+  // balance number is wrong.
+  const overflowMessage = isLocalUnshield
+    ? 'Amount + relayer fee exceeds your private balance.'
+    : 'Amount exceeds your private balance.'
   const amountError = usdcInputErrorMessage(parseError)
-    ?? (tooMuch ? 'Amount exceeds your private balance.' : undefined)
+    ?? (tooMuch ? overflowMessage : undefined)
 
   const recipientTrimmed = recipient.trim()
   const recipientValid =
@@ -108,8 +123,10 @@ export function SendInputStep({
       />
       <FeeSummary
         fee={fee}
-        netAmount={netAmount}
-        netLabel="They'll receive"
+        // Per-kind bottom line — see SendModal's per-kind comment.
+        netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
+        netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
+        feeLabel={isXchain ? 'CCTP fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
         isRefreshing={isFeeRefreshing}
       />
       <FlowFooter

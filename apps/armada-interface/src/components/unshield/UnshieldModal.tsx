@@ -66,11 +66,22 @@ export function UnshieldModal() {
   const record = activeTx?.record ?? null
 
   const computedKind: SubmittedKind = destChainId === hubChainId ? 'unshield-local' : 'unshield-xchain'
+  const isXchain = computedKind === 'unshield-xchain'
   // Display fee per (kind, amount, quote):
   //   unshield-local  → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load.
   //   unshield-xchain → CCTP fast-fee estimate (~2 bps, proportional to amount). Quote ignored.
   const fee: bigint = userFeeForKind(computedKind, amount, quote)
-  const netAmount = amount > fee ? amount - fee : 0n
+  // Two different fee semantics depending on kind — match the displayed math to what actually
+  // happens on chain:
+  //   unshield-local  (relayer-mediated) — the SNARK proof has an EXTRA broadcaster output paying
+  //     the relayer. Recipient receives the full entered amount; total deducted = amount + fee.
+  //   unshield-xchain (CCTP fast)        — the destination Iris transfer deducts its fee from
+  //     the minted amount. Recipient receives amount - fee; total deducted = amount.
+  const recipientReceives = isXchain ? (amount > fee ? amount - fee : 0n) : amount
+  const totalDeducted = isXchain ? amount : amount + fee
+  // Effective max the user is allowed to type — keeps `totalDeducted ≤ shielded` enforceable
+  // regardless of whether the fee comes from the proof (local) or the destination (xchain).
+  const inputMax = isXchain ? max : (max > fee ? max - fee : 0n)
 
   // Pre-fill recipient from the connected EVM wallet on the modal's rising edge only,
   // so the user can clear the field afterwards without it getting repopulated.
@@ -166,9 +177,11 @@ export function UnshieldModal() {
           onRecipientChange={setRecipient}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           fee={fee}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
           isFeeRefreshing={isStale}
           onCancel={close}
           onContinue={() => setStep('review')}
@@ -180,8 +193,9 @@ export function UnshieldModal() {
           recipient={recipient}
           amount={amount}
           fee={fee}
-          netAmount={netAmount}
-          isXchain={computedKind === 'unshield-xchain'}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
@@ -192,7 +206,7 @@ export function UnshieldModal() {
         <UnshieldCompleteStep
           destChainId={destChainId}
           recipient={recipient}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
           onDone={close}
         />
       )}

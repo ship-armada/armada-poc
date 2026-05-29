@@ -107,12 +107,21 @@ export function SendModal() {
 
   const computedKind: SubmittedKind = computeKind(tab, destChainId, hubChainId)
   const isXchain = computedKind === 'unshield-xchain'
+  const isLocalUnshield = computedKind === 'unshield-local'
   // Display fee per (kind, amount, quote):
   //   transfer-shielded → 0n (handler migrates to relayer-mediated in A4)
   //   unshield-local    → relayer's advertised USDC fee from the quote (A3+); 0n pre-quote-load
   //   unshield-xchain   → CCTP fast-fee estimate (~2 bps, proportional to amount)
   const fee: bigint = userFeeForKind(computedKind, amount, quote)
-  const netAmount = amount > fee ? amount - fee : 0n
+  // Per-kind fee semantics — same model as UnshieldModal:
+  //   transfer-shielded — no fee; recipient receives `amount`, total deducted is `amount`.
+  //   unshield-local    — relayer fee is an EXTRA broadcaster output in the proof. Recipient
+  //                       receives `amount`; total deducted is `amount + fee`.
+  //   unshield-xchain   — CCTP destination fee deducts from the mint. Recipient receives
+  //                       `amount - fee`; total deducted is `amount`.
+  const recipientReceives = isXchain ? (amount > fee ? amount - fee : 0n) : amount
+  const totalDeducted = isLocalUnshield ? amount + fee : amount
+  const inputMax = isLocalUnshield ? (max > fee ? max - fee : 0n) : max
 
   // Reset local state on close.
   useEffect(() => {
@@ -211,9 +220,12 @@ export function SendModal() {
           onRecipientChange={setRecipient}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           fee={fee}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
+          isLocalUnshield={isLocalUnshield}
           isFeeRefreshing={isStale}
           destDeploymentError={destDeploymentError}
           onCancel={close}
@@ -227,8 +239,10 @@ export function SendModal() {
           recipient={recipient}
           amount={amount}
           fee={fee}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
           isXchain={isXchain}
+          isLocalUnshield={isLocalUnshield}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
@@ -240,7 +254,7 @@ export function SendModal() {
           tab={tab}
           destChainId={destChainId}
           recipient={recipient}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
           onDone={close}
         />
       )}

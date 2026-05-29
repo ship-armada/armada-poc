@@ -10,15 +10,19 @@ import styles from './UnshieldCompleteStep.module.css'
 export interface UnshieldCompleteStepProps {
   destChainId: number
   recipient: string
-  /** Net amount delivered (post-fee), raw 6-decimal USDC. */
-  netAmount: bigint
+  /**
+   * USDC the recipient actually received on chain. Local: equals the entered amount (relayer fee
+   * was added on top, deducted separately from the user's shielded balance). Xchain: equals the
+   * entered amount minus the CCTP fast-transfer fee taken by the destination Iris transfer.
+   */
+  recipientReceives: bigint
   onDone: () => void
 }
 
 export function UnshieldCompleteStep({
   destChainId,
   recipient,
-  netAmount,
+  recipientReceives,
   onDone,
 }: UnshieldCompleteStepProps) {
   const destChain = getChainById(destChainId)
@@ -29,7 +33,7 @@ export function UnshieldCompleteStep({
       </div>
       <h3 className={styles.title}>Withdrawal complete</h3>
       <p className={styles.body}>
-        Sent {formatUsdcAmount(netAmount)} USDC to {truncateAddress(recipient)} on{' '}
+        Sent {formatUsdcAmount(recipientReceives)} USDC to {truncateAddress(recipient)} on{' '}
         {destChain?.name ?? `chain ${destChainId}`}.
       </p>
       <FlowFooter

@@ -12,7 +12,7 @@ describe('<UnshieldCompleteStep>', () => {
       <UnshieldCompleteStep
         destChainId={31337}
         recipient={VALID_ADDR}
-        netAmount={250_500_000n}
+        recipientReceives={250_500_000n}
         onDone={() => {}}
       />,
     )
@@ -28,7 +28,7 @@ describe('<UnshieldCompleteStep>', () => {
       <UnshieldCompleteStep
         destChainId={31337}
         recipient={VALID_ADDR}
-        netAmount={1_000_000n}
+        recipientReceives={1_000_000n}
         onDone={onDone}
       />,
     )

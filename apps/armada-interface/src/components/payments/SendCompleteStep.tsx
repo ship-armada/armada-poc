@@ -12,7 +12,8 @@ export interface SendCompleteStepProps {
   tab: SendTab
   destChainId: number
   recipient: string
-  netAmount: bigint
+  /** USDC the recipient actually received on chain. See SendModal's per-kind comment. */
+  recipientReceives: bigint
   onDone: () => void
 }
 
@@ -20,7 +21,7 @@ export function SendCompleteStep({
   tab,
   destChainId,
   recipient,
-  netAmount,
+  recipientReceives,
   onDone,
 }: SendCompleteStepProps) {
   const destChain = tab === 'external' ? getChainById(destChainId) : null
@@ -36,8 +37,8 @@ export function SendCompleteStep({
       <h3 className={styles.title}>Sent</h3>
       <p className={styles.body}>
         {tab === 'private'
-          ? <>Sent {formatUsdcAmount(netAmount)} USDC privately to {short}.</>
-          : <>Sent {formatUsdcAmount(netAmount)} USDC to {short} on {destChain?.name ?? `chain ${destChainId}`}.</>}
+          ? <>Sent {formatUsdcAmount(recipientReceives)} USDC privately to {short}.</>
+          : <>Sent {formatUsdcAmount(recipientReceives)} USDC to {short} on {destChain?.name ?? `chain ${destChainId}`}.</>}
       </p>
       <FlowFooter
         className={styles.footer}

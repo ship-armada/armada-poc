@@ -35,6 +35,15 @@ export interface FeeSummaryProps {
   secondaryFee?: bigint | null
   /** Label for the secondary fee row. Required if `secondaryFee` is set. */
   secondaryFeeLabel?: string
+  /**
+   * Optional extra net-style row rendered below the main net amount in the less-emphasized
+   * style. Use for kinds where two destination numbers matter to the user — e.g., xchain
+   * unshield's "Recipient receives" is the primary mint amount and "Total deducted from balance"
+   * is the supplementary debit amount. Hidden when undefined or null.
+   */
+  extraNetAmount?: bigint | null
+  /** Label for the extra net row. Required if `extraNetAmount` is set. */
+  extraNetLabel?: string
   /** Whether the fee quote is currently being refreshed; shows a subtle "refreshing…" hint. */
   isRefreshing?: boolean
   className?: string
@@ -47,11 +56,14 @@ export function FeeSummary({
   feeLabel = 'Estimated fee',
   secondaryFee,
   secondaryFeeLabel,
+  extraNetAmount,
+  extraNetLabel,
   isRefreshing,
   className,
 }: FeeSummaryProps) {
   const cls = [styles.root, className].filter(Boolean).join(' ')
   const showSecondary = secondaryFee !== undefined && secondaryFee !== null && secondaryFeeLabel
+  const showExtraNet = extraNetAmount !== undefined && extraNetAmount !== null && extraNetLabel
   return (
     <dl className={cls}>
       <div className={styles.row}>
@@ -92,6 +104,14 @@ export function FeeSummary({
           {formatUsdcAmount(netAmount)} <span className={styles.unit}>USDC</span>
         </dd>
       </div>
+      {showExtraNet ? (
+        <div className={styles.row}>
+          <dt className={styles.label}>{extraNetLabel}</dt>
+          <dd className={styles.value}>
+            {formatUsdcAmount(extraNetAmount)} <span className={styles.unit}>USDC</span>
+          </dd>
+        </div>
+      ) : null}
     </dl>
   )
 }

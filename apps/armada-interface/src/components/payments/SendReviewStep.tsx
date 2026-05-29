@@ -85,6 +85,9 @@ export function SendReviewStep({
         fee={fee}
         netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
         netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
+        // Xchain surfaces the on-balance debit alongside the recipient mint via the extra row.
+        extraNetAmount={isXchain ? totalDeducted : undefined}
+        extraNetLabel={isXchain ? 'Total deducted from balance' : undefined}
         // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}

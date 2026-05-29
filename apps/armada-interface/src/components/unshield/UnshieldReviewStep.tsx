@@ -65,10 +65,13 @@ export function UnshieldReviewStep({
       <FeeSummary
         fee={fee}
         // Mirrors UnshieldInputStep — bottom line is "Total deducted" on the local path; on
-        // xchain it's "Recipient receives" (the CCTP-net amount) so the user sees what lands
-        // on the destination chain. CCTP fee is surfaced as the secondary row.
+        // xchain it's "Recipient receives" (the CCTP-net amount), with "Total deducted from
+        // balance" rendered as an extra row so the user also sees the on-balance debit. CCTP
+        // fee is surfaced as the secondary row.
         netAmount={isXchain ? recipientReceives : totalDeducted}
         netLabel={isXchain ? 'Recipient receives' : 'Total deducted from balance'}
+        extraNetAmount={isXchain ? totalDeducted : undefined}
+        extraNetLabel={isXchain ? 'Total deducted from balance' : undefined}
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}
         secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}

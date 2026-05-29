@@ -101,11 +101,16 @@ export function UnshieldInputStep({
         fee={fee}
         // Both kinds pay a relayer broadcaster fee; xchain ALSO pays a CCTP fast-fee from the
         // destination mint. Surface the CCTP fee as the secondary row so the user can reason
-        // about why their recipient-receives differs from the entered amount. Bottom line is the
-        // most decision-relevant number per kind — what arrives on dest for xchain, what's
-        // debited for local.
+        // about why their recipient-receives differs from the entered amount.
+        //
+        // Net layout:
+        //   - local : emphasised line is `totalDeducted` (the only number that matters).
+        //   - xchain: emphasised line is `recipientReceives` (what arrives on dest); the extra
+        //             row surfaces `totalDeducted` so the user also sees the on-balance debit.
         netAmount={isXchain ? recipientReceives : totalDeducted}
         netLabel={isXchain ? 'Recipient receives' : 'Total deducted from balance'}
+        extraNetAmount={isXchain ? totalDeducted : undefined}
+        extraNetLabel={isXchain ? 'Total deducted from balance' : undefined}
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}
         secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}

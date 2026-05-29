@@ -22,6 +22,8 @@ export interface RelayerStatusBannerProps {
  */
 export function RelayerStatusBanner({ isOpen }: RelayerStatusBannerProps) {
   const { isDegraded, data } = useRelayerHealth({ enabled: isOpen })
+  // preferencesAtom is `atomWithStorage` → persisted to localStorage. The action button's flip
+  // therefore SURVIVES page reload + session restart; reverting requires the Settings toggle.
   const [prefs, setPrefs] = useAtom(preferencesAtom)
 
   // Already opted in? No nudge needed — handler will use the wallet path regardless of relayer state.

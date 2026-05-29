@@ -28,10 +28,17 @@ export const DEFAULT_PREFERENCES: PreferencesValue = {
 }
 
 /**
- * Persisted user preferences. Reads/writes localStorage under `armada-interface.preferences`.
- * Reading the atom is free — jotai/utils handles the storage round-trip.
+ * localStorage key the preferences atom reads + writes under. Exported so tests (or any code
+ * that needs to clear/inspect the persisted value) can reference it instead of hardcoding the
+ * literal string. Changing this key in code WITHOUT a migration silently resets every existing
+ * user's preferences to DEFAULT_PREFERENCES — treat it as a stable identifier.
+ */
+export const PREFERENCES_STORAGE_KEY = 'armada-interface.preferences'
+
+/**
+ * Persisted user preferences. Reads/writes localStorage via jotai/utils — no manual sync needed.
  */
 export const preferencesAtom = atomWithStorage<PreferencesValue>(
-  'armada-interface.preferences',
+  PREFERENCES_STORAGE_KEY,
   DEFAULT_PREFERENCES,
 )

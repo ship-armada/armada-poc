@@ -85,7 +85,8 @@ export function SendReviewStep({
         fee={fee}
         netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
         netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
-        feeLabel={isXchain ? 'Relayer fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
+        feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}
         secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
       />

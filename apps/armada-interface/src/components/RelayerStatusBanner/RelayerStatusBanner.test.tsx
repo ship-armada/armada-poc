@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { RelayerStatusBanner } from './RelayerStatusBanner'
-import { preferencesAtom, DEFAULT_PREFERENCES } from '@/state/preferences'
+import { preferencesAtom, DEFAULT_PREFERENCES, PREFERENCES_STORAGE_KEY } from '@/state/preferences'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
 
 const mockUseRelayerHealth = useRelayerHealth as unknown as ReturnType<typeof vi.fn>
@@ -23,7 +23,7 @@ describe('<RelayerStatusBanner>', () => {
     mockUseRelayerHealth.mockReset()
     // atomWithStorage persists across tests via jsdom's shared localStorage. Wipe it so each
     // test starts from DEFAULT_PREFERENCES and the per-test `store.set` is the only source.
-    window.localStorage.removeItem('armada-interface.preferences')
+    window.localStorage.removeItem(PREFERENCES_STORAGE_KEY)
   })
 
   it('renders nothing when the relayer reports healthy', () => {

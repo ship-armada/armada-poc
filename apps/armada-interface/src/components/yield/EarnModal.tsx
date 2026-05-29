@@ -65,7 +65,18 @@ export function EarnModal() {
   const syncGate = useSpendableSyncGate()
   // A4 — yield ops are relayer-mediated. Fee comes from the quote's crossContract tier.
   const yieldKind: 'yield-deposit' | 'yield-withdraw' = tab === 'add' ? 'yield-deposit' : 'yield-withdraw'
-  const fee: bigint = userFeeForKind(yieldKind, amount, quote)
+  // TEMP — yield-withdraw is forced to user-wallet submission because the broadcaster-fee
+  // mechanism doesn't fit the current `ArmadaYieldAdapter.redeemAndShield` shape. The SDK
+  // generates one Transaction per token (shares unshield to adapter + USDC unshield to
+  // broadcaster), but the adapter only consumes a single Transaction whose unshieldPreimage
+  // MUST be shares. Tracked at ship-armada/armada-poc#312 (multi-Transaction adapter).
+  // yield-deposit is unaffected — input and broadcaster fee are both USDC, so the SDK fits
+  // them in a single Transaction.
+  const forceWalletForWithdraw = tab === 'withdraw'
+  const effectiveUseWalletOverride = prefs.submitFromWallet || forceWalletForWithdraw
+  // When the user-wallet path is in effect, no broadcaster fee is baked into the proof — the
+  // user pays gas in ETH instead.
+  const fee: bigint = effectiveUseWalletOverride ? 0n : userFeeForKind(yieldKind, amount, quote)
   // Both yield ops are fee-on-top in `computeFeeBreakdown`'s model, but the balance flows differ:
   //   - Add Funds: user unshields (amount + fee) USDC. `totalDeducted = amount + fee` is the
   //     literal private-balance debit. `recipientReceives = amount` is what the vault gains.
@@ -184,7 +195,7 @@ export function EarnModal() {
           feeCacheId,
           broadcasterFeeAmount,
           broadcasterRailgunAddress,
-          useWalletOverride: prefs.submitFromWallet,
+          useWalletOverride: effectiveUseWalletOverride,
         })
       } else {
         setSubmittedKind('yield-withdraw')
@@ -204,7 +215,7 @@ export function EarnModal() {
           shares,
           broadcasterFeeAmount,
           broadcasterRailgunAddress,
-          useWalletOverride: prefs.submitFromWallet,
+          useWalletOverride: effectiveUseWalletOverride,
         })
       }
       setStep('progress')

@@ -87,13 +87,15 @@ export function EarnModal() {
   // pre-flight `continueBlockedReason` below; here we just expose the full vault balance as
   // typeable.
   const inputMax: bigint = tab === 'add' ? feeOnTopInputMax : max
-  // Honest withdraw-display: the user nets `amount - fee` into their private balance. Clamped
-  // at 0 for the edge case where fee > amount (shouldn't happen in practice — small typed
-  // withdraw amount + larger flat fee — but defensive).
-  const withdrawReceives: bigint = amount > fee ? amount - fee : 0n
   // Per-tab display values handed down to the step components. The step components stay dumb;
   // EarnModal owns the per-tab semantic translation.
-  const displayNetAmount: bigint = tab === 'add' ? totalDeducted : withdrawReceives
+  //
+  // For withdraw, the redeem proceeds (`amount`) are shielded back to the user IN FULL — that's
+  // the vault→private flow. The broadcaster fee is a SEPARATE leg (private→relayer) shown on
+  // its own row. Combining them into a single net line would frame two independent flows as
+  // one, surfacing "0 received" whenever fee >= amount even though the user did get `amount`
+  // back from the vault. Better to show both lines as-is and let the user compose mentally.
+  const displayNetAmount: bigint = tab === 'add' ? totalDeducted : amount
   const displayNetLabel: string =
     tab === 'add' ? 'Total deducted from balance' : "You'll receive into private balance"
   // Pre-flight: the withdraw broadcaster fee is unshielded from the user's PRE-EXISTING private
@@ -263,9 +265,11 @@ export function EarnModal() {
         <EarnCompleteStep
           tab={tab}
           // Add: vault gained `recipientReceives` (= amount) of USDC; user spent amount + fee.
-          // Withdraw: user's private balance gained `withdrawReceives` (= amount - fee); vault
-          // dropped by `amount`-worth of shares. Pass the per-tab honest number for the success copy.
-          recipientReceives={tab === 'add' ? recipientReceives : withdrawReceives}
+          // Withdraw: vault returned `amount` USDC into the user's private balance; the
+          // broadcaster fee was paid as a separate proof leg out of the user's existing private
+          // USDC. The success copy reads "Returned amount USDC" because that's literally what
+          // came back from the vault — the fee debit is accounted for separately.
+          recipientReceives={recipientReceives}
           totalDeducted={totalDeducted}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}

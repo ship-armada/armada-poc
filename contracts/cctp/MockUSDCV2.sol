@@ -2,19 +2,25 @@
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
 
 /**
  * @title MockUSDCV2
- * @notice Simple USDC mock for CCTP V2 testing
- * @dev This is just an ERC20 token with mint/burn capabilities.
+ * @notice Simple USDC mock for CCTP V2 testing with EIP-2612 permit support
+ * @dev ERC20 token with mint/burn + permit (gasless approvals).
  *      The CCTP logic has been moved to MockTokenMessengerV2 and MockMessageTransmitterV2
  *      to match Circle's real architecture.
+ *
+ * Permit support is required for Phase B's GaslessShieldWrapper (see
+ * `.claude/RELAYER_MEDIATION_PLAN.md`). Real Sepolia USDC + mainnet USDC v2.2+ both implement
+ * EIP-2612, so this mock matches the real interface for production drop-in replacement —
+ * non-permit callers see zero behaviour change.
  *
  * In production:
  *   - Replace with real USDC address on each chain
  *   - No code changes needed in other contracts
  */
-contract MockUSDCV2 is ERC20 {
+contract MockUSDCV2 is ERC20, ERC20Permit {
     // Addresses allowed to mint (TokenMessenger on this chain)
     mapping(address => bool) public minters;
 
@@ -24,7 +30,10 @@ contract MockUSDCV2 is ERC20 {
     event MinterAdded(address indexed minter);
     event MinterRemoved(address indexed minter);
 
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_)
+        ERC20(name_, symbol_)
+        ERC20Permit(name_)
+    {
         owner = msg.sender;
         minters[msg.sender] = true; // Deployer can mint for initial funding
     }

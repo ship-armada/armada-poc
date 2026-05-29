@@ -12,6 +12,7 @@ import type { WalletManager } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
 import type { VerifierContext } from "./broadcaster-fee-verifier";
 import { verifyBroadcasterFee } from "./broadcaster-fee-verifier";
+import type { Counters } from "./counters";
 import { hubChain } from "../config";
 
 // ============ Constants ============
@@ -24,14 +25,15 @@ import { hubChain } from "../config";
  *   - `lendAndShield(Transaction, ...)` — yield deposit. A4 wrapper-decoder synthesises
  *     a vanilla `transact([txn])` from the embedded Transaction before the SDK decrypts.
  *   - `redeemAndShield(Transaction, ...)` — yield withdraw. Same wrapper path.
- *
- * Off-allowlist until the matching handler PR lands:
- *   - 0xe484d408 atomicCrossChainUnshield → restored in A5 (unshield-xchain handler migration)
+ *   - `atomicCrossChainUnshield(Transaction, ...)` — A5 cross-chain unshield. Same wrapper path:
+ *     the embedded Transaction carries the broadcaster output, so the synthetic-transact rewrite
+ *     finds the fee regardless of which surrounding CCTP args the wrapper added.
  */
 const ALLOWED_SELECTORS: Record<string, string> = {
   "0xd8ae136a": "transact",
   "0xf2987ad1": "lendAndShield",
   "0x0793b70e": "redeemAndShield",
+  "0xe484d408": "atomicCrossChainUnshield",
 };
 
 /**
@@ -58,6 +60,11 @@ function advertisedFeeForSelector(
     case "0xf2987ad1":
     case "0x0793b70e":
       return BigInt(fees.crossContract);
+    case "0xe484d408":
+      // atomicCrossChainUnshield: hub-side burn + CCTP MessageSent emit. Distinct tier from
+      // crossContract because the gas profile differs (no Aave round-trip; pays for the proof
+      // verifier + the TokenMessenger.depositForBurnWithCaller call).
+      return BigInt(fees.crossChainUnshield);
     default:
       // Defensive — the caller already gated on ALLOWED_SELECTORS, so this branch is unreachable.
       throw new RelayError(
@@ -74,16 +81,19 @@ export class PrivacyRelay {
   private feeCalculator: FeeCalculator;
   private allowedTargets: Set<string>;
   private verifierContext: VerifierContext;
+  private counters: Counters;
 
   constructor(
     walletManager: WalletManager,
     feeCalculator: FeeCalculator,
     allowedContracts: { privacyPool: string; armadaYieldAdapter: string },
     verifierContext: VerifierContext,
+    counters: Counters,
   ) {
     this.walletManager = walletManager;
     this.feeCalculator = feeCalculator;
     this.verifierContext = verifierContext;
+    this.counters = counters;
 
     // Normalize addresses to lowercase for comparison. ArmadaYieldAdapter stays in the set so
     // legacy routing (if reactivated) can find it; A2's effective allowlist is enforced via
@@ -158,7 +168,17 @@ export class PrivacyRelay {
     // rejected anyway.
     const fees = await this.feeCalculator.getCurrentFees();
     const advertisedFee = advertisedFeeForSelector(selector, fees.fees);
-    await verifyBroadcasterFee(this.verifierContext, { to, data }, advertisedFee);
+    try {
+      await verifyBroadcasterFee(this.verifierContext, { to, data }, advertisedFee);
+    } catch (e) {
+      if (e instanceof RelayError) {
+        // Bucket by RelayError code — FEE_INSUFFICIENT (under-paid proof) vs INVALID_DATA
+        // (unknown selector / SDK decode error). Operators reading /health use this to tell
+        // "buggy clients" from "tampered clients" without scraping logs.
+        this.counters.inc(`feeVerifierRejects.${e.code}`);
+      }
+      throw e;
+    }
 
     // 6. Check wallet availability
     if (this.walletManager.isLocked()) {
@@ -194,9 +214,12 @@ export class PrivacyRelay {
         data,
         gasLimit
       );
+      this.counters.inc(`submitSuccess.${selectorName}`);
       return { txHash: result.txHash };
     } catch (e: any) {
-      if (e.message?.includes("Duplicate")) {
+      const code = e.message?.includes("Duplicate") ? "DUPLICATE_TX" : "SUBMISSION_FAILED";
+      this.counters.inc(`submitFail.${selectorName}.${code}`);
+      if (code === "DUPLICATE_TX") {
         throw new RelayError("DUPLICATE_TX", e.message);
       }
       throw new RelayError(

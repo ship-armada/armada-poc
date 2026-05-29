@@ -1,8 +1,12 @@
 // ABOUTME: Transfer-shielded stage handler — 0zk → 0zk private send. Relayer-mediated submit (A4); zero EVM wallet prompts.
 // ABOUTME: Build-proof with broadcaster fee → POST /relay → poll /status → hub-confirmed. Mirrors features/unshield/handler.ts pattern.
 
+import { sendTransaction } from 'wagmi/actions'
 import { loadDeployments } from '@/config/deployments'
 import { getNetworkConfig } from '@/config/network'
+import { wagmiConfig } from '@/config/wagmi'
+import { ensureChain } from '@/lib/network-switch'
+import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import {
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
@@ -12,6 +16,7 @@ import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   generateTransferProofForRecipient,
   populateTransferTransaction,
+  type BroadcasterFeeRecipient,
 } from '@/lib/railgun/transfer'
 import { submitRelay, RelayerError } from '@/lib/relayer'
 import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
@@ -58,6 +63,19 @@ export const transferShieldedHandler: StageHandler<'transfer-shielded'> = {
   },
 }
 
+/** A6 — see comment in features/unshield/handler.ts::broadcasterFeeFromRecord. */
+function broadcasterFeeFromRecord(
+  record: TxRecord<'transfer-shielded'>,
+  tokenAddress: string,
+): BroadcasterFeeRecipient | null {
+  if (record.meta.useWalletOverride) return null
+  return {
+    tokenAddress,
+    amount: record.meta.broadcasterFeeAmount,
+    recipientAddress: record.meta.broadcasterRailgunAddress,
+  }
+}
+
 async function runBuildProof(
   record: TxRecord<'transfer-shielded'>,
   ctx: Parameters<typeof transferShieldedHandler.run>[1],
@@ -79,11 +97,7 @@ async function runBuildProof(
     tokenAddress,
     recipient: record.meta.recipient,
     amount: record.meta.amount,
-    broadcasterFee: {
-      tokenAddress,
-      amount: record.meta.broadcasterFeeAmount,
-      recipientAddress: record.meta.broadcasterRailgunAddress,
-    },
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
     onProgress: progress.write,
   })
 
@@ -110,13 +124,32 @@ async function runSubmitAndConfirm(
     tokenAddress,
     recipient: record.meta.recipient,
     amount: record.meta.amount,
-    broadcasterFee: {
-      tokenAddress,
-      amount: record.meta.broadcasterFeeAmount,
-      recipientAddress: record.meta.broadcasterRailgunAddress,
-    },
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // A6 wallet-override path — submit through the user's EVM wallet instead of the relayer.
+  // The proof has no broadcaster output (sendWithPublicWallet=true on the SDK side), so the
+  // verifier would reject; we go direct. Terminal state is identical to the relayer path.
+  if (record.meta.useWalletOverride) {
+    await ensureChain(hubChainId)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    const hash = await sendTransaction(wagmiConfig, {
+      to: populated.to,
+      data: populated.data,
+      value: populated.value,
+    })
+    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+    await ctx.upsert(broadcastRecord)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    if (kmIsUnlocked()) {
+      void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+    }
+    const completed = advance(broadcastRecord, 'hub-confirmed', { sourceTxHash: hash })
+    await ctx.upsert(completed)
+    return
+  }
 
   let submitResponse
   try {

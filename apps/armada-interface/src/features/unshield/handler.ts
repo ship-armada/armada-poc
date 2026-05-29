@@ -1,8 +1,12 @@
 // ABOUTME: Unshield-local stage handler — build-proof (with broadcaster fee) → submit-relayer (POST /relay) → poll status → hub-confirmed.
 // ABOUTME: Phase A3 — first relayer-mediated handler. Zero EVM wallet prompts; tx broadcast + gas paid by the relayer; status tracked via /status polling.
 
+import { sendTransaction } from 'wagmi/actions'
 import { loadDeployments } from '@/config/deployments'
 import { getNetworkConfig } from '@/config/network'
+import { wagmiConfig } from '@/config/wagmi'
+import { ensureChain } from '@/lib/network-switch'
+import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import {
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
@@ -12,6 +16,7 @@ import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   generateUnshieldProofForRecipient,
   populateUnshieldTransaction,
+  type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
 import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
@@ -65,6 +70,25 @@ export const unshieldLocalHandler: StageHandler<'unshield-local'> = {
   },
 }
 
+/**
+ * Compute the broadcasterFee argument for proof generation + population. Returns null when the
+ * record was created with the A6 wallet-override flag set, so the proof is built for direct EVM
+ * submit; otherwise returns the broadcaster context baked into the record's meta at submit-time.
+ * Centralised here because BOTH the proof step AND the populate step must pass identical values
+ * — the SDK's in-memory proof cache is keyed by it.
+ */
+function broadcasterFeeFromRecord(
+  record: TxRecord<'unshield-local'>,
+  tokenAddress: string,
+): BroadcasterFeeRecipient | null {
+  if (record.meta.useWalletOverride) return null
+  return {
+    tokenAddress,
+    amount: record.meta.broadcasterFeeAmount,
+    recipientAddress: record.meta.broadcasterRailgunAddress,
+  }
+}
+
 async function runBuildProof(
   record: TxRecord<'unshield-local'>,
   ctx: Parameters<typeof unshieldLocalHandler.run>[1],
@@ -86,13 +110,9 @@ async function runBuildProof(
     tokenAddress,
     recipient: record.meta.recipient,
     amount: record.meta.amount,
-    // Broadcaster fee baked into the proof — the relayer's verifier reads it back from
-    // the on-the-wire calldata at /relay time and refuses to submit if it's short.
-    broadcasterFee: {
-      tokenAddress,
-      amount: record.meta.broadcasterFeeAmount,
-      recipientAddress: record.meta.broadcasterRailgunAddress,
-    },
+    // A6: null when wallet-override is set → SDK builds a proof without a broadcaster output
+    // (sendWithPublicWallet=true on the SDK side, no extra unshield commitment to the relayer).
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
     onProgress: progress.write,
   })
 
@@ -124,13 +144,33 @@ async function runSubmitAndConfirm(
     tokenAddress,
     recipient: record.meta.recipient,
     amount: record.meta.amount,
-    broadcasterFee: {
-      tokenAddress,
-      amount: record.meta.broadcasterFeeAmount,
-      recipientAddress: record.meta.broadcasterRailgunAddress,
-    },
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // A6 wallet-override path — bypass the relayer entirely and submit through the user's EVM
+  // wallet. Builds the same populated calldata (just with a different proof shape), waits for
+  // the receipt directly, and advances to the same `hub-confirmed` terminal stage so the rest
+  // of the lifecycle (UI, history, balance refresh) is uniform across both paths.
+  if (record.meta.useWalletOverride) {
+    await ensureChain(hubChainId)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    const hash = await sendTransaction(wagmiConfig, {
+      to: populated.to,
+      data: populated.data,
+      value: populated.value,
+    })
+    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+    await ctx.upsert(broadcastRecord)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    if (kmIsUnlocked()) {
+      void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+    }
+    const completed = advance(broadcastRecord, 'hub-confirmed', { sourceTxHash: hash })
+    await ctx.upsert(completed)
+    return
+  }
 
   // Hand the populated calldata to the relayer. The relayer's pre-submit pipeline validates the
   // selector + decrypts the embedded broadcaster output + checks the amount against its

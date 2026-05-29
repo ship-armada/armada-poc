@@ -12,9 +12,11 @@ export interface UnshieldReviewStepProps {
   recipient: string
   amount: bigint
   fee: bigint | null
-  /** USDC the on-chain recipient will receive. Local: `amount`. Xchain: `amount - fee`. */
+  /** CCTP fast-fee on xchain. Surfaced as the FeeSummary secondary row when applicable. */
+  cctpFee: bigint
+  /** USDC the on-chain recipient will receive. Local: `amount`. Xchain: `amount - cctpFee`. */
   recipientReceives: bigint
-  /** USDC actually deducted from the user's shielded balance. Local: `amount + fee`. Xchain: `amount`. */
+  /** USDC deducted from the user's shielded balance. Both kinds post-A5: `amount + fee`. */
   totalDeducted: bigint
   isXchain: boolean
   /** When set, Confirm is disabled and the reason is shown inline. Used to gate the submit
@@ -29,6 +31,7 @@ export function UnshieldReviewStep({
   recipient,
   amount,
   fee,
+  cctpFee,
   recipientReceives,
   totalDeducted,
   isXchain,
@@ -61,12 +64,14 @@ export function UnshieldReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        // Mirrors UnshieldInputStep — bottom line is "Total deducted" on the local path so the
-        // user sees the full balance impact, "Recipient receives" on xchain so they see the
-        // CCTP-net amount the destination address will land.
+        // Mirrors UnshieldInputStep — bottom line is "Total deducted" on the local path; on
+        // xchain it's "Recipient receives" (the CCTP-net amount) so the user sees what lands
+        // on the destination chain. CCTP fee is surfaced as the secondary row.
         netAmount={isXchain ? recipientReceives : totalDeducted}
-        netLabel={isXchain ? "Recipient receives" : 'Total deducted from balance'}
-        feeLabel={isXchain ? 'CCTP fee' : 'Relayer fee'}
+        netLabel={isXchain ? 'Recipient receives' : 'Total deducted from balance'}
+        feeLabel="Relayer fee"
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
       />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

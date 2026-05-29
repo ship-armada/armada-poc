@@ -19,21 +19,20 @@
  *   4. We look up the USDC entry. If missing OR its amount < advertised, we reject with
  *      `FEE_INSUFFICIENT`.
  *
- * Selector support (extended in Phase A4):
+ * Selector support (extended through Phase A4 + A5):
  *   - `transact(Transaction[])` — vanilla. SDK helper decodes directly.
  *   - `lendAndShield(Transaction, bytes32, ShieldCiphertext)` on ArmadaYieldAdapter — wrapper.
  *   - `redeemAndShield(Transaction, bytes32, ShieldCiphertext)` on ArmadaYieldAdapter — wrapper.
+ *   - `atomicCrossChainUnshield(Transaction, uint32, address, bytes32, uint256)` on the
+ *     PrivacyPool itself — A5 cross-chain unshield wrapper.
  *
- *   For the two wrapper selectors the SDK's decoder doesn't know the function name (it expects
+ *   For all wrapper selectors the SDK's decoder doesn't know the function name (it expects
  *   `transact` or `relay`), so we decode the wrapper ourselves, lift the embedded Transaction
- *   struct (always the first argument on both wrappers), and ABI-re-encode it as a synthetic
+ *   struct (always the first argument), and ABI-re-encode it as a synthetic
  *   `transact([transaction])` call against the PrivacyPool address. The broadcaster output
  *   lives inside `Transaction.boundParams.commitmentCiphertext[]` regardless of which outer
  *   contract carried it, so the same decryption pipeline applies. See `lib/transact-shape.ts`
  *   for the ABI fragments and the `normaliseRequestToVanillaTransact` helper.
- *
- *   Phase A5 will extend this with `atomicCrossChainUnshield` (also a single embedded Transaction
- *   in arg 0). Add the selector + its ABI to `lib/transact-shape.ts::WRAPPER_ABIS`.
  *
  *   Single-token check (USDC only) is preserved across all paths — payments in any other
  *   token are ignored.

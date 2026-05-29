@@ -15,6 +15,8 @@ export interface SendReviewStepProps {
   recipient: string
   amount: bigint
   fee: bigint | null
+  /** CCTP fast-fee for xchain. Surfaced as the FeeSummary secondary row when applicable. */
+  cctpFee: bigint
   recipientReceives: bigint
   totalDeducted: bigint
   isXchain: boolean
@@ -39,6 +41,7 @@ export function SendReviewStep({
   recipient,
   amount,
   fee,
+  cctpFee,
   recipientReceives,
   totalDeducted,
   isXchain,
@@ -82,7 +85,9 @@ export function SendReviewStep({
         fee={fee}
         netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
         netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
-        feeLabel={isXchain ? 'CCTP fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        feeLabel={isXchain ? 'Relayer fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
       />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

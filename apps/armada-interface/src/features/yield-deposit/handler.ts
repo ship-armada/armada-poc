@@ -1,8 +1,12 @@
 // ABOUTME: Yield-deposit (lend) handler — single atomic adapt-proof tx with broadcaster fee → POST /relay → poll status. Relayer-mediated (A4).
 // ABOUTME: Three stages: build-proof (~20-30s, embeds broadcaster output), submit-relayer (POST + status poll), hub-confirmed (balance refresh).
 
+import { sendTransaction } from 'wagmi/actions'
 import { loadDeployments, loadYieldDeployment } from '@/config/deployments'
 import { getNetworkConfig } from '@/config/network'
+import { wagmiConfig } from '@/config/wagmi'
+import { ensureChain } from '@/lib/network-switch'
+import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import {
   getRailgunAddress as kmGetRailgunAddress,
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
@@ -10,7 +14,7 @@ import {
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import { buildYieldAdaptTransaction } from '@/lib/railgun/yield'
+import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
 import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
 import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
@@ -56,6 +60,19 @@ export const yieldDepositHandler: StageHandler<'yield-deposit'> = {
   },
 }
 
+/** A6 — null when wallet-override, otherwise the broadcaster context from meta. */
+function broadcasterFeeFromRecord(
+  record: TxRecord<'yield-deposit'>,
+  tokenAddress: string,
+): BroadcasterFeeRecipient | null {
+  if (record.meta.useWalletOverride) return null
+  return {
+    tokenAddress,
+    amount: record.meta.broadcasterFeeAmount,
+    recipientAddress: record.meta.broadcasterRailgunAddress,
+  }
+}
+
 async function runBuildProof(
   record: TxRecord<'yield-deposit'>,
   ctx: Parameters<typeof yieldDepositHandler.run>[1],
@@ -88,11 +105,7 @@ async function runBuildProof(
     railgunAddress,
     adapterAddress,
     hubChainId: getNetworkConfig().hub.chainId,
-    broadcasterFee: {
-      tokenAddress: usdcAddress,
-      amount: record.meta.broadcasterFeeAmount,
-      recipientAddress: record.meta.broadcasterRailgunAddress,
-    },
+    broadcasterFee: broadcasterFeeFromRecord(record, usdcAddress),
     onProgress: progress.write,
   })
 
@@ -118,6 +131,26 @@ async function runSubmitAndConfirm(
     throw new Error('Yield adapt-proof tx missing — re-run build-proof stage.')
   }
   const hubChainId = getNetworkConfig().hub.chainId
+
+  // A6 wallet-override path — submit the wrapper calldata via the user's EVM wallet.
+  if (record.meta.useWalletOverride) {
+    await ensureChain(hubChainId)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    const hash = await sendTransaction(wagmiConfig, {
+      to: yieldTx.to as `0x${string}`,
+      data: yieldTx.data as `0x${string}`,
+      value: BigInt(yieldTx.value),
+    })
+    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+    await ctx.upsert(broadcastRecord)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    if (kmIsUnlocked()) {
+      void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+    }
+    await ctx.upsert(advance(broadcastRecord, 'hub-confirmed', { sourceTxHash: hash }))
+    return
+  }
 
   let submitResponse
   try {

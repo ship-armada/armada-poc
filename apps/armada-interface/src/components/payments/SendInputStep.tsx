@@ -30,9 +30,14 @@ export interface SendInputStepProps {
    */
   max: bigint
   fee: bigint | null
-  /** USDC the recipient actually receives. Local + transfer: `amount`. Xchain: `amount - fee`. */
+  /**
+   * CCTP fast-fee (~2 bps) on xchain kinds — deducted from the destination mint, separate
+   * from `fee` (the relayer's broadcaster fee, paid by the user). Zero / ignored on local kinds.
+   */
+  cctpFee: bigint
+  /** USDC the recipient actually receives. Local + transfer: `amount`. Xchain: `amount - cctpFee`. */
   recipientReceives: bigint
-  /** USDC deducted from the user's shielded balance. Local: `amount + fee`. Others: `amount`. */
+  /** USDC deducted from the user's shielded balance. Local + xchain: `amount + fee`. Transfer: `amount + fee`. */
   totalDeducted: bigint
   isXchain: boolean
   isLocalUnshield: boolean
@@ -54,6 +59,7 @@ export function SendInputStep({
   onAmountChange,
   max,
   fee,
+  cctpFee,
   recipientReceives,
   totalDeducted,
   isXchain,
@@ -65,10 +71,10 @@ export function SendInputStep({
 }: SendInputStepProps) {
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
-  // For unshield-local the user's typeable max is already shielded - fee; if they exceed it,
-  // the cause is that amount + fee would overflow. Spell that out so they don't think their
-  // balance number is wrong.
-  const overflowMessage = isLocalUnshield
+  // For unshield-local and unshield-xchain the user's typeable max is already shielded - fee;
+  // if they exceed it, the cause is that amount + fee would overflow. Spell that out so they
+  // don't think their balance number is wrong.
+  const overflowMessage = isLocalUnshield || isXchain
     ? 'Amount + relayer fee exceeds your private balance.'
     : 'Amount exceeds your private balance.'
   const amountError = usdcInputErrorMessage(parseError)
@@ -123,10 +129,14 @@ export function SendInputStep({
       />
       <FeeSummary
         fee={fee}
-        // Per-kind bottom line — see SendModal's per-kind comment.
+        // Xchain has two fees with different semantics: broadcaster (paid by user, on top) +
+        // CCTP fast-fee (deducted from recipient mint). Render both via the secondary slot so
+        // the user can reason about the breakdown.
         netAmount={isLocalUnshield ? totalDeducted : recipientReceives}
         netLabel={isLocalUnshield ? 'Total deducted from balance' : "They'll receive"}
-        feeLabel={isXchain ? 'CCTP fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        feeLabel={isXchain ? 'Relayer fee' : isLocalUnshield ? 'Relayer fee' : 'Estimated fee'}
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
         isRefreshing={isFeeRefreshing}
       />
       <FlowFooter

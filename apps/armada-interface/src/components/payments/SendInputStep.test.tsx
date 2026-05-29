@@ -25,6 +25,7 @@ function setup(extras?: {
     onAmountChange: vi.fn(),
     max: extras?.max ?? 5_000_000n,
     fee: null as bigint | null,
+    cctpFee: 0n,
     recipientReceives: 0n,
     totalDeducted: 0n,
     isXchain: (extras?.tab ?? 'private') === 'external' && (extras?.destChainId ?? 31337) !== 31337,

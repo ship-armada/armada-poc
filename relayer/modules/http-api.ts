@@ -13,6 +13,7 @@ import { RelayError } from "../types";
 import type { RelayRequest, RelayerHealth } from "../types";
 import type { PrivacyRelay } from "./privacy-relay";
 import type { FeeCalculator } from "./fee-calculator";
+import type { Counters } from "./counters";
 
 // ============ HTTP API ============
 
@@ -22,6 +23,7 @@ export class HttpApi {
   private privacyRelay: PrivacyRelay;
   private feeCalculator: FeeCalculator;
   private getHealth: () => RelayerHealth;
+  private counters: Counters;
   private server: ReturnType<express.Application["listen"]> | null = null;
 
   constructor(
@@ -29,11 +31,13 @@ export class HttpApi {
     privacyRelay: PrivacyRelay,
     feeCalculator: FeeCalculator,
     getHealth: () => RelayerHealth,
+    counters: Counters,
   ) {
     this.port = port;
     this.privacyRelay = privacyRelay;
     this.feeCalculator = feeCalculator;
     this.getHealth = getHealth;
+    this.counters = counters;
 
     this.app = express();
     this.app.use(cors());
@@ -144,9 +148,13 @@ export class HttpApi {
     this.app.get("/health", (_req, res) => {
       try {
         const health = this.getHealth();
+        // Merge in-process counters at response time so the health snapshot reflects the
+        // current values (counters live in PrivacyRelay + verifier; getHealth() comes from
+        // cctp/iris relay modules which don't know about them).
+        const merged: RelayerHealth = { ...health, counters: this.counters.snapshot() };
         const code =
-          health.status === "healthy" || health.status === "degraded" ? 200 : 503;
-        res.status(code).json(health);
+          merged.status === "healthy" || merged.status === "degraded" ? 200 : 503;
+        res.status(code).json(merged);
       } catch (e: any) {
         // getHealth itself throwing means a wiring bug (e.g. health provider not yet
         // initialised) — operators should never see this in steady state. Log server-side
@@ -158,6 +166,7 @@ export class HttpApi {
           status: "unhealthy",
           chains: [],
           generatedAt: Date.now(),
+          counters: this.counters.snapshot(),
         };
         res.status(503).json(errorResponse);
       }

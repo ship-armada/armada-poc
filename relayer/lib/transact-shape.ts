@@ -30,10 +30,20 @@ export const LEND_AND_SHIELD_SELECTOR = "0xf2987ad1";
 /** ArmadaYieldAdapter.redeemAndShield(Transaction, bytes32, ShieldCiphertext) — yield withdraw. */
 export const REDEEM_AND_SHIELD_SELECTOR = "0x0793b70e";
 
+/**
+ * PrivacyPool.atomicCrossChainUnshield(Transaction, uint32, address, bytes32, uint256) — A5
+ * cross-chain unshield. The Transaction struct burns shielded USDC into the pool's own EOA and
+ * the surrounding wrapper args drive the CCTP burn-and-mint to a different chain. Same
+ * single-Transaction-in-arg-0 shape as the yield wrappers, so the synthetic-transact rewrite
+ * applies here too.
+ */
+export const ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR = "0xe484d408";
+
 /** The wrappers that need synthetic-transact re-encoding before the SDK helper can decode. */
 export const WRAPPER_SELECTORS: ReadonlySet<string> = new Set([
   LEND_AND_SHIELD_SELECTOR,
   REDEEM_AND_SHIELD_SELECTOR,
+  ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR,
 ]);
 
 // ============ Shared struct fragments ============
@@ -92,4 +102,5 @@ export const TRANSACT_ABI: readonly string[] = [
 export const WRAPPER_ABIS: readonly string[] = [
   `function lendAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext)`,
   `function redeemAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext)`,
+  `function atomicCrossChainUnshield(${TRANSACTION_STRUCT} _transaction, uint32 destinationDomain, address finalRecipient, bytes32 destinationCaller, uint256 maxFee)`,
 ];

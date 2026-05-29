@@ -20,6 +20,7 @@ import { FeeCalculator } from "./modules/fee-calculator";
 import { PrivacyRelay } from "./modules/privacy-relay";
 import { RelayerRailgunWallet } from "./modules/railgun-wallet";
 import { HttpApi } from "./modules/http-api";
+import { Counters } from "./modules/counters";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
@@ -165,6 +166,10 @@ async function main() {
   // PrivacyPool address, and USDC address so per-request fee verification has everything it
   // needs without re-reading config.
   console.log("[armada] Initializing privacy relay...");
+  // In-process counters exposed via /health. Single instance shared by PrivacyRelay (submit
+  // success/fail) and the http-api /health route (snapshot read). Reset on every restart —
+  // intentional for the lightweight observability surface that A6 ships.
+  const counters = new Counters();
   const privacyRelay = new PrivacyRelay(
     walletManager,
     feeCalculator,
@@ -178,6 +183,7 @@ async function main() {
       hubChainId: netConfig.hub.chainId,
       usdcAddress: contracts.usdc,
     },
+    counters,
   );
 
   // Initialize CCTP relay module — select based on CCTP mode. `getHealth` is the contract
@@ -220,6 +226,7 @@ async function main() {
     privacyRelay,
     feeCalculator,
     () => cctpRelayModule.getHealth(),
+    counters,
   );
 
   // Start HTTP server

@@ -4,6 +4,8 @@
 import { useEffect, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom, type ModalKind } from '@/state/ui'
+import { preferencesAtom } from '@/state/preferences'
+import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { shieldedUsdcAtom, yieldSharesAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
@@ -34,6 +36,8 @@ export function EarnModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
   const isOpen = EARN_KINDS.includes(openModal)
   const initialTab: EarnTab = openModal === 'yield-withdraw' ? 'withdraw' : 'add'
+  // A6 — frozen into the record meta at submit-time so a mid-flight toggle doesn't strand the handler.
+  const prefs = useAtomValue(preferencesAtom)
 
   // Form state
   const [tab, setTab] = useState<EarnTab>(initialTab)
@@ -145,6 +149,7 @@ export function EarnModal() {
           feeCacheId,
           broadcasterFeeAmount,
           broadcasterRailgunAddress,
+          useWalletOverride: prefs.submitFromWallet,
         })
       } else {
         setSubmittedKind('yield-withdraw')
@@ -164,6 +169,7 @@ export function EarnModal() {
           shares,
           broadcasterFeeAmount,
           broadcasterRailgunAddress,
+          useWalletOverride: prefs.submitFromWallet,
         })
       }
       setStep('progress')
@@ -185,6 +191,7 @@ export function EarnModal() {
       steps={STEPS}
       errorAtStep={errorAtStep}
     >
+      <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
         <EarnInputStep
           tab={tab}

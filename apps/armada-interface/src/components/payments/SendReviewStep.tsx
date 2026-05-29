@@ -17,10 +17,9 @@ export interface SendReviewStepProps {
   fee: bigint | null
   /** CCTP fast-fee for xchain. Surfaced as the FeeSummary secondary row when applicable. */
   cctpFee: bigint
-  recipientReceives: bigint
+  /** USDC deducted from the user's shielded balance — `amount + fee` across all three kinds. */
   totalDeducted: bigint
   isXchain: boolean
-  isLocalUnshield: boolean
   submitBlockedReason?: string | null
   onBack: () => void
   onConfirm: () => void
@@ -42,10 +41,8 @@ export function SendReviewStep({
   amount,
   fee,
   cctpFee,
-  recipientReceives,
   totalDeducted,
   isXchain,
-  isLocalUnshield,
   submitBlockedReason,
   onBack,
   onConfirm,
@@ -83,10 +80,9 @@ export function SendReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        // Mirrors SendInputStep — see net-line policy comment there. Both unshield kinds show
-        // "Total deducted from balance"; private transfer shows "They'll receive".
-        netAmount={isLocalUnshield || isXchain ? totalDeducted : recipientReceives}
-        netLabel={isLocalUnshield || isXchain ? 'Total deducted from balance' : "They'll receive"}
+        // Mirrors SendInputStep — single "Total deducted from balance" line across all kinds.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
         // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}

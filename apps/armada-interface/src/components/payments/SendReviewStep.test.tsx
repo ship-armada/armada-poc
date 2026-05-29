@@ -18,9 +18,7 @@ function renderPrivate() {
       amount={5_000_000n}
       fee={null}
       cctpFee={0n}
-      recipientReceives={5_000_000n}
       totalDeducted={5_000_000n}
-      isLocalUnshield={false}
       isXchain={false}
       onBack={onBack}
       onConfirm={onConfirm}
@@ -51,9 +49,7 @@ describe('<SendReviewStep>', () => {
         amount={5_000_000n}
         fee={null}
         cctpFee={0n}
-        recipientReceives={5_000_000n}
-      totalDeducted={5_000_000n}
-      isLocalUnshield={false}
+        totalDeducted={5_000_000n}
         isXchain={false}
         onBack={() => {}}
         onConfirm={() => {}}
@@ -73,9 +69,7 @@ describe('<SendReviewStep>', () => {
         amount={5_000_000n}
         fee={null}
         cctpFee={20_000n}
-        recipientReceives={5_000_000n}
-      totalDeducted={5_000_000n}
-      isLocalUnshield={false}
+        totalDeducted={5_000_000n}
         isXchain
         onBack={() => {}}
         onConfirm={() => {}}

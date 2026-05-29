@@ -35,9 +35,7 @@ export interface SendInputStepProps {
    * from `fee` (the relayer's broadcaster fee, paid by the user). Zero / ignored on local kinds.
    */
   cctpFee: bigint
-  /** USDC the recipient actually receives. Local + transfer: `amount`. Xchain: `amount - cctpFee`. */
-  recipientReceives: bigint
-  /** USDC deducted from the user's shielded balance. Local + xchain: `amount + fee`. Transfer: `amount + fee`. */
+  /** USDC deducted from the user's shielded balance — `amount + fee` across all three SendModal kinds. */
   totalDeducted: bigint
   isXchain: boolean
   isLocalUnshield: boolean
@@ -60,7 +58,6 @@ export function SendInputStep({
   max,
   fee,
   cctpFee,
-  recipientReceives,
   totalDeducted,
   isXchain,
   isLocalUnshield,
@@ -129,14 +126,12 @@ export function SendInputStep({
       />
       <FeeSummary
         fee={fee}
-        // Net-line policy per kind:
-        //   - transfer-shielded (private): "They'll receive" = amount (recipient gets exactly
-        //     what was typed; broadcaster fee comes off the user's balance on top).
-        //   - unshield-local + unshield-xchain: "Total deducted from balance" — load-bearing
-        //     number for the user; xchain recipient mint differs only by the CCTP fast-fee
-        //     already surfaced on its own row.
-        netAmount={isLocalUnshield || isXchain ? totalDeducted : recipientReceives}
-        netLabel={isLocalUnshield || isXchain ? 'Total deducted from balance' : "They'll receive"}
+        // Single "Total deducted from balance" line across all three SendModal kinds. For
+        // transfer-shielded the recipient gets exactly `amount`; for unshield kinds the
+        // recipient mint differs by the CCTP fast-fee already surfaced on its own row when
+        // xchain. The total-deducted number is the user's load-bearing commitment in every case.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
         // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
         feeLabel="Relayer fee"
         secondaryFee={isXchain ? cctpFee : undefined}

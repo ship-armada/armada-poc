@@ -270,7 +270,6 @@ export function SendModal() {
           max={inputMax}
           fee={fee}
           cctpFee={cctpFee}
-          recipientReceives={recipientReceives}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
           isLocalUnshield={isLocalUnshield}
@@ -288,10 +287,8 @@ export function SendModal() {
           amount={amount}
           fee={fee}
           cctpFee={cctpFee}
-          recipientReceives={recipientReceives}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
-          isLocalUnshield={isLocalUnshield}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}

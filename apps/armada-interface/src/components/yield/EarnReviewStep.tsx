@@ -14,8 +14,14 @@ export interface EarnReviewStepProps {
   amount: bigint
   rate: YieldRate | null
   fee: bigint | null
-  /** USDC actually deducted from the user's shielded balance — `amount + fee` for both kinds. */
-  totalDeducted: bigint
+  /**
+   * Bottom-line USDC number for the FeeSummary, computed by the modal per tab. For Add this is
+   * the private-balance debit (`amount + fee`); for Withdraw it's the net private-balance gain
+   * (`amount - fee`), matching the actual yield-withdraw balance flow.
+   */
+  netAmount: bigint
+  /** Label paired with `netAmount` — also per-tab from the modal. */
+  netLabel: string
   submitBlockedReason?: string | null
   onBack: () => void
   onConfirm: () => void
@@ -33,7 +39,8 @@ export function EarnReviewStep({
   amount,
   rate,
   fee,
-  totalDeducted,
+  netAmount,
+  netLabel,
   submitBlockedReason,
   onBack,
   onConfirm,
@@ -59,8 +66,8 @@ export function EarnReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        netAmount={totalDeducted}
-        netLabel="Total deducted from balance"
+        netAmount={netAmount}
+        netLabel={netLabel}
         feeLabel="Relayer fee"
       />
       {tab === 'withdraw' ? (

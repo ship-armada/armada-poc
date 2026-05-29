@@ -11,7 +11,7 @@ import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { useYieldRate } from '@/hooks/useYieldRate'
-import { parseUsdcInput } from '@/lib/format'
+import { formatUsdcAmount, parseUsdcInput } from '@/lib/format'
 import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
@@ -66,14 +66,39 @@ export function EarnModal() {
   // A4 — yield ops are relayer-mediated. Fee comes from the quote's crossContract tier.
   const yieldKind: 'yield-deposit' | 'yield-withdraw' = tab === 'add' ? 'yield-deposit' : 'yield-withdraw'
   const fee: bigint = userFeeForKind(yieldKind, amount, quote)
-  // Both yield ops are fee-on-top: the broadcaster output sits alongside the vault spend in
-  // the same proof; user's shielded USDC pays the fee on top of the deposit/withdraw amount.
+  // Both yield ops are fee-on-top in `computeFeeBreakdown`'s model, but the balance flows differ:
+  //   - Add Funds: user unshields (amount + fee) USDC. `totalDeducted = amount + fee` is the
+  //     literal private-balance debit. `recipientReceives = amount` is what the vault gains.
+  //   - Withdraw: vault redeems `amount` USDC, ALL of it shields back to user. The broadcaster
+  //     fee comes from a SEPARATE unshield of user's pre-existing private USDC (see
+  //     adapter.redeemAndShield + SDK CrossContractCalls broadcaster handling). Net private
+  //     balance change is +(amount - fee); vault balance drops by `amount`-worth of shares.
   const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
     yieldKind,
     amount,
     fee,
     max,
   )
+  // Honest withdraw-display: the user nets `amount - fee` into their private balance. Clamped
+  // at 0 for the edge case where fee > amount (shouldn't happen in practice — small typed
+  // withdraw amount + larger flat fee — but defensive).
+  const withdrawReceives: bigint = amount > fee ? amount - fee : 0n
+  // Per-tab display values handed down to the step components. The step components stay dumb;
+  // EarnModal owns the per-tab semantic translation.
+  const displayNetAmount: bigint = tab === 'add' ? totalDeducted : withdrawReceives
+  const displayNetLabel: string =
+    tab === 'add' ? 'Total deducted from balance' : "You'll receive into private balance"
+  // Pre-flight: the withdraw broadcaster fee is unshielded from the user's PRE-EXISTING private
+  // USDC (the proof needs a USDC UTXO; the redeem proceeds aren't available at proof-construction
+  // time). If the user's private USDC is below the fee, proof gen will fail 20-30s in. Block at
+  // submit-time with a clear reason instead. Only enforced when we have a real fee quote — pre-quote
+  // we don't know the number yet.
+  const withdrawFeeShortfall = tab === 'withdraw' && fee > 0n && (shieldedUsdc ?? 0n) < fee
+  const withdrawFeeBlockedReason: string | null = withdrawFeeShortfall
+    ? `You need at least ${formatUsdcAmount(fee)} USDC in your private balance to cover the withdrawal fee. Add USDC from another source before withdrawing.`
+    : null
+  // Composed gate for the review step — sync gate OR private-USDC shortfall.
+  const submitBlockedReason: string | null = syncGate.reason || withdrawFeeBlockedReason
 
   // Two useTx hooks; only one gets a record per flow.
   const txDeposit = useTx({ kind: 'yield-deposit' })
@@ -204,7 +229,9 @@ export function EarnModal() {
           max={inputMax}
           rate={yieldRate}
           fee={fee}
-          totalDeducted={totalDeducted}
+          netAmount={displayNetAmount}
+          netLabel={displayNetLabel}
+          continueBlockedReason={withdrawFeeBlockedReason}
           isFeeRefreshing={isStale}
           onCancel={close}
           onContinue={() => setStep('review')}
@@ -216,8 +243,9 @@ export function EarnModal() {
           amount={amount}
           rate={yieldRate}
           fee={fee}
-          totalDeducted={totalDeducted}
-          submitBlockedReason={syncGate.reason}
+          netAmount={displayNetAmount}
+          netLabel={displayNetLabel}
+          submitBlockedReason={submitBlockedReason}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
         />
@@ -226,7 +254,10 @@ export function EarnModal() {
       {step === 'complete' && (
         <EarnCompleteStep
           tab={tab}
-          recipientReceives={recipientReceives}
+          // Add: vault gained `recipientReceives` (= amount) of USDC; user spent amount + fee.
+          // Withdraw: user's private balance gained `withdrawReceives` (= amount - fee); vault
+          // dropped by `amount`-worth of shares. Pass the per-tab honest number for the success copy.
+          recipientReceives={tab === 'add' ? recipientReceives : withdrawReceives}
           totalDeducted={totalDeducted}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}

@@ -19,7 +19,8 @@ function setup(extras?: {
     max: extras?.max ?? 5_000_000n,
     rate: extras?.rate ?? null as YieldRate | null,
     fee: null as bigint | null,
-    totalDeducted: 0n,
+    netAmount: 0n,
+    netLabel: 'Total deducted from balance',
     onCancel: vi.fn(),
     onContinue: vi.fn(),
   }
@@ -79,5 +80,30 @@ describe('<EarnInputStep>', () => {
     const props = setup()
     fireEvent.click(screen.getByRole('tab', { name: 'Withdraw' }))
     expect(props.onTabChange).toHaveBeenCalledWith('withdraw')
+  })
+
+  it('disables Continue and surfaces the inline reason when continueBlockedReason is set', () => {
+    // WHY: the withdraw broadcaster fee comes from the user's pre-existing private USDC (not
+    // from the redeem proceeds), so the modal must gate submit when private USDC < fee.
+    // Without this gate the user sees a Continue → 20-30s of proof gen → opaque SDK throw —
+    // the worst possible UX for a fixable pre-condition.
+    render(
+      <EarnInputStep
+        tab="withdraw"
+        onTabChange={vi.fn()}
+        amountStr="3"
+        onAmountChange={vi.fn()}
+        max={5_000_000n}
+        rate={null}
+        fee={500_000n}
+        netAmount={2_500_000n}
+        netLabel="You'll receive into private balance"
+        continueBlockedReason="You need at least 0.50 USDC in your private balance to cover the withdrawal fee."
+        onCancel={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(/0\.50 USDC in your private balance/)
   })
 })

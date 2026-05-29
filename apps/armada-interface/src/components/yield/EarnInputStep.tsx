@@ -29,8 +29,20 @@ export interface EarnInputStepProps {
   /** Current yield rate; null while syncing. Drives the APY hint copy. */
   rate: YieldRate | null
   fee: bigint | null
-  /** USDC actually deducted from the user's shielded balance — `amount + fee` for both kinds. */
-  totalDeducted: bigint
+  /**
+   * Bottom-line USDC number for the FeeSummary, computed by the modal per tab. For Add this is
+   * the literal private-balance debit (`amount + fee`); for Withdraw it's the net private
+   * balance gain (`amount - fee`), matching the actual yield-withdraw balance flow.
+   */
+  netAmount: bigint
+  /** Label paired with `netAmount` — also per-tab from the modal. */
+  netLabel: string
+  /**
+   * When set, the Continue button is disabled and an inline message renders. Used by the modal
+   * to surface the "private USDC < withdrawal fee" pre-flight on the withdraw tab — see
+   * EarnModal for the rationale (fee unshields from existing private USDC, not redeem proceeds).
+   */
+  continueBlockedReason?: string | null
   isFeeRefreshing?: boolean
   onCancel: () => void
   onContinue: () => void
@@ -51,7 +63,9 @@ export function EarnInputStep({
   max,
   rate,
   fee,
-  totalDeducted,
+  netAmount,
+  netLabel,
+  continueBlockedReason,
   isFeeRefreshing,
   onCancel,
   onContinue,
@@ -67,7 +81,7 @@ export function EarnInputStep({
   const amountError =
     usdcInputErrorMessage(parseError) ?? (tooMuch ? overflowMessage : undefined)
 
-  const isValid = amount > 0n && !tooMuch && !parseError
+  const isValid = amount > 0n && !tooMuch && !parseError && !continueBlockedReason
 
   return (
     <div className={styles.root}>
@@ -89,11 +103,16 @@ export function EarnInputStep({
       </div>
       <FeeSummary
         fee={fee}
-        netAmount={totalDeducted}
-        netLabel="Total deducted from balance"
+        netAmount={netAmount}
+        netLabel={netLabel}
         feeLabel="Relayer fee"
         isRefreshing={isFeeRefreshing}
       />
+      {continueBlockedReason ? (
+        <div className={styles.feeBlockedNotice} role="status" aria-live="polite">
+          {continueBlockedReason}
+        </div>
+      ) : null}
       <FlowFooter
         className={styles.footer}
         primary={{ label: 'Continue', onClick: onContinue, disabled: !isValid }}

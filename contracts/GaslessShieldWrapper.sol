@@ -49,7 +49,21 @@ contract GaslessShieldWrapper {
     // EVENTS
     // ══════════════════════════════════════════════════════════════════════════
 
-    event GaslessShield(address indexed user, uint256 shieldAmount, uint256 fee);
+    /**
+     * @dev `shieldRequestHash` is `keccak256(abi.encode(shieldRequest))`. Lets the user (or any
+     *      watcher) verify off-chain that the relayer called the wrapper with exactly the
+     *      `ShieldRequest` the user signed against — recompute the hash from the request handed
+     *      to the relayer and check for equality. Raw `npk` is not surfaced because the pool's
+     *      own `Shield` event already publishes the full preimage in the same tx; adding a
+     *      digest here provides the integrity primitive without making `npk` a first-class
+     *      indexed query surface on the wrapper.
+     */
+    event GaslessShield(
+        address indexed user,
+        uint256 shieldAmount,
+        uint256 fee,
+        bytes32 shieldRequestHash
+    );
     event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
@@ -128,6 +142,10 @@ contract GaslessShieldWrapper {
         ShieldRequest calldata shieldRequest,
         address integrator
     ) external onlyRelayer {
+        // ATOMIC: every step below must succeed together or the whole tx reverts. The wrapper
+        // holds no inter-call state, so do not introduce intermediate storage writes between
+        // permit / transfers / approve / shield — doing so would break the "no fee paid without
+        // shield" guarantee documented in the contract header.
         require(totalAmount > 0, "GaslessShieldWrapper: zero amount");
         require(fee < totalAmount, "GaslessShieldWrapper: fee >= amount");
         uint256 shieldAmount = totalAmount - fee;
@@ -170,6 +188,6 @@ contract GaslessShieldWrapper {
         requests[0] = shieldRequest;
         IPrivacyPool(privacyPool).shield(requests, integrator);
 
-        emit GaslessShield(user, shieldAmount, fee);
+        emit GaslessShield(user, shieldAmount, fee, keccak256(abi.encode(shieldRequest)));
     }
 }

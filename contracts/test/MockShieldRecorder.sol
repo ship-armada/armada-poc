@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {ShieldRequest} from "../railgun/logic/Globals.sol";
 
 /**
@@ -15,6 +18,8 @@ import {ShieldRequest} from "../railgun/logic/Globals.sol";
  *      caller. Avoids implementing dozens of unrelated interface entries just to compile.
  */
 contract MockShieldRecorder {
+    using SafeERC20 for IERC20;
+
     address public immutable usdc;
     uint256 public lastValue;
     address public lastIntegrator;
@@ -28,15 +33,7 @@ contract MockShieldRecorder {
     function shield(ShieldRequest[] calldata requests, address integrator) external {
         require(requests.length == 1, "MockShieldRecorder: one request only");
         ShieldRequest calldata r = requests[0];
-        (bool ok, ) = usdc.call(
-            abi.encodeWithSignature(
-                "transferFrom(address,address,uint256)",
-                msg.sender,
-                address(this),
-                r.preimage.value
-            )
-        );
-        require(ok, "MockShieldRecorder: transferFrom failed");
+        IERC20(usdc).safeTransferFrom(msg.sender, address(this), r.preimage.value);
         lastValue = r.preimage.value;
         lastIntegrator = integrator;
         lastNpk = r.preimage.npk;

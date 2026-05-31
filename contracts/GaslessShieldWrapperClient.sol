@@ -36,11 +36,19 @@ contract GaslessShieldWrapperClient {
     // EVENTS
     // ══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * @dev `destHash` is `keccak256(abi.encode(dest))` — the digest of the `CrossChainParams`
+     *      the wrapper executed. Lets the user verify off-chain that the relayer honored the
+     *      cross-chain destination they signed against (npk, ciphertext, finality, maxFee,
+     *      integrator, destinationCaller, …). Symmetric with the hub wrapper's
+     *      `shieldRequestHash`.
+     */
     event GaslessShield(
         address indexed user,
         uint256 shieldAmount,
         uint256 fee,
-        uint64 cctpNonce
+        uint64 cctpNonce,
+        bytes32 destHash
     );
     event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
@@ -137,6 +145,10 @@ contract GaslessShieldWrapperClient {
         PermitInput calldata permitInput,
         CrossChainParams calldata dest
     ) external onlyRelayer returns (uint64 cctpNonce) {
+        // ATOMIC: every step below must succeed together or the whole tx reverts. The wrapper
+        // holds no inter-call state, so do not introduce intermediate storage writes between
+        // permit / transfers / approve / crossChainShield — doing so would break the "no fee
+        // paid without burn" guarantee documented in the contract header.
         require(permitInput.totalAmount > 0, "GaslessShieldWrapperClient: zero amount");
         require(
             permitInput.fee < permitInput.totalAmount,
@@ -183,6 +195,12 @@ contract GaslessShieldWrapperClient {
             dest.integrator
         );
 
-        emit GaslessShield(permitInput.user, shieldAmount, permitInput.fee, cctpNonce);
+        emit GaslessShield(
+            permitInput.user,
+            shieldAmount,
+            permitInput.fee,
+            cctpNonce,
+            keccak256(abi.encode(dest))
+        );
     }
 }

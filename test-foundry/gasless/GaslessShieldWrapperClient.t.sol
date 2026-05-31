@@ -62,6 +62,15 @@ contract MockPrivacyPoolClient {
 }
 
 contract GaslessShieldWrapperClientTest is Test {
+    // Mirror of the wrapper's event — see GaslessShieldWrapper.t.sol for the 0.8.17 rationale.
+    event GaslessShield(
+        address indexed user,
+        uint256 shieldAmount,
+        uint256 fee,
+        uint64 cctpNonce,
+        bytes32 destHash
+    );
+
     MockUSDCV2 internal usdc;
     MockPrivacyPoolClient internal client;
     GaslessShieldWrapperClient internal wrapper;
@@ -164,6 +173,27 @@ contract GaslessShieldWrapperClientTest is Test {
         assertEq(client.lastAmount(), totalAmount - fee);
         assertEq(client.lastMaxFee(), 1000);
         assertEq(client.lastIntegrator(), integrator);
+    }
+
+    function test_gaslessCrossChainShield_eventEmitsDestDigest() public {
+        // WHY: symmetric with the hub wrapper's shieldRequestHash test. The event surfaces
+        // keccak256(abi.encode(dest)) so the user can verify off-chain that the relayer honoured
+        // the cross-chain destination they signed against (npk, ciphertext, finality, maxFee,
+        // integrator, destinationCaller, …). A refactor that changed the hash shape (e.g.
+        // hashed individual fields, used encodePacked) would silently break that primitive.
+        // Pin the exact digest shape.
+        uint256 totalAmount = 6 * ONE_USDC;
+        uint256 fee = ONE_USDC / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, fee, deadline);
+        GaslessShieldWrapperClient.CrossChainParams memory d = _destDefaults();
+        bytes32 expectedHash = keccak256(abi.encode(d));
+
+        vm.expectEmit(true, false, false, true, address(wrapper));
+        emit GaslessShield(user, totalAmount - fee, fee, client.stubNonce(), expectedHash);
+
+        vm.prank(relayer);
+        wrapper.gaslessCrossChainShield(p, d);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

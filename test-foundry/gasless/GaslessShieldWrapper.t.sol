@@ -50,6 +50,15 @@ contract MockPrivacyPool {
 }
 
 contract GaslessShieldWrapperTest is Test {
+    // Mirror of the wrapper's event so vm.expectEmit can match by topic — Solidity 0.8.17 doesn't
+    // resolve event references via ContractName.EventName, so the test contract has to redeclare.
+    event GaslessShield(
+        address indexed user,
+        uint256 shieldAmount,
+        uint256 fee,
+        bytes32 shieldRequestHash
+    );
+
     MockUSDCV2 internal usdc;
     MockPrivacyPool internal pool;
     GaslessShieldWrapper internal wrapper;
@@ -148,6 +157,28 @@ contract GaslessShieldWrapperTest is Test {
         assertEq(pool.shieldCallCount(), 1);
         assertEq(pool.lastShieldValue(), shieldAmount);
         assertEq(pool.lastIntegrator(), integrator);
+    }
+
+    function test_gaslessShield_eventEmitsShieldRequestDigest() public {
+        // WHY: the GaslessShield event surfaces keccak256(abi.encode(shieldRequest)) so the user
+        // (or any watcher) can verify off-chain that the relayer called the wrapper with the
+        // exact ShieldRequest the user signed against. If a refactor accidentally hashed a
+        // different shape (e.g. only the preimage, or packed encoding) the digest would no longer
+        // match what the user can independently recompute and the verification primitive silently
+        // breaks. Pin the exact hash shape against a known input.
+        uint256 totalAmount = 7 * ONE_USDC;
+        uint256 fee = ONE_USDC;
+        uint256 shieldAmount = totalAmount - fee;
+        uint256 deadline = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(totalAmount, deadline);
+        ShieldRequest memory req = _shieldRequest(shieldAmount);
+        bytes32 expectedHash = keccak256(abi.encode(req));
+
+        vm.expectEmit(true, false, false, true, address(wrapper));
+        emit GaslessShield(user, shieldAmount, fee, expectedHash);
+
+        vm.prank(relayer);
+        wrapper.gaslessShield(user, totalAmount, fee, deadline, v, r, s, req, integrator);
     }
 
     function test_gaslessShield_zeroFeeSkipsTransfer() public {

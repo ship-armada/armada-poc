@@ -67,7 +67,24 @@ const CCTP_FAST_FEE_BPS = 2n
  * for kinds that don't consume the quote. Modals pass the live `useFees()` quote when they have
  * one.
  */
-export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule | null): bigint {
+/**
+ * Per-kind options that flip a fee-shape under the kind's umbrella. Today only `shield` uses
+ * `gasless` — it's free under Phase A's user-wallet direct submit but carries a `shield` tier
+ * fee under Phase B's permit + wrapper path. The flag lives in the modal (which knows whether
+ * a wrapper is deployed for the chosen chain AND the user hasn't toggled wallet-override) and
+ * is passed in here for every recompute.
+ */
+export interface UserFeeOpts {
+  /** Phase B `shield` gasless path: include the relayer's `shield` tier fee. Default false. */
+  gasless?: boolean
+}
+
+export function userFeeForKind(
+  kind: TxKind,
+  amount: bigint,
+  quote?: FeeSchedule | null,
+  opts?: UserFeeOpts,
+): bigint {
   switch (kind) {
     case 'shield-xchain':
       return (amount * CCTP_FAST_FEE_BPS) / 10_000n
@@ -91,8 +108,11 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
       // `crossContract` tier reflects the higher gas profile of that pattern (~2M gas vs ~500k).
       return quote ? BigInt(quote.fees.crossContract) : 0n
     case 'shield':
-      // Shield stays a user-wallet-signed direct submit through Phase A. Phase B replaces it
-      // with a gasless permit + wrapper-contract path; until then no relayer fee applies.
+      // Phase B3 — when the modal decided to route through the GaslessShieldWrapper (wrapper
+      // deployed for the chain, relayer healthy, user hasn't overridden to wallet-submit), the
+      // relayer charges the `shield` tier in USDC. When direct-submit instead, the user pays
+      // ETH gas themselves and the wrapper doesn't enter the picture — fee is 0.
+      if (opts?.gasless) return quote ? BigInt(quote.fees.shield) : 0n
       return 0n
   }
 }
@@ -116,7 +136,7 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
  */
 export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top' | 'fee-on-top-and-from-recipient'
 
-export function feeModelForKind(kind: TxKind): FeeModel {
+export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
   switch (kind) {
     case 'shield-xchain':
       return 'fee-from-recipient'
@@ -135,8 +155,10 @@ export function feeModelForKind(kind: TxKind): FeeModel {
       // is an extra output in the proof, deducted on top of the entered amount.
       return 'fee-on-top'
     case 'shield':
-      // Direct user submit through Phase A. Phase B's gasless wrapper path also uses a separate
-      // permit-based mechanism, not the broadcaster-fee pattern — handled by its own model.
+      // Phase B3 — gasless path: the wrapper pulls `amount + fee` from the user's USDC, shields
+      // `amount`, transfers `fee` to the relayer. Same on-top semantics as the unshield flows.
+      // Direct submit path stays `no-fee` (user pays ETH gas themselves; no USDC line item).
+      if (opts?.gasless) return 'fee-on-top'
       return 'no-fee'
   }
 }

@@ -43,6 +43,44 @@ describe('userFeeForKind', () => {
     expect(userFeeForKind('shield', HUNDRED_USDC)).toBe(0n)
   })
 
+  describe('shield — Phase B3 gasless mode', () => {
+    it('still returns 0n when gasless flag is omitted (direct-submit default)', () => {
+      // WHY: any caller that doesn't pass {gasless:true} must see the unchanged Phase A
+      // behavior. A regression here would have ShieldModal accidentally double-charge — the
+      // modal would render a shield-tier fee even on the direct path where no relayer is in
+      // the picture.
+      const quote = quoteWith({ shield: '50000' })
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote)).toBe(0n)
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote, {})).toBe(0n)
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote, { gasless: false })).toBe(0n)
+    })
+
+    it('reads quote.fees.shield when gasless flag is set', () => {
+      // WHY: pin the contract that gasless shield's user-visible fee is the relayer's `shield`
+      // tier from the FeeSchedule (a per-chain quote since B2). Flat per-op USDC, not
+      // proportional to amount — matches the unshield/transfer/yield pattern.
+      const quote = quoteWith({ shield: '75000' }) // 0.075 USDC raw
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote, { gasless: true })).toBe(75_000n)
+      expect(userFeeForKind('shield', ONE_USDC, quote, { gasless: true })).toBe(75_000n)
+    })
+
+    it('returns 0n with gasless=true but no quote (cold-load before useFees resolves)', () => {
+      // WHY: same render-time UX rationale as the unshield-local cold-load case. The modal
+      // shows "Loading…" via isFeeRefreshing; the fee value is 0n until the first quote lands.
+      expect(userFeeForKind('shield', HUNDRED_USDC, null, { gasless: true })).toBe(0n)
+      expect(userFeeForKind('shield', HUNDRED_USDC, undefined, { gasless: true })).toBe(0n)
+    })
+
+    it('coerces the quote\'s string fee back to bigint', () => {
+      // WHY: same JSON-on-the-wire rationale as the other per-op tiers. The string-to-bigint
+      // coercion is easy to drop in a refactor and would surface as a runtime TypeError.
+      const quote = quoteWith({ shield: '12345' })
+      const fee = userFeeForKind('shield', HUNDRED_USDC, quote, { gasless: true })
+      expect(typeof fee).toBe('bigint')
+      expect(fee).toBe(12_345n)
+    })
+  })
+
   it.each([
     ['transfer-shielded', 'transfer'],
     ['yield-deposit', 'crossContract'],
@@ -183,6 +221,19 @@ describe('feeModelForKind', () => {
 
   it('classifies shield as no-fee (no broadcaster involvement; user submits directly)', () => {
     expect(feeModelForKind('shield')).toBe('no-fee')
+  })
+
+  it('classifies shield as fee-on-top when the gasless flag is set (B3 wrapper path)', () => {
+    // WHY: the GaslessShieldWrapper pulls `amount + fee` from the user's USDC via permit and
+    // shields `amount`, transfers `fee` to the relayer. From the modal's POV that's the same
+    // fee-on-top math as the unshield/transfer/yield flows — recipient receives the entered
+    // amount; user is deducted `amount + fee`. Without this branch the input MAX wouldn't
+    // reserve room for the fee and the wrapper would revert at submit time.
+    expect(feeModelForKind('shield', { gasless: true })).toBe('fee-on-top')
+    // And the omitted/false path still defaults to no-fee so existing direct-submit callers
+    // are unaffected.
+    expect(feeModelForKind('shield', { gasless: false })).toBe('no-fee')
+    expect(feeModelForKind('shield', {})).toBe('no-fee')
   })
 })
 

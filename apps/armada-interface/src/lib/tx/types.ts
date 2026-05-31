@@ -126,6 +126,32 @@ export interface MetaCommon {
 export interface MetaShield extends MetaCommon {
   /** Source chain id where USDC currently lives. */
   fromChainId: number
+  /**
+   * Phase B3 — gasless mode flag. Frozen at submit-time by the modal based on (wrapper
+   * deployed for fromChainId AND relayer healthy AND user hasn't toggled wallet-override).
+   *   - `true`  → handler signs an EIP-2612 permit + POSTs gaslessShield(...) calldata to the
+   *     relayer; user pays the relayer's `shield` tier fee in USDC and no ETH gas.
+   *   - `false` → handler does the existing direct path (user-signed approve + shield from the
+   *     EVM wallet, paying ETH gas). Defaults to false (omitted) for records pre-dating B3.
+   */
+  useGasless?: boolean
+  /**
+   * Phase B3 — USDC raw amount paid to the relayer's wrapper for gas reimbursement. Only set
+   * when `useGasless` is true. The permit signature authorises `amount + feeAmount` total; the
+   * wrapper splits `amount` to the pool and `feeAmount` to the relayer.
+   */
+  feeAmount?: bigint
+  /**
+   * Phase B3 — `GaslessShieldWrapper` address on `fromChainId`, copied from the deployment
+   * manifest at submit-time. Frozen on the record so a manifest refresh mid-flight can't shift
+   * the target out from under an in-flight tx. Only set when `useGasless` is true.
+   */
+  wrapperAddress?: string
+  /**
+   * Phase B3 — Unix seconds the permit signature is valid until. Picked by the modal (~10 min
+   * window per plan doc) and frozen here so the handler signs the permit with the same value.
+   */
+  permitDeadline?: number
 }
 
 export interface MetaShieldXchain extends MetaCommon {
@@ -280,6 +306,14 @@ export interface ArtifactsShield extends ArtifactsCommon {
     encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
     shieldKey: `0x${string}`
   }
+  /**
+   * Phase B3 — EIP-2612 permit signature captured during build-proof when `meta.useGasless`
+   * is true. submit-relayer's gasless branch needs all three to encode the wrapper calldata.
+   * Absent on direct-submit records.
+   */
+  permitV?: number
+  permitR?: `0x${string}`
+  permitS?: `0x${string}`
 }
 
 /**

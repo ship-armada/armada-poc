@@ -27,6 +27,17 @@
  *   npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaHub
  *   npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaClientA
  *   npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaClientB
+ *
+ * Idempotency:
+ *   By default the script SKIPS deployment when the manifest already records a wrapper address
+ *   that is alive on-chain (`getCode != "0x"`). Re-running after a partial multi-chain failure
+ *   only touches chains that need it. The skip is silent-success at exit code 0 so
+ *   `npm run setup` orchestration doesn't abort.
+ *
+ *   Pass `FORCE_REDEPLOY=1` (env var) to override and deploy a fresh wrapper unconditionally —
+ *   only useful when intentionally rotating the wrapper itself. Note that a forced redeploy
+ *   strands USDC permits the user has already signed against the old address; setRelayer() is
+ *   the right tool for relayer-key rotation without a wrapper redeploy.
  */
 
 import { ethers } from "hardhat";
@@ -81,12 +92,46 @@ async function deployForRole(role: ChainRole): Promise<void> {
   console.log(`Relayer EOA:    ${deployer.address}  (deployer doubles as relayer in POC)`);
   console.log("");
 
+  // Idempotency: short-circuit when the manifest already records an address whose contract is
+  // alive on-chain. Two-step check (manifest THEN bytecode) handles both "manifest stale, chain
+  // wiped" (local Anvil restart) and "deploy partway through, address recorded, contract gone"
+  // (RPC failure between deploy success and saveDeployment) cases — we redeploy when the chain
+  // says the address is dead, regardless of what the manifest claims.
+  const forceRedeploy = process.env.FORCE_REDEPLOY === "1";
   const existing = ppDeployment.contracts?.[manifestKey];
-  if (existing) {
+  if (existing && !forceRedeploy) {
+    const code = await ethers.provider.getCode(existing);
+    if (code !== "0x") {
+      console.log(`${contractName} already deployed at ${existing} (manifest + on-chain code).`);
+      console.log(`Skipping. Set FORCE_REDEPLOY=1 to deploy a fresh wrapper.`);
+      // Verify the wrapper's relayer field still matches our deployer EOA — defensive against a
+      // historical setRelayer() that points the wrapper at a different EOA than the running
+      // relayer service uses. A mismatch isn't fatal (the service might be running from that
+      // other key), but operators should know.
+      try {
+        const wrapper = await ethers.getContractAt(contractName, existing);
+        const currentRelayer: string = await wrapper.relayer();
+        if (currentRelayer.toLowerCase() !== deployer.address.toLowerCase()) {
+          console.warn(
+            `WARNING: wrapper.relayer() = ${currentRelayer}, deployer = ${deployer.address}. ` +
+              `If the relayer service signs with the deployer key, gaslessShield calls will revert ` +
+              `with "not relayer". Run setRelayer(${deployer.address}) to fix, or update the ` +
+              `relayer service to sign with ${currentRelayer}.`,
+          );
+        }
+      } catch (e: any) {
+        console.warn(`Could not verify wrapper.relayer(): ${e.message ?? e}`);
+      }
+      return;
+    }
     console.log(
-      `Note: ${manifestKey} already present in manifest (${existing}). Re-deploying with a ` +
-        `fresh address; the manifest will be overwritten. setRelayer() can rotate the relayer ` +
-        `on the existing wrapper without redeploying if rotation is what you need.`,
+      `${manifestKey} is recorded as ${existing} in the manifest but no contract code exists ` +
+        `on-chain (chain wiped, or the prior deploy never landed). Redeploying.`,
+    );
+  } else if (existing && forceRedeploy) {
+    console.log(
+      `FORCE_REDEPLOY=1 — overwriting existing ${manifestKey} (${existing}) with a fresh ` +
+        `deployment. Permits signed against the old address will be stranded.`,
     );
   }
 

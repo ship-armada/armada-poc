@@ -158,6 +158,35 @@ export interface MetaShieldXchain extends MetaCommon {
   /** Client chain id we're shielding FROM. Always a client (not hub) — the modal routes
    *  same-chain shield to `shield` instead. */
   fromChainId: number
+  /**
+   * Phase B4 — gasless mode flag. Frozen at submit-time by the modal based on (client wrapper
+   * deployed for fromChainId AND relayer healthy AND user hasn't toggled wallet-override).
+   *   - `true`  → handler signs an EIP-2612 permit on the source chain + POSTs
+   *     gaslessCrossChainShield(...) calldata to the relayer; user pays the `shieldXchain`
+   *     tier fee in USDC and no native gas on the source chain.
+   *   - `false` → handler does the existing direct path (user-signed approve + crossChainShield
+   *     from the EVM wallet, paying native gas on the source chain). Defaults to false (omitted)
+   *     for records pre-dating B4.
+   */
+  useGasless?: boolean
+  /**
+   * Phase B4 — USDC raw amount paid to the relayer's wrapper for gas reimbursement on the
+   * source chain. Only set when `useGasless` is true. The permit signature authorises
+   * `amount + feeAmount` total; the wrapper splits `amount` into the CCTP burn and `feeAmount`
+   * to the relayer.
+   */
+  feeAmount?: bigint
+  /**
+   * Phase B4 — `GaslessShieldWrapperClient` address on `fromChainId`, copied from the
+   * deployment manifest at submit-time. Frozen on the record so a manifest refresh mid-flight
+   * can't shift the target out from under an in-flight tx. Only set when `useGasless` is true.
+   */
+  wrapperAddress?: string
+  /**
+   * Phase B4 — Unix seconds the permit signature is valid until. Picked by the modal (~10 min
+   * window per plan doc) and frozen here so the handler signs the permit with the same value.
+   */
+  permitDeadline?: number
 }
 
 export interface MetaUnshieldLocal extends MetaCommon, MetaBroadcaster {
@@ -351,6 +380,14 @@ export interface ArtifactsShieldXchain extends ArtifactsXchain {
     encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
     shieldKey: `0x${string}`
   }
+  /**
+   * Phase B4 — EIP-2612 permit signature captured during build-proof when `meta.useGasless`
+   * is true. submit-relayer's gasless branch needs all three to encode the wrapper calldata.
+   * Absent on direct-submit records.
+   */
+  permitV?: number
+  permitR?: `0x${string}`
+  permitS?: `0x${string}`
 }
 
 export type ArtifactsFor<K extends TxKind> =

@@ -9,6 +9,17 @@ import { tabVisibleAtom } from '@/state/visibility'
 import { fetchFees, type FeeSchedule } from '@/lib/relayer'
 import { trackError } from '@/lib/telemetry'
 
+export interface UseFeesOptions {
+  /**
+   * Phase B2+ per-chain quoting — when set, fetches the FeeSchedule for THIS chain instead of
+   * the hub default. Used by B4's shield-xchain gasless path which needs the source client
+   * chain's `shieldXchain` tier (gas costs differ per chain). When omitted, returns the hub
+   * schedule and mirrors it into `feeQuoteAtom` for non-React consumers (existing Phase A
+   * behaviour, unchanged).
+   */
+  chainId?: number
+}
+
 export interface UseFeesResult {
   quote: FeeSchedule | null
   isStale: boolean
@@ -20,7 +31,13 @@ export interface UseFeesResult {
   refresh: () => Promise<FeeSchedule | null>
 }
 
+/** Base key for the hub fees query (no chainId override). */
 export const FEES_QUERY_KEY = ['fees'] as const
+
+/** Per-chain key — keep separate so React Query caches per chain independently. */
+function feesQueryKey(chainId: number | undefined): readonly unknown[] {
+  return chainId === undefined ? FEES_QUERY_KEY : (['fees', chainId] as const)
+}
 
 /** Re-fetch this many ms before the relayer's quote expires so callers never see a stale quote. */
 const REFRESH_LEAD_MS = 30_000
@@ -39,15 +56,18 @@ function refetchDelayFor(quote: FeeSchedule | null): number {
   return Math.max(1_000, ms)
 }
 
-export function useFees(): UseFeesResult {
+export function useFees(opts: UseFeesOptions = {}): UseFeesResult {
+  const chainId = opts.chainId
+  const isHubQuote = chainId === undefined
   const [atomQuote, setAtomQuote] = useAtom(feeQuoteAtom)
-  const isStale = useAtomValue(feeQuoteIsStaleAtom)
+  const hubIsStale = useAtomValue(feeQuoteIsStaleAtom)
   const tabVisible = useAtomValue(tabVisibleAtom)
   const queryClient = useQueryClient()
+  const queryKey = feesQueryKey(chainId)
 
   const query = useQuery({
-    queryKey: FEES_QUERY_KEY,
-    queryFn: ({ signal }) => fetchFees(signal),
+    queryKey,
+    queryFn: ({ signal }) => fetchFees(signal, chainId),
     // Tab-visibility gate: when hidden the interval pauses; resumes on visibility flip.
     refetchInterval: ({ state }) => (tabVisible ? refetchDelayFor(state.data ?? null) : false),
     refetchIntervalInBackground: false,
@@ -62,11 +82,14 @@ export function useFees(): UseFeesResult {
     gcTime: 60 * 60_000,
   })
 
-  // Mirror the latest successful fetch into feeQuoteAtom so non-React consumers (handlers calling
-  // fetchFees directly, modal tests that seed the atom) keep working unchanged.
+  // Mirror the latest successful HUB fetch into feeQuoteAtom so non-React consumers (handlers
+  // calling fetchFees directly, modal tests that seed the atom) keep working unchanged. Per-chain
+  // quotes are scoped to their React Query consumer and intentionally NOT mirrored — a single
+  // global atom can't represent N per-chain schedules at once, and B4's only consumer
+  // (ShieldModal) reads from the query directly.
   useEffect(() => {
-    if (query.data) setAtomQuote(query.data)
-  }, [query.data, setAtomQuote])
+    if (isHubQuote && query.data) setAtomQuote(query.data)
+  }, [isHubQuote, query.data, setAtomQuote])
 
   // Surface persistent fetch errors via telemetry. React Query retries internally; we only emit
   // once per error transition rather than per attempt to avoid noisy logs during a relayer outage.
@@ -78,19 +101,33 @@ export function useFees(): UseFeesResult {
 
   const refresh = async (): Promise<FeeSchedule | null> => {
     const result = await queryClient.fetchQuery({
-      queryKey: FEES_QUERY_KEY,
-      queryFn: ({ signal }) => fetchFees(signal),
+      queryKey,
+      queryFn: ({ signal }) => fetchFees(signal, chainId),
       // Bypass any staleTime so a manual refresh always hits the relayer.
       staleTime: 0,
     }).catch((err: unknown) => {
       trackError('useFees.refresh', err, { scope: 'fees', message: 'fetchFees failed' })
       return null
     })
-    if (result) setAtomQuote(result)
+    if (isHubQuote && result) setAtomQuote(result)
     return result
   }
 
-  // Prefer the live query data, falling back to the atom (covers the brief window before the
-  // first useEffect tick has mirrored a freshly fetched quote into the atom).
-  return { quote: query.data ?? atomQuote, isStale, refresh }
+  // Per-chain quotes don't have an atom mirror, so derive `isStale` from the query data when we
+  // can't use the hub atom. A quote is stale once `expiresAt - now <= REFRESH_LEAD_MS` — same
+  // semantic the hub atom uses, just computed inline. Returns false when no quote loaded yet
+  // (matches the atom's behaviour pre-first-fetch).
+  const liveQuote = query.data ?? null
+  const perChainIsStale =
+    liveQuote === null ? false : liveQuote.expiresAt - Date.now() <= REFRESH_LEAD_MS
+  const isStale = isHubQuote ? hubIsStale : perChainIsStale
+
+  // Prefer the live query data, falling back to the atom for hub-only (covers the brief window
+  // before the first useEffect tick has mirrored a freshly fetched quote into the atom). For
+  // per-chain queries the atom may belong to a different chain entirely, so we DON'T fall back.
+  return {
+    quote: isHubQuote ? (query.data ?? atomQuote) : (query.data ?? null),
+    isStale,
+    refresh,
+  }
 }

@@ -87,6 +87,13 @@ export function userFeeForKind(
 ): bigint {
   switch (kind) {
     case 'shield-xchain':
+      // Phase B4 — gasless path: the wrapper pulls `amount + fee` via permit on the client
+      // chain, burns `amount` through CCTP, transfers `fee` to the relayer. The relayer's
+      // `shieldXchain` fee is per-chain (Base Sepolia ≠ Ethereum Sepolia — see the relayer's
+      // FeeCalculator), so the modal MUST pass the quote for the SOURCE chain via
+      // `fetchFees(chainId)`. Direct path keeps the CCTP fast-fee estimate (~2 bps of amount)
+      // since no relayer fee applies — the user pays gas in ETH themselves.
+      if (opts?.gasless) return quote ? BigInt(quote.fees.shieldXchain) : 0n
       return (amount * CCTP_FAST_FEE_BPS) / 10_000n
     case 'unshield-xchain':
       // A5 — relayer-mediated hub burn. The visible "fee" is the relayer's broadcaster fee from
@@ -139,6 +146,10 @@ export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top' | 'fee-on-
 export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
   switch (kind) {
     case 'shield-xchain':
+      // Phase B4 — gasless: relayer fee is on top of `amount` (wrapper pulls `amount + fee`
+      // from the user, shields `amount`, transfers `fee` to the relayer). Direct path: CCTP's
+      // fast-fee is deducted from the destination mint (the recipient gets `amount - cctpFee`).
+      if (opts?.gasless) return 'fee-on-top'
       return 'fee-from-recipient'
     case 'unshield-xchain':
       // A5 — relayer-mediated AND cross-chain. Two fees apply:

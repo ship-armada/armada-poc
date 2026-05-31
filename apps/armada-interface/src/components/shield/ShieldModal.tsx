@@ -85,23 +85,32 @@ export function ShieldModal() {
 
   const computedKind: SubmittedKind = computeKind(fromChainId, hubChainId)
 
-  // Phase B3 — gasless path is available only for same-chain hub shield (the `shield` kind),
-  // and only when ALL of: wrapper deployed for the chain, relayer health is acceptable, user
-  // hasn't opted into wallet-override. shield-xchain still goes through its (Phase A) handler
-  // unchanged; B4 will add gasless there.
+  // Phase B3/B4 — gasless path is available when the wrapper for the source chain is deployed,
+  // the relayer reports healthy/degraded, and the user hasn't opted into wallet-override.
+  //   - `shield` (hub):           reads `deployments.hub.contracts.gaslessShieldWrapper`.
+  //   - `shield-xchain` (client): reads the per-client `gaslessShieldWrapperClient`.
   const hubWrapperAddress = deployments.data?.hub.contracts.gaslessShieldWrapper
+  const clientWrapperAddress =
+    computedKind === 'shield-xchain'
+      ? deployments.data?.clients.find(c => c.chainId === fromChainId)?.contracts.gaslessShieldWrapperClient
+      : undefined
+  const wrapperAddress =
+    computedKind === 'shield' ? hubWrapperAddress : clientWrapperAddress
   const useGasless: boolean =
-    computedKind === 'shield' &&
-    hubWrapperAddress !== undefined &&
-    relayerAvailable &&
-    !prefs.submitFromWallet
+    wrapperAddress !== undefined && relayerAvailable && !prefs.submitFromWallet
 
   // useFees stays plumbed in for the relayer-submit path (need cacheId at submit time even
-  // though the display fee no longer comes from the quote on the direct path).
-  const { quote, isStale, refresh } = useFees()
-  // Display fee — for the gasless `shield` path this reads `quote.fees.shield` (relayer's
-  // per-chain quote); for direct submit it's 0 (user pays own ETH gas). shield-xchain stays on
-  // the CCTP fast-fee estimate via `userFeeForKind`'s existing branch.
+  // though the display fee no longer comes from the quote on the direct path). For B4 the
+  // shield-xchain gasless path needs the SOURCE chain's quote — fees vary per chain because
+  // gas costs do (Base Sepolia ≠ Ethereum Sepolia). Pass `fromChainId` so useFees fetches the
+  // matching schedule from `/fees?chainId=...`.
+  const feeChainId =
+    computedKind === 'shield-xchain' && useGasless ? fromChainId : undefined
+  const { quote, isStale, refresh } = useFees({ chainId: feeChainId })
+  // Display fee — for the gasless `shield` path this reads `quote.fees.shield`; for gasless
+  // `shield-xchain` it reads `quote.fees.shieldXchain` from the source chain's quote. Direct
+  // paths preserve their existing semantics (0 for hub shield, CCTP fast-fee estimate for
+  // shield-xchain).
   const fee: bigint = userFeeForKind(computedKind, amount, quote, {
     gasless: useGasless,
   })
@@ -181,11 +190,26 @@ export function ShieldModal() {
         }
       } else {
         setSubmittedKind('shield-xchain')
-        await txShieldXchain.submit({
-          amount,
-          feeCacheId: activeQuote.cacheId,
-          fromChainId,
-        })
+        // Phase B4: same dispatch pattern as B3 for hub, but the fee comes from the source
+        // chain's `shieldXchain` tier — useFees was already configured with `chainId=fromChainId`
+        // above so `activeQuote` is the source-chain quote.
+        if (useGasless && clientWrapperAddress !== undefined) {
+          await txShieldXchain.submit({
+            amount,
+            feeCacheId: activeQuote.cacheId,
+            fromChainId,
+            useGasless: true,
+            feeAmount: BigInt(activeQuote.fees.shieldXchain),
+            wrapperAddress: clientWrapperAddress,
+            permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
+          })
+        } else {
+          await txShieldXchain.submit({
+            amount,
+            feeCacheId: activeQuote.cacheId,
+            fromChainId,
+          })
+        }
       }
       setStep('progress')
     } catch (err) {

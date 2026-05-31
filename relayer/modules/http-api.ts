@@ -21,7 +21,11 @@ export class HttpApi {
   private app: express.Application;
   private port: number;
   private privacyRelay: PrivacyRelay;
-  private feeCalculator: FeeCalculator;
+  /** chainId → FeeCalculator. /fees?chainId=X selects the matching one. */
+  private feeCalculators: Map<number, FeeCalculator>;
+  /** Default chain id when /fees is hit without `?chainId=`. The hub — keeps the existing
+   *  Phase A frontend (which has no per-chain awareness yet) working unchanged. */
+  private defaultChainId: number;
   private getHealth: () => RelayerHealth;
   private counters: Counters;
   private server: ReturnType<express.Application["listen"]> | null = null;
@@ -29,13 +33,15 @@ export class HttpApi {
   constructor(
     port: number,
     privacyRelay: PrivacyRelay,
-    feeCalculator: FeeCalculator,
+    feeCalculators: Map<number, FeeCalculator>,
+    defaultChainId: number,
     getHealth: () => RelayerHealth,
     counters: Counters,
   ) {
     this.port = port;
     this.privacyRelay = privacyRelay;
-    this.feeCalculator = feeCalculator;
+    this.feeCalculators = feeCalculators;
+    this.defaultChainId = defaultChainId;
     this.getHealth = getHealth;
     this.counters = counters;
 
@@ -47,10 +53,30 @@ export class HttpApi {
   }
 
   private setupRoutes(): void {
-    // GET /fees — Current fee schedule
-    this.app.get("/fees", async (_req, res) => {
+    // GET /fees[?chainId=N] — Current fee schedule for the chain. Phase B2 made fees per-chain;
+    // omitting the query param falls back to the hub so existing Phase A frontend callers (the
+    // ones that pre-date the per-chain API) keep working without change.
+    this.app.get("/fees", async (req, res) => {
       try {
-        const fees = await this.feeCalculator.getCurrentFees();
+        const raw = req.query.chainId;
+        let chainId = this.defaultChainId;
+        if (typeof raw === "string" && raw.length > 0) {
+          const parsed = Number(raw);
+          if (!Number.isInteger(parsed) || parsed <= 0) {
+            res.status(400).json({ error: `Invalid chainId: ${raw}` });
+            return;
+          }
+          chainId = parsed;
+        }
+        const calc = this.feeCalculators.get(chainId);
+        if (!calc) {
+          res.status(404).json({
+            error: `No fee schedule for chain ${chainId}`,
+            supported: Array.from(this.feeCalculators.keys()),
+          });
+          return;
+        }
+        const fees = await calc.getCurrentFees();
         res.json(fees);
       } catch (e: any) {
         console.error("[http-api] Error fetching fees:", e);
@@ -102,7 +128,9 @@ export class HttpApi {
       }
     });
 
-    // GET /status/:txHash — Check transaction status
+    // GET /status/:txHash[?chainId=N] — Check transaction status. `chainId` is optional;
+    // when omitted the relay fans out across every configured chain in parallel and returns
+    // the first found receipt. Existing Phase A callers (pollRelayStatusOnce) don't pass it.
     this.app.get("/status/:txHash", async (req, res) => {
       try {
         const { txHash } = req.params;
@@ -112,7 +140,18 @@ export class HttpApi {
           return;
         }
 
-        const status = await this.privacyRelay.getTransactionStatus(txHash);
+        const raw = req.query.chainId;
+        let chainId: number | undefined;
+        if (typeof raw === "string" && raw.length > 0) {
+          const parsed = Number(raw);
+          if (!Number.isInteger(parsed) || parsed <= 0) {
+            res.status(400).json({ error: `Invalid chainId: ${raw}` });
+            return;
+          }
+          chainId = parsed;
+        }
+
+        const status = await this.privacyRelay.getTransactionStatus(txHash, chainId);
         res.json(status);
       } catch (e: any) {
         console.error("[http-api] Status check error:", e);

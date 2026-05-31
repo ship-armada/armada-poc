@@ -19,7 +19,7 @@ const FAKE_QUOTE = {
   // empty / malformed broadcaster address before kicking proof generation, which is what catches
   // a misconfigured relayer in practice.
   broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
-  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
+  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
 function renderModal(opts?: {

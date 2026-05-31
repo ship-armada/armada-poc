@@ -14,7 +14,7 @@ const FAKE_QUOTE = {
   expiresAt: Date.now() + 5 * 60_000,
   chainId: 31337,
   broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
-  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
+  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
 function renderModal(opts?: { open?: 'yield-deposit' | 'yield-withdraw' | false; shielded?: bigint }) {

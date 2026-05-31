@@ -28,6 +28,8 @@ function quoteWith(overrides: Partial<FeeSchedule['fees']> = {}): FeeSchedule {
       crossContract: '0',
       crossChainShield: '0',
       crossChainUnshield: '0',
+      shield: '0',
+      shieldXchain: '0',
       ...overrides,
     },
   }

@@ -23,6 +23,19 @@ export interface FeeSchedule {
     crossContract: string
     crossChainShield: string
     crossChainUnshield: string
+    /**
+     * Phase B2 — permit-based gasless `shield` on the hub. Semantically meaningful only on the
+     * hub schedule (clients return a still-computed value for type uniformity, but no handler
+     * consumes it there).
+     */
+    shield: string
+    /**
+     * Phase B2 — permit-based gasless `shield-xchain` originating on a CLIENT chain. Each
+     * client quotes its own gas cost (Base Sepolia is materially cheaper than Ethereum
+     * Sepolia, etc.), so callers must fetch the FeeSchedule for the source client chain via
+     * `fetchFees(chainId)` rather than reading the hub schedule.
+     */
+    shieldXchain: string
   }
 }
 
@@ -260,9 +273,20 @@ async function parseError(res: Response): Promise<RelayerError> {
  * Fetch the current fee schedule from the relayer. The relayer caches its own schedule with a
  * 5-min TTL and returns the cached value when valid; the client caches at the atom layer via
  * `useFees`. Both can re-fetch independently — relayer is the source of truth.
+ *
+ * Phase B2 made fees per-chain — the source-chain gas price drives the gasless `shield-xchain`
+ * quote (Base Sepolia ≠ Ethereum Sepolia). Pass `chainId` to fetch the schedule for a specific
+ * chain; omit to default to the hub (backward-compatible for Phase A callers).
  */
-export async function fetchFees(signal?: AbortSignal): Promise<FeeSchedule> {
-  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.fees), {
+export async function fetchFees(
+  signal?: AbortSignal,
+  chainId?: number,
+): Promise<FeeSchedule> {
+  const url =
+    chainId === undefined
+      ? relayerEndpoint(RELAYER_ENDPOINTS.fees)
+      : `${relayerEndpoint(RELAYER_ENDPOINTS.fees)}?chainId=${chainId}`
+  const res = await fetch(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     signal,

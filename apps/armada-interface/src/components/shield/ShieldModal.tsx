@@ -13,7 +13,7 @@ import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { useBalances } from '@/hooks/useBalances'
 import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
-import { parseUsdcInput } from '@/lib/format'
+import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import {
   ActionFlowShell,
@@ -178,12 +178,24 @@ export function ShieldModal() {
         // Phase B3: gasless meta only set when actually routing through the wrapper; absent
         // when direct-submit. The handler checks `meta.useGasless` to branch.
         if (useGasless && hubWrapperAddress !== undefined) {
+          // Re-check balance against the FRESH fee. The fee shown at input time can stale
+          // between the user typing and clicking Confirm — Sepolia gas spikes a lot. Without
+          // this, the wrapper's permit-driven `transferFrom(user, ..., totalAmount)` would
+          // revert with "ERC20: transfer amount exceeds balance" downstream. Fail fast here
+          // with a copy that tells the user exactly how much to lower the amount by.
+          const liveFee = BigInt(activeQuote.fees.shield)
+          const liveTotal = amount + liveFee
+          if (liveTotal > max) {
+            throw new Error(
+              `Insufficient USDC balance for the current relayer fee. Need ${formatUsdc(liveTotal)} USDC (${formatUsdc(amount)} + ${formatUsdc(liveFee)} fee); you have ${formatUsdc(max)}. Lower the amount and try again.`,
+            )
+          }
           await txShield.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
             useGasless: true,
-            feeAmount: BigInt(activeQuote.fees.shield),
+            feeAmount: liveFee,
             wrapperAddress: hubWrapperAddress,
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
           })
@@ -200,12 +212,19 @@ export function ShieldModal() {
         // chain's `shieldXchain` tier — useFees was already configured with `chainId=fromChainId`
         // above so `activeQuote` is the source-chain quote.
         if (useGasless && clientWrapperAddress !== undefined) {
+          const liveFee = BigInt(activeQuote.fees.shieldXchain)
+          const liveTotal = amount + liveFee
+          if (liveTotal > max) {
+            throw new Error(
+              `Insufficient USDC balance for the current relayer fee. Need ${formatUsdc(liveTotal)} USDC (${formatUsdc(amount)} + ${formatUsdc(liveFee)} fee); you have ${formatUsdc(max)}. Lower the amount and try again.`,
+            )
+          }
           await txShieldXchain.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
             useGasless: true,
-            feeAmount: BigInt(activeQuote.fees.shieldXchain),
+            feeAmount: liveFee,
             wrapperAddress: clientWrapperAddress,
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
           })

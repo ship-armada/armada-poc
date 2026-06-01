@@ -22,16 +22,20 @@ import type { FeeSchedule } from "../types";
 // ============ Constants ============
 
 /**
- * Gas estimates per operation type. Conservative — relayer eats the difference vs actual gas.
+ * Gas estimates per operation type. Tuned to the actual gas measured by the B1 Foundry tests +
+ * a small safety bump (~5-10%). The relayer ALSO applies a 20% gas-limit buffer at submit time
+ * (`privacy-relay.ts::gasLimit = gasEstimate * 120 / 100`), so the on-chain limit lands at
+ * `(estimate × 1.2)` which absorbs sub-20% real-world drift in either direction.
  *
- *  - Phase A tiers: `transfer`, `unshield`, `crossContract`, `crossChainShield`,
- *    `crossChainUnshield`. Sized for hub-side transact / atomicCrossChainUnshield calls.
- *  - Phase B tiers (new): `shield`, `shieldXchain`. Sized from the B1 Foundry gas reports:
- *    - GaslessShieldWrapper.gaslessShield ~285k gas → 350k after 20% headroom
- *    - GaslessShieldWrapperClient.gaslessCrossChainShield ~330k gas + CCTP burn ~50k → 450k
- *
- * If real-world gas drifts up materially (e.g. mainnet TransactModule or a wallet upgrade), bump
- * these here — the formula is purely an upper bound, the relayer would only over-charge users.
+ *  - Phase A tiers (transfer/unshield/crossContract/crossChainShield/crossChainUnshield): kept
+ *    at their historical values because Phase A handlers were measured against these and shipped
+ *    without complaint. Re-tune if Phase A operator economics drift.
+ *  - Phase B tiers (shield/shieldXchain): tuned to B1's gas reports:
+ *      - GaslessShieldWrapper.gaslessShield ~285k actual → 300k estimate (5% safety)
+ *      - GaslessShieldWrapperClient.gaslessCrossChainShield ~330k + CCTP burn overhead → 400k
+ *    Combined with profitMarginBps=0 (POC default), the user-visible fee tracks actual on-chain
+ *    cost closely. The relayer absorbs gas-price drift within the 5-min quote TTL — acceptable
+ *    for team-run testnet infra; bump margin + estimates before mainnet rollout.
  */
 const GAS_ESTIMATES: Record<string, bigint> = {
   transfer: 500_000n,
@@ -39,8 +43,8 @@ const GAS_ESTIMATES: Record<string, bigint> = {
   crossContract: 2_000_000n,
   crossChainShield: 500_000n,
   crossChainUnshield: 500_000n,
-  shield: 350_000n,
-  shieldXchain: 450_000n,
+  shield: 300_000n,
+  shieldXchain: 400_000n,
 };
 
 /** USDC has 6 decimals */

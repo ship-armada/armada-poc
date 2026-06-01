@@ -36,11 +36,10 @@ const ERC20_PERMIT_READ_ABI = [
     inputs: [],
     outputs: [{ name: '', type: 'string' }],
   },
-  // EIP-5267 — standard way to read a contract's EIP-712 domain. Both OZ's ERC20Permit (≥4.7.2)
-  // and Circle's USDC v2.2+ (FiatTokenV2_2) implement it. Returning here lets us source `name`
-  // + `version` dynamically instead of hardcoding either — hardcoding `version: "1"` (OZ default)
-  // breaks against real Circle USDC which uses `version: "2"`, surfacing as
-  // `EIP2612: invalid signature` from the wrapper's permit call.
+  // EIP-5267 — standard way to read a contract's EIP-712 domain. OZ's ERC20Permit (≥4.7.2)
+  // implements it. Circle's USDC (FiatTokenV2_2) does NOT — Circle uses its own custom EIP-712
+  // library that predates EIP-5267 and exposes a plain `version()` getter instead. We try
+  // eip712Domain first, fall back to version() + name() second, default to "1" last.
   {
     type: 'function',
     name: 'eip712Domain',
@@ -55,6 +54,15 @@ const ERC20_PERMIT_READ_ABI = [
       { name: 'salt', type: 'bytes32' },
       { name: 'extensions', type: 'uint256[]' },
     ],
+  },
+  // Circle FiatToken-style version getter. Returns "2" on real USDC v2+, missing on OZ's
+  // ERC20Permit (which uses _hashedVersion internally and only exposes it via eip712Domain).
+  {
+    type: 'function',
+    name: 'version',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
   },
 ] as const
 
@@ -83,13 +91,16 @@ export interface SignUsdcPermitInput {
  * Order of operations:
  *   1. Read the live `nonces(owner)` on chain — every successful `permit(...)` increments it,
  *      so a stale value would produce a signature that the next on-chain permit call rejects.
- *   2. Resolve the EIP-712 domain (`name` + `version`). Try `eip712Domain()` (EIP-5267) first —
- *      both OZ's ERC20Permit (≥4.7.2) and Circle's USDC v2.2+ implement it. Falls back to
- *      `name()` + `version="1"` when the token predates EIP-5267 (legacy contracts only).
- *      Critical: hardcoding `version: "1"` works for OZ's default but breaks against real
- *      Circle USDC, which uses `version: "2"` — the wrapper's permit() call then reverts with
- *      `EIP2612: invalid signature` because the signature recovers to a different address than
- *      `owner` due to the wrong domain separator.
+ *   2. Resolve the EIP-712 domain (`name` + `version`) using a three-tier fallback:
+ *      a. `eip712Domain()` (EIP-5267) — OZ's ERC20Permit ≥4.7.2 implements it.
+ *      b. `name()` + `version()` — Circle's USDC has a plain `version()` getter (returns "2")
+ *         but does NOT implement EIP-5267. This is the load-bearing path for real USDC.
+ *      c. `name()` + version="1" — last-resort fallback for legacy ERC20Permit deployments
+ *         that predate both EIP-5267 and the version() convention.
+ *      Hardcoding `version: "1"` (OZ default) breaks against real Circle USDC, which uses
+ *      `version: "2"` — the wrapper's permit() call then reverts with `EIP2612: invalid
+ *      signature` because the signature recovers to a different address than `owner` due to
+ *      the wrong domain separator.
  *   3. Build the typed-data envelope + ask wagmi to sign through the active wallet client.
  *   4. Split the 65-byte hex signature into `(v, r, s)`.
  *
@@ -98,10 +109,10 @@ export interface SignUsdcPermitInput {
 export async function signUsdcPermit(
   input: SignUsdcPermitInput,
 ): Promise<{ v: number; r: `0x${string}`; s: `0x${string}`; nonce: bigint }> {
-  // Nonce + domain reads in parallel. `eip712Domain()` may revert on legacy contracts that
-  // predate EIP-5267 — catch and fall back to `name()` + version="1". The fallback path keeps
-  // legacy ERC20Permit deployments working at the cost of an extra round trip on failure.
-  const [nonce, domainResult] = await Promise.all([
+  // Fetch nonce + every domain-resolution candidate in parallel. `.catch(() => null)` on the
+  // optional reads means we only do one round trip's worth of latency regardless of which
+  // candidates the token implements. Total: 4 parallel reads.
+  const [nonce, domainResult, fallbackName, fallbackVersion] = await Promise.all([
     readContract(wagmiConfig, {
       address: input.usdcAddress,
       abi: ERC20_PERMIT_READ_ABI,
@@ -115,6 +126,18 @@ export async function signUsdcPermit(
       functionName: 'eip712Domain',
       chainId: input.chainId,
     }).catch(() => null),
+    readContract(wagmiConfig, {
+      address: input.usdcAddress,
+      abi: ERC20_PERMIT_READ_ABI,
+      functionName: 'name',
+      chainId: input.chainId,
+    }).catch(() => null),
+    readContract(wagmiConfig, {
+      address: input.usdcAddress,
+      abi: ERC20_PERMIT_READ_ABI,
+      functionName: 'version',
+      chainId: input.chainId,
+    }).catch(() => null),
   ])
 
   let tokenName: string
@@ -126,13 +149,14 @@ export async function signUsdcPermit(
     tokenName = domainResult[1]
     tokenVersion = domainResult[2]
   } else {
-    tokenName = await readContract(wagmiConfig, {
-      address: input.usdcAddress,
-      abi: ERC20_PERMIT_READ_ABI,
-      functionName: 'name',
-      chainId: input.chainId,
-    })
-    tokenVersion = '1'
+    if (fallbackName === null) {
+      throw new Error(
+        `signUsdcPermit: token at ${input.usdcAddress} implements neither eip712Domain() nor name() — cannot resolve EIP-712 domain.`,
+      )
+    }
+    tokenName = fallbackName
+    // Circle FiatToken returns "2"; legacy ERC20Permit returns nothing → default to "1".
+    tokenVersion = fallbackVersion ?? '1'
   }
 
   const signatureHex = await signTypedData(wagmiConfig, {

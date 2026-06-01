@@ -146,10 +146,11 @@ export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top' | 'fee-on-
 export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
   switch (kind) {
     case 'shield-xchain':
-      // Phase B4 — gasless: relayer fee is on top of `amount` (wrapper pulls `amount + fee`
-      // from the user, shields `amount`, transfers `fee` to the relayer). Direct path: CCTP's
-      // fast-fee is deducted from the destination mint (the recipient gets `amount - cctpFee`).
-      if (opts?.gasless) return 'fee-on-top'
+      // Gasless + direct paths both use `fee-from-recipient` for UX consistency: the user
+      // enters the amount they want to spend, sees `recipient receives = amount - fee`. The
+      // wrapper interprets `totalAmount = amount` (permit value), `fee = relayer fee`, and
+      // shields `(totalAmount - fee)`. Direct path's CCTP fast-fee follows the same shape —
+      // deducted from the destination mint, recipient receives `amount - cctpFee`.
       return 'fee-from-recipient'
     case 'unshield-xchain':
       // A5 — relayer-mediated AND cross-chain. Two fees apply:
@@ -166,10 +167,12 @@ export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
       // is an extra output in the proof, deducted on top of the entered amount.
       return 'fee-on-top'
     case 'shield':
-      // Phase B3 — gasless path: the wrapper pulls `amount + fee` from the user's USDC, shields
-      // `amount`, transfers `fee` to the relayer. Same on-top semantics as the unshield flows.
-      // Direct submit path stays `no-fee` (user pays ETH gas themselves; no USDC line item).
-      if (opts?.gasless) return 'fee-on-top'
+      // Phase B3 — gasless path: the wrapper interprets the user's entered amount as the
+      // permit's `totalAmount`. It transfers `fee` to the relayer and shields `(amount - fee)`.
+      // `fee-from-recipient` so the modal shows "you deposit = amount - fee" consistently
+      // with shield-xchain — same semantic as CCTP's destination-side fee deduction. Direct
+      // submit path stays `no-fee` (user pays ETH gas themselves; no USDC line item).
+      if (opts?.gasless) return 'fee-from-recipient'
       return 'no-fee'
   }
 }

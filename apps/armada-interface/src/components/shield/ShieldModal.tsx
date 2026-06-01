@@ -115,16 +115,22 @@ export function ShieldModal() {
     gasless: useGasless,
   })
   // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
-  // the shared `computeFeeBreakdown` helper. Critical for the gasless paths: the wrapper pulls
-  // `amount + fee` from the user's USDC balance, so the input MAX must reserve room for `fee`
-  // or the wrapper reverts with "ERC20: transfer amount exceeds balance" at submit time.
-  // Direct paths preserve the existing semantics (no fee → inputMax == max, recipient == amount).
+  // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
+  // the entered `amount` IS what's deducted from the user's USDC balance, and the shielded
+  // value is `amount - fee`. The wrapper splits on-chain: `(amount - fee)` to the pool,
+  // `fee` to the relayer. Direct hub shield is `no-fee` (full amount shielded, user pays ETH
+  // gas). Direct shield-xchain is `fee-from-recipient` with the CCTP fast-fee deducted from
+  // the destination mint.
   const { recipientReceives: netAmount, inputMax } = computeFeeBreakdown(
     computedKind,
     amount,
     fee,
     max,
   )
+  // Minimum valid amount = the live fee. Below or equal to it the wrapper's `shieldAmount =
+  // totalAmount - fee` would underflow / be zero. Surfaced via ShieldInputStep's `minAmount`
+  // prop so the user can't type a value that would inevitably revert. Zero for no-fee paths.
+  const minAmount: bigint = fee
 
   // Two useTx hooks mounted; only one gets a record per flow. Pattern mirrors SendModal +
   // UnshieldModal where same-chain vs cross-chain are sibling kinds.
@@ -178,16 +184,20 @@ export function ShieldModal() {
         // Phase B3: gasless meta only set when actually routing through the wrapper; absent
         // when direct-submit. The handler checks `meta.useGasless` to branch.
         if (useGasless && hubWrapperAddress !== undefined) {
-          // Re-check balance against the FRESH fee. The fee shown at input time can stale
-          // between the user typing and clicking Confirm — Sepolia gas spikes a lot. Without
-          // this, the wrapper's permit-driven `transferFrom(user, ..., totalAmount)` would
-          // revert with "ERC20: transfer amount exceeds balance" downstream. Fail fast here
-          // with a copy that tells the user exactly how much to lower the amount by.
+          // Re-check against the FRESH fee. With fee-from-recipient semantics the entered
+          // `amount` IS what gets pulled from the user (not `amount + fee`), so the balance
+          // check is `amount > max`. The trickier race is when gas spiked between input and
+          // submit and the new fee now equals or exceeds amount — the wrapper's
+          // `shieldAmount = totalAmount - fee` would underflow. Fail fast with a clear copy.
           const liveFee = BigInt(activeQuote.fees.shield)
-          const liveTotal = amount + liveFee
-          if (liveTotal > max) {
+          if (amount > max) {
             throw new Error(
-              `Insufficient USDC balance for the current relayer fee. Need ${formatUsdc(liveTotal)} USDC (${formatUsdc(amount)} + ${formatUsdc(liveFee)} fee); you have ${formatUsdc(max)}. Lower the amount and try again.`,
+              `Insufficient USDC balance. You have ${formatUsdc(max)} USDC, attempted to deposit ${formatUsdc(amount)} USDC.`,
+            )
+          }
+          if (amount <= liveFee) {
+            throw new Error(
+              `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
             )
           }
           await txShield.submit({
@@ -212,11 +222,17 @@ export function ShieldModal() {
         // chain's `shieldXchain` tier — useFees was already configured with `chainId=fromChainId`
         // above so `activeQuote` is the source-chain quote.
         if (useGasless && clientWrapperAddress !== undefined) {
+          // Same submit-time race guard as the hub branch — see that comment block for the
+          // full rationale. With fee-from-recipient the entered `amount` IS what's pulled.
           const liveFee = BigInt(activeQuote.fees.shieldXchain)
-          const liveTotal = amount + liveFee
-          if (liveTotal > max) {
+          if (amount > max) {
             throw new Error(
-              `Insufficient USDC balance for the current relayer fee. Need ${formatUsdc(liveTotal)} USDC (${formatUsdc(amount)} + ${formatUsdc(liveFee)} fee); you have ${formatUsdc(max)}. Lower the amount and try again.`,
+              `Insufficient USDC balance. You have ${formatUsdc(max)} USDC, attempted to deposit ${formatUsdc(amount)} USDC.`,
+            )
+          }
+          if (amount <= liveFee) {
+            throw new Error(
+              `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
             )
           }
           await txShieldXchain.submit({
@@ -262,6 +278,7 @@ export function ShieldModal() {
           amountStr={amountStr}
           onAmountChange={setAmountStr}
           max={inputMax}
+          minAmount={minAmount}
           fee={fee}
           netAmount={netAmount}
           isFeeRefreshing={isStale}

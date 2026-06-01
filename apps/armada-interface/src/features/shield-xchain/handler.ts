@@ -173,10 +173,24 @@ async function runBuildProof(
   const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // Determine the value that lands in the shielded commitment. Gasless path: the wrapper takes
+  // `amount` via permit on the CLIENT chain, sends `fee` to the relayer, burns `(amount - fee)`
+  // through CCTP — the hub mint + shield commitment values must match the post-fee amount. The
+  // client wrapper's contract pins this through its `crossChainShield(shieldAmount, ...)` call
+  // shape. Direct submit shields the full `amount` (user paid client-chain gas separately).
+  const shieldValue =
+    record.meta.useGasless && record.meta.feeAmount !== undefined
+      ? record.meta.amount - record.meta.feeAmount
+      : record.meta.amount
+  if (shieldValue <= 0n) {
+    throw new Error(
+      'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
+    )
+  }
   const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
   const request = await createShieldRequest(
     railgunAddress,
-    record.meta.amount,
+    shieldValue,
     hubUsdcAddress,
     shieldPrivateKey,
   )
@@ -185,7 +199,8 @@ async function runBuildProof(
   // Phase B4 — gasless path also requires an EIP-2612 USDC permit on the CLIENT chain (the
   // chain where the user's USDC lives + where the wrapper will pull from). Sign it here so the
   // two wallet prompts (RAILGUN_SHIELD then permit) surface back-to-back; the submit stage is
-  // then network-only with no further user interaction.
+  // then network-only with no further user interaction. Permit value = the entered `amount`;
+  // the wrapper splits it on-chain: `(amount - fee)` burned through CCTP, `fee` to the relayer.
   let permitV: number | undefined
   let permitR: `0x${string}` | undefined
   let permitS: `0x${string}` | undefined
@@ -208,7 +223,7 @@ async function runBuildProof(
       chainId: record.meta.fromChainId,
       owner: ownerCaptured as `0x${string}`,
       spender: record.meta.wrapperAddress as `0x${string}`,
-      value: record.meta.amount + record.meta.feeAmount,
+      value: record.meta.amount,
       deadline: BigInt(record.meta.permitDeadline),
     })
     permitV = sig.v
@@ -365,7 +380,7 @@ async function runGaslessSubmit(
 
   const data = buildGaslessCrossChainShieldCalldata({
     user: ownerCaptured as `0x${string}`,
-    totalAmount: record.meta.amount + record.meta.feeAmount,
+    totalAmount: record.meta.amount,
     fee: record.meta.feeAmount,
     deadline: BigInt(record.meta.permitDeadline),
     v: permitV,

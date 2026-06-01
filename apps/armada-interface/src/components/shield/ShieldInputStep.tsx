@@ -3,7 +3,7 @@
 
 import { AmountInput, ChainSelect, FeeSummary } from '@/components/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
-import { parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
+import { formatUsdc, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { getNetworkConfig } from '@/config/network'
 import styles from './ShieldInputStep.module.css'
 
@@ -14,6 +14,13 @@ export interface ShieldInputStepProps {
   onAmountChange: (next: string) => void
   /** Maximum amount (raw 6-decimal USDC) — sourced from useBalances().unshielded[fromChainId]. */
   max: bigint
+  /**
+   * Minimum valid amount (raw 6-decimal USDC). For gasless paths this is the relayer fee — the
+   * wrapper would otherwise underflow on `shieldAmount = totalAmount - fee` when amount ≤ fee.
+   * Zero for paths with no per-tx relayer fee (direct hub shield). The validator requires
+   * strictly greater so amount == fee (which would shield zero) is also rejected.
+   */
+  minAmount: bigint
   fee: bigint | null
   netAmount: bigint
   isFeeRefreshing?: boolean
@@ -27,6 +34,7 @@ export function ShieldInputStep({
   amountStr,
   onAmountChange,
   max,
+  minAmount,
   fee,
   netAmount,
   isFeeRefreshing,
@@ -37,11 +45,16 @@ export function ShieldInputStep({
   const isXchain = fromChainId !== hubChainId
   const { value: amount, error: amountError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
+  // Below-fee check: only meaningful when there's a fee (minAmount > 0); the entered amount
+  // must be strictly greater than the fee so `shieldAmount = amount - fee` is > 0 on-chain.
+  const tooSmall = minAmount > 0n && amount > 0n && amount <= minAmount
   // Parser-side errors (too-many-decimals etc) take precedence over balance-bound errors —
   // a malformed value can't meaningfully be compared to max anyway. Surfaced via AmountInput.
-  const errorMessage = usdcInputErrorMessage(amountError)
-    ?? (tooMuch ? 'Amount exceeds your available balance.' : undefined)
-  const isValid = amount > 0n && !tooMuch && !amountError
+  const errorMessage =
+    usdcInputErrorMessage(amountError) ??
+    (tooMuch ? 'Amount exceeds your available balance.' : undefined) ??
+    (tooSmall ? `Amount must be greater than the relayer fee (${formatUsdc(minAmount)} USDC).` : undefined)
+  const isValid = amount > 0n && !tooMuch && !tooSmall && !amountError
 
   return (
     <div className={styles.root}>

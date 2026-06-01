@@ -251,29 +251,28 @@ describe('feeModelForKind', () => {
     expect(feeModelForKind('shield')).toBe('no-fee')
   })
 
-  it('classifies shield as fee-on-top when the gasless flag is set (B3 wrapper path)', () => {
-    // WHY: the GaslessShieldWrapper pulls `amount + fee` from the user's USDC via permit and
-    // shields `amount`, transfers `fee` to the relayer. From the modal's POV that's the same
-    // fee-on-top math as the unshield/transfer/yield flows — recipient receives the entered
-    // amount; user is deducted `amount + fee`. Without this branch the input MAX wouldn't
-    // reserve room for the fee and the wrapper would revert at submit time.
-    expect(feeModelForKind('shield', { gasless: true })).toBe('fee-on-top')
-    // And the omitted/false path still defaults to no-fee so existing direct-submit callers
-    // are unaffected.
+  it('classifies shield as fee-from-recipient when the gasless flag is set (B3 wrapper path)', () => {
+    // WHY: with B3's UX-consistency pass, gasless shield uses `fee-from-recipient` semantics:
+    // the user's entered `amount` is what's deducted (=permit's totalAmount); the wrapper
+    // splits on-chain into `(amount - fee)` shielded + `fee` to the relayer. Recipient (the
+    // user's shielded balance) receives `amount - fee`. Mirrors the unshield/cross-chain copy
+    // where users always see "amount in / amount-fee out". The earlier `fee-on-top` model
+    // (entered = what got shielded; user paid entered+fee) was confusing because shield-xchain
+    // direct path was already fee-from-recipient via CCTP.
+    expect(feeModelForKind('shield', { gasless: true })).toBe('fee-from-recipient')
+    // Direct submit path stays no-fee (user pays ETH gas themselves; no relayer involved).
     expect(feeModelForKind('shield', { gasless: false })).toBe('no-fee')
     expect(feeModelForKind('shield', {})).toBe('no-fee')
   })
 
-  it('classifies shield-xchain as fee-on-top when the gasless flag is set (B4 wrapper path)', () => {
-    // WHY: B4 flips the user-visible fee model for cross-chain shield. Direct path is
-    // `fee-from-recipient` (CCTP burns the fee from the destination mint). Gasless path is
-    // `fee-on-top` — the wrapper pulls `amount + fee` from the user's USDC via permit on the
-    // SOURCE chain, burns `amount` through CCTP, transfers `fee` to the relayer. Critical for
-    // computeFeeBreakdown to reserve room in `inputMax`; without it the user could enter MAX
-    // and the wrapper would revert at submit when permit pulls > balance.
-    expect(feeModelForKind('shield-xchain', { gasless: true })).toBe('fee-on-top')
-    // Direct path stays at fee-from-recipient so the existing CCTP fast-fee deduction copy is
-    // unaffected for users on the wallet-submit toggle.
+  it('classifies shield-xchain as fee-from-recipient on BOTH gasless and direct paths', () => {
+    // WHY: B3's UX-consistency pass unified both shield-xchain paths under fee-from-recipient.
+    // Gasless: wrapper's permit pulls `amount`, splits into `(amount - fee)` burned + `fee` to
+    // relayer. Direct: CCTP fast-fee deducted from destination mint. Both result in the same
+    // user-facing math: "you spend amount, you receive amount - fee shielded." The gasless
+    // path replaces the relayer fee for the CCTP fast-fee but the on-top/from-recipient
+    // distinction collapses to identical UX.
+    expect(feeModelForKind('shield-xchain', { gasless: true })).toBe('fee-from-recipient')
     expect(feeModelForKind('shield-xchain', { gasless: false })).toBe('fee-from-recipient')
     expect(feeModelForKind('shield-xchain', {})).toBe('fee-from-recipient')
   })

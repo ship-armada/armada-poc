@@ -1,5 +1,5 @@
-// ABOUTME: Shield stage handler — runs build-proof → submit-relayer → hub-confirmed for a single shield tx.
-// ABOUTME: Uses wagmi/actions imperatively (no React context required); calls into lib/railgun/shield for the SDK-side request construction.
+// ABOUTME: Shield stage handler — dual-mode (direct user-wallet submit OR Phase B3 permit-based gasless via wrapper).
+// ABOUTME: build-proof signs RAILGUN_SHIELD (+ permit when gasless); submit-relayer either writeContract or POST /relay.
 
 import {
   readContract,
@@ -23,10 +23,15 @@ import {
   deriveShieldPrivateKey,
   SHIELD_SIGNATURE_MESSAGE,
 } from '@/lib/railgun/shield'
+import { signUsdcPermit } from '@/lib/wallet/permit'
+import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
+import { submitRelay, RelayerError } from '@/lib/relayer'
+import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
+import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
-import type { TxRecord } from '@/lib/tx/types'
+import type { TxError, TxRecord } from '@/lib/tx/types'
 
 // PrivacyPool.shield ABI — the hub-side direct shield entry point. `integrator` lets the
 // contract route fees to a third party; we always pass ZeroAddress for direct user shields.
@@ -75,13 +80,21 @@ const PRIVACY_POOL_SHIELD_ABI = [
 ] as const
 
 /**
- * Shield stage handler. The three stages map onto:
- *   1. `build-proof`      — sign 'RAILGUN_SHIELD', derive shieldPrivateKey, build ShieldRequest off-chain
- *   2. `submit-relayer`   — ensure USDC allowance, submit `PrivacyPool.shield(...)` via the user's wallet
- *   3. `hub-confirmed`    — wait for the receipt, attach the source tx hash, kick a balance refresh
+ * Shield stage handler. Two submission paths share the same lifecycle stages — `build-proof`
+ * always produces the ShieldRequest from the user's signature, and `submit-relayer` then either
+ * routes through the user's EVM wallet (direct) or the relayer-mediated wrapper (gasless).
  *
- * "submit-relayer" is the framework's stage name for "tx on the wire" — for direct hub shield
- * it's the user's wallet, not the relayer, but the stage semantics (one tx, one receipt) match.
+ *   1. `build-proof`    — sign 'RAILGUN_SHIELD' → derive shieldPrivateKey → build ShieldRequest.
+ *                         When gasless: ALSO sign an EIP-2612 USDC permit for `amount + fee` to
+ *                         the wrapper address. Both prompts surface to the user in succession.
+ *   2. `submit-relayer` — direct path: approve USDC + writeContract(PrivacyPool.shield).
+ *                         gasless path: encode `gaslessShield(...)` calldata + POST /relay +
+ *                         poll /status. No EVM wallet prompts after build-proof on this branch.
+ *   3. `hub-confirmed`  — terminal. Kicks a balance refresh.
+ *
+ * "submit-relayer" is the framework's stage name for "tx on the wire" — for direct submit it's
+ * the user's wallet, not the relayer. Same stage name regardless of path keeps the lifecycle +
+ * UI uniform.
  */
 export const shieldHandler: StageHandler<'shield'> = {
   kind: 'shield',
@@ -142,16 +155,67 @@ async function runBuildProof(
   const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // Determine the value that lands in the shielded commitment. For the gasless path the wrapper
+  // takes `amount` from the user via permit, sends `fee` to the relayer, and shields the
+  // remainder. The SDK's ShieldRequest must therefore reflect `amount - fee` so the on-chain
+  // shield commitment matches what the user actually receives — the wrapper's contract pins
+  // `preimage.value == totalAmount - fee` and reverts on mismatch. Direct submit shields the
+  // full `amount` (user paid ETH gas separately; no relayer fee).
+  const shieldValue =
+    record.meta.useGasless && record.meta.feeAmount !== undefined
+      ? record.meta.amount - record.meta.feeAmount
+      : record.meta.amount
+  if (shieldValue <= 0n) {
+    throw new Error(
+      'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
+    )
+  }
   const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
   const request = await createShieldRequest(
     railgunAddress,
-    record.meta.amount,
+    shieldValue,
     usdcAddress,
     shieldPrivateKey,
   )
+  if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Stash the request fields + addresses in artifacts so the next stage can submit without
-  // re-running the (already-signed) build step on a resume.
+  // Phase B3 — gasless path also requires an EIP-2612 USDC permit. Sign it here, back-to-back
+  // with the SHIELD_SIGNATURE_MESSAGE, so both wallet prompts surface to the user in one beat
+  // rather than spread across the submit stage. Permit value = the entered `amount` (the
+  // wrapper splits it on-chain: `(amount - fee)` to the pool, `fee` to the relayer).
+  let permitV: number | undefined
+  let permitR: `0x${string}` | undefined
+  let permitS: `0x${string}` | undefined
+  if (record.meta.useGasless) {
+    if (
+      record.meta.feeAmount === undefined ||
+      record.meta.wrapperAddress === undefined ||
+      record.meta.permitDeadline === undefined
+    ) {
+      throw new Error(
+        'Shield gasless mode requires feeAmount + wrapperAddress + permitDeadline in meta.',
+      )
+    }
+    const ownerCaptured = record.walletContext.evmAddress
+    if (!ownerCaptured) {
+      throw new Error('Shield requires a connected EVM wallet; none captured at submit time.')
+    }
+    const sig = await signUsdcPermit({
+      usdcAddress: usdcAddress as `0x${string}`,
+      chainId: record.meta.fromChainId,
+      owner: ownerCaptured as `0x${string}`,
+      spender: record.meta.wrapperAddress as `0x${string}`,
+      value: record.meta.amount,
+      deadline: BigInt(record.meta.permitDeadline),
+    })
+    permitV = sig.v
+    permitR = sig.r
+    permitS = sig.s
+    if (ctx.signal.aborted) throw new Error('cancelled')
+  }
+
+  // Stash the request fields + permit signature components + addresses in artifacts so the next
+  // stage can submit without re-running the (already-signed) build step on a resume.
   const next = advance(record, 'submit-relayer', {
     shieldRequest: {
       npk: request.npk,
@@ -161,6 +225,7 @@ async function runBuildProof(
     },
     privacyPoolAddress,
     usdcAddress,
+    ...(permitV !== undefined ? { permitV, permitR, permitS } : {}),
   })
   await ctx.upsert(next)
 }
@@ -176,6 +241,27 @@ async function runSubmitAndConfirm(
   if (!shieldRequest || !privacyPoolAddress || !usdcAddress) {
     throw new Error('Shield artifacts missing — re-run build-proof stage.')
   }
+
+  if (record.meta.useGasless) {
+    await runGaslessSubmit(record, ctx)
+  } else {
+    await runDirectSubmit(record, ctx)
+  }
+}
+
+/**
+ * Phase A direct-submit path: user signs USDC `approve` + `PrivacyPool.shield(...)` from their
+ * wallet. Same flow that's been in production through Phase A — kept unchanged so a relayer
+ * outage / explicit override still has a working shield.
+ */
+async function runDirectSubmit(
+  record: TxRecord<'shield'>,
+  ctx: Parameters<typeof shieldHandler.run>[1],
+): Promise<void> {
+  const artifacts = record.artifacts
+  const shieldRequest = artifacts.shieldRequest!
+  const privacyPoolAddress = artifacts.privacyPoolAddress!
+  const usdcAddress = artifacts.usdcAddress!
 
   // The user may have changed networks between build-proof and submit; re-assert here.
   await ensureChain(record.meta.fromChainId)
@@ -254,6 +340,132 @@ async function runSubmitAndConfirm(
 
   const completed = advance(broadcastRecord, 'hub-confirmed', {
     sourceTxHash: shieldHash,
+  })
+  await ctx.upsert(completed)
+}
+
+/**
+ * Phase B3 gasless-shield path: encode `gaslessShield(...)` calldata from the permit signature
+ * + ShieldRequest captured in build-proof, POST to /relay, poll /status. Zero EVM wallet
+ * prompts here — the user already signed both the RAILGUN_SHIELD message and the USDC permit
+ * during build-proof, so this stage is purely network-side work.
+ */
+async function runGaslessSubmit(
+  record: TxRecord<'shield'>,
+  ctx: Parameters<typeof shieldHandler.run>[1],
+): Promise<void> {
+  const artifacts = record.artifacts
+  const shieldRequest = artifacts.shieldRequest!
+  const usdcAddress = artifacts.usdcAddress!
+  const permitV = artifacts.permitV
+  const permitR = artifacts.permitR
+  const permitS = artifacts.permitS
+  if (permitV === undefined || permitR === undefined || permitS === undefined) {
+    throw new Error('Shield gasless submit requires permit (v, r, s) in artifacts — re-run build-proof.')
+  }
+  if (
+    record.meta.feeAmount === undefined ||
+    record.meta.wrapperAddress === undefined ||
+    record.meta.permitDeadline === undefined
+  ) {
+    throw new Error('Shield gasless submit requires gasless meta fields — re-run build-proof.')
+  }
+  const ownerCaptured = record.walletContext.evmAddress
+  if (!ownerCaptured) {
+    throw new Error('Shield gasless submit requires a connected EVM wallet; none captured at submit time.')
+  }
+
+  const data = buildGaslessShieldCalldata({
+    user: ownerCaptured as `0x${string}`,
+    totalAmount: record.meta.amount,
+    fee: record.meta.feeAmount,
+    deadline: BigInt(record.meta.permitDeadline),
+    v: permitV,
+    r: permitR as `0x${string}`,
+    s: permitS as `0x${string}`,
+    shieldRequest: {
+      npk: shieldRequest.npk as `0x${string}`,
+      value: BigInt(shieldRequest.value),
+      encryptedBundle: shieldRequest.encryptedBundle as readonly [
+        `0x${string}`,
+        `0x${string}`,
+        `0x${string}`,
+      ],
+      shieldKey: shieldRequest.shieldKey as `0x${string}`,
+    },
+    tokenAddress: usdcAddress as `0x${string}`,
+    integrator: getIntegratorAddress() as `0x${string}`,
+  })
+
+  let submitResponse
+  try {
+    submitResponse = await submitRelay(
+      {
+        chainId: record.meta.fromChainId,
+        to: record.meta.wrapperAddress,
+        data,
+        feesCacheId: record.meta.feeCacheId,
+      },
+      ctx.signal,
+    )
+  } catch (err) {
+    if (err instanceof RelayerError) {
+      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+    }
+    throw err
+  }
+
+  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+  // Persist the relayer-broadcast txHash immediately — same OCC-correct patch-then-advance
+  // dance the unshield handler uses. Building the final advance from the stale `record` would
+  // race the patch's updatedSeq increment and silently drop the terminal transition.
+  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
+  await ctx.upsert(broadcastRecord)
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
+  const pollResult = await poll(
+    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
+    { signal: ctx.signal },
+  )
+
+  if (pollResult.status === 'aborted') throw new Error('cancelled')
+  if (pollResult.status === 'timeout') {
+    const error: TxError = {
+      code: 'POLL_TIMEOUT',
+      message:
+        "The relayer hasn't reported a final status. The transaction may still complete on chain — check the explorer.",
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    const failed = markFailed(broadcastRecord, error)
+    await ctx.upsert(failed)
+    return
+  }
+
+  const final = pollResult.value
+  if (!final) {
+    throw new Error('poll returned done without a status value')
+  }
+  if (final.status === 'failed') {
+    track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: 'EXECUTION_FAILED' })
+    const error: TxError = {
+      code: 'TX_REVERTED',
+      message: final.error ?? 'Relayer-broadcast tx reverted on chain.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    const failed = markFailed(broadcastRecord, error)
+    await ctx.upsert(failed)
+    return
+  }
+
+  track('tx.relayer.confirmed', { id: record.id, kind: record.kind })
+
+  if (kmIsUnlocked()) {
+    void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+  }
+
+  const completed = advance(broadcastRecord, 'hub-confirmed', {
+    sourceTxHash: submitResponse.txHash as `0x${string}`,
   })
   await ctx.upsert(completed)
 }

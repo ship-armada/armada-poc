@@ -1,32 +1,50 @@
 /**
  * Fee Calculator
  *
- * Calculates relayer fees in USDC for each operation type.
- * Manages fee schedule caching and validation.
+ * Calculates relayer fees in USDC for each operation type. One instance per chain — gas costs
+ * differ materially across chains (Ethereum Sepolia ~10x Base Sepolia), so quoting from a single
+ * hub-only provider would over- or under-charge users transacting on other chains.
  *
  * Fee formula:
- *   gasEstimate × gasPrice × (ethPrice / usdcPrice) × (1 + profitMargin)
+ *   fee = gasEstimate × gasPrice × (ethUsdcPrice / 1e18) × (1 + profitMargin) × 1e6
  *
- * For local POC:
- *   - Gas estimates are hardcoded per operation type
- *   - ETH/USDC price is hardcoded (2000)
- *   - Gas price is fetched from the hub provider
+ * For the POC:
+ *   - Gas estimates are hardcoded per operation type (covers each tx kind we relay)
+ *   - ETH/USDC price is hardcoded (`armadaRelayerSettings.ethUsdcPrice`); production would
+ *     read an oracle
+ *   - Gas price is fetched per-chain from that chain's provider
  */
 
 import { ethers } from "ethers";
-import { armadaRelayerSettings, hubChain } from "../config";
+import { armadaRelayerSettings } from "../config";
 import type { FeeSchedule } from "../types";
-import type { WalletManager } from "./wallet-manager";
 
 // ============ Constants ============
 
-/** Gas estimates per operation type (conservative) */
+/**
+ * Gas estimates per operation type. Tuned to the actual gas measured by the B1 Foundry tests +
+ * a small safety bump (~5-10%). The relayer ALSO applies a 20% gas-limit buffer at submit time
+ * (`privacy-relay.ts::gasLimit = gasEstimate * 120 / 100`), so the on-chain limit lands at
+ * `(estimate × 1.2)` which absorbs sub-20% real-world drift in either direction.
+ *
+ *  - Phase A tiers (transfer/unshield/crossContract/crossChainShield/crossChainUnshield): kept
+ *    at their historical values because Phase A handlers were measured against these and shipped
+ *    without complaint. Re-tune if Phase A operator economics drift.
+ *  - Phase B tiers (shield/shieldXchain): tuned to B1's gas reports:
+ *      - GaslessShieldWrapper.gaslessShield ~285k actual → 300k estimate (5% safety)
+ *      - GaslessShieldWrapperClient.gaslessCrossChainShield ~330k + CCTP burn overhead → 400k
+ *    Combined with profitMarginBps=0 (POC default), the user-visible fee tracks actual on-chain
+ *    cost closely. The relayer absorbs gas-price drift within the 5-min quote TTL — acceptable
+ *    for team-run testnet infra; bump margin + estimates before mainnet rollout.
+ */
 const GAS_ESTIMATES: Record<string, bigint> = {
   transfer: 500_000n,
   unshield: 500_000n,
   crossContract: 2_000_000n,
   crossChainShield: 500_000n,
   crossChainUnshield: 500_000n,
+  shield: 300_000n,
+  shieldXchain: 400_000n,
 };
 
 /** USDC has 6 decimals */
@@ -41,10 +59,21 @@ const USDC_UNIT = 10n ** USDC_DECIMALS;
  */
 const CCTP_FAST_FEE_BPS = 2n;
 
+/** Operation keys exposed in the FeeSchedule's `fees` object. */
+export type FeeOperation =
+  | "transfer"
+  | "unshield"
+  | "crossContract"
+  | "crossChainShield"
+  | "crossChainUnshield"
+  | "shield"
+  | "shieldXchain";
+
 // ============ Fee Calculator ============
 
 export class FeeCalculator {
-  private walletManager: WalletManager;
+  private provider: ethers.JsonRpcProvider;
+  private chainId: number;
   private currentSchedule: FeeSchedule | null = null;
   private scheduleCounter = 0;
 
@@ -57,14 +86,21 @@ export class FeeCalculator {
   private cctpFastMode: boolean;
 
   /**
-   * @param walletManager EVM hot wallet — supplies gas-price for fee computation.
+   * @param provider EVM provider for THIS chain — used to read gas price for the quote.
+   * @param chainId The chainId quoted in every schedule this instance produces. Frontends use
+   *        this to disambiguate the multi-chain `/fees?chainId=X` responses.
    * @param broadcasterRailgunAddress The relayer's `0zk` address, derived at boot from the
-   *        Railgun wallet (`relayer/modules/railgun-wallet.ts`). Published verbatim on `/fees`
-   *        so clients route their proof's broadcaster output here. Must be a non-empty string;
-   *        the relayer refuses to boot when the wallet derivation fails (see armada-relayer.ts).
+   *        Railgun wallet. Published verbatim on `/fees` so clients route their proof's
+   *        broadcaster output here. Must be a non-empty string; the relayer refuses to boot when
+   *        the wallet derivation fails (see armada-relayer.ts).
    */
-  constructor(walletManager: WalletManager, broadcasterRailgunAddress: string) {
-    this.walletManager = walletManager;
+  constructor(
+    provider: ethers.JsonRpcProvider,
+    chainId: number,
+    broadcasterRailgunAddress: string,
+  ) {
+    this.provider = provider;
+    this.chainId = chainId;
     this.profitMarginBps = armadaRelayerSettings.profitMarginBps;
     this.ethUsdcPrice = armadaRelayerSettings.ethUsdcPrice;
     this.feeTtlSeconds = armadaRelayerSettings.feeTtlSeconds;
@@ -80,8 +116,7 @@ export class FeeCalculator {
    * Result in USDC raw units (6 decimals)
    */
   private async calculateFeeForGas(gasEstimate: bigint): Promise<bigint> {
-    const provider = this.walletManager.getProvider();
-    const feeData = await provider.getFeeData();
+    const feeData = await this.provider.getFeeData();
     const gasPrice = feeData.gasPrice || 1_000_000_000n; // Default 1 gwei
 
     // Gas cost in wei
@@ -117,17 +152,32 @@ export class FeeCalculator {
   }
 
   /**
-   * Generate a new fee schedule
+   * Generate a new fee schedule for THIS chain.
+   *
+   * All operation keys are populated regardless of which chain this is. The semantics are
+   * per-chain — on the hub schedule, `shield` is the meaningful Phase B key (no `shieldXchain`
+   * use); on a client schedule, `shieldXchain` is the meaningful key. Uniformity keeps the wire
+   * type simple and lets callers read whichever key applies to their kind without conditional
+   * shape narrowing.
    */
   async generateFeeSchedule(): Promise<FeeSchedule> {
-    const [transferFee, unshieldFee, crossContractFee, crossChainShieldFee, crossChainUnshieldFee] =
-      await Promise.all([
-        this.calculateFeeForGas(GAS_ESTIMATES.transfer),
-        this.calculateFeeForGas(GAS_ESTIMATES.unshield),
-        this.calculateFeeForGas(GAS_ESTIMATES.crossContract),
-        this.calculateFeeForGas(GAS_ESTIMATES.crossChainShield),
-        this.calculateFeeForGas(GAS_ESTIMATES.crossChainUnshield),
-      ]);
+    const [
+      transferFee,
+      unshieldFee,
+      crossContractFee,
+      crossChainShieldFee,
+      crossChainUnshieldFee,
+      shieldFee,
+      shieldXchainFee,
+    ] = await Promise.all([
+      this.calculateFeeForGas(GAS_ESTIMATES.transfer),
+      this.calculateFeeForGas(GAS_ESTIMATES.unshield),
+      this.calculateFeeForGas(GAS_ESTIMATES.crossContract),
+      this.calculateFeeForGas(GAS_ESTIMATES.crossChainShield),
+      this.calculateFeeForGas(GAS_ESTIMATES.crossChainUnshield),
+      this.calculateFeeForGas(GAS_ESTIMATES.shield),
+      this.calculateFeeForGas(GAS_ESTIMATES.shieldXchain),
+    ]);
 
     // In fast mode, add CCTP fast transfer fee estimate to cross-chain operations.
     // The fee is proportional to transfer amount, but since we don't know the
@@ -138,16 +188,20 @@ export class FeeCalculator {
       ? " (+ ~1-2 bps CCTP fast transfer fee on transfer amount)"
       : "";
     if (cctpFastFeeNote) {
-      console.log(`[fee-calculator] CCTP fast mode enabled${cctpFastFeeNote}`);
+      console.log(`[fee-calculator chain=${this.chainId}] CCTP fast mode enabled${cctpFastFeeNote}`);
     }
 
     this.scheduleCounter++;
-    const cacheId = `fee-${Date.now()}-${this.scheduleCounter}`;
+    // CacheId includes chainId so a stale quote from one chain cannot be replayed as a
+    // valid quote on another (the PrivacyRelay validates the cacheId against the schedule for
+    // the request's chainId, so this is defense-in-depth — humans grep-debugging cacheIds also
+    // see which chain they belong to).
+    const cacheId = `fee-${this.chainId}-${Date.now()}-${this.scheduleCounter}`;
 
     this.currentSchedule = {
       cacheId,
       expiresAt: Date.now() + this.feeTtlSeconds * 1000,
-      chainId: hubChain.chainId,
+      chainId: this.chainId,
       broadcasterRailgunAddress: this.broadcasterRailgunAddress,
       fees: {
         transfer: transferFee.toString(),
@@ -155,6 +209,8 @@ export class FeeCalculator {
         crossContract: crossContractFee.toString(),
         crossChainShield: crossChainShieldFee.toString(),
         crossChainUnshield: crossChainUnshieldFee.toString(),
+        shield: shieldFee.toString(),
+        shieldXchain: shieldXchainFee.toString(),
       },
     };
 
@@ -189,9 +245,7 @@ export class FeeCalculator {
   /**
    * Get the fee for a specific operation type from the current schedule
    */
-  getFeeForOperation(
-    operationType: "transfer" | "unshield" | "crossContract" | "crossChainShield" | "crossChainUnshield"
-  ): string | null {
+  getFeeForOperation(operationType: FeeOperation): string | null {
     if (!this.currentSchedule) return null;
     return this.currentSchedule.fees[operationType];
   }

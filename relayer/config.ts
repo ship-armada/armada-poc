@@ -212,8 +212,14 @@ function getCCTPFinalityMode(): "fast" | "standard" {
 export const armadaRelayerSettings = {
   /** HTTP API port */
   port: netConfig.relayerPort,
-  /** Fee markup over gas cost (1000 = 10%) */
-  profitMarginBps: 1000,
+  /**
+   * Fee markup over gas cost in basis points. POC value is 0 — no margin while testnet
+   * iteration is the focus. The relayer takes on gas-price-drift risk within the quote's TTL
+   * (a Sepolia gas spike between quote and broadcast eats into operator funds), which is
+   * acceptable for team-run testnet infra. Bump to 200-500 for production where margin
+   * compression caused by a stale quote should still leave the relayer break-even.
+   */
+  profitMarginBps: 0,
   /** ETH/USDC price for fee calculation */
   ethUsdcPrice: netConfig.ethUsdcPrice,
   /** Fee quote validity in seconds */

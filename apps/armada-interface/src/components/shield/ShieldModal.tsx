@@ -1,15 +1,19 @@
 // ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders ActionFlowShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
-// ABOUTME: Dispatches between same-chain shield (hub source) and cross-chain shield-xchain (client source) based on fromChainId; mounts both useTx hooks so either can drive a flow.
+// ABOUTME: Dispatches between same-chain shield (hub source) and cross-chain shield-xchain (client source) based on fromChainId; B3 routes hub shield through GaslessShieldWrapper when available.
 
 import { useEffect, useState } from 'react'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
+import { useQuery } from '@tanstack/react-query'
 import { openModalAtom } from '@/state/ui'
+import { preferencesAtom } from '@/state/preferences'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
-import { userFeeForKind } from '@/lib/relayer'
+import { useRelayerHealth } from '@/hooks/useRelayerHealth'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { useBalances } from '@/hooks/useBalances'
 import { getNetworkConfig } from '@/config/network'
-import { parseUsdcInput } from '@/lib/format'
+import { loadDeployments } from '@/config/deployments'
+import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import {
   ActionFlowShell,
@@ -18,6 +22,7 @@ import {
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
+import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { ShieldInputStep } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
@@ -27,6 +32,14 @@ type SubmittedKind = 'shield' | 'shield-xchain'
 
 const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
+/**
+ * Permit deadline window. The relayer's fee TTL is 5 min and proof building isn't required for
+ * shield, so a 10 min window comfortably covers the build-proof signature + relayer broadcast
+ * + on-chain inclusion. Longer windows leave a stranded permit floating in the user's history;
+ * shorter windows risk expiring while the user reads the review step.
+ */
+const PERMIT_DEADLINE_WINDOW_SEC = 10 * 60
+
 function computeKind(fromChainId: number, hubChainId: number): SubmittedKind {
   return fromChainId === hubChainId ? 'shield' : 'shield-xchain'
 }
@@ -34,6 +47,7 @@ function computeKind(fromChainId: number, hubChainId: number): SubmittedKind {
 export function ShieldModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
   const isOpen = openModal === 'shield'
+  const prefs = useAtomValue(preferencesAtom)
 
   // Form state.
   const hubChainId = getNetworkConfig().hub.chainId
@@ -50,17 +64,73 @@ export function ShieldModal() {
   const max = balances.unshielded[fromChainId] ?? 0n
   const { value: amount } = parseUsdcInput(amountStr)
 
-  // useFees stays plumbed in for the relayer-submit path (need cacheId at submit time even
-  // though the display fee no longer comes from the quote).
-  const { quote, isStale, refresh } = useFees()
-  // Display fee is a pure function of (kind, amount). Today shield = 0 (user pays own gas),
-  // shield-xchain = CCTP fast-fee estimate (~2 bps of amount).
+  // Cached deployment manifests — used to discover the per-chain wrapper address. Loaded once
+  // at startup via the standard React Query pattern; rarely changes at runtime.
+  const deployments = useQuery({
+    queryKey: ['deployments'],
+    queryFn: () => loadDeployments(),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+
+  // Relayer-side health. Only consult to flip the gasless toggle off when the relayer is in a
+  // state that can't safely accept submits; the banner itself is rendered at the bottom of the
+  // shell for user-visible context, same as the unshield flow. `isDegraded` covers both `stale`/
+  // `unhealthy` AND total unreachability — anything outside that is safe to route through.
+  const { data: healthData, isDegraded } = useRelayerHealth({ enabled: isOpen })
+  // Require a positive health signal (not just absence of degradation) so the still-loading
+  // state defaults to direct-submit rather than optimistically advertising a gasless fee that
+  // the relayer might immediately reject.
+  const relayerAvailable = !isDegraded && healthData !== undefined
+
   const computedKind: SubmittedKind = computeKind(fromChainId, hubChainId)
-  const fee: bigint = userFeeForKind(computedKind, amount)
-  // Floor at 0 — when amount < fee (e.g. user typed a value smaller than the CCTP fee) the raw
-  // subtraction would render as a negative figure in the FeeSummary. The contract rejects
-  // on-chain anyway; clamping just keeps the UI honest until the user types a viable amount.
-  const netAmount = amount > fee ? amount - fee : 0n
+
+  // Phase B3/B4 — gasless path is available when the wrapper for the source chain is deployed,
+  // the relayer reports healthy/degraded, and the user hasn't opted into wallet-override.
+  //   - `shield` (hub):           reads `deployments.hub.contracts.gaslessShieldWrapper`.
+  //   - `shield-xchain` (client): reads the per-client `gaslessShieldWrapperClient`.
+  const hubWrapperAddress = deployments.data?.hub.contracts.gaslessShieldWrapper
+  const clientWrapperAddress =
+    computedKind === 'shield-xchain'
+      ? deployments.data?.clients.find(c => c.chainId === fromChainId)?.contracts.gaslessShieldWrapperClient
+      : undefined
+  const wrapperAddress =
+    computedKind === 'shield' ? hubWrapperAddress : clientWrapperAddress
+  const useGasless: boolean =
+    wrapperAddress !== undefined && relayerAvailable && !prefs.submitFromWallet
+
+  // useFees stays plumbed in for the relayer-submit path (need cacheId at submit time even
+  // though the display fee no longer comes from the quote on the direct path). For B4 the
+  // shield-xchain gasless path needs the SOURCE chain's quote — fees vary per chain because
+  // gas costs do (Base Sepolia ≠ Ethereum Sepolia). Pass `fromChainId` so useFees fetches the
+  // matching schedule from `/fees?chainId=...`.
+  const feeChainId =
+    computedKind === 'shield-xchain' && useGasless ? fromChainId : undefined
+  const { quote, isStale, refresh } = useFees({ chainId: feeChainId })
+  // Display fee — for the gasless `shield` path this reads `quote.fees.shield`; for gasless
+  // `shield-xchain` it reads `quote.fees.shieldXchain` from the source chain's quote. Direct
+  // paths preserve their existing semantics (0 for hub shield, CCTP fast-fee estimate for
+  // shield-xchain).
+  const fee: bigint = userFeeForKind(computedKind, amount, quote, {
+    gasless: useGasless,
+  })
+  // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
+  // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
+  // the entered `amount` IS what's deducted from the user's USDC balance, and the shielded
+  // value is `amount - fee`. The wrapper splits on-chain: `(amount - fee)` to the pool,
+  // `fee` to the relayer. Direct hub shield is `no-fee` (full amount shielded, user pays ETH
+  // gas). Direct shield-xchain is `fee-from-recipient` with the CCTP fast-fee deducted from
+  // the destination mint.
+  const { recipientReceives: netAmount, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+  )
+  // Minimum valid amount = the live fee. Below or equal to it the wrapper's `shieldAmount =
+  // totalAmount - fee` would underflow / be zero. Surfaced via ShieldInputStep's `minAmount`
+  // prop so the user can't type a value that would inevitably revert. Zero for no-fee paths.
+  const minAmount: bigint = fee
 
   // Two useTx hooks mounted; only one gets a record per flow. Pattern mirrors SendModal +
   // UnshieldModal where same-chain vs cross-chain are sibling kinds.
@@ -111,18 +181,76 @@ export function ShieldModal() {
       }
       if (computedKind === 'shield') {
         setSubmittedKind('shield')
-        await txShield.submit({
-          amount,
-          feeCacheId: activeQuote.cacheId,
-          fromChainId,
-        })
+        // Phase B3: gasless meta only set when actually routing through the wrapper; absent
+        // when direct-submit. The handler checks `meta.useGasless` to branch.
+        if (useGasless && hubWrapperAddress !== undefined) {
+          // Re-check against the FRESH fee. With fee-from-recipient semantics the entered
+          // `amount` IS what gets pulled from the user (not `amount + fee`), so the balance
+          // check is `amount > max`. The trickier race is when gas spiked between input and
+          // submit and the new fee now equals or exceeds amount — the wrapper's
+          // `shieldAmount = totalAmount - fee` would underflow. Fail fast with a clear copy.
+          const liveFee = BigInt(activeQuote.fees.shield)
+          if (amount > max) {
+            throw new Error(
+              `Insufficient USDC balance. You have ${formatUsdc(max)} USDC, attempted to deposit ${formatUsdc(amount)} USDC.`,
+            )
+          }
+          if (amount <= liveFee) {
+            throw new Error(
+              `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
+            )
+          }
+          await txShield.submit({
+            amount,
+            feeCacheId: activeQuote.cacheId,
+            fromChainId,
+            useGasless: true,
+            feeAmount: liveFee,
+            wrapperAddress: hubWrapperAddress,
+            permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
+          })
+        } else {
+          await txShield.submit({
+            amount,
+            feeCacheId: activeQuote.cacheId,
+            fromChainId,
+          })
+        }
       } else {
         setSubmittedKind('shield-xchain')
-        await txShieldXchain.submit({
-          amount,
-          feeCacheId: activeQuote.cacheId,
-          fromChainId,
-        })
+        // Phase B4: same dispatch pattern as B3 for hub, but the fee comes from the source
+        // chain's `shieldXchain` tier — useFees was already configured with `chainId=fromChainId`
+        // above so `activeQuote` is the source-chain quote.
+        if (useGasless && clientWrapperAddress !== undefined) {
+          // Same submit-time race guard as the hub branch — see that comment block for the
+          // full rationale. With fee-from-recipient the entered `amount` IS what's pulled.
+          const liveFee = BigInt(activeQuote.fees.shieldXchain)
+          if (amount > max) {
+            throw new Error(
+              `Insufficient USDC balance. You have ${formatUsdc(max)} USDC, attempted to deposit ${formatUsdc(amount)} USDC.`,
+            )
+          }
+          if (amount <= liveFee) {
+            throw new Error(
+              `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
+            )
+          }
+          await txShieldXchain.submit({
+            amount,
+            feeCacheId: activeQuote.cacheId,
+            fromChainId,
+            useGasless: true,
+            feeAmount: liveFee,
+            wrapperAddress: clientWrapperAddress,
+            permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
+          })
+        } else {
+          await txShieldXchain.submit({
+            amount,
+            feeCacheId: activeQuote.cacheId,
+            fromChainId,
+          })
+        }
       }
       setStep('progress')
     } catch (err) {
@@ -149,7 +277,8 @@ export function ShieldModal() {
           onFromChainIdChange={setFromChainId}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
+          minAmount={minAmount}
           fee={fee}
           netAmount={netAmount}
           isFeeRefreshing={isStale}
@@ -177,6 +306,7 @@ export function ShieldModal() {
           onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
         />
       )}
+      <RelayerStatusBanner isOpen={isOpen} />
     </ActionFlowShell>
   )
 }

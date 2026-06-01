@@ -1,13 +1,20 @@
 /**
  * Wallet Manager
  *
- * Manages the relayer's hot wallet for transaction submission.
- * Fetches fresh nonce from chain before each tx (shared account with CCTP relay).
- * Handles wallet locking and gas balance monitoring.
+ * Manages the relayer's hot wallet for transaction submission. One EOA, multiple chains —
+ * the same deployer key signs on hub + every client. Nonce streams are independent per chain
+ * (each chain tracks its own nonce on the same address), so submissions on different chains
+ * never collide; submissions on the SAME chain serialize through a per-chain lock.
+ *
+ * Why one EOA across chains:
+ *   - Matches the existing CCTP relay (`cctp-relay.ts` / `iris-relay.ts`) which submits on
+ *     every chain from the same key.
+ *   - One key to fund, one balance to monitor.
+ *   - Per-chain key splits are tracked as future hardening (relayer/CLAUDE.md).
  */
 
 import { ethers } from "ethers";
-import { accounts, hubChain } from "../config";
+import { accounts, allChains } from "../config";
 
 // ============ Types ============
 
@@ -15,113 +22,163 @@ interface SubmitResult {
   txHash: string;
 }
 
+interface ChainState {
+  provider: ethers.JsonRpcProvider;
+  wallet: ethers.Wallet;
+  /** Per-chain submission lock — serializes broadcasts on this chain (nonce safety). */
+  locked: boolean;
+}
+
 // ============ Wallet Manager ============
 
 export class WalletManager {
-  private provider: ethers.JsonRpcProvider;
-  private wallet: ethers.Wallet;
-  private locked: boolean = false;
-  private txCache: Map<string, { txHash: string; timestamp: number }> =
+  private chains: Map<number, ChainState> = new Map();
+  /**
+   * Dedup cache shared across chains, keyed by `chainId|keccak256(to, data)` so the same
+   * calldata to the same target on TWO chains is correctly treated as two distinct submissions
+   * (otherwise replaying a hub `transact()` shape on a client would be silently rejected as a
+   * dup, even though it's a legitimately separate tx on a separate chain).
+   */
+  private txCache: Map<string, { txHash: string; chainId: number; timestamp: number }> =
     new Map();
 
   /** Dedup cache TTL in ms (10 minutes) */
   private readonly DEDUP_TTL_MS = 10 * 60 * 1000;
 
   constructor() {
-    this.provider = new ethers.JsonRpcProvider(hubChain.rpc);
-    this.wallet = new ethers.Wallet(accounts.deployer.privateKey, this.provider);
+    for (const chain of allChains) {
+      const provider = new ethers.JsonRpcProvider(chain.rpc);
+      const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
+      this.chains.set(chain.chainId, { provider, wallet, locked: false });
+    }
   }
 
   /**
-   * Initialize: verify connection and check balance
+   * Initialize: verify connectivity + balance on EVERY supported chain. Fails fast if any
+   * chain is unreachable so operators see the boot error rather than discovering it only when
+   * the first `/relay` for that chain comes in.
    */
   async initialize(): Promise<void> {
-    const blockNumber = await this.provider.getBlockNumber();
-    const nonce = await this.provider.getTransactionCount(
-      this.wallet.address,
-      "pending"
+    console.log(`[wallet-manager] Initializing (${this.chains.size} chain(s))`);
+
+    await Promise.all(
+      Array.from(this.chains.entries()).map(async ([chainId, state]) => {
+        const blockNumber = await state.provider.getBlockNumber();
+        const nonce = await state.provider.getTransactionCount(
+          state.wallet.address,
+          "pending",
+        );
+        const balance = await state.provider.getBalance(state.wallet.address);
+        const ethBalance = ethers.formatEther(balance);
+
+        console.log(`  chain=${chainId}  address=${state.wallet.address}  nonce=${nonce}  eth=${ethBalance}  head=${blockNumber}`);
+
+        if (parseFloat(ethBalance) < 0.1) {
+          console.warn(`[wallet-manager] WARNING: Low ETH balance on chain ${chainId} (${ethBalance})`);
+        }
+      }),
     );
-    const balance = await this.provider.getBalance(this.wallet.address);
-    const ethBalance = ethers.formatEther(balance);
-
-    console.log(`[wallet-manager] Initialized`);
-    console.log(`  Address: ${this.wallet.address}`);
-    console.log(`  Next nonce: ${nonce}`);
-    console.log(`  ETH Balance: ${ethBalance}`);
-    console.log(`  Block: ${blockNumber}`);
-
-    if (parseFloat(ethBalance) < 0.1) {
-      console.warn(`[wallet-manager] WARNING: Low ETH balance (${ethBalance})`);
-    }
   }
 
   /**
-   * Get the relayer's Ethereum address
+   * Get the relayer's Ethereum address. Same address across all chains since we use one EOA.
    */
   get address(): string {
-    return this.wallet.address;
+    const first = this.chains.values().next().value;
+    if (!first) {
+      throw new Error("WalletManager: no chains configured");
+    }
+    return first.wallet.address;
   }
 
   /**
-   * Get the hub chain provider
+   * Get the provider for a given chain. Throws if the chain isn't configured — caller bug.
    */
-  getProvider(): ethers.JsonRpcProvider {
-    return this.provider;
+  getProvider(chainId: number): ethers.JsonRpcProvider {
+    const state = this.chains.get(chainId);
+    if (!state) {
+      throw new Error(
+        `WalletManager: chain ${chainId} is not configured. Allowed: ${Array.from(this.chains.keys()).join(", ")}`,
+      );
+    }
+    return state.provider;
   }
 
   /**
-   * Check if the wallet is currently locked (processing a transaction)
+   * List the chain IDs this wallet manager is configured for.
    */
-  isLocked(): boolean {
-    return this.locked;
+  supportedChains(): number[] {
+    return Array.from(this.chains.keys());
   }
 
   /**
-   * Submit a transaction from the relayer wallet
+   * Whether THIS chain is currently mid-broadcast. Per-chain locking — a hub tx in flight does
+   * not block a client tx because their nonces are independent.
+   */
+  isLocked(chainId: number): boolean {
+    const state = this.chains.get(chainId);
+    if (!state) {
+      throw new Error(`WalletManager: chain ${chainId} is not configured`);
+    }
+    return state.locked;
+  }
+
+  /**
+   * Submit a transaction from the relayer wallet on the specified chain.
    *
-   * @param to - Target contract address
-   * @param data - Encoded calldata
-   * @param gasLimit - Optional gas limit override
-   * @returns Transaction hash and receipt
+   * @param chainId Target chain ID.
+   * @param to Target contract address (must be allow-listed upstream in privacy-relay).
+   * @param data Encoded calldata.
+   * @param gasLimit Optional gas limit override; otherwise estimated with a 20% buffer.
+   * @returns Transaction hash (broadcast-only — receipt tracked in the background).
    */
   async submitTransaction(
+    chainId: number,
     to: string,
     data: string,
-    gasLimit?: bigint
+    gasLimit?: bigint,
   ): Promise<SubmitResult> {
-    if (this.locked) {
-      throw new Error("Wallet is locked — another transaction is in progress");
+    const state = this.chains.get(chainId);
+    if (!state) {
+      throw new Error(`WalletManager: chain ${chainId} is not configured`);
     }
 
-    // Check dedup cache
-    const dataHash = ethers.keccak256(
-      ethers.solidityPacked(["address", "bytes"], [to, data])
-    );
-    const cached = this.txCache.get(dataHash);
-    if (cached && Date.now() - cached.timestamp < this.DEDUP_TTL_MS) {
+    if (state.locked) {
       throw new Error(
-        `Duplicate transaction (already submitted as ${cached.txHash})`
+        `Wallet is locked on chain ${chainId} — another transaction is in progress`,
       );
     }
 
-    this.locked = true;
+    // Check dedup cache (chain-scoped — see note on `txCache`).
+    const dataHash = ethers.keccak256(
+      ethers.solidityPacked(["address", "bytes"], [to, data]),
+    );
+    const cacheKey = `${chainId}|${dataHash}`;
+    const cached = this.txCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.DEDUP_TTL_MS) {
+      throw new Error(
+        `Duplicate transaction on chain ${chainId} (already submitted as ${cached.txHash})`,
+      );
+    }
+
+    state.locked = true;
 
     try {
-      // Always fetch fresh nonce from chain. WalletManager shares the deployer
-      // account with CCTPRelayModule; CCTP may have submitted txs (e.g. receiveMessage
-      // for cross-chain deposits) that consumed nonces. Caching would cause
-      // "nonce already used" when Privacy Relay submits after CCTP.
-      const nonce = await this.provider.getTransactionCount(
-        this.wallet.address,
-        "pending"
+      // Always fetch fresh nonce from chain. WalletManager shares the deployer account with
+      // the CCTP relay paths (cctp-relay / iris-relay), which may have submitted txs on the
+      // SAME chain (e.g. receiveMessage for cross-chain deposits) that consumed nonces.
+      // Caching would cause "nonce already used" when the privacy relay then submits.
+      const nonce = await state.provider.getTransactionCount(
+        state.wallet.address,
+        "pending",
       );
 
       // Estimate gas if not provided
       let estimatedGas = gasLimit;
       if (!estimatedGas) {
         try {
-          const estimate = await this.provider.estimateGas({
-            from: this.wallet.address,
+          const estimate = await state.provider.estimateGas({
+            from: state.wallet.address,
             to,
             data,
           });
@@ -133,24 +190,24 @@ export class WalletManager {
       }
 
       console.log(
-        `[wallet-manager] Submitting tx (nonce=${nonce}, gas=${estimatedGas})`
+        `[wallet-manager] Submitting tx (chain=${chainId}, nonce=${nonce}, gas=${estimatedGas})`,
       );
       console.log(`  To: ${to}`);
       console.log(`  Data: ${data.slice(0, 10)}... (${(data.length - 2) / 2} bytes)`);
 
-      const tx = await this.wallet.sendTransaction({
+      const tx = await state.wallet.sendTransaction({
         to,
         data,
         nonce,
         gasLimit: estimatedGas,
       });
 
-      console.log(`[wallet-manager] Tx submitted: ${tx.hash}`);
+      console.log(`[wallet-manager] Tx submitted (chain=${chainId}): ${tx.hash}`);
 
       // Cache for dedup at broadcast — a future identical request hits the cache instead of
       // re-broadcasting with a fresh nonce. The mempool already has the tx; we don't need
       // confirmation to know it's "ours".
-      this.txCache.set(dataHash, { txHash: tx.hash, timestamp: Date.now() });
+      this.txCache.set(cacheKey, { txHash: tx.hash, chainId, timestamp: Date.now() });
 
       // Track the receipt in the background for operator-side revert logging. The HTTP response
       // doesn't wait on this — the frontend polls /status/:txHash, which observes the receipt
@@ -166,16 +223,16 @@ export class WalletManager {
             return;
           }
           if (receipt.status === 0) {
-            console.error(`[wallet-manager] Tx reverted: ${tx.hash}`);
+            console.error(`[wallet-manager] Tx reverted (chain=${chainId}): ${tx.hash}`);
             return;
           }
           console.log(
-            `[wallet-manager] Tx confirmed in block ${receipt.blockNumber} (gas used: ${receipt.gasUsed})`
+            `[wallet-manager] Tx confirmed (chain=${chainId}) in block ${receipt.blockNumber} (gas used: ${receipt.gasUsed})`,
           );
         })
         .catch((err) => {
           console.warn(
-            `[wallet-manager] Background receipt tracking failed for ${tx.hash}: ${err?.message ?? err}`
+            `[wallet-manager] Background receipt tracking failed for ${tx.hash}: ${err?.message ?? err}`,
           );
         });
 
@@ -187,33 +244,43 @@ export class WalletManager {
         e.code === "NONCE_EXPIRED"
       ) {
         console.warn(
-          "[wallet-manager] Nonce error (another process may have used the account)"
+          `[wallet-manager] Nonce error on chain ${chainId} (another process may have used the account)`,
         );
       }
       throw e;
     } finally {
-      // Released as soon as broadcast returns. The nonce is committed to the mempool, so the next
-      // request's `getTransactionCount(..., "pending")` will see nonce+1. Concurrent /relay
-      // requests serialise through this lock during broadcast, then proceed in parallel after.
-      this.locked = false;
+      // Released as soon as broadcast returns. The nonce is committed to the mempool, so the
+      // next request's `getTransactionCount(..., "pending")` will see nonce+1. Concurrent
+      // /relay requests on the SAME chain serialize through this lock during broadcast, then
+      // proceed in parallel after. Other chains' locks are independent.
+      state.locked = false;
     }
   }
 
   /**
-   * Get a transaction receipt by hash
+   * Get a transaction receipt by hash from a specific chain's provider.
    */
   async getTransactionReceipt(
-    txHash: string
+    chainId: number,
+    txHash: string,
   ): Promise<ethers.TransactionReceipt | null> {
-    return this.provider.getTransactionReceipt(txHash);
+    const state = this.chains.get(chainId);
+    if (!state) {
+      throw new Error(`WalletManager: chain ${chainId} is not configured`);
+    }
+    return state.provider.getTransactionReceipt(txHash);
   }
 
   /**
-   * Estimate gas for a transaction
+   * Estimate gas for a transaction on the specified chain.
    */
-  async estimateGas(to: string, data: string): Promise<bigint> {
-    return this.provider.estimateGas({
-      from: this.wallet.address,
+  async estimateGas(chainId: number, to: string, data: string): Promise<bigint> {
+    const state = this.chains.get(chainId);
+    if (!state) {
+      throw new Error(`WalletManager: chain ${chainId} is not configured`);
+    }
+    return state.provider.estimateGas({
+      from: state.wallet.address,
       to,
       data,
     });

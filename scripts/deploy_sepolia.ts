@@ -13,6 +13,9 @@
  *   Phase 6: Fee module + yield-ownership transfer to timelock — MUST follow Phase 5 because
  *            deploy_fee_module.ts transfers adapter ownership at the end, after which Phase 5's
  *            owner-gated adapter.setPrivacyPool() would revert.
+ *   Phase 7: Gasless shield wrappers (hub + clients) — must follow Phase 3 (needs privacy-pool
+ *            addresses). Independent of phases 4–6; placed last so existing phase numbers stay
+ *            stable.
  *
  * Prerequisites:
  *   - source config/sepolia.env
@@ -188,6 +191,32 @@ async function main() {
       "npx hardhat run scripts/deploy_fee_module.ts --network sepoliaHub",
       "Deploying Fee Module"
     );
+  }
+
+  // ========== Phase 7: Gasless Shield Wrappers ==========
+  // Depends only on Phase 3 (privacy-pool addresses + USDC). Owner = deployer; relayer EOA =
+  // deployer (matches relayer/config.ts::accounts.deployer). Wrappers expose setRelayer() so
+  // the relayer key can later split from the deployer without redeploying.
+  if (shouldRun(7)) {
+    console.log("\n" + "#".repeat(60));
+    console.log("  PHASE 7: Gasless Shield Wrappers");
+    console.log("#".repeat(60));
+
+    run(
+      "npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaHub",
+      "Deploying GaslessShieldWrapper (Hub)"
+    );
+
+    if (!hubOnly) {
+      run(
+        "npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaClientA",
+        "Deploying GaslessShieldWrapperClient (Client A)"
+      );
+      run(
+        "npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaClientB",
+        "Deploying GaslessShieldWrapperClient (Client B)"
+      );
+    }
   }
 
   console.log("\n" + "=".repeat(60));

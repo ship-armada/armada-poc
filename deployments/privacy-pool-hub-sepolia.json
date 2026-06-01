@@ -8,7 +8,8 @@
     "verifierModule": "0xAf60145070c33cA9F575b884c3c435D84c392239",
     "shieldModule": "0x52cDe1613D776654583747aaBEE4F614e91ca0EB",
     "transactModule": "0x5570c8504DfB61f6B3DD72c631452aC1b8f6af46",
-    "hookRouter": "0xd215524bFC1adb2F91D49566677D82DDA7D7d5EB"
+    "hookRouter": "0xd215524bFC1adb2F91D49566677D82DDA7D7d5EB",
+    "gaslessShieldWrapper": "0x4Fc8Ca3aB3A7B237AC59DF8CFdbc9cA75d1bE705"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
@@ -16,5 +17,5 @@
     "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
   },
   "deployBlock": 10893598,
-  "timestamp": "2026-05-21T16:46:00.788Z"
+  "timestamp": "2026-05-31T21:41:01.703Z"
 }

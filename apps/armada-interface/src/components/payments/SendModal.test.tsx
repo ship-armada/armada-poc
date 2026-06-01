@@ -18,7 +18,7 @@ const FAKE_QUOTE = {
   chainId: 31337,
   // Shape-valid 0zk for the submit-time isShieldedAddress() check on the external-tab→hub path.
   broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
-  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
+  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
 function renderModal(opts?: { open?: boolean; shielded?: bigint }) {

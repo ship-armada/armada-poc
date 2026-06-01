@@ -23,6 +23,19 @@ export interface FeeSchedule {
     crossContract: string
     crossChainShield: string
     crossChainUnshield: string
+    /**
+     * Phase B2 — permit-based gasless `shield` on the hub. Semantically meaningful only on the
+     * hub schedule (clients return a still-computed value for type uniformity, but no handler
+     * consumes it there).
+     */
+    shield: string
+    /**
+     * Phase B2 — permit-based gasless `shield-xchain` originating on a CLIENT chain. Each
+     * client quotes its own gas cost (Base Sepolia is materially cheaper than Ethereum
+     * Sepolia, etc.), so callers must fetch the FeeSchedule for the source client chain via
+     * `fetchFees(chainId)` rather than reading the hub schedule.
+     */
+    shieldXchain: string
   }
 }
 
@@ -54,9 +67,33 @@ const CCTP_FAST_FEE_BPS = 2n
  * for kinds that don't consume the quote. Modals pass the live `useFees()` quote when they have
  * one.
  */
-export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule | null): bigint {
+/**
+ * Per-kind options that flip a fee-shape under the kind's umbrella. Today only `shield` uses
+ * `gasless` — it's free under Phase A's user-wallet direct submit but carries a `shield` tier
+ * fee under Phase B's permit + wrapper path. The flag lives in the modal (which knows whether
+ * a wrapper is deployed for the chosen chain AND the user hasn't toggled wallet-override) and
+ * is passed in here for every recompute.
+ */
+export interface UserFeeOpts {
+  /** Phase B `shield` gasless path: include the relayer's `shield` tier fee. Default false. */
+  gasless?: boolean
+}
+
+export function userFeeForKind(
+  kind: TxKind,
+  amount: bigint,
+  quote?: FeeSchedule | null,
+  opts?: UserFeeOpts,
+): bigint {
   switch (kind) {
     case 'shield-xchain':
+      // Phase B4 — gasless path: the wrapper pulls `amount + fee` via permit on the client
+      // chain, burns `amount` through CCTP, transfers `fee` to the relayer. The relayer's
+      // `shieldXchain` fee is per-chain (Base Sepolia ≠ Ethereum Sepolia — see the relayer's
+      // FeeCalculator), so the modal MUST pass the quote for the SOURCE chain via
+      // `fetchFees(chainId)`. Direct path keeps the CCTP fast-fee estimate (~2 bps of amount)
+      // since no relayer fee applies — the user pays gas in ETH themselves.
+      if (opts?.gasless) return quote ? BigInt(quote.fees.shieldXchain) : 0n
       return (amount * CCTP_FAST_FEE_BPS) / 10_000n
     case 'unshield-xchain':
       // A5 — relayer-mediated hub burn. The visible "fee" is the relayer's broadcaster fee from
@@ -78,8 +115,11 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
       // `crossContract` tier reflects the higher gas profile of that pattern (~2M gas vs ~500k).
       return quote ? BigInt(quote.fees.crossContract) : 0n
     case 'shield':
-      // Shield stays a user-wallet-signed direct submit through Phase A. Phase B replaces it
-      // with a gasless permit + wrapper-contract path; until then no relayer fee applies.
+      // Phase B3 — when the modal decided to route through the GaslessShieldWrapper (wrapper
+      // deployed for the chain, relayer healthy, user hasn't overridden to wallet-submit), the
+      // relayer charges the `shield` tier in USDC. When direct-submit instead, the user pays
+      // ETH gas themselves and the wrapper doesn't enter the picture — fee is 0.
+      if (opts?.gasless) return quote ? BigInt(quote.fees.shield) : 0n
       return 0n
   }
 }
@@ -103,9 +143,14 @@ export function userFeeForKind(kind: TxKind, amount: bigint, quote?: FeeSchedule
  */
 export type FeeModel = 'no-fee' | 'fee-from-recipient' | 'fee-on-top' | 'fee-on-top-and-from-recipient'
 
-export function feeModelForKind(kind: TxKind): FeeModel {
+export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
   switch (kind) {
     case 'shield-xchain':
+      // Gasless + direct paths both use `fee-from-recipient` for UX consistency: the user
+      // enters the amount they want to spend, sees `recipient receives = amount - fee`. The
+      // wrapper interprets `totalAmount = amount` (permit value), `fee = relayer fee`, and
+      // shields `(totalAmount - fee)`. Direct path's CCTP fast-fee follows the same shape —
+      // deducted from the destination mint, recipient receives `amount - cctpFee`.
       return 'fee-from-recipient'
     case 'unshield-xchain':
       // A5 — relayer-mediated AND cross-chain. Two fees apply:
@@ -122,8 +167,12 @@ export function feeModelForKind(kind: TxKind): FeeModel {
       // is an extra output in the proof, deducted on top of the entered amount.
       return 'fee-on-top'
     case 'shield':
-      // Direct user submit through Phase A. Phase B's gasless wrapper path also uses a separate
-      // permit-based mechanism, not the broadcaster-fee pattern — handled by its own model.
+      // Phase B3 — gasless path: the wrapper interprets the user's entered amount as the
+      // permit's `totalAmount`. It transfers `fee` to the relayer and shields `(amount - fee)`.
+      // `fee-from-recipient` so the modal shows "you deposit = amount - fee" consistently
+      // with shield-xchain — same semantic as CCTP's destination-side fee deduction. Direct
+      // submit path stays `no-fee` (user pays ETH gas themselves; no USDC line item).
+      if (opts?.gasless) return 'fee-from-recipient'
       return 'no-fee'
   }
 }
@@ -260,9 +309,20 @@ async function parseError(res: Response): Promise<RelayerError> {
  * Fetch the current fee schedule from the relayer. The relayer caches its own schedule with a
  * 5-min TTL and returns the cached value when valid; the client caches at the atom layer via
  * `useFees`. Both can re-fetch independently — relayer is the source of truth.
+ *
+ * Phase B2 made fees per-chain — the source-chain gas price drives the gasless `shield-xchain`
+ * quote (Base Sepolia ≠ Ethereum Sepolia). Pass `chainId` to fetch the schedule for a specific
+ * chain; omit to default to the hub (backward-compatible for Phase A callers).
  */
-export async function fetchFees(signal?: AbortSignal): Promise<FeeSchedule> {
-  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.fees), {
+export async function fetchFees(
+  signal?: AbortSignal,
+  chainId?: number,
+): Promise<FeeSchedule> {
+  const url =
+    chainId === undefined
+      ? relayerEndpoint(RELAYER_ENDPOINTS.fees)
+      : `${relayerEndpoint(RELAYER_ENDPOINTS.fees)}?chainId=${chainId}`
+  const res = await fetch(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     signal,

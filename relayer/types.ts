@@ -27,6 +27,20 @@ export interface FeeSchedule {
     crossChainShield: string;
     /** Fee in USDC raw units for cross-chain unshield client-side relay */
     crossChainUnshield: string;
+    /**
+     * Fee in USDC raw units for a permit-based gasless `shield` on the hub. Phase B2 introduces
+     * this key. Semantically meaningful only on the hub schedule (clients return a still-computed
+     * value for type uniformity, but no handler consumes it there).
+     */
+    shield: string;
+    /**
+     * Fee in USDC raw units for a permit-based gasless `shield-xchain` originating on this
+     * chain — the client-side CCTP burn that the hub later mints into a shielded UTXO. Phase B2
+     * introduces this key. Each client chain's schedule quotes its OWN gas cost (Base Sepolia is
+     * cheaper than Ethereum Sepolia, etc.), so the frontend must call `fetchFees(chainId)` for
+     * the source client chain rather than reading the hub schedule.
+     */
+    shieldXchain: string;
   };
 }
 
@@ -168,16 +182,35 @@ export interface PrivacyPoolDeployment {
   domain: number;
   deployer: string;
   contracts: {
-    privacyPool: string;
-    merkleModule: string;
-    verifierModule: string;
-    shieldModule: string;
-    transactModule: string;
+    privacyPool?: string;
+    privacyPoolClient?: string;
+    merkleModule?: string;
+    verifierModule?: string;
+    shieldModule?: string;
+    transactModule?: string;
+    hookRouter?: string;
+    /**
+     * Phase B2 — permit-based gasless shield wrapper. Present on the hub manifest
+     * (`GaslessShieldWrapper`, calls `PrivacyPool.shield(...)`). Optional because manifests
+     * predating B2 don't carry it; the relayer logs a warning at boot when absent rather than
+     * failing — the Phase A submission paths still work without it.
+     */
+    gaslessShieldWrapper?: string;
+    /**
+     * Phase B2 — permit-based gasless cross-chain shield wrapper. Present on each client
+     * manifest (`GaslessShieldWrapperClient`, calls `PrivacyPoolClient.crossChainShield(...)`).
+     * Optional for the same reason as `gaslessShieldWrapper`.
+     */
+    gaslessShieldWrapperClient?: string;
   };
   cctp: {
     tokenMessenger: string;
     messageTransmitter: string;
     usdc: string;
+  };
+  hub?: {
+    domain: number;
+    privacyPool: string;
   };
   timestamp: string;
 }

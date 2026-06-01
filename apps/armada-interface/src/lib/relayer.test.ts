@@ -28,6 +28,8 @@ function quoteWith(overrides: Partial<FeeSchedule['fees']> = {}): FeeSchedule {
       crossContract: '0',
       crossChainShield: '0',
       crossChainUnshield: '0',
+      shield: '0',
+      shieldXchain: '0',
       ...overrides,
     },
   }
@@ -39,6 +41,44 @@ const HUNDRED_USDC = 100n * ONE_USDC
 describe('userFeeForKind', () => {
   it('returns 0n for shield (user-submitted; no broadcaster fee path)', () => {
     expect(userFeeForKind('shield', HUNDRED_USDC)).toBe(0n)
+  })
+
+  describe('shield — Phase B3 gasless mode', () => {
+    it('still returns 0n when gasless flag is omitted (direct-submit default)', () => {
+      // WHY: any caller that doesn't pass {gasless:true} must see the unchanged Phase A
+      // behavior. A regression here would have ShieldModal accidentally double-charge — the
+      // modal would render a shield-tier fee even on the direct path where no relayer is in
+      // the picture.
+      const quote = quoteWith({ shield: '50000' })
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote)).toBe(0n)
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote, {})).toBe(0n)
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote, { gasless: false })).toBe(0n)
+    })
+
+    it('reads quote.fees.shield when gasless flag is set', () => {
+      // WHY: pin the contract that gasless shield's user-visible fee is the relayer's `shield`
+      // tier from the FeeSchedule (a per-chain quote since B2). Flat per-op USDC, not
+      // proportional to amount — matches the unshield/transfer/yield pattern.
+      const quote = quoteWith({ shield: '75000' }) // 0.075 USDC raw
+      expect(userFeeForKind('shield', HUNDRED_USDC, quote, { gasless: true })).toBe(75_000n)
+      expect(userFeeForKind('shield', ONE_USDC, quote, { gasless: true })).toBe(75_000n)
+    })
+
+    it('returns 0n with gasless=true but no quote (cold-load before useFees resolves)', () => {
+      // WHY: same render-time UX rationale as the unshield-local cold-load case. The modal
+      // shows "Loading…" via isFeeRefreshing; the fee value is 0n until the first quote lands.
+      expect(userFeeForKind('shield', HUNDRED_USDC, null, { gasless: true })).toBe(0n)
+      expect(userFeeForKind('shield', HUNDRED_USDC, undefined, { gasless: true })).toBe(0n)
+    })
+
+    it('coerces the quote\'s string fee back to bigint', () => {
+      // WHY: same JSON-on-the-wire rationale as the other per-op tiers. The string-to-bigint
+      // coercion is easy to drop in a refactor and would surface as a runtime TypeError.
+      const quote = quoteWith({ shield: '12345' })
+      const fee = userFeeForKind('shield', HUNDRED_USDC, quote, { gasless: true })
+      expect(typeof fee).toBe('bigint')
+      expect(fee).toBe(12_345n)
+    })
   })
 
   it.each([
@@ -103,6 +143,34 @@ describe('userFeeForKind', () => {
   it('returns CCTP fast-fee (2 bps of amount) for shield-xchain', () => {
     // 2 bps of 100 USDC = 0.02 USDC = 20_000 raw
     expect(userFeeForKind('shield-xchain', HUNDRED_USDC)).toBe(20_000n)
+  })
+
+  describe('shield-xchain — Phase B4 gasless mode', () => {
+    it('returns CCTP fast-fee estimate when gasless flag is omitted (direct-submit default)', () => {
+      // WHY: any caller pre-dating B4 (or explicitly direct-submitting) must keep seeing the
+      // proportional CCTP fast-fee. A regression here would double-charge — the modal would
+      // surface a relayer-tier fee even on the direct path where no relayer is involved.
+      const quote = quoteWith({ shieldXchain: '500000' })
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote)).toBe(20_000n)
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote, { gasless: false })).toBe(20_000n)
+    })
+
+    it('reads quote.fees.shieldXchain when gasless flag is set', () => {
+      // WHY: pin the contract that gasless shield-xchain's user-visible fee is the relayer's
+      // `shieldXchain` tier from the SOURCE chain's FeeSchedule (per-chain quote since B2 —
+      // gas costs differ on Base Sepolia vs Ethereum Sepolia). Flat per-op USDC, NOT
+      // proportional to amount the way the direct CCTP fast-fee estimate is.
+      const quote = quoteWith({ shieldXchain: '120000' }) // 0.12 USDC raw
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote, { gasless: true })).toBe(120_000n)
+      expect(userFeeForKind('shield-xchain', ONE_USDC, quote, { gasless: true })).toBe(120_000n)
+    })
+
+    it('returns 0n with gasless=true but no quote (cold-load before useFees resolves)', () => {
+      // WHY: same render-time UX rationale as the hub gasless cold-load case. The modal shows
+      // "Loading…" via isFeeRefreshing; fee value is 0n until the per-chain quote lands.
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, null, { gasless: true })).toBe(0n)
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, undefined, { gasless: true })).toBe(0n)
+    })
   })
 
   it('unshield-xchain (A5) reads the relayer\'s crossChainUnshield tier — independent of amount', () => {
@@ -181,6 +249,32 @@ describe('feeModelForKind', () => {
 
   it('classifies shield as no-fee (no broadcaster involvement; user submits directly)', () => {
     expect(feeModelForKind('shield')).toBe('no-fee')
+  })
+
+  it('classifies shield as fee-from-recipient when the gasless flag is set (B3 wrapper path)', () => {
+    // WHY: with B3's UX-consistency pass, gasless shield uses `fee-from-recipient` semantics:
+    // the user's entered `amount` is what's deducted (=permit's totalAmount); the wrapper
+    // splits on-chain into `(amount - fee)` shielded + `fee` to the relayer. Recipient (the
+    // user's shielded balance) receives `amount - fee`. Mirrors the unshield/cross-chain copy
+    // where users always see "amount in / amount-fee out". The earlier `fee-on-top` model
+    // (entered = what got shielded; user paid entered+fee) was confusing because shield-xchain
+    // direct path was already fee-from-recipient via CCTP.
+    expect(feeModelForKind('shield', { gasless: true })).toBe('fee-from-recipient')
+    // Direct submit path stays no-fee (user pays ETH gas themselves; no relayer involved).
+    expect(feeModelForKind('shield', { gasless: false })).toBe('no-fee')
+    expect(feeModelForKind('shield', {})).toBe('no-fee')
+  })
+
+  it('classifies shield-xchain as fee-from-recipient on BOTH gasless and direct paths', () => {
+    // WHY: B3's UX-consistency pass unified both shield-xchain paths under fee-from-recipient.
+    // Gasless: wrapper's permit pulls `amount`, splits into `(amount - fee)` burned + `fee` to
+    // relayer. Direct: CCTP fast-fee deducted from destination mint. Both result in the same
+    // user-facing math: "you spend amount, you receive amount - fee shielded." The gasless
+    // path replaces the relayer fee for the CCTP fast-fee but the on-top/from-recipient
+    // distinction collapses to identical UX.
+    expect(feeModelForKind('shield-xchain', { gasless: true })).toBe('fee-from-recipient')
+    expect(feeModelForKind('shield-xchain', { gasless: false })).toBe('fee-from-recipient')
+    expect(feeModelForKind('shield-xchain', {})).toBe('fee-from-recipient')
   })
 })
 

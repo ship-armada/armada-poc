@@ -11,8 +11,14 @@ export type TransactionStatus = 'pending' | 'loading' | 'done' | 'error'
 export interface Transaction {
   label: string
   status: TransactionStatus
-  /** Surfaced below the status icon when status is 'error'. */
+  /** Friendly summary surfaced below the status icon when status is 'error'.
+   *  Should be short and modal-width-friendly — the raw error goes in
+   *  `errorDetails`. */
   errorMessage?: string
+  /** Optional full / raw error string. When provided AND distinct from
+   *  `errorMessage`, a "Show details" toggle appears under the summary that
+   *  reveals this in a scrollable mono block. */
+  errorDetails?: string
 }
 
 export interface Step4ApproveProps extends ParticipateStepBarProps {
@@ -46,6 +52,9 @@ export default function Step4Approve({
     { label: `Approve ${amount.toLocaleString()} USDC`, status: 'loading' },
     { label: 'Commit participation', status: 'pending' },
   ])
+  // Per-row "show details" toggle keyed by row index. Reset implicitly when
+  // the component remounts (next attempt).
+  const [expandedDetails, setExpandedDetails] = useState<Record<number, boolean>>({})
   const liveRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -112,7 +121,7 @@ export default function Step4Approve({
                     </div>
                   )}
                   {tx.status === 'error' && (
-                    <div className={styles.check} aria-hidden="true" style={{ color: 'var(--semantic-color-status-error)' }}>
+                    <div className={styles.checkError} aria-hidden="true">
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                         <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                       </svg>
@@ -124,14 +133,32 @@ export default function Step4Approve({
                   </span>
                 </div>
               </div>
-              {tx.status === 'error' && tx.errorMessage && (
-                <div
-                  className={styles.txLabel}
-                  style={{ color: 'var(--semantic-color-status-error)', paddingTop: 4, fontSize: 12 }}
-                >
-                  {tx.errorMessage}
-                </div>
-              )}
+              {tx.status === 'error' && tx.errorMessage && (() => {
+                const hasDetails = !!tx.errorDetails && tx.errorDetails !== tx.errorMessage
+                const expanded = !!expandedDetails[i]
+                return (
+                  <div>
+                    <div className={styles.errorMessage}>{tx.errorMessage}</div>
+                    {hasDetails && (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.errorDetailsToggle}
+                          aria-expanded={expanded}
+                          onClick={() =>
+                            setExpandedDetails((prev) => ({ ...prev, [i]: !prev[i] }))
+                          }
+                        >
+                          {expanded ? 'Hide details' : 'Show details'}
+                        </button>
+                        {expanded && (
+                          <pre className={styles.errorDetails}>{tx.errorDetails}</pre>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           ))}
         </div>

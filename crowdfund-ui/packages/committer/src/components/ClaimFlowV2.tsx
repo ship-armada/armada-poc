@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Contract, type Signer, type TransactionResponse, type JsonRpcProvider } from 'ethers'
 import {
   Step4Approve,
+  type ReceiptLogLike,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
@@ -35,6 +36,13 @@ export interface ClaimFlowV2Props {
   claimCountdownSeconds?: number
   onGoToMyPosition: () => void
   onGoToNetwork: () => void
+  /** Hook for ingesting the claim/refund tx's receipt logs into the event
+   *  store — `Allocated` (claim) / `RefundClaimed` (refund) flip the graph's
+   *  per-node state immediately instead of on the next event poll. */
+  onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
+  /** Refresh USDC + ARM balance after the tx confirms so the navbar wallet
+   *  badge and MyPosition surface the post-claim state right away. */
+  refreshAllowance?: () => Promise<void>
 }
 
 const ARM_STEPS = ['Review', 'Submit', 'Done']
@@ -54,6 +62,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     claimCountdownSeconds,
     onGoToMyPosition,
     onGoToNetwork,
+    onReceiptLogs,
+    refreshAllowance,
   } = props
 
   const [delegate, setDelegate] = useState<string>(walletAddress ?? '')
@@ -136,9 +146,19 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       }
       setRowStatus({ status: 'done' })
       setHasClaimed(true)
+      // Fast-path the Allocated / RefundClaimed receipt log into the event
+      // store and refresh balances — same shape as the commit flow's fix.
+      // ethers v6 receipt.logs are structurally compatible with ReceiptLogLike
+      // (just the `index` vs `logIndex` field differs); cast through unknown.
+      onReceiptLogs?.(receipt.logs as unknown as readonly ReceiptLogLike[])
+      void refreshAllowance?.()
       setTimeout(() => setStep('done'), 600)
     } catch (err) {
-      setRowStatus({ status: 'error', errorMessage: mapRevertToMessage(err) })
+      setRowStatus({
+        status: 'error',
+        errorMessage: mapRevertToMessage(err),
+        errorDetails: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 

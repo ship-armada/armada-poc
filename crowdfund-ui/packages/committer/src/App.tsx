@@ -843,7 +843,7 @@ export function App() {
 
   // Wallet-specific hooks
   const eligibility = useEligibility(wallet.address, nodes)
-  const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider)
+  const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider, pollInterval)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
 
   // Phase 3.2.x — derive CrowdfundInviteSlotConfig from real eligibility + invite-link state.
@@ -1288,6 +1288,8 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
             closeParticipate()
             setPage('network')
           }}
+          inviteSlotConfig={inviteSlots.empty ? undefined : inviteSlots.config}
+          onReceiptLogs={ingestReceiptLogs}
         />
       )}
     </ParticipateFlowModal>
@@ -1591,6 +1593,8 @@ onClick={() => setIntent('commit')}
                 claimCountdownSeconds={lifecycleCountdown}
                 onGoToMyPosition={() => setPage('my-position')}
                 onGoToNetwork={() => setPage('network')}
+                onReceiptLogs={ingestReceiptLogs}
+                refreshAllowance={allowance.refresh}
               />
             </ErrorBoundary>
           </div>

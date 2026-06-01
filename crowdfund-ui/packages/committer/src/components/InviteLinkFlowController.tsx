@@ -30,10 +30,11 @@ import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
-import { getHubRpcUrl } from '@/config/network'
+import { getHubRpcUrl, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
+import { useAllowance } from '@/hooks/useAllowance'
 
 type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation'
 
@@ -69,8 +70,21 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
 
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
-  const [balance, setBalance] = useState<bigint>(0n)
-  const [allowance, setAllowance] = useState<bigint>(0n)
+
+  // Balance + allowance via the shared hook so this flow inherits the same
+  // polling cadence + post-tx refresh API the main App uses. Without this,
+  // the inline `Step2Commit` Available line and the skip-approve decision
+  // would freeze at first-load values and miss any USDC activity that happens
+  // on other tabs or after we just consumed the previous allowance.
+  const allowanceState = useAllowance(
+    rawAddress ? rawAddress.toLowerCase() : null,
+    deployment?.contracts.usdc ?? null,
+    deployment?.contracts.crowdfund ?? null,
+    deployment?.contracts.armToken ?? null,
+    provider,
+    getPollIntervalMs(),
+  )
+  const { balance, allowance } = allowanceState
 
   // Step machine + transition state (mirrors the designer's
   // ParticipateFlowInviteLink — fading wraps each step swap).
@@ -93,32 +107,6 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       })
       .catch(() => {})
   }, [])
-
-  // Refresh balance + allowance whenever the wallet, provider, or deployment
-  // resolve. The committer's main `useAllowance` is keyed off App-level state
-  // we don't import here; doing the read inline keeps this component
-  // self-contained while preserving the same behavior as the legacy
-  // InviteLinkRedemption page.
-  useEffect(() => {
-    if (!provider || !rawAddress || !deployment) return
-    let cancelled = false
-    const refresh = async () => {
-      try {
-        const usdc = new Contract(deployment.contracts.usdc, ERC20_ABI_FRAGMENTS, provider)
-        const [bal, allow] = await Promise.all([
-          usdc.balanceOf(rawAddress) as Promise<bigint>,
-          usdc.allowance(rawAddress, deployment.contracts.crowdfund) as Promise<bigint>,
-        ])
-        if (cancelled) return
-        setBalance(bal)
-        setAllowance(allow)
-      } catch {
-        // Non-fatal — the tx itself will surface errors.
-      }
-    }
-    refresh()
-    return () => { cancelled = true }
-  }, [provider, rawAddress, deployment])
 
   // Auto-advance past the wallet step once the user connects (matches the
   // ParticipateFlowV2 pattern). Going back to disconnected drops to wallet.
@@ -193,7 +181,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         setRowStatus(index, { status: 'done' })
         return true
       } catch (err) {
-        setRowStatus(index, { status: 'error', errorMessage: mapRevertToMessage(err) })
+        setRowStatus(index, {
+          status: 'error',
+          errorMessage: mapRevertToMessage(err),
+          errorDetails: err instanceof Error ? err.message : String(err),
+        })
         return false
       }
     }
@@ -205,7 +197,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         return usdc.approve(deployment.contracts.crowdfund, amountBig)
       })
       if (!ok) return
-      setAllowance(amountBig)
+      // Re-read from chain so the next step's `skipApproval` decision (and
+      // any subsequent attempt) sees the real allowance, not an optimistic guess.
+      await allowanceState.refresh()
       cursor += 1
     }
 
@@ -221,6 +215,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       )
     })
     if (!commitOk) return
+
+    // Refresh balance + allowance after the commit consumes the spend cap so
+    // the navbar wallet badge and any subsequent action see the post-tx state
+    // immediately, not on the next poll tick.
+    await allowanceState.refresh()
 
     setTimeout(() => transitionTo('confirmation'), 600)
   }

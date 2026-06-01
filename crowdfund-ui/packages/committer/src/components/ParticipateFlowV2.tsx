@@ -5,12 +5,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { Contract, type Signer, type TransactionResponse } from 'ethers'
 import {
+  ParticipateFlowInviteSlots,
   Step1Wallet,
   Step1WalletNotWhitelisted,
   Step2Commit,
   Step3Review,
   Step4Approve,
   Step5Confirmation,
+  type CrowdfundInviteSlotConfig,
+  type ReceiptLogLike,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
@@ -23,7 +26,7 @@ import {
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import type { HopPosition } from '@/hooks/useEligibility'
 
-type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation'
+type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation' | 'invites'
 
 export interface ParticipateFlowV2Props {
   walletConnected: boolean
@@ -41,6 +44,16 @@ export interface ParticipateFlowV2Props {
   windowOpen: boolean
   onGoToMyPosition: () => void
   onGoToNetwork: () => void
+  /** Live invite-slot configuration. When provided, clicking Invite on the
+   *  confirmation step opens the invite-slots screen inside the modal
+   *  (matching the designer's reference). When omitted (e.g. user not
+   *  eligible at any hop), Invite falls back to navigating to My Position. */
+  inviteSlotConfig?: CrowdfundInviteSlotConfig
+  /** Hook for ingesting commit-tx receipt logs straight into the event store
+   *  so the graph state (per-node committed totals, MyPosition stats) refreshes
+   *  immediately on confirmation instead of waiting for the next event poll.
+   *  Mirrors how v1 `CommitTab` plugs into `useContractEvents.ingestReceiptLogs`. */
+  onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
 }
 
 // Convert a bigint USDC amount (6 decimals) into a plain number for the
@@ -80,6 +93,8 @@ export function ParticipateFlowV2({
   windowOpen,
   onGoToMyPosition,
   onGoToNetwork,
+  inviteSlotConfig,
+  onReceiptLogs,
 }: ParticipateFlowV2Props) {
   const [step, setStep] = useState<FlowStep>('wallet')
   const [amount, setAmount] = useState<number>(0)
@@ -105,6 +120,17 @@ export function ParticipateFlowV2({
     // the "you had this much before" baseline stays stable across the steps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Raw bigint baseline, captured the same way. Used by the ARM estimate so
+  // it doesn't double-count the just-committed amount once `ingestReceiptLogs`
+  // bumps `activePosition.committed` post-confirmation.
+  const baselinePositionCommittedUsdc = useMemo(() => {
+    return activePosition?.committed ?? 0n
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const baselineCappedDemand = useMemo(() => {
+    return cappedDemand
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const isAdditionalCommit = initialCommittedUsd > 0
 
   // Auto-advance past the wallet step when the user lands here with a wallet
@@ -121,23 +147,35 @@ export function ParticipateFlowV2({
   const estimatedArm = useMemo(() => {
     if (!activePosition || amount <= 0) return 0
     const committed = numberToUsdc(amount)
+    // Use the mount-time baselines (not the live values) so the projection
+    // stays "baseline + this flow's amount" — stable across the flow and
+    // immune to the `ingestReceiptLogs` post-confirmation bump that would
+    // otherwise double-add `amount` to both the user's position and the
+    // global capped demand.
     const projectedPositions: UserHopPosition[] = [
       {
         hop: activePosition.hop,
-        committed: activePosition.committed + committed,
+        committed: baselinePositionCommittedUsdc + committed,
         effectiveCap: activePosition.effectiveCap,
       },
     ]
     const armAllocation = estimateUserArmAllocation(
       projectedPositions,
       hopStats,
-      cappedDemand + committed,
+      baselineCappedDemand + committed,
       saleSize,
     )
     // `estimateUserArmAllocation` returns ARM in 18-decimal units (ERC20
     // standard), not 6-decimal USDC units. Divide by 10^18, not 10^6.
     return armToNumber(armAllocation)
-  }, [activePosition, amount, hopStats, cappedDemand, saleSize])
+  }, [
+    activePosition,
+    amount,
+    hopStats,
+    baselineCappedDemand,
+    baselinePositionCommittedUsdc,
+    saleSize,
+  ])
 
   // Run the real approve + commit pipeline. Updates `txs` so Step4Approve renders
   // controlled status. On full success, advance to Step 5. On error, the user
@@ -177,6 +215,7 @@ export function ParticipateFlowV2({
       index: number,
       label: string,
       send: () => Promise<TransactionResponse>,
+      onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
     ): Promise<boolean> => {
       setRowStatus(index, { label, status: 'loading' })
       try {
@@ -187,9 +226,17 @@ export function ParticipateFlowV2({
           return false
         }
         setRowStatus(index, { status: 'done' })
+        // ethers v6 receipts shape `logs` compatibly with `ReceiptLogLike`
+        // (read-only array of `{ topics, data, ... }`). Cast through `unknown`
+        // to bypass the structural mismatch on the `index` field name.
+        onSuccess?.(receipt.logs as unknown as readonly ReceiptLogLike[])
         return true
       } catch (err) {
-        setRowStatus(index, { status: 'error', errorMessage: mapRevertToMessage(err) })
+        setRowStatus(index, {
+          status: 'error',
+          errorMessage: mapRevertToMessage(err),
+          errorDetails: err instanceof Error ? err.message : String(err),
+        })
         return false
       }
     }
@@ -206,10 +253,26 @@ export function ParticipateFlowV2({
     }
 
     const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
-    const ok = await sendAndWait(pipelineIndex, commitLabel, () =>
-      crowdfund.commit(activePosition.hop, amountBig),
+    const ok = await sendAndWait(
+      pipelineIndex,
+      commitLabel,
+      () => crowdfund.commit(activePosition.hop, amountBig),
+      // Fast-path the new Committed event into the event store so the per-node
+      // tooltip + MyPosition refresh on confirmation instead of waiting for
+      // the next event poll. Filtering to the crowdfund-contract logs in the
+      // ingester is already handled by `useContractEvents`.
+      (logs) => onReceiptLogs?.(logs),
     )
     if (!ok) return
+
+    // Re-read USDC balance + allowance from chain so the navbar wallet badge
+    // and any subsequent Participate modal open immediately reflect the spent
+    // funds and consumed allowance. Without this, a same-session second
+    // commit would (a) display the pre-commit balance under "Available" and
+    // (b) skip the approve step because the cached allowance still shows the
+    // amount we just consumed — the tx would then revert with
+    // "insufficient allowance".
+    await refreshAllowance()
 
     // Hold the success state briefly so the checkmark animation reads, then advance.
     setTimeout(() => setStep('confirmation'), 600)
@@ -312,6 +375,33 @@ export function ParticipateFlowV2({
     )
   }
 
+  if (step === 'invites') {
+    // Matches the designer's `ParticipateFlowCrowdfund` reference — after
+    // committing, Invite stays inside the modal as a dedicated step that
+    // renders the invite-slots screen with its own "Do it later" footer
+    // (which closes the modal). Only reachable when the committer supplied
+    // a live `inviteSlotConfig`; otherwise the confirmation step's Invite
+    // CTA falls back to navigating to My Position.
+    if (inviteSlotConfig) {
+      return (
+        <ParticipateFlowInviteSlots
+          slots={inviteSlotConfig.slots}
+          onGenerateLink={inviteSlotConfig.onGenerateLink}
+          onCopy={inviteSlotConfig.onCopy}
+          onRevoke={inviteSlotConfig.onRevoke}
+          onInviteOnchain={inviteSlotConfig.onInviteOnchain}
+          copiedId={inviteSlotConfig.copiedId}
+          loadingId={inviteSlotConfig.loadingId}
+          onDoItLater={onGoToMyPosition}
+        />
+      )
+    }
+    // Config disappeared mid-flow (shouldn't happen — eligibility doesn't
+    // revoke between commit and confirmation). Defensive fallback.
+    onGoToMyPosition()
+    return null
+  }
+
   // step === 'confirmation'
   // For returning participants (had a non-zero commit before this flow), the
   // designer's Step5 swaps in "Commitment updated" copy + a "View your
@@ -323,10 +413,14 @@ export function ParticipateFlowV2({
     <Step5Confirmation
       onViewPosition={onGoToMyPosition}
       onInvite={() => {
-        // TODO (3.2.x): wire to a dedicated invite-slots flow. For now,
-        // bounce back to the crowdfund — the user can find their slots in
-        // the My Position view.
-        onGoToMyPosition()
+        if (inviteSlotConfig) {
+          setStep('invites')
+        } else {
+          // No live slot config (e.g. user not eligible at any hop, which
+          // shouldn't really happen here since they just committed). Fall
+          // back to navigating so the user can still reach their slots.
+          onGoToMyPosition()
+        }
       }}
       amount={amount}
       estimatedArm={estimatedArm}

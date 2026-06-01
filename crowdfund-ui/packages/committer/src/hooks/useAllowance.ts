@@ -34,6 +34,11 @@ export function useAllowance(
   crowdfundAddress: string | null,
   armTokenAddress: string | null,
   provider: JsonRpcProvider | null,
+  /** Poll cadence for balance + allowance reads. Required to keep the navbar
+   *  USDC badge and the Participate modal's "Available" line responsive to
+   *  on-chain activity that happens outside this tab (faucets, manual
+   *  transfers, other dapps). Omit (or pass `false`) to disable polling. */
+  pollIntervalMs?: number | false,
 ): UseAllowanceResult {
   const enabled = !!address && !!usdcAddress && !!crowdfundAddress && !!provider
 
@@ -58,6 +63,8 @@ export function useAllowance(
     staleTime: 0,
     gcTime: 5 * 60 * 1000,
     retry: false,
+    refetchInterval: pollIntervalMs ?? false,
+    refetchIntervalInBackground: false,
   })
 
   const snapshot = query.data ?? ZERO_SNAPSHOT

@@ -36,6 +36,26 @@ const ERC20_PERMIT_READ_ABI = [
     inputs: [],
     outputs: [{ name: '', type: 'string' }],
   },
+  // EIP-5267 — standard way to read a contract's EIP-712 domain. Both OZ's ERC20Permit (≥4.7.2)
+  // and Circle's USDC v2.2+ (FiatTokenV2_2) implement it. Returning here lets us source `name`
+  // + `version` dynamically instead of hardcoding either — hardcoding `version: "1"` (OZ default)
+  // breaks against real Circle USDC which uses `version: "2"`, surfacing as
+  // `EIP2612: invalid signature` from the wrapper's permit call.
+  {
+    type: 'function',
+    name: 'eip712Domain',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'fields', type: 'bytes1' },
+      { name: 'name', type: 'string' },
+      { name: 'version', type: 'string' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'verifyingContract', type: 'address' },
+      { name: 'salt', type: 'bytes32' },
+      { name: 'extensions', type: 'uint256[]' },
+    ],
+  },
 ] as const
 
 /** Inputs the caller controls per permit. */
@@ -63,9 +83,13 @@ export interface SignUsdcPermitInput {
  * Order of operations:
  *   1. Read the live `nonces(owner)` on chain — every successful `permit(...)` increments it,
  *      so a stale value would produce a signature that the next on-chain permit call rejects.
- *   2. Read `name()` — the EIP-712 domain binds the canonical token name (USDC's is `"USD Coin"`,
- *      the local mock's `MockUSDCV2` is `"USD Coin"` too). Hard-coding it would silently break
- *      a deployment that changes the token name.
+ *   2. Resolve the EIP-712 domain (`name` + `version`). Try `eip712Domain()` (EIP-5267) first —
+ *      both OZ's ERC20Permit (≥4.7.2) and Circle's USDC v2.2+ implement it. Falls back to
+ *      `name()` + `version="1"` when the token predates EIP-5267 (legacy contracts only).
+ *      Critical: hardcoding `version: "1"` works for OZ's default but breaks against real
+ *      Circle USDC, which uses `version: "2"` — the wrapper's permit() call then reverts with
+ *      `EIP2612: invalid signature` because the signature recovers to a different address than
+ *      `owner` due to the wrong domain separator.
  *   3. Build the typed-data envelope + ask wagmi to sign through the active wallet client.
  *   4. Split the 65-byte hex signature into `(v, r, s)`.
  *
@@ -74,7 +98,10 @@ export interface SignUsdcPermitInput {
 export async function signUsdcPermit(
   input: SignUsdcPermitInput,
 ): Promise<{ v: number; r: `0x${string}`; s: `0x${string}`; nonce: bigint }> {
-  const [nonce, tokenName] = await Promise.all([
+  // Nonce + domain reads in parallel. `eip712Domain()` may revert on legacy contracts that
+  // predate EIP-5267 — catch and fall back to `name()` + version="1". The fallback path keeps
+  // legacy ERC20Permit deployments working at the cost of an extra round trip on failure.
+  const [nonce, domainResult] = await Promise.all([
     readContract(wagmiConfig, {
       address: input.usdcAddress,
       abi: ERC20_PERMIT_READ_ABI,
@@ -85,18 +112,33 @@ export async function signUsdcPermit(
     readContract(wagmiConfig, {
       address: input.usdcAddress,
       abi: ERC20_PERMIT_READ_ABI,
+      functionName: 'eip712Domain',
+      chainId: input.chainId,
+    }).catch(() => null),
+  ])
+
+  let tokenName: string
+  let tokenVersion: string
+  if (domainResult) {
+    // EIP-5267 returns (fields, name, version, chainId, verifyingContract, salt, extensions).
+    // We rely on name + version only — chainId + verifyingContract are inputs to this fn,
+    // and fields/salt/extensions matter only for non-standard domain shapes (USDC + OZ aren't).
+    tokenName = domainResult[1]
+    tokenVersion = domainResult[2]
+  } else {
+    tokenName = await readContract(wagmiConfig, {
+      address: input.usdcAddress,
+      abi: ERC20_PERMIT_READ_ABI,
       functionName: 'name',
       chainId: input.chainId,
-    }),
-  ])
+    })
+    tokenVersion = '1'
+  }
 
   const signatureHex = await signTypedData(wagmiConfig, {
     domain: {
       name: tokenName,
-      // EIP-2612's spec leaves `version` to the token; OZ's ERC20Permit defaults to "1" and
-      // real USDC v2.2+ matches. Hard-coded here for the same reason ethers tests on PRs to
-      // this repo hard-code it — adding it as an input would just push the wrong-value risk up.
-      version: '1',
+      version: tokenVersion,
       chainId: input.chainId,
       verifyingContract: input.usdcAddress,
     },

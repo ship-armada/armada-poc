@@ -9,7 +9,7 @@ import { preferencesAtom } from '@/state/preferences'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
-import { userFeeForKind } from '@/lib/relayer'
+import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { useBalances } from '@/hooks/useBalances'
 import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
@@ -114,11 +114,17 @@ export function ShieldModal() {
   const fee: bigint = userFeeForKind(computedKind, amount, quote, {
     gasless: useGasless,
   })
-  // Floor at 0 — when amount < fee (e.g. user typed a value smaller than the CCTP fee on
-  // shield-xchain) the raw subtraction would render as a negative figure in the FeeSummary.
-  // The contract rejects on-chain anyway; clamping keeps the UI honest until the user types a
-  // viable amount.
-  const netAmount = amount > fee ? amount - fee : 0n
+  // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
+  // the shared `computeFeeBreakdown` helper. Critical for the gasless paths: the wrapper pulls
+  // `amount + fee` from the user's USDC balance, so the input MAX must reserve room for `fee`
+  // or the wrapper reverts with "ERC20: transfer amount exceeds balance" at submit time.
+  // Direct paths preserve the existing semantics (no fee → inputMax == max, recipient == amount).
+  const { recipientReceives: netAmount, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+  )
 
   // Two useTx hooks mounted; only one gets a record per flow. Pattern mirrors SendModal +
   // UnshieldModal where same-chain vs cross-chain are sibling kinds.
@@ -236,7 +242,7 @@ export function ShieldModal() {
           onFromChainIdChange={setFromChainId}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           fee={fee}
           netAmount={netAmount}
           isFeeRefreshing={isStale}

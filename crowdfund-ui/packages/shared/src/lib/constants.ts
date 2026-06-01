@@ -109,15 +109,22 @@ export const CROWDFUND_CONSTANTS: CrowdfundConstants =
 export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] =
   HOP_CONFIGS_BY_PROFILE[CROWDFUND_PROFILE]
 
-/** ABI fragments for event parsing and contract reads */
+/** ABI fragments for event parsing and contract reads.
+ *  Must match the indexed flags + param shape of the on-chain events exactly
+ *  — ethers' `Interface.parseLog` looks up the fragment by topic[0] (selector,
+ *  insensitive to indexed flags) but then decodes topics vs data using the
+ *  fragment's indexed/non-indexed layout. A mismatch makes parseLog throw,
+ *  which our event parser silently swallows, so the corresponding events go
+ *  missing from the graph entirely. Cross-check against the events block in
+ *  `contracts/crowdfund/ArmadaCrowdfund.sol` whenever this list changes. */
 export const CROWDFUND_ABI_FRAGMENTS = [
-  'event ArmLoaded()',
+  'event ArmLoaded(address indexed caller, uint256 balance, uint256 required)',
   'event SeedAdded(address indexed seed)',
-  'event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce)',
+  'event Invited(address indexed inviter, address indexed invitee, uint8 indexed hop, uint256 nonce)',
   'event LaunchTeamInvited(address indexed invitee, uint8 hop)',
-  'event Committed(address indexed participant, uint8 hop, uint256 amount)',
-  'event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode)',
-  'event Cancelled()',
+  'event Committed(address indexed participant, uint8 indexed hop, uint256 amount)',
+  'event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode, uint256 cappedDemand, uint256 totalCommitted)',
+  'event Cancelled(address indexed caller, uint256 timestamp)',
   'event Allocated(address indexed participant, uint256 armTransferred, uint256 refundUsdc, address delegate)',
   'event AllocatedHop(address indexed participant, uint8 indexed hop, uint256 acceptedUsdc)',
   'event RefundClaimed(address indexed participant, uint256 usdcAmount)',

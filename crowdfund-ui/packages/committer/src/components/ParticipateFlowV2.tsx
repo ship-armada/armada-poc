@@ -228,17 +228,15 @@ export function ParticipateFlowV2({
       // `compact` + `showSteps={false}` match the Path 2 modal sizing — the
       // step bar starts at Commit once we're inside the modal.
       return (
-        <div className="flex min-h-screen items-center justify-center">
-          <ConnectButton.Custom>
-            {({ openConnectModal }) => (
-              <Step1Wallet
-                compact
-                showSteps={false}
-                onNext={() => openConnectModal()}
-              />
-            )}
-          </ConnectButton.Custom>
-        </div>
+        <ConnectButton.Custom>
+          {({ openConnectModal }) => (
+            <Step1Wallet
+              compact
+              showSteps={false}
+              onNext={() => openConnectModal()}
+            />
+          )}
+        </ConnectButton.Custom>
       )
     }
     // Effect will flip us to 'commit' on the next tick.
@@ -253,19 +251,17 @@ export function ParticipateFlowV2({
     // wallet" CTA routes back to the network view so the user can disconnect
     // from the header pill and try another address.
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Step1WalletNotWhitelisted
-          address={walletAddress ?? '0x0000000000000000000000000000000000000000'}
-          onSelectAnother={onGoToNetwork}
-        />
-      </div>
+      <Step1WalletNotWhitelisted
+        address={walletAddress ?? '0x0000000000000000000000000000000000000000'}
+        onSelectAnother={onGoToNetwork}
+      />
     )
   }
 
   if (step === 'commit') {
     if (!windowOpen) {
       return (
-        <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-4 text-center">
+        <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 text-center">
           <div className="text-2xl">Commit window isn't open</div>
           <div className="text-muted-foreground">
             New commits aren't accepted right now. Check back when the campaign opens.
@@ -276,49 +272,43 @@ export function ParticipateFlowV2({
     const effectiveCapUsd = usdcToNumber(activePosition.effectiveCap)
     const availableBalance = usdcToNumber(balance)
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Step2Commit
-          onNext={(amt) => {
-            setAmount(amt)
-            setStep('review')
-          }}
-          onBack={onGoToNetwork}
-          maxAmount={effectiveCapUsd}
-          availableBalance={availableBalance}
-          maxArm={effectiveCapUsd}
-          existingCommittedUsdc={initialCommittedUsd}
-        />
-      </div>
+      <Step2Commit
+        onNext={(amt) => {
+          setAmount(amt)
+          setStep('review')
+        }}
+        onBack={onGoToNetwork}
+        maxAmount={effectiveCapUsd}
+        availableBalance={availableBalance}
+        maxArm={effectiveCapUsd}
+        existingCommittedUsdc={initialCommittedUsd}
+      />
     )
   }
 
   if (step === 'review') {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Step3Review
-          onNext={() => {
-            setTxs(null)
-            setStep('approve')
-            void runPipeline()
-          }}
-          onBack={() => setStep('commit')}
-          hopLevel={`Hop ${activePosition.hop}`}
-          amount={amount}
-          estimatedArm={estimatedArm}
-        />
-      </div>
+      <Step3Review
+        onNext={() => {
+          setTxs(null)
+          setStep('approve')
+          void runPipeline()
+        }}
+        onBack={() => setStep('commit')}
+        hopLevel={`Hop ${activePosition.hop}`}
+        amount={amount}
+        estimatedArm={estimatedArm}
+      />
     )
   }
 
   if (step === 'approve') {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Step4Approve
-          amount={amount}
-          txs={txs ?? undefined}
-          onDone={() => setStep('confirmation')}
-        />
-      </div>
+      <Step4Approve
+        amount={amount}
+        txs={txs ?? undefined}
+        onDone={() => setStep('confirmation')}
+      />
     )
   }
 
@@ -330,20 +320,18 @@ export function ParticipateFlowV2({
   // pre-existing snapshot plus what they just added.
   const totalCommittedUsdc = initialCommittedUsd + amount
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <Step5Confirmation
-        onViewPosition={onGoToMyPosition}
-        onInvite={() => {
-          // TODO (3.2.x): wire to a dedicated invite-slots flow. For now,
-          // bounce back to the crowdfund — the user can find their slots in
-          // the My Position view.
-          onGoToMyPosition()
-        }}
-        amount={amount}
-        estimatedArm={estimatedArm}
-        isAdditionalCommit={isAdditionalCommit}
-        totalCommittedUsdc={totalCommittedUsdc}
-      />
-    </div>
+    <Step5Confirmation
+      onViewPosition={onGoToMyPosition}
+      onInvite={() => {
+        // TODO (3.2.x): wire to a dedicated invite-slots flow. For now,
+        // bounce back to the crowdfund — the user can find their slots in
+        // the My Position view.
+        onGoToMyPosition()
+      }}
+      amount={amount}
+      estimatedArm={estimatedArm}
+      isAdditionalCommit={isAdditionalCommit}
+      totalCommittedUsdc={totalCommittedUsdc}
+    />
   )
 }

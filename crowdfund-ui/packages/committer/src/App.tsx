@@ -603,23 +603,24 @@ if (typeof window ==='undefined') return 0
 }
 
 /**
- * Phase 3 design-refresh feature flag. Two ways to enable, URL wins:
- *   - URL: `?design=v2` (or `?design=v1` to force off in a v2 build)
- *   - Env: `VITE_DESIGN_V2=true` or `=1` in the committer's .env / shell
+ * Design-refresh switch. v2 is now the default (post Phase-4d flip); the
+ * legacy v1 layout is reachable through two escape hatches, URL wins:
+ *   - URL: `?design=v1` forces v1 for this load (`?design=v2` still works
+ *     as an explicit opt-in if a future env override flips the default).
+ *   - Env: `VITE_DESIGN_V2=false` or `=0` opts the entire build out.
  *
- * When on, the Network and My Position pages render the new Hero shell
- * (`<AppShell bare>` + `<CrowdfundExperience>`) with mock data. Participate
- * and Claim continue using the v1 layout until their respective sub-phases
- * (3.2, 3.3) land. When off, everything renders v1.
+ * Pending Phase 5 — once v1 rendering paths are removed entirely, this
+ * helper and the `isV2` branch in `App()` go with them.
  */
 function getDesignV2Mode(): boolean {
   if (typeof window !== 'undefined') {
     const p = new URLSearchParams(window.location.search).get('design')
-    if (p === 'v2') return true
     if (p === 'v1') return false
+    if (p === 'v2') return true
   }
   const envFlag = import.meta.env.VITE_DESIGN_V2
-  return envFlag === 'true' || envFlag === '1'
+  if (envFlag === 'false' || envFlag === '0') return false
+  return true
 }
 
 type NodeSpherePreview =

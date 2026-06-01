@@ -649,6 +649,7 @@ export function CrowdfundExperience({
                       setParticipantsListOpen(open)
                       if (!open) setSelectedAddress(undefined)
                     }}
+                    onParticipate={onParticipate}
                   />
                 </div>
               </>
@@ -745,6 +746,7 @@ export function CrowdfundExperience({
               className={[heroStyles.enter, heroStyles.enterParticipate].join(' ')}
               imageSrc={fleetPng}
               videoSrc={fleetMp4}
+              onCtaClick={onParticipate}
             />
           </div>
         )}

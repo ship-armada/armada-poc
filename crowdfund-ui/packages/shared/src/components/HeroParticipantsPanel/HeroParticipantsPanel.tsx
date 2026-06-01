@@ -57,6 +57,8 @@ export interface HeroParticipantsPanelProps {
   showList?: boolean
   onShowListChange?: (open: boolean) => void
   layoutExpanded?: boolean
+  /** Fires when the empty-state "Participate" CTA is clicked. */
+  onParticipate?: () => void
 }
 
 export function HeroParticipantsPanel({
@@ -69,6 +71,7 @@ export function HeroParticipantsPanel({
   showList: controlledShowList,
   onShowListChange,
   layoutExpanded: layoutExpandedProp,
+  onParticipate,
 }: HeroParticipantsPanelProps) {
   // `collapsedMaxRows` is part of the mockup's API surface but the verbatim
   // body never reads it (the row truncation is handled purely via CSS). Touch
@@ -146,7 +149,7 @@ export function HeroParticipantsPanel({
                   <div className={styles.emptyTitle}>No participants yet</div>
                   <div className={styles.emptySub}>Be the first to participate.</div>
                   <div className={styles.emptyCta}>
-                    <Button variant="gradient" size="md" label="Participate" showIcon icon="arrow-right-micro" />
+                    <Button variant="gradient" size="md" label="Participate" showIcon icon="arrow-right-micro" onClick={onParticipate} />
                   </div>
                 </div>
               ) : noResults ? (

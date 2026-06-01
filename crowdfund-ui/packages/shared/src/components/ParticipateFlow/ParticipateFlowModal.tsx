@@ -25,6 +25,15 @@ export function ParticipateFlowModal({
   const closeRef = useRef<HTMLButtonElement>(null)
   const [mounted, setMounted] = useState(open)
   const [exiting, setExiting] = useState(false)
+  // Hold `onClose` in a ref so the focus + keydown effect below can read the
+  // latest callback without listing it as a dependency. Parents typically pass
+  // an inline arrow (`() => setOpen(false)`) — including it as a dep would
+  // re-run the effect on every parent render and steal focus back to the
+  // close button while the user is typing in a field.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (open) {
@@ -49,7 +58,7 @@ export function ParticipateFlowModal({
     closeRef.current?.focus()
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseRef.current()
     }
     window.addEventListener('keydown', onKeyDown)
 
@@ -57,7 +66,7 @@ export function ParticipateFlowModal({
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [mounted, exiting, onClose])
+  }, [mounted, exiting])
 
   if (!mounted) return null
 

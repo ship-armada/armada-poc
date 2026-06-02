@@ -264,10 +264,19 @@ export function NodeSphere({
   }, [scenarioSeed])
 
   // Avoid tearing down/recreating Three.js scene due to new array references.
+  // `multiHop` and `inviters` are baked into the key so the scene rebuilds when
+  // a wallet gains a new hop (e.g. self-invite flips it from single- to
+  // multi-hop) or its incoming-edge set changes. Without these, the cached key
+  // stays identical and the halo / edges only appear on the next full reload.
   const pinnedNodesKey = useMemo(() => {
     if (!pinnedNodes?.length) return ''
     return pinnedNodes
-      .map((p) => `${p.kind}:${p.address}:${p.committed ?? ''}`)
+      .map(
+        (p) =>
+          `${p.kind}:${p.address}:${p.committed ?? ''}:${p.multiHop ? 'm' : ''}:${
+            p.inviters?.join(',') ?? ''
+          }`,
+      )
       .join('|')
   }, [pinnedNodes])
 

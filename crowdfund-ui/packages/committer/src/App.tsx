@@ -49,7 +49,6 @@ import { useWallet } from '@/hooks/useWallet'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
-import { NodeSpherePreview } from '@/components/NodeSpherePreview'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { InviteSlotsPage } from '@/components/InviteSlotsPage'
@@ -572,27 +571,6 @@ if (typeof window ==='undefined') return 0
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-type NodeSpherePreview =
-  | 'node-sphere'
-  | 'my-position'
-  | 'my-position-split'
-  | 'crowdfund-experience'
-  | null
-
-function getNodeSpherePreviewFromUrl(): NodeSpherePreview {
-  if (typeof window === 'undefined') return null
-  const p = new URLSearchParams(window.location.search).get('mock')
-  if (
-    p === 'node-sphere' ||
-    p === 'my-position' ||
-    p === 'my-position-split' ||
-    p === 'crowdfund-experience'
-  ) {
-    return p
-  }
-  return null
-}
-
 /** Format the Crowdfund hero Progress card's countdown tag from a remaining
  *  duration in seconds. Mirrors the designer's "X DAYS LEFT" / "X HOURS LEFT"
  *  aesthetic exactly, with sane singular vs. plural copy. Returns `null` past
@@ -668,12 +646,6 @@ function deriveLifecycleStage(
 export function App() {
   const [mockSize] = useState(getMockSizeFromUrl)
   if (mockSize > 0) return <MockCommitterApp size={mockSize} />
-
-  // Phase 4a debug surface — render NodeSphere / CrowdfundExperience / MyPosition*
-  // variants with the designer's mock data. Selected via `?mock=node-sphere` (etc.).
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const [nodeSpherePreview] = useState(getNodeSpherePreviewFromUrl)
-  if (nodeSpherePreview) return <NodeSpherePreview variant={nodeSpherePreview} />
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)

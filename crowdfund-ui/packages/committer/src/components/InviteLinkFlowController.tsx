@@ -123,7 +123,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     localBlockTimestamp,
   )
   const inviteSlots = useInviteSlots(
-    eligibility.positions[0] ?? null,
+    eligibility.positions,
     inviteLinks,
     provider,
     signer,
@@ -375,13 +375,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       case 'invites':
         return (
           <ParticipateFlowInviteSlots
-            slots={inviteSlots.config.slots}
-            onGenerateLink={inviteSlots.config.onGenerateLink}
-            onCopy={inviteSlots.config.onCopy}
-            onRevoke={inviteSlots.config.onRevoke}
-            onInviteOnchain={inviteSlots.config.onInviteOnchain}
-            copiedId={inviteSlots.config.copiedId}
-            loadingId={inviteSlots.config.loadingId}
+            sections={inviteSlots.sections}
             onDoItLater={() => navigate('/?view=myposition')}
           />
         )
@@ -391,9 +385,21 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     }
   }
 
+  // The 'invites' step (post-commit invite-slot list) can exceed the
+  // 480×500 footprint when the user has many slots. Apply the override
+  // classes only for that step so the other steps keep their fixed sizing.
+  const isInvitesStep = renderStep === 'invites'
   return (
-    <div className={inlineStyles.slot}>
-      <div className={inlineStyles.step}>
+    <div
+      className={[inlineStyles.slot, isInvitesStep && inlineStyles.slotInvites]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <div
+        className={[inlineStyles.step, isInvitesStep && inlineStyles.stepInvites]
+          .filter(Boolean)
+          .join(' ')}
+      >
         <div
           key={renderStep}
           className={[

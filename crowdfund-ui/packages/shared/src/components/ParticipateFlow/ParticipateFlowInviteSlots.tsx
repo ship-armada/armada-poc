@@ -1,33 +1,30 @@
-// ABOUTME: Modal-bound invite-slots step — reuses the InviteSlots shell + SlotCard list inside the Participate modal, adds a "Do it later" footer.
-// ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteSlots.tsx); `../Button` import rewritten to `@armada/ui`.
+// ABOUTME: Modal-bound invite-slots step — renders one section per eligible hop, each with its own SlotCard list. Single-hop wallets see one un-headered section (designer-mockup behavior); multi-hop wallets see headered sections stacked vertically.
+// ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteSlots.tsx) and extended with the `sections` prop in place of the original flat slot/handlers props.
 
-import SlotCard, { type SlotData } from '../InviteFlow/screens/SlotCard'
+import SlotCard from '../InviteFlow/screens/SlotCard'
 import { Button } from '@armada/ui'
+import type { CrowdfundInviteSlotSection } from '../CrowdfundExperience/CrowdfundExperience'
 import inviteStyles from '../InviteFlow/screens/InviteSlots.module.css'
 import styles from './ParticipateFlowInviteSlots.module.css'
 
 export interface ParticipateFlowInviteSlotsProps {
-  slots: SlotData[]
-  onGenerateLink: (slotId: number) => Promise<void>
-  onCopy: (slotId: number, link: string) => void
-  onRevoke: (slotId: number) => void
-  onInviteOnchain: (slotId: number, address: string, ensName?: string) => Promise<void>
+  /** One section per eligible hop, each carrying its own slot list +
+   *  handlers. Pass an empty array for the "no invite slots" empty state. */
+  sections: ReadonlyArray<CrowdfundInviteSlotSection>
   onDoItLater?: () => void
-  copiedId?: number | null
-  loadingId?: number | null
 }
 
 export function ParticipateFlowInviteSlots({
-  slots,
-  onGenerateLink,
-  onCopy,
-  onRevoke,
-  onInviteOnchain,
+  sections,
   onDoItLater,
-  copiedId = null,
-  loadingId = null,
 }: ParticipateFlowInviteSlotsProps) {
-  const isEmpty = slots.length === 0
+  // The wallet has no slot capacity at any hop (e.g. hop-2 invitee who can't
+  // re-invite). Render the centered empty message in the shell.
+  const isEmpty =
+    sections.length === 0 || sections.every((s) => s.config.slots.length === 0)
+  // Section headers are only meaningful when the user holds more than one
+  // hop; single-hop users see the original layout unchanged.
+  const showHeaders = sections.length > 1
 
   return (
     <div className={styles.layout}>
@@ -42,27 +39,45 @@ export function ParticipateFlowInviteSlots({
         </div>
 
         <div className={styles.scroll}>
-          {slots.length === 0 ? (
+          {isEmpty ? (
             <div className={styles.empty} role="status">
               <p className={styles.emptyText}>
                 You have no invite slots available at this hop.
               </p>
             </div>
           ) : (
-            <div className={inviteStyles.slotList}>
-              {slots.map((slot) => (
-                <SlotCard
-                  key={slot.id}
-                  slot={slot}
-                  onGenerateLink={onGenerateLink}
-                  onCopy={onCopy}
-                  onRevoke={onRevoke}
-                  onInviteOnchain={onInviteOnchain}
-                  copied={copiedId === slot.id}
-                  loading={loadingId === slot.id}
-                />
-              ))}
-            </div>
+            sections.map((section) => (
+              <div key={section.hop} className={styles.section}>
+                {showHeaders && (
+                  <div className={styles.sectionHeader}>
+                    <span
+                      className={styles.sectionDot}
+                      style={{ background: section.hopColor }}
+                      aria-hidden
+                    />
+                    <span className={styles.sectionLabel}>{section.hopLabel}</span>
+                    <span className={styles.sectionCount}>
+                      ({section.totalSlots} {section.totalSlots === 1 ? 'slot' : 'slots'})
+                    </span>
+                  </div>
+                )}
+                <div className={inviteStyles.slotList}>
+                  {section.config.slots.map((slot) => (
+                    <SlotCard
+                      key={slot.id}
+                      slot={slot}
+                      onGenerateLink={section.config.onGenerateLink}
+                      onCopy={section.config.onCopy}
+                      onRevoke={section.config.onRevoke}
+                      onInviteOnchain={section.config.onInviteOnchain}
+                      copied={section.config.copiedId === slot.id}
+                      loading={section.config.loadingId === slot.id}
+                      resolveEns={section.config.resolveEns}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>

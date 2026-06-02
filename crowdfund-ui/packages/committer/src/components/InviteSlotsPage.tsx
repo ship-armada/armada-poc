@@ -1,26 +1,27 @@
 // ABOUTME: Standalone v2 Invite Slots page reached from the header Invite button.
-// ABOUTME: Renders the same SlotCard primitive as CrowdfundExperience's inline path, driven by the shared useInviteSlots adapter.
+// ABOUTME: Renders one section per eligible hop, driven by the per-hop sections from `useInviteSlots`. Single-hop wallets see one un-headered section; multi-hop wallets see hop-labeled sections stacked vertically.
 
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import {
   SlotCard,
-  type CrowdfundInviteSlotConfig,
+  type CrowdfundInviteSlotSection,
 } from '@armada/crowdfund-shared'
 import { Tooltip, Button as ArmadaButton } from '@armada/ui'
 
 export interface InviteSlotsPageProps {
   walletConnected: boolean
+  /** True when the wallet has no eligibility positions at all. */
   empty: boolean
-  hopLabel: string
-  config: CrowdfundInviteSlotConfig
+  /** Per-hop slot sections. Empty array short-circuits to the "no slots" copy
+   *  alongside `empty`. */
+  sections: ReadonlyArray<CrowdfundInviteSlotSection>
   onBack: () => void
 }
 
 export function InviteSlotsPage({
   walletConnected,
   empty,
-  hopLabel,
-  config,
+  sections,
   onBack,
 }: InviteSlotsPageProps) {
   if (!walletConnected) {
@@ -36,7 +37,8 @@ export function InviteSlotsPage({
     )
   }
 
-  const noSlots = !empty && config.slots.length === 0
+  const noSlotsAtAnyHop =
+    !empty && (sections.length === 0 || sections.every((s) => s.config.slots.length === 0))
 
   if (empty) {
     return (
@@ -57,12 +59,13 @@ export function InviteSlotsPage({
     )
   }
 
-  if (noSlots) {
+  if (noSlotsAtAnyHop) {
+    const hopList = sections.map((s) => s.hopLabel).join(' / ') || 'this address'
     return (
       <Centered>
         <h1 className="mb-2 text-2xl">No invite slots available</h1>
         <p className="mb-6 text-muted-foreground">
-          You have no invite slots available at {hopLabel}.
+          You have no invite slots available at {hopList}.
         </p>
         <ArmadaButton
           variant="secondary"
@@ -75,13 +78,17 @@ export function InviteSlotsPage({
     )
   }
 
+  // Section headers are only meaningful when the wallet holds more than one
+  // hop; single-hop wallets see the original layout unchanged.
+  const showHeaders = sections.length > 1
+  // Compose a friendly hop list for the tooltip body ("SEED", "SEED + HOP-1").
+  const hopListDesc = sections.map((s) => s.hopLabel).join(' + ')
+
   return (
     // 12rem = 2 × (AppShell main `pt-20` + container `p-4-top`) — keeps the
     // card centered on the viewport's visual midline. See ClaimFlowV2's
     // FlowShell for the derivation.
     <div className="flex min-h-[calc(100vh-12rem)] items-center justify-center px-6">
-      {/* Layout mirrors the designer's `InviteSlots` shell (480px card with header + slot list)
-          but consumes the controlled `config` from the committer's adapter instead of mock state. */}
       <div className="w-full max-w-md rounded-2xl border border-[color:var(--semantic-color-border-lavender)] bg-[color:var(--semantic-color-surface-default)] p-8">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <div className="flex items-center gap-2">
@@ -89,7 +96,7 @@ export function InviteSlotsPage({
             <Tooltip
               variant="rich"
               title="How invite slots work"
-              description={`Each slot lets you bring one person into the fleet at ${hopLabel}. Share a link or send an onchain invite to a specific address.`}
+              description={`Each slot lets you bring one person into the fleet at the next hop down (you hold ${hopListDesc}). Share a link or send an onchain invite to a specific address.`}
               bullets={[
                 'Link slots are only consumed when someone redeems',
                 'Onchain invites are immediate and irrevocable',
@@ -118,19 +125,38 @@ export function InviteSlotsPage({
           </p>
         </div>
 
-        <div className="flex flex-col gap-3">
-          {config.slots.map((slot) => (
-            <SlotCard
-              key={slot.id}
-              slot={slot}
-              onGenerateLink={config.onGenerateLink}
-              onCopy={config.onCopy}
-              onRevoke={config.onRevoke}
-              onInviteOnchain={config.onInviteOnchain}
-              copied={config.copiedId === slot.id}
-              loading={config.loadingId === slot.id}
-              resolveEns={config.resolveEns}
-            />
+        {/* `max-h-[360px]` mirrors the inline MyPosition card and the modal
+            invite-slots step — ~3-4 SlotCards visible before scroll. */}
+        <div className="flex max-h-[360px] flex-col gap-5 overflow-y-auto pr-1">
+          {sections.map((section) => (
+            <div key={section.hop} className="flex flex-col gap-3">
+              {showHeaders && (
+                <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                  <span
+                    className="h-2 w-2 flex-shrink-0 rounded-full"
+                    style={{ background: section.hopColor }}
+                    aria-hidden
+                  />
+                  <span className="text-foreground">{section.hopLabel}</span>
+                  <span>
+                    ({section.totalSlots} {section.totalSlots === 1 ? 'slot' : 'slots'})
+                  </span>
+                </div>
+              )}
+              {section.config.slots.map((slot) => (
+                <SlotCard
+                  key={slot.id}
+                  slot={slot}
+                  onGenerateLink={section.config.onGenerateLink}
+                  onCopy={section.config.onCopy}
+                  onRevoke={section.config.onRevoke}
+                  onInviteOnchain={section.config.onInviteOnchain}
+                  copied={section.config.copiedId === slot.id}
+                  loading={section.config.loadingId === slot.id}
+                  resolveEns={section.config.resolveEns}
+                />
+              ))}
+            </div>
           ))}
         </div>
 

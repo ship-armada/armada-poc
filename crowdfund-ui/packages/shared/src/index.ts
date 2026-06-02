@@ -165,8 +165,10 @@ export type {
   CrowdfundExperienceProps,
   CrowdfundView,
   CrowdfundInviteSlotConfig,
+  CrowdfundInviteSlotSection,
   CrowdfundExperienceLiveData,
   CrowdfundExperienceMyPositionData,
+  CrowdfundExperienceHopPosition,
 } from './components/CrowdfundExperience/index.js'
 
 export { Participate } from './components/Participate/index.js'
@@ -223,6 +225,8 @@ export {
 } from './components/ParticipateFlow/index.js'
 export type {
   Step0InviteProps,
+  Step2CommitHopRow,
+  Step3ReviewHopCommit,
   Step4ApproveProps,
   Step4Transaction,
   Step4TransactionStatus,

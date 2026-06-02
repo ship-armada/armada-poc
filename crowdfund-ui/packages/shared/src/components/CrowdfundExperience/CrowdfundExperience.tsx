@@ -22,6 +22,7 @@ import {
   formatUsdcCommitted,
 } from '../MyPosition/myPositionDemo'
 import { NodeSphere } from '../NodeSphere/NodeSphere'
+import { hopPillDotColor } from '../../lib/graphHopColors'
 import { CROWDFUND_CONSTANTS } from '../../lib/constants'
 import {
   generateCrowdfund,
@@ -64,6 +65,25 @@ export interface CrowdfundInviteSlotConfig {
   resolveEns?: (
     input: string,
   ) => Promise<import('../InviteFlow/screens/SlotCard').SlotCardEnsResult>
+}
+
+/** One hop's worth of invite slots, paired with its display label / color +
+ *  a self-contained `CrowdfundInviteSlotConfig` that handles only that hop's
+ *  slot interactions. Multi-hop wallets render multiple sections stacked; the
+ *  section header (label + slot count + colored dot) is suppressed when there
+ *  is only one section so single-hop UX is unchanged. */
+export interface CrowdfundInviteSlotSection {
+  /** Source hop the invites come from (slot generates an invite at `hop + 1`). */
+  hop: 0 | 1 | 2
+  /** Display label — 'SEED' / 'HOP-1' / 'HOP-2'. */
+  hopLabel: string
+  /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
+  hopColor: string
+  /** Total slot budget for this hop (sum of available + used). */
+  totalSlots: number
+  /** Per-hop slot list + handlers. Slot IDs are namespaced by hop, so the
+   *  shared `copiedId` / `loadingId` numbers don't collide across sections. */
+  config: CrowdfundInviteSlotConfig
 }
 
 /**
@@ -109,6 +129,28 @@ export type CrowdfundExperienceLiveData =
  * Omit the prop entirely to fall through to the demo constants from
  * `myPositionDemo.ts` (showcase / `?design=v1` preview behavior).
  */
+/** A single hop-position slice for a wallet — committed / cap / invite-slot
+ *  budget at one hop. Multi-hop wallets have several. The data layer's
+ *  `useEligibility` hook already produces this shape (modulo the `cap` field
+ *  name); the renderer consumes it via `CrowdfundExperienceMyPositionData`. */
+export interface CrowdfundExperienceHopPosition {
+  hop: 0 | 1 | 2
+  /** USDC committed at this hop (6 decimals). */
+  committed: bigint
+  /** USDC cap at this hop (6 decimals — `effectiveCap` from useEligibility).
+   *  Equal to `invitesReceived * hop-base-cap`, so a wallet invited twice to
+   *  the same hop has double the per-hop cap. */
+  cap: bigint
+  /** Number of times this wallet was invited at this hop. >1 when multiple
+   *  seeds / inviters routed the wallet to the same hop; drives the `xN`
+   *  suffix on the meta-row hop chip. */
+  invitesReceived: number
+  /** Remaining invite slots the user can hand out from this hop. */
+  invitesAvailable: number
+  /** Invite slots already consumed from this hop. */
+  invitesUsed: number
+}
+
 export type CrowdfundExperienceMyPositionData =
   | { status: 'disconnected' }
   | { status: 'no-position'; walletDisplay: string }
@@ -118,14 +160,24 @@ export type CrowdfundExperienceMyPositionData =
       walletAddress: string
       /** Truncated display form — drives the wallet `<Tag>` label. */
       walletDisplay: string
-      /** Primary hop (0/1/2). Drives the `HOP-N` / `SEED` tag label. */
+      /** Primary hop = lowest hop the user is eligible at. Drives the
+       *  `HOP-N` / `SEED` tag label and the legacy single-hop stat block
+       *  (until per-hop rendering lands in step 2). New multi-hop UI
+       *  should iterate `positions` instead of reading these scalar
+       *  fields. */
       hop: 0 | 1 | 2
       /** USDC committed at the primary hop (6 decimals). */
       committedUsdc: bigint
       /** USDC cap at the primary hop (6 decimals — `effectiveCap`). */
       capUsdc: bigint
-      /** Estimated ARM allocation (18 decimals). */
+      /** Estimated ARM allocation across every eligible hop (18 decimals). */
       armAllocation: bigint
+      /** All hops this wallet is eligible at, ordered by hop ascending.
+       *  Single-hop wallets carry one entry; multi-hop carry two or three.
+       *  `positions[0]` is always equivalent to the legacy `hop` /
+       *  `committedUsdc` / `capUsdc` scalars — those stay populated as a
+       *  back-compat shim while consumers migrate. */
+      positions: ReadonlyArray<CrowdfundExperienceHopPosition>
       /** True once the user's `claim()` has been executed (read from the graph
        *  summary, which sets it on the `Allocated` event). Surfaces a
        *  "CLAIMED" tag in the meta row. */
@@ -203,12 +255,13 @@ export interface CrowdfundExperienceProps {
    */
   header?: ReactNode
   /**
-   * Controlled invite-slot config for the MyPosition view's "Your invites"
-   * card. When provided, replaces the demo slots + mock callbacks with the
-   * consumer's real data and handlers. Omit to keep the showcase/preview
-   * demo behavior.
+   * Controlled per-hop invite-slot sections for the MyPosition view's "Your
+   * invites" card. One section per eligible hop; single-hop wallets pass an
+   * array of length 1 and the card renders without a hop header. Omit to
+   * keep the showcase / preview demo behavior (which uses internal mock
+   * `DEMO_SLOTS` and stubbed handlers).
    */
-  inviteSlotConfig?: CrowdfundInviteSlotConfig
+  inviteSlotSections?: ReadonlyArray<CrowdfundInviteSlotSection>
   /**
    * Live crowdfund data. When provided, replaces the internal mock snapshot
    * with real graph data (or renders a loading skeleton while events are
@@ -289,7 +342,7 @@ export function CrowdfundExperience({
   view: controlledView,
   onViewChange,
   header,
-  inviteSlotConfig,
+  inviteSlotSections,
   liveData,
   myPositionData,
   onConnectWallet,
@@ -355,17 +408,54 @@ export function CrowdfundExperience({
       : myPositionData
         ? undefined
         : DEMO_WALLET_DISPLAY)
-  const myPositionHopLabel = myPositionReady
-    ? HOP_TAG_LABELS[myPositionReady.hop]
-    : 'HOP-1'
+  // Per-hop chips rendered in the meta row. Multi-hop wallets get one chip
+  // per distinct hop, with an `xN` suffix when they were invited to the same
+  // hop multiple times (e.g. two seed inviters → "SEED x2"). Single-hop
+  // wallets still get just one chip.
+  const myPositionHopChips = useMemo(() => {
+    const colorFor = (hop: 0 | 1 | 2) =>
+      hop === 0
+        ? hopPillDotColor('seed')
+        : hop === 1
+          ? hopPillDotColor('hop-1')
+          : hopPillDotColor('hop-2')
+    if (!myPositionReady) {
+      return [
+        { key: 'demo', label: <>HOP-1</> as ReactNode, dotColor: hopPillDotColor('hop-1') },
+      ]
+    }
+    return myPositionReady.positions.map((pos) => {
+      const base = HOP_TAG_LABELS[pos.hop]
+      const label: ReactNode =
+        pos.invitesReceived > 1 ? (
+          <>
+            {base}
+            <span className={mpStyles.hopChipMultiplier}>x{pos.invitesReceived}</span>
+          </>
+        ) : (
+          base
+        )
+      return { key: `hop-${pos.hop}`, label, dotColor: colorFor(pos.hop) }
+    })
+  }, [myPositionReady])
+  // Cross-hop totals — `committed` / `cap` collapse the user's full footprint
+  // into one stat block + one fill bar. A wallet with `SEED ($1k cap)` plus a
+  // `HOP-1 x2 ($2k cap)` position shows $3k cap and the sum of commitments.
   const myPositionCommittedUsd = myPositionReady
-    ? usdcBigintToUsdNumber(myPositionReady.committedUsdc)
+    ? usdcBigintToUsdNumber(
+        myPositionReady.positions.reduce((sum, p) => sum + p.committed, 0n),
+      )
     : COMMITTED
   const myPositionCapUsd = myPositionReady
-    ? usdcBigintToUsdNumber(myPositionReady.capUsdc)
+    ? usdcBigintToUsdNumber(
+        myPositionReady.positions.reduce((sum, p) => sum + p.cap, 0n),
+      )
     : CAP
   const myPositionFillPct = myPositionReady
-    ? computeFillPct(myPositionReady.committedUsdc, myPositionReady.capUsdc)
+    ? computeFillPct(
+        myPositionReady.positions.reduce((sum, p) => sum + p.committed, 0n),
+        myPositionReady.positions.reduce((sum, p) => sum + p.cap, 0n),
+      )
     : FILL_PCT
   const myPositionArmNumber = myPositionReady
     ? armBigintToArmNumber(myPositionReady.armAllocation)
@@ -723,9 +813,10 @@ export function CrowdfundExperience({
                 {myPositionWalletDisplay && (
                   <Tag label={myPositionWalletDisplay} dot="lavender" />
                 )}
-                {myPositionEmptyKind === null && (
-                  <Tag label={myPositionHopLabel} dot="lavender" />
-                )}
+                {myPositionEmptyKind === null &&
+                  myPositionHopChips.map((chip) => (
+                    <Tag key={chip.key} label={chip.label} dotColor={chip.dotColor} />
+                  ))}
                 {myPositionEmptyKind === null && myPositionTerminalClaimed && (
                   <Tag label="CLAIMED" dot="active" />
                 )}
@@ -860,39 +951,76 @@ export function CrowdfundExperience({
           <section className={mpStyles.inviteCard} aria-label="Your invites">
             <h2 className={mpStyles.inviteTitle}>Your Invites</h2>
             {(() => {
-              const renderedSlots = inviteSlotConfig?.slots ?? DEMO_SLOTS
-              if (renderedSlots.length === 0) {
+              // Three render modes:
+              //   1. live sections supplied AND non-empty → render per-hop sections (hop header
+              //      hidden when there's only one section so single-hop UX is unchanged)
+              //   2. live sections supplied but all empty → "no invite slots" message
+              //   3. no live sections (showcase / mock preview) → DEMO_SLOTS with mock handlers
+              if (inviteSlotSections) {
+                const isEmpty =
+                  inviteSlotSections.length === 0 ||
+                  inviteSlotSections.every((s) => s.config.slots.length === 0)
+                if (isEmpty) {
+                  return (
+                    <div className={mpStyles.inviteEmpty} role="status">
+                      <p className={mpStyles.inviteEmptyText}>
+                        You have no invite slots available at this hop.
+                      </p>
+                    </div>
+                  )
+                }
+                const showHeaders = inviteSlotSections.length > 1
                 return (
-                  <div className={mpStyles.inviteEmpty} role="status">
-                    <p className={mpStyles.inviteEmptyText}>
-                      You have no invite slots available at this hop.
-                    </p>
+                  <div className={mpStyles.slotList}>
+                    {inviteSlotSections.map((section) => (
+                      <div key={section.hop} className={mpStyles.inviteSection}>
+                        {showHeaders && (
+                          <div className={mpStyles.inviteSectionHeader}>
+                            <span
+                              className={mpStyles.inviteSectionDot}
+                              style={{ background: section.hopColor }}
+                              aria-hidden
+                            />
+                            <span className={mpStyles.inviteSectionLabel}>
+                              {section.hopLabel}
+                            </span>
+                            <span className={mpStyles.inviteSectionCount}>
+                              ({section.totalSlots}{' '}
+                              {section.totalSlots === 1 ? 'slot' : 'slots'})
+                            </span>
+                          </div>
+                        )}
+                        {section.config.slots.map((slot) => (
+                          <SlotCard
+                            key={slot.id}
+                            slot={slot}
+                            onGenerateLink={section.config.onGenerateLink}
+                            onCopy={section.config.onCopy}
+                            onRevoke={section.config.onRevoke}
+                            onInviteOnchain={section.config.onInviteOnchain}
+                            copied={section.config.copiedId === slot.id}
+                            loading={section.config.loadingId === slot.id}
+                            resolveEns={section.config.resolveEns}
+                          />
+                        ))}
+                      </div>
+                    ))}
                   </div>
                 )
               }
+              // Showcase / mock path (no live sections).
               return (
                 <div className={mpStyles.slotList}>
-                  {renderedSlots.map((slot) => (
+                  {DEMO_SLOTS.map((slot) => (
                     <SlotCard
                       key={slot.id}
                       slot={slot}
-                      onGenerateLink={inviteSlotConfig?.onGenerateLink ?? handleGenerateLink}
-                      onCopy={inviteSlotConfig?.onCopy ?? handleCopy}
-                      onRevoke={inviteSlotConfig?.onRevoke ?? handleRevoke}
-                      onInviteOnchain={
-                        inviteSlotConfig?.onInviteOnchain ?? handleInviteOnchain
-                      }
-                      copied={
-                        inviteSlotConfig
-                          ? inviteSlotConfig.copiedId === slot.id
-                          : copiedId === slot.id
-                      }
-                      loading={
-                        inviteSlotConfig
-                          ? inviteSlotConfig.loadingId === slot.id
-                          : loadingId === slot.id
-                      }
-                      resolveEns={inviteSlotConfig?.resolveEns}
+                      onGenerateLink={handleGenerateLink}
+                      onCopy={handleCopy}
+                      onRevoke={handleRevoke}
+                      onInviteOnchain={handleInviteOnchain}
+                      copied={copiedId === slot.id}
+                      loading={loadingId === slot.id}
                     />
                   ))}
                 </div>

@@ -1,5 +1,5 @@
-// ABOUTME: Derives a CrowdfundInviteSlotConfig from the committer's useInviteLinks + eligibility state.
-// ABOUTME: Single-source-of-truth adapter consumed by both the inline (MyPosition view) and standalone (Invite Slots page) surfaces.
+// ABOUTME: Derives one CrowdfundInviteSlotSection per eligible hop from useInviteLinks + eligibility state.
+// ABOUTME: Single-source-of-truth adapter consumed by both inline (MyPosition view) and standalone (Invite Slots page) surfaces; multi-hop wallets get multiple sections.
 
 import { useCallback, useMemo, useState } from 'react'
 import { Contract, type JsonRpcProvider, type Signer } from 'ethers'
@@ -7,9 +7,12 @@ import { toast } from 'sonner'
 import { encodeInviteUrl, type StoredInviteLink } from '@/lib/inviteLinks'
 import {
   CROWDFUND_ABI_FRAGMENTS,
+  HOP_CONFIGS,
+  hopPillDotColor,
   truncateAddress,
   type CrowdfundEvent,
   type CrowdfundInviteSlotConfig,
+  type CrowdfundInviteSlotSection,
   type ReceiptLogLike,
   type SlotCardEnsResult,
   type SlotData,
@@ -18,24 +21,260 @@ import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
 
 export interface UseInviteSlotsResult {
-  config: CrowdfundInviteSlotConfig
-  hopLabel: string
-  totalSlots: number
-  /** True when the user has no eligibility positions; both surfaces should hide rather than render zero slots. */
+  /** One section per eligible hop. Multi-hop wallets carry two/three; single
+   *  hop wallets carry one. Empty array when the wallet isn't eligible at
+   *  any hop. */
+  sections: CrowdfundInviteSlotSection[]
+  /** True when the wallet has no eligibility positions at all; consumers
+   *  short-circuit to a "no invite slots" message rather than rendering an
+   *  empty section list. */
   empty: boolean
 }
 
-/**
- * Map a list of stored invite-link records into the designer's SlotData shape,
- * one slot per row. Used (pending or redeemed) links fill slot rows in creation
- * order; remaining rows stay 'empty'. Revoked / expired links free their slot
- * back to empty so the user can regenerate without exceeding the cap.
+const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
+
+/** Map an `HopPosition` plus its slot UI to one `CrowdfundInviteSlotSection`.
+ *  Used by the public `useInviteSlots` hook below — extracted so the hook
+ *  reads as a flat reducer over `positions` rather than an N-way branch.
  *
- * Single-hop only — picks the user's first eligibility position. Multi-hop
- * slot management is deferred (TODO).
+ *  Slot IDs are assigned globally 1..N across the wallet's full invite set,
+ *  with `startId` provided by the parent so the shared `copiedId` /
+ *  `loadingId` numeric state never collides across sections. */
+function useHopSection(args: {
+  position: HopPosition
+  /** First slot ID for this section. The parent computes startId per hop
+   *  from the cumulative slot count of preceding hops so the wallet's full
+   *  set is numbered 1..N globally. */
+  startId: number
+  inviteLinks: UseInviteLinksResult
+  signer: Signer | null
+  crowdfundAddress: string | null
+  address: string | null
+  events: CrowdfundEvent[]
+  copiedId: number | null
+  loadingId: number | null
+  setCopiedId: React.Dispatch<React.SetStateAction<number | null>>
+  setLoadingId: React.Dispatch<React.SetStateAction<number | null>>
+  resolveEns: CrowdfundInviteSlotConfig['resolveEns']
+  onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
+}): CrowdfundInviteSlotSection {
+  const {
+    position,
+    startId,
+    inviteLinks,
+    signer,
+    crowdfundAddress,
+    address,
+    events,
+    copiedId,
+    loadingId,
+    setCopiedId,
+    setLoadingId,
+    resolveEns,
+    onReceiptLogs,
+  } = args
+
+  const hop = position.hop
+  // Total slot budget for this hop = `invitesReceived * maxInvites[hop]`.
+  // We compute it from the canonical `HOP_CONFIGS` rather than reading
+  // `position.invitesAvailable + position.invitesUsed`, because the graph's
+  // `invitesAvailable` is initialized once at node-creation time and never
+  // bumped when the wallet is invited into the same hop a second time —
+  // so multi-invite hops would otherwise under-report their slot count.
+  const perInviteSlots = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop].maxInvites : 0
+  const totalSlots = position.invitesReceived * perInviteSlots
+
+  // Active link records (pending or redeemed) consume slot rows. Revoked /
+  // expired records are dropped so the slot returns to "empty".
+  const activeLinks = useMemo<StoredInviteLink[]>(() => {
+    return inviteLinks.links
+      .filter((l) => l.fromHop === hop)
+      .filter((l) => l.status === 'pending' || l.status === 'redeemed')
+      .sort((a, b) => a.createdAt - b.createdAt)
+  }, [inviteLinks.links, hop])
+
+  // `Invited(inviter, invitee, hop, nonce)` covers both signed-link
+  // redemptions (nonce = the link's nonce) and direct `invite()` calls
+  // (nonce = 0). Split per-hop so each section drives its own slot state.
+  const { directInvitedAddresses, linkRedemptions } = useMemo<{
+    directInvitedAddresses: string[]
+    linkRedemptions: Map<number, string>
+  }>(() => {
+    const directs: string[] = []
+    const redemptions = new Map<number, string>()
+    if (!address) return { directInvitedAddresses: directs, linkRedemptions: redemptions }
+    const lowerAddr = address.toLowerCase()
+    const targetHop = hop + 1
+    const matched = events
+      .filter((e) => {
+        if (e.type !== 'Invited') return false
+        const inviter = String(e.args.inviter).toLowerCase()
+        if (inviter !== lowerAddr) return false
+        if (Number(e.args.hop) !== targetHop) return false
+        return true
+      })
+      .sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
+    for (const e of matched) {
+      const nonce = e.args.nonce
+      const nonceNum = typeof nonce === 'bigint' ? Number(nonce) : Number(nonce)
+      const invitee = String(e.args.invitee).toLowerCase()
+      if (nonceNum === 0) {
+        directs.push(invitee)
+      } else {
+        redemptions.set(nonceNum, invitee)
+      }
+    }
+    return { directInvitedAddresses: directs, linkRedemptions: redemptions }
+  }, [events, address, hop])
+
+  // Build visible slot rows. Slot IDs run globally 1..N across all the
+  // wallet's sections — `startId` is supplied by the parent based on the
+  // cumulative slot count of preceding hops, so the shared copiedId /
+  // loadingId state never collides across sections.
+  const slots = useMemo<SlotData[]>(() => {
+    const out: SlotData[] = []
+    const linkRowsUsed = Math.min(activeLinks.length, totalSlots)
+    for (let i = 0; i < linkRowsUsed; i += 1) {
+      const slotId = startId + i
+      const link = activeLinks[i]
+      const redeemedBy = linkRedemptions.get(link.nonce)
+      if (redeemedBy) {
+        out.push({ id: slotId, status: 'redeemed', redeemedBy })
+        continue
+      }
+      if (link.status === 'redeemed') {
+        out.push({ id: slotId, status: 'redeemed' })
+        continue
+      }
+      out.push({
+        id: slotId,
+        status: 'link-active',
+        link: encodeInviteUrl(link),
+        expiresAt: new Date(link.deadline * 1000),
+      })
+    }
+    let directIndex = 0
+    for (let i = linkRowsUsed; i < totalSlots; i += 1) {
+      const slotId = startId + i
+      const invitedAddress = directInvitedAddresses[directIndex]
+      directIndex += 1
+      if (!invitedAddress) {
+        out.push({ id: slotId, status: 'empty' })
+        continue
+      }
+      out.push({
+        id: slotId,
+        status: 'onchain-pending',
+        invitedAddress,
+      })
+    }
+    return out
+  }, [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId])
+
+  // Map slotId → matching link record (for revoke nonce lookup). Keyed off
+  // the globally-unique slotId so the section's onRevoke can find the right
+  // nonce even though the global state may hold a slotId from another hop.
+  const linkBySlotId = useMemo(() => {
+    const m = new Map<number, StoredInviteLink>()
+    activeLinks.forEach((l, i) => m.set(startId + i, l))
+    return m
+  }, [activeLinks, startId])
+
+  const onGenerateLink = useCallback(
+    async (slotId: number) => {
+      setLoadingId(slotId)
+      try {
+        await inviteLinks.createLink(hop)
+      } finally {
+        setLoadingId((cur) => (cur === slotId ? null : cur))
+      }
+    },
+    [inviteLinks, hop, setLoadingId],
+  )
+
+  const onCopy = useCallback(
+    (slotId: number, link: string) => {
+      navigator.clipboard.writeText(link).catch(() => {
+        // Non-fatal — clipboard API may be unavailable in non-secure contexts.
+      })
+      setCopiedId(slotId)
+      setTimeout(() => setCopiedId((cur) => (cur === slotId ? null : cur)), 2000)
+    },
+    [setCopiedId],
+  )
+
+  const onRevoke = useCallback(
+    (slotId: number) => {
+      const link = linkBySlotId.get(slotId)
+      if (!link) return
+      setLoadingId(slotId)
+      void inviteLinks
+        .revokeLink(link.nonce)
+        .finally(() => setLoadingId((cur) => (cur === slotId ? null : cur)))
+    },
+    [linkBySlotId, inviteLinks, setLoadingId],
+  )
+
+  const onInviteOnchain = useCallback(
+    async (slotId: number, invitee: string, ensName?: string) => {
+      if (!signer || !crowdfundAddress) return
+      setLoadingId(slotId)
+      try {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
+        const tx = await crowdfund.invite(invitee, hop)
+        const receipt = await tx.wait()
+        if (!receipt || receipt.status === 0) {
+          throw new Error('Transaction reverted')
+        }
+        if (onReceiptLogs) {
+          onReceiptLogs(receipt.logs as unknown as readonly ReceiptLogLike[])
+        }
+        await inviteLinks.refreshLinks()
+        toast.success(`Invite sent to ${ensName ?? truncateAddress(invitee)}`)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        toast.error('Invite failed', { description: message })
+      } finally {
+        setLoadingId((cur) => (cur === slotId ? null : cur))
+      }
+    },
+    [hop, signer, crowdfundAddress, inviteLinks, onReceiptLogs, setLoadingId],
+  )
+
+  const config: CrowdfundInviteSlotConfig = {
+    slots,
+    copiedId,
+    loadingId,
+    onGenerateLink,
+    onCopy,
+    onRevoke,
+    onInviteOnchain,
+    resolveEns,
+  }
+
+  return {
+    hop: hop as 0 | 1 | 2,
+    hopLabel: HOP_LABELS[hop],
+    hopColor: hopPillDotColor(HOP_DOT_KEYS[hop]),
+    totalSlots,
+    config,
+  }
+}
+
+/**
+ * Build one `CrowdfundInviteSlotSection` per eligible hop for the connected
+ * wallet. Single-hop wallets get one section; multi-hop wallets get two or
+ * three. Consumers render sections stacked, hiding the section header when
+ * there's only one.
+ *
+ * Note: this hook calls `useHopSection` once per `positions[0..2]`. Since
+ * hooks must be called in a stable order, the implementation iterates a
+ * fixed-length `[0, 1, 2]` array of hops and includes only the sections for
+ * which an eligibility position exists, satisfying React's rules of hooks.
  */
 export function useInviteSlots(
-  position: HopPosition | null,
+  positions: HopPosition[],
   inviteLinks: UseInviteLinksResult,
   provider: JsonRpcProvider | null,
   signer: Signer | null,
@@ -58,192 +297,8 @@ export function useInviteSlots(
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [loadingId, setLoadingId] = useState<number | null>(null)
 
-  // HopPosition doesn't carry a `total` field — derive it from used+available.
-  const totalSlots = position ? position.invitesUsed + position.invitesAvailable : 0
-  const hop = position?.hop ?? 0
-  const hopLabel = position ? `Hop ${hop}` : '—'
-
-  // Active link records (pending or redeemed) consume slot rows. Revoked /
-  // expired records are dropped so the slot returns to "empty".
-  const activeLinks = useMemo<StoredInviteLink[]>(() => {
-    return inviteLinks.links
-      .filter((l) => l.fromHop === hop)
-      .filter((l) => l.status === 'pending' || l.status === 'redeemed')
-      .sort((a, b) => a.createdAt - b.createdAt)
-  }, [inviteLinks.links, hop])
-
-  // `Invited(inviter, invitee, hop, nonce)` covers both signed-link
-  // redemptions (nonce = the link's nonce) and direct `invite()` calls
-  // (nonce = 0). Split the event stream by `nonce` so we can drive two
-  // different slot states from the same stream:
-  //   - directInvitedAddresses → ordered list of nonce=0 invitees, filling
-  //     `'onchain-pending'` rows after the link rows.
-  //   - linkRedemptions → map from link nonce → redeemer address, used to
-  //     flip `'link-active'` rows to `'redeemed'` once on chain.
-  const { directInvitedAddresses, linkRedemptions } = useMemo<{
-    directInvitedAddresses: string[]
-    linkRedemptions: Map<number, string>
-  }>(() => {
-    const directs: string[] = []
-    const redemptions = new Map<number, string>()
-    if (!address || !position) return { directInvitedAddresses: directs, linkRedemptions: redemptions }
-    const lowerAddr = address.toLowerCase()
-    const targetHop = position.hop + 1
-    const matched = events
-      .filter((e) => {
-        if (e.type !== 'Invited') return false
-        const inviter = String(e.args.inviter).toLowerCase()
-        if (inviter !== lowerAddr) return false
-        if (Number(e.args.hop) !== targetHop) return false
-        return true
-      })
-      .sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
-    for (const e of matched) {
-      const nonce = e.args.nonce
-      const nonceNum = typeof nonce === 'bigint' ? Number(nonce) : Number(nonce)
-      const invitee = String(e.args.invitee).toLowerCase()
-      if (nonceNum === 0) {
-        directs.push(invitee)
-      } else {
-        redemptions.set(nonceNum, invitee)
-      }
-    }
-    return { directInvitedAddresses: directs, linkRedemptions: redemptions }
-  }, [events, address, position])
-
-  // Build the visible slot rows. We assign slot IDs positionally (1..N).
-  // Link-active and link-redeemed rows from `activeLinks` fill first (in
-  // creation order); direct on-chain invites then fill the next rows as
-  // `'onchain-pending'` with the invitee address; any remaining rows stay
-  // empty. We dedup by address so a wallet that was both link-redeemed and
-  // later re-invited on-chain doesn't double-fill rows.
-  const slots = useMemo<SlotData[]>(() => {
-    const out: SlotData[] = []
-    const linkRowsUsed = Math.min(activeLinks.length, totalSlots)
-    for (let i = 0; i < linkRowsUsed; i += 1) {
-      const slotId = i + 1
-      const link = activeLinks[i]
-      // Live redemption check: if there's an `Invited` event matching this
-      // nonce, the link has been consumed on chain — flip to 'redeemed' even
-      // if the local record still reads 'pending' (the IndexedDB status flag
-      // only gets updated on revoke, never on redeem). This naturally hides
-      // the Copy/Revoke buttons on redeemed links, which matters because
-      // revoking a used nonce reverts at the contract level.
-      const redeemedBy = linkRedemptions.get(link.nonce)
-      if (redeemedBy) {
-        out.push({ id: slotId, status: 'redeemed', redeemedBy })
-        continue
-      }
-      if (link.status === 'redeemed') {
-        // IndexedDB-locked fallback. Shouldn't fire post-event-fix, but
-        // preserved so a stale record still renders as redeemed if events
-        // haven't backfilled yet.
-        out.push({ id: slotId, status: 'redeemed' })
-        continue
-      }
-      // pending — render as link-active with the encoded URL + expiry
-      out.push({
-        id: slotId,
-        status: 'link-active',
-        link: encodeInviteUrl(link),
-        expiresAt: new Date(link.deadline * 1000),
-      })
-    }
-    let directIndex = 0
-    for (let i = linkRowsUsed; i < totalSlots; i += 1) {
-      const slotId = i + 1
-      const invitedAddress = directInvitedAddresses[directIndex]
-      directIndex += 1
-      if (!invitedAddress) {
-        out.push({ id: slotId, status: 'empty' })
-        continue
-      }
-      out.push({
-        id: slotId,
-        status: 'onchain-pending',
-        invitedAddress,
-      })
-    }
-    return out
-  }, [totalSlots, activeLinks, directInvitedAddresses])
-
-  // Map slotId → matching link record (for revoke nonce lookup).
-  const linkBySlotId = useMemo(() => {
-    const m = new Map<number, StoredInviteLink>()
-    activeLinks.forEach((l, i) => m.set(i + 1, l))
-    return m
-  }, [activeLinks])
-
-  const onGenerateLink = useCallback(
-    async (slotId: number) => {
-      if (!position) return
-      setLoadingId(slotId)
-      try {
-        await inviteLinks.createLink(hop)
-      } finally {
-        setLoadingId(null)
-      }
-    },
-    [position, inviteLinks, hop],
-  )
-
-  const onCopy = useCallback((slotId: number, link: string) => {
-    navigator.clipboard.writeText(link).catch(() => {
-      // Non-fatal — clipboard API may be unavailable in non-secure contexts.
-    })
-    setCopiedId(slotId)
-    setTimeout(() => setCopiedId((cur) => (cur === slotId ? null : cur)), 2000)
-  }, [])
-
-  const onRevoke = useCallback(
-    (slotId: number) => {
-      const link = linkBySlotId.get(slotId)
-      if (!link) return
-      setLoadingId(slotId)
-      void inviteLinks
-        .revokeLink(link.nonce)
-        .finally(() => setLoadingId((cur) => (cur === slotId ? null : cur)))
-    },
-    [linkBySlotId, inviteLinks],
-  )
-
-  const onInviteOnchain = useCallback(
-    async (slotId: number, invitee: string, ensName?: string) => {
-      if (!signer || !crowdfundAddress) return
-      setLoadingId(slotId)
-      try {
-        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
-        const tx = await crowdfund.invite(invitee, hop)
-        const receipt = await tx.wait()
-        if (!receipt || receipt.status === 0) {
-          throw new Error('Transaction reverted')
-        }
-        // Forward receipt logs into the event stream so derived graph state
-        // (NodeSphere multi-hop halo, slot rows, MyPosition tooltips) reflects
-        // the new `Invited` edge immediately. Without this, the next event-poll
-        // tick is the only thing that surfaces the change — which on a self-
-        // invite leaves the inviter's node un-haloed until a page refresh.
-        if (onReceiptLogs) {
-          onReceiptLogs(receipt.logs as unknown as readonly ReceiptLogLike[])
-        }
-        // Refresh signed-link records so any concurrent redemption surfaces.
-        await inviteLinks.refreshLinks()
-        toast.success(`Invite sent to ${ensName ?? truncateAddress(invitee)}`)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        toast.error('Invite failed', { description: message })
-      } finally {
-        setLoadingId(null)
-      }
-    },
-    [hop, signer, crowdfundAddress, inviteLinks, onReceiptLogs],
-  )
-
-  // Real ENS resolver — only wired when a provider is available. Falls back to
-  // SlotCard's internal mock if the prop is undefined (which happens when the
-  // committer is on local mode without a provider). The resolver normalises
-  // success/error into SlotCardEnsResult so the controlled-mode branch in
-  // SlotCard can render without owning provider semantics.
+  // Real ENS resolver — only wired when a provider is available. Falls back
+  // to SlotCard's internal mock if the prop is undefined.
   const resolveEns = useMemo<CrowdfundInviteSlotConfig['resolveEns']>(() => {
     if (!provider) return undefined
     return async (input: string): Promise<SlotCardEnsResult> => {
@@ -259,21 +314,105 @@ export function useInviteSlots(
     }
   }, [provider])
 
-  const config: CrowdfundInviteSlotConfig = {
-    slots,
-    copiedId,
-    loadingId,
-    onGenerateLink,
-    onCopy,
-    onRevoke,
-    onInviteOnchain,
-    resolveEns,
+  // Build a fixed 3-slot array of HopPosition | null so we call useHopSection
+  // in a stable order regardless of which hops the wallet is eligible at.
+  // React's rules of hooks require the same number of hook calls per render;
+  // we always call useHopSection three times and filter the result.
+  const positionByHop = useMemo<(HopPosition | null)[]>(() => {
+    const slots: (HopPosition | null)[] = [null, null, null]
+    for (const p of positions) {
+      if (p.hop === 0 || p.hop === 1 || p.hop === 2) slots[p.hop] = p
+    }
+    return slots
+  }, [positions])
+
+  // Per-hop starting slot ID so the wallet's full invite set is numbered
+  // 1..N globally across sections. A wallet with 3 seed slots + 4 hop-1
+  // slots renders SEED 1-3 and HOP-1 4-7.
+  const startIdByHop = useMemo<[number, number, number]>(() => {
+    const slotsPerHop = (i: 0 | 1 | 2): number => {
+      const p = positionByHop[i]
+      if (!p) return 0
+      const per = i < HOP_CONFIGS.length ? HOP_CONFIGS[i].maxInvites : 0
+      return p.invitesReceived * per
+    }
+    const h0 = slotsPerHop(0)
+    const h1 = slotsPerHop(1)
+    return [1, 1 + h0, 1 + h0 + h1]
+  }, [positionByHop])
+
+  // Stable empty position placeholder so disabled-hop hook calls receive a
+  // typed `HopPosition`. The resulting section gets discarded below — we
+  // only need the hook calls themselves to remain in a stable order.
+  const placeholder: HopPosition = {
+    hop: 0,
+    invitesReceived: 0,
+    committed: 0n,
+    effectiveCap: 0n,
+    remaining: 0n,
+    invitesUsed: 0,
+    invitesAvailable: 0,
+    invitedBy: [],
   }
 
+  // Three hook calls in a stable order — one per hop slot. Disabled slots get
+  // the placeholder position; we filter them out of the returned array.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const section0 = useHopSection({
+    position: positionByHop[0] ?? { ...placeholder, hop: 0 },
+    startId: startIdByHop[0],
+    inviteLinks,
+    signer,
+    crowdfundAddress,
+    address,
+    events,
+    copiedId,
+    loadingId,
+    setCopiedId,
+    setLoadingId,
+    resolveEns,
+    onReceiptLogs,
+  })
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const section1 = useHopSection({
+    position: positionByHop[1] ?? { ...placeholder, hop: 1 },
+    startId: startIdByHop[1],
+    inviteLinks,
+    signer,
+    crowdfundAddress,
+    address,
+    events,
+    copiedId,
+    loadingId,
+    setCopiedId,
+    setLoadingId,
+    resolveEns,
+    onReceiptLogs,
+  })
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const section2 = useHopSection({
+    position: positionByHop[2] ?? { ...placeholder, hop: 2 },
+    startId: startIdByHop[2],
+    inviteLinks,
+    signer,
+    crowdfundAddress,
+    address,
+    events,
+    copiedId,
+    loadingId,
+    setCopiedId,
+    setLoadingId,
+    resolveEns,
+    onReceiptLogs,
+  })
+
+  const sections = useMemo(() => {
+    const all = [section0, section1, section2]
+    return all.filter((_, i) => positionByHop[i] !== null)
+  }, [section0, section1, section2, positionByHop])
+
   return {
-    config,
-    hopLabel,
-    totalSlots,
-    empty: position === null,
+    sections,
+    empty: positions.length === 0,
   }
 }

@@ -97,6 +97,14 @@
   gap: var(--primitives-spacing-3);
 }
 
+/* `xN` multiplier suffix on multi-invite hop chips — slightly smaller than
+ * the hop label itself so the chip reads as "HOP-1" with a secondary count. */
+.hopChipMultiplier {
+  font-size: 0.85em;
+  margin-left: 2px;
+  opacity: 0.85;
+}
+
 .statsRow {
   display: flex;
   flex-direction: row;
@@ -225,7 +233,16 @@
   display: flex;
   flex-direction: column;
   gap: var(--primitives-spacing-3);
-  max-height: calc(var(--hero-corner-max-height, calc(100vh - 120px)) - 72px);
+  /* ~3-4 SlotCards before the list starts scrolling. A collapsed SlotCard is
+   * ~72px tall (12px padding × 2 + 40px badge row + a button row) and the
+   * gap between cards is `spacing-3` (12px). 4 × 72 + 3 × 12 ≈ 324px; we
+   * round up a bit to ~360 so the third card stays fully visible and the
+   * fourth is partially revealed as a scroll affordance. Falls back to the
+   * viewport-relative ceiling when the corner card is shorter than this. */
+  max-height: min(
+    360px,
+    calc(var(--hero-corner-max-height, calc(100vh - 120px)) - 72px)
+  );
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -242,6 +259,46 @@
   align-items: center;
   justify-content: center;
   padding: var(--primitives-spacing-6) var(--primitives-spacing-4);
+}
+
+/* ── Multi-hop sections ──
+ * Header only renders when the wallet holds more than one hop. Each section
+ * groups one hop's SlotCards under a small label + colored dot + slot count. */
+.inviteSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.inviteSection + .inviteSection {
+  margin-top: var(--primitives-spacing-4);
+}
+
+.inviteSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.inviteSectionDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.inviteSectionLabel {
+  color: var(--semantic-color-text-primary);
+}
+
+.inviteSectionCount {
+  color: var(--semantic-color-text-muted);
 }
 
 .inviteEmptyText {

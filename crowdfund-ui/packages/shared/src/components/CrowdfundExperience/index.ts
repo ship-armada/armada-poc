@@ -6,6 +6,8 @@ export type {
   CrowdfundExperienceProps,
   CrowdfundView,
   CrowdfundInviteSlotConfig,
+  CrowdfundInviteSlotSection,
   CrowdfundExperienceLiveData,
   CrowdfundExperienceMyPositionData,
+  CrowdfundExperienceHopPosition,
 } from './CrowdfundExperience'

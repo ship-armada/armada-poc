@@ -27,6 +27,11 @@
 .scroll {
   flex: 1;
   min-height: 0;
+  /* Match the MyPosition inline card — ~3-4 SlotCards visible before the
+   * list starts to scroll. The shell already provides a viewport-relative
+   * upper bound (`max-height: min(70vh, 520px)`), so this just pins the
+   * inner scroll to a consistent target on roomy viewports. */
+  max-height: 360px;
   overflow-y: auto;
   padding-right: var(--primitives-spacing-1);
 }
@@ -36,6 +41,47 @@
   align-items: center;
   justify-content: center;
   padding: var(--primitives-spacing-6) var(--primitives-spacing-4);
+}
+
+/* ── Multi-hop sections ──
+ * Each section wraps one hop's slot list with a small header (label + count
+ * + colored dot). Only rendered for multi-hop users; single-hop users get a
+ * single un-headered section so the existing UX is preserved. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.section + .section {
+  margin-top: var(--primitives-spacing-5);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.sectionDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sectionLabel {
+  color: var(--semantic-color-text-primary);
+}
+
+.sectionCount {
+  color: var(--semantic-color-text-muted);
 }
 
 .emptyText {

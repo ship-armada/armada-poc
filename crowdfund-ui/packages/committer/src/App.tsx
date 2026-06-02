@@ -881,11 +881,12 @@ export function App() {
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider, pollInterval)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
 
-  // Phase 3.2.x — derive CrowdfundInviteSlotConfig from real eligibility + invite-link state.
-  // Single-source-of-truth adapter consumed by both the inline (CrowdfundExperience MyPosition
-  // view) and standalone (`page === 'invite-slots'`) surfaces.
+  // Per-hop invite-slot sections derived from real eligibility + invite-link
+  // state. Multi-hop wallets get a section per eligible hop; single-hop
+  // wallets get one. Same adapter feeds both the inline (CrowdfundExperience
+  // MyPosition view) and standalone (`page === 'invite-slots'`) surfaces.
   const inviteSlots = useInviteSlots(
-    eligibility.positions[0] ?? null,
+    eligibility.positions,
     inviteLinks,
     provider,
     wallet.signer,
@@ -942,12 +943,23 @@ export function App() {
   const myPositionData = useMemo<CrowdfundExperienceMyPositionData>(() => {
     if (!wallet.address) return { status: 'disconnected' }
     const walletDisplay = truncateAddress(wallet.address)
-    const primary = eligibility.positions[0]
+    // Filter eligibility positions down to the renderable hop range, mapped
+    // into the shape `CrowdfundExperienceMyPositionData` expects. Sorted
+    // ascending so `positions[0]` is the primary (smallest) hop.
+    const renderablePositions = eligibility.positions
+      .filter((p) => p.hop === 0 || p.hop === 1 || p.hop === 2)
+      .map((p) => ({
+        hop: p.hop as 0 | 1 | 2,
+        committed: p.committed,
+        cap: p.effectiveCap,
+        invitesReceived: p.invitesReceived,
+        invitesAvailable: p.invitesAvailable,
+        invitesUsed: p.invitesUsed,
+      }))
+      .sort((a, b) => a.hop - b.hop)
+    const primary = renderablePositions[0]
     if (!primary) return { status: 'no-position', walletDisplay }
     const hop = primary.hop
-    if (hop !== 0 && hop !== 1 && hop !== 2) {
-      return { status: 'no-position', walletDisplay }
-    }
     const userSummary = summaries.get(wallet.address.toLowerCase())
     // Refund-mode signal: contract flag is canonical post-finalize; pre-
     // finalize we infer it from the closed window + sub-minimum demand so
@@ -978,8 +990,9 @@ export function App() {
       walletDisplay,
       hop,
       committedUsdc: primary.committed,
-      capUsdc: primary.effectiveCap,
+      capUsdc: primary.cap,
       armAllocation: userAllocation?.estArmAllocation ?? 0n,
+      positions: renderablePositions,
       armClaimed: !!userSummary?.armClaimed,
       finalized: contractState.phase === 1,
       refundMode,
@@ -1366,7 +1379,7 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
             closeParticipate()
             setPage('network')
           }}
-          inviteSlotConfig={inviteSlots.empty ? undefined : inviteSlots.config}
+          inviteSlotSections={inviteSlots.empty ? undefined : inviteSlots.sections}
           onReceiptLogs={ingestReceiptLogs}
         />
       )}
@@ -1396,7 +1409,7 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
               setPage(next === 'myposition' ? 'my-position' : 'network')
             }
             header={null}
-            inviteSlotConfig={inviteSlots.empty ? undefined : inviteSlots.config}
+            inviteSlotSections={inviteSlots.empty ? undefined : inviteSlots.sections}
             liveData={crowdfundLiveData}
             myPositionData={myPositionData}
             onConnectWallet={openConnectModal}
@@ -1495,8 +1508,7 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
               <InviteSlotsPage
                 walletConnected={wallet.connected}
                 empty={inviteSlots.empty}
-                hopLabel={inviteSlots.hopLabel}
-                config={inviteSlots.config}
+                sections={inviteSlots.sections}
                 onBack={() => setPage('network')}
               />
             </ErrorBoundary>

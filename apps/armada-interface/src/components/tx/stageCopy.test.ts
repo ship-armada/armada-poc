@@ -49,7 +49,14 @@ describe('recordTitle', () => {
     const record: TxRecord<'unshield-xchain'> = {
       id: '01J', kind: 'unshield-xchain', executionState: 'pending', stage: 'build-proof',
       stagesCompleted: [], updatedSeq: 0, createdAt: 0, updatedAt: 0,
-      meta: { amount: 0n, feeCacheId: '', toChainId: 31338, recipient: '0x0' },
+      meta: {
+        amount: 0n,
+        feeCacheId: '',
+        toChainId: 31338,
+        recipient: '0x0',
+        broadcasterFeeAmount: 0n,
+        broadcasterRailgunAddress: '',
+      },
       artifacts: {},
       walletContext: { evmAddress: undefined, railgunWalletId: '', sourceChainId: 31337 },
     }

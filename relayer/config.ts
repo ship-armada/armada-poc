@@ -212,8 +212,14 @@ function getCCTPFinalityMode(): "fast" | "standard" {
 export const armadaRelayerSettings = {
   /** HTTP API port */
   port: netConfig.relayerPort,
-  /** Fee markup over gas cost (1000 = 10%) */
-  profitMarginBps: 1000,
+  /**
+   * Fee markup over gas cost in basis points. POC value is 0 — no margin while testnet
+   * iteration is the focus. The relayer takes on gas-price-drift risk within the quote's TTL
+   * (a Sepolia gas spike between quote and broadcast eats into operator funds), which is
+   * acceptable for team-run testnet infra. Bump to 200-500 for production where margin
+   * compression caused by a stale quote should still leave the relayer break-even.
+   */
+  profitMarginBps: 0,
   /** ETH/USDC price for fee calculation */
   ethUsdcPrice: netConfig.ethUsdcPrice,
   /** Fee quote validity in seconds */
@@ -228,6 +234,22 @@ export const armadaRelayerSettings = {
   iris: netConfig.iris,
   /** CCTP finality mode: "fast" (~8-20s, 1-1.3 bps fee) or "standard" (~15-19 min, free) */
   cctpFinalityMode: getCCTPFinalityMode(),
+  /**
+   * Relayer's Railgun `0zk...` address, published verbatim on `/fees` so clients can route the
+   * broadcaster-fee output of their SNARK proof here. When empty, the relayer derives it from
+   * `RELAYER_RAILGUN_MNEMONIC` at boot; when set, the relayer asserts the derived address
+   * matches and fails boot otherwise (cheap misconfiguration detector).
+   */
+  broadcasterRailgunAddress: process.env.BROADCASTER_RAILGUN_ADDRESS ?? "",
+  /**
+   * BIP39 mnemonic used to derive the relayer's Railgun (0zk) wallet. Required — relayer
+   * refuses to boot without it because broadcaster-fee verification needs the wallet's
+   * viewing key to decrypt incoming commitment ciphertexts. Local default lives in
+   * `config/local.env` (Anvil's publicly-known test mnemonic); sepolia/prod sourced from
+   * gitignored `config/secrets.env`. Loaded at boot only — never logged, never persisted to
+   * relayer state (only the engine's leveldown sees derived keys).
+   */
+  railgunWalletMnemonic: process.env.RELAYER_RAILGUN_MNEMONIC ?? "",
 };
 
 // Legacy config export for backward compatibility

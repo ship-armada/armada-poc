@@ -14,7 +14,8 @@ const FAKE_QUOTE = {
   cacheId: 'test-cache',
   expiresAt: Date.now() + 5 * 60_000,
   chainId: 31337,
-  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
+  broadcasterRailgunAddress: '',
+  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
 function renderModal(opts?: { open?: boolean; max?: bigint }) {

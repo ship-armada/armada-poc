@@ -8,6 +8,14 @@ export interface FeeSchedule {
   cacheId: string;
   expiresAt: number; // Unix timestamp ms
   chainId: number;
+  /**
+   * The relayer's Railgun (`0zk...`) address. Clients direct the broadcaster-fee output of their
+   * SNARK proof to this address so the relayer can sweep its gas reimbursement on the same tx.
+   * Sourced verbatim from `BROADCASTER_RAILGUN_ADDRESS` in the relayer env — empty string until
+   * configured (Phase A1 ships the publishing path; the relayer does not yet enroll or spend on
+   * this wallet, that comes with A2's server-side fee verification).
+   */
+  broadcasterRailgunAddress: string;
   fees: {
     /** Fee in USDC raw units (6 decimals) for private transfers */
     transfer: string;
@@ -19,6 +27,20 @@ export interface FeeSchedule {
     crossChainShield: string;
     /** Fee in USDC raw units for cross-chain unshield client-side relay */
     crossChainUnshield: string;
+    /**
+     * Fee in USDC raw units for a permit-based gasless `shield` on the hub. Phase B2 introduces
+     * this key. Semantically meaningful only on the hub schedule (clients return a still-computed
+     * value for type uniformity, but no handler consumes it there).
+     */
+    shield: string;
+    /**
+     * Fee in USDC raw units for a permit-based gasless `shield-xchain` originating on this
+     * chain — the client-side CCTP burn that the hub later mints into a shielded UTXO. Phase B2
+     * introduces this key. Each client chain's schedule quotes its OWN gas cost (Base Sepolia is
+     * cheaper than Ethereum Sepolia, etc.), so the frontend must call `fetchFees(chainId)` for
+     * the source client chain rather than reading the hub schedule.
+     */
+    shieldXchain: string;
   };
 }
 
@@ -47,6 +69,11 @@ export interface TransactionStatus {
 export type RelayErrorCode =
   | "FEE_TOO_LOW"
   | "FEE_EXPIRED"
+  // The proof's broadcaster-fee output is missing, points at a different recipient/token, or
+  // pays less than the advertised fee. Distinct from FEE_TOO_LOW (which historically meant
+  // "the request body's declared fee is too low" — not used today since the fee comes from the
+  // cached schedule); FEE_INSUFFICIENT means "the SNARK itself doesn't pay us enough."
+  | "FEE_INSUFFICIENT"
   | "INVALID_TARGET"
   | "INVALID_CHAIN"
   | "INVALID_DATA"
@@ -134,6 +161,18 @@ export interface RelayerHealth {
   chains: ChainHealth[];
   /** Unix ms when this health snapshot was generated (server side, not cached). */
   generatedAt: number;
+  /**
+   * In-process counters since the relayer last started — fee-verifier rejects + submit
+   * success/fail by kind. See `relayer/modules/counters.ts` for the key scheme. Operators read
+   * these to triage misbehaving clients ("are we rejecting a lot of FEE_INSUFFICIENT?") and
+   * relayer outages ("is submitFail.*.SUBMISSION_FAILED climbing?"). Resets on restart.
+   *
+   * Optional in the type because counters are an http-api overlay — the cctp/iris relay
+   * modules' own `getHealth()` impls don't carry this field, http-api injects it at response
+   * time so we don't have to thread the Counters instance through every module that cares
+   * about chain health.
+   */
+  counters?: Record<string, number>;
 }
 
 // ============ Deployment Types ============
@@ -143,16 +182,35 @@ export interface PrivacyPoolDeployment {
   domain: number;
   deployer: string;
   contracts: {
-    privacyPool: string;
-    merkleModule: string;
-    verifierModule: string;
-    shieldModule: string;
-    transactModule: string;
+    privacyPool?: string;
+    privacyPoolClient?: string;
+    merkleModule?: string;
+    verifierModule?: string;
+    shieldModule?: string;
+    transactModule?: string;
+    hookRouter?: string;
+    /**
+     * Phase B2 — permit-based gasless shield wrapper. Present on the hub manifest
+     * (`GaslessShieldWrapper`, calls `PrivacyPool.shield(...)`). Optional because manifests
+     * predating B2 don't carry it; the relayer logs a warning at boot when absent rather than
+     * failing — the Phase A submission paths still work without it.
+     */
+    gaslessShieldWrapper?: string;
+    /**
+     * Phase B2 — permit-based gasless cross-chain shield wrapper. Present on each client
+     * manifest (`GaslessShieldWrapperClient`, calls `PrivacyPoolClient.crossChainShield(...)`).
+     * Optional for the same reason as `gaslessShieldWrapper`.
+     */
+    gaslessShieldWrapperClient?: string;
   };
   cctp: {
     tokenMessenger: string;
     messageTransmitter: string;
     usdc: string;
+  };
+  hub?: {
+    domain: number;
+    privacyPool: string;
   };
   timestamp: string;
 }

@@ -21,10 +21,20 @@ contract ArmadaFeeModuleTest is Test {
     address public integrator1 = address(0x1111);
     address public integrator2 = address(0x2222);
     address public nonOwner = address(0xBAD);
+    /// @dev Placeholder asset address — these unit tests don't deploy a real ERC20.
+    address public asset = address(0xA55E7);
 
     // Events (for expectEmit)
     event IntegratorRegistered(address indexed integrator, uint256 baseFee);
-    event ShieldFeeRecorded(address indexed integrator, uint256 amount, uint256 armadaTake, uint256 integratorFee);
+    event ShieldFeeRecorded(
+        address indexed asset,
+        address indexed integrator,
+        uint256 amount,
+        uint256 armadaTakeBps,
+        uint256 armadaTakePaid,
+        uint256 integratorFeePaid,
+        uint256 integratorCumulativeVolume
+    );
     event YieldFeeRecorded(uint256 amount);
     event BaseArmadaTakeUpdated(uint256 oldBps, uint256 newBps);
     event TierAdded(uint256 index, uint256 volumeThreshold, uint256 armadaTakeBps);
@@ -136,7 +146,7 @@ contract ArmadaFeeModuleTest is Test {
 
         // Push integrator volume above $250k tier
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 300_000e6, 150e6, 90e6);
+        feeModule.recordShieldFee(asset, integrator1, 300_000e6, 150e6, 90e6);
 
         (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
             feeModule.calculateShieldFee(integrator1, 10_000e6);
@@ -187,14 +197,14 @@ contract ArmadaFeeModuleTest is Test {
 
         // Push volume above $250k
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 300_000e6, 0, 0);
+        feeModule.recordShieldFee(asset, integrator1, 300_000e6, 0, 0);
 
         (uint256 take2, , ) = feeModule.calculateShieldFee(integrator1, 1000e6);
         assertEq(take2, (1000e6 * 40) / 10000); // tier 1: 40 bps
 
         // Push volume above $1M
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 800_000e6, 0, 0);
+        feeModule.recordShieldFee(asset, integrator1, 800_000e6, 0, 0);
 
         (uint256 take3, , ) = feeModule.calculateShieldFee(integrator1, 1000e6);
         assertEq(take3, (1000e6 * 30) / 10000); // tier 2: 30 bps
@@ -206,7 +216,7 @@ contract ArmadaFeeModuleTest is Test {
 
         // Volume exactly at threshold
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 250_000e6, 0, 0);
+        feeModule.recordShieldFee(asset, integrator1, 250_000e6, 0, 0);
 
         uint256 take = feeModule.getArmadaTake(integrator1);
         assertEq(take, 40); // Should match tier 1
@@ -247,13 +257,95 @@ contract ArmadaFeeModuleTest is Test {
         feeModule.setIntegratorFee(30);
 
         vm.startPrank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 100_000e6, 50e6, 30e6);
-        feeModule.recordShieldFee(integrator1, 200_000e6, 100e6, 60e6);
+        feeModule.recordShieldFee(asset, integrator1, 100_000e6, 50e6, 30e6);
+        feeModule.recordShieldFee(asset, integrator1, 200_000e6, 100e6, 60e6);
         vm.stopPrank();
 
         IArmadaFeeModule.IntegratorInfo memory info = feeModule.getIntegratorInfo(integrator1);
         assertEq(info.cumulativeVolume, 300_000e6);
         assertEq(info.cumulativeEarnings, 90e6);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ShieldFeeRecorded event payload (#158)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// WHY: Pin every field of the augmented event so the spec fields (asset,
+    ///      armadaTakeBps, integratorCumulativeVolume) can't silently regress.
+    ///      Uses an integrator at base-tier (no custom terms) so armadaTakeBps
+    ///      resolves to baseArmadaTakeBps = 50.
+    function test_recordShieldFee_emitsFullPayload_directShield() public {
+        // Direct shield (no integrator) — base rate applies, cumulative volume stays 0.
+        vm.expectEmit(true, true, false, true);
+        emit ShieldFeeRecorded(
+            asset,
+            address(0),
+            10_000e6,       // amount
+            50,             // armadaTakeBps (baseArmadaTakeBps default)
+            5e6,            // armadaTakePaid
+            0,              // integratorFeePaid (no integrator)
+            0               // integratorCumulativeVolume (no integrator)
+        );
+
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(asset, address(0), 10_000e6, 5e6, 0);
+    }
+
+    /// WHY: With a registered integrator, integratorCumulativeVolume must be the
+    ///      POST-update value (i.e. including this shield), and armadaTakeBps must
+    ///      reflect the tier that priced this shield, NOT the tier this shield may
+    ///      have just unlocked. Concretely: the integrator is below the 250k tier
+    ///      threshold before this 100k shield, so they're still at base rate (50).
+    function test_recordShieldFee_emitsFullPayload_belowTier() public {
+        vm.prank(integrator1);
+        feeModule.setIntegratorFee(30);
+
+        vm.expectEmit(true, true, false, true);
+        emit ShieldFeeRecorded(
+            asset,
+            integrator1,
+            100_000e6,      // amount
+            50,             // armadaTakeBps (still base — below 250k threshold)
+            500e6,          // armadaTakePaid (5 bps of 100k = 50e6, but caller passed 500e6 — pin whatever caller passes)
+            300e6,          // integratorFeePaid (matches caller arg)
+            100_000e6       // integratorCumulativeVolume AFTER this shield
+        );
+
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(asset, integrator1, 100_000e6, 500e6, 300e6);
+    }
+
+    /// WHY: Verify the "rate at time of shield" snapshot is taken BEFORE the volume
+    ///      bump. Integrator is at 200k cumulative volume; this 100k shield will push
+    ///      them to 300k (over the 250k tier threshold → 40 bps). The emitted bps
+    ///      should still be the PRE-bump rate (50, base), not 40.
+    function test_recordShieldFee_armadaTakeBps_snapshotsPreVolumeUpdate() public {
+        vm.prank(integrator1);
+        feeModule.setIntegratorFee(30);
+
+        // Bring integrator volume to 200k (still below 250k tier threshold).
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(asset, integrator1, 200_000e6, 0, 0);
+
+        // Now a 100k shield. PRE-bump volume = 200k → base tier (50 bps).
+        // POST-bump volume = 300k → over threshold (40 bps).
+        // The event must report 50 (the rate that actually priced THIS shield).
+        vm.expectEmit(true, true, false, true);
+        emit ShieldFeeRecorded(
+            asset,
+            integrator1,
+            100_000e6,
+            50,             // PRE-bump rate
+            500e6,
+            300e6,
+            300_000e6       // POST-bump cumulative
+        );
+
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(asset, integrator1, 100_000e6, 500e6, 300e6);
+
+        // Sanity: subsequent shields should now see the new (lower) tier.
+        assertEq(feeModule.getArmadaTake(integrator1), 40);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -352,7 +444,7 @@ contract ArmadaFeeModuleTest is Test {
         assertEq(feeModule.cumulativeFeesCollected(), 0);
 
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(address(0), 10_000e6, 5e6, 0);
+        feeModule.recordShieldFee(asset, address(0), 10_000e6, 5e6, 0);
         assertEq(feeModule.cumulativeFeesCollected(), 5e6);
 
         vm.prank(yieldVault);
@@ -365,7 +457,7 @@ contract ArmadaFeeModuleTest is Test {
         feeModule.setIntegratorFee(30);
 
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 10_000e6, 5e6, 3e6);
+        feeModule.recordShieldFee(asset, integrator1, 10_000e6, 5e6, 3e6);
 
         // Only armada take (5e6) is protocol revenue
         assertEq(feeModule.cumulativeFeesCollected(), 5e6);
@@ -380,7 +472,7 @@ contract ArmadaFeeModuleTest is Test {
     function test_recordShieldFee_onlyPrivacyPool() public {
         vm.prank(alice);
         vm.expectRevert("ArmadaFeeModule: only privacy pool");
-        feeModule.recordShieldFee(address(0), 10_000e6, 5e6, 0);
+        feeModule.recordShieldFee(asset, address(0), 10_000e6, 5e6, 0);
     }
 
     function test_recordYieldFee_onlyYieldVault() public {
@@ -449,7 +541,7 @@ contract ArmadaFeeModuleTest is Test {
 
         // Push above tier
         vm.prank(privacyPool);
-        feeModule.recordShieldFee(integrator1, 300_000e6, 0, 0);
+        feeModule.recordShieldFee(asset, integrator1, 300_000e6, 0, 0);
 
         // Bonus = 50 (base) - 40 (tier 1) = 10
         assertEq(feeModule.getIntegratorBonus(integrator1), 10);

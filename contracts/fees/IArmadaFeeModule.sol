@@ -41,7 +41,23 @@ interface IArmadaFeeModule is IFeeCollector {
     // ══════════════════════════════════════════════════════════════════════════
 
     event IntegratorRegistered(address indexed integrator, uint256 baseFee);
-    event ShieldFeeRecorded(address indexed integrator, uint256 amount, uint256 armadaTake, uint256 integratorFee);
+    /// @notice Emitted when a shield's fee is recorded.
+    /// @param asset The token shielded (e.g. USDC).
+    /// @param integrator The integrator addressed credited for the shield, or zero for direct shields.
+    /// @param amount Gross shield amount (before fees).
+    /// @param armadaTakeBps The effective Armada take rate (in bps) that applied to this shield.
+    /// @param armadaTakePaid Absolute Armada take transferred to the treasury.
+    /// @param integratorFeePaid Absolute integrator fee transferred to the integrator.
+    /// @param integratorCumulativeVolume Integrator's cumulative volume INCLUDING this shield. Zero for direct shields.
+    event ShieldFeeRecorded(
+        address indexed asset,
+        address indexed integrator,
+        uint256 amount,
+        uint256 armadaTakeBps,
+        uint256 armadaTakePaid,
+        uint256 integratorFeePaid,
+        uint256 integratorCumulativeVolume
+    );
     event YieldFeeRecorded(uint256 amount);
     event BaseArmadaTakeUpdated(uint256 oldBps, uint256 newBps);
     event TierAdded(uint256 index, uint256 volumeThreshold, uint256 armadaTakeBps);
@@ -81,11 +97,17 @@ interface IArmadaFeeModule is IFeeCollector {
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @notice Record a shield fee after payment. Called by PrivacyPool only.
-    /// @param integrator Integrator address (address(0) for no integrator)
-    /// @param amount Gross shield amount
-    /// @param armadaTakePaid Armada protocol fee actually paid
-    /// @param integratorFeePaid Integrator fee actually paid
+    /// @dev Looks up the effective Armada-take rate that applied to this shield
+    ///      BEFORE updating the integrator's cumulative volume (so the rate emitted
+    ///      reflects the tier that actually priced this shield, not the tier the
+    ///      shield may have just unlocked).
+    /// @param asset The token shielded.
+    /// @param integrator Integrator address (address(0) for no integrator).
+    /// @param amount Gross shield amount.
+    /// @param armadaTakePaid Armada protocol fee actually paid.
+    /// @param integratorFeePaid Integrator fee actually paid.
     function recordShieldFee(
+        address asset,
         address integrator,
         uint256 amount,
         uint256 armadaTakePaid,

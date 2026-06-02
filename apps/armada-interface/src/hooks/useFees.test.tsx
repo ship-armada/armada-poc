@@ -14,7 +14,8 @@ function makeQuote(expiresInMs: number): relayer.FeeSchedule {
     cacheId: `cache-${expiresInMs}-${Math.random()}`,
     expiresAt: Date.now() + expiresInMs,
     chainId: 31337,
-    fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
+    broadcasterRailgunAddress: '',
+    fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
   }
 }
 

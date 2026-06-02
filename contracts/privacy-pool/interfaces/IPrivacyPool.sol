@@ -124,12 +124,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
     function setShieldFee(uint120 feeBps) external;
 
     /**
-     * @notice Set the unshield fee in basis points
-     * @param feeBps Fee in basis points (50 = 0.50%)
-     */
-    function setUnshieldFee(uint120 feeBps) external;
-
-    /**
      * @notice Enable or disable testing mode
      * @dev POC ONLY - bypasses SNARK verification
      * @param enabled Whether to enable testing mode

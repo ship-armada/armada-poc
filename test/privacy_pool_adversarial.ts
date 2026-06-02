@@ -376,21 +376,22 @@ describe("Privacy Pool Adversarial", function () {
       expect(poolAfter - poolBefore).to.equal(amount - expectedFee);
     });
 
-    it("privileged unshield recipient bypasses unshield fee", async function () {
-      await privacyPool.setUnshieldFee(50);
-      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
-      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
-      await privacyPool.setPrivilegedShieldCaller(await forwarder.getAddress(), true);
-
+    it("unshield is always free — no fee transferred to treasury, full amount to recipient", async function () {
+      // WHY: Per FEE_STRUCTURE.md, unshield is free. There is no setter to raise the
+      //      unshield fee any more — pin that an ordinary (non-privileged) recipient
+      //      receives the full preimage value and the treasury sees zero inflow on the
+      //      unshield path. If a future change reintroduces an unshield fee, this fails.
       const amount = ethers.parseUnits("100", 6);
       const root = await shieldAndGetRoot(amount);
       const usdcAddr = await hubUsdc.getAddress();
-      const recipientAddr = await forwarder.getAddress();
+
+      // Plain EOA recipient — explicitly NOT a privileged shield caller.
+      const recipientAddr = await alice.getAddress();
       const npkBigInt = BigInt(recipientAddr);
       const tokenId = BigInt(usdcAddr);
       const unshieldAmount = ethers.parseUnits("50", 6);
       const commitHash = computeCommitmentHash(npkBigInt, tokenId, unshieldAmount);
-      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("priv-unshield-null"));
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("free-unshield-null"));
 
       const tx = makeTransaction({
         merkleRoot: root,
@@ -409,13 +410,8 @@ describe("Privacy Pool Adversarial", function () {
 
       await privacyPool.transact([tx]);
 
-      const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
-      const recipientAfter = await hubUsdc.balanceOf(recipientAddr);
-
-      expect(treasuryAfter - treasuryBefore).to.equal(0n);
-      expect(recipientAfter - recipientBefore).to.equal(unshieldAmount);
-
-      await privacyPool.setUnshieldFee(0);
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(0n);
+      expect((await hubUsdc.balanceOf(recipientAddr)) - recipientBefore).to.equal(unshieldAmount);
     });
   });
 

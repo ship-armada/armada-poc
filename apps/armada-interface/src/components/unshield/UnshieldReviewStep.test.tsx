@@ -15,7 +15,8 @@ function setup(opts?: { isXchain?: boolean; destChainId?: number }) {
       recipient={VALID_ADDR}
       amount={50_000_000n}
       fee={null}
-      netAmount={50_000_000n}
+      cctpFee={0n}
+      totalDeducted={50_000_000n}
       isXchain={opts?.isXchain ?? false}
       onBack={onBack}
       onConfirm={onConfirm}

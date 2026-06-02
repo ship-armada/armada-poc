@@ -1,5 +1,5 @@
-// ABOUTME: SDK-side helpers for unshield — generateUnshieldProof + populateProvedUnshield. Direct user-submitted tx (no relayer for v1).
-// ABOUTME: Dynamic-imports the Railgun SDK + shared-models to dodge jsdom's circomlibjs crash; the populated tx hash gets submitted by features/unshield/handler.
+// ABOUTME: SDK-side helpers for unshield — generateUnshieldProof + populateProvedUnshield with broadcaster-fee (relayer-mediated) support.
+// ABOUTME: Dynamic-imports the Railgun SDK + shared-models to dodge jsdom's circomlibjs crash; the populated calldata gets POSTed to /relay by features/unshield/handler.
 
 import { loadHubNetwork } from './network'
 
@@ -14,21 +14,50 @@ async function sharedModels(): Promise<SharedModels> {
 }
 
 /**
- * Gas details used for both proof generation (informs the proof of the gas estimate) and the
- * actual tx submission. Values mirror legacy/usdc-v2-frontend — EIP-1559 (Type2) because Hardhat
- * (and our patched Railgun NetworkName.Hardhat) require it.
+ * Gas details used for proof generation + tx population. The SDK selects the right structural
+ * shape based on (network, sendWithPublicWallet) via `getEVMGasTypeForTransaction`:
  *
- * 2 000 000 gas / 2 gwei max / 1 gwei priority — overkill for local but harmless; the user pays
- * actual usage. When Sepolia mode lands we'll likely sharpen these per chain.
+ *  - Direct user submit (`sendWithPublicWallet=true`) on Hardhat → Type2 (EIP-1559) — accepts
+ *    `maxFeePerGas` / `maxPriorityFeePerGas`. Matches what MetaMask sends.
+ *  - Broadcaster mode (`sendWithPublicWallet=false`) on Hardhat → Type1 (legacy) — accepts
+ *    `gasPrice` instead, because the broadcaster flow requires `overallBatchMinGasPrice` which
+ *    the SDK only supports on Type1. Trying to pass Type2 here surfaces the runtime error
+ *    `Invalid evmGasType for Hardhat (Broadcaster): expected Type1, received Type2`.
+ *
+ * Values: 2 000 000 gas / 1 gwei — overkill for Hardhat/Anvil; the relayer's on-chain submit
+ * pays actual usage. Sepolia tuning ships separately when we sharpen per-chain gas knobs.
  */
-async function buildGasDetails(): Promise<unknown> {
+async function buildGasDetails(sendWithPublicWallet: boolean): Promise<unknown> {
   const { EVMGasType } = await sharedModels()
-  return {
-    evmGasType: EVMGasType.Type2,
-    gasEstimate: 2_000_000n,
-    maxFeePerGas: 2_000_000_000n,
-    maxPriorityFeePerGas: 1_000_000_000n,
+  if (sendWithPublicWallet) {
+    return {
+      evmGasType: EVMGasType.Type2,
+      gasEstimate: 2_000_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+    }
   }
+  return {
+    evmGasType: EVMGasType.Type1,
+    gasEstimate: 2_000_000n,
+    gasPrice: 1_000_000_000n,
+  }
+}
+
+/**
+ * One broadcaster output baked into the SNARK proof so the relayer is paid in the same atomic
+ * tx as the unshield. Required when `submitRelay` is the submission path — without it, the
+ * relayer's server-side fee verifier rejects with `FEE_INSUFFICIENT`. Pass `null` to fall back
+ * to a direct user-submitted tx (kept for the A6 wallet-fallback override).
+ */
+export interface BroadcasterFeeRecipient {
+  /** USDC token address on the hub chain. Same address the unshield's first recipient uses. */
+  tokenAddress: string
+  /** Fee amount in USDC raw units (6 decimals) — must equal the value the relayer published on
+   *  `/fees`; the relayer compares against this exact value at request time. */
+  amount: bigint
+  /** Relayer's `0zk...` address. Sourced from the `FeeSchedule.broadcasterRailgunAddress` field. */
+  recipientAddress: string
 }
 
 /**
@@ -38,6 +67,10 @@ async function buildGasDetails(): Promise<unknown> {
  *
  * `onProgress` receives a value in [0, 1]; the SDK calls it ~10× over the proof generation
  * window (which is 20-30 seconds on local Anvil, longer on slower machines).
+ *
+ * `broadcasterFee`: when present, the proof embeds a broadcaster-fee output to the relayer's
+ * 0zk address — the relayer-mediated submit path (A3+). When null, the proof is built for direct
+ * user submission (legacy path).
  */
 export async function generateUnshieldProofForRecipient(opts: {
   walletId: string
@@ -45,6 +78,7 @@ export async function generateUnshieldProofForRecipient(opts: {
   tokenAddress: string
   recipient: string
   amount: bigint
+  broadcasterFee: BroadcasterFeeRecipient | null
   onProgress?: (fraction: number) => void
 }): Promise<void> {
   await loadHubNetwork()
@@ -52,6 +86,7 @@ export async function generateUnshieldProofForRecipient(opts: {
     railgunSdk(),
     sharedModels(),
   ])
+  const sendWithPublicWallet = opts.broadcasterFee === null
   await generateUnshieldProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -65,32 +100,36 @@ export async function generateUnshieldProofForRecipient(opts: {
       },
     ],
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeRecipient — direct user submit, no relayer fee
-    true, // sendWithPublicWallet
-    undefined, // overallBatchMinGasPrice
+    opts.broadcasterFee ?? undefined,
+    sendWithPublicWallet,
+    undefined, // overallBatchMinGasPrice — A6/follow-up: derive from quote for fee staleness check
     (progress) => opts.onProgress?.(progress / 100),
   )
 }
 
 /**
  * Populate the transaction object using the proof generated by `generateUnshieldProofForRecipient`.
- * Inputs MUST match the proof call exactly (walletId, recipient, amount, token).
+ * Inputs MUST match the proof call exactly (walletId, recipient, amount, token, broadcasterFee).
+ * The SDK's in-memory proof cache is keyed by all of these — a `broadcasterFee` mismatch between
+ * the proof and populate steps produces a "proof not found" throw.
  *
- * Returns the raw `to` + `data` + `value` from the SDK — the handler signs+submits via the
- * connected wallet rather than letting the SDK call its own provider (which would use a
- * non-user signer).
+ * Returns the raw `to` + `data` + `value`. The handler POSTs `{to, data}` to the relayer's
+ * `/relay` endpoint when broadcasterFee is non-null; otherwise it falls back to user-wallet
+ * submission via wagmi.
  */
 export async function populateUnshieldTransaction(opts: {
   walletId: string
   tokenAddress: string
   recipient: string
   amount: bigint
+  broadcasterFee: BroadcasterFeeRecipient | null
 }): Promise<{ to: `0x${string}`; data: `0x${string}`; value: bigint }> {
   const [{ populateProvedUnshield }, { TXIDVersion, NetworkName }] = await Promise.all([
     railgunSdk(),
     sharedModels(),
   ])
-  const gasDetails = await buildGasDetails()
+  const sendWithPublicWallet = opts.broadcasterFee === null
+  const gasDetails = await buildGasDetails(sendWithPublicWallet)
   const result = await populateProvedUnshield(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -103,9 +142,9 @@ export async function populateUnshieldTransaction(opts: {
       },
     ],
     [], // nftAmountRecipients
-    undefined, // broadcasterFeeRecipient
-    true, // sendWithPublicWallet
-    undefined, // overallBatchMinGasPrice
+    opts.broadcasterFee ?? undefined,
+    sendWithPublicWallet,
+    undefined, // overallBatchMinGasPrice — see generateUnshieldProofForRecipient
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     gasDetails as any,
   )
@@ -124,6 +163,10 @@ export async function populateUnshieldTransaction(opts: {
  * Cross-chain unshield: the proof is generated with the PrivacyPool itself as the unshield
  * recipient (the pool effectively burns the shielded UTXO and emits CCTP messages to deliver
  * USDC to the real recipient on a different chain). Same SDK fn, different recipient.
+ *
+ * `broadcasterFee`: A5 — when present, embeds a broadcaster-fee output to the relayer's 0zk
+ * address so the relayer-mediated hub burn pays the relayer in the same atomic tx. When null,
+ * falls back to a direct user-submitted hub burn (kept for the A6 wallet-override fallback).
  */
 export async function generateXchainUnshieldProof(opts: {
   walletId: string
@@ -131,6 +174,7 @@ export async function generateXchainUnshieldProof(opts: {
   tokenAddress: string
   privacyPoolAddress: string
   amount: bigint
+  broadcasterFee: BroadcasterFeeRecipient | null
   onProgress?: (fraction: number) => void
 }): Promise<void> {
   await loadHubNetwork()
@@ -138,6 +182,7 @@ export async function generateXchainUnshieldProof(opts: {
     railgunSdk(),
     sharedModels(),
   ])
+  const sendWithPublicWallet = opts.broadcasterFee === null
   await generateUnshieldProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -152,10 +197,10 @@ export async function generateXchainUnshieldProof(opts: {
         recipientAddress: opts.privacyPoolAddress,
       },
     ],
-    [],
-    undefined,
-    true,
-    undefined,
+    [], // nftAmountRecipients
+    opts.broadcasterFee ?? undefined,
+    sendWithPublicWallet,
+    undefined, // overallBatchMinGasPrice — A6/follow-up
     (progress) => opts.onProgress?.(progress / 100),
   )
 }
@@ -173,6 +218,7 @@ export async function buildXchainUnshieldTransactionStruct(opts: {
   tokenAddress: string
   privacyPoolAddress: string
   amount: bigint
+  broadcasterFee: BroadcasterFeeRecipient | null
 }): Promise<unknown> {
   const [{ populateProvedUnshield }, { TXIDVersion, NetworkName }] = await Promise.all([
     railgunSdk(),
@@ -180,7 +226,12 @@ export async function buildXchainUnshieldTransactionStruct(opts: {
   ])
   const { ethers } = await import('ethers')
 
-  const gasDetails = await buildGasDetails()
+  // A5: broadcaster mode flips sendWithPublicWallet to false → SDK selects Type1 (legacy) gas
+  // because the broadcaster flow needs `overallBatchMinGasPrice`, which only Type1 supports.
+  // Type2 here surfaces the SDK's "expected Type1, received Type2" runtime error. Direct submit
+  // (broadcasterFee=null) keeps Type2 to match what MetaMask sends.
+  const sendWithPublicWallet = opts.broadcasterFee === null
+  const gasDetails = await buildGasDetails(sendWithPublicWallet)
   const result = await populateProvedUnshield(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -192,10 +243,10 @@ export async function buildXchainUnshieldTransactionStruct(opts: {
         recipientAddress: opts.privacyPoolAddress,
       },
     ],
-    [],
-    undefined,
-    true,
-    undefined,
+    [], // nftAmountRecipients
+    opts.broadcasterFee ?? undefined,
+    sendWithPublicWallet,
+    undefined, // overallBatchMinGasPrice — A6/follow-up
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     gasDetails as any,
   )

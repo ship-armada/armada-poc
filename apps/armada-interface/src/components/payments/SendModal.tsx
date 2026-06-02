@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
+import { preferencesAtom } from '@/state/preferences'
 import { shieldedUsdcAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
@@ -15,7 +16,8 @@ import {
   type ResolvedDeployments,
 } from '@/config/deployments'
 import { parseUsdcInput } from '@/lib/format'
-import { userFeeForKind } from '@/lib/relayer'
+import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { trackError } from '@/lib/telemetry'
 import {
@@ -28,6 +30,7 @@ import {
 import { SendInputStep, type SendTab } from './SendInputStep'
 import { SendReviewStep } from './SendReviewStep'
 import { SendCompleteStep } from './SendCompleteStep'
+import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 
 type LocalStep = FlowStep
 const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
@@ -42,6 +45,8 @@ function computeKind(tab: SendTab, destChainId: number, hubChainId: number): Sub
 export function SendModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
   const isOpen = openModal === 'payment'
+  // A6 — frozen into the record's meta at submit-time so a mid-flight toggle doesn't strand the handler.
+  const prefs = useAtomValue(preferencesAtom)
 
   // Form state
   const hubChainId = getNetworkConfig().hub.chainId
@@ -107,10 +112,28 @@ export function SendModal() {
 
   const computedKind: SubmittedKind = computeKind(tab, destChainId, hubChainId)
   const isXchain = computedKind === 'unshield-xchain'
-  // Display fee is a pure function of (kind, amount). transfer-shielded + unshield-local = 0
-  // (user submits via own wallet); unshield-xchain = CCTP fast-fee estimate (~2 bps).
-  const fee: bigint = userFeeForKind(computedKind, amount)
-  const netAmount = amount > fee ? amount - fee : 0n
+  const isLocalUnshield = computedKind === 'unshield-local'
+  // Display fee per (kind, amount, quote):
+  //   transfer-shielded → relayer's `transfer` tier from the quote (A4); 0n pre-quote-load
+  //   unshield-local    → relayer's `unshield` tier from the quote (A3+); 0n pre-quote-load
+  //   unshield-xchain   → relayer's `crossChainUnshield` tier (A5). A separate CCTP fast-fee
+  //                       (~2 bps) applies on top — surfaced via `cctpFee` below as the secondary
+  //                       FeeSummary line so the user sees both deductions.
+  const fee: bigint = userFeeForKind(computedKind, amount, quote)
+  // CCTP fast-fee — paid out of the destination mint on xchain, not the user's shielded balance.
+  // Distinct semantics from `fee` (which is the on-top relayer fee). Zero for non-xchain kinds.
+  const cctpFee: bigint = isXchain ? cctpFastFeeForAmount(amount) : 0n
+  // Per-kind fee math (recipient gets / user is debited / how much they can type) lives in one
+  // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. The xchain branch uses
+  // `secondaryFee` to model the CCTP fee being deducted from the recipient mint, separate from
+  // the broadcaster fee on top.
+  const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
+    computedKind,
+    amount,
+    fee,
+    max,
+    { secondaryFee: cctpFee },
+  )
 
   // Reset local state on close.
   useEffect(() => {
@@ -151,26 +174,64 @@ export function SendModal() {
       }
       const feeCacheId = activeQuote.cacheId
       if (computedKind === 'transfer-shielded') {
+        // Same address-shape guard as unshield-local — both paths now embed a broadcaster
+        // output, so a malformed published address would doom proof gen the same way.
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('transfer-shielded')
         await txTransfer.submit({
           amount,
           feeCacheId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.transfer),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          useWalletOverride: prefs.submitFromWallet,
         })
       } else if (computedKind === 'unshield-local') {
+        // Fail fast if the relayer published a malformed broadcaster address — see UnshieldModal's
+        // version of this check for the rationale (avoid a 20-30s proof gen that's doomed to
+        // surface an opaque SDK throw deep in the pipeline).
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('unshield-local')
+        // Freeze the broadcaster context with the rest of the submit state — same rationale as
+        // UnshieldModal: the proof must embed these EXACT values to pass the relayer's verifier.
         await txUnshieldLocal.submit({
           amount,
           feeCacheId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          useWalletOverride: prefs.submitFromWallet,
         })
       } else {
+        // A5 — relayer-mediated hub burn for cross-chain unshield. Same broadcaster-context shape
+        // as unshield-local + transfer-shielded, with the fee sourced from the `crossChainUnshield`
+        // tier of the quote. Fail fast on a malformed broadcaster address so 20-30s of proof gen
+        // doesn't end in an opaque SDK throw downstream.
+        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+          throw new Error(
+            'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
+              'problem persists, the relayer may be misconfigured.',
+          )
+        }
         setSubmittedKind('unshield-xchain')
         await txUnshieldXchain.submit({
           amount,
           feeCacheId,
           toChainId: destChainId,
           recipient,
+          broadcasterFeeAmount: BigInt(activeQuote.fees.crossChainUnshield),
+          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          useWalletOverride: prefs.submitFromWallet,
         })
       }
       setStep('progress')
@@ -192,6 +253,7 @@ export function SendModal() {
       steps={STEPS}
       errorAtStep={errorAtStep}
     >
+      <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
         <SendInputStep
           tab={tab}
@@ -205,9 +267,12 @@ export function SendModal() {
           onRecipientChange={setRecipient}
           amountStr={amountStr}
           onAmountChange={setAmountStr}
-          max={max}
+          max={inputMax}
           fee={fee}
-          netAmount={netAmount}
+          cctpFee={cctpFee}
+          totalDeducted={totalDeducted}
+          isXchain={isXchain}
+          isLocalUnshield={isLocalUnshield}
           isFeeRefreshing={isStale}
           destDeploymentError={destDeploymentError}
           onCancel={close}
@@ -221,7 +286,8 @@ export function SendModal() {
           recipient={recipient}
           amount={amount}
           fee={fee}
-          netAmount={netAmount}
+          cctpFee={cctpFee}
+          totalDeducted={totalDeducted}
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
@@ -234,7 +300,11 @@ export function SendModal() {
           tab={tab}
           destChainId={destChainId}
           recipient={recipient}
-          netAmount={netAmount}
+          recipientReceives={recipientReceives}
+          totalDeducted={totalDeducted}
+          // Hub-chain explorer link for the on-chain submission. The destination delivery for
+          // xchain is a separate event tracked elsewhere; this is the source-chain action.
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onDone={close}
         />
       )}

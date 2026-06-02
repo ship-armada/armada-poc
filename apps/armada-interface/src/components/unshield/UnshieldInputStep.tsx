@@ -5,7 +5,6 @@ import { AmountInput, ChainSelect, FeeSummary, RecipientInput } from '@/componen
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { isEvmAddress } from '@/lib/address'
-import { getNetworkConfig } from '@/config/network'
 import styles from './UnshieldInputStep.module.css'
 
 export interface UnshieldInputStepProps {
@@ -15,10 +14,18 @@ export interface UnshieldInputStepProps {
   onRecipientChange: (next: string) => void
   amountStr: string
   onAmountChange: (next: string) => void
-  /** Max from shieldedUsdcAtom. */
+  /**
+   * Maximum amount the user can type, AFTER reserving room for the relayer fee. Modal-side:
+   * `shielded - fee` for both local and xchain (both pay a broadcaster fee on top post-A5).
+   * Keeps `totalDeducted ≤ shielded_balance` enforceable here at the input gate.
+   */
   max: bigint
   fee: bigint | null
-  netAmount: bigint
+  /** CCTP fast-fee on xchain. Surfaced as the FeeSummary secondary row when xchain. */
+  cctpFee: bigint
+  /** USDC deducted from the user's shielded balance. Both kinds post-A5: `amount + fee`. */
+  totalDeducted: bigint
+  isXchain: boolean
   isFeeRefreshing?: boolean
   onCancel: () => void
   onContinue: () => void
@@ -33,19 +40,21 @@ export function UnshieldInputStep({
   onAmountChange,
   max,
   fee,
-  netAmount,
+  cctpFee,
+  totalDeducted,
+  isXchain,
   isFeeRefreshing,
   onCancel,
   onContinue,
 }: UnshieldInputStepProps) {
-  const hubChainId = getNetworkConfig().hub.chainId
-  const isXchain = destChainId !== hubChainId
-
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
   // Parser-side errors (too-many-decimals etc) take precedence over balance-bound errors.
+  // Both kinds now reserve room for the relayer fee in `max` post-A5, so the overflow message
+  // is the same — amount + fee exceeded the user's shielded balance.
+  const overflowMessage = 'Amount + relayer fee exceeds your private balance.'
   const amountError = usdcInputErrorMessage(parseError)
-    ?? (tooMuch ? 'Amount exceeds your private balance.' : undefined)
+    ?? (tooMuch ? overflowMessage : undefined)
 
   const recipientTrimmed = recipient.trim()
   // Empty recipient is allowed (no error shown); validation only kicks in once the user types something.
@@ -87,8 +96,16 @@ export function UnshieldInputStep({
       />
       <FeeSummary
         fee={fee}
-        netAmount={netAmount}
-        netLabel="You'll receive"
+        // Both kinds pay a relayer broadcaster fee; xchain ALSO pays a CCTP fast-fee from the
+        // destination mint. Surface the CCTP fee as the secondary row so the user can see the
+        // breakdown. Bottom line is `Total deducted from balance` on both paths — that's the
+        // load-bearing number the user is committing to. Recipient mint differs only by the
+        // CCTP fast-fee already shown on its own row above.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
+        feeLabel="Relayer fee"
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
         isRefreshing={isFeeRefreshing}
       />
       <FlowFooter

@@ -1,6 +1,7 @@
 // ABOUTME: Abortable, jittered, backoff-aware polling loop for non-terminal tx stages.
 // ABOUTME: Each TxKind's stage determines which `pollOnce` adapter to use (Iris, RPC receipt, relayer /status, etc.).
 
+import { pollStatus, type StatusResponse } from '../relayer'
 import { trackError } from '../telemetry'
 
 export interface PollOptions {
@@ -86,4 +87,26 @@ export async function poll<T>(
   }
 
   return { status: 'aborted' }
+}
+
+/**
+ * `pollOnce` adapter for relayer-mediated submits — fetches `/status/:txHash` once and:
+ *   - returns `null` while the relayer reports `pending` (poll loop keeps waiting)
+ *   - returns the full `StatusResponse` once the relayer reports `confirmed` or `failed`
+ *
+ * The poll loop treats any non-null return as terminal, so the caller switches on
+ * `result.value.status` to distinguish confirmed (success) from failed (markFailed).
+ *
+ * Network/HTTP errors from `pollStatus` propagate as throws — the poll loop's exponential backoff
+ * + error-streak counter handles transient relayer hiccups. A wedged status endpoint surfaces as a
+ * lifecycle `timeout` rather than a per-tick failure.
+ *
+ * Dormant in A1 alongside `submitRelay`. Handlers wire it in A3+.
+ */
+export async function pollRelayStatusOnce(
+  txHash: string,
+  signal: AbortSignal,
+): Promise<StatusResponse | null> {
+  const status = await pollStatus(txHash, signal)
+  return status.status === 'pending' ? null : status
 }

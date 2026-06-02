@@ -5,7 +5,6 @@ import { AmountInput, ChainSelect, FeeSummary, RecipientInput, Tabs } from '@/co
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { isEvmAddress, isShieldedAddress } from '@/lib/address'
-import { getNetworkConfig } from '@/config/network'
 import styles from './SendInputStep.module.css'
 
 export type SendTab = 'private' | 'external'
@@ -24,9 +23,22 @@ export interface SendInputStepProps {
   onRecipientChange: (next: string) => void
   amountStr: string
   onAmountChange: (next: string) => void
+  /**
+   * Maximum typeable amount with the fee already reserved for relayer-mediated kinds.
+   * Modal-side: `shielded - fee` for unshield-local, `shielded` for transfer-shielded + xchain.
+   * Keeps `totalDeducted ≤ shielded` enforceable here without leaking per-kind math.
+   */
   max: bigint
   fee: bigint | null
-  netAmount: bigint
+  /**
+   * CCTP fast-fee (~2 bps) on xchain kinds — deducted from the destination mint, separate
+   * from `fee` (the relayer's broadcaster fee, paid by the user). Zero / ignored on local kinds.
+   */
+  cctpFee: bigint
+  /** USDC deducted from the user's shielded balance — `amount + fee` across all three SendModal kinds. */
+  totalDeducted: bigint
+  isXchain: boolean
+  isLocalUnshield: boolean
   isFeeRefreshing?: boolean
   /** When set, the destination chain has no deployment manifest — block Continue and explain inline. */
   destDeploymentError?: string
@@ -45,19 +57,25 @@ export function SendInputStep({
   onAmountChange,
   max,
   fee,
-  netAmount,
+  cctpFee,
+  totalDeducted,
+  isXchain,
+  isLocalUnshield,
   isFeeRefreshing,
   destDeploymentError,
   onCancel,
   onContinue,
 }: SendInputStepProps) {
-  const hubChainId = getNetworkConfig().hub.chainId
-  const isXchain = tab === 'external' && destChainId !== hubChainId
-
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > max
+  // For unshield-local and unshield-xchain the user's typeable max is already shielded - fee;
+  // if they exceed it, the cause is that amount + fee would overflow. Spell that out so they
+  // don't think their balance number is wrong.
+  const overflowMessage = isLocalUnshield || isXchain
+    ? 'Amount + relayer fee exceeds your private balance.'
+    : 'Amount exceeds your private balance.'
   const amountError = usdcInputErrorMessage(parseError)
-    ?? (tooMuch ? 'Amount exceeds your private balance.' : undefined)
+    ?? (tooMuch ? overflowMessage : undefined)
 
   const recipientTrimmed = recipient.trim()
   const recipientValid =
@@ -108,8 +126,16 @@ export function SendInputStep({
       />
       <FeeSummary
         fee={fee}
-        netAmount={netAmount}
-        netLabel="They'll receive"
+        // Single "Total deducted from balance" line across all three SendModal kinds. For
+        // transfer-shielded the recipient gets exactly `amount`; for unshield kinds the
+        // recipient mint differs by the CCTP fast-fee already surfaced on its own row when
+        // xchain. The total-deducted number is the user's load-bearing commitment in every case.
+        netAmount={totalDeducted}
+        netLabel="Total deducted from balance"
+        // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
+        feeLabel="Relayer fee"
+        secondaryFee={isXchain ? cctpFee : undefined}
+        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
         isRefreshing={isFeeRefreshing}
       />
       <FlowFooter

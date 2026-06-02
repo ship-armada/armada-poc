@@ -146,6 +146,7 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
     /// @inheritdoc IArmadaFeeModule
     function recordShieldFee(
+        address asset,
         address integrator,
         uint256 amount,
         uint256 armadaTakePaid,
@@ -153,15 +154,30 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     ) external override {
         require(msg.sender == privacyPool, "ArmadaFeeModule: only privacy pool");
 
+        // Capture the effective Armada-take rate BEFORE bumping volume — otherwise the
+        // emitted bps would reflect the tier this shield just unlocked, not the tier
+        // that priced it.
+        uint256 armadaTakeBps = _getEffectiveArmadaTake(integrator);
+
         cumulativeArmadaFees += armadaTakePaid;
 
+        uint256 cumulativeVolumeAfter = 0;
         if (integrator != address(0) && _integrators[integrator].registered) {
             _integrators[integrator].cumulativeVolume += amount;
             _integrators[integrator].cumulativeEarnings += integratorFeePaid;
             cumulativeIntegratorFees += integratorFeePaid;
+            cumulativeVolumeAfter = _integrators[integrator].cumulativeVolume;
         }
 
-        emit ShieldFeeRecorded(integrator, amount, armadaTakePaid, integratorFeePaid);
+        emit ShieldFeeRecorded(
+            asset,
+            integrator,
+            amount,
+            armadaTakeBps,
+            armadaTakePaid,
+            integratorFeePaid,
+            cumulativeVolumeAfter
+        );
     }
 
     /// @inheritdoc IArmadaFeeModule

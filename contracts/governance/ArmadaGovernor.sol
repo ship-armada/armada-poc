@@ -401,7 +401,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("upgradeToAndCall(address,bytes)"))] = true;
         // Fee parameters (on privacy pool and yield vault)
         extendedSelectors[bytes4(keccak256("setShieldFee(uint120)"))] = true;
-        extendedSelectors[bytes4(keccak256("setUnshieldFee(uint120)"))] = true;
         extendedSelectors[bytes4(keccak256("setYieldFeeBps(uint256)"))] = true;
         // Steward election (on TreasurySteward) — removal is Standard (defensive/emergency action)
         extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;

@@ -27,9 +27,6 @@ import "../../governance/IShieldPauseController.sol";
 contract TransactModule is PrivacyPoolStorage, ITransactModule {
     using SafeERC20 for IERC20;
 
-    /// @notice Basis points denominator (100% = 10000)
-    uint120 private constant BASIS_POINTS = 10000;
-
     /**
      * @notice Execute private transactions (transfers and/or local unshields)
      * @dev Validates proofs, nullifies inputs, creates new commitments.
@@ -192,17 +189,14 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         bytes32 destinationCaller,
         uint256 maxFee
     ) internal returns (uint64 nonce) {
-        // Calculate unshield amount (after fees)
-        uint120 unshieldAmount = _transaction.unshieldPreimage.value;
-        (uint120 base, uint120 fee) = _getFee(uint136(unshieldAmount), true, unshieldFee);
+        // Unshield is free per spec — the full preimage value is bridged.
+        // `fee` is retained at zero solely so the Unshield event below keeps its 4-field
+        // shape for downstream log parsers.
+        uint120 base = _transaction.unshieldPreimage.value;
+        uint120 fee = 0;
 
-        // Validate maxFee does not exceed base amount after protocol fee
+        // Validate maxFee does not exceed the bridged amount
         require(maxFee <= base, "TransactModule: maxFee exceeds base");
-
-        // Transfer fee to treasury
-        if (fee > 0 && treasury != address(0)) {
-            IERC20(usdc).safeTransfer(treasury, fee);
-        }
 
         // Encode CCTP payload
         bytes memory hookData = CCTPPayloadLib.encodeUnshield(
@@ -360,26 +354,10 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         // Get recipient from npk (address encoded as bytes32)
         address recipient = address(uint160(uint256(_note.npk)));
 
-        // Privileged recipients (e.g. yield adapter) bypass unshield fee
-        uint120 base;
-        uint120 fee;
-        if (privilegedShieldCallers[recipient]) {
-            base = _note.value;
-            fee = 0;
-        } else {
-            (base, fee) = _getFee(_note.value, true, unshieldFee);
-        }
-
-        // Transfer to recipient
-        token.safeTransfer(recipient, base);
-
-        // Transfer fee to treasury
-        if (fee > 0 && treasury != address(0)) {
-            token.safeTransfer(treasury, fee);
-        }
-
-        // Emit unshield event
-        emit Unshield(recipient, _note.token, base, fee);
+        // Unshield is free per spec — the full preimage value is paid out. The trailing
+        // 0 in the Unshield event preserves the 4-field shape for downstream log parsers.
+        token.safeTransfer(recipient, _note.value);
+        emit Unshield(recipient, _note.token, _note.value, 0);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -395,27 +373,6 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             total += _transactions[i].boundParams.commitmentCiphertext.length;
         }
         return total;
-    }
-
-    /**
-     * @notice Calculate base and fee amounts
-     */
-    function _getFee(
-        uint136 _amount,
-        bool _isInclusive,
-        uint120 _feeBP
-    ) internal pure returns (uint120 base, uint120 fee) {
-        if (_feeBP == 0) {
-            return (uint120(_amount), 0);
-        }
-
-        if (_isInclusive) {
-            base = uint120(_amount - (_amount * _feeBP) / BASIS_POINTS);
-            fee = uint120(_amount) - base;
-        } else {
-            base = uint120(_amount);
-            fee = uint120((BASIS_POINTS * _amount) / (BASIS_POINTS - _feeBP) - _amount);
-        }
     }
 
     /**

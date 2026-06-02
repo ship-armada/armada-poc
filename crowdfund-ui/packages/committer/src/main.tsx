@@ -1,5 +1,5 @@
 // ABOUTME: Entry point for the crowdfund committer app.
-// ABOUTME: Renders with wagmi, RainbowKit, Jotai, routing, and toast providers.
+// ABOUTME: Renders with wagmi, RainbowKit, Jotai, routing, toast providers, and Sentry error boundary.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
@@ -12,29 +12,34 @@ import { MotionConfig } from 'framer-motion'
 import { wagmiConfig } from '@/config/wagmi'
 import { App } from '@/App'
 import { InviteLandingPage } from '@/components/InviteLandingPage'
+import { initSentry, SentryErrorBoundary } from '@/lib/sentry'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
+
+initSentry()
 
 const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
-          <JotaiProvider>
-            <BrowserRouter>
-              <MotionConfig reducedMotion="user">
-                <Routes>
-                  <Route path="/" element={<App />} />
-                  <Route path="/invite" element={<InviteLandingPage />} />
-                </Routes>
-              </MotionConfig>
-            </BrowserRouter>
-            <CrowdfundToaster />
-          </JotaiProvider>
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <SentryErrorBoundary fallback={<div className="p-6">An unexpected error occurred. The team has been notified.</div>}>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider theme={darkTheme()}>
+            <JotaiProvider>
+              <BrowserRouter>
+                <MotionConfig reducedMotion="user">
+                  <Routes>
+                    <Route path="/" element={<App />} />
+                    <Route path="/invite" element={<InviteLandingPage />} />
+                  </Routes>
+                </MotionConfig>
+              </BrowserRouter>
+              <CrowdfundToaster />
+            </JotaiProvider>
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </SentryErrorBoundary>
   </StrictMode>,
 )

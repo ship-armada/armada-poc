@@ -7,12 +7,17 @@ export const RELAYER_ENDPOINTS = {
   fees: '/fees',
   relay: '/relay',
   status: '/status', // suffix: `/${txHash}`
+  health: '/health',
 } as const
 
 /** Error codes returned by the relayer (see `relayer/armada-relayer.ts`). */
 export type RelayerErrorCode =
   | 'FEE_TOO_LOW'
   | 'FEE_EXPIRED'
+  // The proof's broadcaster-fee output is missing, points at a wrong recipient/token, or pays
+  // less than the advertised rate. Surfaces only when the user's local fee-quote drifted from
+  // the relayer's after the proof was already built; UX should prompt a re-quote + rebuild.
+  | 'FEE_INSUFFICIENT'
   | 'INVALID_TARGET'
   | 'INVALID_CHAIN'
   | 'INVALID_DATA'
@@ -26,6 +31,7 @@ export type RelayerErrorCode =
 export const RELAYER_STATUS_CODES: Readonly<Record<RelayerErrorCode, number>> = {
   FEE_TOO_LOW: 402,
   FEE_EXPIRED: 402,
+  FEE_INSUFFICIENT: 402,
   INVALID_TARGET: 400,
   INVALID_CHAIN: 400,
   INVALID_DATA: 400,

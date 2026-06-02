@@ -6,15 +6,20 @@ import { Provider as JotaiProvider } from 'jotai'
 import { Toaster } from 'sonner'
 import { MotionConfig } from 'framer-motion'
 import { App } from '@/App'
+import { initSentry, SentryErrorBoundary } from '@/lib/sentry'
 import './index.css'
+
+initSentry()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <JotaiProvider>
-      <MotionConfig reducedMotion="user">
-        <App />
-      </MotionConfig>
-      <Toaster richColors position="bottom-right" />
-    </JotaiProvider>
+    <SentryErrorBoundary fallback={<div className="p-6">An unexpected error occurred. The team has been notified.</div>}>
+      <JotaiProvider>
+        <MotionConfig reducedMotion="user">
+          <App />
+        </MotionConfig>
+        <Toaster richColors position="bottom-right" />
+      </JotaiProvider>
+    </SentryErrorBoundary>
   </StrictMode>,
 )

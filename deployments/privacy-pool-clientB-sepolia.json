@@ -4,7 +4,8 @@
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
     "privacyPoolClient": "0xd76105dC158de8d3a1B32AFcAD22C55feC69716d",
-    "hookRouter": "0xb3a0A6A3C5fDbAB3e46fE5Bd1e168b623Cc17DA1"
+    "hookRouter": "0xb3a0A6A3C5fDbAB3e46fE5Bd1e168b623Cc17DA1",
+    "gaslessShieldWrapperClient": "0xe74ea1224214B7FD0e715a563AA03C1e47f9F7B1"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
@@ -16,5 +17,5 @@
     "privacyPool": "0x014aC1dfC2Bde83d4be2CFFb5bea4dE942DAD77F"
   },
   "deployBlock": 269983413,
-  "timestamp": "2026-05-21T16:46:13.060Z"
+  "timestamp": "2026-05-31T21:41:07.681Z"
 }

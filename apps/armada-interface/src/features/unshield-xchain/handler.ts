@@ -1,4 +1,4 @@
-// ABOUTME: Cross-chain unshield handler — burns shielded USDC on hub via atomicCrossChainUnshield, then polls destination chain for CCTP delivery.
+// ABOUTME: Cross-chain unshield handler — A5 relayer-mediated. Hub-side atomicCrossChainUnshield is wrapped by the relayer; destination CCTP delivery polling is unchanged.
 // ABOUTME: Same handler covers Withdraw modal (destination ≠ hub) and Send-External tab (destination ≠ hub) — same contract path, different UI entry.
 
 import { ethers } from 'ethers'
@@ -11,6 +11,7 @@ import { track } from '@/lib/telemetry'
 import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
 import { getChainById, getNetworkConfig } from '@/config/network'
+import { ensureChain } from '@/lib/network-switch'
 import { createProvider } from '@/lib/rpc'
 import {
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
@@ -21,13 +22,13 @@ import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   buildXchainUnshieldTransactionStruct,
   generateXchainUnshieldProof,
+  type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
 import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,
 } from '@/lib/cctp'
-import { cctpMaxFeeForKind } from '@/lib/relayer'
-import { ensureChain } from '@/lib/network-switch'
+import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
 
 // MessageReceived ABI — used by ethers.Interface.parseLog to decode `messageBody` from a raw log.
 // We route the destination scan through ethers (rather than viem) so the app-wide bisecting
@@ -45,11 +46,11 @@ type EthersScanLog = {
   data: string
 }
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
-import { poll } from '@/lib/tx/poller'
+import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { scanCctpDeliveryWindow } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import type { StageHandler } from '@/lib/tx/executor'
-import type { TxRecord } from '@/lib/tx/types'
+import type { TxError, TxRecord } from '@/lib/tx/types'
 
 /**
  * PrivacyPool.atomicCrossChainUnshield ABI — same Transaction struct as transact(), wrapped with
@@ -117,10 +118,13 @@ const PRIVACY_POOL_XCHAIN_UNSHIELD_ABI = [
 ] as const
 
 /**
- * Stage map for `unshield-xchain`:
- *   1. `build-proof`              — Groth16 proof (recipient = PrivacyPool itself)
+ * Stage map for `unshield-xchain` (A5 — relayer-mediated hub burn):
+ *   1. `build-proof`              — Groth16 proof (recipient = PrivacyPool itself) with
+ *                                    broadcaster-fee output to the relayer's 0zk address.
  *   2. `submit-relayer`           — extract Transaction struct from populated calldata, encode
- *                                    atomicCrossChainUnshield, submit via user wallet
+ *                                    atomicCrossChainUnshield, POST to `/relay`, poll `/status`
+ *                                    until confirmed. Once confirmed, fetch the hub receipt by
+ *                                    the relayer's txHash to extract the CCTP MessageSent log.
  *   3. `hub-burn-confirmed`       — wait for hub receipt
  *   4. `iris-attestation-pending` — polls destination chain for the recipient's USDC balance to
  *                                    tick up (signal that CCTP delivered + hook router minted).
@@ -165,6 +169,19 @@ export const unshieldXchainHandler: StageHandler<'unshield-xchain'> = {
   },
 }
 
+/** A6 — null when wallet-override, otherwise the broadcaster context from meta. */
+function broadcasterFeeFromRecord(
+  record: TxRecord<'unshield-xchain'>,
+  tokenAddress: string,
+): BroadcasterFeeRecipient | null {
+  if (record.meta.useWalletOverride) return null
+  return {
+    tokenAddress,
+    amount: record.meta.broadcasterFeeAmount,
+    recipientAddress: record.meta.broadcasterRailgunAddress,
+  }
+}
+
 async function runBuildProof(
   record: TxRecord<'unshield-xchain'>,
   ctx: Parameters<typeof unshieldXchainHandler.run>[1],
@@ -187,6 +204,7 @@ async function runBuildProof(
     tokenAddress,
     privacyPoolAddress,
     amount: record.meta.amount,
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
     onProgress: progress.write,
   })
 
@@ -203,6 +221,7 @@ async function runSubmitAndBurn(
   const deployments = await loadDeployments()
   const tokenAddress = deployments.hub.cctp.usdc
   const privacyPoolAddress = deployments.hub.contracts.privacyPool
+  const hubChainId = getNetworkConfig().hub.chainId
 
   // Map destination chain id → CCTP domain. Both come from the network config.
   const destChain = getNetworkConfig().clients.find(c => c.chainId === record.meta.toChainId)
@@ -216,12 +235,15 @@ async function runSubmitAndBurn(
   }
   const destHookRouter = destClientDeployment.contracts.hookRouter
 
-  // Build the Transaction struct (decoded from the SDK's populated transact() calldata).
+  // Build the Transaction struct (decoded from the SDK's populated transact() calldata). The
+  // broadcaster fee must be passed here EXACTLY as it was passed to generateXchainUnshieldProof —
+  // the SDK's in-memory proof cache is keyed by it, and a mismatch throws "proof not found".
   const txStruct = await buildXchainUnshieldTransactionStruct({
     walletId,
     tokenAddress,
     privacyPoolAddress,
     amount: record.meta.amount,
+    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
@@ -234,59 +256,175 @@ async function runSubmitAndBurn(
   // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
   // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
   // Fee is deducted from the amount minted on the destination — recipient receives
-  // (amount − feeExecuted). The modal's Review step shows `userFeeForKind` (without the bound
+  // (amount − feeExecuted). The modal's Review step shows the realistic fee (without the bound
   // multiplier) so the user sees what they will actually pay, not the contract bound.
   const maxFee = cctpMaxFeeForKind('unshield-xchain', record.meta.amount)
 
-  // Hub-side atomicCrossChainUnshield() — the only user-signed leg of this flow. The
-  // destination-side receiveMessage is relayer-submitted, so we never need the user on the
-  // client chain.
-  await ensureChain(getNetworkConfig().hub.chainId)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const calldata = encodeAtomicCrossChainUnshield(
+    txStruct,
+    destinationDomain,
+    record.meta.recipient as `0x${string}`,
+    destinationCaller,
+    maxFee,
+  )
 
-  const hash = await sendTransaction(wagmiConfig, {
-    to: privacyPoolAddress as `0x${string}`,
-    data: encodeAtomicCrossChainUnshield(
-      txStruct,
-      destinationDomain,
-      record.meta.recipient as `0x${string}`,
-      destinationCaller,
-      maxFee,
-    ),
-    value: 0n,
-  })
+  // A6 wallet-override path — submit the wrapper calldata via the user's EVM wallet. The
+  // CCTP-message extraction + destination polling are identical to the relayer path; the only
+  // difference is the source of the hub-side tx hash.
+  if (record.meta.useWalletOverride) {
+    await ensureChain(hubChainId)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    const userHash = await sendTransaction(wagmiConfig, {
+      to: privacyPoolAddress as `0x${string}`,
+      data: calldata,
+      value: 0n,
+    })
+    const broadcastRecord = patchArtifacts(record, { sourceTxHash: userHash })
+    await ctx.upsert(broadcastRecord)
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal })
+    await extractCctpRefAndAdvance({
+      ctx,
+      record: broadcastRecord,
+      txHash: userHash,
+      hubChainId,
+      messageTransmitter: deployments.hub.cctp.messageTransmitter as `0x${string}`,
+      destChainId: record.meta.toChainId,
+    })
+    if (kmIsUnlocked()) {
+      void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+    }
+    return
+  }
+
+  // Hand the wrapper calldata to the relayer. Pre-submit pipeline validates the selector
+  // (atomicCrossChainUnshield → A5 addition) and decrypts the embedded broadcaster output against
+  // the `crossChainUnshield` advertised fee. Same failure modes as unshield-local:
+  //   FEE_INSUFFICIENT       — broadcaster output below advertised
+  //   FEE_EXPIRED            — cacheId expired between modal validation and relayer submit
+  //   GAS_ESTIMATION_FAILED  — would revert on-chain
+  //   SUBMISSION_FAILED      — relayer wallet couldn't broadcast
+  let submitResponse
+  try {
+    submitResponse = await submitRelay(
+      {
+        chainId: hubChainId,
+        to: privacyPoolAddress,
+        data: calldata,
+        feesCacheId: record.meta.feeCacheId,
+      },
+      ctx.signal,
+    )
+  } catch (err) {
+    if (err instanceof RelayerError) {
+      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+    }
+    throw err
+  }
+
+  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
   // Persist sourceTxHash immediately so cancel/timeout/revert can carry the hash forward. The
   // patched record MUST be threaded into the final advance below — `record` is now stale (lower
   // updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq write that
   // OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
+  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
   await ctx.upsert(broadcastRecord)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  const receipt = await waitForReceiptOrFail({ hash, signal: ctx.signal })
+  // Poll the relayer's /status until terminal. Same shape as unshield-local — the generic poll
+  // loop handles jittered backoff + abort propagation.
+  const pollResult = await poll(
+    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
+    { signal: ctx.signal },
+  )
 
-  // Extract the CCTP message reference from the hub receipt — gives us the indexed `nonce`
-  // topic to filter destination events on (unique per CCTP message, eliminates false positives
-  // we'd otherwise get from balance polling).
+  if (pollResult.status === 'aborted') throw new Error('cancelled')
+  if (pollResult.status === 'timeout') {
+    const error: TxError = {
+      code: 'POLL_TIMEOUT',
+      message:
+        'The relayer hasn\'t reported a final status for the hub burn. The transaction may still complete on chain — check the explorer.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    const failed = markFailed(broadcastRecord, error)
+    await ctx.upsert(failed)
+    return
+  }
+  const final = pollResult.value
+  if (!final) {
+    throw new Error('poll returned done without a status value')
+  }
+  if (final.status === 'failed') {
+    track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: 'EXECUTION_FAILED' })
+    const error: TxError = {
+      code: 'TX_REVERTED',
+      message: final.error ?? 'Relayer-broadcast hub burn reverted on chain.',
+      txHash: submitResponse.txHash as `0x${string}`,
+    }
+    const failed = markFailed(broadcastRecord, error)
+    await ctx.upsert(failed)
+    return
+  }
+  track('tx.relayer.confirmed', { id: record.id, kind: record.kind })
+
+  await extractCctpRefAndAdvance({
+    ctx,
+    record: broadcastRecord,
+    txHash: submitResponse.txHash as `0x${string}`,
+    hubChainId,
+    messageTransmitter: deployments.hub.cctp.messageTransmitter as `0x${string}`,
+    destChainId: record.meta.toChainId,
+  })
+
+  // Refresh shielded balance now — the burn debited the user's UTXOs plus the broadcaster output.
+  // Hub-side completion of the burn is the right moment; the destination mint is a separate event.
+  if (kmIsUnlocked()) {
+    void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
+  }
+}
+
+/**
+ * Hub-side completion: fetch the tx receipt from the wagmi public client, extract the CCTP
+ * MessageSent event from the logs, snapshot the destination chain's current block height, and
+ * advance the record to `hub-burn-confirmed`. Identical for both the relayer-mediated path (A5)
+ * and the wallet-override path (A6) — they only differ in the source of the txHash.
+ */
+async function extractCctpRefAndAdvance(args: {
+  ctx: Parameters<typeof unshieldXchainHandler.run>[1]
+  record: TxRecord<'unshield-xchain'>
+  txHash: `0x${string}`
+  hubChainId: number
+  messageTransmitter: `0x${string}`
+  destChainId: number
+}): Promise<void> {
+  const { ctx, record, txHash, hubChainId, messageTransmitter, destChainId } = args
+  const hubClient = getPublicClient(wagmiConfig, { chainId: hubChainId })
+  if (!hubClient) {
+    throw new Error('No wagmi public client for hub chain — cannot fetch tx receipt.')
+  }
+  const receipt = await hubClient.getTransactionReceipt({ hash: txHash })
+  if (!receipt) {
+    throw asTxError({
+      code: 'POLL_TIMEOUT',
+      message: 'Hub burn confirmed, but no receipt is fetchable. Retry shortly.',
+      txHash,
+    })
+  }
   const cctpRef = extractCctpMessageFromReceipt({
     logs: receipt.logs,
-    messageTransmitterAddress: deployments.hub.cctp.messageTransmitter as `0x${string}`,
+    messageTransmitterAddress: messageTransmitter,
   })
   if (!cctpRef) {
     throw new Error('No CCTP MessageSent log in hub tx receipt — cross-chain delivery cannot be tracked.')
   }
-
-  // Snapshot the destination chain's current block height so the delivery poll can scope its
-  // log query to fromBlock=now. Avoids re-scanning history; also cheap to support a resume
-  // mid-poll (we keep matching from the same fromBlock floor).
-  const destClient = getPublicClient(wagmiConfig, { chainId: record.meta.toChainId })
+  const destClient = getPublicClient(wagmiConfig, { chainId: destChainId })
   if (!destClient) {
-    throw new Error(`No wagmi public client for destination chain ${record.meta.toChainId}`)
+    throw new Error(`No wagmi public client for destination chain ${destChainId}`)
   }
   const destFromBlock = await destClient.getBlockNumber()
-
-  await ctx.upsert(advance(broadcastRecord, 'hub-burn-confirmed', {
-    sourceTxHash: hash,
+  await ctx.upsert(advance(record, 'hub-burn-confirmed', {
+    sourceTxHash: txHash,
     messageHash: cctpRef.messageHash,
     cctpNonce: cctpRef.nonce,
     destFromBlock: destFromBlock.toString(),
@@ -461,7 +599,9 @@ async function runWaitForDelivery(
     }
   }
 
-  // Balance refresh — the user just sent shielded USDC out, so their shielded balance dropped.
+  // Final shielded-balance refresh — the destination mint is a separate event but the user's
+  // shielded debit happened at the hub burn. Refreshing again here is a no-op safety net in case
+  // an earlier refresh raced the relayer's state.
   if (kmIsUnlocked()) {
     void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
   }

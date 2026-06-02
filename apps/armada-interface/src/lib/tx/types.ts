@@ -126,33 +126,113 @@ export interface MetaCommon {
 export interface MetaShield extends MetaCommon {
   /** Source chain id where USDC currently lives. */
   fromChainId: number
+  /**
+   * Phase B3 — gasless mode flag. Frozen at submit-time by the modal based on (wrapper
+   * deployed for fromChainId AND relayer healthy AND user hasn't toggled wallet-override).
+   *   - `true`  → handler signs an EIP-2612 permit + POSTs gaslessShield(...) calldata to the
+   *     relayer; user pays the relayer's `shield` tier fee in USDC and no ETH gas.
+   *   - `false` → handler does the existing direct path (user-signed approve + shield from the
+   *     EVM wallet, paying ETH gas). Defaults to false (omitted) for records pre-dating B3.
+   */
+  useGasless?: boolean
+  /**
+   * Phase B3 — USDC raw amount paid to the relayer's wrapper for gas reimbursement. Only set
+   * when `useGasless` is true. The permit signature authorises `amount + feeAmount` total; the
+   * wrapper splits `amount` to the pool and `feeAmount` to the relayer.
+   */
+  feeAmount?: bigint
+  /**
+   * Phase B3 — `GaslessShieldWrapper` address on `fromChainId`, copied from the deployment
+   * manifest at submit-time. Frozen on the record so a manifest refresh mid-flight can't shift
+   * the target out from under an in-flight tx. Only set when `useGasless` is true.
+   */
+  wrapperAddress?: string
+  /**
+   * Phase B3 — Unix seconds the permit signature is valid until. Picked by the modal (~10 min
+   * window per plan doc) and frozen here so the handler signs the permit with the same value.
+   */
+  permitDeadline?: number
 }
 
 export interface MetaShieldXchain extends MetaCommon {
   /** Client chain id we're shielding FROM. Always a client (not hub) — the modal routes
    *  same-chain shield to `shield` instead. */
   fromChainId: number
+  /**
+   * Phase B4 — gasless mode flag. Frozen at submit-time by the modal based on (client wrapper
+   * deployed for fromChainId AND relayer healthy AND user hasn't toggled wallet-override).
+   *   - `true`  → handler signs an EIP-2612 permit on the source chain + POSTs
+   *     gaslessCrossChainShield(...) calldata to the relayer; user pays the `shieldXchain`
+   *     tier fee in USDC and no native gas on the source chain.
+   *   - `false` → handler does the existing direct path (user-signed approve + crossChainShield
+   *     from the EVM wallet, paying native gas on the source chain). Defaults to false (omitted)
+   *     for records pre-dating B4.
+   */
+  useGasless?: boolean
+  /**
+   * Phase B4 — USDC raw amount paid to the relayer's wrapper for gas reimbursement on the
+   * source chain. Only set when `useGasless` is true. The permit signature authorises
+   * `amount + feeAmount` total; the wrapper splits `amount` into the CCTP burn and `feeAmount`
+   * to the relayer.
+   */
+  feeAmount?: bigint
+  /**
+   * Phase B4 — `GaslessShieldWrapperClient` address on `fromChainId`, copied from the
+   * deployment manifest at submit-time. Frozen on the record so a manifest refresh mid-flight
+   * can't shift the target out from under an in-flight tx. Only set when `useGasless` is true.
+   */
+  wrapperAddress?: string
+  /**
+   * Phase B4 — Unix seconds the permit signature is valid until. Picked by the modal (~10 min
+   * window per plan doc) and frozen here so the handler signs the permit with the same value.
+   */
+  permitDeadline?: number
 }
 
-export interface MetaUnshieldLocal extends MetaCommon {
+export interface MetaUnshieldLocal extends MetaCommon, MetaBroadcaster {
   /** EVM recipient on the hub chain. */
   recipient: string
 }
 
-export interface MetaUnshieldXchain extends MetaCommon {
+export interface MetaUnshieldXchain extends MetaCommon, MetaBroadcaster {
   /** Destination client chain id. */
   toChainId: number
   /** EVM recipient on the destination chain. */
   recipient: string
 }
 
-export interface MetaTransferShielded extends MetaCommon {
+/**
+ * Broadcaster context captured at submit-time from the FeeSchedule the modal used. The proof
+ * embeds these EXACT values; the relayer's server-side verifier (Phase A2) rejects requests
+ * whose decrypted broadcaster output doesn't match. Frozen for the record's lifetime — the
+ * cacheId already gates against the relayer rotating the schedule mid-flight.
+ *
+ * A6 — when `useWalletOverride: true` the handler skips the broadcaster path entirely: the proof
+ * is built with `broadcasterFee: null`, the tx is submitted via the user's EVM wallet, and the
+ * broadcasterFeeAmount / broadcasterRailgunAddress fields are recorded for history but ignored
+ * by the proof builder. The flag is frozen on the record at submit-time so a session-level
+ * preference flip mid-flight doesn't strand the handler.
+ */
+interface MetaBroadcaster {
+  /** USDC raw amount paid to the relayer's broadcaster output. */
+  broadcasterFeeAmount: bigint
+  /** Relayer's Railgun (`0zk`) address that the broadcaster output pays. */
+  broadcasterRailgunAddress: string
+  /**
+   * A6 wallet-override escape hatch. When true, handler builds the proof with `broadcasterFee:
+   * null` and submits via the user's EVM wallet (writeContract / sendTransaction) instead of
+   * POSTing to `/relay`. Defaults to false (relayer path) for records created before A6.
+   */
+  useWalletOverride?: boolean
+}
+
+export interface MetaTransferShielded extends MetaCommon, MetaBroadcaster {
   /** 0zk recipient. */
   recipient: string
 }
 
-export interface MetaYieldDeposit extends MetaCommon {}
-export interface MetaYieldWithdraw extends MetaCommon {
+export type MetaYieldDeposit = MetaCommon & MetaBroadcaster
+export interface MetaYieldWithdraw extends MetaCommon, MetaBroadcaster {
   /** Yield share amount to redeem; `amount` is the expected USDC output. */
   shares: bigint
 }
@@ -255,6 +335,14 @@ export interface ArtifactsShield extends ArtifactsCommon {
     encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
     shieldKey: `0x${string}`
   }
+  /**
+   * Phase B3 — EIP-2612 permit signature captured during build-proof when `meta.useGasless`
+   * is true. submit-relayer's gasless branch needs all three to encode the wrapper calldata.
+   * Absent on direct-submit records.
+   */
+  permitV?: number
+  permitR?: `0x${string}`
+  permitS?: `0x${string}`
 }
 
 /**
@@ -292,6 +380,14 @@ export interface ArtifactsShieldXchain extends ArtifactsXchain {
     encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
     shieldKey: `0x${string}`
   }
+  /**
+   * Phase B4 — EIP-2612 permit signature captured during build-proof when `meta.useGasless`
+   * is true. submit-relayer's gasless branch needs all three to encode the wrapper calldata.
+   * Absent on direct-submit records.
+   */
+  permitV?: number
+  permitR?: `0x${string}`
+  permitS?: `0x${string}`
 }
 
 export type ArtifactsFor<K extends TxKind> =

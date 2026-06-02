@@ -3,22 +3,26 @@
  *
  * Unified relayer service that handles:
  * 1. Privacy Relay: Submit shielded transactions on behalf of users
+ *    (multi-chain — hub + every configured client. Phase A selectors run on hub; Phase B2
+ *    gasless-shield wrapper selectors run on whichever chain the user signed the permit for.)
  * 2. CCTP Relay: Forward cross-chain CCTP messages between all chains
  *
  * Environment-aware:
  *   - Local (CCTP_MODE=mock): Uses mock message relay with no attestation
  *   - Testnet (CCTP_MODE=real): Uses Circle's Iris attestation service
  *
- * Loads contract addresses from deployment JSONs and starts all modules.
+ * Loads contract addresses from per-chain deployment JSONs and starts all modules.
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import { armadaRelayerSettings } from "./config";
+import { armadaRelayerSettings, allChains, hubChain, clientChains } from "./config";
 import { WalletManager } from "./modules/wallet-manager";
 import { FeeCalculator } from "./modules/fee-calculator";
 import { PrivacyRelay } from "./modules/privacy-relay";
+import { RelayerRailgunWallet } from "./modules/railgun-wallet";
 import { HttpApi } from "./modules/http-api";
+import { Counters } from "./modules/counters";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
@@ -50,43 +54,48 @@ interface YieldDeployment {
   contracts: { armadaYieldAdapter: string };
 }
 
-interface ContractAddresses {
+interface HubContractAddresses {
   privacyPool: string;
   armadaYieldAdapter: string;
   usdc: string;
   messageTransmitter: string;
   tokenMessenger: string;
+  /** Phase B2 wrapper. Optional — relayer logs a warning when absent. */
+  gaslessShieldWrapper?: string;
 }
 
-function loadContractAddresses(): ContractAddresses {
+interface ClientContractAddresses {
+  chainId: number;
+  privacyPoolClient: string;
+  /** Phase B2 wrapper. Optional — relayer logs a warning when absent. */
+  gaslessShieldWrapperClient?: string;
+}
+
+function loadHubAddresses(): HubContractAddresses {
   const netConfig = getNetworkConfig();
   const suffix = netConfig.env === "local" ? "" : `-${netConfig.env}`;
 
-  // Load privacy pool hub deployment
   const ppFile = `privacy-pool-hub${suffix}.json`;
   const ppDeployment = loadJson<PrivacyPoolDeployment>(ppFile);
   if (!ppDeployment) {
-    throw new Error(
-      `${ppFile} not found. Run deployment scripts first.`
-    );
+    throw new Error(`${ppFile} not found. Run deployment scripts first.`);
+  }
+  if (!ppDeployment.contracts.privacyPool) {
+    throw new Error(`${ppFile} is missing contracts.privacyPool.`);
   }
 
-  // Load yield deployment for ArmadaYieldAdapter
   const yieldFile = `yield-hub${suffix}.json`;
   const yieldDeployment = loadJson<YieldDeployment>(yieldFile);
   if (!yieldDeployment?.contracts?.armadaYieldAdapter) {
     throw new Error(
-      `${yieldFile} with armadaYieldAdapter not found. Run deploy_yield.ts first.`
+      `${yieldFile} with armadaYieldAdapter not found. Run deploy_yield.ts first.`,
     );
   }
 
-  // Load CCTP hub deployment
   const cctpFile = `hub${suffix}-v3.json`;
   const cctpDeployment = loadJson<CCTPDeployment>(cctpFile);
   if (!cctpDeployment) {
-    throw new Error(
-      `${cctpFile} not found. Run deployment scripts first.`
-    );
+    throw new Error(`${cctpFile} not found. Run deployment scripts first.`);
   }
 
   return {
@@ -95,7 +104,45 @@ function loadContractAddresses(): ContractAddresses {
     usdc: cctpDeployment.contracts.usdc,
     messageTransmitter: cctpDeployment.contracts.messageTransmitter,
     tokenMessenger: cctpDeployment.contracts.tokenMessenger,
+    gaslessShieldWrapper: ppDeployment.contracts.gaslessShieldWrapper,
   };
+}
+
+function loadClientAddresses(): ClientContractAddresses[] {
+  const netConfig = getNetworkConfig();
+  const suffix = netConfig.env === "local" ? "" : `-${netConfig.env}`;
+  const out: ClientContractAddresses[] = [];
+
+  // Map each configured client chain to its privacy-pool manifest. The filenames mirror the
+  // deployment-script convention: `privacy-pool-{prefix}{-env}.json`.
+  for (const chain of clientChains) {
+    // chain.privacyPoolDeploymentFile already encodes the per-env suffix.
+    const ppDeployment = loadJson<PrivacyPoolDeployment>(chain.privacyPoolDeploymentFile);
+    if (!ppDeployment) {
+      console.warn(
+        `[armada] ${chain.privacyPoolDeploymentFile} not found — client chain ${chain.chainId} (${chain.name}) will have no allowed targets. Phase B2 gasless-shield on this chain will reject as INVALID_TARGET.`,
+      );
+      continue;
+    }
+    if (!ppDeployment.contracts.privacyPoolClient) {
+      console.warn(
+        `[armada] ${chain.privacyPoolDeploymentFile} is missing contracts.privacyPoolClient — client chain ${chain.chainId} will have no allowed targets.`,
+      );
+      continue;
+    }
+    out.push({
+      chainId: chain.chainId,
+      privacyPoolClient: ppDeployment.contracts.privacyPoolClient,
+      gaslessShieldWrapperClient: ppDeployment.contracts.gaslessShieldWrapperClient,
+    });
+    // Tell the operator unambiguously whether B2 wrappers are wired up.
+    const wrapperStatus = ppDeployment.contracts.gaslessShieldWrapperClient
+      ? ppDeployment.contracts.gaslessShieldWrapperClient
+      : "(not deployed — gaslessCrossChainShield will reject as INVALID_TARGET)";
+    console.log(`  chain=${chain.chainId} (${chain.name}) wrapper=${wrapperStatus}`);
+  }
+
+  return out;
 }
 
 // ============ Main ============
@@ -110,50 +157,110 @@ async function main() {
   console.log("=".repeat(60));
   console.log();
 
-  // Load contract addresses
+  // Load contract addresses (hub + each client)
   console.log("[armada] Loading deployment configuration...");
-  let contracts: ContractAddresses;
+  let hubAddresses: HubContractAddresses;
+  let clientAddresses: ClientContractAddresses[];
   try {
-    contracts = loadContractAddresses();
+    hubAddresses = loadHubAddresses();
+    clientAddresses = loadClientAddresses();
   } catch (e: any) {
     console.error(`[armada] ${e.message}`);
     process.exit(1);
   }
 
-  console.log("[armada] Contract addresses:");
-  console.log(`  PrivacyPool:        ${contracts.privacyPool}`);
-  console.log(`  ArmadaYieldAdapter: ${contracts.armadaYieldAdapter}`);
-  console.log(`  USDC:               ${contracts.usdc}`);
-  console.log(`  MessageTransmitter: ${contracts.messageTransmitter}`);
-  console.log(`  TokenMessenger:     ${contracts.tokenMessenger}`);
+  console.log("[armada] Hub contract addresses:");
+  console.log(`  PrivacyPool:           ${hubAddresses.privacyPool}`);
+  console.log(`  ArmadaYieldAdapter:    ${hubAddresses.armadaYieldAdapter}`);
+  console.log(`  USDC:                  ${hubAddresses.usdc}`);
+  console.log(`  MessageTransmitter:    ${hubAddresses.messageTransmitter}`);
+  console.log(`  TokenMessenger:        ${hubAddresses.tokenMessenger}`);
+  console.log(
+    `  GaslessShieldWrapper:  ${hubAddresses.gaslessShieldWrapper ?? "(not deployed — gaslessShield will reject as INVALID_TARGET)"}`,
+  );
   console.log();
 
-  // Initialize wallet manager
+  // Initialize wallet manager — multi-chain (one provider + same EOA across all chains)
   console.log("[armada] Initializing wallet manager...");
   const walletManager = new WalletManager();
   await walletManager.initialize();
   console.log();
 
-  // Initialize fee calculator
-  console.log("[armada] Initializing fee calculator...");
-  const feeCalculator = new FeeCalculator(walletManager);
-  const initialFees = await feeCalculator.generateFeeSchedule();
-  console.log("[armada] Initial fee schedule:");
-  console.log(`  Transfer:           ${FeeCalculator.formatUsdcFee(initialFees.fees.transfer)}`);
-  console.log(`  Unshield:           ${FeeCalculator.formatUsdcFee(initialFees.fees.unshield)}`);
-  console.log(`  Cross-contract:     ${FeeCalculator.formatUsdcFee(initialFees.fees.crossContract)}`);
-  console.log(`  Cross-chain shield: ${FeeCalculator.formatUsdcFee(initialFees.fees.crossChainShield)}`);
-  console.log(`  Cross-chain unshield: ${FeeCalculator.formatUsdcFee(initialFees.fees.crossChainUnshield)}`);
-  console.log(`  Cache ID:           ${initialFees.cacheId}`);
-  console.log(`  Expires:            ${new Date(initialFees.expiresAt).toISOString()}`);
+  // Initialize the relayer's Railgun (0zk) wallet — engine boot + mnemonic-derived wallet.
+  // MUST precede FeeCalculator so the derived address is published on `/fees` from the first
+  // request, and MUST precede PrivacyRelay so broadcaster-fee verification has a viewing key.
+  console.log("[armada] Initializing relayer Railgun wallet...");
+  const railgunWallet = new RelayerRailgunWallet();
+  const { walletId: railgunWalletId, railgunAddress } = await railgunWallet.initialize();
+  console.log(`  Wallet ID: ${railgunWalletId.slice(0, 16)}...`);
+  console.log(`  Broadcaster address: ${railgunAddress}`);
   console.log();
 
-  // Initialize privacy relay
+  // Per-chain fee calculators. Each holds its own provider so the quoted gas price reflects
+  // the actual cost on that chain (Base Sepolia ~10x cheaper than Ethereum Sepolia today).
+  console.log("[armada] Initializing per-chain fee calculators...");
+  const feeCalculators = new Map<number, FeeCalculator>();
+  for (const chain of allChains) {
+    const provider = walletManager.getProvider(chain.chainId);
+    const calc = new FeeCalculator(provider, chain.chainId, railgunAddress);
+    feeCalculators.set(chain.chainId, calc);
+    const initial = await calc.generateFeeSchedule();
+    console.log(`  chain=${chain.chainId} (${chain.name})`);
+    console.log(`    shield:            ${FeeCalculator.formatUsdcFee(initial.fees.shield)}`);
+    console.log(`    shieldXchain:      ${FeeCalculator.formatUsdcFee(initial.fees.shieldXchain)}`);
+    console.log(`    transfer/unshield: ${FeeCalculator.formatUsdcFee(initial.fees.transfer)} / ${FeeCalculator.formatUsdcFee(initial.fees.unshield)}`);
+    console.log(`    crossContract:     ${FeeCalculator.formatUsdcFee(initial.fees.crossContract)}`);
+    console.log(`    crossChainUnshield:${FeeCalculator.formatUsdcFee(initial.fees.crossChainUnshield)}`);
+    console.log(`    cacheId:           ${initial.cacheId}`);
+  }
+  console.log();
+
+  // Build the per-chain allowed-targets map.
+  //   hub:    PrivacyPool + ArmadaYieldAdapter + (optional) GaslessShieldWrapper
+  //   client: GaslessShieldWrapperClient (when deployed)
+  // Phase A selectors are hub-only today, so clients only need the wrapper allow-listed.
+  const allowedTargetsByChain = new Map<number, string[]>();
+  const hubTargets: string[] = [hubAddresses.privacyPool, hubAddresses.armadaYieldAdapter];
+  if (hubAddresses.gaslessShieldWrapper) {
+    hubTargets.push(hubAddresses.gaslessShieldWrapper);
+  }
+  allowedTargetsByChain.set(hubChain.chainId, hubTargets);
+  for (const cli of clientAddresses) {
+    const targets: string[] = [cli.privacyPoolClient];
+    if (cli.gaslessShieldWrapperClient) {
+      targets.push(cli.gaslessShieldWrapperClient);
+    }
+    allowedTargetsByChain.set(cli.chainId, targets);
+  }
+
+  // Build the per-chain wrapper map for gasless-fee-verifier (lookup hot-path).
+  const wrappersByChain = new Map<number, string>();
+  if (hubAddresses.gaslessShieldWrapper) {
+    wrappersByChain.set(hubChain.chainId, hubAddresses.gaslessShieldWrapper);
+  }
+  for (const cli of clientAddresses) {
+    if (cli.gaslessShieldWrapperClient) {
+      wrappersByChain.set(cli.chainId, cli.gaslessShieldWrapperClient);
+    }
+  }
+
+  // Initialize privacy relay. Multi-chain — receives requests from any configured chain,
+  // dispatches via the right provider, fee-verifies via the right path.
   console.log("[armada] Initializing privacy relay...");
-  const privacyRelay = new PrivacyRelay(walletManager, feeCalculator, {
-    privacyPool: contracts.privacyPool,
-    armadaYieldAdapter: contracts.armadaYieldAdapter,
-  });
+  const counters = new Counters();
+  const privacyRelay = new PrivacyRelay(
+    walletManager,
+    feeCalculators,
+    allowedTargetsByChain,
+    {
+      wallet: railgunWallet.getWallet(),
+      privacyPoolAddress: hubAddresses.privacyPool,
+      hubChainId: netConfig.hub.chainId,
+      usdcAddress: hubAddresses.usdc,
+    },
+    { wrappersByChain },
+    counters,
+  );
 
   // Initialize CCTP relay module — select based on CCTP mode. `getHealth` is the contract
   // surfaced to http-api for the /health endpoint; both iris and cctp modules implement it.
@@ -175,7 +282,9 @@ async function main() {
   } else {
     console.log("[armada] Initializing MOCK CCTP relay module...");
     const cctpRelay = new CCTPRelayModule(async () => {
-      const fees = await feeCalculator.getCurrentFees();
+      // CCTP mock relay reads from the hub schedule today — keeps existing behaviour.
+      const hubCalc = feeCalculators.get(hubChain.chainId)!;
+      const fees = await hubCalc.getCurrentFees();
       const shieldFee = BigInt(fees.fees.crossChainShield);
       const unshieldFee = BigInt(fees.fees.crossChainUnshield);
       return shieldFee < unshieldFee ? shieldFee : unshieldFee;
@@ -193,8 +302,10 @@ async function main() {
   const httpApi = new HttpApi(
     armadaRelayerSettings.port,
     privacyRelay,
-    feeCalculator,
+    feeCalculators,
+    hubChain.chainId,
     () => cctpRelayModule.getHealth(),
+    counters,
   );
 
   // Start HTTP server
@@ -242,8 +353,6 @@ async function main() {
       );
       process.exit(1);
     }, SHUTDOWN_FORCE_EXIT_MS);
-    // `unref` so the timer itself doesn't keep the event loop alive if shutdown completes
-    // quickly. Otherwise a happy-path shutdown would wait the full 60s for the timer.
     forceExit.unref();
     clearInterval(cleanupInterval);
     try {
@@ -255,6 +364,11 @@ async function main() {
       httpApi.stop();
     } catch (err) {
       console.error("[armada] Error during HTTP API shutdown:", err);
+    }
+    try {
+      await railgunWallet.shutdown();
+    } catch (err) {
+      console.error("[armada] Error during Railgun engine shutdown:", err);
     }
     clearTimeout(forceExit);
     process.exit(0);

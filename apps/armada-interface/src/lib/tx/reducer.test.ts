@@ -19,6 +19,8 @@ function baseXchainRecord(): TxRecord<'unshield-xchain'> {
       feeCacheId: 'fee-1',
       toChainId: 84532,
       recipient: '0x0000000000000000000000000000000000000001',
+      broadcasterFeeAmount: 50_000n,
+      broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
     },
     artifacts: {
       sourceTxHash: '0xabc' as `0x${string}`,

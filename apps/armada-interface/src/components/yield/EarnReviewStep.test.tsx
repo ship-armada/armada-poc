@@ -14,6 +14,7 @@ function setupAdd() {
       rate={null}
       fee={null}
       netAmount={100_000_000n}
+      netLabel="Total deducted from balance"
       onBack={onBack}
       onConfirm={onConfirm}
     />,
@@ -35,7 +36,8 @@ describe('<EarnReviewStep>', () => {
         amount={50_000_000n}
         rate={null}
         fee={null}
-        netAmount={50_000_000n}
+        netAmount={49_500_000n}
+        netLabel="You'll receive into private balance"
         onBack={() => {}}
         onConfirm={() => {}}
       />,

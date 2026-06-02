@@ -125,6 +125,30 @@ export function Settings() {
               </label>
             </div>
           </li>
+          <li className={styles.row}>
+            <div className={styles.rowLabel}>
+              Submit transactions from my wallet
+              <div className={styles.rowSubLabel}>
+                Pay gas in ETH and sign each transaction in your wallet, instead of having the
+                relayer broadcast for you. Use this if the relayer is unreachable.
+              </div>
+            </div>
+            <div className={styles.rowAction}>
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  aria-label="Submit transactions from my wallet"
+                  checked={prefs.submitFromWallet}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setPrefs({ ...prefs, submitFromWallet: e.target.checked })
+                  }
+                />
+                <span className={styles.toggleTrack} aria-hidden="true">
+                  <span className={styles.toggleThumb} />
+                </span>
+              </label>
+            </div>
+          </li>
         </ul>
       </Card>
 

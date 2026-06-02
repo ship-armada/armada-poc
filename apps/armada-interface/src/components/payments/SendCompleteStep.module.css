@@ -36,6 +36,18 @@
   margin: 0;
 }
 
+.explorerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+  color: var(--semantic-color-text-accent);
+  text-decoration: none;
+}
+
+.explorerLink:hover {
+  text-decoration: underline;
+}
+
 .footer {
   align-self: stretch;
   margin: var(--primitives-spacing-6) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);

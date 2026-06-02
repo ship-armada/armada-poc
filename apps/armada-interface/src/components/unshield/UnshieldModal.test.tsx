@@ -15,7 +15,11 @@ const FAKE_QUOTE = {
   cacheId: 'test-cache',
   expiresAt: Date.now() + 5 * 60_000,
   chainId: 31337,
-  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0' },
+  // Shape-valid 0zk for the new isShieldedAddress() submit-time check. UnshieldModal rejects an
+  // empty / malformed broadcaster address before kicking proof generation, which is what catches
+  // a misconfigured relayer in practice.
+  broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
+  fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
 function renderModal(opts?: {

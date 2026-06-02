@@ -15,6 +15,12 @@ export interface PrivacyPoolHubDeployment {
     shieldModule: string
     transactModule: string
     hookRouter: string
+    /**
+     * Phase B2 — permit-based gasless `GaslessShieldWrapper` for hub gasless shield. Optional
+     * because manifests predating B2 don't carry it; B3's shield handler falls back to
+     * direct-submit (the Phase A path) when this is absent.
+     */
+    gaslessShieldWrapper?: string
   }
   cctp: {
     tokenMessenger: string
@@ -39,6 +45,12 @@ export interface PrivacyPoolClientDeployment {
   contracts: {
     privacyPoolClient: string
     hookRouter: string
+    /**
+     * Phase B2 — permit-based gasless `GaslessShieldWrapperClient` for cross-chain gasless
+     * shield originating on this client. Same optional-with-fallback rationale as the hub's
+     * `gaslessShieldWrapper`.
+     */
+    gaslessShieldWrapperClient?: string
   }
   cctp: {
     tokenMessenger: string

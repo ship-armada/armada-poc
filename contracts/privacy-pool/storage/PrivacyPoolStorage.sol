@@ -80,7 +80,9 @@ abstract contract PrivacyPoolStorage {
     /// @notice Shield fee in basis points (100 = 1%), default 0 for POC
     uint120 public shieldFee;
 
-    /// @notice Unshield fee in basis points (100 = 1%), default 0 for POC
+    /// @notice DEPRECATED — unshield is free per spec.
+    /// @dev Slot retained for storage layout compatibility with the delegatecall modules
+    ///      (removing it would shift `nftFee` and every subsequent slot). Always 0.
     uint120 public unshieldFee;
 
     /// @notice NFT fee in basis points, default 0 for POC (required for SDK compatibility)

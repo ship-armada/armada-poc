@@ -283,16 +283,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
-     * @notice Set the unshield fee in basis points
-     * @param _feeBps Fee in basis points (50 = 0.50%)
-     */
-    function setUnshieldFee(uint120 _feeBps) external override {
-        require(msg.sender == owner, "PrivacyPool: Only owner");
-        require(_feeBps <= 10000, "PrivacyPool: Fee too high");
-        unshieldFee = _feeBps;
-    }
-
-    /**
      * @notice Enable or disable testing mode
      * @dev POC ONLY - bypasses SNARK verification
      * @param _enabled Whether to enable testing mode

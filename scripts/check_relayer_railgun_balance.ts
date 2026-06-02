@@ -1,0 +1,310 @@
+/**
+ * Check the relayer's Railgun (0zk) wallet's shielded USDC balance — the running tally of
+ * broadcaster fees the relayer has collected via relayer-mediated submits (Phase A3+).
+ *
+ * Run:
+ *   source config/local.env && npx ts-node scripts/check_relayer_railgun_balance.ts
+ *   source config/sepolia.env && source config/secrets.env && npx ts-node scripts/check_relayer_railgun_balance.ts
+ *
+ * Why this is a separate script (not a relayer endpoint): the running relayer doesn't load a
+ * provider for its Railgun wallet — it only uses the wallet's viewing key for on-the-fly
+ * ciphertext decryption at /relay verify time. To READ the balance we need to load a provider,
+ * scan the merkletree, and await completion — which is heavy and unnecessary for the relayer's
+ * core duty. A scheduled job can wrap this script if you want continuous reporting.
+ *
+ * Uses a separate LevelDB at `data/relayer-balance-check-db/` so it doesn't fight the running
+ * relayer for the single-process lock on `relayer/state/railgun-db/`.
+ */
+
+import "dotenv/config";
+import * as fs from "fs";
+import * as path from "path";
+import { ethers } from "ethers";
+// @ts-ignore — leveldown ships with implicit any types
+import leveldown from "leveldown";
+import { installBisectingGetLogs } from "../relayer/lib/rpc-bisecting";
+import {
+  ArtifactStore,
+  startRailgunEngine,
+  stopRailgunEngine,
+  createRailgunWallet,
+  fullWalletForID,
+  loadProvider,
+  refreshBalances,
+  balanceForERC20Token,
+  setOnUTXOMerkletreeScanCallback,
+} from "@railgun-community/wallet";
+import { MerkletreeScanStatus } from "@railgun-community/shared-models";
+
+// Bisecting eth_getLogs patch — load BEFORE any ethers provider is constructed (the patch hits
+// JsonRpcProvider.prototype, so order isn't strictly required, but mounting at module top makes
+// the intent obvious to anyone reading the file). On Sepolia public RPCs this is load-bearing —
+// the SDK's internal scan calls would otherwise fail outright when a getLogs window exceeds the
+// provider's cap (Alchemy free tier = 10 blocks; Infura = 10k).
+installBisectingGetLogs();
+import {
+  NETWORK_CONFIG,
+  NetworkName,
+  TXIDVersion,
+} from "@railgun-community/shared-models";
+import {
+  ChainType,
+  POI,
+} from "@railgun-community/engine";
+import { getNetworkConfig } from "../config/networks";
+
+// Same constant the rest of the relayer-side flow uses for engine-encrypted wallet ops. Not a
+// secret — it's the wrapping key for the engine's own at-rest wallet record, not the user's
+// material. (See `lib/sdk/wallet.ts::DEFAULT_ENCRYPTION_KEY` for the long-form rationale.)
+const DEFAULT_ENCRYPTION_KEY =
+  "0101010101010101010101010101010101010101010101010101010101010101";
+
+// Wallet source — same tag the relayer itself uses, so logs identify this consistently.
+const ENGINE_WALLET_SOURCE = "armadarlcheck";
+
+interface Manifest {
+  contracts: { privacyPool: string };
+  cctp: { usdc: string };
+  deployBlock?: number;
+}
+
+function loadManifest(filename: string): Manifest {
+  const manifestPath = path.resolve(__dirname, "..", "deployments", filename);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Deployment manifest not found: ${manifestPath}`);
+  }
+  return JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as Manifest;
+}
+
+/**
+ * Mirror of the frontend's network-patching logic (apps/armada-interface/src/lib/railgun/
+ * network.ts). The SDK ships `NetworkName.Hardhat` as a placeholder; we point it at our
+ * actual deployment + real chain ID. On sepolia we also neutralise the canonical
+ * `Ethereum_Sepolia` entry so the SDK doesn't shadow ours with a QuickSync against
+ * real Railgun history.
+ */
+function patchNetworkConfig(
+  privacyPoolAddress: string,
+  deployBlock: number,
+  hubChainId: number,
+  isSepolia: boolean,
+): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const networkConfig = NETWORK_CONFIG as any;
+  const target = networkConfig[NetworkName.Hardhat];
+  if (!target) {
+    throw new Error("SDK NETWORK_CONFIG missing Hardhat entry");
+  }
+  target.proxyContract = privacyPoolAddress;
+  target.relayAdaptContract = ethers.ZeroAddress;
+  target.relayAdaptHistory = [""];
+  target.deploymentBlock = deployBlock;
+  target.poseidonMerkleAccumulatorV3Contract = ethers.ZeroAddress;
+  target.poseidonMerkleVerifierV3Contract = ethers.ZeroAddress;
+  target.tokenVaultV3Contract = ethers.ZeroAddress;
+  target.deploymentBlockPoseidonMerkleAccumulatorV3 = 0;
+  target.supportsV3 = false;
+  target.poi = undefined;
+  if (isSepolia) {
+    target.chain = { type: ChainType.EVM, id: hubChainId };
+    const sepoliaEntry = networkConfig["Ethereum_Sepolia"];
+    if (sepoliaEntry) sepoliaEntry.chain = { type: ChainType.EVM, id: -1 };
+  }
+}
+
+async function main(): Promise<void> {
+  const mnemonic = process.env.RELAYER_RAILGUN_MNEMONIC?.trim();
+  if (!mnemonic) {
+    throw new Error(
+      "RELAYER_RAILGUN_MNEMONIC is not set. Source the relayer's env (config/local.env or " +
+        "config/sepolia.env + config/secrets.env) before running.",
+    );
+  }
+
+  const netConfig = getNetworkConfig();
+  const isSepolia = netConfig.env === "sepolia";
+  const suffix = isSepolia ? "-sepolia" : "";
+  const hubManifest = loadManifest(`privacy-pool-hub${suffix}.json`);
+  const cctpManifest = loadManifest(`hub${suffix}-v3.json`);
+
+  const privacyPool = hubManifest.contracts.privacyPool;
+  const usdcAddress = cctpManifest.cctp?.usdc ?? hubManifest.cctp.usdc;
+  const deployBlock = hubManifest.deployBlock ?? 0;
+  const hubChainId = netConfig.hub.chainId;
+  const hubRpc = netConfig.hub.rpc;
+
+  console.log("[check-balance] Initializing engine via wallet-package startRailgunEngine...");
+  const dbPath = path.resolve(__dirname, "..", "data", "relayer-balance-check-db");
+  if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
+  const db = leveldown(dbPath);
+
+  // Stub artifact store — the wallet-package init requires one but balance reads + chain scans
+  // never trigger artifact lookups (those are proof-generation only). Callbacks throw loudly so
+  // any future code path that DOES need real artifacts surfaces the misuse immediately rather
+  // than failing later with a more confusing error.
+  const artifactStore = new ArtifactStore(
+    async () => {
+      throw new Error("balance-check: artifact get not supported (proof-gen disabled)");
+    },
+    async () => {
+      throw new Error("balance-check: artifact store not supported (proof-gen disabled)");
+    },
+    async () => false,
+  );
+
+  // startRailgunEngine sets the wallet-package's engine singleton — load-bearing for the later
+  // loadProvider call, which checks hasEngine() on the wallet package. Skipping this in favour
+  // of the engine-package's RailgunEngine.initForWallet alone produces the misleading
+  // "RAILGUN Engine not yet initialized" from loadProvider.
+  await startRailgunEngine(
+    ENGINE_WALLET_SOURCE,
+    db,
+    false, // shouldDebug
+    artifactStore,
+    false, // useNativeArtifacts
+    false, // skipMerkletreeScans — we WANT to scan so balanceForERC20Token has data
+  );
+
+  console.log("[check-balance] Deriving relayer wallet from mnemonic...");
+  const { id: walletId, railgunAddress } = await createRailgunWallet(
+    DEFAULT_ENCRYPTION_KEY,
+    mnemonic,
+    undefined, // creationBlockNumbers — relayer doesn't need creation-block scoping
+  );
+  console.log(`  Wallet ID: ${walletId.slice(0, 16)}...`);
+  console.log(`  Address:   ${railgunAddress}`);
+
+  console.log("[check-balance] Patching SDK network config + loading hub provider...");
+  console.log(`  Scan deployBlock: ${deployBlock}`);
+  console.log(`  RPC:              ${hubRpc}`);
+  patchNetworkConfig(privacyPool, deployBlock, hubChainId, isSepolia);
+
+  // Wire a UTXO-scan callback that doubles as our completion signal. We DON'T use
+  // `awaitWalletScan` because that waits for `WalletDecryptBalancesComplete`, which is gated by
+  // `if (!deferCompletionEvent)` inside the SDK — and the scan path triggered by `refreshBalances`
+  // → `scanContractHistory` → `scanUTXOHistory` always passes `deferCompletionEvent=true`. The
+  // event we'd be waiting for cannot fire. Instead, we resolve when the merkletree scan reaches
+  // the `Complete` status, at which point all commitments are persisted and `balanceForERC20Token`
+  // returns the right value.
+  let lastReportedPct = -5;
+  let lastStatus = "";
+  let resolveScanComplete: ((reason: "complete" | "incomplete") => void) | null = null;
+  const scanSettled = new Promise<"complete" | "incomplete">((resolve) => {
+    resolveScanComplete = resolve;
+  });
+  setOnUTXOMerkletreeScanCallback((evt) => {
+    const pct = Math.floor(evt.progress * 100);
+    const statusChanged = evt.scanStatus !== lastStatus;
+    const milestone = pct === 100 || pct - lastReportedPct >= 5;
+    if (statusChanged || milestone) {
+      if (statusChanged) lastStatus = evt.scanStatus;
+      if (milestone) lastReportedPct = pct;
+      console.log(`  scan ${pct}% (status=${evt.scanStatus})`);
+    }
+    if (evt.scanStatus === MerkletreeScanStatus.Complete && resolveScanComplete) {
+      resolveScanComplete("complete");
+      resolveScanComplete = null;
+    } else if (evt.scanStatus === MerkletreeScanStatus.Incomplete && resolveScanComplete) {
+      // Incomplete = scan threw mid-flight (RPC failure, validation issue). Balance reads may
+      // be partial but we resolve anyway so the operator sees something useful.
+      resolveScanComplete("incomplete");
+      resolveScanComplete = null;
+    }
+  });
+
+  // Single-provider fallback config — pollingInterval longer on testnet to be kind to public RPCs.
+  await loadProvider(
+    {
+      chainId: hubChainId,
+      providers: [
+        {
+          provider: hubRpc,
+          priority: 1,
+          weight: 2,
+          maxLogsPerBatch: 10,
+          stallTimeout: isSepolia ? 10_000 : 2_500,
+        },
+      ],
+    },
+    NetworkName.Hardhat,
+    isSepolia ? 15_000 : 2_000,
+  );
+
+  console.log("[check-balance] Kicking merkletree scan + awaiting completion...");
+  console.log("  (Sepolia first-run can take minutes — progress lines tick every ~5%)");
+  const chain = { type: ChainType.EVM, id: hubChainId };
+  // refreshBalances → engine.scanContractHistory: actually starts the scan. `loadProvider`
+  // alone only registers the network; without this call there's nothing scanning and the
+  // promise sits forever waiting for an event that never fires.
+  void refreshBalances(chain, [walletId]);
+
+  // Race against a hard timeout in case Complete never fires (RPC stuck on a single block,
+  // SDK internal error swallowed, etc.). On timeout we still read the balance from whatever
+  // got persisted — better than an open-ended wait.
+  const SCAN_TIMEOUT_MS = isSepolia ? 15 * 60_000 : 60_000;
+  const result = await Promise.race([
+    scanSettled,
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), SCAN_TIMEOUT_MS)),
+  ]);
+  if (result === "timeout") {
+    console.warn(
+      `[check-balance] Scan didn't settle within ${SCAN_TIMEOUT_MS / 1000}s; reading balance ` +
+        `from whatever was scanned so far. Re-run to resume from the last persisted cursor ` +
+        `(LevelDB at data/relayer-balance-check-db/).`,
+    );
+  } else if (result === "incomplete") {
+    console.warn(
+      "[check-balance] Scan ended in 'Incomplete' status — partial coverage. Re-run to resume.",
+    );
+  }
+
+  console.log("[check-balance] Reading USDC balance...");
+  // POI (Proof of Innocence) sanity-init. `startRailgunEngine` only calls `WalletPOI.init` when
+  // `poiNodeURLs` is provided; we don't pass any (we don't need POI for read-only balance work).
+  // The engine still calls into POI from `getTokenBalancesByTxidVersion` to bucket commitments;
+  // an uninitialized `POI.lists` (undefined) blows up there with "Cannot read properties of
+  // undefined (reading 'filter')". An empty list array + stub node interface satisfies the
+  // class invariant — bucketing falls into the no-active-list branch (MissingExternalPOI etc.)
+  // which is fine because we're just summing all token balances regardless of bucket.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  POI.init([], {} as any);
+  const wallet = fullWalletForID(walletId);
+  const balanceRaw = await balanceForERC20Token(
+    TXIDVersion.V2_PoseidonMerkle,
+    wallet,
+    NetworkName.Hardhat,
+    usdcAddress,
+    false, // onlySpendable: include non-spendable (POI-pending) too — closer to "accrued"
+  );
+
+  // 6-decimal USDC formatting without depending on ethers.formatUnits (clearer for an op script).
+  const USDC_DECIMALS = 6n;
+  const USDC_UNIT = 10n ** USDC_DECIMALS;
+  const whole = balanceRaw / USDC_UNIT;
+  const fraction = balanceRaw % USDC_UNIT;
+  const fractionPadded = fraction.toString().padStart(Number(USDC_DECIMALS), "0");
+
+  console.log("");
+  console.log("=".repeat(60));
+  console.log(`  RELAYER SHIELDED USDC BALANCE`);
+  console.log(`  Address:    ${railgunAddress}`);
+  console.log(`  USDC token: ${usdcAddress}`);
+  console.log(`  Raw:        ${balanceRaw}`);
+  console.log(`  Formatted:  ${whole}.${fractionPadded} USDC`);
+  console.log("=".repeat(60));
+
+  await stopRailgunEngine();
+}
+
+main()
+  .then(() => {
+    // `stopRailgunEngine` doesn't tear down the polling-provider's setInterval timer (or any
+    // POI batcher / merkletree listener that's still subscribed). Without an explicit exit the
+    // event loop has live handles and the process sits forever even though our work is done.
+    // Diagnostic script → exit 0 is the right answer.
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("[check-balance] FAILED:", err);
+    process.exit(1);
+  });

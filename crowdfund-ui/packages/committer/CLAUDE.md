@@ -10,13 +10,25 @@ The spec defines the full action surface: commit flow (per-hop amounts, pro-rata
 
 ## Architecture
 
-Two halves:
-- **Observer Panel (left ~60%)** — embeds shared view components from `@armada/crowdfund-shared` (StatsBar, TreeView, TableView). Same data, same visualization as the standalone observer.
-- **Action Panel (right ~40%)** — wallet-connected, app-local. Three tabs: Commit, Invite, Claim. Context-aware — shows only actions available to the connected address in the current contract state.
+The app renders three primary surfaces driven by URL state (the `page` enum
+in `App.tsx`):
 
-The observer and action panels share the same data layer (from shared). The action panel adds wallet-specific hooks (useWallet, useEligibility, useAllowance, useProRataEstimate).
-
-Desktop: side-by-side resizable split. Mobile: tabbed (Network / Participate).
+- **Network** — full-bleed Hero (`CrowdfundExperience` from `@armada/crowdfund-shared`)
+  with the NodeSphere, participants panel, and Progress card. Mock data flows
+  through during initial deploy load; live data takes over once the indexer
+  has events.
+- **My Position** — same `CrowdfundExperience` shell, view switched to
+  `'myposition'`. Drives the user's per-hop summary card + invite-slot card.
+- **Participate** — opens as a portal-rendered modal (`ParticipateFlowModal`)
+  wrapping `ParticipateFlowV2`. Multi-hop aware: per-hop amount entry,
+  single-approve + N-commit pipeline, in-modal invite-slot step.
+- **Claim** — `ClaimFlowV2` page. Handles ARM claim + delegation, and USDC
+  refund for cancelled / below-min sales.
+- **Invite Slots** — standalone `InviteSlotsPage` reached from the header.
+  Renders per-hop sections from `useInviteSlots`.
+- **`/invite?...`** — `InviteLandingPage` reads the EIP-712 invite link,
+  pre-validates, and hands off to `InviteLinkFlowController` for the
+  commitWithInvite path.
 
 ## Development
 
@@ -66,31 +78,36 @@ See `package.json` for the full list.
 These components and hooks belong to this app (NOT in shared):
 
 **Components** (`src/components/`):
-- `ActionPanel.tsx` — tab container (Commit / Invite / Claim)
-- `CommitTab.tsx` — eligibility check, per-hop amount entry, review/confirm
-- `InviteTab.tsx` — invite slot management, link creation (EIP-712), direct invite
-- `InviteLinkRedemption.tsx` — landing page for `/invite?...` URL
-- `ClaimTab.tsx` — ARM claim with delegation, USDC refund claim
-- `ProRataEstimate.tsx` — estimated allocation display
-- `TransactionFlow.tsx` — shared tx submission UI (pending → confirmed → error)
-- `WalletHeader.tsx` — connected address, balance, network indicator
-- `DelegateInput.tsx` — delegate address selector for ARM claim
+- `ParticipateFlowV2.tsx` — wires the designer's Step1–Step5 commit flow to the
+  committer's eligibility / balance / approve+commit transaction pipeline.
+  Multi-hop aware.
+- `ClaimFlowV2.tsx` — page-level controller for the ARM-or-refund claim flow.
+  Mirrors the commit modal aesthetic (480px lavender card, Step4Approve-style
+  tx pipeline, Step5-style done screen).
+- `InviteSlotsPage.tsx` — standalone Invite Slots page reachable from the
+  header Invite button. Renders per-hop sections.
+- `InviteLinkFlowController.tsx` — the inline `/invite` step machine
+  (`Step1Wallet → Step2Commit → Step3Review → Step4Approve → Step5Confirmation
+  → 'invites'`), wired to `commitWithInvite`.
+- `InviteLandingPage.tsx` — `/invite?...` landing chrome (logo + Step0Invite
+  card + pre-validation gates).
 
 **Hooks** (`src/hooks/`):
 - `useWallet.ts` — wallet connection state (wagmi)
 - `useEligibility.ts` — which hops is the connected address invited to?
 - `useAllowance.ts` — USDC allowance check for commit flow
-- `useTransactionFlow.ts` — submit tx → wait → confirm/error
-- `useProRataEstimate.ts` — live pro-rata estimate from current demand
 - `useInviteLinks.ts` — create, store, revoke invite links (EIP-712 + IndexedDB)
+- `useInviteSlots.ts` — per-hop invite-slot sections derived from eligibility +
+  invite-link state; consumed by both the MyPosition inline card and the
+  standalone Invite Slots page.
 
 ## URL Routing
 
 Two routes:
-- `/` — main app (observer + action panel)
+- `/` — main app
 - `/invite?inviter=...&fromHop=...&nonce=...&deadline=...&sig=...` — invite link redemption landing
 
-Use a lightweight router (react-router-dom or similar). The `/invite` route renders `InviteLinkRedemption.tsx`.
+Use a lightweight router (react-router-dom or similar). The `/invite` route renders `InviteLandingPage.tsx`.
 
 ## Contract Write Functions
 

@@ -16,7 +16,6 @@ import {
   SearchBar,
   TreeView,
   AppShell,
-  LifecycleBanner,
   Separator,
   Tabs,
   TabsList,
@@ -56,14 +55,6 @@ import { useInviteSlots } from '@/hooks/useInviteSlots'
 
 type ActionTab = 'commit' | 'invite'
 type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'invite-slots'
-
-/**
- * Master switch for the lifecycle progress bar (header strip + mobile body
- * fallback). Currently hidden because the Claim nav suffix surfaces the same
- * countdown more compactly. The component, derivations, and rendering paths
- * stay in the codebase — flip to `true` to bring the banner back.
- */
-const SHOW_LIFECYCLE_BAR = false
 
 /**
  * Desktop horizontal nav items (left side of header).
@@ -327,11 +318,6 @@ function MockCommitterApp({ size }: { size: number }) {
       appName={`Committer · stress ?mock=stress${size}`}
       network="local"
       headerNav={headerNav}
-      headerStatus={
-        SHOW_LIFECYCLE_BAR ? (
-          <LifecycleBanner stage="commit-invite" countdownSeconds={13 * 86400} compact />
-        ) : undefined
-      }
       mobileMenu={mobileMenu}
     >
       <div className="container mx-auto p-4 space-y-4">
@@ -340,13 +326,6 @@ function MockCommitterApp({ size }: { size: number }) {
           action-panel visuals stubbed as a whitelisted hop-1 participant.
           Interactions are disabled. Remove <code>?mock=…</code> from the URL to exit.
         </div>
-
-        {SHOW_LIFECYCLE_BAR && (
-          // Mobile-only fallback for the lifecycle status (sm+ uses the header).
-          <div className="sm:hidden">
-            <LifecycleBanner stage="commit-invite" countdownSeconds={13 * 86400} />
-          </div>
-        )}
 
         {page === 'network' && (
           <div key="mock-page-network" className="space-y-8 animate-page-enter">
@@ -1057,14 +1036,6 @@ export function App() {
 
   const headerNav = <PageNav current={page} onChange={setPage} />
 
-  const lifecycleStatus = SHOW_LIFECYCLE_BAR ? (
-    <LifecycleBanner
-      stage={lifecycleStage}
-      countdownSeconds={lifecycleCountdown}
-      compact
-    />
-  ) : undefined
-
   const participateModal = (
     <ParticipateFlowModal
       open={participateOpen}
@@ -1112,7 +1083,6 @@ export function App() {
           appName="Committer"
           network={getNetworkMode()}
           headerNav={headerNav}
-          headerStatus={lifecycleStatus}
           headerRight={headerRightChrome}
           mobileMenu={mobileMenu}
           bare
@@ -1150,7 +1120,6 @@ export function App() {
       appName="Committer"
       network={getNetworkMode()}
       headerNav={headerNav}
-      headerStatus={lifecycleStatus}
       headerRight={headerRightChrome}
       mobileMenu={mobileMenu}
     >
@@ -1158,16 +1127,6 @@ export function App() {
       <div className="container mx-auto p-4 space-y-4">
         <StaleDataBanner indexerHealth={indexerHealth} />
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
-
-        {SHOW_LIFECYCLE_BAR && (
-          // Mobile-only fallback for the lifecycle status. On sm+ the status
-          // lives in the AppShell header (compact form); below that
-          // breakpoint the header collapses, so we render the full banner
-          // here instead.
-          <div className="sm:hidden">
-            <LifecycleBanner stage={lifecycleStage} countdownSeconds={lifecycleCountdown} />
-          </div>
-        )}
 
         {page === 'invite-slots' && (
           <div key="page-invite-slots" className="animate-page-enter">

@@ -1,15 +1,37 @@
-// ABOUTME: Step 2 of the Participate flow — USDC amount entry with existing-commitment-aware progress bar + ARM allocation tooltip.
-// ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/screens/Step2Commit.tsx); @armada/ui primitive imports rewritten to named imports from the package barrel.
+// ABOUTME: Step 2 of the Participate flow — USDC amount entry. Single-hop path keeps the designer's big centered input; multi-hop path stacks one input row per eligible hop with shared balance / allocation footer.
+// ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/screens/Step2Commit.tsx); @armada/ui primitive imports rewritten to named imports from the package barrel. Multi-hop variant is local extension (designer-silent).
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import styles from './Step2Commit.module.css'
 import { Steps } from '@armada/ui'
 import { Button } from '@armada/ui'
 import { Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
+
+/** One per-hop input row for the multi-hop variant. The single-hop path is
+ *  triggered when `hopRows` is omitted or length === 1 — passing a single
+ *  row through is supported, but the legacy big-number input is preferred
+ *  for that case (cleaner visual). */
+export interface Step2CommitHopRow {
+  hop: 0 | 1 | 2
+  /** Display label — e.g. 'SEED', 'HOP-1', 'HOP-2'. */
+  hopLabel: string
+  /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
+  hopColor: string
+  /** Per-hop cap in USDC (matches `effectiveCap` from useEligibility). */
+  maxAmount: number
+  /** Already committed at this hop, used to compute remaining cap. */
+  existingCommittedUsdc: number
+}
+
 interface Step2CommitProps extends ParticipateStepBarProps {
+  /** Single-hop callback. Called with the amount the user entered. Ignored
+   *  when `hopRows` triggers the multi-hop path. */
   onNext: (amount: number) => void
+  /** Multi-hop callback. Called instead of `onNext` when `hopRows.length > 1`.
+   *  Map keyed by hop (0/1/2) with the per-hop amount the user entered. */
+  onNextMulti?: (amounts: Record<0 | 1 | 2, number>) => void
   onBack: () => void
   maxAmount?: number
   availableBalance?: number
@@ -17,12 +39,21 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   /** Already committed USDC — bar shows this before new input. */
   existingCommittedUsdc?: number
   showBack?: boolean
+  /** Per-hop rows for the multi-hop variant. When length > 1, replaces the
+   *  single amount input with stacked entries. Omit (or pass length ≤ 1) to
+   *  keep the legacy designer-faithful single-hop UX. */
+  hopRows?: ReadonlyArray<Step2CommitHopRow>
 }
 
 const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
 
+function formatBalance(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function Step2Commit({
   onNext,
+  onNextMulti,
   onBack,
   maxAmount = 4000,
   availableBalance = 215154.14,
@@ -31,7 +62,57 @@ export default function Step2Commit({
   showBack = true,
   steps = DEFAULT_STEPS,
   stepIndex = 2,
+  hopRows,
 }: Step2CommitProps) {
+  const isMulti = !!hopRows && hopRows.length > 1
+  return isMulti ? (
+    <MultiHopVariant
+      hopRows={hopRows!}
+      onNextMulti={onNextMulti}
+      onBack={onBack}
+      availableBalance={availableBalance}
+      showBack={showBack}
+      steps={steps}
+      stepIndex={stepIndex}
+    />
+  ) : (
+    <SingleHopVariant
+      onNext={onNext}
+      onBack={onBack}
+      maxAmount={maxAmount}
+      availableBalance={availableBalance}
+      maxArm={maxArm}
+      existingCommittedUsdc={existingCommittedUsdc}
+      showBack={showBack}
+      steps={steps}
+      stepIndex={stepIndex}
+    />
+  )
+}
+
+// ── Single-hop variant (designer-faithful, byte-equivalent to original) ──
+
+function SingleHopVariant({
+  onNext,
+  onBack,
+  maxAmount,
+  availableBalance,
+  maxArm,
+  existingCommittedUsdc,
+  showBack,
+  steps,
+  stepIndex,
+}: {
+  onNext: (amount: number) => void
+  onBack: () => void
+  maxAmount: number
+  availableBalance: number
+  maxArm: number
+  existingCommittedUsdc: number
+  showBack: boolean
+  steps: readonly string[]
+  stepIndex: number
+}) {
   const [amount, setAmount] = useState<number>(0)
 
   const remainingCap = Math.max(0, maxAmount - existingCommittedUsdc)
@@ -50,9 +131,6 @@ export default function Step2Commit({
       setAmount(Math.min(val, remainingCap))
     }
   }
-
-  const formatBalance = (n: number) =>
-    n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   return (
     <div className={styles.shell}>
@@ -171,6 +249,227 @@ export default function Step2Commit({
           showIcon={false}
           onClick={() => onNext(amount)}
           disabled={!hasNewAmount}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── Multi-hop variant (local extension; designer hasn't shipped a spec) ──
+
+function MultiHopVariant({
+  hopRows,
+  onNextMulti,
+  onBack,
+  availableBalance,
+  showBack,
+  steps,
+  stepIndex,
+}: {
+  hopRows: ReadonlyArray<Step2CommitHopRow>
+  onNextMulti: ((amounts: Record<0 | 1 | 2, number>) => void) | undefined
+  onBack: () => void
+  availableBalance: number
+  showBack: boolean
+  steps: readonly string[]
+  stepIndex: number
+}) {
+  // Amounts are tracked as strings so the user can clear a field without it
+  // collapsing to "0" mid-typing. Numeric conversion happens for sums + the
+  // submit callback.
+  const [amounts, setAmounts] = useState<Record<0 | 1 | 2, string>>({
+    0: '',
+    1: '',
+    2: '',
+  })
+
+  // Reset row state if the input set changes mid-flow (e.g. eligibility
+  // refresh adds a new hop). Keyed on the hop list so re-mounting isn't
+  // required for the common case where rows are stable.
+  const hopsKey = useMemo(() => hopRows.map((r) => r.hop).join(','), [hopRows])
+  useEffect(() => {
+    setAmounts({ 0: '', 1: '', 2: '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hopsKey])
+
+  const parsedByHop = useMemo<Record<0 | 1 | 2, number>>(() => {
+    const out: Record<0 | 1 | 2, number> = { 0: 0, 1: 0, 2: 0 }
+    for (const row of hopRows) {
+      const raw = amounts[row.hop]
+      const parsed = parseFloat(raw.replace(/[^0-9.]/g, ''))
+      out[row.hop] = isNaN(parsed) ? 0 : parsed
+    }
+    return out
+  }, [amounts, hopRows])
+
+  const totalNew = useMemo(
+    () => hopRows.reduce((sum, row) => sum + (parsedByHop[row.hop] ?? 0), 0),
+    [parsedByHop, hopRows],
+  )
+  const totalExisting = useMemo(
+    () => hopRows.reduce((sum, row) => sum + row.existingCommittedUsdc, 0),
+    [hopRows],
+  )
+  const totalCap = useMemo(
+    () => hopRows.reduce((sum, row) => sum + row.maxAmount, 0),
+    [hopRows],
+  )
+  const totalArm = Math.round(totalExisting + totalNew)
+
+  const overBalance = totalNew > availableBalance
+  const anyOverHopCap = hopRows.some((row) => {
+    const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
+    return parsedByHop[row.hop] > remaining
+  })
+  const canReview = totalNew > 0 && !overBalance && !anyOverHopCap
+
+  const handleInputChange = (hop: 0 | 1 | 2) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Strip non-numeric (except decimal point). Allow an empty string so the
+    // user can clear a field; numeric coercion happens at parse time above.
+    const cleaned = e.target.value.replace(/[^0-9.]/g, '')
+    setAmounts((prev) => ({ ...prev, [hop]: cleaned }))
+  }
+
+  const handleNext = () => {
+    if (!onNextMulti) return
+    onNextMulti(parsedByHop)
+  }
+
+  // Bar fills: each hop contributes a slice proportional to its share of
+  // totalCap. We render existing fills (purple-700) followed by new fills
+  // (lavender) for each hop in declaration order.
+  const safeTotalCap = totalCap > 0 ? totalCap : 1
+  const existingRatio = Math.min(totalExisting / safeTotalCap, 1)
+  const newRatio = Math.min((totalExisting + totalNew) / safeTotalCap, 1) - existingRatio
+
+  return (
+    <div className={styles.shell}>
+      <Steps steps={[...steps]} currentStep={stepIndex} />
+
+      <div className={styles.content}>
+        <div className={styles.multiList}>
+          <div>
+            <h2 className={styles.multiTitle}>How much USDC?</h2>
+            <p className={styles.multiAvailableLabel}>
+              Available {formatBalance(availableBalance)}
+            </p>
+          </div>
+
+          {hopRows.map((row) => {
+            const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
+            const hasExisting = row.existingCommittedUsdc > 0
+            const value = amounts[row.hop]
+            const inputId = `commit-amount-hop-${row.hop}`
+            return (
+              <label key={row.hop} htmlFor={inputId} className={styles.multiRow}>
+                <div className={styles.multiRowLeft}>
+                  <span
+                    className={styles.multiHopDot}
+                    style={{ background: row.hopColor }}
+                    aria-hidden
+                  />
+                  <span className={styles.multiHopLabel}>{row.hopLabel}</span>
+                </div>
+                <span className={styles.multiCapLabel}>
+                  {hasExisting
+                    ? `${remaining.toLocaleString()} remaining`
+                    : `Max ${row.maxAmount.toLocaleString()}`}
+                </span>
+                <span className={styles.visuallyHidden}>
+                  USDC amount for {row.hopLabel}
+                </span>
+                <input
+                  id={inputId}
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={remaining}
+                  value={value}
+                  placeholder="0"
+                  onChange={handleInputChange(row.hop)}
+                  className={styles.multiAmountInput}
+                />
+              </label>
+            )
+          })}
+        </div>
+
+        <div className={styles.allocationBlock}>
+          <div
+            className={styles.barTrack}
+            role="progressbar"
+            aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Total committed amount progress"
+          >
+            {existingRatio > 0 && (
+              <div
+                className={styles.barFillExisting}
+                style={{ width: `${existingRatio * 100}%` }}
+              />
+            )}
+            {newRatio > 0 && (
+              <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
+            )}
+          </div>
+          <div className={styles.allocationRow}>
+            <div className={styles.allocationLeft}>
+              <span className={styles.allocationLabel}>EST. ARM ALLOCATION</span>
+              <Tooltip
+                variant="rich"
+                title="EST. ARM Allocation"
+                description="Estimated total ARM across all hops based on the amounts entered."
+                bullets={[
+                  '1 ARM per 1 USDC committed',
+                  'Final allocation confirmed at close',
+                  'Subject to per-hop pool caps',
+                ]}
+              >
+                <button
+                  type="button"
+                  className={styles.infoTrigger}
+                  aria-label="Estimated ARM allocation details"
+                >
+                  <InformationCircleIcon className={styles.infoIcon} aria-hidden />
+                </button>
+              </Tooltip>
+            </div>
+            <div className={styles.allocationRight}>
+              <span
+                className={
+                  totalNew > 0 || totalExisting > 0
+                    ? styles.allocationValueActive
+                    : styles.allocationValue
+                }
+              >
+                {totalArm.toLocaleString()}
+              </span>
+              <span className={styles.allocationDivider} aria-hidden="true">
+                /
+              </span>
+              <span className={styles.allocationMax}>{totalCap.toLocaleString()} ARM</span>
+            </div>
+          </div>
+          {overBalance && (
+            <p className={styles.multiOverBalance}>
+              Total exceeds your wallet balance.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.buttonRow}>
+        {showBack && (
+          <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+        )}
+        <Button
+          variant="primary"
+          size="lg"
+          label="Review"
+          showIcon={false}
+          onClick={handleNext}
+          disabled={!canReview}
         />
       </div>
     </div>

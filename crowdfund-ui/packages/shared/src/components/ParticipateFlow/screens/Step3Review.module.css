@@ -22,6 +22,19 @@
   overflow: visible;
 }
 
+/* Multi-hop variant: per-hop summary rows push the card past the fixed
+ * 500px height when the user is eligible at 2-3 hops. Switch to auto-
+ * sized height with a 500px floor (so two-hop cards don't shrink below
+ * the designer's original size) and a viewport-relative ceiling so very
+ * short viewports still get a scrollable card. Single-hop reviews keep
+ * the unmodified 500px shell. */
+.shellMultiHop {
+  height: auto;
+  min-height: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
 .content {
   display: flex;
   flex-direction: column;
@@ -76,6 +89,15 @@
   display: flex;
   align-items: center;
   gap: var(--primitives-spacing-2);
+}
+
+/* Colored hop dot for the multi-hop review row labels. Matches the dot in
+ * MyPosition meta chips / Step2Commit row headers. */
+.hopDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .summaryLabel {
@@ -144,6 +166,11 @@
   display: flex;
   gap: var(--primitives-spacing-3);
   width: 100%;
+  /* Guaranteed gap above the row. In single-hop (fixed 500px shell) this
+   * shrinks the inner `space-between` gap by the same amount — no visible
+   * change. In multi-hop (auto-height shell) it adds real breathing room
+   * between the warning block and the buttons. */
+  margin-top: var(--primitives-spacing-6);
 }
 
 .buttonRow > * {

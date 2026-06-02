@@ -300,3 +300,138 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* ── Multi-hop input variant ──
+ * Each hop is a single horizontal row (hop chip + cap label + amount
+ * input) with no surrounding card — kept flat so the modal stays compact
+ * when the user is eligible at 2-3 hops. */
+.multiList {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.multiTitle {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+}
+
+/* "Available {balance}" sits directly under the title (was lower down
+ * in v0 of the multi-hop variant). Caps/uppercase to match the single-
+ * hop variant's `.availableLabel` styling. */
+.multiAvailableLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  margin: var(--primitives-spacing-2) 0 var(--primitives-spacing-4);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: var(--primitives-letterSpacing-wider);
+}
+
+.multiRow {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  /* No background, no border, no internal padding — flat row inside the
+   * shell's main padding. The amount input keeps its own large font so
+   * the entry stays the visual anchor of the row. */
+}
+
+.multiRowLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  flex-shrink: 0;
+}
+
+.multiHopDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.multiHopLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+}
+
+/* Sits between the hop label and the amount input. `flex: 1` lets it
+ * absorb the remaining horizontal space so the amount input always
+ * snaps to the right edge of the row. */
+.multiCapLabel {
+  flex: 1;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.multiAmountInput {
+  font-family: var(--primitives-fontFamily-display);
+  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  /* Match the single-hop variant's resting placeholder color (white) by
+   * coloring the actual input text the same — when empty the browser
+   * renders the placeholder "0", when populated the typed digits sit in
+   * the same color. Focus state shifts to lavender like single-hop. */
+  color: var(--semantic-color-text-primary);
+  caret-color: var(--semantic-color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: right;
+  /* Cap the width so the input doesn't overflow into long rows; the
+   * field still right-aligns its digits. */
+  width: 9ch;
+  flex-shrink: 0;
+  padding: 0;
+  -moz-appearance: textfield;
+}
+
+.multiAmountInput::placeholder {
+  color: var(--semantic-color-text-primary);
+  opacity: 1;
+}
+
+.multiAmountInput:focus {
+  color: var(--semantic-color-brand-lavender);
+  caret-color: var(--semantic-color-brand-lavender);
+}
+
+.multiAmountInput:focus::placeholder {
+  color: var(--semantic-color-brand-lavender);
+  opacity: 0.6;
+}
+
+.multiAmountInput::-webkit-outer-spin-button,
+.multiAmountInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.multiOverBalance {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-status-error);
+  text-align: center;
+  margin: 0;
+}

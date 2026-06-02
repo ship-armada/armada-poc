@@ -1,5 +1,5 @@
 // ABOUTME: v2 Participate flow page-level controller — wires the designer's Step1–Step5 screens to the committer's eligibility/balance/tx hooks.
-// ABOUTME: Single-hop only (multi-hop deferred); invite-link generation deferred. Uses real approve + commit transactions through the controlled Step4Approve.
+// ABOUTME: Multi-hop aware — per-hop amount entry, single approve(total) + one commit(hop, amount) per non-zero hop. Real approve + commit transactions through the controlled Step4Approve.
 
 import { useEffect, useMemo, useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
@@ -12,8 +12,11 @@ import {
   Step3Review,
   Step4Approve,
   Step5Confirmation,
-  type CrowdfundInviteSlotConfig,
+  hopPillDotColor,
+  type CrowdfundInviteSlotSection,
   type ReceiptLogLike,
+  type Step2CommitHopRow,
+  type Step3ReviewHopCommit,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
@@ -44,11 +47,12 @@ export interface ParticipateFlowV2Props {
   windowOpen: boolean
   onGoToMyPosition: () => void
   onGoToNetwork: () => void
-  /** Live invite-slot configuration. When provided, clicking Invite on the
-   *  confirmation step opens the invite-slots screen inside the modal
-   *  (matching the designer's reference). When omitted (e.g. user not
-   *  eligible at any hop), Invite falls back to navigating to My Position. */
-  inviteSlotConfig?: CrowdfundInviteSlotConfig
+  /** Live per-hop invite-slot sections. When non-empty, clicking Invite on
+   *  the confirmation step opens the invite-slots screen inside the modal
+   *  (matching the designer's reference). When omitted / empty (e.g. user
+   *  not eligible at any hop), Invite falls back to navigating to My
+   *  Position. */
+  inviteSlotSections?: ReadonlyArray<CrowdfundInviteSlotSection>
   /** Hook for ingesting commit-tx receipt logs straight into the event store
    *  so the graph state (per-node committed totals, MyPosition stats) refreshes
    *  immediately on confirmation instead of waiting for the next event poll.
@@ -77,6 +81,12 @@ function armToNumber(amount: bigint): number {
   return Number(whole) + Number(frac) / 1e18
 }
 
+const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
+
+type AmountsByHop = Record<0 | 1 | 2, number>
+const EMPTY_AMOUNTS: AmountsByHop = { 0: 0, 1: 0, 2: 0 }
+
 export function ParticipateFlowV2({
   walletConnected,
   walletAddress,
@@ -93,110 +103,132 @@ export function ParticipateFlowV2({
   windowOpen,
   onGoToMyPosition,
   onGoToNetwork,
-  inviteSlotConfig,
+  inviteSlotSections,
   onReceiptLogs,
 }: ParticipateFlowV2Props) {
   const [step, setStep] = useState<FlowStep>('wallet')
-  const [amount, setAmount] = useState<number>(0)
+  const [amounts, setAmounts] = useState<AmountsByHop>(EMPTY_AMOUNTS)
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
 
-  // TODO: multi-hop UX. Designer's Step2Commit ships with a single amount input;
-  // when a user is eligible at multiple hops we silently pick the lowest hop
-  // (best allocation). Until the designer specs a multi-hop flow, this matches
-  // the most common case (one hop per user) but loses information for the rare
-  // multi-hop participant.
-  const activePosition = positions[0] ?? null
-  const eligible = activePosition !== null
+  // Eligible positions, filtered to renderable hops and ordered ascending.
+  // Drives the per-hop entry rows in Step2 and the per-hop summary in Step3.
+  const renderablePositions = useMemo(() => {
+    return positions
+      .filter((p): p is HopPosition & { hop: 0 | 1 | 2 } =>
+        p.hop === 0 || p.hop === 1 || p.hop === 2,
+      )
+      .sort((a, b) => a.hop - b.hop)
+  }, [positions])
+  const eligible = renderablePositions.length > 0
+  const isMulti = renderablePositions.length > 1
+  const primaryPosition = renderablePositions[0] ?? null
 
-  // Snapshot of committed USDC at the moment the user entered the flow, in
-  // plain dollars. Step2 uses this to render the existing-commitment fill on
-  // the progress bar (without it the bar resets every visit); Step5 uses it
-  // to decide between first-time and "Commitment updated" copy.
-  const initialCommittedUsd = useMemo(() => {
-    if (!activePosition) return 0
-    return usdcToNumber(activePosition.committed)
-    // Capture once when the controller mounts. The position can refresh from
-    // chain events during the flow — we deliberately don't react to that, so
-    // the "you had this much before" baseline stays stable across the steps.
+  // Sum of the in-flow amounts (this flow's new commits, across all hops).
+  // Drives the approve tx + the wallet-balance constraint.
+  const totalNewAmountUsd = useMemo(
+    () => renderablePositions.reduce((sum, p) => sum + (amounts[p.hop] ?? 0), 0),
+    [amounts, renderablePositions],
+  )
+  const totalNewAmountUsdc = useMemo(
+    () => numberToUsdc(totalNewAmountUsd),
+    [totalNewAmountUsd],
+  )
+
+  // Snapshot of committed USDC at the moment the user entered the flow.
+  // Captured per-hop and rolled up so Step5 can decide first-time-commit vs
+  // additional-commit copy without flickering when chain events refresh
+  // mid-flow.
+  const initialCommittedByHop = useMemo<AmountsByHop>(() => {
+    const out: AmountsByHop = { 0: 0, 1: 0, 2: 0 }
+    for (const p of renderablePositions) out[p.hop] = usdcToNumber(p.committed)
+    return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // Raw bigint baseline, captured the same way. Used by the ARM estimate so
-  // it doesn't double-count the just-committed amount once `ingestReceiptLogs`
-  // bumps `activePosition.committed` post-confirmation.
-  const baselinePositionCommittedUsdc = useMemo(() => {
-    return activePosition?.committed ?? 0n
+  const initialCommittedTotal = useMemo(
+    () => Object.values(initialCommittedByHop).reduce((s, v) => s + v, 0),
+    [initialCommittedByHop],
+  )
+  const baselineCommittedByHopUsdc = useMemo<Record<0 | 1 | 2, bigint>>(() => {
+    const out: Record<0 | 1 | 2, bigint> = { 0: 0n, 1: 0n, 2: 0n }
+    for (const p of renderablePositions) out[p.hop] = p.committed
+    return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const baselineCappedDemand = useMemo(() => {
     return cappedDemand
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const isAdditionalCommit = initialCommittedUsd > 0
+  const isAdditionalCommit = initialCommittedTotal > 0
 
   // Auto-advance past the wallet step when the user lands here with a wallet
-  // already connected (most common path — they came from the header
-  // Participate CTA on the Hero page). When they disconnect, fall back.
+  // already connected. When they disconnect, fall back.
   useEffect(() => {
     if (walletConnected && step === 'wallet') setStep('commit')
     if (!walletConnected && step !== 'wallet') setStep('wallet')
   }, [walletConnected, step])
 
-  // Pro-rata estimate of ARM allocation at the proposed commit amount. Uses
-  // shared `estimateUserArmAllocation` so the math stays in lockstep with the
-  // observer's pro-rata banner.
+  // Pro-rata estimate of ARM allocation at the proposed commit amounts.
+  // Aggregates across all hops via the shared `estimateUserArmAllocation`
+  // helper. Uses mount-time baselines (per-hop committed + global capped
+  // demand) so the projection stays stable across the flow and is immune
+  // to the `ingestReceiptLogs` post-confirmation bump.
   const estimatedArm = useMemo(() => {
-    if (!activePosition || amount <= 0) return 0
-    const committed = numberToUsdc(amount)
-    // Use the mount-time baselines (not the live values) so the projection
-    // stays "baseline + this flow's amount" — stable across the flow and
-    // immune to the `ingestReceiptLogs` post-confirmation bump that would
-    // otherwise double-add `amount` to both the user's position and the
-    // global capped demand.
-    const projectedPositions: UserHopPosition[] = [
-      {
-        hop: activePosition.hop,
-        committed: baselinePositionCommittedUsdc + committed,
-        effectiveCap: activePosition.effectiveCap,
-      },
-    ]
+    if (renderablePositions.length === 0 || totalNewAmountUsd <= 0) return 0
+    const projectedPositions: UserHopPosition[] = renderablePositions.map((p) => ({
+      hop: p.hop,
+      committed:
+        baselineCommittedByHopUsdc[p.hop] + numberToUsdc(amounts[p.hop] ?? 0),
+      effectiveCap: p.effectiveCap,
+    }))
     const armAllocation = estimateUserArmAllocation(
       projectedPositions,
       hopStats,
-      baselineCappedDemand + committed,
+      baselineCappedDemand + totalNewAmountUsdc,
       saleSize,
     )
-    // `estimateUserArmAllocation` returns ARM in 18-decimal units (ERC20
-    // standard), not 6-decimal USDC units. Divide by 10^18, not 10^6.
     return armToNumber(armAllocation)
   }, [
-    activePosition,
-    amount,
+    renderablePositions,
+    amounts,
+    totalNewAmountUsd,
+    totalNewAmountUsdc,
     hopStats,
     baselineCappedDemand,
-    baselinePositionCommittedUsdc,
+    baselineCommittedByHopUsdc,
     saleSize,
   ])
 
-  // Run the real approve + commit pipeline. Updates `txs` so Step4Approve renders
-  // controlled status. On full success, advance to Step 5. On error, the user
-  // sees the error inline on Step 4 with a Back-to-Review affordance (handled
-  // via the Step4 footer copy + an external back arrow we'll add via the
-  // shared step shell in 3.2.x).
+  // Run the real approve + N×commit pipeline. The approve covers the sum of
+  // all per-hop amounts so the user signs one allowance bump even on a
+  // multi-hop commit. Each non-zero hop gets its own commit tx; failures
+  // stop the pipeline at the failing row.
   const runPipeline = async () => {
-    if (!signer || !crowdfundAddress || !usdcAddress || !activePosition || amount <= 0) {
+    if (!signer || !crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
       return
     }
-    const amountBig = numberToUsdc(amount)
-    const approveLabel = `Approve ${formatUsdc(amountBig)} USDC`
-    const commitLabel = 'Commit participation'
+    const totalBig = totalNewAmountUsdc
+    const approveLabel = `Approve ${formatUsdc(totalBig)} USDC`
+    const skipApproval = !needsApproval(totalBig)
 
-    const skipApproval = !needsApproval(amountBig)
-    const initial: Step4Transaction[] = skipApproval
-      ? [{ label: commitLabel, status: 'loading' }]
-      : [
-          { label: approveLabel, status: 'loading' },
-          { label: commitLabel, status: 'pending' },
-        ]
+    // One commit row per non-zero hop, ordered ascending so the user reads
+    // SEED → HOP-1 → HOP-2 top-down (matches Step3Review's order).
+    const commits = renderablePositions
+      .filter((p) => (amounts[p.hop] ?? 0) > 0)
+      .map((p) => ({
+        hop: p.hop,
+        amountBig: numberToUsdc(amounts[p.hop]),
+        label: isMulti
+          ? `Commit ${HOP_LABELS[p.hop]} (${formatUsdc(numberToUsdc(amounts[p.hop]))})`
+          : 'Commit participation',
+      }))
+
+    const initial: Step4Transaction[] = [
+      ...(skipApproval ? [] : [{ label: approveLabel, status: 'loading' as const }]),
+      ...commits.map((c, i) => ({
+        label: c.label,
+        status: (skipApproval && i === 0 ? 'loading' : 'pending') as Step4Transaction['status'],
+      })),
+    ]
     setTxs(initial)
 
     const setRowStatus = (
@@ -226,9 +258,6 @@ export function ParticipateFlowV2({
           return false
         }
         setRowStatus(index, { status: 'done' })
-        // ethers v6 receipts shape `logs` compatibly with `ReceiptLogLike`
-        // (read-only array of `{ topics, data, ... }`). Cast through `unknown`
-        // to bypass the structural mismatch on the `index` field name.
         onSuccess?.(receipt.logs as unknown as readonly ReceiptLogLike[])
         return true
       } catch (err) {
@@ -245,7 +274,7 @@ export function ParticipateFlowV2({
     if (!skipApproval) {
       const usdc = new Contract(usdcAddress, ERC20_ABI_FRAGMENTS, signer)
       const ok = await sendAndWait(pipelineIndex, approveLabel, () =>
-        usdc.approve(crowdfundAddress, amountBig),
+        usdc.approve(crowdfundAddress, totalBig),
       )
       if (!ok) return
       await refreshAllowance()
@@ -253,28 +282,22 @@ export function ParticipateFlowV2({
     }
 
     const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
-    const ok = await sendAndWait(
-      pipelineIndex,
-      commitLabel,
-      () => crowdfund.commit(activePosition.hop, amountBig),
-      // Fast-path the new Committed event into the event store so the per-node
-      // tooltip + MyPosition refresh on confirmation instead of waiting for
-      // the next event poll. Filtering to the crowdfund-contract logs in the
-      // ingester is already handled by `useContractEvents`.
-      (logs) => onReceiptLogs?.(logs),
-    )
-    if (!ok) return
+    for (const commit of commits) {
+      const ok = await sendAndWait(
+        pipelineIndex,
+        commit.label,
+        () => crowdfund.commit(commit.hop, commit.amountBig),
+        (logs) => onReceiptLogs?.(logs),
+      )
+      if (!ok) return
+      pipelineIndex += 1
+    }
 
-    // Re-read USDC balance + allowance from chain so the navbar wallet badge
-    // and any subsequent Participate modal open immediately reflect the spent
-    // funds and consumed allowance. Without this, a same-session second
-    // commit would (a) display the pre-commit balance under "Available" and
-    // (b) skip the approve step because the cached allowance still shows the
-    // amount we just consumed — the tx would then revert with
-    // "insufficient allowance".
+    // Refresh balance + allowance so the navbar wallet badge and any
+    // subsequent modal open with the post-commit numbers and don't try to
+    // skip approval based on the now-consumed allowance.
     await refreshAllowance()
 
-    // Hold the success state briefly so the checkmark animation reads, then advance.
     setTimeout(() => setStep('confirmation'), 600)
   }
 
@@ -282,14 +305,6 @@ export function ParticipateFlowV2({
 
   if (step === 'wallet') {
     if (!walletConnected) {
-      // Bridge the designer's wallet picker to RainbowKit. Any of the three
-      // wallet rows opens RainbowKit's connect modal — the auto-advance effect
-      // above transitions us to 'commit' as soon as wagmi reports a connected
-      // address. RainbowKit handles the actual wallet-specific UX (Metamask /
-      // WalletConnect / etc.) past this point.
-      //
-      // `compact` + `showSteps={false}` match the Path 2 modal sizing — the
-      // step bar starts at Commit once we're inside the modal.
       return (
         <ConnectButton.Custom>
           {({ openConnectModal }) => (
@@ -302,17 +317,10 @@ export function ParticipateFlowV2({
         </ConnectButton.Custom>
       )
     }
-    // Effect will flip us to 'commit' on the next tick.
     return null
   }
 
   if (!eligible) {
-    // Connected but no eligible hop position — show the designer's
-    // Step1WalletNotWhitelisted screen. The "allowlist" framing maps onto
-    // our reality: a wallet is "on the allowlist" if it has at least one
-    // hop position (i.e. it accepted an invite). The "Connect a different
-    // wallet" CTA routes back to the network view so the user can disconnect
-    // from the header pill and try another address.
     return (
       <Step1WalletNotWhitelisted
         address={walletAddress ?? '0x0000000000000000000000000000000000000000'}
@@ -332,24 +340,77 @@ export function ParticipateFlowV2({
         </div>
       )
     }
-    const effectiveCapUsd = usdcToNumber(activePosition.effectiveCap)
+    if (isMulti) {
+      // Multi-hop: stacked per-hop input rows. Single-hop falls through to
+      // the legacy big-number variant below for an unchanged UX.
+      const hopRows: Step2CommitHopRow[] = renderablePositions.map((p) => ({
+        hop: p.hop,
+        hopLabel: HOP_LABELS[p.hop],
+        hopColor: hopPillDotColor(HOP_DOT_KEYS[p.hop]),
+        maxAmount: usdcToNumber(p.effectiveCap),
+        existingCommittedUsdc: initialCommittedByHop[p.hop],
+      }))
+      return (
+        <Step2Commit
+          hopRows={hopRows}
+          availableBalance={usdcToNumber(balance)}
+          onNext={() => {}}
+          onNextMulti={(next) => {
+            setAmounts({ 0: next[0] ?? 0, 1: next[1] ?? 0, 2: next[2] ?? 0 })
+            setStep('review')
+          }}
+          onBack={onGoToNetwork}
+        />
+      )
+    }
+    // Single-hop path — identical to pre-multi-hop UX.
+    if (!primaryPosition) return null
+    const effectiveCapUsd = usdcToNumber(primaryPosition.effectiveCap)
     const availableBalance = usdcToNumber(balance)
     return (
       <Step2Commit
         onNext={(amt) => {
-          setAmount(amt)
+          setAmounts({
+            0: primaryPosition.hop === 0 ? amt : 0,
+            1: primaryPosition.hop === 1 ? amt : 0,
+            2: primaryPosition.hop === 2 ? amt : 0,
+          })
           setStep('review')
         }}
         onBack={onGoToNetwork}
         maxAmount={effectiveCapUsd}
         availableBalance={availableBalance}
         maxArm={effectiveCapUsd}
-        existingCommittedUsdc={initialCommittedUsd}
+        existingCommittedUsdc={initialCommittedByHop[primaryPosition.hop]}
       />
     )
   }
 
   if (step === 'review') {
+    if (isMulti) {
+      const hopCommits: Step3ReviewHopCommit[] = renderablePositions
+        .filter((p) => (amounts[p.hop] ?? 0) > 0)
+        .map((p) => ({
+          hop: p.hop,
+          hopLabel: HOP_LABELS[p.hop],
+          hopColor: hopPillDotColor(HOP_DOT_KEYS[p.hop]),
+          amount: amounts[p.hop],
+        }))
+      return (
+        <Step3Review
+          onNext={() => {
+            setTxs(null)
+            setStep('approve')
+            void runPipeline()
+          }}
+          onBack={() => setStep('commit')}
+          hopCommits={hopCommits}
+          amount={totalNewAmountUsd}
+          estimatedArm={estimatedArm}
+        />
+      )
+    }
+    if (!primaryPosition) return null
     return (
       <Step3Review
         onNext={() => {
@@ -358,8 +419,8 @@ export function ParticipateFlowV2({
           void runPipeline()
         }}
         onBack={() => setStep('commit')}
-        hopLevel={`Hop ${activePosition.hop}`}
-        amount={amount}
+        hopLevel={HOP_LABELS[primaryPosition.hop]}
+        amount={totalNewAmountUsd}
         estimatedArm={estimatedArm}
       />
     )
@@ -368,7 +429,7 @@ export function ParticipateFlowV2({
   if (step === 'approve') {
     return (
       <Step4Approve
-        amount={amount}
+        amount={totalNewAmountUsd}
         txs={txs ?? undefined}
         onDone={() => setStep('confirmation')}
       />
@@ -376,53 +437,31 @@ export function ParticipateFlowV2({
   }
 
   if (step === 'invites') {
-    // Matches the designer's `ParticipateFlowCrowdfund` reference — after
-    // committing, Invite stays inside the modal as a dedicated step that
-    // renders the invite-slots screen with its own "Do it later" footer
-    // (which closes the modal). Only reachable when the committer supplied
-    // a live `inviteSlotConfig`; otherwise the confirmation step's Invite
-    // CTA falls back to navigating to My Position.
-    if (inviteSlotConfig) {
+    if (inviteSlotSections && inviteSlotSections.length > 0) {
       return (
         <ParticipateFlowInviteSlots
-          slots={inviteSlotConfig.slots}
-          onGenerateLink={inviteSlotConfig.onGenerateLink}
-          onCopy={inviteSlotConfig.onCopy}
-          onRevoke={inviteSlotConfig.onRevoke}
-          onInviteOnchain={inviteSlotConfig.onInviteOnchain}
-          copiedId={inviteSlotConfig.copiedId}
-          loadingId={inviteSlotConfig.loadingId}
+          sections={inviteSlotSections}
           onDoItLater={onGoToMyPosition}
         />
       )
     }
-    // Config disappeared mid-flow (shouldn't happen — eligibility doesn't
-    // revoke between commit and confirmation). Defensive fallback.
     onGoToMyPosition()
     return null
   }
 
   // step === 'confirmation'
-  // For returning participants (had a non-zero commit before this flow), the
-  // designer's Step5 swaps in "Commitment updated" copy + a "View your
-  // position" CTA alongside Invite. First-time commits stay on the original
-  // "You're in." headline with just the Invite CTA. Total committed = the
-  // pre-existing snapshot plus what they just added.
-  const totalCommittedUsdc = initialCommittedUsd + amount
+  const totalCommittedUsdc = initialCommittedTotal + totalNewAmountUsd
   return (
     <Step5Confirmation
       onViewPosition={onGoToMyPosition}
       onInvite={() => {
-        if (inviteSlotConfig) {
+        if (inviteSlotSections && inviteSlotSections.length > 0) {
           setStep('invites')
         } else {
-          // No live slot config (e.g. user not eligible at any hop, which
-          // shouldn't really happen here since they just committed). Fall
-          // back to navigating so the user can still reach their slots.
           onGoToMyPosition()
         }
       }}
-      amount={amount}
+      amount={totalNewAmountUsd}
       estimatedArm={estimatedArm}
       isAdditionalCommit={isAdditionalCommit}
       totalCommittedUsdc={totalCommittedUsdc}

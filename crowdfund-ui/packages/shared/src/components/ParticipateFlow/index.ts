@@ -6,7 +6,9 @@ export type { Step0InviteProps } from './steps/Step0Invite/Step0Invite'
 export { default as Step1Wallet } from './screens/Step1Wallet'
 export { default as Step1WalletNotWhitelisted } from './screens/Step1WalletNotWhitelisted'
 export { default as Step2Commit } from './screens/Step2Commit'
+export type { Step2CommitHopRow } from './screens/Step2Commit'
 export { default as Step3Review } from './screens/Step3Review'
+export type { Step3ReviewHopCommit } from './screens/Step3Review'
 export { default as Step4Approve } from './screens/Step4Approve'
 export type {
   Step4ApproveProps,

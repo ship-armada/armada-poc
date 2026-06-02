@@ -30,6 +30,12 @@ export interface Step4ApproveProps extends ParticipateStepBarProps {
    * `onDone`. Omit for the standalone showcase/mock-preview behavior.
    */
   txs?: Transaction[]
+  /**
+   * Optional headline override. Defaults to the designer's two-line plural
+   * copy ("Confirm transactions / on your wallet"). The claim flow swaps in
+   * a singular variant since it submits a single tx.
+   */
+  title?: React.ReactNode
 }
 
 const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
@@ -47,6 +53,7 @@ export default function Step4Approve({
   txs: controlledTxs,
   steps = DEFAULT_STEPS,
   stepIndex = 4,
+  title,
 }: Step4ApproveProps) {
   const [internalTxs, setInternalTxs] = useState<Transaction[]>([
     { label: `Approve ${amount.toLocaleString()} USDC`, status: 'loading' },
@@ -84,7 +91,11 @@ export default function Step4Approve({
 
       <div className={styles.content}>
         <h2 className={styles.title}>
-          Confirm transactions<br />on your wallet
+          {title ?? (
+            <>
+              Confirm transactions<br />on your wallet
+            </>
+          )}
         </h2>
 
         {/* aria-live announces status changes to screen readers */}

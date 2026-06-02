@@ -13,7 +13,8 @@ import {
   formatUsdc,
   formatCountdown,
 } from '@armada/crowdfund-shared'
-import { Steps, Button as ArmadaButton, Tag } from '@armada/ui'
+import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
+import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import styles from './ClaimFlowV2.module.css'
 
@@ -218,9 +219,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         mode={mode}
         armDisplay={armDisplay}
         refundDisplay={refundDisplay}
+        refundAmount={refundAmount}
         onGoToMyPosition={onGoToMyPosition}
         onGoToNetwork={onGoToNetwork}
-        alreadyClaimed
       />
     )
   }
@@ -313,59 +314,106 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
   if (step === 'review') {
     const delegateValid = /^0x[a-fA-F0-9]{40}$/.test(delegate)
+    const armHasRefund = mode === 'arm' && refundAmount > 0n
     return (
       <FlowShell stepsLabels={stepsLabels} currentStep={currentStepIndex}>
-        <h2 className={styles.flowHeading}>
-          {mode === 'arm' ? 'Claim your ARM' : 'Claim your refund'}
-        </h2>
-        <p className={styles.flowSubheading}>
-          {mode === 'arm'
-            ? 'Review your allocation before submitting. Your delegate receives your governance voting power.'
-            : 'The sale ended without meeting the minimum raise. You can claim your committed USDC back.'}
-        </p>
+        <div className={styles.cardContent}>
+          <h2 className={styles.cardTitle}>
+            {mode === 'arm' ? 'Claim your ARM' : 'Claim your refund'}
+          </h2>
 
-        <div className={styles.summaryGrid}>
+          {/* Single summary card with row dividers — matches Step3Review. */}
+          <div className={styles.summaryCard}>
+            {mode === 'arm' && (
+              <>
+                <div className={styles.summaryRow}>
+                  <div className={styles.summaryLabelGroup}>
+                    <span className={styles.summaryLabel}>ARM allocation</span>
+                    <Tooltip
+                      variant="rich"
+                      title="ARM allocation"
+                      description="The ARM tokens delivered to your wallet by this transaction."
+                      bullets={[
+                        'Pro-rata share of the sale, capped at your hop allocation',
+                        'Delegate set below receives your governance voting power',
+                        'Any committed USDC not used to buy ARM is refunded in the same tx',
+                      ]}
+                    >
+                      <button
+                        type="button"
+                        className={styles.infoTrigger}
+                        aria-label="ARM allocation details"
+                      >
+                        <InformationCircleIcon className={styles.infoIcon} aria-hidden />
+                      </button>
+                    </Tooltip>
+                  </div>
+                  <span className={styles.summaryValueAccent}>{armDisplay}</span>
+                </div>
+                {armHasRefund && (
+                  <>
+                    <div className={styles.divider} />
+                    <div className={styles.summaryRow}>
+                      <span className={styles.summaryLabel}>USDC refund</span>
+                      <span className={styles.summaryValue}>{formatUsdc(refundAmount)}</span>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+            {mode === 'refund' && (
+              <div className={styles.summaryRow}>
+                <span className={styles.summaryLabel}>USDC refund</span>
+                <span className={styles.summaryValue}>{refundDisplay}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Lavender-tinted note pinned under the allocation so the user reads
+              "this is what hits your wallet" before any input. Same surface as
+              Step3Review's warning block. */}
+          <div className={styles.warningBlock}>
+            <p className={styles.warningText}>
+              {mode === 'arm'
+                ? armHasRefund
+                  ? 'A single transaction delivers your ARM and your USDC refund.'
+                  : 'A single transaction delivers your ARM and any over-cap USDC refund.'
+                : 'The sale ended below the minimum raise. Your committed USDC will be returned to your wallet.'}
+            </p>
+          </div>
+
           {mode === 'arm' && (
-            <SummaryRow label="ARM allocation" value={armDisplay} accent="lavender" />
-          )}
-          {mode === 'arm' && refundAmount > 0n && (
-            <SummaryRow label="USDC refund" value={formatUsdc(refundAmount)} accent="warning" />
-          )}
-          {mode === 'refund' && (
-            <SummaryRow label="USDC refund" value={refundDisplay} accent="warning" />
+            <div className={styles.delegateBlock}>
+              <label className={styles.delegateLabel}>Delegate address</label>
+              <input
+                type="text"
+                value={delegate}
+                onChange={(e) => setDelegate(e.target.value.trim())}
+                placeholder="0x…"
+                className={styles.delegateInput}
+              />
+              {!delegateValid && delegate.length > 0 && (
+                <p className={styles.delegateError}>Not a valid 0x address.</p>
+              )}
+              <p className={styles.delegateHelp}>
+                Your delegate votes on your behalf in governance. Use your own address to
+                self-delegate.
+              </p>
+            </div>
           )}
         </div>
 
-        {mode === 'arm' && (
-          <div className={styles.delegateBlock}>
-            <label className={styles.delegateLabel}>Delegate address</label>
-            <input
-              type="text"
-              value={delegate}
-              onChange={(e) => setDelegate(e.target.value.trim())}
-              placeholder="0x…"
-              className={styles.delegateInput}
-            />
-            {!delegateValid && delegate.length > 0 && (
-              <p className={styles.delegateError}>Not a valid 0x address.</p>
-            )}
-            <p className={styles.delegateHelp}>
-              Your delegate votes on your behalf in governance. Use your own address to self-delegate.
-            </p>
-          </div>
-        )}
-
-        <div className={styles.flowActions}>
+        <div className={styles.buttonRow}>
           <ArmadaButton
             variant="secondary"
-            size="md"
+            size="lg"
             label="Cancel"
             showIcon={false}
             onClick={onGoToNetwork}
           />
           <ArmadaButton
-            variant="primary"
-            size="md"
+            variant="gradient"
+            size="lg"
             label={mode === 'arm' ? 'Claim ARM' : 'Claim refund'}
             showIcon={false}
             disabled={mode === 'arm' && !delegateValid}
@@ -384,8 +432,17 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     return (
       <div className={styles.submitShell}>
         {/* Reuse Step4Approve's controlled-tx surface. Single op; the second-row
-            "Commit" slot collapses since we only pass one tx. */}
+            "Commit" slot collapses since we only pass one tx. `steps` /
+            `stepIndex` are forwarded so the inner Steps bar shows the claim's
+            3-step set ('Review / Submit / Done') at index 2, not Step4's
+            commit-flow default ('…/ Confirmation' at index 4). */}
         <Step4Approve
+          steps={stepsLabels}
+          stepIndex={currentStepIndex}
+          // Singular variant — claim submits a single tx, unlike commit's
+          // Approve + Commit pair. Same two-line shape as the default so the
+          // card height doesn't shift.
+          title={<>Confirm transaction<br />on your wallet</>}
           amount={mode === 'arm' ? Number(formatArm(armAmount).replace(/[, ARM]/g, '')) : 0}
           txs={txs ?? undefined}
           onDone={() => setStep('done')}
@@ -400,6 +457,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       mode={mode}
       armDisplay={armDisplay}
       refundDisplay={refundDisplay}
+      refundAmount={refundAmount}
       onGoToMyPosition={onGoToMyPosition}
       onGoToNetwork={onGoToNetwork}
     />
@@ -428,33 +486,10 @@ function FlowShell({
 }) {
   return (
     <div className={styles.flowShell}>
-      <div className={styles.flowInner}>
-        <div className={styles.flowStepsWrap}>
-          <Steps steps={stepsLabels} currentStep={currentStep} />
-        </div>
+      <div className={styles.cardShell}>
+        <Steps steps={stepsLabels} currentStep={currentStep} />
         {children}
       </div>
-    </div>
-  )
-}
-
-function SummaryRow({
-  label,
-  value,
-  accent,
-}: {
-  label: string
-  value: string
-  // 'lavender' = brand purple for ARM; 'warning' = amber-yellow for USDC refund.
-  // Picked from Tag's token-driven dot palette — see --semantic-component-tag-dot-*.
-  accent: 'lavender' | 'warning'
-}) {
-  return (
-    <div className={styles.summaryRow}>
-      <div className={styles.summaryLabel}>
-        <Tag label={label} dot={accent} />
-      </div>
-      <div className={styles.summaryValue}>{value}</div>
     </div>
   )
 }
@@ -463,44 +498,75 @@ function DoneScreen({
   mode,
   armDisplay,
   refundDisplay,
+  refundAmount,
   onGoToMyPosition,
   onGoToNetwork,
-  alreadyClaimed,
 }: {
   mode: ClaimMode
   armDisplay: string
   refundDisplay: string
+  /** Over-cap USDC refund delivered by the ARM `claim()` call. Used to swap in
+   *  the "ARM + USDC refund" copy when applicable; ignored for `mode='refund'`
+   *  (the refund there is the whole `refundDisplay`). */
+  refundAmount: bigint
   onGoToMyPosition: () => void
   onGoToNetwork: () => void
-  alreadyClaimed?: boolean
 }) {
+  // Same headline on first-success and on revisit — the action is idempotent
+  // from the user's perspective, and "You already claimed" reads like an
+  // error. Past-tense success copy works for both cases.
+  const armHasRefund = mode === 'arm' && refundAmount > 0n
+  const headline = mode === 'arm' ? 'ARM claimed.' : 'Refund claimed.'
+  const subline =
+    mode === 'arm' ? (
+      armHasRefund ? (
+        <>
+          {armDisplay} is in your wallet.
+          <br />
+          {refundDisplay} USDC refund returned too.
+        </>
+      ) : (
+        <>
+          {armDisplay} is in your wallet.
+          <br />
+          Your delegate now holds your governance voting power.
+        </>
+      )
+    ) : (
+      <>{refundDisplay} returned to your wallet.</>
+    )
+  const nextText =
+    mode === 'arm'
+      ? armHasRefund
+        ? 'Both transfers are already settled on-chain. View your position to confirm balances, or head back to the crowdfund to see how the rest of the fleet finalized.'
+        : 'Your ARM is settled on-chain and your delegate is active. View your position to confirm the balance, or head back to the crowdfund.'
+      : 'Your USDC refund is settled on-chain. View your position to confirm the balance, or head back to the crowdfund.'
+
   return (
     <FlowShell stepsLabels={mode === 'arm' ? ARM_STEPS : REFUND_STEPS} currentStep={3}>
-      <h2 className={styles.flowHeading}>
-        {alreadyClaimed
-          ? mode === 'arm'
-            ? 'You already claimed your ARM'
-            : 'You already claimed your refund'
-          : mode === 'arm'
-            ? 'ARM claimed'
-            : 'Refund claimed'}
-      </h2>
-      <p className={styles.flowSubheading}>
-        {mode === 'arm'
-          ? `Your ${armDisplay} is in your wallet, and your delegate has voting power.`
-          : `Your ${refundDisplay} has been returned to your wallet.`}
-      </p>
-      <div className={styles.flowActions}>
+      <div className={styles.cardContent}>
+        <div className={styles.heroBlock}>
+          <h1 className={styles.headline}>{headline}</h1>
+          <p className={styles.subline}>{subline}</p>
+        </div>
+
+        <div className={styles.nextCard}>
+          <span className={styles.nextEyebrow}>WHAT'S NEXT</span>
+          <p className={styles.nextText}>{nextText}</p>
+        </div>
+      </div>
+
+      <div className={styles.buttonRow}>
         <ArmadaButton
           variant="secondary"
-          size="md"
+          size="lg"
           label="Back to crowdfund"
           showIcon={false}
           onClick={onGoToNetwork}
         />
         <ArmadaButton
-          variant="primary"
-          size="md"
+          variant="gradient"
+          size="lg"
           label="View my position"
           showIcon={false}
           onClick={onGoToMyPosition}

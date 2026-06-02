@@ -30,3 +30,18 @@
   overflow-y: auto;
   padding-right: var(--primitives-spacing-1);
 }
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--primitives-spacing-6) var(--primitives-spacing-4);
+}
+
+.emptyText {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  text-align: center;
+}

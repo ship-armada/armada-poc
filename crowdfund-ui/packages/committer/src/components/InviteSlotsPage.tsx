@@ -36,6 +36,8 @@ export function InviteSlotsPage({
     )
   }
 
+  const noSlots = !empty && config.slots.length === 0
+
   if (empty) {
     return (
       <Centered>
@@ -43,6 +45,24 @@ export function InviteSlotsPage({
         <p className="mb-6 text-muted-foreground">
           This address hasn't been whitelisted for the crowdfund. Once you've committed at a hop
           with invite slots, you'll be able to manage them here.
+        </p>
+        <ArmadaButton
+          variant="secondary"
+          size="md"
+          label="Back to crowdfund"
+          showIcon={false}
+          onClick={onBack}
+        />
+      </Centered>
+    )
+  }
+
+  if (noSlots) {
+    return (
+      <Centered>
+        <h1 className="mb-2 text-2xl">No invite slots available</h1>
+        <p className="mb-6 text-muted-foreground">
+          You have no invite slots available at {hopLabel}.
         </p>
         <ArmadaButton
           variant="secondary"

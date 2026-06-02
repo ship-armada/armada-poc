@@ -758,31 +758,45 @@ export function CrowdfundExperience({
         >
           <section className={mpStyles.inviteCard} aria-label="Your invites">
             <h2 className={mpStyles.inviteTitle}>Your Invites</h2>
-            <div className={mpStyles.slotList}>
-              {(inviteSlotConfig?.slots ?? DEMO_SLOTS).map((slot) => (
-                <SlotCard
-                  key={slot.id}
-                  slot={slot}
-                  onGenerateLink={inviteSlotConfig?.onGenerateLink ?? handleGenerateLink}
-                  onCopy={inviteSlotConfig?.onCopy ?? handleCopy}
-                  onRevoke={inviteSlotConfig?.onRevoke ?? handleRevoke}
-                  onInviteOnchain={
-                    inviteSlotConfig?.onInviteOnchain ?? handleInviteOnchain
-                  }
-                  copied={
-                    inviteSlotConfig
-                      ? inviteSlotConfig.copiedId === slot.id
-                      : copiedId === slot.id
-                  }
-                  loading={
-                    inviteSlotConfig
-                      ? inviteSlotConfig.loadingId === slot.id
-                      : loadingId === slot.id
-                  }
-                  resolveEns={inviteSlotConfig?.resolveEns}
-                />
-              ))}
-            </div>
+            {(() => {
+              const renderedSlots = inviteSlotConfig?.slots ?? DEMO_SLOTS
+              if (renderedSlots.length === 0) {
+                return (
+                  <div className={mpStyles.inviteEmpty} role="status">
+                    <p className={mpStyles.inviteEmptyText}>
+                      You have no invite slots available at this hop.
+                    </p>
+                  </div>
+                )
+              }
+              return (
+                <div className={mpStyles.slotList}>
+                  {renderedSlots.map((slot) => (
+                    <SlotCard
+                      key={slot.id}
+                      slot={slot}
+                      onGenerateLink={inviteSlotConfig?.onGenerateLink ?? handleGenerateLink}
+                      onCopy={inviteSlotConfig?.onCopy ?? handleCopy}
+                      onRevoke={inviteSlotConfig?.onRevoke ?? handleRevoke}
+                      onInviteOnchain={
+                        inviteSlotConfig?.onInviteOnchain ?? handleInviteOnchain
+                      }
+                      copied={
+                        inviteSlotConfig
+                          ? inviteSlotConfig.copiedId === slot.id
+                          : copiedId === slot.id
+                      }
+                      loading={
+                        inviteSlotConfig
+                          ? inviteSlotConfig.loadingId === slot.id
+                          : loadingId === slot.id
+                      }
+                      resolveEns={inviteSlotConfig?.resolveEns}
+                    />
+                  ))}
+                </div>
+              )
+            })()}
           </section>
         </div>
         )}

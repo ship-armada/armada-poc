@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { BarTrackTicks } from '../BarTrackTicks'
-import { Tag } from '../Tag'
+import { Tag, type TagDot } from '../Tag'
 import styles from './Progress.module.css'
 
 export interface ProgressProps {
@@ -12,12 +12,21 @@ export interface ProgressProps {
   committedAmount?: number  // raw number e.g. 857000
   minRaiseAmount?: number   // e.g. 1200000
   maxAmount?: number        // full bar scale e.g. 1800000
-  daysLeft?: string
+  /** Countdown tag text (e.g. "3 DAYS LEFT"). Pass `null` to suppress the tag —
+   *  e.g. when the sale window has closed and a countdown is misleading. */
+  daysLeft?: string | null
   participants?: string
   className?: string
   animateOnMount?: boolean
   /** Hide title + status tags (e.g. dashboard layout with headline outside the card). */
   hideStatus?: boolean
+  /** Lifecycle status pill label. Defaults to 'ACTIVE' to preserve the
+   *  designer's mockup; consumers swap in 'CLOSED' / 'FINALIZED' / etc. as the
+   *  contract phase advances. */
+  status?: string
+  /** Dot color for the status pill — matches the `Tag` primitive's variants.
+   *  Defaults to 'active'. */
+  statusDot?: TagDot
 }
 
 function formatCommitted(amount: number) {
@@ -43,6 +52,8 @@ export function Progress({
   className,
   animateOnMount = true,
   hideStatus = false,
+  status = 'ACTIVE',
+  statusDot = 'active',
 }: ProgressProps) {
   // Bar position calculations
   const filledPct = Math.max(0, Math.min(100, (committedAmount / maxAmount) * 100))
@@ -94,8 +105,8 @@ export function Progress({
         <div className={styles.status}>
           <p className={styles.title}>{title}</p>
           <div className={styles.tags}>
-            <Tag label="ACTIVE" dot="active" />
-            <Tag label={daysLeft} />
+            <Tag label={status} dot={statusDot} />
+            {daysLeft != null && <Tag label={daysLeft} />}
             <Tag label={participants} />
           </div>
         </div>

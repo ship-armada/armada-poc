@@ -164,6 +164,9 @@ Frontend variables:
 | `VITE_SEPOLIA_RPC_FALLBACK` | unset | Optional browser RPC fallback. |
 | `VITE_CROWDFUND_INDEXER_URL` | unset | Indexer API base URL used for snapshot/health loading. |
 | `VITE_WALLETCONNECT_PROJECT_ID` | dev fallback | WalletConnect project ID for wallet connections. Set explicitly outside local dev. |
+| `VITE_SENTRY_DSN` | unset | Sentry DSN for `committer` and `admin` apps. When unset, Sentry init is a no-op (local/dev). |
+| `VITE_SENTRY_ENVIRONMENT` | `MODE` | Environment tag attached to Sentry events (e.g. `production`, `staging`). Falls back to Vite's `MODE`. |
+| `VITE_SENTRY_RELEASE` | unset | Release identifier attached to Sentry events. Typically the git SHA injected at build time. |
 
 ---
 

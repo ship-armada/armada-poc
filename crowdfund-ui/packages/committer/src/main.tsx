@@ -12,29 +12,34 @@ import { MotionConfig } from 'framer-motion'
 import { wagmiConfig } from '@/config/wagmi'
 import { App } from '@/App'
 import { InviteLinkRedemption } from '@/components/InviteLinkRedemption'
+import { initSentry, SentryErrorBoundary } from '@/lib/sentry'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
+
+initSentry()
 
 const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
-          <JotaiProvider>
-            <BrowserRouter>
-              <MotionConfig reducedMotion="user">
-                <Routes>
-                  <Route path="/" element={<App />} />
-                  <Route path="/invite" element={<InviteLinkRedemption />} />
-                </Routes>
-              </MotionConfig>
-            </BrowserRouter>
-            <CrowdfundToaster />
-          </JotaiProvider>
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <SentryErrorBoundary fallback={<div className="p-6">An unexpected error occurred. The team has been notified.</div>}>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider theme={darkTheme()}>
+            <JotaiProvider>
+              <BrowserRouter>
+                <MotionConfig reducedMotion="user">
+                  <Routes>
+                    <Route path="/" element={<App />} />
+                    <Route path="/invite" element={<InviteLinkRedemption />} />
+                  </Routes>
+                </MotionConfig>
+              </BrowserRouter>
+              <CrowdfundToaster />
+            </JotaiProvider>
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </SentryErrorBoundary>
   </StrictMode>,
 )

@@ -1,0 +1,39 @@
+// ABOUTME: Sentry initialization for the crowdfund admin app.
+// ABOUTME: No-op when VITE_SENTRY_DSN is unset so local/dev runs incur no overhead.
+
+import * as Sentry from '@sentry/react'
+
+let initialized = false
+
+export function initSentry(): void {
+  if (initialized) return
+  const dsn = import.meta.env.VITE_SENTRY_DSN
+  if (!dsn) return
+
+  Sentry.init({
+    dsn,
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE ?? 'production',
+    release: import.meta.env.VITE_SENTRY_RELEASE,
+    // Error tracking only — performance/replay incur per-event cost we don't need.
+    tracesSampleRate: 0,
+    // Don't send PII (wallet addresses are sensitive in this context).
+    sendDefaultPii: false,
+  })
+  initialized = true
+}
+
+/**
+ * Capture an error originating from a privileged admin action (finalize, cancel, seed
+ * batch, sweep, etc.). Tag + structured breadcrumb separate admin failures from
+ * generic render errors in Sentry triage.
+ */
+export function captureAdminError(err: unknown, context?: Record<string, unknown>): void {
+  if (!initialized) return
+  Sentry.withScope((scope) => {
+    scope.setTag('source', 'admin')
+    if (context) scope.setContext('admin', context as Record<string, unknown>)
+    Sentry.captureException(err)
+  })
+}
+
+export const SentryErrorBoundary = Sentry.ErrorBoundary

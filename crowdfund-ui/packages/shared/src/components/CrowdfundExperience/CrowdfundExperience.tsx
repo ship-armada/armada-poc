@@ -82,8 +82,16 @@ export type CrowdfundExperienceLiveData =
       status: 'ready'
       dashRows: DashboardParticipant[]
       totalCommitted: number
-      /** Optional countdown label shown on the Progress card (e.g. "6 DAYS LEFT"). When omitted, falls through to the Progress primitive's default. */
-      daysLeftLabel?: string
+      /** Countdown label shown on the Progress card (e.g. "6 DAYS LEFT").
+       *  Pass `null` to suppress the tag once the window has ended — the
+       *  Progress primitive hides it rather than rendering a stale countdown.
+       *  Omit entirely to fall back to the primitive's mockup default. */
+      daysLeftLabel?: string | null
+      /** Lifecycle status pill label (e.g. 'ACTIVE', 'CLOSED', 'FINALIZED').
+       *  Omit to fall back to the primitive's 'ACTIVE' default. */
+      saleStatusLabel?: string
+      /** Tag dot color paired with `saleStatusLabel`. */
+      saleStatusDot?: 'active' | 'warning' | 'error' | 'neutral' | 'lavender'
     }
 
 /**
@@ -118,6 +126,15 @@ export type CrowdfundExperienceMyPositionData =
       capUsdc: bigint
       /** Estimated ARM allocation (18 decimals). */
       armAllocation: bigint
+      /** True once the user's `claim()` has been executed (read from the graph
+       *  summary, which sets it on the `Allocated` event). Surfaces a
+       *  "CLAIMED" tag in the meta row. */
+      armClaimed?: boolean
+      /** True when the sale has been finalized (contract phase === 1). Flips
+       *  the ARM allocation tooltip from "Estimated · pending finalization" to
+       *  "Available for claim", since post-finalize the amount is no longer an
+       *  estimate. */
+      finalized?: boolean
     }
 
 const HOP_TAG_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
@@ -333,6 +350,8 @@ export function CrowdfundExperience({
   const myPositionArmNumber = myPositionReady
     ? armBigintToArmNumber(myPositionReady.armAllocation)
     : ARM_ALLOCATION
+  const myPositionArmClaimed = myPositionReady ? !!myPositionReady.armClaimed : false
+  const myPositionFinalized = myPositionReady ? !!myPositionReady.finalized : false
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>(undefined)
   const [filter, setFilter] = useState<'all' | 'seed' | 'hop1' | 'hop2' | 'multi'>('all')
   const [participantsListOpen, setParticipantsListOpen] = useState(false)
@@ -631,8 +650,14 @@ export function CrowdfundExperience({
                   committedAmount={committedAmount}
                   minRaiseAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
                   maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
-                  {...(liveReady?.daysLeftLabel
+                  {...(liveReady?.daysLeftLabel !== undefined
                     ? { daysLeft: liveReady.daysLeftLabel }
+                    : {})}
+                  {...(liveReady?.saleStatusLabel
+                    ? { status: liveReady.saleStatusLabel }
+                    : {})}
+                  {...(liveReady?.saleStatusDot
+                    ? { statusDot: liveReady.saleStatusDot }
                     : {})}
                 />
                 <div ref={participantsPanelRef} className={heroStyles.participantsWrap}>
@@ -671,6 +696,9 @@ export function CrowdfundExperience({
                 {myPositionEmptyKind === null && (
                   <Tag label={myPositionHopLabel} dot="lavender" />
                 )}
+                {myPositionEmptyKind === null && myPositionArmClaimed && (
+                  <Tag label="CLAIMED" dot="active" />
+                )}
               </div>
             </div>
 
@@ -693,7 +721,16 @@ export function CrowdfundExperience({
                 <div className={mpStyles.statBlock}>
                   <div className={mpStyles.statLabelRow}>
                     <p className={mpStyles.statLabel}>ARM allocation</p>
-                    <Tooltip variant="centered" content="Estimated · pending finalization">
+                    <Tooltip
+                      variant="centered"
+                      content={
+                        myPositionArmClaimed
+                          ? 'Claimed · in your wallet'
+                          : myPositionFinalized
+                            ? 'Available for claim. Any committed USDC not used to buy ARM is included as a refund in the same transaction.'
+                            : 'Estimated · pending finalization. Any committed USDC not used to buy ARM will be refunded at finalization.'
+                      }
+                    >
                       <button
                         type="button"
                         className={mpStyles.infoTrigger}

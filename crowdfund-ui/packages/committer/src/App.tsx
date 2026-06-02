@@ -646,16 +646,34 @@ function getNodeSpherePreviewFromUrl(): NodeSpherePreview {
 
 /** Format the Crowdfund hero Progress card's countdown tag from a remaining
  *  duration in seconds. Mirrors the designer's "X DAYS LEFT" / "X HOURS LEFT"
- *  aesthetic exactly, with sane singular vs. plural copy. Sub-minute / past
- *  the deadline collapses to "EXPIRED". */
-function formatRemainingLabel(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'EXPIRED'
+ *  aesthetic exactly, with sane singular vs. plural copy. Returns `null` past
+ *  the deadline so the Progress primitive suppresses the tag entirely — the
+ *  status pill flips to "CLOSED" via `formatSaleStatusLabel` in that case,
+ *  which is the user-facing signal we want without a stale countdown tag. */
+function formatRemainingLabel(seconds: number): string | null {
+  if (!Number.isFinite(seconds) || seconds <= 0) return null
   const days = Math.floor(seconds / 86400)
   if (days >= 1) return `${days} ${days === 1 ? 'DAY' : 'DAYS'} LEFT`
   const hours = Math.floor(seconds / 3600)
   if (hours >= 1) return `${hours} ${hours === 1 ? 'HOUR' : 'HOURS'} LEFT`
   const minutes = Math.max(1, Math.floor(seconds / 60))
   return `${minutes} MIN LEFT`
+}
+
+/** Derive the Progress card's lifecycle status pill from the contract phase
+ *  plus window-open state. The "Active" badge in the mockup was hardcoded;
+ *  here we map the four real states ('ACTIVE' during the open commit window,
+ *  'CLOSED' after the window ends but before finalization, then 'FINALIZED' /
+ *  'CANCELLED' once the launch team rules) so the user can tell at a glance
+ *  which phase the sale is in. */
+function formatSaleStatusLabel(
+  phase: number,
+  windowOpen: boolean,
+): { label: string; dot: 'active' | 'lavender' | 'neutral' | 'warning' } {
+  if (phase === 1) return { label: 'FINALIZED', dot: 'lavender' }
+  if (phase === 2) return { label: 'CANCELLED', dot: 'warning' }
+  if (!windowOpen) return { label: 'CLOSED', dot: 'neutral' }
+  return { label: 'ACTIVE', dot: 'active' }
 }
 
 /** Determine commit/invite tab enabled state + disabled message. Claim was
@@ -829,13 +847,30 @@ export function App() {
     const windowEnd = Number(contractState.windowEnd)
     const remaining = windowEnd - contractState.blockTimestamp
     const daysLeftLabel = formatRemainingLabel(remaining)
-    return { status: 'ready', dashRows, totalCommitted, daysLeftLabel }
+    // Inline rather than reading the `windowOpen` const further down — this
+    // memo is hoisted above that declaration. Same predicate.
+    const liveWindowOpen =
+      contractState.armLoaded &&
+      contractState.blockTimestamp >= contractState.windowStart &&
+      contractState.blockTimestamp <= contractState.windowEnd
+    const saleStatus = formatSaleStatusLabel(contractState.phase, liveWindowOpen)
+    return {
+      status: 'ready',
+      dashRows,
+      totalCommitted,
+      daysLeftLabel,
+      saleStatusLabel: saleStatus.label,
+      saleStatusDot: saleStatus.dot,
+    }
   }, [
     eventsLoading,
     summaryArray,
     contractState.cappedDemand,
     contractState.windowEnd,
+    contractState.windowStart,
     contractState.blockTimestamp,
+    contractState.phase,
+    contractState.armLoaded,
   ])
 
   // Wallet
@@ -913,6 +948,7 @@ export function App() {
     if (hop !== 0 && hop !== 1 && hop !== 2) {
       return { status: 'no-position', walletDisplay }
     }
+    const userSummary = summaries.get(wallet.address.toLowerCase())
     return {
       status: 'ready',
       walletAddress: wallet.address,
@@ -921,8 +957,16 @@ export function App() {
       committedUsdc: primary.committed,
       capUsdc: primary.effectiveCap,
       armAllocation: userAllocation?.estArmAllocation ?? 0n,
+      armClaimed: !!userSummary?.armClaimed,
+      finalized: contractState.phase === 1,
     }
-  }, [wallet.address, eligibility.positions, userAllocation])
+  }, [
+    wallet.address,
+    eligibility.positions,
+    userAllocation,
+    summaries,
+    contractState.phase,
+  ])
 
   // Per-intent enabled state — drives the intent picker on the Participate
   // page and the soft-disabled flag on the participate nav item.

@@ -855,6 +855,9 @@ export function App() {
     provider,
     wallet.signer,
     crowdfundAddress,
+    wallet.address,
+    events,
+    ingestReceiptLogs,
   )
 
   // Compute the user's personal committed amount (not the global total)

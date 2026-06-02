@@ -18,6 +18,7 @@ const REVERT_MAP: [RegExp, string][] = [
   [/claim expired/i, 'The 3-year claim deadline has passed.'],
   [/refundMode/i, 'No ARM allocations (refund mode). Use Claim Refund instead.'],
   [/invalid signature/i, 'This invite link has an invalid signature.'],
+  [/nonce already used/i, 'This invite link has already been used.'],
   [/nonce consumed/i, 'This invite link has already been used.'],
   [/nonce revoked/i, 'This invite link has been revoked.'],
   [/no invites remaining/i, 'The inviter has no remaining invite slots at this hop.'],

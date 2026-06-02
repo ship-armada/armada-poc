@@ -40,7 +40,16 @@ export function encodeInviteUrl(data: InviteLinkData): string {
     deadline: String(data.deadline),
     sig: data.signature,
   })
-  return `/invite?${params.toString()}`
+  const path = `/invite?${params.toString()}`
+  // Emit an absolute URL so a pasted link resolves to the current deployment
+  // (e.g. https://committer.armada.wtf/invite?…) instead of being interpreted
+  // as a relative path against whatever destination the user pastes into —
+  // most notably the browser address bar, which falls back to `file:///` for
+  // a bare leading-slash path.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`
+  }
+  return path
 }
 
 export function decodeInviteUrl(searchParams: URLSearchParams): InviteLinkData | null {

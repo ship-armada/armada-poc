@@ -7,18 +7,23 @@ import { JsonRpcProvider, Contract, type TransactionResponse } from 'ethers'
 import { useAccount, useWalletClient } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import {
+  ParticipateFlowInviteSlots,
   Step1Wallet,
   Step2Commit,
   Step3Review,
   Step4Approve,
   Step5Confirmation,
   INVITE_LINK_STEPS,
+  type ReceiptLogLike,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
+  createProvider,
   formatUsdc,
   formatUsdcPlain,
   hopLabel,
+  useContractEvents,
+  useGraphState,
   HOP_CONFIGS,
 } from '@armada/crowdfund-shared'
 // CSS modules are co-located rather than imported from `@armada/crowdfund-shared`
@@ -30,13 +35,16 @@ import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
-import { getHubRpcUrl, getPollIntervalMs } from '@/config/network'
+import { getHubRpcUrls, getHubRpcUrl, getIndexerUrl, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { useAllowance } from '@/hooks/useAllowance'
+import { useEligibility } from '@/hooks/useEligibility'
+import { useInviteLinks } from '@/hooks/useInviteLinks'
+import { useInviteSlots } from '@/hooks/useInviteSlots'
 
-type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation'
+type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation' | 'invites'
 
 const MODAL_STEPS = [...INVITE_LINK_STEPS]
 const STEP_TRANSITION_MS = 240
@@ -85,6 +93,45 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     getPollIntervalMs(),
   )
   const { balance, allowance } = allowanceState
+
+  // Data layer for the post-commit `'invites'` step. The /invite route lives
+  // outside the main App tree (Jotai atoms are shared, but `useContractEvents`
+  // and friends aren't mounted by InviteLandingPage), so wire the same hook
+  // chain here so `useInviteSlots` can produce a live `CrowdfundInviteSlotConfig`
+  // for the post-commit invite-slots screen. Block timestamp falls back to
+  // local time — close enough for the link-expiry checks `useInviteLinks`
+  // performs (deadlines are multi-day windows).
+  const eventsPollProvider = useMemo(
+    () => (deployment ? createProvider(getHubRpcUrls()) : null),
+    [deployment],
+  )
+  const { events, ingestReceiptLogs } = useContractEvents({
+    provider: eventsPollProvider,
+    contractAddress: deployment?.contracts.crowdfund ?? null,
+    pollIntervalMs: getPollIntervalMs(),
+    startBlock: deployment?.deployBlock,
+    indexerBaseUrl: getIndexerUrl(),
+  })
+  const { nodes } = useGraphState()
+  const lowerAddress = rawAddress ? rawAddress.toLowerCase() : null
+  const eligibility = useEligibility(lowerAddress, nodes)
+  const localBlockTimestamp = useMemo(() => Math.floor(Date.now() / 1000), [events])
+  const inviteLinks = useInviteLinks(
+    lowerAddress,
+    signer,
+    deployment?.contracts.crowdfund ?? null,
+    localBlockTimestamp,
+  )
+  const inviteSlots = useInviteSlots(
+    eligibility.positions[0] ?? null,
+    inviteLinks,
+    provider,
+    signer,
+    deployment?.contracts.crowdfund ?? null,
+    lowerAddress,
+    events,
+    ingestReceiptLogs,
+  )
 
   // Step machine + transition state (mirrors the designer's
   // ParticipateFlowInviteLink — fading wraps each step swap).
@@ -169,6 +216,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       index: number,
       label: string,
       send: () => Promise<TransactionResponse>,
+      onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
     ): Promise<boolean> => {
       setRowStatus(index, { label, status: 'loading' })
       try {
@@ -179,6 +227,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
           return false
         }
         setRowStatus(index, { status: 'done' })
+        // ethers v6 receipt.logs is structurally compatible with
+        // `ReceiptLogLike`; the `index` vs `logIndex` field name differs.
+        onSuccess?.(receipt.logs as unknown as readonly ReceiptLogLike[])
         return true
       } catch (err) {
         setRowStatus(index, {
@@ -203,17 +254,26 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       cursor += 1
     }
 
-    const commitOk = await sendAndWait(cursor, commitLabel, async () => {
-      const crowdfund = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, signer)
-      return crowdfund.commitWithInvite(
-        inviteData.inviter,
-        inviteData.fromHop,
-        inviteData.nonce,
-        inviteData.deadline,
-        inviteData.signature,
-        amountBig,
-      )
-    })
+    const commitOk = await sendAndWait(
+      cursor,
+      commitLabel,
+      async () => {
+        const crowdfund = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, signer)
+        return crowdfund.commitWithInvite(
+          inviteData.inviter,
+          inviteData.fromHop,
+          inviteData.nonce,
+          inviteData.deadline,
+          inviteData.signature,
+          amountBig,
+        )
+      },
+      // Fast-path the Invited + Committed events into the graph so the user
+      // has a recognized hop position the moment we hit Step5 — without this,
+      // `useEligibility` doesn't see the position until the next event poll
+      // and the post-commit invite-slots step wouldn't have a config.
+      (logs) => ingestReceiptLogs(logs),
+    )
     if (!commitOk) return
 
     // Refresh balance + allowance after the commit consumes the spend cap so
@@ -296,10 +356,35 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             estimatedArm={estimatedArm}
             showViewPositionButton
             onViewPosition={() => navigate('/?view=myposition')}
-            onInvite={() => navigate('/?view=myposition')}
+            onInvite={() => {
+              // Match ParticipateFlowV2: stay in the flow's slot, swap to the
+              // invite-slots step. Falls back to navigating to MyPosition only
+              // if `useInviteSlots` couldn't derive a live config (e.g. graph
+              // state hasn't caught up yet — shouldn't happen since we
+              // ingested the commit-with-invite receipt above).
+              if (!inviteSlots.empty) {
+                transitionTo('invites')
+              } else {
+                navigate('/?view=myposition')
+              }
+            }}
           />
         )
       }
+
+      case 'invites':
+        return (
+          <ParticipateFlowInviteSlots
+            slots={inviteSlots.config.slots}
+            onGenerateLink={inviteSlots.config.onGenerateLink}
+            onCopy={inviteSlots.config.onCopy}
+            onRevoke={inviteSlots.config.onRevoke}
+            onInviteOnchain={inviteSlots.config.onInviteOnchain}
+            copiedId={inviteSlots.config.copiedId}
+            loadingId={inviteSlots.config.loadingId}
+            onDoItLater={() => navigate('/?view=myposition')}
+          />
+        )
 
       default:
         return null

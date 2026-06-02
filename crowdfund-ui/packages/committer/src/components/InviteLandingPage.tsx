@@ -54,6 +54,10 @@ export function InviteLandingPage() {
   const [joined, setJoined] = useState(false)
   const [preCheckError, setPreCheckError] = useState<PreCheckError | null>(null)
   const [preCheckLoading, setPreCheckLoading] = useState(true)
+  // Crowdfund `windowEnd` (epoch seconds) populated by the pre-check effect
+  // below — drives the live "X DAYS LEFT" label on the landing card so it
+  // reflects on-chain truth instead of a placeholder.
+  const [windowEndSec, setWindowEndSec] = useState<number | null>(null)
 
   const inviteData = useMemo<InviteLinkData | null>(
     () => decodeInviteUrl(searchParams),
@@ -66,10 +70,21 @@ export function InviteLandingPage() {
   )
 
   const daysLeft = useMemo(() => {
+    // 1) Explicit `?days=N` URL override always wins (used for screenshots /
+    //    showcase). 2) Live on-chain `windowEnd` once the pre-check resolved.
+    // 3) Fall back to a small constant while loading so the card doesn't
+    //    flash "—" or render half-blank on first paint.
     const raw = searchParams.get('days')
     const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DAYS_LEFT
-  }, [searchParams])
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+    if (windowEndSec !== null) {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const remainingSec = windowEndSec - nowSec
+      if (remainingSec <= 0) return 0
+      return Math.max(1, Math.ceil(remainingSec / 86400))
+    }
+    return DEFAULT_DAYS_LEFT
+  }, [searchParams, windowEndSec])
 
   // Pre-redemption nonce + slot + deadline validation. Mirrors the legacy
   // InviteLinkRedemption useEffect — surfaces the same four failure modes so
@@ -91,18 +106,44 @@ export function InviteLandingPage() {
           provider,
         )
 
+        // Read `windowEnd` up front (and stash it for the days-left label) so
+        // a downstream failure on `queryFilter` below can't strand us with the
+        // hardcoded 3-day fallback. Block timestamp also needed for the
+        // deadline_passed check further down.
+        const windowEnd = (await contract.windowEnd()) as bigint
+        if (!cancelled) setWindowEndSec(Number(windowEnd))
+        const block = await provider.getBlock('latest')
+
         const nonceUsed = (await contract.usedNonces(
           inviteData.inviter,
           inviteData.nonce,
         )) as boolean
         if (nonceUsed) {
-          const revokedFilter = contract.filters.InviteNonceRevoked(
-            inviteData.inviter,
-            inviteData.nonce,
-          )
-          const revokedLogs = await contract.queryFilter(revokedFilter)
+          // Distinguish revoked (inviter actively cancelled) from consumed
+          // (someone redeemed it). `queryFilter` defaults to fromBlock=0,
+          // which throws on some RPCs and times out on busy chains; scope it
+          // to the deployment block and ignore failures — `nonce_consumed` is
+          // a safe fallback since both states mean "the link cannot be used
+          // again," and that's what the user needs to know.
+          let isRevoked = false
+          try {
+            const revokedFilter = contract.filters.InviteNonceRevoked(
+              inviteData.inviter,
+              inviteData.nonce,
+            )
+            const revokedLogs = await contract.queryFilter(
+              revokedFilter,
+              deployment.deployBlock ?? 0,
+              'latest',
+            )
+            isRevoked = revokedLogs.length > 0
+          } catch {
+            // Provider couldn't scan logs — treat as `nonce_consumed`. Loses
+            // the revoked-vs-consumed distinction in copy, doesn't lose the
+            // "this link is dead" gate that's the actual safety property.
+          }
           if (!cancelled) {
-            setPreCheckError(revokedLogs.length > 0 ? 'nonce_revoked' : 'nonce_consumed')
+            setPreCheckError(isRevoked ? 'nonce_revoked' : 'nonce_consumed')
           }
           return
         }
@@ -116,8 +157,6 @@ export function InviteLandingPage() {
           return
         }
 
-        const windowEnd = (await contract.windowEnd()) as bigint
-        const block = await provider.getBlock('latest')
         if (block && BigInt(block.timestamp) > windowEnd) {
           if (!cancelled) setPreCheckError('deadline_passed')
           return
@@ -207,6 +246,33 @@ export function InviteLandingPage() {
             <p className={styles.errorBody}>{PRE_CHECK_MESSAGES[preCheckError]}</p>
           </div>
           {footer}
+        </div>
+      </div>
+    )
+  }
+
+  // Pre-check still in flight — render a placeholder card matching the
+  // landing/error card dimensions instead of falling through to the welcome
+  // card, which would briefly flash before a consumed/expired/no-slots link
+  // resolves to the corresponding error state above. Only relevant before the
+  // user joins; once they've clicked Join we let the controller handle its
+  // own loading/idle state.
+  if (preCheckLoading && !joined) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.logo}>
+          <ArmadaLogo />
+        </div>
+        <div className={styles.stack}>
+          <div
+            className={styles.loadingCard}
+            role="status"
+            aria-live="polite"
+            aria-label="Checking invite link"
+          >
+            <div className={styles.loadingSpinner} aria-hidden="true" />
+            <p className={styles.loadingLabel}>Checking invite…</p>
+          </div>
         </div>
       </div>
     )

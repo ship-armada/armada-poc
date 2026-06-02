@@ -28,12 +28,17 @@ function encodeLog(
 
 describe('parseCrowdfundEvent', () => {
   it('parses ArmLoaded event', () => {
-    const log = encodeLog('ArmLoaded', [])
+    const caller = '0x' + 'aa'.repeat(20)
+    const balance = 1_800_000n * 10n ** 18n
+    const required = 1_800_000n * 10n ** 18n
+    const log = encodeLog('ArmLoaded', [caller, balance, required])
     const result = parseCrowdfundEvent(log)
     expect(result).not.toBeNull()
     expect(result!.type).toBe('ArmLoaded')
     expect(result!.blockNumber).toBe(100)
-    expect(result!.args).toEqual({})
+    expect(result!.args.caller).toBe(caller.toLowerCase())
+    expect(result!.args.balance).toBe(balance)
+    expect(result!.args.required).toBe(required)
   })
 
   it('parses SeedAdded event', () => {
@@ -84,7 +89,9 @@ describe('parseCrowdfundEvent', () => {
     const saleSize = 1_200_000n * 10n ** 6n
     const allocatedArm = 1_200_000n * 10n ** 18n
     const netProceeds = 1_100_000n * 10n ** 6n
-    const log = encodeLog('Finalized', [saleSize, allocatedArm, netProceeds, false])
+    const cappedDemand = 1_150_000n * 10n ** 6n
+    const totalCommitted = 1_300_000n * 10n ** 6n
+    const log = encodeLog('Finalized', [saleSize, allocatedArm, netProceeds, false, cappedDemand, totalCommitted])
     const result = parseCrowdfundEvent(log)
     expect(result).not.toBeNull()
     expect(result!.type).toBe('Finalized')
@@ -92,14 +99,19 @@ describe('parseCrowdfundEvent', () => {
     expect(result!.args.allocatedArm).toBe(allocatedArm)
     expect(result!.args.netProceeds).toBe(netProceeds)
     expect(result!.args.refundMode).toBe(false)
+    expect(result!.args.cappedDemand).toBe(cappedDemand)
+    expect(result!.args.totalCommitted).toBe(totalCommitted)
   })
 
   it('parses Cancelled event', () => {
-    const log = encodeLog('Cancelled', [])
+    const caller = '0x' + 'bb'.repeat(20)
+    const timestamp = 1_780_000_000n
+    const log = encodeLog('Cancelled', [caller, timestamp])
     const result = parseCrowdfundEvent(log)
     expect(result).not.toBeNull()
     expect(result!.type).toBe('Cancelled')
-    expect(result!.args).toEqual({})
+    expect(result!.args.caller).toBe(caller.toLowerCase())
+    expect(result!.args.timestamp).toBe(timestamp)
   })
 
   it('parses Allocated event', () => {
@@ -173,7 +185,7 @@ describe('parseCrowdfundEvent', () => {
   })
 
   it('preserves block number and transaction hash', () => {
-    const log = encodeLog('ArmLoaded', [], {
+    const log = encodeLog('ArmLoaded', ['0x' + 'aa'.repeat(20), 1n, 1n], {
       blockNumber: 42,
       transactionHash: '0x' + 'cd'.repeat(32),
     })
@@ -183,7 +195,7 @@ describe('parseCrowdfundEvent', () => {
   })
 
   it('preserves logIndex', () => {
-    const log = encodeLog('ArmLoaded', [], { logIndex: 5 })
+    const log = encodeLog('ArmLoaded', ['0x' + 'aa'.repeat(20), 1n, 1n], { logIndex: 5 })
     const result = parseCrowdfundEvent(log)
     expect(result!.logIndex).toBe(5)
   })
@@ -192,7 +204,7 @@ describe('parseCrowdfundEvent', () => {
 describe('parseCrowdfundEvents', () => {
   it('parses multiple logs and filters out unrecognized', () => {
     const logs = [
-      encodeLog('ArmLoaded', [], { blockNumber: 1 }),
+      encodeLog('ArmLoaded', ['0x' + 'aa'.repeat(20), 1n, 1n], { blockNumber: 1 }),
       { blockNumber: 2, transactionHash: '0x00', logIndex: 0, topics: ['0xdead'], data: '0x' },
       encodeLog('SeedAdded', ['0x' + '11'.repeat(20)], { blockNumber: 3 }),
     ]

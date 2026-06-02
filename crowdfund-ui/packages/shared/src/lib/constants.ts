@@ -35,13 +35,13 @@ export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] = [
 
 /** ABI fragments for event parsing and contract reads */
 export const CROWDFUND_ABI_FRAGMENTS = [
-  'event ArmLoaded()',
+  'event ArmLoaded(address indexed caller, uint256 balance, uint256 required)',
   'event SeedAdded(address indexed seed)',
-  'event Invited(address indexed inviter, address indexed invitee, uint8 hop, uint256 nonce)',
+  'event Invited(address indexed inviter, address indexed invitee, uint8 indexed hop, uint256 nonce)',
   'event LaunchTeamInvited(address indexed invitee, uint8 hop)',
-  'event Committed(address indexed participant, uint8 hop, uint256 amount)',
-  'event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode)',
-  'event Cancelled()',
+  'event Committed(address indexed participant, uint8 indexed hop, uint256 amount)',
+  'event Finalized(uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode, uint256 cappedDemand, uint256 totalCommitted)',
+  'event Cancelled(address indexed caller, uint256 timestamp)',
   'event Allocated(address indexed participant, uint256 armTransferred, uint256 refundUsdc, address delegate)',
   'event AllocatedHop(address indexed participant, uint8 indexed hop, uint256 acceptedUsdc)',
   'event RefundClaimed(address indexed participant, uint256 usdcAmount)',

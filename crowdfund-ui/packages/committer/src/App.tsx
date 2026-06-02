@@ -1,19 +1,17 @@
 // ABOUTME: Root component for the crowdfund committer app.
 // ABOUTME: Renders three header-nav pages: Network, Participate, and My Position.
 
-import { useCallback, useState, useEffect, useMemo, type ReactNode } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
-import { ArrowRight, GitBranch, UserPlus, Wallet } from 'lucide-react'
+import { ArrowRight, Wallet } from 'lucide-react'
 import {
   Button,
   createProvider,
   useContractEvents,
   useGraphState,
-  useSelection,
   useENS,
-  StatsBar,
   TableView,
   SearchBar,
   TreeView,
@@ -23,13 +21,11 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
-  EmptyState,
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
   WhatsNextCard,
   CROWDFUND_CONSTANTS,
-  formatCountdown,
   formatUsdc,
   formatArm,
   truncateAddress,
@@ -53,18 +49,13 @@ import { useWallet } from '@/hooks/useWallet'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
-import { CommitTab } from '@/components/CommitTab'
 import { NodeSpherePreview } from '@/components/NodeSpherePreview'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { InviteSlotsPage } from '@/components/InviteSlotsPage'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
-import { InviteTab } from '@/components/InviteTab'
-import { ClaimTab } from '@/components/ClaimTab'
-import { MyPositionPanel } from '@/components/MyPositionPanel'
 
 type ActionTab = 'commit' | 'invite'
-type ParticipateIntent = ActionTab | null
 type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'invite-slots'
 
 /**
@@ -285,27 +276,6 @@ function HeaderWalletButton({
         )
       }}
     </ConnectButton.Custom>
-  )
-}
-
-function PageWithHelp({
-  children,
-  aside,
-}: {
-  children: ReactNode
-  aside?: ReactNode
-}) {
-  return (
-    <div className="relative mx-auto w-full max-w-6xl">
-      <div className="mx-auto w-full max-w-2xl space-y-3">
-        {children}
-      </div>
-      {aside && (
-        <aside className="mx-auto mt-3 w-full max-w-2xl xl:absolute xl:left-[calc(50%+22rem)] xl:top-0 xl:mt-0 xl:w-56">
-          {aside}
-        </aside>
-      )}
-    </div>
   )
 }
 
@@ -602,27 +572,6 @@ if (typeof window ==='undefined') return 0
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-/**
- * Design-refresh switch. v2 is now the default (post Phase-4d flip); the
- * legacy v1 layout is reachable through two escape hatches, URL wins:
- *   - URL: `?design=v1` forces v1 for this load (`?design=v2` still works
- *     as an explicit opt-in if a future env override flips the default).
- *   - Env: `VITE_DESIGN_V2=false` or `=0` opts the entire build out.
- *
- * Pending Phase 5 — once v1 rendering paths are removed entirely, this
- * helper and the `isV2` branch in `App()` go with them.
- */
-function getDesignV2Mode(): boolean {
-  if (typeof window !== 'undefined') {
-    const p = new URLSearchParams(window.location.search).get('design')
-    if (p === 'v1') return false
-    if (p === 'v2') return true
-  }
-  const envFlag = import.meta.env.VITE_DESIGN_V2
-  if (envFlag === 'false' || envFlag === '0') return false
-  return true
-}
-
 type NodeSpherePreview =
   | 'node-sphere'
   | 'my-position'
@@ -676,38 +625,6 @@ function formatSaleStatusLabel(
   return { label: 'ACTIVE', dot: 'active' }
 }
 
-/** Determine commit/invite tab enabled state + disabled message. Claim was
- *  promoted to its own page; see `getClaimAvailability` for that gating. */
-function getTabState(
-  tab: ActionTab,
-  phase: number,
-  windowOpen: boolean,
-  armLoaded: boolean,
-  windowEnd: number,
-  blockTimestamp: number,
-  hasInviteSlots: boolean,
-): { enabled: boolean; message: string } {
-  const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
-
-  if (!armLoaded && phase === 0) {
-    return { enabled: false, message: 'Not yet open' }
-  }
-  if (phase === 2) return { enabled: false, message: 'Cancelled' }
-  if (phase === 1) return { enabled: false, message: 'Finalized' }
-
-  if (tab === 'commit') {
-    if (!windowOpen && windowEnded) return { enabled: false, message: 'Deadline passed' }
-    if (!windowOpen) return { enabled: false, message: 'Not yet open' }
-    return { enabled: true, message: '' }
-  }
-
-  // tab === 'invite'
-  if (!windowOpen && windowEnded) return { enabled: false, message: 'Deadline passed' }
-  if (!windowOpen) return { enabled: false, message: 'Not yet open' }
-  if (!hasInviteSlots) return { enabled: false, message: 'No invite slots' }
-  return { enabled: true, message: '' }
-}
-
 type ClaimAvailability =
   | { state: 'available' }
   | { state: 'pending'; reason: string }
@@ -758,15 +675,10 @@ export function App() {
   const [nodeSpherePreview] = useState(getNodeSpherePreviewFromUrl)
   if (nodeSpherePreview) return <NodeSpherePreview variant={nodeSpherePreview} />
 
-  // Phase 3 design-refresh feature flag — captured once on mount; URL wins over env.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const [isV2] = useState(getDesignV2Mode)
-
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
-  const [intent, setIntent] = useState<ParticipateIntent>(null)
   const [page, setPage] = useState<Page>('network')
   // Phase 6 — v2 Participate flow runs as a modal overlay; v1 fallback still
   // uses the dedicated `?page=participate` page. `openParticipate()` routes
@@ -800,19 +712,11 @@ export function App() {
     startBlock: deployment?.deployBlock,
     indexerBaseUrl: indexerUrl,
   })
-  const { graph, summaries, nodes } = useGraphState()
+  const { summaries, nodes } = useGraphState()
   const contractState = useContractState(provider, crowdfundAddress, pollInterval)
-  const { selectedAddress, selectAddress, searchQuery, setSearchQuery, focusRequest, requestFocus } = useSelection()
-
-  // "View in table" selects the address AND scrolls the table. Plain tree clicks select only.
-  const handleViewInTable = (addr: string) => {
-    selectAddress(addr)
-    requestFocus(addr)
-  }
-
-  // ENS
+  // ENS resolver (kept addresses dep stable via memo).
   const addresses = useMemo(() => [...summaries.keys()], [summaries])
-  const { resolve: resolveENS } = useENS({ provider, addresses })
+  useENS({ provider, addresses })
   const summaryArray = useMemo(() => [...summaries.values()], [summaries])
 
   // RainbowKit's programmatic connect-modal opener. Wired to the
@@ -1012,14 +916,6 @@ export function App() {
     contractState.cappedDemand,
   ])
 
-  // Per-intent enabled state — drives the intent picker on the Participate
-  // page and the soft-disabled flag on the participate nav item.
-  const hasInviteSlots = eligibility.positions.some((p) => p.invitesAvailable > 0)
-  const tabStates = useMemo(() => ({
-    commit: getTabState('commit', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots),
-    invite: getTabState('invite', contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots),
-  }), [contractState.phase, windowOpen, contractState.armLoaded, contractState.windowEnd, contractState.blockTimestamp, hasInviteSlots])
-
   // Claim availability + lifecycle stage — drive the Claim page state and
   // the persistent lifecycle banner shown above every page.
   const claimAvailability = useMemo(
@@ -1071,46 +967,6 @@ export function App() {
     contractState.blockTimestamp,
   ])
 
-  // Soft-disabled nav items: present but not actionable yet (Claim before
-  // finalization) or no longer actionable (Participate after window end).
-  // Map values are the suffix shown after the tab label, e.g. "20d 13h" for
-  // Claim while the invite/commit window counts down.
-  const softDisabledPages = useMemo<Map<Page, string>>(() => {
-    const m = new Map<Page, string>()
-
-    // Claim suffix — prefer the live countdown to invite/commit window
-    // close. Falls back to "soon" before the window opens or after it
-    // closes but before finalization (when no countdown applies).
-    if (claimAvailability.state !== 'available') {
-      const windowSecondsLeft =
-        contractState.windowEnd > 0 && contractState.blockTimestamp > 0
-          ? contractState.windowEnd - contractState.blockTimestamp
-          : 0
-      const suffix =
-        windowSecondsLeft > 0 ? formatCountdown(windowSecondsLeft) : 'soon'
-      m.set('claim', suffix)
-    }
-
-    // Participate suffix — "ended" once the commit window has closed,
-    // "soon" if the campaign hasn't opened yet, otherwise no suffix.
-    const participateActive =
-      tabStates.commit.enabled || tabStates.invite.enabled
-    if (!participateActive) {
-      const windowEnded =
-        contractState.windowEnd > 0 &&
-        contractState.blockTimestamp > contractState.windowEnd
-      m.set('participate', windowEnded ? 'ended' : 'soon')
-    }
-
-    return m
-  }, [
-    claimAvailability.state,
-    contractState.windowEnd,
-    contractState.blockTimestamp,
-    tabStates.commit.enabled,
-    tabStates.invite.enabled,
-  ])
-
   // Error states
   if (deployError) {
     return (
@@ -1123,12 +979,13 @@ export function App() {
     )
   }
 
-  // Phase 3.1: in v2 mode on a Hero page (Network or My Position), CrowdfundExperience
-  // renders with mock data — no contract state needed, so we skip the loading gate.
-  // Participate/Claim still wait on deployment because the v1 page bodies need it.
-  const isV2Hero = isV2 && (page === 'network' || page === 'my-position')
+  // On a Hero page (Network or My Position), CrowdfundExperience renders with
+  // mock data while contract state hydrates — so we skip the loading gate for
+  // those views. Other pages (Participate, Claim, Invite Slots) still wait on
+  // the deployment before rendering.
+  const isHeroPage = page === 'network' || page === 'my-position'
 
-  if ((!deployment || contractState.loading) && !isV2Hero) {
+  if ((!deployment || contractState.loading) && !isHeroPage) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center space-y-2">
@@ -1169,11 +1026,7 @@ export function App() {
   // `participationEnabled` below; this is belt-and-braces.
   const openParticipate = () => {
     if (!windowOpen) return
-    if (isV2) {
-      setParticipateOpen(true)
-    } else {
-      setPage('participate')
-    }
+    setParticipateOpen(true)
   }
   const closeParticipate = () => setParticipateOpen(false)
 
@@ -1232,116 +1085,6 @@ export function App() {
 
   const headerNav = <PageNav current={page} onChange={setPage} />
 
-  // Derive "days remaining in commit window" for the inset campaign header.
-  // Falls back to 0 before the window is known or after it closes.
-  const daysLeft =
-    contractState.armLoaded && contractState.windowEnd > 0 && contractState.blockTimestamp > 0
-      ? Math.max(0, Math.floor((contractState.windowEnd - contractState.blockTimestamp) / 86400))
-      : 0
-
-  const treeCampaignHeader = (
-    <div className="px-1 py-1">
-      <div className="">
-        Armada Crowdfund
-      </div>
-      <div className="mt-2 flex items-start gap-4">
-        <div>
-          <div className="text-foreground">
-            {formatUsdc(contractState.totalCommitted)}
-          </div>
-          <div className="text-muted-foreground">
-            Committed
-          </div>
-        </div>
-        <div className="h-8 w-px bg-border/60" aria-hidden="true" />
-        <div>
-          <div className="text-foreground">
-            {contractState.participantCount}
-          </div>
-          <div className="text-muted-foreground">
-            Participants
-          </div>
-        </div>
-        <div className="h-8 w-px bg-border/60" aria-hidden="true" />
-        <div>
-          <div className="text-foreground">{daysLeft}</div>
-          <div className="text-muted-foreground">
-            Days left
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-
-  // TODO: wire to a campaign-details dialog / route. Placeholder for now.
-  // Two-layer background trick gives a clean gradient border that respects
-  // border-radius without the concentric-arc thinning of a wrapper+padding
-  // approach: padding-box paints the inner card surface, border-box paints
-  // the gradient under the transparent border.
-  const treeCampaignDetailsLink = (
-    <button
-      type="button"
-      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-primary shadow-sm transition-opacity hover:opacity-85"
-      style={{
-        background:
-          'linear-gradient(var(--card), var(--card)) padding-box, ' +
-          'linear-gradient(to right, var(--primary), var(--hop-0)) border-box',
-        border: '1px solid transparent',
-      }}
-      onClick={() => {
-        /* TODO: open campaign details */
-      }}
-    >
-      View campaign details
-      <ArrowRight className="size-3" />
-    </button>
-  )
-
-  const treeParticipateCta = (
-    <div className="flex flex-col gap-6 px-5 py-4 text-center sm:flex-row sm:items-center sm:justify-center sm:gap-0 sm:text-left">
-      <div className="space-y-1.5">
-        <div className="text-foreground">
-          Ready to join this network?
-        </div>
-        <div className="text-muted-foreground">
-          Participate as an existing node.
-        </div>
-      </div>
-      <Button
-        size="sm"
-        // Bold blue→purple gradient mirrors the "Send Invite" CTA from
-        // the mockup. The pulsing halo is set inline because Tailwind v4's
-// `animate-{name}` utility generation was producing an empty rule
-// that shadowed our hand-written one. Inline `animation` is the
-// simplest path that actually applies; the keyframe lives in
-// theme.css alongside the other animations.
-className="rounded-md bg-gradient-to-r from-primary to-hop-0 px-8 text-white sm:ml-24"
-style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
-        onClick={openParticipate}
-      >
-        Participate
-      </Button>
-    </div>
-  )
-
-  const networkStats = (
-    <ErrorBoundary>
-      <StatsBar
-        hopStats={contractState.hopStats}
-        totalCommitted={contractState.totalCommitted}
-        cappedDemand={contractState.cappedDemand}
-        saleSize={contractState.saleSize}
-        participantCount={contractState.participantCount}
-        phase={contractState.phase}
-        armLoaded={contractState.armLoaded}
-        windowEnd={contractState.windowEnd}
-        blockTimestamp={contractState.blockTimestamp}
-        userAllocation={userAllocation}
-        isLoading={eventsLoading}
-      />
-    </ErrorBoundary>
-  )
-
   const lifecycleStatus = SHOW_LIFECYCLE_BAR ? (
     <LifecycleBanner
       stage={lifecycleStage}
@@ -1352,11 +1095,11 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
 
   const participateModal = (
     <ParticipateFlowModal
-      open={isV2 && participateOpen}
+      open={participateOpen}
       onClose={closeParticipate}
       ariaLabel="Participate in the Armada crowdfund"
     >
-      {isV2 && participateOpen && (
+      {participateOpen && (
         <ParticipateFlowV2
           walletConnected={wallet.connected}
           walletAddress={wallet.address}
@@ -1386,12 +1129,11 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
     </ParticipateFlowModal>
   )
 
-  // Phase 3.1 v2 hero shell — AppShell renders the single chrome header (via AppHeader),
-  // CrowdfundExperience renders the full-bleed body with its own header slot suppressed.
-  // Controlled `view` syncs to the committer's `page` state; transitions inside
-  // CrowdfundExperience notify back via `onViewChange`. Mock data; Phase 4b wires
-  // live CrowdfundGraph data into CrowdfundExperience.
-  if (isV2Hero) {
+  // Hero shell — AppShell renders the single chrome header (via AppHeader);
+  // CrowdfundExperience renders the full-bleed body with its own header slot
+  // suppressed. Controlled `view` syncs to the committer's `page` state;
+  // transitions inside CrowdfundExperience notify back via `onViewChange`.
+  if (isHeroPage) {
     return (
       <>
         <AppShell
@@ -1455,55 +1197,8 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
           </div>
         )}
 
-        {page === 'network' && (
-          <div key="page-network" className="space-y-8 animate-page-enter">
-            <ErrorBoundary>
-              <TreeView
-                graph={graph}
-                selectedAddress={selectedAddress}
-                onSelectAddress={selectAddress}
-                onViewInTable={handleViewInTable}
-                searchQuery={searchQuery}
-                phase={contractState.phase}
-                resolveENS={resolveENS}
-                connectedAddress={wallet.address}
-                isLoading={eventsLoading}
-                campaignHeader={treeCampaignHeader}
-                campaignDetailsLink={treeCampaignDetailsLink}
-                participateCta={treeParticipateCta}
-              />
-            </ErrorBoundary>
-            {networkStats}
-            <ErrorBoundary>
-              <TableView
-                summaries={summaryArray}
-                nodes={nodes}
-                selectedAddress={selectedAddress}
-                onSelectAddress={selectAddress}
-                focusRequest={focusRequest}
-                searchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
-                phase={contractState.phase}
-                resolveENS={resolveENS}
-                hopStats={contractState.hopStats}
-                saleSize={contractState.saleSize}
-                connectedAddress={wallet.address}
-                isLoading={eventsLoading}
-                explorerUrl={getExplorerUrl()}
-                // "View in tree" selects the node; TreeView highlights it
-                // via the shared selection atom. TODO: also zoom — TreeView
-                // would need a new focusRequest prop mirroring the table's.
-                onFocusInTree={selectAddress}
-              />
-            </ErrorBoundary>
-            <div className="text-muted-foreground text-center">
-              {events.length} events loaded {eventsLoading && '(syncing...)'}
-            </div>
-          </div>
-        )}
-
-        {page === 'invite-slots' && isV2 && (
-          <div key="page-invite-slots-v2" className="animate-page-enter">
+        {page === 'invite-slots' && (
+          <div key="page-invite-slots" className="animate-page-enter">
             <ErrorBoundary>
               <InviteSlotsPage
                 walletConnected={wallet.connected}
@@ -1516,162 +1211,8 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
         )}
 
 
-        {page === 'participate' && !isV2 && (
-          <div key="page-participate" className="animate-page-enter">
-           <ErrorBoundary>
-            <PageWithHelp
-              aside={
-                <WhatsNextCard
-                  title="Next steps"
-                  variant="rail"
-                  steps={[
-                    {
-                      label: 'Commit USDC',
-                      status: userTotalCommitted > 0n ? 'done' : 'active',
-                      detail:
-                        userTotalCommitted > 0n
-                          ? `You've committed ${formatUsdc(userTotalCommitted)}`
-                          : 'Pick a hop and submit your commitment',
-                    },
-                    {
-                      label: 'Invite others (optional)',
-                      detail: hasInviteSlots ? 'You have invite slots available' : undefined,
-                    },
-                    { label: 'Wait for the campaign window to end' },
-                    { label: 'Claim ARM or refund' },
-                  ]}
-                />
-              }
-            >
-            {!wallet.connected ? (
-              <div className="rounded-lg border border-border bg-card shadow-elevated">
-                <EmptyState
-                  icon={Wallet}
-                  title="Connect your wallet to participate"
-                  description="Commit USDC and issue invites while the campaign window is open."
-                  action={<ConnectButton />}
-                />
-              </div>
-            ) : softDisabledPages.has('participate') ? (
-              // Window has closed (or hasn't opened yet) — explain instead of vanishing.
-<div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
-<div className="mb-1 text-foreground">
-This phase has ended
-</div>
-<div className="text-muted-foreground">
-You can no longer commit or invite. Head over to Claim when the
-sale finalizes to claim your ARM tokens (or a USDC refund if the
-sale ends below the minimum raise).
-</div>
-<div className="mt-4">
-<Button size="sm" onClick={() => setPage('claim')}>
-Go to Claim
-</Button>
-</div>
-</div>
-) : intent === null ? (
-// Step 1 of the checkout: choose intent. Sub-flows handle their
-// own internal step state once the user picks one.
-<div className="overflow-hidden rounded-xl border border-border/80 bg-card/80 shadow-elevated ring-1 ring-white/[0.03] backdrop-blur-sm">
-<div className="space-y-5 px-6 py-6">
-<div>
-<div className="mb-2 text-foreground">
-How do you want to participate?
-</div>
-
-</div>
-<div className="grid grid-cols-1 gap-4">
-<button
-type="button"
-disabled={!eligibility.eligible}
-onClick={() => setIntent('commit')}
-                      className={cn(
-                        'group relative flex items-center gap-4 overflow-hidden rounded-lg border border-border/70 bg-background/20 p-4 text-left transition-all',
-                        'hover:border-hop-0/70 hover:bg-hop-0/5 hover:shadow-[0_0_24px_rgba(132,80,210,0.10)]',
-                        'disabled:cursor-not-allowed disabled:opacity-50',
-                        intent === ('commit' as ParticipateIntent)
-                          ? 'border-hop-0/80 bg-hop-0/10'
-                          : 'border-border/70',
-)}
->
-<div className="flex size-16 shrink-0 items-center justify-center rounded-xl border border-hop-0/35 bg-hop-0/15 text-hop-0">
-<UserPlus className="size-4" aria-hidden="true" />
-</div>
-<div className="min-w-0">
-<div className="text-foreground">Commit USDC</div>
-<div className="mt-1.5 text-muted-foreground">
-{eligibility.eligible
-? `Eligible at ${eligibility.positions.length} hop${eligibility.positions.length === 1 ?'' : 's'}`
-                            : 'Not eligible — you need an invite first'}
-                        </div>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!hasInviteSlots}
-                      onClick={() => setIntent('invite')}
-                      className={cn(
-                        'group relative flex items-center gap-4 overflow-hidden rounded-lg border border-border/70 bg-background/20 p-4 text-left transition-all',
-                        'hover:border-hop-0/70 hover:bg-hop-0/5 hover:shadow-[0_0_24px_rgba(132,80,210,0.10)]',
-                        'disabled:cursor-not-allowed disabled:opacity-50',
-)}
->
-<div className="flex size-16 shrink-0 items-center justify-center rounded-xl border border-hop-0/35 bg-hop-0/15 text-hop-0">
-<GitBranch className="size-4" aria-hidden="true" />
-</div>
-<div className="min-w-0">
-<div className="text-foreground">Invite someone</div>
-<div className="mt-1.5 text-muted-foreground">
-{hasInviteSlots
-?'Send an on-chain invite or share a link'
-                            : 'No invite slots available'}
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : intent === 'commit' ? (
-              <CommitTab
-                positions={eligibility.positions}
-                eligible={eligibility.eligible}
-                balance={allowance.balance}
-                needsApproval={allowance.needsApproval}
-                refreshAllowance={allowance.refresh}
-                signer={wallet.signer}
-                crowdfundAddress={crowdfundAddress!}
-                usdcAddress={usdcAddress!}
-                hopStats={contractState.hopStats}
-                saleSize={contractState.saleSize}
-                phase={contractState.phase}
-                windowOpen={windowOpen}
-                resolveENS={resolveENS}
-                onBackToIntent={() => setIntent(null)}
-                onReceiptLogs={ingestReceiptLogs}
-              />
-            ) : (
-              <InviteTab
-                positions={eligibility.positions}
-                signer={wallet.signer}
-                address={wallet.address}
-                crowdfundAddress={crowdfundAddress!}
-                phase={contractState.phase}
-                windowOpen={windowOpen}
-                inviteLinks={inviteLinks}
-                blockTimestamp={contractState.blockTimestamp}
-                nodes={nodes}
-                provider={provider}
-                onBackToIntent={() => setIntent(null)}
-                onReceiptLogs={ingestReceiptLogs}
-              />
-            )}
-            </PageWithHelp>
-           </ErrorBoundary>
-          </div>
-        )}
-
-        {page === 'claim' && isV2 && (
-          <div key="page-claim-v2" className="animate-page-enter">
+        {page === 'claim' && (
+          <div key="page-claim" className="animate-page-enter">
             <ErrorBoundary>
               <ClaimFlowV2
                 walletConnected={wallet.connected}
@@ -1697,117 +1238,6 @@ onClick={() => setIntent('commit')}
           </div>
         )}
 
-        {page === 'claim' && !isV2 && (
-          <div key="page-claim" className="animate-page-enter">
-           <ErrorBoundary>
-            <PageWithHelp
-              aside={
-                wallet.connected && claimAvailability.state !== 'available' ? (
-                  <WhatsNextCard
-                    title="Next steps"
-                    variant="rail"
-                    steps={[
-                      {
-                        label: 'Commit & invite',
-                        status: lifecycleStage === 'commit-invite' ? 'active' : 'done',
-                      },
-                      {
-                        label: 'Window closes & sale finalizes',
-                        status: lifecycleStage === 'commit-invite' ? 'pending' : 'active',
-                      },
-                      { label: 'Claim ARM or refund' },
-                    ]}
-                  />
-                ) : undefined
-              }
-            >
-            {!wallet.connected ? (
-              <div className="rounded-lg border border-border bg-card shadow-elevated">
-                <EmptyState
-                  icon={Wallet}
-                  title="Connect your wallet to claim"
-                  description="Once the campaign finalizes you'll be able to claim ARM tokens (or a USDC refund) from here."
-                  action={<ConnectButton />}
-                />
-              </div>
-            ) : claimAvailability.state !== 'available' ? (
-              // Pre-claim explanation — keeps the page visible so users learn
-              // when claim opens, instead of bouncing back to Participate.
-              <div className="rounded-lg border border-border bg-card p-6 shadow-elevated">
-                <div className="mb-1 text-foreground">
-                  Claiming is not yet available
-                </div>
-                <div className="text-muted-foreground">
-                  {claimAvailability.state === 'pre-open'
-                    ? 'The campaign has not opened yet. Once ARM is loaded and the commitment window closes, you can claim from this page.'
-                    : `${claimAvailability.reason}. You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum raise) from here.`}
-                </div>
-                {lifecycleCountdown !== undefined && lifecycleCountdown > 0 && (
-                  <div className="mt-3 text-muted-foreground">
-                    Estimated:{' '}
-                    <span className="text-foreground">
-                      {formatCountdown(lifecycleCountdown)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            ) : wallet.address ? (
-              <div className="rounded-lg border border-border bg-card p-4 shadow-elevated">
-                <ClaimTab
-                  address={wallet.address}
-                  signer={wallet.signer}
-                  provider={provider}
-                  crowdfundAddress={crowdfundAddress!}
-                  phase={contractState.phase}
-                  refundMode={contractState.refundMode}
-                  blockTimestamp={contractState.blockTimestamp}
-                  claimDeadline={contractState.claimDeadline}
-                  totalCommitted={userTotalCommitted}
-                  windowEnd={contractState.windowEnd}
-                  cappedDemand={contractState.cappedDemand}
-                  graph={graph}
-                  onReceiptLogs={ingestReceiptLogs}
-                />
-              </div>
-            ) : null}
-            </PageWithHelp>
-           </ErrorBoundary>
-          </div>
-        )}
-
-        {page === 'my-position' && (
-          <div key="page-my-position" className="mx-auto w-full max-w-4xl animate-page-enter">
-            {!wallet.connected ? (
-              <div className="rounded-lg border border-border bg-card shadow-elevated">
-                <EmptyState
-                  icon={Wallet}
-                  title="Connect your wallet to view your position"
-                  description="Your committed total, invite slots, hop level, and activity will appear here."
-                  action={<ConnectButton />}
-                />
-              </div>
-            ) : (
-              <ErrorBoundary>
-                <MyPositionPanel
-                  address={wallet.address!}
-                  positions={eligibility.positions}
-                  totalCommitted={userTotalCommitted}
-                  graph={graph}
-                  events={events}
-                  resolveENS={resolveENS}
-                  claimAvailable={claimAvailability.state === 'available'}
-                  claimCountdown={lifecycleCountdown}
-                  onGoToInvite={() => {
-                    setIntent('invite')
-                    setPage('participate')
-                  }}
-                  onGoToNetwork={() => setPage('network')}
-                  onGoToClaim={() => setPage('claim')}
-                />
-              </ErrorBoundary>
-            )}
-          </div>
-        )}
       </div>
      </ErrorBoundary>
     </AppShell>

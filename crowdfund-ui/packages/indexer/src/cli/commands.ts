@@ -12,6 +12,7 @@ export type CliCommand =
   | 'backfill'
   | 'rebuild-snapshot'
   | 'publish-snapshot'
+  | 'evaluate-alerts'
 
 export interface ParsedCliArgs {
   command: CliCommand
@@ -31,6 +32,7 @@ const COMMANDS = new Set<CliCommand>([
   'backfill',
   'rebuild-snapshot',
   'publish-snapshot',
+  'evaluate-alerts',
 ])
 
 function parseBlockValue(raw: string, name: string): number | 'latest' {

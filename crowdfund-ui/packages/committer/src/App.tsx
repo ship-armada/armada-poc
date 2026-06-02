@@ -949,6 +949,29 @@ export function App() {
       return { status: 'no-position', walletDisplay }
     }
     const userSummary = summaries.get(wallet.address.toLowerCase())
+    // Refund-mode signal: contract flag is canonical post-finalize; pre-
+    // finalize we infer it from the closed window + sub-minimum demand so
+    // the card stops showing a misleading "ARM allocation" before the
+    // launch team calls finalize().
+    const windowEnded =
+      contractState.windowEnd > 0 &&
+      contractState.blockTimestamp > contractState.windowEnd
+    const saleBelowMin = contractState.cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
+    const refundMode =
+      contractState.refundMode ||
+      contractState.phase === 2 ||
+      (windowEnded && saleBelowMin)
+    // Refund amount: prefer the on-chain post-claim `refundUsdc` from the
+    // user's graph summary; otherwise the user's total committed across
+    // all hops (full refund when sale falls below min).
+    const totalCommittedUsdcAcrossHops = eligibility.positions.reduce(
+      (sum, p) => sum + p.committed,
+      0n,
+    )
+    const refundUsdc =
+      userSummary?.refundUsdc != null
+        ? userSummary.refundUsdc
+        : totalCommittedUsdcAcrossHops
     return {
       status: 'ready',
       walletAddress: wallet.address,
@@ -959,6 +982,10 @@ export function App() {
       armAllocation: userAllocation?.estArmAllocation ?? 0n,
       armClaimed: !!userSummary?.armClaimed,
       finalized: contractState.phase === 1,
+      refundMode,
+      refundUsdc,
+      refundClaimed: !!userSummary?.refundClaimed,
+      cancelled: contractState.phase === 2,
     }
   }, [
     wallet.address,
@@ -966,6 +993,10 @@ export function App() {
     userAllocation,
     summaries,
     contractState.phase,
+    contractState.refundMode,
+    contractState.windowEnd,
+    contractState.blockTimestamp,
+    contractState.cappedDemand,
   ])
 
   // Per-intent enabled state — drives the intent picker on the Participate
@@ -1370,7 +1401,14 @@ style={{ animation:'glow-pulse 3.5s ease-in-out infinite' }}
             myPositionData={myPositionData}
             onConnectWallet={openConnectModal}
             onParticipate={openParticipate}
-            participationEnabled={windowOpen}
+            // Hide the Participate CTA (and the My Position invite card) once
+            // the sale's outcome is fixed — finalized, cancelled by the
+            // security council, or window-closed-pending-finalize all collapse
+            // to "the sale is over, no more commits". `windowOpen` already
+            // returns false for the first and third cases; `phase !== 2`
+            // catches the cancellation path even when cancellation lands
+            // mid-window.
+            participationEnabled={windowOpen && contractState.phase !== 2}
             etherscanBaseUrl={getExplorerUrl()}
           />
         </AppShell>

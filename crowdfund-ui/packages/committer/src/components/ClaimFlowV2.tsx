@@ -91,6 +91,13 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
   // Load allocation + claimed state on mount (and when prerequisites change).
   // Read directly from the contract — same approach as v1 ClaimTab.
+  //
+  // The two reads are issued independently rather than via `Promise.all` so a
+  // revert on one doesn't sink the other. `computeAllocation()` reverts when
+  // the sale is cancelled (phase === 2) — without this split, a successful
+  // `claimRefund()` would never flip `hasClaimed` to true on revisit, leaving
+  // the user staring at the review screen and able to re-submit a tx the
+  // contract will reject.
   useEffect(() => {
     if (!provider || !crowdfundAddress || !walletAddress || phase < 1) {
       setLoading(false)
@@ -98,19 +105,38 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     }
     let cancelled = false
     const fetchAllocation = async () => {
+      const contract = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, provider)
+
+      // `claimed[user]` is set by both `claim()` and `claimRefund()` — same
+      // gate for both success-path and refund-mode flows. Read it first so
+      // the post-claim short-circuit still fires when the allocation read
+      // can't run.
       try {
-        const contract = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, provider)
-        const [allocation, claimed] = await Promise.all([
-          contract.computeAllocation(walletAddress) as Promise<[bigint, bigint]>,
-          contract.claimed(walletAddress) as Promise<boolean>,
-        ])
-        if (cancelled) return
-        setArmAmount(allocation[0])
-        setRefundAmount(allocation[1])
-        setHasClaimed(claimed)
+        const claimed = (await contract.claimed(walletAddress)) as boolean
+        if (!cancelled) setHasClaimed(claimed)
       } catch {
-        // Non-fatal — keep zero values; UI shows "no allocation" state.
+        // Non-fatal — leave `hasClaimed` at its initial value.
       }
+
+      // `computeAllocation()` is only callable in `Phase.Finalized`. Skip the
+      // call entirely for cancelled (phase === 2) since it would revert; the
+      // refund-mode codepath only needs `totalCommitted` from props, not the
+      // allocation tuple.
+      if (phase === 1) {
+        try {
+          const allocation = (await contract.computeAllocation(walletAddress)) as [
+            bigint,
+            bigint,
+          ]
+          if (!cancelled) {
+            setArmAmount(allocation[0])
+            setRefundAmount(allocation[1])
+          }
+        } catch {
+          // Non-fatal — keep zero values; UI shows "no allocation" state.
+        }
+      }
+
       if (!cancelled) setLoading(false)
     }
     fetchAllocation()
@@ -282,33 +308,27 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     )
   }
 
-  // No allocation: don't show the submit path at all. Reaches here only after
-  // the sale has been finalized successfully — i.e., the connected address
-  // genuinely has nothing to claim (didn't commit, or committed under a
-  // different wallet).
-  if (mode === 'arm' && armAmount === 0n && refundAmount === 0n) {
-    return (
-      <CardShell title="Nothing to claim">
-        <p className={styles.gateBody}>
-          {walletAddress
-            ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)} doesn't have a sale allocation. If you committed but the address doesn't match, switch wallets and try again.`
-            : 'This address has no sale allocation.'}
-        </p>
-        <div className={styles.gateActions}>
-          <ArmadaButton
-            variant="secondary"
-            size="md"
-            label="Back to crowdfund"
-            showIcon={false}
-            onClick={onGoToNetwork}
-          />
-        </div>
-      </CardShell>
-    )
-  }
-
   const stepsLabels = mode === 'arm' ? ARM_STEPS : REFUND_STEPS
   const currentStepIndex = step === 'review' ? 1 : step === 'submit' ? 2 : 3
+
+  // No allocation: don't show the submit path at all. Reaches here only after
+  // the sale has been finalized successfully — the connected address
+  // genuinely has nothing to claim (didn't commit, or committed under a
+  // different wallet). Renders in the same shell as the DoneScreen so the
+  // terminal state is visually consistent with a successful claim.
+  const armNothing = mode === 'arm' && armAmount === 0n && refundAmount === 0n
+  const refundNothing = mode === 'refund' && totalCommitted === 0n
+  if (armNothing || refundNothing) {
+    return (
+      <NothingToClaimScreen
+        mode={mode}
+        walletAddress={walletAddress}
+        stepsLabels={stepsLabels}
+        onGoToMyPosition={onGoToMyPosition}
+        onGoToNetwork={onGoToNetwork}
+      />
+    )
+  }
 
   // ── Active flow ─────────────────────────────────────────────────
 
@@ -378,7 +398,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
                 ? armHasRefund
                   ? 'A single transaction delivers your ARM and your USDC refund.'
                   : 'A single transaction delivers your ARM and any over-cap USDC refund.'
-                : 'The sale ended below the minimum raise. Your committed USDC will be returned to your wallet.'}
+                : phase === 2
+                  ? 'The sale was cancelled by the security council. Your full committed USDC is available to claim back.'
+                  : 'The sale ended below the minimum raise, so no ARM was sold. Your full committed USDC is available to claim back.'}
             </p>
           </div>
 
@@ -491,6 +513,86 @@ function FlowShell({
         {children}
       </div>
     </div>
+  )
+}
+
+function NothingToClaimScreen({
+  mode,
+  walletAddress,
+  stepsLabels,
+  onGoToMyPosition,
+  onGoToNetwork,
+}: {
+  mode: ClaimMode
+  walletAddress: string | null
+  stepsLabels: string[]
+  onGoToMyPosition: () => void
+  onGoToNetwork: () => void
+}) {
+  // Mirror DoneScreen's terminal-state composition (heroBlock + nextCard +
+  // button row) so the "nothing to claim" outcome reads as a deliberate end
+  // of the flow rather than an error. Stepper sits at step 3 to underline
+  // "you've reached the end" — same as the success path.
+  const headline = mode === 'arm' ? 'Nothing to claim.' : 'No refund to claim.'
+  const shortAddress = walletAddress
+    ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
+    : null
+  const subline =
+    mode === 'arm' ? (
+      shortAddress ? (
+        <>
+          {shortAddress} has no sale allocation.
+          <br />
+          You may have committed with a different wallet.
+        </>
+      ) : (
+        <>This address has no sale allocation.</>
+      )
+    ) : shortAddress ? (
+      <>
+        {shortAddress} didn't commit any USDC to the sale.
+        <br />
+        You may have committed with a different wallet.
+      </>
+    ) : (
+      <>This address didn't commit any USDC to the sale.</>
+    )
+  const nextText =
+    mode === 'arm'
+      ? 'If you committed but expected an allocation here, switch to the wallet you used to commit and reload the claim page.'
+      : 'If you expected a refund here, switch to the wallet you used to commit and reload the claim page.'
+
+  return (
+    <FlowShell stepsLabels={stepsLabels} currentStep={3}>
+      <div className={styles.cardContent}>
+        <div className={styles.heroBlock}>
+          <h1 className={styles.headline}>{headline}</h1>
+          <p className={styles.subline}>{subline}</p>
+        </div>
+
+        <div className={styles.nextCard}>
+          <span className={styles.nextEyebrow}>WHAT'S NEXT</span>
+          <p className={styles.nextText}>{nextText}</p>
+        </div>
+      </div>
+
+      <div className={styles.buttonRow}>
+        <ArmadaButton
+          variant="secondary"
+          size="lg"
+          label="Back to crowdfund"
+          showIcon={false}
+          onClick={onGoToNetwork}
+        />
+        <ArmadaButton
+          variant="gradient"
+          size="lg"
+          label="View my position"
+          showIcon={false}
+          onClick={onGoToMyPosition}
+        />
+      </div>
+    </FlowShell>
   )
 }
 

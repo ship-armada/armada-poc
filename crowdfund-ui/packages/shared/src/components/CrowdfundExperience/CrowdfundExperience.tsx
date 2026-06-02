@@ -135,6 +135,26 @@ export type CrowdfundExperienceMyPositionData =
        *  "Available for claim", since post-finalize the amount is no longer an
        *  estimate. */
       finalized?: boolean
+      /** True when the sale's outcome is (or will be) a refund — either
+       *  contract `refundMode === true` (post-finalize, below-min) or
+       *  cancelled (`phase === 2`), or pre-finalize but the window has closed
+       *  with `cappedDemand < MIN_SALE`. When set, the stat block swaps from
+       *  "ARM allocation" to "USDC refund" and the tooltip + CLAIMED tag pivot
+       *  to refund semantics. */
+      refundMode?: boolean
+      /** USDC refund amount (6 decimals) to display when `refundMode` is true.
+       *  Post-claim: actual `refundUsdc` from `RefundClaimed`. Pre-claim:
+       *  the user's total committed USDC (full refund in refund mode). */
+      refundUsdc?: bigint
+      /** True once the user's `claimRefund()` has been executed (read from
+       *  the graph summary, set on the `RefundClaimed` event). Surfaces the
+       *  "CLAIMED" tag in the meta row when `refundMode` is true. */
+      refundClaimed?: boolean
+      /** True when the sale was cancelled by the security council (contract
+       *  `phase === 2`). Distinguishes a cancellation from a below-min refund:
+       *  cancellation is immediate, has no `finalize()` step, and warrants
+       *  different tooltip / claim-flow copy. Implies `refundMode === true`. */
+      cancelled?: boolean
     }
 
 const HOP_TAG_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
@@ -352,6 +372,16 @@ export function CrowdfundExperience({
     : ARM_ALLOCATION
   const myPositionArmClaimed = myPositionReady ? !!myPositionReady.armClaimed : false
   const myPositionFinalized = myPositionReady ? !!myPositionReady.finalized : false
+  const myPositionRefundMode = myPositionReady ? !!myPositionReady.refundMode : false
+  const myPositionRefundClaimed = myPositionReady ? !!myPositionReady.refundClaimed : false
+  const myPositionCancelled = myPositionReady ? !!myPositionReady.cancelled : false
+  const myPositionRefundUsd = myPositionReady
+    ? usdcBigintToUsdNumber(myPositionReady.refundUsdc ?? 0n)
+    : 0
+  // Refund-mode reuses the same "CLAIMED" tag slot; the source flag differs.
+  const myPositionTerminalClaimed = myPositionRefundMode
+    ? myPositionRefundClaimed
+    : myPositionArmClaimed
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>(undefined)
   const [filter, setFilter] = useState<'all' | 'seed' | 'hop1' | 'hop2' | 'multi'>('all')
   const [participantsListOpen, setParticipantsListOpen] = useState(false)
@@ -696,7 +726,7 @@ export function CrowdfundExperience({
                 {myPositionEmptyKind === null && (
                   <Tag label={myPositionHopLabel} dot="lavender" />
                 )}
-                {myPositionEmptyKind === null && myPositionArmClaimed && (
+                {myPositionEmptyKind === null && myPositionTerminalClaimed && (
                   <Tag label="CLAIMED" dot="active" />
                 )}
               </div>
@@ -718,32 +748,66 @@ export function CrowdfundExperience({
                   </p>
                 </div>
 
-                <div className={mpStyles.statBlock}>
-                  <div className={mpStyles.statLabelRow}>
-                    <p className={mpStyles.statLabel}>ARM allocation</p>
-                    <Tooltip
-                      variant="centered"
-                      content={
-                        myPositionArmClaimed
-                          ? 'Claimed · in your wallet'
-                          : myPositionFinalized
-                            ? 'Available for claim. Any committed USDC not used to buy ARM is included as a refund in the same transaction.'
-                            : 'Estimated · pending finalization. Any committed USDC not used to buy ARM will be refunded at finalization.'
-                      }
-                    >
-                      <button
-                        type="button"
-                        className={mpStyles.infoTrigger}
-                        aria-label="ARM allocation info"
+                {myPositionRefundMode ? (
+                  // Sale didn't meet the minimum raise (or was cancelled) —
+                  // the user's outcome is a USDC refund, not an ARM
+                  // allocation. Swap the stat block accordingly.
+                  <div className={mpStyles.statBlock}>
+                    <div className={mpStyles.statLabelRow}>
+                      <p className={mpStyles.statLabel}>USDC refund</p>
+                      <Tooltip
+                        variant="centered"
+                        content={
+                          myPositionRefundClaimed
+                            ? 'Claimed · returned to your wallet'
+                            : myPositionCancelled
+                              ? 'Available for claim. The sale was cancelled by the security council — your committed USDC will be returned to your wallet.'
+                              : myPositionFinalized
+                                ? 'Available for claim. Your committed USDC will be returned to your wallet.'
+                                : 'Pending finalization. The sale fell below the minimum raise — your committed USDC will be returned to your wallet.'
+                        }
                       >
-                        <InformationCircleIcon className={mpStyles.infoIcon} aria-hidden />
-                      </button>
-                    </Tooltip>
+                        <button
+                          type="button"
+                          className={mpStyles.infoTrigger}
+                          aria-label="USDC refund info"
+                        >
+                          <InformationCircleIcon className={mpStyles.infoIcon} aria-hidden />
+                        </button>
+                      </Tooltip>
+                    </div>
+                    <p className={mpStyles.statAmountAccent}>
+                      {formatUsdcCommitted(myPositionRefundUsd)}
+                    </p>
                   </div>
-                  <p className={mpStyles.statAmountAccent}>
-                    {formatArmAllocation(myPositionArmNumber)}
-                  </p>
-                </div>
+                ) : (
+                  <div className={mpStyles.statBlock}>
+                    <div className={mpStyles.statLabelRow}>
+                      <p className={mpStyles.statLabel}>ARM allocation</p>
+                      <Tooltip
+                        variant="centered"
+                        content={
+                          myPositionArmClaimed
+                            ? 'Claimed · in your wallet'
+                            : myPositionFinalized
+                              ? 'Available for claim. Any committed USDC not used to buy ARM is included as a refund in the same transaction.'
+                              : 'Estimated · pending finalization. Any committed USDC not used to buy ARM will be refunded at finalization.'
+                        }
+                      >
+                        <button
+                          type="button"
+                          className={mpStyles.infoTrigger}
+                          aria-label="ARM allocation info"
+                        >
+                          <InformationCircleIcon className={mpStyles.infoIcon} aria-hidden />
+                        </button>
+                      </Tooltip>
+                    </div>
+                    <p className={mpStyles.statAmountAccent}>
+                      {formatArmAllocation(myPositionArmNumber)}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className={mpStyles.barSection}>
@@ -788,7 +852,7 @@ export function CrowdfundExperience({
           </div>
         )}
 
-        {participationEnabled && (
+        {participationEnabled && !myPositionCancelled && myPositionEmptyKind === null && (
         <div
           className={layerClass(myPositionPanelVisible, motionReady, myPositionPanelAnimates)}
           aria-hidden={!myPositionPanelVisible}

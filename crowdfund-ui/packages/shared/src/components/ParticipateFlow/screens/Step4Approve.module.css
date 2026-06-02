@@ -117,6 +117,14 @@
   color: var(--semantic-color-surface-bg);
 }
 
+/* Wrapper around the error message + optional details toggle. Mirrors
+ * `.txRow`'s horizontal padding so the error copy aligns with the tx label
+ * above it (left-edge alignment) and with the bottom of the card; without
+ * this the error text would butt up against the txCard border. */
+.errorBlock {
+  padding: 0 var(--primitives-spacing-5) var(--primitives-spacing-4);
+}
+
 /* Error message body — wraps long unbroken strings (long tx hashes, JSON dumps)
  * so the modal stays at its 480px width instead of bursting horizontally. */
 .errorMessage {

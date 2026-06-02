@@ -148,7 +148,7 @@ export default function Step4Approve({
                 const hasDetails = !!tx.errorDetails && tx.errorDetails !== tx.errorMessage
                 const expanded = !!expandedDetails[i]
                 return (
-                  <div>
+                  <div className={styles.errorBlock}>
                     <div className={styles.errorMessage}>{tx.errorMessage}</div>
                     {hasDetails && (
                       <>

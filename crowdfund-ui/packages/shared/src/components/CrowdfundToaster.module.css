@@ -1,0 +1,67 @@
+/* ABOUTME: CSS Module styling sonner toasts against @armada/ui design tokens. */
+/* ABOUTME: `!important` everywhere because sonner emits inline styles on every toast (specificity 1,0,0,0); the same way the previous Tailwind-flavor `!bg-card` etc. worked here. */
+
+.toast {
+  background: var(--semantic-color-surface-default) !important;
+  color: var(--semantic-color-text-primary) !important;
+  border: 1px solid var(--semantic-color-border-default) !important;
+  border-radius: calc(var(--primitives-borderRadius-lg) * 1px) !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+  font-size: calc(var(--primitives-fontSize-base) * 1px) !important;
+  box-shadow: 0 12px 28px -16px rgba(0, 0, 0, 0.55) !important;
+}
+
+.description {
+  color: var(--semantic-color-text-muted) !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+}
+
+.actionButton {
+  background: var(--semantic-color-text-lavender) !important;
+  color: var(--semantic-color-text-primary) !important;
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px) !important;
+  padding: 4px 10px !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px) !important;
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus) !important;
+  outline-offset: 2px !important;
+}
+
+.cancelButton {
+  background: var(--semantic-color-surface-hover) !important;
+  color: var(--semantic-color-text-muted) !important;
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px) !important;
+  padding: 4px 10px !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px) !important;
+}
+
+.cancelButton:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus) !important;
+  outline-offset: 2px !important;
+}
+
+/* Per-variant border tints — overlay the status color on the default border
+ * at ~40% so the toast reads as themed without overwhelming the card surface. */
+.success {
+  border-color: color-mix(in srgb, var(--semantic-color-status-success) 40%, var(--semantic-color-border-default)) !important;
+}
+
+.error {
+  border-color: color-mix(in srgb, var(--semantic-color-status-error) 40%, var(--semantic-color-border-default)) !important;
+}
+
+.warning {
+  border-color: color-mix(in srgb, var(--semantic-color-status-warning) 40%, var(--semantic-color-border-default)) !important;
+}
+
+.info {
+  border-color: color-mix(in srgb, var(--semantic-color-status-info) 40%, var(--semantic-color-border-default)) !important;
+}
+
+.loading {
+  border-color: color-mix(in srgb, var(--semantic-color-status-info) 40%, var(--semantic-color-border-default)) !important;
+}

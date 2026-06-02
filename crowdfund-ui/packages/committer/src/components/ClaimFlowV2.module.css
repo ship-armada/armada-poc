@@ -1,0 +1,166 @@
+/* ABOUTME: CSS Module for ClaimFlowV2 — surfaces, text, and the delegate input use @armada/ui design tokens so the wrapper matches the modal/header chrome. */
+/* ABOUTME: Pairs with `Step4Approve.module.css` (the inner tx UI) which already references the same `--semantic-color-*` / `--primitives-*` tokens. */
+
+/* `100vh - 12rem` matches the AppShell main `pt-20` + container `p-4-top`
+ * doubled — keeps the centered content on the viewport's visual midline.
+ * Same derivation as `FlowShell`'s wrapper; see Step4Approve.tsx for the
+ * full notes. */
+.gateShell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-3, 12px);
+  min-height: 60vh;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 0 calc(var(--primitives-spacing-6) * 1px);
+  text-align: center;
+  font-family: var(--primitives-fontFamily-ui);
+  color: var(--semantic-color-text-primary);
+}
+
+.gateTitle {
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium, 500);
+  color: var(--semantic-color-text-primary);
+}
+
+.gateBody {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+}
+
+.gateBody .accent {
+  color: var(--semantic-color-text-primary);
+}
+
+.gateBodyFootnote {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+  margin-top: 12px;
+}
+
+.gateActions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+/* Active-flow container — same vertical-center math as the gate shell. */
+.flowShell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 12rem);
+  padding: 0 24px;
+  font-family: var(--primitives-fontFamily-ui);
+  color: var(--semantic-color-text-primary);
+}
+
+.flowInner {
+  width: 100%;
+  max-width: 36rem;
+}
+
+.flowStepsWrap {
+  margin-bottom: 32px;
+}
+
+.flowHeading {
+  margin-bottom: 8px;
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium, 500);
+  color: var(--semantic-color-text-primary);
+}
+
+.flowSubheading {
+  margin-bottom: 32px;
+  color: var(--semantic-color-text-muted);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  line-height: 1.5;
+}
+
+/* Summary grid (ARM allocation + USDC refund cards on the Review step). */
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.summaryRow {
+  padding: 16px;
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px);
+  background: var(--semantic-color-surface-default);
+}
+
+.summaryLabel {
+  margin-bottom: 8px;
+}
+
+.summaryValue {
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  color: var(--semantic-color-text-primary);
+}
+
+/* Delegate address input. */
+.delegateBlock {
+  margin-bottom: 24px;
+}
+
+.delegateLabel {
+  display: block;
+  margin-bottom: 8px;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--semantic-color-text-muted);
+}
+
+.delegateInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px);
+  background: var(--semantic-color-surface-default);
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-mono);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.delegateInput:focus {
+  border-color: var(--semantic-color-border-focus);
+}
+
+.delegateError {
+  margin-top: 4px;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+.delegateHelp {
+  margin-top: 8px;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+/* Footer actions (Cancel / Claim, or Back / View position on Done). */
+.flowActions {
+  display: flex;
+  gap: 12px;
+}
+
+/* Submit-step wrapper — Step4Approve handles its own surface; this is just
+ * the centering chrome around it. */
+.submitShell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 12rem);
+}

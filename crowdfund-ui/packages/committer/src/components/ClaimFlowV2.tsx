@@ -15,6 +15,7 @@ import {
 } from '@armada/crowdfund-shared'
 import { Steps, Button as ArmadaButton, Tag } from '@armada/ui'
 import { mapRevertToMessage } from '@/lib/revertMessages'
+import styles from './ClaimFlowV2.module.css'
 
 type ClaimMode = 'arm' | 'refund'
 type FlowStep = 'review' | 'submit' | 'done'
@@ -167,7 +168,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   if (!walletConnected) {
     return (
       <CardShell title="Connect your wallet to claim">
-        <p className="text-muted-foreground">
+        <p className={styles.gateBody}>
           Once the campaign finalizes you'll be able to claim ARM tokens (or a USDC refund) from
           here.
         </p>
@@ -178,17 +179,17 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   if (!claimAvailable) {
     return (
       <CardShell title="Claiming isn't open yet">
-        <p className="text-muted-foreground">
+        <p className={styles.gateBody}>
           You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum
           raise) from here.
         </p>
         {claimCountdownSeconds !== undefined && claimCountdownSeconds > 0 && (
-          <p className="mt-3 text-muted-foreground">
+          <p className={styles.gateBodyFootnote}>
             Estimated:{' '}
-            <span className="text-foreground">{formatCountdown(claimCountdownSeconds)}</span>
+            <span className={styles.accent}>{formatCountdown(claimCountdownSeconds)}</span>
           </p>
         )}
-        <div className="mt-6">
+        <div className={styles.gateActions}>
           <ArmadaButton
             variant="secondary"
             size="md"
@@ -204,7 +205,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   if (loading) {
     return (
       <CardShell title="Loading allocation…">
-        <p className="text-muted-foreground">Fetching your share of the sale.</p>
+        <p className={styles.gateBody}>Fetching your share of the sale.</p>
       </CardShell>
     )
   }
@@ -238,15 +239,15 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     if (saleBelowMin) {
       return (
         <CardShell title="Sale ended below minimum">
-          <p className="text-muted-foreground">
+          <p className={styles.gateBody}>
             {props.totalCommitted > 0n
               ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
               : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
           </p>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className={styles.gateBodyFootnote}>
             Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
           </p>
-          <div className="mt-6">
+          <div className={styles.gateActions}>
             <ArmadaButton
               variant="secondary"
               size="md"
@@ -260,14 +261,14 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     }
     return (
       <CardShell title="Awaiting finalization">
-        <p className="text-muted-foreground">
+        <p className={styles.gateBody}>
           The commit window has closed. Once the sale is finalized you'll be able to claim your
           ARM allocation (and any USDC refund for over-cap commitments) from here.
         </p>
-        <p className="mt-3 text-xs text-muted-foreground">
+        <p className={styles.gateBodyFootnote}>
           Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
         </p>
-        <div className="mt-6">
+        <div className={styles.gateActions}>
           <ArmadaButton
             variant="secondary"
             size="md"
@@ -287,12 +288,12 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   if (mode === 'arm' && armAmount === 0n && refundAmount === 0n) {
     return (
       <CardShell title="Nothing to claim">
-        <p className="text-muted-foreground">
+        <p className={styles.gateBody}>
           {walletAddress
             ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)} doesn't have a sale allocation. If you committed but the address doesn't match, switch wallets and try again.`
             : 'This address has no sale allocation.'}
         </p>
-        <div className="mt-6">
+        <div className={styles.gateActions}>
           <ArmadaButton
             variant="secondary"
             size="md"
@@ -314,16 +315,16 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const delegateValid = /^0x[a-fA-F0-9]{40}$/.test(delegate)
     return (
       <FlowShell stepsLabels={stepsLabels} currentStep={currentStepIndex}>
-        <h2 className="mb-2 text-2xl">
+        <h2 className={styles.flowHeading}>
           {mode === 'arm' ? 'Claim your ARM' : 'Claim your refund'}
         </h2>
-        <p className="mb-8 text-muted-foreground">
+        <p className={styles.flowSubheading}>
           {mode === 'arm'
             ? 'Review your allocation before submitting. Your delegate receives your governance voting power.'
             : 'The sale ended without meeting the minimum raise. You can claim your committed USDC back.'}
         </p>
 
-        <div className="mb-6 grid grid-cols-2 gap-3">
+        <div className={styles.summaryGrid}>
           {mode === 'arm' && (
             <SummaryRow label="ARM allocation" value={armDisplay} accent="lavender" />
           )}
@@ -336,27 +337,25 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         </div>
 
         {mode === 'arm' && (
-          <div className="mb-6">
-            <label className="mb-2 block text-sm uppercase tracking-widest text-muted-foreground">
-              Delegate address
-            </label>
+          <div className={styles.delegateBlock}>
+            <label className={styles.delegateLabel}>Delegate address</label>
             <input
               type="text"
               value={delegate}
               onChange={(e) => setDelegate(e.target.value.trim())}
               placeholder="0x…"
-              className="w-full rounded-md border border-border/60 bg-background/40 px-3 py-2 font-mono text-sm text-foreground focus:border-primary focus:outline-none"
+              className={styles.delegateInput}
             />
             {!delegateValid && delegate.length > 0 && (
-              <p className="mt-1 text-xs text-destructive">Not a valid 0x address.</p>
+              <p className={styles.delegateError}>Not a valid 0x address.</p>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className={styles.delegateHelp}>
               Your delegate votes on your behalf in governance. Use your own address to self-delegate.
             </p>
           </div>
         )}
 
-        <div className="flex gap-3">
+        <div className={styles.flowActions}>
           <ArmadaButton
             variant="secondary"
             size="md"
@@ -383,11 +382,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
   if (step === 'submit') {
     return (
-      // 12rem = 2 × (AppShell main `pt-20` + container `p-4-top`) — needed so
-      // the centered content lands at the viewport's visual midline. A plain
-      // `min-h-screen` overflows and pushes the center down by the full chrome
-      // offset; subtracting only the header (5rem) still leaves it half-low.
-      <div className="flex min-h-[calc(100vh-12rem)] items-center justify-center">
+      <div className={styles.submitShell}>
         {/* Reuse Step4Approve's controlled-tx surface. Single op; the second-row
             "Commit" slot collapses since we only pass one tx. */}
         <Step4Approve
@@ -415,9 +410,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
 function CardShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-      <div className="text-2xl">{title}</div>
-      <div className="text-sm">{children}</div>
+    <div className={styles.gateShell}>
+      <div className={styles.gateTitle}>{title}</div>
+      <div>{children}</div>
     </div>
   )
 }
@@ -432,12 +427,9 @@ function FlowShell({
   children: React.ReactNode
 }) {
   return (
-    // `100vh - 5rem` matches AppShell's `pt-20` header clearance — a bare
-    // `min-h-screen` overflows the viewport, dropping the centered content
-    // below the visual midline by the header's height.
-    <div className="flex min-h-[calc(100vh-12rem)] items-center justify-center px-6">
-      <div className="w-full max-w-xl">
-        <div className="mb-8">
+    <div className={styles.flowShell}>
+      <div className={styles.flowInner}>
+        <div className={styles.flowStepsWrap}>
           <Steps steps={stepsLabels} currentStep={currentStep} />
         </div>
         {children}
@@ -458,11 +450,11 @@ function SummaryRow({
   accent: 'lavender' | 'warning'
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background/40 p-4">
-      <div className="mb-2">
+    <div className={styles.summaryRow}>
+      <div className={styles.summaryLabel}>
         <Tag label={label} dot={accent} />
       </div>
-      <div className="text-xl text-foreground">{value}</div>
+      <div className={styles.summaryValue}>{value}</div>
     </div>
   )
 }
@@ -484,7 +476,7 @@ function DoneScreen({
 }) {
   return (
     <FlowShell stepsLabels={mode === 'arm' ? ARM_STEPS : REFUND_STEPS} currentStep={3}>
-      <h2 className="mb-2 text-2xl">
+      <h2 className={styles.flowHeading}>
         {alreadyClaimed
           ? mode === 'arm'
             ? 'You already claimed your ARM'
@@ -493,12 +485,12 @@ function DoneScreen({
             ? 'ARM claimed'
             : 'Refund claimed'}
       </h2>
-      <p className="mb-8 text-muted-foreground">
+      <p className={styles.flowSubheading}>
         {mode === 'arm'
           ? `Your ${armDisplay} is in your wallet, and your delegate has voting power.`
           : `Your ${refundDisplay} has been returned to your wallet.`}
       </p>
-      <div className="flex gap-3">
+      <div className={styles.flowActions}>
         <ArmadaButton
           variant="secondary"
           size="md"

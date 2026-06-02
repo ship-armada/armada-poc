@@ -871,9 +871,11 @@ export function NodeSphere({
     let cameraResetActive = false
     let userAdjustedView = false
 
-    // Focused nodes sit slightly right and above center so tooltips have room.
+    // Focused nodes sit slightly right and above center so tooltips have room
+    // and so the MyPosition view's taller right-corner invites card doesn't
+    // clip the locked wallet node.
     const FOCUS_OFFSET_X = 0.18
-    const FOCUS_OFFSET_Y = 0.1
+    const FOCUS_OFFSET_Y = 0.28
     const FOCUS_INNER_RADIUS = 2.6
     const FOCUS_OUTER_RADIUS = 6.2
     const FOCUS_ZOOM_OUT_MAX = 0.65

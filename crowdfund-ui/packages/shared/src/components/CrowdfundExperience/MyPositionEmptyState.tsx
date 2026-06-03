@@ -22,8 +22,10 @@ const COPY: Record<MyPositionEmptyStateKind, { headline: string; subhead: string
   },
   'no-position': {
     headline: 'No position yet',
-    subhead: "You haven't been invited to a hop or committed USDC yet. Head to Participate to claim a spot.",
-    cta: 'Participate',
+    subhead: "You haven't been invited to a hop or committed USDC yet.",
+    // No CTA — non-whitelisted wallets can't act here; the Participate CTA
+    // is gated on eligibility and only reachable via the hero.
+    cta: '',
   },
 }
 
@@ -34,11 +36,12 @@ export function MyPositionEmptyState({
 }: MyPositionEmptyStateProps) {
   const copy = COPY[kind]
   const onClick = kind === 'disconnected' ? onConnectWallet : onParticipate
+  const showCta = copy.cta !== '' && !!onClick
   return (
     <div className={styles.body}>
       <h2 className={styles.headline}>{copy.headline}</h2>
       <p className={styles.subhead}>{copy.subhead}</p>
-      {onClick && (
+      {showCta && (
         <div className={styles.ctaRow}>
           <Button
             variant="gradient"

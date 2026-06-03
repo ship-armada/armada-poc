@@ -367,16 +367,30 @@ Each `evaluate-alerts` invocation is a single pass — it reads current indexer 
 
 If you need tighter latency than one minute, drop the timer to 30s — the evaluator is cheap (single store read + a few RPC calls when `chainState` is configured). Sub-30s is overkill at this scale and risks Discord rate limits.
 
+### Where webhook URLs live
+
+Webhook URLs are bearer credentials — anyone holding the URL can post to that channel — so they are **never** committed to git. The canonical home for them depends on environment:
+
+| Environment | Location | Set by |
+|---|---|---|
+| **Local dev / testing** | `config/secrets.env` (gitignored; template at `config/secrets.env.template`) | Operator copies template, fills in values, `source`s the file before running the indexer or CLI. |
+| **Production VPS** | systemd `EnvironmentFile=` pointing at a root-owned file under `/etc/crowdfund-alerts/` (mode `0640`, group-readable by the alerts service user) | Deploy script writes the file from your secret manager during host provisioning. Never check the file into the repo. |
+| **Container / PaaS** | Platform secret manager (Render, Fly, Vercel, AWS Secrets Manager, GCP Secret Manager, …) injected at process start | Set via the platform's UI or `infra-as-code`; rotate via the same channel. |
+
+`sample.env.production` keeps placeholder values (`https://discord.com/api/webhooks/<id>/<token>`) so the full env-var inventory is visible without leaking credentials. `config/secrets.env.template` carries the same env-var names with empty values, ready for `cp config/secrets.env.template config/secrets.env` then editing in place.
+
+`.gitignore` already covers `config/secrets.env` — verify with `git check-ignore -v config/secrets.env` before pasting a real URL.
+
 ### Rotating or changing the Discord channel
 
 The webhook URLs are env-var-driven (`CROWDFUND_ALERT_WEBHOOK_P0/P1/P2/P3`), so swapping channels is a config change, not a code redeploy:
 
 1. Create the new webhook in Discord (Server Settings → Integrations → Webhooks → New Webhook).
-2. Update the env var(s) on the host running the cron — secret manager, systemd EnvironmentFile, `.env`, etc.
+2. Update the env var(s) in whichever store applies to your environment (see table above).
 3. Reload the cron unit (`systemctl daemon-reload && systemctl restart crowdfund-alerts.timer`, or equivalent on your platform).
 4. Optionally revoke the old webhook in Discord to prevent stale tokens from posting.
 
-You can route different severities to different channels — e.g. P0/P1 to a paged channel with an `@on-call` role mention (`CROWDFUND_ALERT_MENTION_P0=<@&ROLE_ID>`), P2/P3 to a silent log channel. Or point all four at one channel for simplicity. Webhook URLs are secrets — set them via the platform's secret store, not by committing them.
+You can route different severities to different channels — e.g. P0/P1 to a paged channel with an `@on-call` role mention (`CROWDFUND_ALERT_MENTION_P0=<@&ROLE_ID>`), P2/P3 to a silent log channel. Or point all four at one channel for simplicity.
 
 ---
 

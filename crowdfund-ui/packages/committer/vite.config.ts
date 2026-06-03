@@ -3,6 +3,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -52,6 +53,20 @@ export default defineConfig({
     react(),
     tailwindcss(),
     serveDeployments(),
+    // Sentry sourcemap upload. Self-disabling when `SENTRY_AUTH_TOKEN` is
+    // unset, so local dev builds incur zero overhead and Netlify previews
+    // without Sentry env vars still build cleanly. Must run last so the
+    // bundle is finalised before sourcemaps are uploaded.
+    sentryVitePlugin({
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+      release: process.env.VITE_SENTRY_RELEASE
+        ? { name: process.env.VITE_SENTRY_RELEASE }
+        : undefined,
+      sourcemaps: { assets: ['./dist/**'] },
+    }),
   ],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
@@ -66,5 +81,12 @@ export default defineConfig({
     fs: {
       allow: ['../../..'],
     },
+  },
+  build: {
+    // `hidden` generates sourcemaps for the Sentry plugin to upload, then
+    // strips the `//# sourceMappingURL=...` reference from the emitted JS so
+    // the maps aren't reachable from the deployed bundle. Sentry still
+    // symbolicates events because it has the maps server-side.
+    sourcemap: 'hidden',
   },
 })

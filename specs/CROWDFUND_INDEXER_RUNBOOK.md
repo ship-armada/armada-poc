@@ -361,6 +361,23 @@ Pair with a one-shot service that runs `npm run crowdfund:indexer:cli -- evaluat
 
 To force a re-fire after operator intervention (e.g. you want a P0 to re-page after a Discord channel outage), remove the relevant `dedupeKey` entries from `data/crowdfund-indexer/alerts.json` or delete the file entirely.
 
+### Delivery cadence
+
+Each `evaluate-alerts` invocation is a single pass — it reads current indexer state, evaluates every rule, dispatches newly-fired alerts, and exits. **Worst-case alert latency is your cron interval.** Multiple alerts that become true between two ticks all deliver in the same tick, so you may see two or three messages arrive together; that's expected, not a bug.
+
+If you need tighter latency than one minute, drop the timer to 30s — the evaluator is cheap (single store read + a few RPC calls when `chainState` is configured). Sub-30s is overkill at this scale and risks Discord rate limits.
+
+### Rotating or changing the Discord channel
+
+The webhook URLs are env-var-driven (`CROWDFUND_ALERT_WEBHOOK_P0/P1/P2/P3`), so swapping channels is a config change, not a code redeploy:
+
+1. Create the new webhook in Discord (Server Settings → Integrations → Webhooks → New Webhook).
+2. Update the env var(s) on the host running the cron — secret manager, systemd EnvironmentFile, `.env`, etc.
+3. Reload the cron unit (`systemctl daemon-reload && systemctl restart crowdfund-alerts.timer`, or equivalent on your platform).
+4. Optionally revoke the old webhook in Discord to prevent stale tokens from posting.
+
+You can route different severities to different channels — e.g. P0/P1 to a paged channel with an `@on-call` role mention (`CROWDFUND_ALERT_MENTION_P0=<@&ROLE_ID>`), P2/P3 to a silent log channel. Or point all four at one channel for simplicity. Webhook URLs are secrets — set them via the platform's secret store, not by committing them.
+
 ---
 
 ## Normal Operating Loop

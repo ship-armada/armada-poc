@@ -32,19 +32,23 @@ export function tryGetChecksumAddress(val: string): string | null {
   }
 }
 
-/** Strict ENS-name check for the subset we resolve in the app: lowercase
- * labels separated by dots, each label `[a-z0-9-]` (no leading / trailing
- * hyphen), must end with `.eth`, at least one label before `.eth`. Rejects
- * uppercase, whitespace, emoji, IDN — out of scope for the invite flow. */
+/** Structural ENS-name check — must end with `.eth`, within the length cap,
+ * no whitespace or ASCII control characters, no empty labels. Intentionally
+ * permissive about per-label charset: ENSIP-15 normalization (mixed case,
+ * emoji, IDN) is handled by ethers' resolver downstream, and over-rejecting
+ * here would silently break mainnet users with emoji / Unicode names. The
+ * resolver is the source of truth; this is just a pre-flight smoke test. */
 export function isValidEnsName(val: string): boolean {
   if (!val.endsWith('.eth')) return false
   if (val.length <= 4 || val.length > ADDRESS_INPUT_MAX_LENGTH) return false
+  // Reject whitespace + ASCII control characters (0x00-0x1F, 0x7F).
+  // Unicode / emoji is intentionally allowed — ENSIP-15 covers that.
+  if (/[\s\x00-\x1f\x7f]/.test(val)) return false
   const labels = val.split('.')
   if (labels.length < 2) return false
   if (labels[labels.length - 1] !== 'eth') return false
-  const labelRe = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
   for (const label of labels) {
-    if (!labelRe.test(label)) return false
+    if (label.length === 0) return false
   }
   return true
 }

@@ -99,24 +99,40 @@ describe('isValidEnsName', () => {
     expect(isValidEnsName('al-ice.eth')).toBe(true)
   })
 
+  it('accepts mixed case (ENSIP-15 normalization happens at the resolver)', () => {
+    expect(isValidEnsName('Vitalik.eth')).toBe(true)
+  })
+
+  it('accepts emoji labels', () => {
+    expect(isValidEnsName('\u{1F984}.eth')).toBe(true)
+  })
+
+  it('accepts Unicode / IDN labels', () => {
+    expect(isValidEnsName('münchen.eth')).toBe(true)
+  })
+
   it('rejects a name not ending in .eth', () => {
     expect(isValidEnsName('vitalik.xyz')).toBe(false)
   })
 
-  it('rejects uppercase characters', () => {
-    expect(isValidEnsName('Vitalik.eth')).toBe(false)
-  })
-
-  it('rejects whitespace', () => {
+  it('rejects leading whitespace', () => {
     expect(isValidEnsName(' vitalik.eth')).toBe(false)
   })
 
-  it('rejects leading hyphen in a label', () => {
-    expect(isValidEnsName('-vitalik.eth')).toBe(false)
+  it('rejects mid-string whitespace', () => {
+    expect(isValidEnsName('alice .eth')).toBe(false)
   })
 
-  it('rejects trailing hyphen in a label', () => {
-    expect(isValidEnsName('vitalik-.eth')).toBe(false)
+  it('rejects an embedded ASCII control character (tab)', () => {
+    expect(isValidEnsName('alice\t.eth')).toBe(false)
+  })
+
+  it('rejects an embedded ASCII control character (NUL)', () => {
+    expect(isValidEnsName('alice\x00.eth')).toBe(false)
+  })
+
+  it('rejects an embedded ASCII control character (DEL)', () => {
+    expect(isValidEnsName('alice\x7f.eth')).toBe(false)
   })
 
   it('rejects empty label (double dot)', () => {
@@ -130,9 +146,5 @@ describe('isValidEnsName', () => {
   it('rejects extremely long input', () => {
     const long = 'a'.repeat(ADDRESS_INPUT_MAX_LENGTH) + '.eth'
     expect(isValidEnsName(long)).toBe(false)
-  })
-
-  it('rejects emoji / unicode', () => {
-    expect(isValidEnsName('🦄.eth')).toBe(false)
   })
 })

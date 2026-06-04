@@ -1,0 +1,67 @@
+# Netlify build config — crowdfund admin app deploy.
+#
+# Env vars set in the Netlify UI (not committed):
+#   DEPLOYMENT_INSTANCE            optional override; defaults to "medi3".
+#                                  The build script re-exports it as
+#                                  VITE_DEPLOYMENT_INSTANCE so the bundled
+#                                  admin reads the matching instance file
+#                                  at runtime — set this one var only.
+#   VITE_CROWDFUND_PROFILE         "medi" or "mainnet" (default mainnet).
+#                                  Selects which constants the bundle bakes in
+#                                  (MAX_SEEDS, BASE_SALE, hop caps, durations).
+#                                  Must match the contracts at the configured
+#                                  deployment instance.
+#   VITE_CROWDFUND_INDEXER_URL     optional indexer API base URL — when set,
+#                                  the admin's event log is seeded from the
+#                                  indexer snapshot before falling back to RPC
+#                                  polling.
+#   VITE_SEPOLIA_RPC               optional — paid RPC endpoint avoids the
+#                                  public Sepolia rate-limiter.
+#   VITE_SEPOLIA_RPC_FALLBACK      optional secondary RPC.
+#   VITE_SENTRY_DSN                optional runtime Sentry — note source maps
+#                                  are NOT uploaded by this build; events show
+#                                  minified stack traces.
+#   VITE_SENTRY_ENVIRONMENT        optional ("production", "staging", etc.)
+#   VITE_SENTRY_RELEASE            optional — e.g. crowdfund-admin-${INSTANCE}@${COMMIT_REF}
+#   VITE_SENTRY_TRACES_SAMPLE_RATE optional [0..1].
+
+[build]
+  base    = "."
+  publish = "crowdfund-ui/packages/admin/dist"
+  # Build flow:
+  #   1. Pick the deployment instance (defaults to medi3).
+  #   2. Fetch the crowdfund manifest from the armada-deployments repo into
+  #      the admin's public/api/deployments/instances/<name>/sepolia/ so the
+  #      production build serves it under the same path the dev server's
+  #      serveDeployments() plugin exposes.
+  #   3. Install workspace deps with --legacy-peer-deps (Railgun SDK peer-dep conflict).
+  #   4. Build the admin app.
+  command = """
+    INSTANCE="${DEPLOYMENT_INSTANCE:-medi3}" && \
+    export VITE_DEPLOYMENT_INSTANCE="${INSTANCE}" && \
+    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/main/testnet/${INSTANCE}" && \
+    echo "Fetching crowdfund deployment manifest for instance: ${INSTANCE}" && \
+    mkdir -p "crowdfund-ui/packages/admin/public/api/deployments/instances/${INSTANCE}/sepolia" && \
+    curl -sfL -o "crowdfund-ui/packages/admin/public/api/deployments/instances/${INSTANCE}/sepolia/crowdfund.json" "${BASE}/sepolia/crowdfund.json" && \
+    rm -rf node_modules package-lock.json && \
+    npm install --legacy-peer-deps && \
+    npm run build --workspace=@armada/crowdfund-admin
+  """
+
+[build.environment]
+  # Required: Railgun SDK peer-dep conflict forces legacy resolution.
+  NPM_FLAGS    = "--legacy-peer-deps"
+  NODE_VERSION = "20"
+  # Lifted heap limit — committer's build OOM'd at the 2 GB default with tsc -b
+  # + vite build + workspace graph in scope; admin shares the same workspace.
+  NODE_OPTIONS = "--max-old-space-size=4096"
+  # Switches network-dependent decisions in the app (manifest path, hub RPC,
+  # chain ID 11155111, sepolia.etherscan, 15s poll). The other VITE_* env vars
+  # are set via the Netlify UI as deploy-context env vars (see header).
+  VITE_NETWORK = "sepolia"
+
+# SPA fallback — admin uses client-side routing for some flows.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

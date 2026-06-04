@@ -30,8 +30,28 @@ export function getHubChainId(): number {
   return isLocalMode() ? 31337 : 11155111
 }
 
+/**
+ * Returns the path (relative to the Vite serveDeployments middleware in dev, or
+ * the static asset path in production) of the crowdfund deployment manifest.
+ *
+ * Local mode → `crowdfund-hub.json` (written by `npm run setup`).
+ * Sepolia + `VITE_DEPLOYMENT_INSTANCE=<name>` → mirrored path under
+ *   `instances/<name>/sepolia/crowdfund.json`, populated by the Netlify build
+ *   step (curl from armada-deployments) or `npm run fetch-deployment -- <name>`.
+ * Sepolia, no instance set → legacy `crowdfund-hub-sepolia.json` (whatever the
+ *   local `deployments/` folder currently holds — overwritten by `setup:sepolia`).
+ */
 export function getDeploymentFileName(): string {
-  return isLocalMode() ? 'crowdfund-hub.json' : 'crowdfund-hub-sepolia.json'
+  if (isLocalMode()) return 'crowdfund-hub.json'
+  const instance = (import.meta.env.VITE_DEPLOYMENT_INSTANCE as string | undefined)?.trim()
+  if (instance) return `instances/${instance}/sepolia/crowdfund.json`
+  return 'crowdfund-hub-sepolia.json'
+}
+
+/** Optional indexer API base URL. When provided, the admin's events hook prefers
+ *  indexed snapshots over backfilling from RPC on first load. */
+export function getIndexerUrl(): string | null {
+  return (import.meta.env.VITE_CROWDFUND_INDEXER_URL as string | undefined) ?? null
 }
 
 export function getPollIntervalMs(): number {

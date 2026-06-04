@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { type JsonRpcProvider } from 'ethers'
 import { createProvider } from '@armada/crowdfund-shared'
-import { getHubRpcUrls, getPollIntervalMs, getNetworkMode, isLocalMode } from '@/config/network'
+import { getHubRpcUrls, getIndexerUrl, getPollIntervalMs, getNetworkMode, isLocalMode } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -48,7 +48,7 @@ export function App() {
   const wallet = useWallet()
   const { role, launchTeamAddress, treasuryAddress, loading: roleLoading } = useRole(provider, crowdfundAddress, wallet.address)
   const adminState = useAdminState(provider, crowdfundAddress, pollInterval)
-  const { events, loading: eventsLoading } = useAdminEvents(provider, crowdfundAddress, deployment?.deployBlock)
+  const { events, loading: eventsLoading } = useAdminEvents(provider, crowdfundAddress, deployment?.deployBlock, getIndexerUrl())
   const treasury = useTreasuryBalances(provider, crowdfundAddress, treasuryAddress, usdcAddress, armTokenAddress)
   const timeControls = useTimeControls(provider)
   const participants = useParticipants(events)

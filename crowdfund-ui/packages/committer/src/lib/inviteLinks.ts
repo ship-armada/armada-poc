@@ -1,6 +1,24 @@
 // ABOUTME: EIP-712 invite link creation, encoding, and IndexedDB storage.
 // ABOUTME: Pure functions for invite link lifecycle — no React dependency.
 
+import { tryGetChecksumAddress } from '@armada/crowdfund-shared'
+
+/** Max hop index in the URL — matches `HOP_CONFIGS.length - 1`. Anything
+ * outside this band can't represent a real inviter so we reject pre-contract. */
+const MAX_HOP_INDEX = 2
+
+/** Standard EVM ECDSA signature: 65 bytes (r,s,v) → 130 hex chars + `0x`. */
+const SIGNATURE_HEX_LENGTH = 132
+
+/** Strict non-negative integer parse — rejects `"12abc"`, `""`, scientific
+ * notation, leading `+`, etc. that `parseInt` silently accepts. */
+function parseStrictNonNegativeInt(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null
+  const n = Number(raw)
+  if (!Number.isSafeInteger(n)) return null
+  return n
+}
+
 export interface InviteLinkData {
   inviter: string
   fromHop: number
@@ -53,21 +71,33 @@ export function encodeInviteUrl(data: InviteLinkData): string {
 }
 
 export function decodeInviteUrl(searchParams: URLSearchParams): InviteLinkData | null {
-  const inviter = searchParams.get('inviter')
+  const inviterRaw = searchParams.get('inviter')
   const fromHopStr = searchParams.get('fromHop')
   const nonceStr = searchParams.get('nonce')
   const deadlineStr = searchParams.get('deadline')
-  const signature = searchParams.get('sig')
+  const signatureRaw = searchParams.get('sig')
 
-  if (!inviter || !fromHopStr || !nonceStr || !deadlineStr || !signature) return null
+  if (!inviterRaw || !fromHopStr || !nonceStr || !deadlineStr || !signatureRaw) return null
 
-  const fromHop = parseInt(fromHopStr, 10)
-  const nonce = parseInt(nonceStr, 10)
-  const deadline = parseInt(deadlineStr, 10)
+  // Inviter must be a checksummable address. `tryGetChecksumAddress` covers
+  // format (0x + 40 hex) AND EIP-55 checksum so a typoed pasted link gets
+  // rejected here instead of as an opaque revert during the contract call.
+  const inviter = tryGetChecksumAddress(inviterRaw.trim())
+  if (!inviter) return null
 
-  if (isNaN(fromHop) || isNaN(nonce) || isNaN(deadline)) return null
-  if (!inviter.startsWith('0x') || inviter.length !== 42) return null
-  if (!signature.startsWith('0x')) return null
+  const fromHop = parseStrictNonNegativeInt(fromHopStr)
+  const nonce = parseStrictNonNegativeInt(nonceStr)
+  const deadline = parseStrictNonNegativeInt(deadlineStr)
+  if (fromHop === null || nonce === null || deadline === null) return null
+  if (fromHop > MAX_HOP_INDEX) return null
+
+  // Signature must be the canonical 65-byte ECDSA hex string. `recoverAddress`
+  // downstream would already reject malformed inputs, but rejecting at parse
+  // time means a hostile / malformed link doesn't show the user a half-broken
+  // landing page before failing.
+  const signature = signatureRaw.trim()
+  if (signature.length !== SIGNATURE_HEX_LENGTH) return null
+  if (!/^0x[a-fA-F0-9]+$/.test(signature)) return null
 
   return { inviter, fromHop, nonce, deadline, signature }
 }

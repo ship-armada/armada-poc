@@ -6,6 +6,12 @@ import { createPortal } from 'react-dom'
 import styles from './SlotCard.module.css'
 import { Button } from '@armada/ui'
 import { Tag } from '@armada/ui'
+import {
+  ADDRESS_INPUT_MAX_LENGTH,
+  isValidEnsName,
+  sanitizeAddressInput,
+  tryGetChecksumAddress,
+} from '../../../lib/addressInput'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -69,11 +75,11 @@ export function truncateAddress(addr: string): string {
   return addr.slice(0, 6) + '…' + addr.slice(-4)
 }
 
-function isValidAddress(val: string): boolean {
-  return /^0x[a-fA-F0-9]{40}$/.test(val)
-}
-
-function isEns(val: string): boolean {
+/** Loose ENS prefilter — drives the "should we kick off resolution?" branch
+ * inside `handleAddressChange`. Strict charset validation lives in
+ * `isValidEnsName`; this looser check still treats partial typing like
+ * "alice.et" as not-yet-ENS. */
+function isEnsCandidate(val: string): boolean {
   return val.endsWith('.eth') && val.length > 4
 }
 
@@ -123,10 +129,19 @@ export default function SlotCard({
     }
   }
 
-  const handleAddressChange = async (val: string) => {
+  const handleAddressChange = async (rawVal: string) => {
+    // Trim whitespace + cap length up front so a stray paste can't smuggle
+    // characters past the checksum / charset checks below.
+    const val = sanitizeAddressInput(rawVal)
     setAddressInput(val)
     setResolvedAddress('')
-    if (isEns(val)) {
+    if (isEnsCandidate(val)) {
+      // Strict charset gate before we burn an ENS lookup — uppercase letters,
+      // whitespace, IDN / emoji get rejected without an RPC round-trip.
+      if (!isValidEnsName(val)) {
+        setEnsState('error')
+        return
+      }
       setEnsState('resolving')
       // Controlled mode — delegate to the consumer's real ENS resolver.
       // Race-guard via the input value: if the user kept typing while we
@@ -136,7 +151,14 @@ export default function SlotCard({
           const result = await resolveEns(val)
           if (val !== addressInputRef.current) return
           if ('address' in result) {
-            setResolvedAddress(result.address)
+            const checksummed = tryGetChecksumAddress(result.address)
+            // Resolver returned something that isn't a valid address — treat
+            // as not-found rather than feeding garbage into the contract.
+            if (!checksummed) {
+              setEnsState('error')
+              return
+            }
+            setResolvedAddress(checksummed)
             setEnsState('resolved')
           } else {
             setEnsState('error')
@@ -156,11 +178,16 @@ export default function SlotCard({
         setResolvedAddress(mock)
         setEnsState('resolved')
       }
-    } else if (isValidAddress(val)) {
-      setEnsState('resolved')
-      setResolvedAddress(val)
     } else {
-      setEnsState('idle')
+      // Direct 0x… entry — validate checksum (catches EIP-55 typos), keep the
+      // canonical casing for the contract call.
+      const checksummed = tryGetChecksumAddress(val)
+      if (checksummed) {
+        setEnsState('resolved')
+        setResolvedAddress(checksummed)
+      } else {
+        setEnsState('idle')
+      }
     }
   }
 
@@ -170,19 +197,24 @@ export default function SlotCard({
   }
 
   const handleInviteOnchain = async () => {
-    const address = resolvedAddress || addressInput
+    // Always send the checksummed address downstream. `resolvedAddress` is
+    // already checksummed (set by `handleAddressChange`); if the user typed a
+    // raw 0x… and we somehow got here without it being populated, normalize
+    // the typed value the same way as a defense-in-depth backstop.
+    const address = resolvedAddress || tryGetChecksumAddress(addressInput)
     if (!address) return
     await onInviteOnchain(
       slot.id,
       address,
-      isEns(addressInput) ? addressInput : undefined
+      isValidEnsName(addressInput) ? addressInput : undefined
     )
     setExpandedAction(null)
     resetInput()
   }
 
   const canSubmitOnchain =
-    ensState === 'resolved' && (resolvedAddress !== '' || isValidAddress(addressInput))
+    ensState === 'resolved' &&
+    (resolvedAddress !== '' || tryGetChecksumAddress(addressInput) !== null)
 
   const updateRevokePopoverPosition = () => {
     const anchor = revokeBtnRef.current
@@ -395,6 +427,10 @@ export default function SlotCard({
               onChange={e => handleAddressChange(e.target.value)}
               aria-label="Wallet address or ENS name"
               spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              maxLength={ADDRESS_INPUT_MAX_LENGTH}
             />
             {ensState === 'resolving' && (
               <span className={styles.spinner} aria-label="Resolving ENS" />

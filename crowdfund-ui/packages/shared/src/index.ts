@@ -36,6 +36,14 @@ export {
   SHORT_VIEWPORT_MAX_HEIGHT_PX,
 } from './lib/viewportBreakpoints.js'
 
+export {
+  ADDRESS_INPUT_MAX_LENGTH,
+  sanitizeAddressInput,
+  isHexAddressFormat,
+  tryGetChecksumAddress,
+  isValidEnsName,
+} from './lib/addressInput.js'
+
 export { estimateAllocation, estimateUserArmAllocation } from './lib/allocation.js'
 export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
 

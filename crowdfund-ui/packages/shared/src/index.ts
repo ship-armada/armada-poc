@@ -25,6 +25,17 @@ export {
   phaseColor,
 } from './lib/format.js'
 
+export {
+  sanitizeAmountInput,
+  hasActiveAmount,
+  parseActiveAmount,
+} from './lib/amountInput.js'
+
+export {
+  LAPTOP_LAYOUT_MAX_WIDTH_PX,
+  SHORT_VIEWPORT_MAX_HEIGHT_PX,
+} from './lib/viewportBreakpoints.js'
+
 export { estimateAllocation, estimateUserArmAllocation } from './lib/allocation.js'
 export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
 

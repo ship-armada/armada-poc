@@ -428,7 +428,9 @@
   margin: 0;
 }
 
-.multiOverBalance {
+/* Shared by both variants — single-hop renders it under the "Available
+ * {balance}" line; multi-hop renders it under the allocation row. */
+.overBalance {
   font-family: var(--primitives-fontFamily-ui);
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   color: var(--semantic-color-status-error);

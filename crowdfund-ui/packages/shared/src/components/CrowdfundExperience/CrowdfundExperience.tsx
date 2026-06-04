@@ -1,8 +1,9 @@
 // ABOUTME: Ported from the armada-crowdfund mockup (components/CrowdfundExperience/CrowdfundExperience.tsx); designer's '/fleet.png' + '/fleet.mp4' public-folder paths replaced with ESM asset imports so the assets ship with crowdfund-shared.
 // ABOUTME: Header rendering is also exposed via a slot prop (default falls back to @armada/ui's Header) so consuming apps render only one chrome instead of two; view is optionally controllable from outside to keep consumer page state in sync.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
+import { ChevronDownIcon } from '@heroicons/react/24/outline'
 import { Header } from '@armada/ui'
 import { Progress } from '@armada/ui'
 import { Participate } from '../Participate/Participate'
@@ -478,6 +479,9 @@ export function CrowdfundExperience({
   const [holdColumnExpanded, setHoldColumnExpanded] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [loadingId, setLoadingId] = useState<number | null>(null)
+  // My Position invites card — open by default; user toggles collapse/expand.
+  const [invitesExpanded, setInvitesExpanded] = useState<boolean>(true)
+  const invitesListId = useId()
 
   const participantsPanelRef = useRef<HTMLDivElement | null>(null)
   const leftStackRef = useRef<HTMLDivElement | null>(null)
@@ -948,8 +952,49 @@ export function CrowdfundExperience({
           className={layerClass(myPositionPanelVisible, motionReady, myPositionPanelAnimates)}
           aria-hidden={!myPositionPanelVisible}
         >
+          {(() => {
+            // Available / total counts shown in the collapsible header. Counts the
+            // raw SlotData arrays across all live sections (or DEMO_SLOTS in the
+            // showcase path) — "available" === `status === 'empty'`.
+            const allSlots = inviteSlotSections
+              ? inviteSlotSections.flatMap((s) => s.config.slots)
+              : DEMO_SLOTS
+            const inviteAvailableCount = allSlots.filter((s) => s.status === 'empty').length
+            const inviteTotalCount = allSlots.length
+            return (
           <section className={mpStyles.inviteCard} aria-label="Your invites">
-            <h2 className={mpStyles.inviteTitle}>Your Invites</h2>
+            <button
+              type="button"
+              className={mpStyles.inviteHeader}
+              onClick={() => setInvitesExpanded((open) => !open)}
+              aria-expanded={invitesExpanded}
+              aria-controls={invitesListId}
+              aria-label={`${invitesExpanded ? 'Collapse' : 'Expand'} invites, ${inviteAvailableCount} of ${inviteTotalCount} available`}
+            >
+              <span className={mpStyles.inviteTitle} role="heading" aria-level={2}>
+                Your Invites
+              </span>
+              <span className={mpStyles.inviteHeaderActions}>
+                <span className={mpStyles.inviteHeaderCount} aria-hidden>
+                  {inviteAvailableCount} of {inviteTotalCount}
+                </span>
+                <ChevronDownIcon
+                  className={[
+                    mpStyles.inviteHeaderChevron,
+                    !invitesExpanded && mpStyles.inviteHeaderChevronCollapsed,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  aria-hidden
+                />
+              </span>
+            </button>
+            <div
+              id={invitesListId}
+              className={[!invitesExpanded && mpStyles.inviteBodyCollapsed]
+                .filter(Boolean)
+                .join(' ')}
+            >
             {(() => {
               // Three render modes:
               //   1. live sections supplied AND non-empty → render per-hop sections (hop header
@@ -1026,7 +1071,10 @@ export function CrowdfundExperience({
                 </div>
               )
             })()}
+            </div>
           </section>
+            )
+          })()}
         </div>
         )}
       </div>

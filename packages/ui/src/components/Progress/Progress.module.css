@@ -194,7 +194,7 @@
   align-items: baseline;
 }
 
-/* Pinned under the threshold line */
+/* Pinned under the threshold line — $ value aligns with vertical marker above */
 .labelMinRaise {
   position: absolute;
   transform: translateX(0);
@@ -221,4 +221,30 @@
   font-weight: 300;
   line-height: var(--primitives-lineHeight-none);
   color: var(--semantic-color-text-muted);
+}
+
+/* Laptop / narrow-column responsive — caps the Progress card at 480px and
+ * tightens the labels row so the left labels (RAISED %, LEFT $X) don't
+ * overlap the MIN-RAISE marker when the host column is below ~1366px wide.
+ * Ported from the armada-crowdfund mockup (commit 214b972). */
+@media (max-width: 1440px) {
+  .card {
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .barWrapper {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .barLabels {
+    max-width: 100%;
+  }
+
+  .labelLeft {
+    gap: var(--primitives-spacing-3);
+    min-width: 0;
+    padding-right: var(--primitives-spacing-2);
+  }
 }

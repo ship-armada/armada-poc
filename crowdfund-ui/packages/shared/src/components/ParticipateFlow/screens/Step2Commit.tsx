@@ -7,6 +7,11 @@ import { Steps } from '@armada/ui'
 import { Button } from '@armada/ui'
 import { Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
+import {
+  hasActiveAmount,
+  parseActiveAmount,
+  sanitizeAmountInput,
+} from '../../../lib/amountInput'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
 
 /** One per-hop input row for the multi-hop variant. The single-hop path is
@@ -113,23 +118,51 @@ function SingleHopVariant({
   steps: readonly string[]
   stepIndex: number
 }) {
-  const [amount, setAmount] = useState<number>(0)
+  // Free-form string state so the input can hold mid-decimal entries ("0.",
+  // "1.") without flickering the bar / ARM allocation numbers. Parsed via
+  // `parseActiveAmount` to a capped numeric for downstream math. Ported from
+  // the armada-crowdfund mockup's Step2Commit (commit 214b972).
+  const [amountInput, setAmountInput] = useState('')
 
   const remainingCap = Math.max(0, maxAmount - existingCommittedUsdc)
+  const showActiveAmount = hasActiveAmount(amountInput)
+  const amount = parseActiveAmount(amountInput, remainingCap)
   const existingRatio = Math.min(existingCommittedUsdc / maxAmount, 1)
   const newRatio = Math.min(amount / maxAmount, 1)
   const totalCommitted = existingCommittedUsdc + amount
   const totalArm = Math.round(totalCommitted)
   const hasNewAmount = amount > 0
   const hasExisting = existingCommittedUsdc > 0
+  // Wallet-balance gate. `remainingCap` caps the typed input at the user's
+  // *hop cap*, not their *wallet balance*; without this check a user with
+  // $100 of USDC could enter $4,000 and click Review. Mirrors the
+  // `overBalance` gate in `MultiHopVariant`.
+  const overBalance = amount > availableBalance
 
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value.replace(/[^0-9.]/g, ''))
-    if (isNaN(val)) {
-      setAmount(0)
-    } else {
-      setAmount(Math.min(val, remainingCap))
+  function handleInput(raw: string) {
+    const next = sanitizeAmountInput(raw)
+    if (!hasActiveAmount(next)) {
+      setAmountInput('')
+      return
     }
+    // Trailing-dot entry: preserve the literal string while still capping the
+    // integer part so the bar can't jump past `remainingCap`.
+    if (next.endsWith('.')) {
+      const val = parseFloat(next)
+      if (!Number.isNaN(val) && val > remainingCap) {
+        setAmountInput(String(remainingCap))
+      } else {
+        setAmountInput(next)
+      }
+      return
+    }
+    const val = parseFloat(next)
+    if (Number.isNaN(val)) {
+      setAmountInput('')
+      return
+    }
+    const capped = Math.min(val, remainingCap)
+    setAmountInput(hasActiveAmount(String(capped)) ? String(capped) : '')
   }
 
   return (
@@ -153,21 +186,20 @@ function SingleHopVariant({
               <span
                 className={[
                   styles.amountDisplay,
-                  hasNewAmount ? styles.amountDisplayActive : '',
+                  showActiveAmount ? styles.amountDisplayActive : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
                 aria-hidden="true"
               >
-                {hasNewAmount ? amount.toLocaleString() : '0'}
+                {showActiveAmount ? amountInput : '0'}
               </span>
               <input
                 id="commit-amount"
-                type="number"
-                min={0}
-                max={remainingCap}
-                value={amount === 0 ? '' : amount}
-                onChange={handleInput}
+                type="text"
+                inputMode="decimal"
+                value={amountInput}
+                onChange={(e) => handleInput(e.target.value)}
                 className={styles.amountInput}
                 aria-labelledby="commit-title"
                 aria-describedby="commit-max commit-available"
@@ -178,6 +210,9 @@ function SingleHopVariant({
           <p className={styles.availableLabel} id="commit-available">
             Available {formatBalance(availableBalance)}
           </p>
+          {overBalance && hasNewAmount && (
+            <p className={styles.overBalance}>Amount exceeds your wallet balance.</p>
+          )}
         </div>
 
         <div className={styles.allocationBlock}>
@@ -248,7 +283,7 @@ function SingleHopVariant({
           label="Review"
           showIcon={false}
           onClick={() => onNext(amount)}
-          disabled={!hasNewAmount}
+          disabled={!hasNewAmount || overBalance}
         />
       </div>
     </div>
@@ -295,9 +330,8 @@ function MultiHopVariant({
   const parsedByHop = useMemo<Record<0 | 1 | 2, number>>(() => {
     const out: Record<0 | 1 | 2, number> = { 0: 0, 1: 0, 2: 0 }
     for (const row of hopRows) {
-      const raw = amounts[row.hop]
-      const parsed = parseFloat(raw.replace(/[^0-9.]/g, ''))
-      out[row.hop] = isNaN(parsed) ? 0 : parsed
+      const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
+      out[row.hop] = parseActiveAmount(amounts[row.hop], remaining)
     }
     return out
   }, [amounts, hopRows])
@@ -323,12 +357,36 @@ function MultiHopVariant({
   })
   const canReview = totalNew > 0 && !overBalance && !anyOverHopCap
 
-  const handleInputChange = (hop: 0 | 1 | 2) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Strip non-numeric (except decimal point). Allow an empty string so the
-    // user can clear a field; numeric coercion happens at parse time above.
-    const cleaned = e.target.value.replace(/[^0-9.]/g, '')
-    setAmounts((prev) => ({ ...prev, [hop]: cleaned }))
-  }
+  const handleInputChange = (hop: 0 | 1 | 2, row: Step2CommitHopRow) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const next = sanitizeAmountInput(e.target.value)
+      const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
+      if (!hasActiveAmount(next)) {
+        setAmounts((prev) => ({ ...prev, [hop]: '' }))
+        return
+      }
+      // Trailing-dot mid-typing: preserve the literal string but cap the
+      // integer portion so the per-row bar can't jump past `remaining`.
+      if (next.endsWith('.')) {
+        const val = parseFloat(next)
+        if (!Number.isNaN(val) && val > remaining) {
+          setAmounts((prev) => ({ ...prev, [hop]: String(remaining) }))
+        } else {
+          setAmounts((prev) => ({ ...prev, [hop]: next }))
+        }
+        return
+      }
+      const val = parseFloat(next)
+      if (Number.isNaN(val)) {
+        setAmounts((prev) => ({ ...prev, [hop]: '' }))
+        return
+      }
+      const capped = Math.min(val, remaining)
+      setAmounts((prev) => ({
+        ...prev,
+        [hop]: hasActiveAmount(String(capped)) ? String(capped) : '',
+      }))
+    }
 
   const handleNext = () => {
     if (!onNextMulti) return
@@ -380,13 +438,11 @@ function MultiHopVariant({
                 </span>
                 <input
                   id={inputId}
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  min={0}
-                  max={remaining}
                   value={value}
                   placeholder="0"
-                  onChange={handleInputChange(row.hop)}
+                  onChange={handleInputChange(row.hop, row)}
                   className={styles.multiAmountInput}
                 />
               </label>
@@ -452,7 +508,7 @@ function MultiHopVariant({
             </div>
           </div>
           {overBalance && (
-            <p className={styles.multiOverBalance}>
+            <p className={styles.overBalance}>
               Total exceeds your wallet balance.
             </p>
           )}

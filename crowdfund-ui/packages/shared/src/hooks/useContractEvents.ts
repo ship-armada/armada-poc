@@ -107,18 +107,41 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
         if (indexerBaseUrl) {
           try {
             const indexed = await fetchIndexedEventsSnapshot(indexerBaseUrl)
-            if (
-              indexed.metadata.contractAddress.toLowerCase() === contractAddress.toLowerCase() &&
-              indexed.metadata.deployBlock === effectiveStartBlock
-            ) {
+            // Accept any snapshot whose backfill window CONTAINS our needed start
+            // block — snapshot.deployBlock <= effectiveStartBlock. Snapshots starting
+            // earlier than effectiveStartBlock are harmless (they just include a few
+            // pre-contract-creation blocks with zero matching logs). Strict equality
+            // here is fragile: the indexer env, the deployments-repo manifest, and
+            // the frontend bundle are three independently-edited copies of the same
+            // value, and any drift silently disables the snapshot path.
+            const addressMatches =
+              indexed.metadata.contractAddress.toLowerCase() === contractAddress.toLowerCase()
+            const startBlockCovered = indexed.metadata.deployBlock <= effectiveStartBlock
+            if (addressMatches && startBlockCovered) {
               cacheEvents(indexed.events, indexed.metadata.verifiedBlock).catch(() => {})
               return {
                 events: indexed.events,
                 cursor: indexed.metadata.verifiedBlock,
               }
             }
-          } catch {
-            // Fall back to the existing RPC/IndexedDB path when the indexer is unavailable.
+            // Mismatch — surface why we're skipping the snapshot. Silent fallback
+            // here masked a stale deploys-repo manifest in medi3.
+            console.warn(
+              '[useContractEvents] indexer snapshot rejected, falling back to RPC',
+              {
+                snapshotContractAddress: indexed.metadata.contractAddress,
+                expectedContractAddress: contractAddress,
+                snapshotDeployBlock: indexed.metadata.deployBlock,
+                effectiveStartBlock,
+                addressMatches,
+                startBlockCovered,
+              },
+            )
+          } catch (err) {
+            console.warn(
+              '[useContractEvents] indexer snapshot fetch failed, falling back to RPC',
+              err,
+            )
           }
         }
 

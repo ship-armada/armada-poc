@@ -5,6 +5,10 @@ import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
 import { createIndexerStore } from '../db/createStore.js'
 import { parseCliArgs, runReadOnlyCommand } from './commands.js'
+import { createRpcChainStateReader } from '../alerts/chainState.js'
+import { createFileAlertStateStore } from '../alerts/state.js'
+import { createDiscordNotifierFromEnv, runAlertsOnce } from '../alerts/runner.js'
+import type { CrowdfundParams } from '../alerts/types.js'
 import { backfillVerifiedRanges } from '../ingest/backfill.js'
 import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
@@ -212,6 +216,44 @@ async function main(): Promise<void> {
       lastError: null,
     }))
     process.stdout.write(`published ${result.snapshotFileName}\nlatest ${result.latestUrl ?? result.latestPath}\n`)
+    return
+  }
+
+  if (args.command === 'evaluate-alerts') {
+    const params: CrowdfundParams = {
+      chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
+      contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
+      treasuryAddress: readRequiredEnv('CROWDFUND_TREASURY_ADDRESS'),
+      openTimestamp: readNumberEnv('CROWDFUND_OPEN_TIMESTAMP', 0),
+      week1Deadline: readNumberEnv('CROWDFUND_WEEK1_DEADLINE', 0),
+      commitmentDeadline: readNumberEnv('CROWDFUND_COMMITMENT_DEADLINE', 0),
+    }
+    const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
+    const usdcAddress = process.env.CROWDFUND_USDC_ADDRESS
+    const chainState = rpcUrl && usdcAddress
+      ? createRpcChainStateReader({
+          rpcUrl,
+          crowdfundAddress: params.contractAddress,
+          usdcAddress,
+          treasuryAddress: params.treasuryAddress,
+        })
+      : null
+    const stateFile = process.env.CROWDFUND_ALERT_STATE_FILE
+      ?? join(process.cwd(), 'data/crowdfund-indexer/alerts.json')
+    const result = await runAlertsOnce({
+      store,
+      stateStore: createFileAlertStateStore(stateFile),
+      params,
+      repairMaxAttempts: readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6),
+      chainState,
+      notifier: createDiscordNotifierFromEnv(),
+    })
+    process.stdout.write(
+      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}\n`,
+    )
+    for (const e of result.delivered) {
+      process.stdout.write(`  [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)
+    }
     return
   }
 

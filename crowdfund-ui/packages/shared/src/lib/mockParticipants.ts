@@ -83,6 +83,10 @@ export type DashboardParticipant = {
 
 export type HeroParticipantRow = {
   address: string
+  /** Reverse-resolved ENS name for `address`. Consumers render this in place
+   *  of the truncated address when present; search/selection still keys off
+   *  the raw `address`. */
+  displayName?: string
   hop: 'SEED' | 'HOP-1' | 'HOP-2'
   amountUsd: number
   multiHop?: boolean
@@ -90,6 +94,8 @@ export type HeroParticipantRow = {
 
 export type ParticipantsTableRow = {
   address: string
+  /** Reverse-resolved ENS name for `address`. See `HeroParticipantRow.displayName`. */
+  displayName?: string
   hops: string
   committedUsd: number
   invitedBy: string

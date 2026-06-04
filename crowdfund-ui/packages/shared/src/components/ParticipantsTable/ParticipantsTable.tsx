@@ -18,6 +18,9 @@ export interface ParticipantsTableProps {
 
 export type ParticipantRow = {
   address: string
+  /** Reverse-resolved ENS name for `address`. Rendered in place of the
+   *  full address when present; search still matches against both. */
+  displayName?: string
   hops: string
   committedUsd: number
   invitedBy: string
@@ -183,7 +186,10 @@ export function ParticipantsTable({
     const q = query.trim().toLowerCase()
     const base = rowsProp ?? MOCK_ROWS
     return base.filter((r) => {
-      const matchesQuery = !q || r.address.toLowerCase().includes(q)
+      const matchesQuery =
+        !q ||
+        r.address.toLowerCase().includes(q) ||
+        (r.displayName?.toLowerCase().includes(q) ?? false)
       const matchesFilter =
         filter === 'all' ||
         (filter === 'hop0' && r.hops === 'Hop 0') ||
@@ -253,7 +259,7 @@ export function ParticipantsTable({
                 <div className={styles.td}>
                   <div className={styles.addrCell}>
                     <span className={styles.avatar} style={{ ['--avatar' as any]: avatarColor }} aria-hidden />
-                    <span className={styles.addr}>{r.address}</span>
+                    <span className={styles.addr}>{r.displayName ?? r.address}</span>
                   </div>
                 </div>
                 <div className={styles.td}>

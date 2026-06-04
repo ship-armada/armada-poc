@@ -2,8 +2,10 @@
 // ABOUTME: Header rendering is also exposed via a slot prop (default falls back to @armada/ui's Header) so consuming apps render only one chrome instead of two; view is optionally controllable from outside to keep consumer page state in sync.
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useAtomValue } from 'jotai'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { ChevronDownIcon } from '@heroicons/react/24/outline'
+import { ensMapAtom } from '../../hooks/useENS'
 import { Header } from '@armada/ui'
 import { Progress } from '@armada/ui'
 import { Participate } from '../Participate/Participate'
@@ -387,7 +389,21 @@ export function CrowdfundExperience({
     if (liveReady) return liveReady.dashRows
     return toDashboardParticipants(snapshot)
   }, [isLiveLoading, liveReady, snapshot])
-  const participants = useMemo(() => toHeroParticipants(dashRows) as HeroParticipant[], [dashRows])
+  // Reverse-resolve ENS names for the address list. `useENS` is mounted in
+  // the consuming app (committer / observer) and feeds `ensMapAtom`; here
+  // we just read the cached map and inject the resolved name onto each
+  // participant. Rows without a resolved name fall back to the truncated
+  // address in `HeroParticipantsPanel`. Atom updates re-render the panel
+  // naturally as resolutions land.
+  const ensMap = useAtomValue(ensMapAtom)
+  const participants = useMemo<HeroParticipant[]>(() => {
+    const base = toHeroParticipants(dashRows) as HeroParticipant[]
+    if (ensMap.size === 0) return base
+    return base.map((p) => {
+      const name = ensMap.get(p.address.toLowerCase())
+      return name ? { ...p, displayName: name } : p
+    })
+  }, [dashRows, ensMap])
 
   // Derived MyPosition display values. The `ready` status produces live
   // numbers; `disconnected` / `no-position` short-circuit into the

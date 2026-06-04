@@ -11,6 +11,10 @@ export type HeroHopFilter = 'all' | 'seed' | 'hop1' | 'hop2' | 'multi'
 
 export type HeroParticipant = {
   address: string
+  /** Reverse-resolved ENS name for `address`. Renders in place of the
+   *  truncated address when present; search and selection still key off
+   *  the raw `address`. */
+  displayName?: string
   hop: 'SEED' | 'HOP-1' | 'HOP-2'
   amountUsd: number
   // Phase 4b — multi-hop is now its own flag rather than a hop value. A wallet
@@ -99,7 +103,10 @@ export function HeroParticipantsPanel({
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     return participants.filter((p) => {
-      const matchesQuery = !q || p.address.toLowerCase().includes(q)
+      const matchesQuery =
+        !q ||
+        p.address.toLowerCase().includes(q) ||
+        (p.displayName?.toLowerCase().includes(q) ?? false)
       const matchesFilter =
         filter === 'all' ||
         (filter === 'seed' && p.hop === 'SEED') ||
@@ -176,7 +183,7 @@ export function HeroParticipantsPanel({
                       tabIndex={showList ? 0 : -1}
                     >
                       <span className={styles.rank}>{idx + 1}</span>
-                      <span className={styles.addr}>{p.address}</span>
+                      <span className={styles.addr}>{p.displayName ?? p.address}</span>
                       <span className={styles.hop}>
                         <span className={styles.dot} style={{ ['--dot' as string]: hopColor(p) }} aria-hidden />
                         {p.hop}

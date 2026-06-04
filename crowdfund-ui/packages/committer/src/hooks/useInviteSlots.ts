@@ -10,6 +10,7 @@ import {
   HOP_CONFIGS,
   hopPillDotColor,
   truncateAddress,
+  useENS,
   type CrowdfundEvent,
   type CrowdfundInviteSlotConfig,
   type CrowdfundInviteSlotSection,
@@ -406,10 +407,56 @@ export function useInviteSlots(
     onReceiptLogs,
   })
 
-  const sections = useMemo(() => {
+  const rawSections = useMemo(() => {
     const all = [section0, section1, section2]
     return all.filter((_, i) => positionByHop[i] !== null)
   }, [section0, section1, section2, positionByHop])
+
+  // Collect every address that appears in a slot row so `useENS` can issue
+  // one batched reverse lookup. The hook dedupes internally; passing the
+  // raw list is fine. Both `invitedAddress` (onchain-pending) and
+  // `redeemedBy` (redeemed) feed into the slot display, so both go in.
+  const slotAddresses = useMemo(() => {
+    const out: string[] = []
+    for (const section of rawSections) {
+      for (const slot of section.config.slots) {
+        if (slot.invitedAddress) out.push(slot.invitedAddress)
+        if (slot.redeemedBy) out.push(slot.redeemedBy)
+      }
+    }
+    return out
+  }, [rawSections])
+
+  const { resolve: resolveCachedName } = useENS({ provider, addresses: slotAddresses })
+
+  // Enrich each slot with reverse-resolved names so the SlotCard rows can
+  // render `alice.eth` instead of `0xabcd…1234`. Forward-resolved names (set
+  // at invite time on the onchain-pending path) take priority over the
+  // reverse lookup. Resolution that hasn't completed yet returns null and
+  // the row falls back to the truncated address — re-renders naturally pick
+  // up the name once react-query settles.
+  const sections = useMemo<CrowdfundInviteSlotSection[]>(() => {
+    return rawSections.map((section) => ({
+      ...section,
+      config: {
+        ...section.config,
+        slots: section.config.slots.map((slot) => {
+          if (slot.status === 'onchain-pending' && slot.invitedAddress) {
+            const ensName = slot.ensName ?? resolveCachedName(slot.invitedAddress) ?? undefined
+            return ensName === slot.ensName ? slot : { ...slot, ensName }
+          }
+          if (slot.status === 'redeemed' && slot.redeemedBy) {
+            const redeemedEnsName =
+              slot.redeemedEnsName ?? resolveCachedName(slot.redeemedBy) ?? undefined
+            return redeemedEnsName === slot.redeemedEnsName
+              ? slot
+              : { ...slot, redeemedEnsName }
+          }
+          return slot
+        }),
+      },
+    }))
+  }, [rawSections, resolveCachedName])
 
   return {
     sections,

@@ -25,8 +25,15 @@ export interface SlotData {
   link?: string
   expiresAt?: Date
   invitedAddress?: string
+  /** ENS name for `invitedAddress` — populated either from the forward lookup
+   *  at invite time (user typed `alice.eth`) or from a reverse lookup once
+   *  the on-chain invitee address resolves. Optional; falls back to truncated
+   *  address when absent. */
   ensName?: string
   redeemedBy?: string
+  /** Reverse-resolved ENS name for `redeemedBy`. Optional; falls back to
+   *  truncated address when absent. */
+  redeemedEnsName?: string
 }
 
 /**
@@ -380,11 +387,17 @@ export default function SlotCard({
           {/* Redeemed */}
           {slot.status === 'redeemed' && (
             <div className={styles.statusRow}>
-              <span className={styles.addressPrimary}>
-                {slot.redeemedBy
-                  ? truncateAddress(slot.redeemedBy)
-                  : 'Link redeemed'}
-              </span>
+              <div className={styles.addressStack}>
+                <span className={styles.addressPrimary}>
+                  {slot.redeemedEnsName ??
+                    (slot.redeemedBy ? truncateAddress(slot.redeemedBy) : 'Link redeemed')}
+                </span>
+                {slot.redeemedEnsName && slot.redeemedBy && (
+                  <span className={styles.addressSecondary}>
+                    {truncateAddress(slot.redeemedBy)}
+                  </span>
+                )}
+              </div>
               <Tag label="Joined" dot="active" />
             </div>
           )}

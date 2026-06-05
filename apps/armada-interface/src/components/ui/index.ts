@@ -36,3 +36,12 @@ export type { TechnicalDetailsDisclosureProps } from './TechnicalDetailsDisclosu
 
 export { Tooltip } from './Tooltip'
 export type { TooltipProps } from './Tooltip'
+
+export { EstimatedFeeValue } from './EstimatedFeeValue'
+export type { EstimatedFeeValueProps } from './EstimatedFeeValue'
+
+export { FeeBreakdownTooltip } from './FeeBreakdownTooltip'
+export type { FeeBreakdownTooltipProps } from './FeeBreakdownTooltip'
+
+export { GasBalanceNotice } from './GasBalanceNotice'
+export type { GasBalanceNoticeProps } from './GasBalanceNotice'

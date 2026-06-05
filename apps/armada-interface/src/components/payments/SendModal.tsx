@@ -21,19 +21,20 @@ import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { trackError } from '@/lib/telemetry'
 import {
-  ActionFlowShell,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { SendInputStep, type SendTab } from './SendInputStep'
 import { SendReviewStep } from './SendReviewStep'
 import { SendCompleteStep } from './SendCompleteStep'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 
 type LocalStep = FlowStep
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 type SubmittedKind = 'transfer-shielded' | 'unshield-local' | 'unshield-xchain'
 
@@ -245,13 +246,13 @@ export function SendModal() {
   if (!isOpen) return null
 
   return (
-    <ActionFlowShell
+    <DepositOverlayShell
       open
       onClose={close}
-      title="Send"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Send"
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
@@ -316,6 +317,6 @@ export function SendModal() {
           onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
         />
       )}
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

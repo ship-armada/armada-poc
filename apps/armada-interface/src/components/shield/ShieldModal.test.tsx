@@ -1,7 +1,7 @@
 // ABOUTME: Tests for ShieldModal orchestrator — open/closed gating, step advancement (input → review → progress), close resets state.
 // ABOUTME: Seeds openModalAtom + usdcBalancesAtom so the user can enter an amount and proceed.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ShieldModal } from './ShieldModal'
@@ -9,6 +9,33 @@ import { openModalAtom } from '@/state/ui'
 import { usdcBalancesAtom } from '@/state/wallet'
 import { feeQuoteAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
+
+// useDisplayFees calls wagmi's useReadContract which requires a WagmiProvider; these tests
+// don't mount one, so stub the hook with a deterministic DisplayFees value. The protocolFee
+// arithmetic is exercised by relayer.test.ts; this mock just keeps the modal renderable.
+vi.mock('@/hooks/useDisplayFees', () => ({
+  useDisplayFees: () => ({
+    fees: {
+      protocolFee: 0n,
+      gasFee: 0n,
+      nativeGas: null,
+      totalFee: 0n,
+      feeInclusive: true,
+    },
+    isLoading: false,
+  }),
+}))
+
+// useGasBalanceWarning calls wagmi's useAccount/useBalance — same provider requirement.
+// "No warning" keeps the GasBalanceNotice hidden; gasless-mode branching is asserted in
+// ShieldInputStep.test.tsx by directly setting gaslessMode (no integration concern here).
+vi.mock('@/hooks/useGasBalanceWarning', () => ({
+  useGasBalanceWarning: () => ({
+    show: false,
+    nativeSymbol: 'ETH',
+    formattedBalance: null,
+  }),
+}))
 
 const FAKE_QUOTE = {
   cacheId: 'test-cache',

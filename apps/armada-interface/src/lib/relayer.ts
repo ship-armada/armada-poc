@@ -201,27 +201,41 @@ export function computeFeeBreakdown(
   amount: bigint,
   fee: bigint,
   max: bigint,
-  opts?: { secondaryFee?: bigint },
+  opts?: { secondaryFee?: bigint; protocolFee?: bigint },
 ): FeeBreakdown {
+  // `protocolFee` is an additional USDC deduction from the recipient side, layered on top of
+  // the model's existing fee plumbing. For `shield` this is the on-chain shield fee module's
+  // calculated take (PrivacyPool deducts it before crediting the shielded balance — invisible
+  // to the FeeBreakdown contract today but soon surfaced via useDisplayFees). For other kinds
+  // it stays 0n by default, preserving existing semantics.
+  const protocolFee = opts?.protocolFee ?? 0n
   switch (feeModelForKind(kind)) {
     case 'no-fee':
-      return { recipientReceives: amount, totalDeducted: amount, inputMax: max }
-    case 'fee-from-recipient':
       return {
-        recipientReceives: amount > fee ? amount - fee : 0n,
+        recipientReceives: amount > protocolFee ? amount - protocolFee : 0n,
         totalDeducted: amount,
         inputMax: max,
       }
+    case 'fee-from-recipient': {
+      const totalDeduction = fee + protocolFee
+      return {
+        recipientReceives: amount > totalDeduction ? amount - totalDeduction : 0n,
+        totalDeducted: amount,
+        inputMax: max,
+      }
+    }
     case 'fee-on-top':
       return {
-        recipientReceives: amount,
+        recipientReceives: amount > protocolFee ? amount - protocolFee : 0n,
         totalDeducted: amount + fee,
         inputMax: max > fee ? max - fee : 0n,
       }
     case 'fee-on-top-and-from-recipient': {
       const secondary = opts?.secondaryFee ?? 0n
+      const totalRecipientDeduction = secondary + protocolFee
       return {
-        recipientReceives: amount > secondary ? amount - secondary : 0n,
+        recipientReceives:
+          amount > totalRecipientDeduction ? amount - totalRecipientDeduction : 0n,
         totalDeducted: amount + fee,
         inputMax: max > fee ? max - fee : 0n,
       }

@@ -16,19 +16,20 @@ import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import {
-  ActionFlowShell,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { UnshieldInputStep } from './UnshieldInputStep'
 import { UnshieldReviewStep } from './UnshieldReviewStep'
 import { UnshieldCompleteStep } from './UnshieldCompleteStep'
 
 type LocalStep = FlowStep
 
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 type SubmittedKind = 'unshield-local' | 'unshield-xchain'
 
@@ -195,13 +196,13 @@ export function UnshieldModal() {
   if (!isOpen) return null
 
   return (
-    <ActionFlowShell
+    <DepositOverlayShell
       open
       onClose={close}
-      title="Withdraw"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Withdraw"
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
@@ -257,6 +258,6 @@ export function UnshieldModal() {
           onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
         />
       )}
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

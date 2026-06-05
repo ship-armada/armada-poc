@@ -5,6 +5,17 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ShieldInputStep } from './ShieldInputStep'
 
+// useGasBalanceWarning reads from wagmi's useAccount/useBalance which require WagmiProvider;
+// these tests don't mount one. Default to "no warning" so the GasBalanceNotice stays hidden —
+// the gasless/fallback branching is exercised in ShieldModal.test.tsx where `gaslessMode` is set.
+vi.mock('@/hooks/useGasBalanceWarning', () => ({
+  useGasBalanceWarning: () => ({
+    show: false,
+    nativeSymbol: 'ETH',
+    formattedBalance: null,
+  }),
+}))
+
 function setup(extras?: { max?: bigint; amountStr?: string; minAmount?: bigint }) {
   const props = {
     fromChainId: 31337,

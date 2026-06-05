@@ -358,6 +358,62 @@ describe('computeFeeBreakdown', () => {
     expect(r.totalDeducted).toBe(AMOUNT + FEE)
     expect(r.inputMax).toBe(MAX - FEE)
   })
+
+  it('protocolFee subtracts from recipient on fee-from-recipient (shield-xchain with shield-fee-module)', () => {
+    // WHY: cross-chain shield deducts BOTH the broadcaster/CCTP fee (already plumbed via `fee`)
+    // AND the on-chain shield fee module's take from the user's entered amount. recipientReceives
+    // must reflect both deductions so the user sees the true shielded value.
+    const protocolFee = 500_000n // 0.5 USDC (50 bps of 100)
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX, { protocolFee })
+    expect(r.recipientReceives).toBe(AMOUNT - FEE - protocolFee)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee subtracts from recipient on no-fee (direct hub shield with fee-module take)', () => {
+    // WHY: direct hub shield has no broadcaster fee (`feeModelForKind('shield')` returns 'no-fee')
+    // but the on-chain shield fee module still takes its bps. Without protocolFee, recipientReceives
+    // over-reports — UI says "100 shielded" when reality is "99.5 shielded". With it plumbed, both
+    // halves reconcile.
+    const protocolFee = 500_000n
+    const r = computeFeeBreakdown('shield', AMOUNT, 0n, MAX, { protocolFee })
+    expect(r.recipientReceives).toBe(AMOUNT - protocolFee)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee defaults to 0n when omitted (no behavior change for callers that do not opt in)', () => {
+    // WHY: backwards-compat — every existing call site (49 tests above) passes nothing for
+    // protocolFee. Default must keep the current numbers exact so this seam is purely additive.
+    // shield-xchain is the cleanest fee-from-recipient regression test.
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX)
+    expect(r.recipientReceives).toBe(AMOUNT - FEE)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee floors recipientReceives at 0n when total deduction exceeds amount', () => {
+    // WHY: defensive floor — a misconfigured fee module or stale quote could in principle make
+    // (broadcasterFee + protocolFee) > amount. Returning a negative bigint would crash the UI.
+    const protocolFee = AMOUNT
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX, { protocolFee })
+    expect(r.recipientReceives).toBe(0n)
+  })
+
+  it('protocolFee combines with secondaryFee on unshield-xchain (CCTP fast-fee + protocol take)', () => {
+    // WHY: covers the cross-chain shape — both `secondaryFee` (CCTP) and `protocolFee` deduct
+    // from the recipient side. Future-proofing for unshield-xchain if it ever surfaces a
+    // protocol-side take; today protocolFee defaults to 0 for this kind so callers can opt in.
+    const cctpFee = 2_000n
+    const protocolFee = 100_000n
+    const r = computeFeeBreakdown('unshield-xchain', AMOUNT, FEE, MAX, {
+      secondaryFee: cctpFee,
+      protocolFee,
+    })
+    expect(r.recipientReceives).toBe(AMOUNT - cctpFee - protocolFee)
+    expect(r.totalDeducted).toBe(AMOUNT + FEE)
+    expect(r.inputMax).toBe(MAX - FEE)
+  })
 })
 
 describe('cctpMaxFeeForKind', () => {

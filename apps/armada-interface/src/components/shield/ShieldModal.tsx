@@ -1,4 +1,4 @@
-// ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders ActionFlowShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
+// ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders DepositOverlayShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
 // ABOUTME: Dispatches between same-chain shield (hub source) and cross-chain shield-xchain (client source) based on fromChainId; B3 routes hub shield through GaslessShieldWrapper when available.
 
 import { useEffect, useState } from 'react'
@@ -8,6 +8,7 @@ import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
 import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { useBalances } from '@/hooks/useBalances'
@@ -16,12 +17,14 @@ import { loadDeployments } from '@/config/deployments'
 import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import {
-  ActionFlowShell,
   ProgressStep,
   ErrorStep,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { ShieldInputStep } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
@@ -30,7 +33,6 @@ import { ShieldCompleteStep } from './ShieldCompleteStep'
 type LocalStep = FlowStep
 type SubmittedKind = 'shield' | 'shield-xchain'
 
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 /**
  * Permit deadline window. The relayer's fee TTL is 5 min and proof building isn't required for
@@ -114,18 +116,26 @@ export function ShieldModal() {
   const fee: bigint = userFeeForKind(computedKind, amount, quote, {
     gasless: useGasless,
   })
+  // On-chain protocol fee — PrivacyPool's fee module takes ~50 bps off the shielded amount on
+  // the hub regardless of submission path (gasless or direct). useDisplayFees reads
+  // calculateShieldFee from the deployed fee module via wagmi; layered into computeFeeBreakdown
+  // below as `protocolFee` so recipientReceives reflects the TRUE shielded value the user gets,
+  // not just `amount - broadcasterFee`. nativeGas is also surfaced for the wallet-submit fallback
+  // (gasless path doesn't pay native gas — Phase 6 hides that row).
+  const { fees: displayFees } = useDisplayFees(computedKind, amount, fromChainId, quote)
+  const protocolFee = displayFees.protocolFee
   // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
   // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
   // the entered `amount` IS what's deducted from the user's USDC balance, and the shielded
-  // value is `amount - fee`. The wrapper splits on-chain: `(amount - fee)` to the pool,
-  // `fee` to the relayer. Direct hub shield is `no-fee` (full amount shielded, user pays ETH
-  // gas). Direct shield-xchain is `fee-from-recipient` with the CCTP fast-fee deducted from
-  // the destination mint.
+  // value is `amount - fee - protocolFee`. The wrapper splits on-chain: `(amount - fee)` to the
+  // pool, which the pool then takes `protocolFee` from before crediting the shielded balance.
+  // Direct hub shield is `no-fee` so only `protocolFee` deducts from the shielded value.
   const { recipientReceives: netAmount, inputMax } = computeFeeBreakdown(
     computedKind,
     amount,
     fee,
     max,
+    { protocolFee },
   )
   // Minimum valid amount = the live fee. Below or equal to it the wrapper's `shieldAmount =
   // totalAmount - fee` would underflow / be zero. Surfaced via ShieldInputStep's `minAmount`
@@ -262,14 +272,22 @@ export function ShieldModal() {
 
   if (!isOpen) return null
 
+  // DepositOverlayShell renders a 3-segment indicator (Amount/Review/Confirm) — `progress`,
+  // `complete`, and `error` all map to segment 3. `overlayIndicatorStatus` flips the bar green
+  // on `complete` and red on `error`. Lavender otherwise. errorAtStep is no longer surfaced
+  // through the shell (the legacy 4-segment bar used it); instead the ErrorStep itself owns
+  // the retry button + copy.
+  const indicatorStep = overlayIndicatorStep(step)
+  const indicatorStatus = overlayIndicatorStatus(step)
+
   return (
-    <ActionFlowShell
-      open
+    <DepositOverlayShell
+      open={isOpen}
       onClose={close}
-      title="Deposit"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Deposit"
+      currentStep={indicatorStep}
+      status={indicatorStatus}
     >
       {step === 'input' && (
         <ShieldInputStep
@@ -282,6 +300,7 @@ export function ShieldModal() {
           fee={fee}
           netAmount={netAmount}
           isFeeRefreshing={isStale}
+          gaslessMode={useGasless}
           onCancel={close}
           onContinue={() => setStep('review')}
         />
@@ -307,6 +326,6 @@ export function ShieldModal() {
         />
       )}
       <RelayerStatusBanner isOpen={isOpen} />
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

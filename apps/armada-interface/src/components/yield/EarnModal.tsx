@@ -17,18 +17,19 @@ import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { sharesToUsdc } from '@/lib/yield'
 import {
-  ActionFlowShell,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { EarnInputStep, type EarnTab } from './EarnInputStep'
 import { EarnReviewStep } from './EarnReviewStep'
 import { EarnCompleteStep } from './EarnCompleteStep'
 
 type LocalStep = FlowStep
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 const EARN_KINDS: ReadonlyArray<ModalKind> = ['yield-deposit', 'yield-withdraw']
 
@@ -229,13 +230,13 @@ export function EarnModal() {
   if (!isOpen) return null
 
   return (
-    <ActionFlowShell
+    <DepositOverlayShell
       open
       onClose={close}
-      title="Earn"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Earn"
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
@@ -294,6 +295,6 @@ export function EarnModal() {
           onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
         />
       )}
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

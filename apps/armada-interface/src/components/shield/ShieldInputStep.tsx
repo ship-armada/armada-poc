@@ -1,8 +1,9 @@
 // ABOUTME: Shield input step — From-chain selector, amount input (display variant), fee summary, Cancel + Continue.
 // ABOUTME: Validates amount > 0 and amount <= max; disables Continue until valid.
 
-import { AmountInput, ChainSelect, FeeSummary } from '@/components/ui'
+import { AmountInput, ChainSelect, FeeSummary, GasBalanceNotice } from '@/components/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
+import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
 import { formatUsdc, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { getNetworkConfig } from '@/config/network'
 import styles from './ShieldInputStep.module.css'
@@ -24,6 +25,13 @@ export interface ShieldInputStepProps {
   fee: bigint | null
   netAmount: bigint
   isFeeRefreshing?: boolean
+  /**
+   * When true, submission goes through the gasless permit + wrapper path — the user pays no
+   * native gas, so the GasBalanceNotice is suppressed. When false the user's wallet submits
+   * directly and needs native gas; the notice shows when the wallet's native balance is below
+   * the safety floor in `useGasBalanceWarning`.
+   */
+  gaslessMode?: boolean
   onCancel: () => void
   onContinue: () => void
 }
@@ -38,12 +46,17 @@ export function ShieldInputStep({
   fee,
   netAmount,
   isFeeRefreshing,
+  gaslessMode = true,
   onCancel,
   onContinue,
 }: ShieldInputStepProps) {
   const hubChainId = getNetworkConfig().hub.chainId
   const isXchain = fromChainId !== hubChainId
   const { value: amount, error: amountError } = parseUsdcInput(amountStr)
+  // Only consult the wallet's native balance when the user will actually pay gas (wallet-submit
+  // fallback). The hook still runs unconditionally (rules of hooks) but its `show` gates rendering.
+  const gasWarning = useGasBalanceWarning(fromChainId)
+  const showGasNotice = !gaslessMode && gasWarning.show
   const tooMuch = amount > max
   // Below-fee check: only meaningful when there's a fee (minAmount > 0); the entered amount
   // must be strictly greater than the fee so `shieldAmount = amount - fee` is > 0 on-chain.
@@ -83,6 +96,12 @@ export function ShieldInputStep({
         netLabel="You'll deposit"
         isRefreshing={isFeeRefreshing}
       />
+      {showGasNotice ? (
+        <GasBalanceNotice
+          nativeSymbol={gasWarning.nativeSymbol}
+          formattedBalance={gasWarning.formattedBalance}
+        />
+      ) : null}
       <FlowFooter
         className={styles.footer}
         primary={{ label: 'Continue', onClick: onContinue, disabled: !isValid }}

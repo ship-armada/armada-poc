@@ -7,6 +7,12 @@ export type { OnboardingShellProps } from './OnboardingShell'
 export { OnboardingFlow } from './OnboardingFlow'
 export type { OnboardingFlowProps } from './OnboardingFlow'
 
+export { OnboardingFlowV2 } from './OnboardingFlowV2'
+export type { OnboardingFlowV2Props } from './OnboardingFlowV2'
+
+export { OnboardingLayout } from '../OnboardingLayout/OnboardingLayout'
+export type { OnboardingLayoutProps } from '../OnboardingLayout/OnboardingLayout'
+
 export { UnlockFlow } from './UnlockFlow'
 export type { UnlockFlowProps } from './UnlockFlow'
 

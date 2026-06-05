@@ -21,6 +21,53 @@
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+.loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.loading:disabled {
+  opacity: 1;
+  cursor: wait;
+}
+
+.loading.primary:disabled {
+  background: var(--semantic-component-button-primary-bg);
+  color: var(--semantic-component-button-primary-text);
+}
+
+.loading.secondary:disabled {
+  color: var(--semantic-component-button-secondary-text);
+  border-color: var(--semantic-component-button-secondary-border);
+}
+
+.spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: buttonSpin 700ms linear infinite;
+}
+
+.md .spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.lg .spinner {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes buttonSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Sizes */
 .sm { height: var(--semantic-component-button-primary-sm-height); padding: 0 var(--semantic-component-button-primary-sm-padding-x); font-size: var(--semantic-component-button-primary-sm-font-size); }
 .sm.icon { padding-right: var(--semantic-component-button-primary-sm-padding-x-icon); }
@@ -28,6 +75,11 @@
 .md.icon { padding-right: var(--semantic-component-button-primary-md-padding-x-icon); }
 .lg { height: var(--semantic-component-button-primary-lg-height); padding: 0 var(--semantic-component-button-primary-lg-padding-x); font-size: var(--semantic-component-button-primary-lg-font-size); }
 .lg.icon { padding-right: var(--semantic-component-button-primary-lg-padding-x-icon); }
+
+/* No trailing arrow — symmetric horizontal padding */
+.noIcon.sm { padding-right: var(--semantic-component-button-primary-sm-padding-x); }
+.noIcon.md { padding-right: var(--semantic-component-button-primary-md-padding-x); }
+.noIcon.lg { padding-right: var(--semantic-component-button-primary-lg-padding-x); }
 
 /* Primary */
 .primary { background: var(--semantic-component-button-primary-bg); color: var(--semantic-component-button-primary-text); }

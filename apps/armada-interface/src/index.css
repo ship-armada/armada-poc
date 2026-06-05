@@ -37,3 +37,50 @@
 :root {
   --rk-fonts-body: Geist, system-ui, -apple-system, sans-serif;
 }
+
+html {
+  background-color: var(--semantic-color-surface-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% 20%, var(--semantic-color-surface-default) 0%, var(--semantic-color-surface-bg) 70%);
+  background-attachment: fixed;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--semantic-color-text-primary);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--semantic-color-border-default) transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--semantic-color-border-default);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--semantic-color-text-muted);
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes row-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-page-enter { animation: page-enter 0.28s ease-out; }
+.animate-row-enter  { animation: row-enter 0.25s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter,
+  .animate-row-enter { animation: none; }
+}

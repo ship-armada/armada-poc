@@ -2,6 +2,7 @@
 // ABOUTME: Pure presentational: validation lives in lib/address; callers decide the error string + accepted formats.
 
 import { useId, useState, type ChangeEvent } from 'react'
+import { WalletIcon } from '@heroicons/react/24/solid'
 import { ClipboardPaste } from 'lucide-react'
 import styles from './RecipientInput.module.css'
 
@@ -15,6 +16,8 @@ export interface RecipientInputProps {
   error?: string
   /** When true, renders a "Paste" button next to the input that pulls from navigator.clipboard. */
   showPasteButton?: boolean
+  /** Leading wallet icon (e.g. locked connected-wallet recipient on withdraw). */
+  showWalletIcon?: boolean
 }
 
 export function RecipientInput({
@@ -25,6 +28,7 @@ export function RecipientInput({
   disabled,
   error,
   showPasteButton = true,
+  showWalletIcon = false,
 }: RecipientInputProps) {
   const id = useId()
   const [pasted, setPasted] = useState(false)
@@ -47,7 +51,15 @@ export function RecipientInput({
           {label}
         </label>
       ) : null}
-      <div className={styles.inputRow}>
+      <div className={[styles.inputRow, showWalletIcon && styles.inputRowWithIcon]
+        .filter(Boolean)
+        .join(' ')}
+      >
+        {showWalletIcon ? (
+          <span className={styles.walletIconWrap} aria-hidden>
+            <WalletIcon className={styles.walletIcon} />
+          </span>
+        ) : null}
         <input
           id={id}
           type="text"

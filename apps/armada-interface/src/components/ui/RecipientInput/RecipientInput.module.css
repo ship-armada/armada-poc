@@ -1,5 +1,5 @@
-/* ABOUTME: RecipientInput styling — input + optional Paste pill, error region. */
-/* ABOUTME: Mono font for the value so 0x/0zk strings stay legible; Paste pill mirrors the MnemonicStep Copy button. */
+/* ABOUTME: RecipientInput styling — single bordered field with optional in-field Paste adornment. */
+/* ABOUTME: Mono font for the value so 0x/0zk strings stay legible. */
 
 .root {
   display: flex;
@@ -16,24 +16,45 @@
 
 .inputRow {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: var(--primitives-spacing-2);
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  padding-right: var(--primitives-spacing-2);
+}
+
+.inputRow:focus-within {
+  border-color: var(--semantic-color-border-focus);
+  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+}
+
+.inputRowWithIcon {
+  padding-left: var(--primitives-spacing-3);
+}
+
+.walletIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.walletIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  color: var(--semantic-color-text-muted);
 }
 
 .input {
   flex: 1 1 auto;
-  background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-default);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: 10px 12px;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-3);
   color: var(--semantic-color-text-primary);
-  font-family: "Geist Mono", monospace;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   outline: none;
-}
-
-.input:focus {
-  border-color: var(--semantic-color-border-focus);
-  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
 }
 
 .input::placeholder {
@@ -43,13 +64,15 @@
 .pasteBtn {
   display: inline-flex;
   align-items: center;
-  gap: var(--primitives-spacing-2);
+  gap: var(--primitives-spacing-1);
+  flex-shrink: 0;
   background: transparent;
-  border: 1px solid var(--semantic-color-border-default);
+  border: none;
   color: var(--semantic-color-text-muted);
-  padding: 0 12px;
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
   border-radius: calc(var(--semantic-borderRadius-input) * 1px);
   cursor: pointer;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
   transition: background 120ms ease, color 120ms ease;
 }
 

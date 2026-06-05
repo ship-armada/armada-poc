@@ -1,40 +1,94 @@
-/* ABOUTME: UnlockFlow layout — centered lock icon, body paragraph, single passphrase field, edge-to-edge footer. */
-/* ABOUTME: Visually similar to WelcomeStep but more compact since there's only one field. */
+/* ABOUTME: UnlockFlow layout — left-aligned lock icon, body copy, fields, edge-to-edge footer. */
+/* ABOUTME: Visually similar to WelcomeStep but more compact since there's only one field per mode. */
 
-.root {
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-11);
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-8);
+  text-align: left;
+  width: 100%;
+  max-width: 400px;
+  margin-inline: auto;
+}
+
+.modeForm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.modeFormFields {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--primitives-spacing-3);
-}
-
-.icon {
-  align-self: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(196, 145, 229, 0.12);
-  color: var(--semantic-color-brand-lavender);
-  margin-bottom: var(--primitives-spacing-2);
+  gap: var(--primitives-spacing-4);
+  width: 100%;
 }
 
 .body {
   color: var(--semantic-color-text-muted);
-  text-align: center;
+  text-align: left;
+  max-width: 46ch;
   margin: 0;
+  line-height: var(--primitives-lineHeight-normal);
+}
+
+.body + .field,
+.body + .secretField {
+  margin-top: calc(var(--primitives-spacing-8) - var(--primitives-spacing-4));
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-1);
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  text-align: left;
+}
+
+.field + .field {
+  margin-top: calc(var(--primitives-spacing-5) - var(--primitives-spacing-4));
 }
 
 .label {
+  color: var(--semantic-color-text-secondary);
+}
+
+.infoTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  cursor: help;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.infoTrigger:hover .infoIcon {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoIcon {
+  width: 20px;
+  height: 20px;
   color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+  transition: color 150ms ease;
 }
 
 .input {
@@ -44,11 +98,61 @@
   padding: 10px 12px;
   color: var(--semantic-color-text-primary);
   outline: none;
+  width: 100%;
 }
 
 .input:focus {
   border-color: var(--semantic-color-border-focus);
   box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+}
+
+.secretField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  padding: var(--primitives-spacing-3);
+  text-align: left;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  box-sizing: border-box;
+}
+
+.secretField:focus-within {
+  border-color: var(--semantic-color-border-focus);
+  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+}
+
+.secretInput {
+  width: 100%;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  line-height: var(--primitives-lineHeight-normal);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  color: var(--semantic-color-text-primary);
+  min-height: calc(var(--primitives-spacing-10) + var(--primitives-spacing-8));
+  resize: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+.secretInput:focus {
+  border: none;
+  box-shadow: none;
+}
+
+.secretInput::placeholder {
+  color: var(--semantic-color-text-dim);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+}
+
+.pasteBtnWrap {
+  align-self: flex-end;
 }
 
 .error {
@@ -57,13 +161,16 @@
 
 .footer {
   align-self: stretch;
-  margin: var(--primitives-spacing-6) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+  margin-top: var(--primitives-spacing-6);
 }
 
 .createNew {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
   text-align: center;
   color: var(--semantic-color-text-muted);
-  margin-top: var(--primitives-spacing-3);
 }
 
 .createNewLink {

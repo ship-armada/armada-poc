@@ -33,3 +33,6 @@ export type { TabsProps, TabItem } from './Tabs'
 
 export { TechnicalDetailsDisclosure } from './TechnicalDetailsDisclosure'
 export type { TechnicalDetailsDisclosureProps } from './TechnicalDetailsDisclosure'
+
+export { Tooltip } from './Tooltip'
+export type { TooltipProps } from './Tooltip'

@@ -101,6 +101,7 @@
     "verify:snark": "hardhat run scripts/verify_snark_mode.ts --network hub",
     "verify:snark:sepolia": "hardhat run scripts/verify_snark_mode.ts --network sepoliaHub",
     "prepare": "git config core.hooksPath .githooks",
+    "postinstall": "node scripts/ensure-linux-native-modules.mjs",
     "check:anvil-addresses": "./scripts/check-anvil-addresses.sh",
     "check:sizes": "node scripts/check-contract-sizes.js",
     "slither": "slither . --config-file slither.config.json",
@@ -150,5 +151,10 @@
     "railgun-circuit-test-artifacts": "https://ipfs-lb.com/ipfs/QmPvs6Lws1MS4CTMAQ6P3WfyFpWFKGu7o6cSbWCu3vgXLW/railgun-circuit-test-artifacts-0.0.1.tgz",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.57.1",
+    "lightningcss-linux-x64-gnu": "1.30.2",
+    "@tailwindcss/oxide-linux-x64-gnu": "4.1.18"
   }
 }

@@ -197,3 +197,9 @@ export function resetInitState(): void {
   lastError = null
   setEngineState('cold')
 }
+
+/** User-triggered retry after a failed engine warm-up (Sign step). */
+export async function retryRailgunEngineInit(): Promise<void> {
+  resetInitState()
+  await initRailgunEngine()
+}

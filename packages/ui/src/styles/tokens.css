@@ -6,9 +6,9 @@
  *   --primitives-*  raw values (color scales, font sizes, spacing, radii, etc.)
  *   --semantic-*    contextual aliases (surface bg, text color, button-md height, etc.)
  *
- * Forward direction: a build script will regenerate this file from armada-tokens.json
- * once recovered or rewritten. Until then, this CSS is the live source of truth — edit
- * it directly AND keep armada-tokens.json in sync so the future migration is clean.
+ * Typography composites (ui/heading-sm, etc.) are generated — see typography.css via
+ * `npm run tokens:typography --workspace=@armada/ui`. Primitives/semantic colors here
+ * are still hand-maintained; keep armada-tokens.json in sync when editing.
  *
  * Note: some token values are intentionally unitless (e.g. --primitives-fontSize-xs: 10).
  * That matches the mockup's emission style; consuming CSS multiplies by px where needed.
@@ -46,7 +46,7 @@
   --primitives-color-neutral-700: #c0bece;
   --primitives-color-neutral-800: #e0deea;
   --primitives-color-white-low: rgba(255,255,255,0.18);
-  --primitives-color-white-mid: rgba(255,255,255,0.38);
+  --primitives-color-white-mid: rgba(255, 255, 255, 0.45);
   --primitives-color-white-high: rgba(255,255,255,0.87);
   --primitives-color-white-full: #ffffff;
   --primitives-color-status-success: #34d399;
@@ -71,6 +71,7 @@
   --primitives-fontWeight-semibold: 600;
   --primitives-fontFamily-display: Charis SIL;
   --primitives-fontFamily-ui: Geist;
+  /* Optional — use for hashes / code when explicitly needed; default UI type is Geist. */
   --primitives-fontFamily-mono: Geist Mono;
   --primitives-lineHeight-none: 100%;
   --primitives-lineHeight-tight: 110%;
@@ -91,6 +92,7 @@
   --primitives-spacing-6: 24px;
   --primitives-spacing-8: 32px;
   --primitives-spacing-10: 40px;
+  --primitives-spacing-11: 44px;
   --primitives-spacing-12: 48px;
   --primitives-spacing-16: 64px;
   --primitives-spacing-20: 80px;
@@ -110,6 +112,7 @@
   --semantic-color-surface-bg: var(--primitives-color-neutral-0);
   --semantic-color-surface-default: var(--primitives-color-neutral-50);
   --semantic-color-surface-raised: var(--primitives-color-neutral-100);
+  --semantic-color-surface-hover: var(--primitives-color-neutral-100);
   --semantic-color-border-default: rgba(255,255,255,0.07);
   --semantic-color-border-lavender: rgba(196,145,229,0.14);
   --semantic-color-border-amber: rgba(243,208,160,0.14);
@@ -131,6 +134,8 @@
   --semantic-borderRadius-button: var(--primitives-borderRadius-full);
   --semantic-borderRadius-input: var(--primitives-borderRadius-md);
   --semantic-borderRadius-badge: var(--primitives-borderRadius-sm);
+  --semantic-borderRadius-item: 8px;
+  --semantic-borderRadius-modal: 20px;
   --semantic-component-button-primary-bg: var(--primitives-color-purple-500);
   --semantic-component-button-primary-bg-hover: var(--primitives-color-purple-400);
   --semantic-component-button-primary-bg-active: var(--primitives-color-purple-600);
@@ -241,3 +246,5 @@
   --semantic-component-tag-dot-error: #f87171;
   --semantic-component-tag-dot-neutral: #9990a9;
 }
+
+@import "./typography.css";

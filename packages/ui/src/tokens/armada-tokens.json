@@ -140,7 +140,7 @@
           "type": "color"
         },
         "mid": {
-          "value": "rgba(255,255,255,0.38)",
+          "value": "rgba(255,255,255,0.45)",
           "type": "color"
         },
         "high": {
@@ -350,6 +350,10 @@
         "value": "40",
         "type": "spacing"
       },
+      "11": {
+        "value": "44",
+        "type": "spacing"
+      },
       "12": {
         "value": "48",
         "type": "spacing"
@@ -432,6 +436,11 @@
         "raised": {
           "value": "{color.neutral.100}",
           "type": "color"
+        },
+        "hover": {
+          "value": "{color.neutral.100}",
+          "type": "color",
+          "description": "Surface color for interactive hover states"
         }
       },
       "border": {
@@ -578,16 +587,27 @@
           "type": "typography",
           "description": "20px \u2014 card titles"
         },
+        "heading-xl": {
+          "value": {
+            "fontFamily": "{fontFamily.ui}",
+            "fontWeight": "{fontWeight.medium}",
+            "fontSize": "{fontSize.3xl}",
+            "lineHeight": "{lineHeight.snug}",
+            "letterSpacing": "{letterSpacing.tight}"
+          },
+          "type": "typography",
+          "description": "32px \u2014 prominent step titles"
+        },
         "heading-sm": {
           "value": {
             "fontFamily": "{fontFamily.ui}",
             "fontWeight": "{fontWeight.medium}",
             "fontSize": "{fontSize.lg}",
-            "lineHeight": "{lineHeight.snug}",
+            "lineHeight": "{spacing.6}",
             "letterSpacing": "{letterSpacing.tight}"
           },
           "type": "typography",
-          "description": "17px \u2014 subheadings"
+          "description": "17px / 24px line-height \u2014 step titles, subheadings"
         },
         "body-lg": {
           "value": {
@@ -745,6 +765,16 @@
       "badge": {
         "value": "{borderRadius.sm}",
         "type": "borderRadius"
+      },
+      "item": {
+        "value": "8",
+        "type": "borderRadius",
+        "description": "Interactive list rows and items"
+      },
+      "modal": {
+        "value": "20",
+        "type": "borderRadius",
+        "description": "Modal and overlay containers"
       }
     },
     "component": {

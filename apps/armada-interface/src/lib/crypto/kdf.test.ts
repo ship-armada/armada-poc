@@ -13,6 +13,7 @@ import {
   encryptBackup,
   decryptBackup,
   parseBackupBlob,
+  parseBackupJsonText,
   PBKDF2_ITERATIONS_V1,
   type BackupBlob,
   type EncryptOptions,
@@ -313,6 +314,24 @@ describe('backup encryption round-trip (v2)', { timeout: 30_000 }, () => {
     const v2 = encryptBackup({ rootSecret, creationBlock: 0 }, 'right-here', TEST_OPTS)
     const mislabeled: BackupBlob = { ...v2, format: 'armada-backup-v1' }
     expect(() => decryptBackup(mislabeled, 'right-here')).toThrow(/v1 expected 32-byte payload/)
+  })
+})
+
+describe('parseBackupJsonText', () => {
+  it('rejects malformed JSON with a friendly message', () => {
+    expect(() => parseBackupJsonText('{ "format": ]')).toThrow(/not valid JSON/i)
+  })
+
+  it('rejects empty files', () => {
+    expect(() => parseBackupJsonText('   ')).toThrow(/empty/i)
+  })
+
+  it('unwraps a one-element JSON array (common duplicate-download shape)', () => {
+    const rootSecret = deriveRootSecret(fixedSignature())
+    const blob = encryptBackup({ rootSecret, creationBlock: 42 }, 'pw-here-now', TEST_OPTS)
+    const wrapped = JSON.stringify([JSON.parse(JSON.stringify(blob))])
+    const parsed = parseBackupJsonText(wrapped)
+    expect(parsed.format).toBe('armada-backup-v2')
   })
 })
 

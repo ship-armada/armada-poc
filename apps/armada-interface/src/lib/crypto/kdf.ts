@@ -358,11 +358,58 @@ export function decryptBackup(blob: BackupBlob, passphrase: string): BackupPaylo
   return decodePayload(plain)
 }
 
+const BACKUP_JSON_INVALID_MSG =
+  'Backup file is not valid JSON. The file may be corrupted, incomplete, or not an Armada export. ' +
+  'Open it in a text editor — it should be one object with `"format": "armada-backup-v2"`. ' +
+  'Export a fresh file from Settings → Export recovery secret while your wallet is unlocked.'
+
+/**
+ * Parse backup file text (from disk upload). Strips BOM, validates JSON, then `parseBackupBlob`.
+ */
+export function parseBackupJsonText(text: string): BackupBlob {
+  const trimmed = text.replace(/^\uFEFF/, '').trim()
+  if (!trimmed) {
+    throw new Error('Backup file is empty.')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error(BACKUP_JSON_INVALID_MSG)
+  }
+  return parseBackupBlob(parsed)
+}
+
+/** Map low-level parse / storage errors to user-facing unlock messages. */
+export function normalizeBackupUnlockError(err: unknown): Error {
+  if (err instanceof Error) {
+    if (err instanceof SyntaxError || /Unexpected token/i.test(err.message)) {
+      return new Error(BACKUP_JSON_INVALID_MSG)
+    }
+    return err
+  }
+  return new Error('Unlock failed.')
+}
+
 /**
  * Parse + validate an unknown JSON object as a BackupBlob. Rejects unknown top-level fields per
  * spec interop contract.
  */
 export function parseBackupBlob(json: unknown): BackupBlob {
+  if (Array.isArray(json)) {
+    if (
+      json.length === 1 &&
+      typeof json[0] === 'object' &&
+      json[0] !== null &&
+      !Array.isArray(json[0])
+    ) {
+      return parseBackupBlob(json[0])
+    }
+    throw new Error('parseBackupBlob: expected one backup object, not a JSON array')
+  }
+  if (typeof json === 'string') {
+    return parseBackupJsonText(json)
+  }
   if (typeof json !== 'object' || json === null) {
     throw new Error('parseBackupBlob: input is not an object')
   }

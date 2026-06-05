@@ -33,7 +33,7 @@
 }
 
 .totalAmount {
-  font-family: "Charis SIL", serif;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-5xl) * 1px);
   line-height: var(--primitives-lineHeight-tight);
   font-weight: var(--primitives-fontWeight-regular);
@@ -67,7 +67,7 @@
 
 .breakdownValue {
   color: var(--semantic-color-text-primary);
-  font-family: "Charis SIL", serif;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-2xl) * 1px);
   line-height: var(--primitives-lineHeight-tight);
   font-variant-numeric: tabular-nums;

@@ -40,4 +40,19 @@ describe('<RecipientInput>', () => {
     expect(screen.getByLabelText('Recipient')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Paste from clipboard' })).toBeDisabled()
   })
+
+  it('renders a wallet icon when showWalletIcon is set', () => {
+    const { container } = render(
+      <RecipientInput
+        value="0xabc"
+        onValueChange={() => {}}
+        label="Recipient"
+        showWalletIcon
+        showPasteButton={false}
+        disabled
+      />,
+    )
+    expect(container.querySelector('svg')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Paste from clipboard' })).toBeNull()
+  })
 })

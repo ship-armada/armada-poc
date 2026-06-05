@@ -104,6 +104,11 @@ function clearStoredWalletId(): void {
     /* silent */
   }
 }
+
+/** Dev/UX escape hatch: clear persisted wallet identity (forces onboarding on next boot). */
+export function clearStoredWalletIdentity(): void {
+  clearStoredWalletId()
+}
 function storedChecksum(): string | null {
   try {
     return window.localStorage.getItem(STORED_CHECKSUM_KEY)

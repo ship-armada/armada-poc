@@ -12,6 +12,8 @@ export interface ButtonProps {
   label?: string
   showIcon?: boolean
   disabled?: boolean
+  /** Keeps the default variant colors and shows a spinner (does not apply muted disabled styles). */
+  loading?: boolean
   onClick?: () => void
   style?: React.CSSProperties
   className?: string
@@ -24,19 +26,43 @@ const Arrow = () => (
   </svg>
 )
 
-export function Button({ variant = 'primary', size = 'md', label = 'Button', showIcon = true, disabled = false, onClick, className, type = 'button', style }: ButtonProps) {
+export function Button({
+  variant = 'primary',
+  size = 'md',
+  label = 'Button',
+  showIcon = true,
+  disabled = false,
+  loading = false,
+  onClick,
+  className,
+  type = 'button',
+  style,
+}: ButtonProps) {
+  const showTrailing = showIcon || loading
   const cls = [
     styles.btn,
     styles[variant],
     styles[size],
-    showIcon ? styles.icon : '',
-    className ?? ''
+    showTrailing ? styles.icon : '',
+    loading ? styles.loading : '',
+    className ?? '',
   ].filter(Boolean).join(' ')
 
   return (
-    <button type={type} className={cls} disabled={disabled} onClick={onClick} style={style}>
+    <button
+      type={type}
+      className={cls}
+      disabled={disabled && !loading}
+      aria-busy={loading || undefined}
+      onClick={loading ? undefined : onClick}
+      style={style}
+    >
       <span>{label}</span>
-      {showIcon && <span className={styles.iconWrap}><Arrow /></span>}
+      {showTrailing ? (
+        <span className={styles.iconWrap} aria-hidden={loading}>
+          {loading ? <span className={styles.spinner} /> : showIcon ? <Arrow /> : null}
+        </span>
+      ) : null}
     </button>
   )
 }

@@ -41,7 +41,7 @@ beforeEach(() => {
 describe('<UnlockFlow> — backup mode (default)', () => {
   it('renders the dialog with Backup file selected and Paste secret available', () => {
     renderWith()
-    expect(screen.getByRole('dialog', { name: 'Unlock your account' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Unlock your account' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Backup file' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Paste secret' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Sign again' })).not.toBeInTheDocument()

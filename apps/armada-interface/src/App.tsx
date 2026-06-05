@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AppLayout } from '@/components/AppLayout'
-import { OnboardingFlow, UnlockFlow } from '@/components/onboarding'
+import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
 import { UnshieldModal } from '@/components/unshield'
 import { SendModal } from '@/components/payments'
@@ -29,7 +29,12 @@ import '@/features/yield-deposit'
 import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
 import { initRailgunEngine } from '@/lib/railgun/init'
-import { readStoredWalletId } from '@/lib/railgun/wallet'
+import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
+import { isLocalMode } from '@/config/network'
+import {
+  DEFAULT_DEV_MOCK_BALANCE,
+  devMockBalanceAtom,
+} from '@/state/devMockBalance'
 import {
   activeRailgunWalletIdAtom,
   shieldedWalletAtom,
@@ -61,6 +66,16 @@ export function App() {
   // same cached quote via feeQuoteAtom; mounting at root ensures it's warm by the time any
   // modal opens (otherwise the first modal sees `quote=null` briefly).
   useFees()
+
+  const setDevMockBalance = useSetAtom(devMockBalanceAtom)
+
+  // First local boot: enable mock USDC unless opted out (VITE_DEV_MOCK_BALANCE=false) or Debug saved a preference.
+  useEffect(() => {
+    if (!isLocalMode()) return
+    if (import.meta.env.VITE_DEV_MOCK_BALANCE === 'false') return
+    if (localStorage.getItem('armada-interface.devMockBalance') != null) return
+    setDevMockBalance({ ...DEFAULT_DEV_MOCK_BALANCE, enabled: true })
+  }, [setDevMockBalance])
 
   useEffect(() => {
     // Start the tx execution engine. Idempotent + module-scope, so this runs
@@ -128,17 +143,33 @@ export function App() {
     // Always offer the Restore escape hatch — the onboarding flow has no way to know whether
     // the user is genuinely new vs. arriving on a new device with an existing backup. The link
     // is harmless for genuinely new users (they ignore it) and load-bearing for the second case.
-    return <OnboardingFlow onDone={() => setMode('app')} onRestore={() => setMode('unlock')} />
+    return <OnboardingFlowV2 onDone={() => setMode('app')} onRestore={() => setMode('unlock')} />
   }
 
   if (mode === 'unlock') {
-    // Only expose the Create-new link when there's no persisted wallet on this device. A
-    // returning user (had a persisted wallet at boot) MUST go through Unlock — accidentally
-    // starting Create would orphan their existing IDB-stored wallet without recovery.
+    const handleStartOver = () => {
+      if (
+        hadPersistedWalletAtBoot &&
+        !window.confirm(
+          'Start a new account? The wallet saved in this browser will no longer be used. ' +
+            'Only continue if you have a backup or want to enroll again.',
+        )
+      ) {
+        return
+      }
+      clearStoredWalletIdentity()
+      setShieldedWallets({})
+      setActiveWalletId(null)
+      setHadPersistedWalletAtBoot(false)
+      setMode('onboarding')
+    }
     return (
       <UnlockFlow
         onUnlocked={() => setMode('app')}
-        onCreateNew={hadPersistedWalletAtBoot ? undefined : () => setMode('onboarding')}
+        onCreateNew={handleStartOver}
+        createNewLabel={
+          hadPersistedWalletAtBoot ? 'Start over and create a new account' : undefined
+        }
       />
     )
   }

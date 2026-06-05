@@ -2,6 +2,22 @@
 /* ABOUTME: Step content (incl. footer) flows in here; Modal owns dialog chrome (background, radius, border). */
 
 .body {
-  padding: var(--primitives-spacing-6);
+  padding-top: var(--primitives-spacing-10);
+  padding-right: var(--primitives-spacing-10);
+  padding-bottom: var(--primitives-spacing-10);
+  padding-left: var(--primitives-spacing-10);
   overflow-y: auto;
+  width: 100%;
+}
+
+.header {
+  border-bottom: none;
+  padding-top: var(--primitives-spacing-10);
+  padding-right: var(--primitives-spacing-10);
+  padding-bottom: 0;
+  padding-left: var(--primitives-spacing-10);
+}
+
+.dialog {
+  max-width: calc(var(--primitives-spacing-10) * 12);
 }

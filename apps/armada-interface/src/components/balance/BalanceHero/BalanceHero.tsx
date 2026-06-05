@@ -5,12 +5,13 @@ import { useAtomValue } from 'jotai'
 import { Card } from '@/components/ui'
 import { formatUsdcAmount } from '@/lib/format'
 import { sharesToUsdc } from '@/lib/yield'
-import { shieldedUsdcAtom, yieldSharesAtom } from '@/state/wallet'
+import { yieldSharesAtom } from '@/state/wallet'
+import { usePrivateUsdcDisplay } from '@/hooks/usePrivateUsdcDisplay'
 import { useYieldRate } from '@/hooks/useYieldRate'
 import styles from './BalanceHero.module.css'
 
 export function BalanceHero() {
-  const shielded = useAtomValue(shieldedUsdcAtom)
+  const { displayBalance, isSyncing } = usePrivateUsdcDisplay()
   const yieldShares = useAtomValue(yieldSharesAtom)
   const { rate: yieldRate } = useYieldRate()
 
@@ -19,15 +20,7 @@ export function BalanceHero() {
       ? sharesToUsdc(yieldShares, yieldRate.rate)
       : null
 
-  // Total = shielded + yield (when yield is known). Treat unknown yield as 0 for the headline
-  // so the total reflects what the user actually has access to right now; the breakdown row
-  // below still shows "—" for yield until its own sync wires up.
-  const total = shielded !== null ? shielded + (earningUsdc ?? 0n) : null
-
-  // Pre-sync state — gates only on shielded (the canonical "do I have private USDC?" feed).
-  // Yield sync is a separate pipeline; when it isn't wired the breakdown shows "—" and the
-  // total simply omits the vault contribution.
-  const isSyncing = shielded === null
+  const total = displayBalance + (earningUsdc ?? 0n)
 
   return (
     <Card variant="raised" className={styles.card}>
@@ -37,7 +30,7 @@ export function BalanceHero() {
       ) : (
         <div className={styles.totalRow}>
           <span className={styles.totalAmount}>
-            {total !== null ? formatUsdcAmount(total) : '—'}
+            {formatUsdcAmount(total)}
           </span>
           <span className={styles.totalUnit}>USDC</span>
         </div>
@@ -47,7 +40,7 @@ export function BalanceHero() {
         <div className={styles.breakdownItem}>
           <div className={styles.breakdownLabel}>Available privately</div>
           <div className={styles.breakdownValue}>
-            {shielded === null ? '—' : formatUsdcAmount(shielded)}
+            {isSyncing ? '—' : formatUsdcAmount(displayBalance)}
           </div>
         </div>
         <div className={styles.breakdownDivider} aria-hidden="true" />

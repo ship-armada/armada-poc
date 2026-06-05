@@ -11,6 +11,7 @@ import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { useYieldRate } from '@/hooks/useYieldRate'
+import { getNetworkConfig } from '@/config/network'
 import { formatUsdcAmount, parseUsdcInput } from '@/lib/format'
 import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
@@ -25,7 +26,8 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
-import { EarnInputStep, type EarnTab } from './EarnInputStep'
+import { EarnInputStepContent, EarnInputStepFooter, type EarnTab } from './EarnInputStep'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { EarnReviewStep } from './EarnReviewStep'
 import { EarnCompleteStep } from './EarnCompleteStep'
 
@@ -85,12 +87,26 @@ export function EarnModal() {
   //     fee comes from a SEPARATE unshield of user's pre-existing private USDC (see
   //     adapter.redeemAndShield + SDK CrossContractCalls broadcaster handling). Net private
   //     balance change is +(amount - fee); vault balance drops by `amount`-worth of shares.
+  const hubChainId = getNetworkConfig().hub.chainId
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    yieldKind,
+    amount,
+    hubChainId,
+    quote,
+  )
   const { recipientReceives, totalDeducted, inputMax: feeOnTopInputMax } = computeFeeBreakdown(
     yieldKind,
     amount,
     fee,
     max,
+    { protocolFee: displayFees.protocolFee },
   )
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    recipientReceives,
+    totalDeducted,
+    recipientLabel: tab === 'add' ? 'Vault receives' : "You'll receive into private balance",
+  }
   // For withdraw the fee doesn't come from the vault — it's debited from private USDC via a
   // separate unshield in the same proof. Reserving `fee` against the vault `max` would collapse
   // the typeable cap to 0 whenever `fee >= vault balance` (e.g. a $0.50 fee on a $0.40 vault
@@ -240,24 +256,32 @@ export function EarnModal() {
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
-        <EarnInputStep
-          tab={tab}
-          onTabChange={t => {
-            setTab(t)
-            setAmountStr('') // amount caps differ per tab
-          }}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          rate={yieldRate}
-          fee={fee}
-          netAmount={displayNetAmount}
-          netLabel={displayNetLabel}
-          continueBlockedReason={withdrawFeeBlockedReason}
-          isFeeRefreshing={isStale}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <EarnInputStepContent
+            tab={tab}
+            onTabChange={t => {
+              setTab(t)
+              setAmountStr('') // amount caps differ per tab
+            }}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            max={max}
+            maxInput={inputMax}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            gasChainId={hubChainId}
+            rate={yieldRate}
+            continueBlockedReason={withdrawFeeBlockedReason}
+          />
+          <EarnInputStepFooter
+            amountStr={amountStr}
+            maxInput={inputMax}
+            continueBlockedReason={withdrawFeeBlockedReason}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <EarnReviewStep

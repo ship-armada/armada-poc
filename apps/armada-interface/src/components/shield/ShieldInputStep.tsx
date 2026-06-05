@@ -1,11 +1,17 @@
-// ABOUTME: Shield input step — From-chain selector, amount input (display variant), fee summary, Cancel + Continue.
-// ABOUTME: Validates amount > 0 and amount <= max; disables Continue until valid.
+// ABOUTME: Shield amount step — DepositAmountCard + Review/Cancel CTAs (full-viewport deposit flow).
+// ABOUTME: gaslessMode hides the GasBalanceNotice on the relayer-mediated permit path; the wallet-submit fallback shows it when the wallet's native balance is low.
 
-import { AmountInput, ChainSelect, FeeSummary, GasBalanceNotice } from '@/components/ui'
-import { FlowFooter } from '@/components/flow/FlowFooter'
+import { useMemo } from 'react'
+import { Button } from '@armada/ui'
+import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
+import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { GasBalanceNotice } from '@/components/ui'
+import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
+import { getAllChainIdentities } from '@/config/network'
+import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
+import type { DisplayFees } from '@/lib/fees/displayFees'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
-import { formatUsdc, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
-import { getNetworkConfig } from '@/config/network'
+import { hasActiveAmount } from '@/utils/amountInput'
 import styles from './ShieldInputStep.module.css'
 
 export interface ShieldInputStepProps {
@@ -13,18 +19,15 @@ export interface ShieldInputStepProps {
   onFromChainIdChange: (chainId: number) => void
   amountStr: string
   onAmountChange: (next: string) => void
-  /** Maximum amount (raw 6-decimal USDC) — sourced from useBalances().unshielded[fromChainId]. */
+  /** Raw unshielded balance shown on the card's balance row. */
   max: bigint
-  /**
-   * Minimum valid amount (raw 6-decimal USDC). For gasless paths this is the relayer fee — the
-   * wrapper would otherwise underflow on `shieldAmount = totalAmount - fee` when amount ≤ fee.
-   * Zero for paths with no per-tx relayer fee (direct hub shield). The validator requires
-   * strictly greater so amount == fee (which would shield zero) is also rejected.
-   */
+  /** Cap accepted by the amount input — reserves fee on top for `fee-on-top` paths. */
+  maxInput: bigint
+  /** Minimum valid amount (raw 6-decimal USDC) — relayer fee for gasless paths so `shieldAmount = amount - fee > 0`. Zero for paths with no per-tx relayer fee. */
   minAmount: bigint
-  fee: bigint | null
-  netAmount: bigint
-  isFeeRefreshing?: boolean
+  displayFees: DisplayFees
+  flowBreakdown?: FlowFeeBreakdown
+  feeLoading?: boolean
   /**
    * When true, submission goes through the gasless permit + wrapper path — the user pays no
    * native gas, so the GasBalanceNotice is suppressed. When false the user's wallet submits
@@ -36,65 +39,71 @@ export interface ShieldInputStepProps {
   onContinue: () => void
 }
 
-export function ShieldInputStep({
+type ContentProps = Pick<
+  ShieldInputStepProps,
+  | 'fromChainId'
+  | 'onFromChainIdChange'
+  | 'amountStr'
+  | 'onAmountChange'
+  | 'max'
+  | 'maxInput'
+  | 'minAmount'
+  | 'displayFees'
+  | 'flowBreakdown'
+  | 'feeLoading'
+  | 'gaslessMode'
+>
+
+export function ShieldInputStepContent({
   fromChainId,
   onFromChainIdChange,
   amountStr,
   onAmountChange,
   max,
+  maxInput,
   minAmount,
-  fee,
-  netAmount,
-  isFeeRefreshing,
+  displayFees,
+  flowBreakdown,
+  feeLoading = false,
   gaslessMode = true,
-  onCancel,
-  onContinue,
-}: ShieldInputStepProps) {
-  const hubChainId = getNetworkConfig().hub.chainId
-  const isXchain = fromChainId !== hubChainId
-  const { value: amount, error: amountError } = parseUsdcInput(amountStr)
-  // Only consult the wallet's native balance when the user will actually pay gas (wallet-submit
-  // fallback). The hook still runs unconditionally (rules of hooks) but its `show` gates rendering.
+}: ContentProps) {
+  const chains = useMemo(
+    () => getAllChainIdentities().map((c) => ({ chainId: c.chainId, label: c.name })),
+    [],
+  )
   const gasWarning = useGasBalanceWarning(fromChainId)
   const showGasNotice = !gaslessMode && gasWarning.show
-  const tooMuch = amount > max
+
+  const { value: amount, error: parseError } = parseUsdcInput(amountStr)
+  const tooMuch = amount > maxInput
   // Below-fee check: only meaningful when there's a fee (minAmount > 0); the entered amount
   // must be strictly greater than the fee so `shieldAmount = amount - fee` is > 0 on-chain.
   const tooSmall = minAmount > 0n && amount > 0n && amount <= minAmount
-  // Parser-side errors (too-many-decimals etc) take precedence over balance-bound errors —
-  // a malformed value can't meaningfully be compared to max anyway. Surfaced via AmountInput.
   const errorMessage =
-    usdcInputErrorMessage(amountError) ??
+    usdcInputErrorMessage(parseError) ??
     (tooMuch ? 'Amount exceeds your available balance.' : undefined) ??
-    (tooSmall ? `Amount must be greater than the relayer fee (${formatUsdc(minAmount)} USDC).` : undefined)
-  const isValid = amount > 0n && !tooMuch && !tooSmall && !amountError
+    (tooSmall
+      ? `Amount must be greater than the relayer fee (${formatUsdcPlain(minAmount)} USDC).`
+      : undefined)
+
+  const balanceDisplay = formatUsdcPlain(max)
 
   return (
-    <div className={styles.root}>
-      <ChainSelect
-        label="From"
-        value={fromChainId}
-        onChange={onFromChainIdChange}
-      />
-      {isXchain ? (
-        <div className={styles.xchainNotice}>
-          Cross-chain deposit takes ~30 seconds to a few minutes for the CCTP confirmation. You
-          can close this modal — progress is tracked in your activity history.
-        </div>
-      ) : null}
-      <AmountInput
-        variant="display"
-        label="How much USDC?"
-        value={amountStr}
-        onValueChange={onAmountChange}
-        max={max}
+    <div className={styles.contentZone}>
+      <p className={styles.question}>How much USDC do you want to deposit?</p>
+      <DepositAmountCard
+        chains={chains}
+        chainId={fromChainId}
+        onChainIdChange={onFromChainIdChange}
+        amount={amountStr}
+        onAmountChange={onAmountChange}
+        balance={balanceDisplay}
+        displayFees={displayFees}
+        flowBreakdown={flowBreakdown}
+        feeLoading={feeLoading}
+        onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
         error={errorMessage}
-      />
-      <FeeSummary
-        fee={fee}
-        netAmount={netAmount}
-        netLabel="You'll deposit"
-        isRefreshing={isFeeRefreshing}
+        amountAriaLabel="Deposit amount"
       />
       {showGasNotice ? (
         <GasBalanceNotice
@@ -102,11 +111,53 @@ export function ShieldInputStep({
           formattedBalance={gasWarning.formattedBalance}
         />
       ) : null}
-      <FlowFooter
-        className={styles.footer}
-        primary={{ label: 'Continue', onClick: onContinue, disabled: !isValid }}
-        secondary={{ label: 'Cancel', onClick: onCancel }}
+    </div>
+  )
+}
+
+type FooterProps = Pick<
+  ShieldInputStepProps,
+  'amountStr' | 'maxInput' | 'minAmount' | 'onCancel' | 'onContinue'
+>
+
+export function ShieldInputStepFooter({
+  amountStr,
+  maxInput,
+  minAmount,
+  onCancel,
+  onContinue,
+}: FooterProps) {
+  const { value: amount, error: parseError } = parseUsdcInput(amountStr)
+  const tooMuch = amount > maxInput
+  const tooSmall = minAmount > 0n && amount > 0n && amount <= minAmount
+  const canReview = hasActiveAmount(amountStr) && !tooMuch && !tooSmall && !parseError
+
+  return (
+    <div className={depositOverlayShellStyles.buttonRow}>
+      <Button
+        variant="secondary"
+        size="lg"
+        label="Cancel"
+        showIcon={false}
+        onClick={onCancel}
+      />
+      <Button
+        variant="primary"
+        size="lg"
+        label="Review"
+        showIcon={false}
+        disabled={!canReview}
+        onClick={onContinue}
       />
     </div>
+  )
+}
+
+export function ShieldInputStep(props: ShieldInputStepProps) {
+  return (
+    <>
+      <ShieldInputStepContent {...props} />
+      <ShieldInputStepFooter {...props} />
+    </>
   )
 }

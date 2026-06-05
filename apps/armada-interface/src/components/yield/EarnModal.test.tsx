@@ -1,6 +1,6 @@
 // ABOUTME: Tests for EarnModal orchestrator — opens on both yield-deposit and yield-withdraw kinds, tab defaults from entry kind, switching tabs clears amount.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { EarnModal } from './EarnModal'
@@ -8,6 +8,28 @@ import { openModalAtom } from '@/state/ui'
 import { shieldedUsdcAtom } from '@/state/wallet'
 import { feeQuoteAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
+
+// useDisplayFees + useGasBalanceWarning hit wagmi hooks that require a WagmiProvider; these
+// tests don't mount one. Stub with neutral defaults.
+vi.mock('@/hooks/useDisplayFees', () => ({
+  useDisplayFees: () => ({
+    fees: {
+      protocolFee: 0n,
+      gasFee: 0n,
+      nativeGas: null,
+      totalFee: 0n,
+      feeInclusive: false,
+    },
+    isLoading: false,
+  }),
+}))
+vi.mock('@/hooks/useGasBalanceWarning', () => ({
+  useGasBalanceWarning: () => ({
+    show: false,
+    nativeSymbol: 'ETH',
+    formattedBalance: null,
+  }),
+}))
 
 const FAKE_QUOTE = {
   cacheId: 'test-cache',
@@ -53,22 +75,22 @@ describe('<EarnModal>', () => {
 
   it('switching tabs clears the amount field', () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much to add?'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Withdraw' }))
-    expect(screen.getByLabelText('How much to withdraw?')).toHaveValue('')
+    expect(screen.getByLabelText('Vault withdrawal amount')).toHaveValue('')
   })
 
   it('advances to review on Continue with a valid amount (add tab)', () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much to add?'), { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByText('Review deposit')).toBeInTheDocument()
   })
 
   it('Confirm submits the tx and advances to the progress step', async () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much to add?'), { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
     })

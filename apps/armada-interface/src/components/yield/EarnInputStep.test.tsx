@@ -1,9 +1,28 @@
-// ABOUTME: Tests for EarnInputStep — tab switching, amount validation against tab-specific max, APY copy in each rate state.
+// ABOUTME: Tests for EarnInputStep — tab switching, amount validation against tab-specific maxInput, APY copy in each rate state.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { EarnInputStep, type EarnTab } from './EarnInputStep'
 import type { YieldRate } from '@/hooks/useYieldRate'
+import type { DisplayFees } from '@/lib/fees/displayFees'
+
+// useGasBalanceWarning hits wagmi's useAccount/useBalance which need a WagmiProvider; these
+// tests don't mount one.
+vi.mock('@/hooks/useGasBalanceWarning', () => ({
+  useGasBalanceWarning: () => ({
+    show: false,
+    nativeSymbol: 'ETH',
+    formattedBalance: null,
+  }),
+}))
+
+const ZERO_FEES: DisplayFees = {
+  protocolFee: 0n,
+  gasFee: 0n,
+  nativeGas: null,
+  totalFee: 0n,
+  feeInclusive: false,
+}
 
 function setup(extras?: {
   tab?: EarnTab
@@ -11,16 +30,18 @@ function setup(extras?: {
   max?: bigint
   rate?: YieldRate | null
 }) {
+  const max = extras?.max ?? 5_000_000n
   const props = {
     tab: extras?.tab ?? 'add' as EarnTab,
     onTabChange: vi.fn(),
     amountStr: extras?.amountStr ?? '',
     onAmountChange: vi.fn(),
-    max: extras?.max ?? 5_000_000n,
+    max,
+    maxInput: max,
+    displayFees: ZERO_FEES,
+    feeLoading: false,
+    gasChainId: 31337,
     rate: extras?.rate ?? null as YieldRate | null,
-    fee: null as bigint | null,
-    netAmount: 0n,
-    netLabel: 'Total deducted from balance',
     onCancel: vi.fn(),
     onContinue: vi.fn(),
   }
@@ -35,14 +56,14 @@ describe('<EarnInputStep>', () => {
     expect(screen.getByRole('tab', { name: 'Withdraw' })).toBeInTheDocument()
   })
 
-  it('uses the add label when tab=add', () => {
+  it('uses the vault-deposit aria-label when tab=add', () => {
     setup({ tab: 'add' })
-    expect(screen.getByLabelText('How much to add?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Vault deposit amount')).toBeInTheDocument()
   })
 
-  it('uses the withdraw label when tab=withdraw', () => {
+  it('uses the vault-withdraw aria-label when tab=withdraw', () => {
     setup({ tab: 'withdraw' })
-    expect(screen.getByLabelText('How much to withdraw?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Vault withdrawal amount')).toBeInTheDocument()
   })
 
   it('shows the syncing APY copy when rate is null', () => {
@@ -60,9 +81,9 @@ describe('<EarnInputStep>', () => {
     expect(screen.getByText('~4.50%')).toBeInTheDocument()
   })
 
-  it('disables Continue when amount exceeds max', () => {
+  it('disables Review when amount exceeds maxInput', () => {
     setup({ max: 1_000_000n, amountStr: '5' })
-    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent(/exceeds your private balance/i)
   })
 
@@ -71,9 +92,9 @@ describe('<EarnInputStep>', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/exceeds your earning balance/i)
   })
 
-  it('enables Continue when amount is positive and within max', () => {
+  it('enables Review when amount is positive and within maxInput', () => {
     setup({ max: 5_000_000n, amountStr: '3' })
-    expect(screen.getByRole('button', { name: /Continue/ })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review/ })).not.toBeDisabled()
   })
 
   it('fires onTabChange when a tab is clicked', () => {
@@ -82,11 +103,9 @@ describe('<EarnInputStep>', () => {
     expect(props.onTabChange).toHaveBeenCalledWith('withdraw')
   })
 
-  it('disables Continue and surfaces the inline reason when continueBlockedReason is set', () => {
+  it('disables Review and surfaces the inline reason when continueBlockedReason is set', () => {
     // WHY: the withdraw broadcaster fee comes from the user's pre-existing private USDC (not
     // from the redeem proceeds), so the modal must gate submit when private USDC < fee.
-    // Without this gate the user sees a Continue → 20-30s of proof gen → opaque SDK throw —
-    // the worst possible UX for a fixable pre-condition.
     render(
       <EarnInputStep
         tab="withdraw"
@@ -94,16 +113,17 @@ describe('<EarnInputStep>', () => {
         amountStr="3"
         onAmountChange={vi.fn()}
         max={5_000_000n}
+        maxInput={5_000_000n}
+        displayFees={ZERO_FEES}
+        feeLoading={false}
+        gasChainId={31337}
         rate={null}
-        fee={500_000n}
-        netAmount={2_500_000n}
-        netLabel="You'll receive into private balance"
         continueBlockedReason="You need at least 0.50 USDC in your private balance to cover the withdrawal fee."
         onCancel={vi.fn()}
         onContinue={vi.fn()}
       />,
     )
-    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent(/0\.50 USDC in your private balance/)
+    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/0\.50 USDC in your private balance/)
   })
 })

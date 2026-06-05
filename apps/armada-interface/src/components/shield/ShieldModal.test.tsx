@@ -69,13 +69,13 @@ describe('<ShieldModal>', () => {
   it('renders the input step when open', () => {
     renderModal({ open: true, max: 10_000_000n })
     expect(screen.getByRole('dialog', { name: 'Deposit' })).toBeInTheDocument()
-    expect(screen.getByLabelText('How much USDC?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
   })
 
   it('advances to the review step after entering a valid amount', () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByText('Review your deposit')).toBeInTheDocument()
     // 5.00 appears in both the hero numeral and the FeeSummary net-amount row.
     expect(screen.getAllByText('5.00').length).toBeGreaterThanOrEqual(1)
@@ -83,10 +83,10 @@ describe('<ShieldModal>', () => {
 
   it('Back from review returns to the input step', () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Back/ }))
-    expect(screen.getByLabelText('How much USDC?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
   })
 
   it('Cancel closes the modal', () => {
@@ -97,8 +97,8 @@ describe('<ShieldModal>', () => {
 
   it('Confirm submits the tx and advances to the progress step', async () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
     })

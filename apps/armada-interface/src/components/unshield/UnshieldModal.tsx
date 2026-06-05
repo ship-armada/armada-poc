@@ -1,17 +1,18 @@
 // ABOUTME: UnshieldModal — withdraw private USDC to an EVM address. Selects unshield-local or unshield-xchain based on destination chain.
 // ABOUTME: Two useTx hooks are mounted (one per kind); submit picks the right one. Record subscription follows the kind that was submitted.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
-import { evmAddressAtom, shieldedUsdcAtom } from '@/state/wallet'
+import { evmAddressAtom, shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { getNetworkConfig } from '@/config/network'
-import { parseUsdcInput } from '@/lib/format'
+import { formatUsdcPlain, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
@@ -24,7 +25,7 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
-import { UnshieldInputStep } from './UnshieldInputStep'
+import { UnshieldInputStepContent, UnshieldInputStepFooter } from './UnshieldInputStep'
 import { UnshieldReviewStep } from './UnshieldReviewStep'
 import { UnshieldCompleteStep } from './UnshieldCompleteStep'
 
@@ -44,17 +45,16 @@ export function UnshieldModal() {
   const hubChainId = getNetworkConfig().hub.chainId
   const connectedEvm = useAtomValue(evmAddressAtom)
   const [destChainId, setDestChainId] = useState<number>(hubChainId)
-  const [recipient, setRecipient] = useState<string>('')
   const [amountStr, setAmountStr] = useState<string>('')
+  // Recipient is locked to the connected wallet — matches designer's pattern (Send/External
+  // tab covers "withdraw to a different address" so Unshield is always self-custody).
+  const recipient = connectedEvm ?? ''
 
   // Flow state.
   const [step, setStep] = useState<LocalStep>('input')
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
-  // One-shot guard so the connected-EVM prefill only runs on the modal's rising
-  // edge — otherwise clearing the recipient would immediately refill from the effect.
-  const didPrefillRef = useRef(false)
 
   // Source data.
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -84,23 +84,33 @@ export function UnshieldModal() {
   // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. The xchain branch uses
   // `secondaryFee` to model the CCTP fee being deducted from the recipient mint, separate from
   // the broadcaster fee on top.
+  // useDisplayFees provides on-chain protocol-fee read (0n for unshield kinds today, but the
+  // hook normalizes shape so the modal can pass DisplayFees through DepositAmountCard's tooltip).
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    computedKind,
+    amount,
+    destChainId,
+    quote,
+  )
   const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
     computedKind,
     amount,
     fee,
     max,
-    { secondaryFee: cctpFee },
+    { secondaryFee: cctpFee, protocolFee: displayFees.protocolFee },
   )
-
-  // Pre-fill recipient from the connected EVM wallet on the modal's rising edge only,
-  // so the user can clear the field afterwards without it getting repopulated.
-  useEffect(() => {
-    if (!isOpen) return
-    if (didPrefillRef.current) return
-    didPrefillRef.current = true
-    if (!recipient && connectedEvm) setRecipient(connectedEvm)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
+  // Initial-sync gate for the balance label/onMax — when null we don't know the real balance yet.
+  const syncState = useAtomValue(syncStateAtom)
+  const balanceSyncing = syncState.status === 'syncing'
+  const balanceLabel = balanceSyncing ? 'syncing…' : formatUsdcPlain(max)
+  // Tooltip-ready breakdown — surfaces broadcaster fee + recipient receives + total deducted
+  // inside FeeBreakdownTooltip so the input UI stays clean.
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    recipientReceives,
+    totalDeducted,
+    recipientLabel: 'Recipient receives',
+  }
 
   // Reset local state on close.
   useEffect(() => {
@@ -110,7 +120,6 @@ export function UnshieldModal() {
       setErrorAtStep(undefined)
       setAmountStr('')
       setSubmittedKind(null)
-      didPrefillRef.current = false
     }
   }, [isOpen])
 
@@ -206,22 +215,30 @@ export function UnshieldModal() {
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
-        <UnshieldInputStep
-          destChainId={destChainId}
-          onDestChainIdChange={setDestChainId}
-          recipient={recipient}
-          onRecipientChange={setRecipient}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          fee={fee}
-          cctpFee={cctpFee}
-          totalDeducted={totalDeducted}
-          isXchain={isXchain}
-          isFeeRefreshing={isStale}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <UnshieldInputStepContent
+            destChainId={destChainId}
+            onDestChainIdChange={setDestChainId}
+            walletAddress={connectedEvm ?? null}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            maxInput={inputMax}
+            balanceLabel={balanceLabel}
+            balanceSyncing={balanceSyncing}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            gasChainId={destChainId}
+          />
+          <UnshieldInputStepFooter
+            walletAddress={connectedEvm ?? null}
+            amountStr={amountStr}
+            maxInput={inputMax}
+            balanceSyncing={balanceSyncing}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <UnshieldReviewStep

@@ -26,7 +26,7 @@ import {
 } from '@/components/flow'
 import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
-import { ShieldInputStep } from './ShieldInputStep'
+import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
 
@@ -122,7 +122,12 @@ export function ShieldModal() {
   // below as `protocolFee` so recipientReceives reflects the TRUE shielded value the user gets,
   // not just `amount - broadcasterFee`. nativeGas is also surfaced for the wallet-submit fallback
   // (gasless path doesn't pay native gas — Phase 6 hides that row).
-  const { fees: displayFees } = useDisplayFees(computedKind, amount, fromChainId, quote)
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    computedKind,
+    amount,
+    fromChainId,
+    quote,
+  )
   const protocolFee = displayFees.protocolFee
   // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
   // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
@@ -130,13 +135,19 @@ export function ShieldModal() {
   // value is `amount - fee - protocolFee`. The wrapper splits on-chain: `(amount - fee)` to the
   // pool, which the pool then takes `protocolFee` from before crediting the shielded balance.
   // Direct hub shield is `no-fee` so only `protocolFee` deducts from the shielded value.
-  const { recipientReceives: netAmount, inputMax } = computeFeeBreakdown(
-    computedKind,
-    amount,
-    fee,
-    max,
-    { protocolFee },
-  )
+  const {
+    recipientReceives: netAmount,
+    totalDeducted,
+    inputMax,
+  } = computeFeeBreakdown(computedKind, amount, fee, max, { protocolFee })
+  // Tooltip-ready breakdown — surfaces broadcaster fee + "You'll deposit" + "Total deducted"
+  // bullets inside FeeBreakdownTooltip so the input UI stays clean (no inline FeeSummary rows).
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    recipientReceives: netAmount,
+    totalDeducted,
+    recipientLabel: "You'll deposit",
+  }
   // Minimum valid amount = the live fee. Below or equal to it the wrapper's `shieldAmount =
   // totalAmount - fee` would underflow / be zero. Surfaced via ShieldInputStep's `minAmount`
   // prop so the user can't type a value that would inevitably revert. Zero for no-fee paths.
@@ -290,20 +301,28 @@ export function ShieldModal() {
       status={indicatorStatus}
     >
       {step === 'input' && (
-        <ShieldInputStep
-          fromChainId={fromChainId}
-          onFromChainIdChange={setFromChainId}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          minAmount={minAmount}
-          fee={fee}
-          netAmount={netAmount}
-          isFeeRefreshing={isStale}
-          gaslessMode={useGasless}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <ShieldInputStepContent
+            fromChainId={fromChainId}
+            onFromChainIdChange={setFromChainId}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            max={max}
+            maxInput={inputMax}
+            minAmount={minAmount}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            gaslessMode={useGasless}
+          />
+          <ShieldInputStepFooter
+            amountStr={amountStr}
+            maxInput={inputMax}
+            minAmount={minAmount}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <ShieldReviewStep

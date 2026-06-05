@@ -7,6 +7,16 @@
   gap: var(--primitives-spacing-5);
 }
 
+.blockedReason {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-warning);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+}
+
 .apyBlock {
   display: flex;
   flex-direction: column;
@@ -26,7 +36,7 @@
 
 .apyValue {
   color: var(--semantic-color-text-primary);
-  font-family: "Charis SIL", serif;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-2xl) * 1px);
   line-height: var(--primitives-lineHeight-tight);
   font-variant-numeric: tabular-nums;
@@ -35,14 +45,6 @@
 .apyCaveat {
   color: var(--semantic-color-text-muted);
   margin-top: var(--primitives-spacing-1);
-}
-
-.feeBlockedNotice {
-  background: rgba(196, 145, 229, 0.08);
-  border: 1px solid var(--semantic-color-border-lavender);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  color: var(--semantic-color-text-secondary);
 }
 
 .footer {

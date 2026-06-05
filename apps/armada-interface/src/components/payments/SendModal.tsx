@@ -29,7 +29,8 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
-import { SendInputStep, type SendTab } from './SendInputStep'
+import { SendInputStepContent, SendInputStepFooter, type SendTab } from './SendInputStep'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { SendReviewStep } from './SendReviewStep'
 import { SendCompleteStep } from './SendCompleteStep'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
@@ -113,7 +114,6 @@ export function SendModal() {
 
   const computedKind: SubmittedKind = computeKind(tab, destChainId, hubChainId)
   const isXchain = computedKind === 'unshield-xchain'
-  const isLocalUnshield = computedKind === 'unshield-local'
   // Display fee per (kind, amount, quote):
   //   transfer-shielded → relayer's `transfer` tier from the quote (A4); 0n pre-quote-load
   //   unshield-local    → relayer's `unshield` tier from the quote (A3+); 0n pre-quote-load
@@ -128,13 +128,27 @@ export function SendModal() {
   // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. The xchain branch uses
   // `secondaryFee` to model the CCTP fee being deducted from the recipient mint, separate from
   // the broadcaster fee on top.
+  // useDisplayFees normalizes shape (protocolFee + nativeGas) — 0n for these kinds today, but
+  // routes through DepositAmountCard's tooltip via flowBreakdown below.
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    computedKind,
+    amount,
+    tab === 'external' && isXchain ? destChainId : hubChainId,
+    quote,
+  )
   const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
     computedKind,
     amount,
     fee,
     max,
-    { secondaryFee: cctpFee },
+    { secondaryFee: cctpFee, protocolFee: displayFees.protocolFee },
   )
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    recipientReceives,
+    totalDeducted,
+    recipientLabel: 'Recipient receives',
+  }
 
   // Reset local state on close.
   useEffect(() => {
@@ -256,29 +270,37 @@ export function SendModal() {
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
-        <SendInputStep
-          tab={tab}
-          onTabChange={t => {
-            setTab(t)
-            setRecipient('') // recipient format differs between tabs; clear on switch
-          }}
-          destChainId={destChainId}
-          onDestChainIdChange={setDestChainId}
-          recipient={recipient}
-          onRecipientChange={setRecipient}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          fee={fee}
-          cctpFee={cctpFee}
-          totalDeducted={totalDeducted}
-          isXchain={isXchain}
-          isLocalUnshield={isLocalUnshield}
-          isFeeRefreshing={isStale}
-          destDeploymentError={destDeploymentError}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <SendInputStepContent
+            tab={tab}
+            onTabChange={t => {
+              setTab(t)
+              setRecipient('') // recipient format differs between tabs; clear on switch
+            }}
+            destChainId={destChainId}
+            onDestChainIdChange={setDestChainId}
+            recipient={recipient}
+            onRecipientChange={setRecipient}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            max={max}
+            maxInput={inputMax}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            gasChainId={tab === 'external' && isXchain ? destChainId : hubChainId}
+            destDeploymentError={destDeploymentError}
+          />
+          <SendInputStepFooter
+            tab={tab}
+            recipient={recipient}
+            amountStr={amountStr}
+            maxInput={inputMax}
+            destDeploymentError={destDeploymentError}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <SendReviewStep

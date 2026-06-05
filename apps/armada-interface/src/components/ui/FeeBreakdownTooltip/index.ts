@@ -1,2 +1,2 @@
 export { FeeBreakdownTooltip } from './FeeBreakdownTooltip'
-export type { FeeBreakdownTooltipProps } from './FeeBreakdownTooltip'
+export type { FeeBreakdownTooltipProps, FlowFeeBreakdown } from './FeeBreakdownTooltip'

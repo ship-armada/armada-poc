@@ -98,6 +98,12 @@ export function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
+/** Truncate to first/last six characters, e.g. "0x6C62...F87B9". */
+export function truncateAddressEnds(address: string, head = 6, tail = 6): string {
+  if (address.length <= head + tail + 3) return address
+  return `${address.slice(0, head)}...${address.slice(-tail)}`
+}
+
 /**
  * Compact relative-time formatter — "just now" / "12s ago" / "5m ago" / "3h ago" / "Yesterday" / "Mar 14".
  *

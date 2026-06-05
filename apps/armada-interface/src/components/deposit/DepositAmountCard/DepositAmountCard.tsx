@@ -6,7 +6,7 @@ import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
 import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
 import { chainIconForChainId } from '@/components/deposit/depositChainIcons'
-import { FeeBreakdownTooltip } from '@/components/ui/FeeBreakdownTooltip'
+import { FeeBreakdownTooltip, type FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { formatUsdcPlain } from '@/lib/format'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import styles from './DepositAmountCard.module.css'
@@ -29,6 +29,12 @@ export interface DepositAmountCardProps {
   /** When set, fee row shows total + breakdown tooltip. */
   displayFees?: DisplayFees
   feeLoading?: boolean
+  /**
+   * Optional flow-level breakdown (broadcaster fee, recipient-receives, total-deducted) layered
+   * onto the tooltip and into the FEE label total. Used by relayer-mediated / gasless flows
+   * where the displayed total USDC fee is `protocolFee + broadcasterFee`.
+   */
+  flowBreakdown?: FlowFeeBreakdown
   onMax?: () => void
   error?: string
   /** Accessible name for the amount field (e.g. "Deposit amount", "Withdrawal amount"). */
@@ -61,6 +67,7 @@ export function DepositAmountCard({
   balance = '0.00',
   displayFees,
   feeLoading = false,
+  flowBreakdown,
   onMax,
   error,
   amountAriaLabel = 'Amount',
@@ -195,9 +202,14 @@ export function DepositAmountCard({
         {displayFees ? (
           <span className={styles.feeGroup}>
             <span className={styles.feeText}>
-              FEE {formatUsdcPlain(displayFees.totalFee)} {token}
+              FEE {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n))}{' '}
+              {token}
             </span>
-            <FeeBreakdownTooltip fees={displayFees} isLoading={feeLoading} />
+            <FeeBreakdownTooltip
+              fees={displayFees}
+              isLoading={feeLoading}
+              flowBreakdown={flowBreakdown}
+            />
           </span>
         ) : (
           <span className={styles.feeText}>FEE — {token}</span>

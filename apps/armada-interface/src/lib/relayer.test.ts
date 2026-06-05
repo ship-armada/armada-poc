@@ -400,6 +400,26 @@ describe('computeFeeBreakdown', () => {
     expect(r.recipientReceives).toBe(0n)
   })
 
+  it('gasless shield: opts.gasless routes through fee-from-recipient so recipientReceives subtracts BOTH broadcaster + protocol fees', () => {
+    // WHY: regression test for the deposit fee tooltip bug. feeModelForKind('shield') returns
+    // 'no-fee' by default (direct hub shield), which only subtracts protocolFee and ignores
+    // the broadcaster fee. With the gasless permit path, the wrapper deducts both, so the
+    // helper must route through 'fee-from-recipient' to keep recipientReceives honest.
+    const protocolFee = 500_000n
+    const direct = computeFeeBreakdown('shield', AMOUNT, FEE, MAX, { protocolFee })
+    // Direct (no opt) still uses no-fee: ignores broadcaster fee.
+    expect(direct.recipientReceives).toBe(AMOUNT - protocolFee)
+
+    const gasless = computeFeeBreakdown('shield', AMOUNT, FEE, MAX, {
+      protocolFee,
+      gasless: true,
+    })
+    // Gasless routes through fee-from-recipient: deducts both.
+    expect(gasless.recipientReceives).toBe(AMOUNT - FEE - protocolFee)
+    expect(gasless.totalDeducted).toBe(AMOUNT)
+    expect(gasless.inputMax).toBe(MAX)
+  })
+
   it('protocolFee combines with secondaryFee on unshield-xchain (CCTP fast-fee + protocol take)', () => {
     // WHY: covers the cross-chain shape — both `secondaryFee` (CCTP) and `protocolFee` deduct
     // from the recipient side. Future-proofing for unshield-xchain if it ever surfaces a

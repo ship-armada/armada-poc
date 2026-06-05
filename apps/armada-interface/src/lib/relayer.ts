@@ -201,15 +201,21 @@ export function computeFeeBreakdown(
   amount: bigint,
   fee: bigint,
   max: bigint,
-  opts?: { secondaryFee?: bigint; protocolFee?: bigint },
+  opts?: { secondaryFee?: bigint; protocolFee?: bigint; gasless?: boolean },
 ): FeeBreakdown {
   // `protocolFee` is an additional USDC deduction from the recipient side, layered on top of
   // the model's existing fee plumbing. For `shield` this is the on-chain shield fee module's
   // calculated take (PrivacyPool deducts it before crediting the shielded balance — invisible
   // to the FeeBreakdown contract today but soon surfaced via useDisplayFees). For other kinds
   // it stays 0n by default, preserving existing semantics.
+  //
+  // `gasless` flows through to feeModelForKind because the `shield` kind has a model that
+  // depends on submission mode: direct-submit hub shield is 'no-fee' (user pays ETH gas, no
+  // broadcaster fee), but the gasless permit path is 'fee-from-recipient' (the wrapper takes
+  // `fee` from the user's USDC and shields the remainder). Without this flag the gasless path
+  // would land in 'no-fee' and recipientReceives would skip the broadcaster fee.
   const protocolFee = opts?.protocolFee ?? 0n
-  switch (feeModelForKind(kind)) {
+  switch (feeModelForKind(kind, { gasless: opts?.gasless })) {
     case 'no-fee':
       return {
         recipientReceives: amount > protocolFee ? amount - protocolFee : 0n,

@@ -139,7 +139,13 @@ export function ShieldModal() {
     recipientReceives: netAmount,
     totalDeducted,
     inputMax,
-  } = computeFeeBreakdown(computedKind, amount, fee, max, { protocolFee })
+  } = computeFeeBreakdown(computedKind, amount, fee, max, {
+    protocolFee,
+    // Routes the `shield` kind through the gasless `fee-from-recipient` model when the wrapper
+    // path is active — without this the helper falls back to `no-fee` and the tooltip's
+    // "You'll deposit" line skips the broadcaster fee (recipientReceives misses one deduction).
+    gasless: useGasless,
+  })
   // Tooltip-ready breakdown — surfaces broadcaster fee + "You'll deposit" + "Total deducted"
   // bullets inside FeeBreakdownTooltip so the input UI stays clean (no inline FeeSummary rows).
   const flowBreakdown = {

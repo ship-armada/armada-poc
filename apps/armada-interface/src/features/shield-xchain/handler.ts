@@ -6,7 +6,6 @@ import {
   getPublicClient,
   readContract,
   sendTransaction,
-  signMessage,
   writeContract,
 } from 'wagmi/actions'
 import { erc20Abi, maxUint256 } from 'viem'
@@ -23,8 +22,7 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   createShieldRequest,
-  deriveShieldPrivateKey,
-  SHIELD_SIGNATURE_MESSAGE,
+  generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
 import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
@@ -167,10 +165,10 @@ async function runBuildProof(
   await ensureChain(record.meta.fromChainId)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Same flow as same-chain shield: prompt RAILGUN_SHIELD, derive the per-session key, ask the
-  // engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK construction —
-  // only what we do with the result on-chain.
-  const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
+  // Same flow as same-chain shield: generate an ephemeral per-deposit shieldPrivateKey and ask
+  // the engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK
+  // construction — only what we do with the result on-chain. See lib/railgun/shield.ts for why
+  // randomness is correct (the Railgun-convention wallet prompt is unnecessary in our model).
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Determine the value that lands in the shielded commitment. Gasless path: the wrapper takes
@@ -187,7 +185,7 @@ async function runBuildProof(
       'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
     )
   }
-  const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
+  const shieldPrivateKey = generateRandomShieldPrivateKey()
   const request = await createShieldRequest(
     railgunAddress,
     shieldValue,

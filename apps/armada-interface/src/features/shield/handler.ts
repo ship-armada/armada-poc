@@ -1,9 +1,8 @@
 // ABOUTME: Shield stage handler — dual-mode (direct user-wallet submit OR Phase B3 permit-based gasless via wrapper).
-// ABOUTME: build-proof signs RAILGUN_SHIELD (+ permit when gasless); submit-relayer either writeContract or POST /relay.
+// ABOUTME: build-proof generates an ephemeral shieldPrivateKey (+ EIP-2612 permit when gasless); submit-relayer either writeContract or POST /relay.
 
 import {
   readContract,
-  signMessage,
   writeContract,
 } from 'wagmi/actions'
 import { waitForReceiptOrFail } from '@/lib/tx/receipt'
@@ -20,8 +19,7 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   createShieldRequest,
-  deriveShieldPrivateKey,
-  SHIELD_SIGNATURE_MESSAGE,
+  generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
@@ -150,10 +148,11 @@ async function runBuildProof(
   await ensureChain(record.meta.fromChainId)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Sign 'RAILGUN_SHIELD' through wagmi. The active wallet client = the user's MetaMask.
-  // signMessage prompts the user; rejection bubbles up as a Viem error.
-  const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  // shieldPrivateKey is an ephemeral per-deposit ECIES sender secret — used once at note
+  // construction, never re-needed (the recipient's chain scan uses the on-chain `shieldKey` +
+  // their viewing key to decrypt). Random generation eliminates the Railgun-convention
+  // `personal_sign('RAILGUN_SHIELD')` wallet prompt; see lib/railgun/shield.ts for the full
+  // rationale.
 
   // Determine the value that lands in the shielded commitment. For the gasless path the wrapper
   // takes `amount` from the user via permit, sends `fee` to the relayer, and shields the
@@ -170,7 +169,7 @@ async function runBuildProof(
       'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
     )
   }
-  const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
+  const shieldPrivateKey = generateRandomShieldPrivateKey()
   const request = await createShieldRequest(
     railgunAddress,
     shieldValue,

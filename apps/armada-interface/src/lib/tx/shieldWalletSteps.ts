@@ -31,45 +31,38 @@ function shieldArtifacts(record: ShieldRecord) {
 
 /**
  * Wallet prompts for deposit (shield) flows:
- * 1. Authorize — RAILGUN_SHIELD signature during build-proof
- * 2. Approve USDC — optional when allowance is low
- * 3. Submit deposit — on-chain shield / crossChainShield
+ * 1. Approve USDC — optional when allowance is low
+ * 2. Submit deposit — on-chain shield / crossChainShield (direct) or relay submit (gasless)
+ *
+ * The build-proof stage runs silently (ephemeral shieldPrivateKey is generated locally; no
+ * wallet prompt) and isn't surfaced as a row. shieldWalletInteractionsComplete() still gates
+ * on `stagesCompleted.includes('build-proof')` so downstream consumers know proof inputs are
+ * ready.
  */
 export function shieldWalletSteps(
   record: ShieldRecord | null,
   amount: bigint,
 ): WalletStep[] {
   const amountLabel = formatUsdcAmount(amount)
-  const authorizeDone = record?.stagesCompleted.includes('build-proof') ?? false
   const artifacts = record ? shieldArtifacts(record) : {}
   const approveSkipped = artifacts.approveSkipped === true
   const approveDone = approveSkipped || Boolean(artifacts.approveTxHash)
   const depositBroadcast = Boolean(artifacts.sourceTxHash)
   const terminalSuccess = record?.executionState === 'completed'
 
-  const onBuildProof =
-    record?.stage === 'build-proof'
-    && !authorizeDone
-    && (record.executionState === 'active' || record.executionState === 'waiting')
-
   const onSubmitWallet =
     record?.stage === 'submit-relayer'
     && !terminalSuccess
     && (record.executionState === 'active' || record.executionState === 'waiting')
 
-  const steps: WalletStep[] = [
-    {
-      label: 'Authorize deposit',
-      status: stepStatus(authorizeDone, !record || onBuildProof),
-    },
-  ]
+  const steps: WalletStep[] = []
 
   if (!approveSkipped) {
     steps.push({
       label: `Approve ${amountLabel} USDC`,
       status: stepStatus(
         approveDone,
-        authorizeDone && onSubmitWallet && !approveDone,
+        onSubmitWallet && !approveDone,
       ),
     })
   }

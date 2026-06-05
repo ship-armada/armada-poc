@@ -21,10 +21,14 @@ const base: TxRecord<'shield'> = {
 }
 
 describe('shieldWalletSteps', () => {
-  it('shows authorize loading before a record exists', () => {
+  it('renders Approve + Submit rows before a record exists', () => {
+    // WHY: build-proof now runs silently (ephemeral shieldPrivateKey, no wallet prompt) — the
+    // pre-record snapshot starts with Approve pending, not an "Authorize" placeholder.
     const steps = shieldWalletSteps(null, 5_000_000n)
-    expect(steps[0]).toMatchObject({ label: 'Authorize deposit', status: 'loading' })
-    expect(steps.some(s => s.label.includes('Approve'))).toBe(true)
+    expect(steps.map(s => s.label)).toEqual([
+      'Approve 5.00 USDC',
+      'Submit 5.00 USDC deposit',
+    ])
   })
 
   it('omits approve row when allowance was sufficient', () => {
@@ -35,12 +39,8 @@ describe('shieldWalletSteps', () => {
       artifacts: { approveSkipped: true },
     }
     const steps = shieldWalletSteps(record, 5_000_000n)
-    expect(steps.map(s => s.label)).toEqual([
-      'Authorize deposit',
-      'Submit 5.00 USDC deposit',
-    ])
-    expect(steps[0].status).toBe('done')
-    expect(steps[1].status).toBe('loading')
+    expect(steps.map(s => s.label)).toEqual(['Submit 5.00 USDC deposit'])
+    expect(steps[0].status).toBe('loading')
   })
 
   it('wallet interactions incomplete until authorize, approve, and deposit submit', () => {

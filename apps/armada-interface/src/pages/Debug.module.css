@@ -18,7 +18,7 @@
 }
 
 .sectionTitle {
-  font-family: "Charis SIL", serif;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-xl) * 1px);
   font-weight: var(--primitives-fontWeight-regular);
   color: var(--semantic-color-text-primary);
@@ -57,8 +57,39 @@
 
 .kv code,
 .table code {
-  font-family: "Geist Mono", monospace;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: 0.92em;
+}
+
+/* Relayer-health pill — small dot + label rendered inline next to the Relayer URL. */
+.healthPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  margin-left: var(--primitives-spacing-2);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: 0.92em;
+  color: var(--semantic-color-text-secondary);
+}
+
+.healthDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+}
+
+.healthDotHealthy {
+  background: var(--semantic-color-status-success);
+}
+
+.healthDotDegraded {
+  background: var(--semantic-color-status-warning);
+}
+
+.healthDotUnreachable {
+  background: var(--semantic-color-status-error);
 }
 
 .table {

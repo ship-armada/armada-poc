@@ -49,6 +49,19 @@ export function isLocalMode(): boolean {
 }
 
 /**
+ * Whether the UI should call the relayer HTTP API (`/fees`, `/relay`, `/health`, …). True when
+ * the resolved `relayerUrl` is non-empty. Today the local-mode default is `localhost:3001` even
+ * when no relayer is running — the call simply fails and downstream code surfaces that.
+ *
+ * TODO (Packet F follow-up): tighten `relayerUrl` resolution so sepolia + unset env yields an
+ * empty string (per LOCAL_VS_DEPLOY.md), making this gate a clean boolean rather than relying
+ * on the fetch failure to communicate "no relayer".
+ */
+export function isRelayerConfigured(): boolean {
+  return getNetworkConfig().relayerUrl.length > 0
+}
+
+/**
  * Optional integrator address passed to `PrivacyPool.shield()` to route shield fees to a third
  * party. Defaults to ZeroAddress when unset or malformed (no fee-routing relationship).
  * Partners configure via `VITE_INTEGRATOR_ADDRESS` without touching code.

@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
+import { ShieldedAddressPill } from './ShieldedAddressPill'
 import { SyncBanner } from './sync'
 
 const NAV: ReadonlyArray<{ label: string; path: string }> = [
@@ -39,6 +40,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
+          <ShieldedAddressPill />
           <WalletConnector />
         </div>
       </header>

@@ -28,12 +28,21 @@ export function ActionGrid() {
   // matching BalanceHero's definition. Stays at 0% until both numbers have resolved; if total is
   // zero we report 0 to avoid divide-by-zero (NaN would render the bar full). While the Railgun
   // engine is still syncing, force 0 so the bar reads as "no data yet" instead of a stale figure.
+  //
+  // Dust handling: anything below the Earn footer's 4-decimal display threshold (50 raw units =
+  // 0.00005 USDC) rounds to "0.0000" in the UI. Without rounding to that floor here, a few raw
+  // share units in the vault paired with 0n shielded would compute as 100% and fill the bar even
+  // though the user reads both balances as zero. Treat sub-threshold amounts as 0 on each side
+  // before computing the ratio so the bar matches the displayed numbers.
   const earnProgress = (() => {
     if (syncing) return 0
     if (earningUsdc === null || shielded === null) return 0
-    const total = shielded + earningUsdc
+    const DUST = 50n
+    const vault = earningUsdc < DUST ? 0n : earningUsdc
+    const avail = shielded < DUST ? 0n : shielded
+    const total = avail + vault
     if (total === 0n) return 0
-    return Number((earningUsdc * 10_000n) / total) / 100
+    return Number((vault * 10_000n) / total) / 100
   })()
 
   return (

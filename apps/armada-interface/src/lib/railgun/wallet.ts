@@ -1,5 +1,5 @@
-// ABOUTME: Signature-derived Railgun wallet lifecycle per specs/TX_SIGNING.md (Phase 1).
-// ABOUTME: enrollFromSignature / unlockFromRootSecret / unlockFromBackup / lockWallet / resetWallet. Internal mnemonic shim hidden inside this module.
+// ABOUTME: Signature-derived Railgun wallet lifecycle per specs/TX_SIGNING.md + TX_SIGNING_V2_AMENDMENT.md.
+// ABOUTME: enrollFromSignature / unlockFromRootSecret / unlockFromBackup / lockWallet / resetWallet route through a shared applyRootSecret helper. Internal mnemonic shim hidden inside this module.
 
 // The Railgun SDK pulls a chunky transitive dep graph (circomlibjs, etc.) that has trouble
 // loading in jsdom. We `import()` the SDK at call time so vitest can load this module without
@@ -125,26 +125,136 @@ function storeChecksum(checksum: string): void {
 }
 
 /**
- * Enrollment from a normalized EIP-712 signature. Derives root_secret, runs IC-2 canary on
- * root + subkey bytes, and unlocks the SDK wallet.
+ * Shared post-derivation pipeline used by the three rootSecret-bearing entry points
+ * (enrollFromSignature / unlockFromRootSecret / unlockFromBackup). Runs IC-2 canaries,
+ * fast-paths `loadWalletByID` if a cached id matches, else (re)creates the SDK wallet, persists
+ * walletId + checksum to localStorage, and hands the live key material to the keyManager.
  *
- * Try-load-first semantics: if a walletId is already persisted in localStorage (returning user
- * who re-signed via the UnlockFlow "Sign again" tab, or onboarding that succeeded but the user
- * reloaded mid-ceremony), we load the existing SDK wallet from IDB to preserve its merkle scan
- * cursor + UTXO set. Falling back to `createRailgunWallet` would re-run the wallet's scanner
- * from scratch and (in some SDK code paths) skip already-known commitments — the symptom is
- * "shielded balance shows 0 after reload+sign-again".
+ * Telemetry is the caller's responsibility — `applyRootSecret` reports back via `newlyCreated`
+ * so each caller can emit the right `shielded.created` vs `shielded.unlock` semantics. (Why not
+ * emit here? Because "newly created" is necessary but not sufficient for "first-time
+ * enrollment": a re-sign whose cached load fails will *recreate* the SDK wallet, but for the
+ * user it's still an unlock, not a new identity.)
  *
- * First-time enrollment (no cached walletId) emits `shielded.created`; returning paths emit
- * `shielded.unlock`.
+ * Caller-supplied `creationBlock` semantics:
+ *  - First-time enrollment passes the current hub block (the true wallet birthdate)
+ *  - Backup-file unlock passes the value embedded in the v2 blob
+ *  - Paste-secret unlock and post-load-failure recovery pass `undefined` (forces a full rescan)
  *
- * Returns `rootSecret` to the caller because the onboarding flow needs it to drive the backup
- * ceremony. After the user finishes the ceremony the caller is expected to drop its reference;
- * the keyManager retains the authoritative copy until lock or reset.
+ * Spec compliance: IC-2 entropy-floor canaries on root + both subkey buffers (Phase 1 belt-
+ * and-suspenders; the spec mandates the canary on the raw HKDF output of each, pre-reduction).
+ */
+interface ApplyRootSecretOptions {
+  /**
+   * Hub block where this wallet was first enrolled. When known (first sign-in or restored from
+   * a v2 backup) it's threaded to the SDK's commitment-scan start position. When omitted, the
+   * SDK runs a full-genesis scan — correct, just slow.
+   */
+  readonly creationBlock?: number
+}
+
+interface ApplyRootSecretResult {
+  readonly state: ShieldedWalletState
+  /**
+   * True when the SDK wallet was newly created in this call (the cached walletId either didn't
+   * exist or failed to load). Callers interpret this against their own "first-time?" context to
+   * decide between `shielded.created` and `shielded.unlock` telemetry.
+   */
+  readonly newlyCreated: boolean
+}
+
+async function applyRootSecret(
+  rootSecret: Uint8Array,
+  opts: ApplyRootSecretOptions = {},
+): Promise<ApplyRootSecretResult> {
+  // IC-2 canaries on root + subkey bytes — catches the bytesToNumber truncation bug class that
+  // Privacy Pools shipped. The subkey checks are belt-and-suspenders since these scalars aren't
+  // yet handed to the SDK directly (Phase 2 will use them after field reduction).
+  assertEntropyFloor('root_secret', rootSecret)
+  assertEntropyFloor('spending_key', deriveSpendingKeyBytes(rootSecret))
+  assertEntropyFloor('viewing_key', deriveViewingKeyBytes(rootSecret))
+
+  const sdkEncryptionKey = deriveSdkEncryptionKeyHex(rootSecret)
+  const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
+  const cachedWalletId = storedWalletId()
+
+  let walletId: string
+  let railgunAddress: string
+  let newlyCreated: boolean
+  // `effectiveCreationBlock` mirrors what we stash into keyManager.creationBlock so a later
+  // `exportBackup` can write a meaningful value. null = "not known in this session": the load-
+  // fast-path doesn't tell us, since the SDK already has the canonical value in walletDetails.
+  let effectiveCreationBlock: number | null = opts.creationBlock ?? null
+
+  if (cachedWalletId) {
+    try {
+      const { loadWalletByID } = await railgunSdk()
+      const info = await loadWalletByID(sdkEncryptionKey, cachedWalletId, false /* isViewOnlyWallet */)
+      walletId = cachedWalletId
+      railgunAddress = info.railgunAddress
+      newlyCreated = false
+    } catch (err) {
+      // Cached id but no entry in this device's IDB (cleared / new device / corrupted state, or
+      // the cached id belonged to a different identity and this rootSecret's sdkEncryptionKey
+      // can't decrypt it). Recreate the wallet — same rootSecret deterministically yields the
+      // same walletId per the BIP-39 mnemonic shim, so this is idempotent.
+      trackError('railgun.wallet.loadByID', err, {
+        scope: 'shielded.unlock',
+        message: 'load failed, recreating',
+      })
+      const recreated = await createSdkWalletFromRoot(rootSecret, opts.creationBlock)
+      walletId = recreated.walletId
+      railgunAddress = recreated.railgunAddress
+      newlyCreated = true
+    }
+  } else {
+    const recreated = await createSdkWalletFromRoot(rootSecret, opts.creationBlock)
+    walletId = recreated.walletId
+    railgunAddress = recreated.railgunAddress
+    newlyCreated = true
+  }
+
+  storeWalletId(walletId)
+  storeChecksum(checksum)
+  setUnlocked({
+    rootSecret,
+    walletId,
+    sdkEncryptionKey,
+    railgunAddress,
+    checksum,
+    creationBlock: effectiveCreationBlock,
+  })
+
+  return {
+    state: {
+      id: walletId,
+      status: 'unlocked',
+      railgunAddress,
+      checksum,
+      unlockedAt: Date.now(),
+    },
+    newlyCreated,
+  }
+}
+
+/**
+ * Enrollment / re-sign-in from a normalized EIP-712 signature. Derives root_secret, runs the
+ * shared apply pipeline, and emits create-vs-unlock telemetry.
  *
- * Phase 1 compromise: `deriveInternalMnemonic` produces a deterministic 24-word BIP-39 from
- * root_secret; we hand it to `createRailgunWallet` (or `loadWalletByID`) and never expose it.
- * Phase 2 drops the shim by going through the lower-level engine package.
+ * Spec V2 amendment: deterministic re-sign is the primary recovery path for compatible EOA
+ * wallets. The cached-checksum-mismatch check below catches the case where a wallet *isn't*
+ * deterministic (different signature each time → different root_secret → different identity):
+ * we refuse to clobber the prior identity and direct the user to paste-secret / backup-file
+ * unlock. Phase 2a will replace the inline error message with a typed `NonDeterministicSignerError`
+ * the UI can render as a dedicated screen.
+ *
+ * Returns `rootSecret` to the caller because the onboarding flow needs it for the (now-optional)
+ * backup-export ceremony. The keyManager retains the authoritative copy until lock or reset; the
+ * caller must NOT mutate or `fill(0)` the returned buffer.
+ *
+ * Phase 1 compromise: `deriveInternalMnemonic` (called inside `applyRootSecret`'s recreate path)
+ * produces a deterministic 24-word BIP-39 from root_secret; we hand it to `createRailgunWallet`
+ * and never expose it. Phase 2 drops the shim by going through the lower-level engine package.
  */
 export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
   rootSecret: Uint8Array
@@ -152,102 +262,43 @@ export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
 }> {
   await ensureRailgunReady()
   const rootSecret = deriveRootSecret(signatureBytes)
-  // IC-2 canaries on root + subkey bytes — catches the bytesToNumber truncation bug class
-  // that Privacy Pools shipped. The subkey checks are belt-and-suspenders since these scalars
-  // aren't yet handed to the SDK directly (Phase 2 will).
-  assertEntropyFloor('root_secret', rootSecret)
-  assertEntropyFloor('spending_key', deriveSpendingKeyBytes(rootSecret))
-  assertEntropyFloor('viewing_key', deriveViewingKeyBytes(rootSecret))
 
-  const sdkEncryptionKey = deriveSdkEncryptionKeyHex(rootSecret)
-  const cachedWalletId = storedWalletId()
+  // Determinism-mismatch guard: if the cached checksum exists and differs from what THIS
+  // signature derives, the user's wallet is non-deterministic and re-signing isn't a valid
+  // recovery path for them. Hard-fail with a directional message (Phase 2a upgrades this to
+  // a typed error so the UI can render the wallet compatibility list + paste/backup fallback
+  // CTAs in their own screen).
   const cachedChecksum = storedChecksum()
   const derivedChecksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
-
-  // Spec §"Recovery & re-signing": if a wallet is already enrolled and the user re-signs with
-  // a non-deterministic wallet, the new signature derives a DIFFERENT root_secret → different
-  // identity. We detect that here via the persisted checksum and refuse to clobber the session.
-  // Users with deterministic-signing wallets (e.g. Ledger / RFC 6979 conformant) get the
-  // happy-path load below; everyone else sees a clear error directing them to paste-secret.
   if (cachedChecksum && derivedChecksum !== cachedChecksum) {
     throw new Error(
       `This signature produces a different identity (${derivedChecksum}) than your stored wallet (${cachedChecksum}). ` +
-        'Most wallets produce a different signature every time — re-signing is not a reliable recovery path. ' +
-        'Use Paste secret or Backup file instead.',
+        'This wallet appears to produce a different signature every time — sign-in recovery requires a deterministic wallet. ' +
+        'Use Paste recovery secret or Restore from backup file instead.',
     )
   }
 
-  let walletId: string
-  let railgunAddress: string
-  let isFirstTime: boolean
-  // Track the creation block we hand to the SDK so we can stash it in the session for
-  // exportBackup. null = "not known in this session" — load-from-LevelDB fast-path doesn't need
-  // it (the SDK has it in walletDetails); restore-after-cache-loss can't know it.
-  let creationBlock: number | null = null
+  // First-time enrollment (no cached walletId) sets `creationBlock` to the current hub head so
+  // a future exportBackup can write a useful value into the v2 blob. Returning paths leave it
+  // unset and accept the slow-rescan fallback if the SDK load fails.
+  const wasFirstTimeEnrollment = storedWalletId() == null
+  const creationBlock = wasFirstTimeEnrollment ? (await getCurrentHubBlock()) ?? undefined : undefined
 
-  if (cachedWalletId) {
-    // Returning path — try to load the existing SDK wallet first. Preserves scan state + UTXOs.
-    try {
-      const { loadWalletByID } = await railgunSdk()
-      const info = await loadWalletByID(sdkEncryptionKey, cachedWalletId, false /* isViewOnlyWallet */)
-      walletId = cachedWalletId
-      railgunAddress = info.railgunAddress
-      isFirstTime = false
-    } catch (err) {
-      // Cached id but no entry in this device's IDB (cleared / new device / corrupted state).
-      // Recreate deterministically from root_secret. Pass `undefined` for creationBlock — the
-      // re-sign path has no way to know the true wallet creation block; using currentHead
-      // would silently truncate the SDK's commitment scan to the recent past (the bug v2
-      // backups exist to avoid). Slow full rescan is the correct fallback.
-      trackError('railgun.wallet.loadByID', err, { scope: 'shielded.enroll', message: 'load failed, recreating' })
-      const recreated = await createSdkWalletFromRoot(rootSecret, undefined)
-      walletId = recreated.walletId
-      railgunAddress = recreated.railgunAddress
-      isFirstTime = false // we had a cache; treat as returning even if load failed
-    }
+  const { state, newlyCreated } = await applyRootSecret(rootSecret, { creationBlock })
+
+  if (wasFirstTimeEnrollment && newlyCreated) {
+    track('shielded.created', { walletId: state.id })
   } else {
-    // True first-time enrollment — currentBlock IS the wallet's creation block. Capture and
-    // persist into the session so exportBackup can write it into the v2 blob.
-    const currentBlock = await getCurrentHubBlock()
-    creationBlock = currentBlock ?? null
-    const fresh = await createSdkWalletFromRoot(rootSecret, currentBlock ?? undefined)
-    walletId = fresh.walletId
-    railgunAddress = fresh.railgunAddress
-    isFirstTime = true
+    track('shielded.unlock', { walletId: state.id })
   }
 
-  storeWalletId(walletId)
-  storeChecksum(derivedChecksum)
-  setUnlocked({
-    rootSecret,
-    walletId,
-    sdkEncryptionKey,
-    railgunAddress,
-    checksum: derivedChecksum,
-    creationBlock,
-  })
-  if (isFirstTime) {
-    track('shielded.created', { walletId })
-  } else {
-    track('shielded.unlock', { walletId })
-  }
-
-  return {
-    rootSecret,
-    state: {
-      id: walletId,
-      status: 'unlocked',
-      railgunAddress,
-      checksum: derivedChecksum,
-      unlockedAt: Date.now(),
-    },
-  }
+  return { rootSecret, state }
 }
 
 /**
  * Returning-user unlock from a 32-byte root_secret (typically pasted from clipboard / QR or
- * decrypted from an encrypted backup). Same derivation flow as enrollment; loads the SDK
- * wallet from cached walletId when possible, falls back to recreating it (idempotent).
+ * decrypted from an encrypted backup). Delegates to `applyRootSecret` for the shared pipeline;
+ * always emits `shielded.unlock` (paste / backup is by definition not a fresh identity).
  *
  * `creationBlock` is the hub block at which the wallet was originally enrolled. When supplied
  * (i.e. came out of a decrypted v2 backup), it's threaded to the SDK so the merkletree scan
@@ -262,58 +313,9 @@ export async function unlockFromRootSecret(
     throw new Error('unlockFromRootSecret: rootSecret must be 32 bytes')
   }
   await ensureRailgunReady()
-  assertEntropyFloor('root_secret', rootSecret)
-  assertEntropyFloor('spending_key', deriveSpendingKeyBytes(rootSecret))
-  assertEntropyFloor('viewing_key', deriveViewingKeyBytes(rootSecret))
-
-  const sdkEncryptionKey = deriveSdkEncryptionKeyHex(rootSecret)
-  let walletId = storedWalletId()
-  let railgunAddress: string
-
-  if (walletId) {
-    // Try fast-path: existing wallet ID, just load it. The SDK already has the correct
-    // creationBlock in walletDetails, so we don't need to pass our copy through here.
-    try {
-      const { loadWalletByID } = await railgunSdk()
-      const info = await loadWalletByID(sdkEncryptionKey, walletId, false /* isViewOnlyWallet */)
-      railgunAddress = info.railgunAddress
-    } catch (err) {
-      // Wallet not in this device's IDB (cleared / new device / corrupted). Fall through to
-      // recreate it from the deterministic mnemonic — same root_secret → same walletId.
-      trackError('railgun.wallet.loadByID', err, { scope: 'shielded.unlock', message: 'load failed, recreating' })
-      const recreated = await createSdkWalletFromRoot(rootSecret, creationBlock)
-      walletId = recreated.walletId
-      railgunAddress = recreated.railgunAddress
-    }
-  } else {
-    const recreated = await createSdkWalletFromRoot(rootSecret, creationBlock)
-    walletId = recreated.walletId
-    railgunAddress = recreated.railgunAddress
-  }
-
-  const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
-  storeWalletId(walletId)
-  storeChecksum(checksum)
-  setUnlocked({
-    rootSecret,
-    walletId,
-    sdkEncryptionKey,
-    railgunAddress,
-    checksum,
-    // Stash the creationBlock we have (if any) so exportBackup can write a useful value into
-    // the next v2 blob. Paste-secret path with no backup-sourced creationBlock yields null →
-    // a subsequent exportBackup writes 0 → that backup's restores fall back to full rescan.
-    creationBlock: creationBlock ?? null,
-  })
-  track('shielded.unlock', { walletId })
-
-  return {
-    id: walletId,
-    status: 'unlocked',
-    railgunAddress,
-    checksum,
-    unlockedAt: Date.now(),
-  }
+  const { state } = await applyRootSecret(rootSecret, { creationBlock })
+  track('shielded.unlock', { walletId: state.id })
+  return state
 }
 
 /**

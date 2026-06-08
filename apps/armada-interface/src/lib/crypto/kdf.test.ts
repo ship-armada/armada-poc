@@ -6,6 +6,7 @@ import {
   deriveSpendingKeyBytes,
   deriveViewingKeyBytes,
   deriveSdkEncryptionKeyHex,
+  deriveHistoryEncryptionKey,
   deriveInternalMnemonic,
   antiPhishChecksumBytes,
   formatChecksumDisplay,
@@ -94,6 +95,37 @@ describe('deriveSdkEncryptionKeyHex', () => {
     const spend = deriveSpendingKeyBytes(root)
     const spendHex = Array.from(spend, b => b.toString(16).padStart(2, '0')).join('')
     expect(enc).not.toBe(spendHex)
+  })
+})
+
+describe('deriveHistoryEncryptionKey', () => {
+  it('returns 32 bytes', () => {
+    const root = deriveRootSecret(fixedSignature())
+    expect(deriveHistoryEncryptionKey(root).length).toBe(32)
+  })
+
+  it('is deterministic for the same root_secret', () => {
+    const root = deriveRootSecret(fixedSignature())
+    expect(deriveHistoryEncryptionKey(root)).toEqual(deriveHistoryEncryptionKey(root))
+  })
+
+  it('is distinct from the SDK encryption key (different HKDF info string)', () => {
+    const root = deriveRootSecret(fixedSignature())
+    const history = deriveHistoryEncryptionKey(root)
+    const sdkHex = deriveSdkEncryptionKeyHex(root)
+    const historyHex = Array.from(history, b => b.toString(16).padStart(2, '0')).join('')
+    expect(historyHex).not.toBe(sdkHex)
+  })
+
+  it('is distinct from the spending/viewing subkeys', () => {
+    const root = deriveRootSecret(fixedSignature())
+    expect(deriveHistoryEncryptionKey(root)).not.toEqual(deriveSpendingKeyBytes(root))
+    expect(deriveHistoryEncryptionKey(root)).not.toEqual(deriveViewingKeyBytes(root))
+  })
+
+  it('rejects bad input lengths (assertRootSecret)', () => {
+    expect(() => deriveHistoryEncryptionKey(new Uint8Array(31))).toThrow()
+    expect(() => deriveHistoryEncryptionKey(new Uint8Array(33))).toThrow()
   })
 })
 

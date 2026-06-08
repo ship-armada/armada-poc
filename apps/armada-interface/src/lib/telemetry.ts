@@ -30,6 +30,9 @@ export type EventRegistry = {
   'shielded.locked':          { walletId: string }
   'shielded.exported':        { walletId: string }                             // Settings → Export recovery phrase; phrase content NEVER logged
   'shielded.reset':           { walletId: string }                             // Settings → Reset private wallet; id pre-clear so we can trace
+  // One-shot schema-version migration on cold boot. `from`/`to` are integers (the schemaVersion
+  // tags). Emitted once per cold boot when the local schema is older than the bundled version.
+  'shielded.schema-migration': { from: number; to: number }
 
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }

@@ -139,6 +139,79 @@ describe('enroll', () => {
   })
 })
 
+describe('signIn (v2 primary)', () => {
+  it('signs the EIP-712 message and mirrors the resulting state into atoms', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValueOnce({
+      rootSecret: new Uint8Array(32),
+      state: SAMPLE_STATE,
+    })
+    const capture = renderWithStore(store)
+
+    let result: { rootSecret: Uint8Array; state: ShieldedWalletState } | undefined
+    await act(async () => {
+      result = await capture.current!.signIn()
+    })
+
+    expect(mockSignTypedData).toHaveBeenCalledTimes(1)
+    expect(mockEnroll).toHaveBeenCalledTimes(1)
+    expect(result!.state.id).toBe('wallet-id-1')
+    expect(store.get(activeRailgunWalletIdAtom)).toBe('wallet-id-1')
+  })
+
+  it('defaults the account index to 0 in the signed message', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.signIn()
+    })
+
+    const args = mockSignTypedData.mock.calls[0]?.[1] as { message: { account: string } } | undefined
+    expect(args?.message.account).toBe('0')
+  })
+
+  it('threads a non-zero account index through to the signed message', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.signIn(7n)
+    })
+
+    const args = mockSignTypedData.mock.calls[0]?.[1] as { message: { account: string } } | undefined
+    expect(args?.message.account).toBe('7')
+  })
+
+  it('rejects when no EVM wallet is connected', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, null)
+    const capture = renderWithStore(store)
+
+    await expect(capture.current!.signIn()).rejects.toThrow(/Connect an EVM wallet/)
+    expect(mockSignTypedData).not.toHaveBeenCalled()
+  })
+
+  it('enroll() is a thin alias for signIn(0n) — same behaviour, same outputs', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValue({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.enroll()
+    })
+
+    const args = mockSignTypedData.mock.calls[0]?.[1] as { message: { account: string } } | undefined
+    expect(args?.message.account).toBe('0')
+  })
+})
+
 describe('unlockByPaste', () => {
   it('parses 64-hex input (with 0x prefix) and unlocks', async () => {
     const store = createStore()

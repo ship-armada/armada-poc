@@ -89,6 +89,21 @@ export function deriveSdkEncryptionKeyHex(rootSecret: Uint8Array): string {
 }
 
 /**
+ * Derive a 32-byte AES-256 key for encrypting transaction-history records at rest. Consumed by
+ * `lib/cache.ts` once Phase 7 wires per-record encryption.
+ *
+ * Versioned info string — a future Phase 7.x can rotate to `:v2` without disturbing other key
+ * derivations. Like every other subkey here, this is HKDF-Expand from root_secret (root_secret
+ * is already a PRK output, so a second Extract would be redundant per RFC 5869 §3.3).
+ */
+const HKDF_INFO_HISTORY_ENCRYPTION_V1 = utf8('armada-tx-history:v1')
+
+export function deriveHistoryEncryptionKey(rootSecret: Uint8Array): Uint8Array {
+  assertRootSecret(rootSecret)
+  return hkdfExpand(sha256, rootSecret, HKDF_INFO_HISTORY_ENCRYPTION_V1, 32)
+}
+
+/**
  * Convert the 32-byte root_secret into a 24-word BIP-39 mnemonic for SDK consumption only.
  *
  * Phase 1 compromise: the Railgun wallet SDK's public entry point is mnemonic-based. We derive

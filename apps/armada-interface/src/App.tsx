@@ -1,4 +1,4 @@
-// ABOUTME: Top-level route shell + wallet-status guard — installs the visibility listener once, hydrates tx history, starts the executor, and renders OnboardingFlow / UnlockFlow / Outlet based on local mode.
+// ABOUTME: Top-level route shell + wallet-status guard — runs the v2 schema migration before anything else, installs the visibility listener, hydrates tx history, starts the executor, and renders OnboardingFlow / UnlockFlow / Outlet based on local mode.
 // ABOUTME: Guard uses a local mode state (not direct atom read) so the onboarding success screen gets to render even after createWallet flips the atom.
 
 import { useEffect, useState } from 'react'
@@ -29,6 +29,7 @@ import '@/features/yield-deposit'
 import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
 import { initRailgunEngine } from '@/lib/railgun/init'
+import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
 import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
 import { isLocalMode } from '@/config/network'
 import {
@@ -41,7 +42,7 @@ import {
   shieldedWalletsAtom,
 } from '@/state/wallet'
 
-type GuardMode = 'pre-init' | 'onboarding' | 'unlock' | 'app'
+type GuardMode = 'pre-migration' | 'pre-init' | 'onboarding' | 'unlock' | 'app'
 
 export function App() {
   useTabVisible()
@@ -77,7 +78,30 @@ export function App() {
     setDevMockBalance({ ...DEFAULT_DEV_MOCK_BALANCE, enabled: true })
   }, [setDevMockBalance])
 
+  const wallet = useAtomValue(shieldedWalletAtom)
+  const setShieldedWallets = useSetAtom(shieldedWalletsAtom)
+  const setActiveWalletId = useSetAtom(activeRailgunWalletIdAtom)
+  const [mode, setMode] = useState<GuardMode>('pre-migration')
+
+  // v2 schema migration: drops legacy localStorage keys + IndexedDB databases on first run of
+  // the v2 schema. Synchronous portion (localStorage) is done by the time the awaited promise
+  // resolves; async portion (IDB drops) is awaited before we transition out of `pre-migration`
+  // so the Railgun engine init below doesn't race against `armada-shielded` being deleted.
+  // Idempotent — `runSchemaMigrationIfNeeded` short-circuits when the on-disk version is current,
+  // making StrictMode's double-mount safe.
   useEffect(() => {
+    if (mode !== 'pre-migration') return
+    let cancelled = false
+    void runSchemaMigrationIfNeeded().finally(() => {
+      if (!cancelled) setMode('pre-init')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [mode])
+
+  useEffect(() => {
+    if (mode === 'pre-migration') return
     // Start the tx execution engine. Idempotent + module-scope, so this runs
     // safely under StrictMode's double-mount and never spawns a second engine.
     startEngine()
@@ -87,12 +111,7 @@ export function App() {
     // Idempotent: a later enroll/unlock call also goes through ensureRailgunReady() which is a
     // no-op once initialized.
     void initRailgunEngine()
-  }, [])
-
-  const wallet = useAtomValue(shieldedWalletAtom)
-  const setShieldedWallets = useSetAtom(shieldedWalletsAtom)
-  const setActiveWalletId = useSetAtom(activeRailgunWalletIdAtom)
-  const [mode, setMode] = useState<GuardMode>('pre-init')
+  }, [mode])
   // Sticky flag: true when this device boot started with NO persisted walletId. Drives whether
   // we offer the bidirectional Onboarding ↔ Unlock fork. A returning user (had a wallet at boot)
   // never sees the "Create new" link in UnlockFlow — preventing accidental orphaning of their
@@ -133,9 +152,12 @@ export function App() {
     if (mode === 'app' && wallet.status === 'locked') setMode('unlock')
   }, [mode, wallet.status])
 
-  if (mode === 'pre-init') {
-    // Brief pre-render gap — atom hydration is synchronous in Jotai so this
-    // usually never paints. Return null to avoid flashing the wrong shell.
+  if (mode === 'pre-migration' || mode === 'pre-init') {
+    // Brief pre-render gap. `pre-migration` waits for the v2 schema-migration to drop legacy
+    // localStorage + IDB state (usually under 50ms — synchronous localStorage clear plus a
+    // single-tick IDB delete that's a no-op when the DBs are already absent). `pre-init` is
+    // the brief window before the cold-boot derivation effect fires. Either state should
+    // rarely paint; null avoids flashing the wrong shell.
     return null
   }
 

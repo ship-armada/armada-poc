@@ -1,4 +1,4 @@
-// ABOUTME: Railgun wallet hook — signature-derived enrollment + paste/backup unlock + lock/reset/exportBackup.
+// ABOUTME: Railgun wallet hook — signIn (signature-derived, deterministic v2 primary) + paste/backup unlock + lock/reset/exportBackup.
 // ABOUTME: Plural-wallet schema (state/wallet.ts) is future-proofing; v1 UX is singular and the hook hides that.
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -48,24 +48,27 @@ export function useShieldedWallet() {
   const setActiveId = useSetAtom(activeRailgunWalletIdAtom)
 
   /**
-   * Drive the full enrollment flow: build typed data → sign via wagmi → normalize → derive
-   * root_secret → create SDK wallet. The signing prompt is what users see in MetaMask / Rabbit
-   * etc; if they reject, the wagmi async call rejects and we propagate. Returns the rootSecret
-   * to the caller so the onboarding flow can show it during the backup ceremony.
+   * Primary unlock path (v2 amendment): build the deterministic EIP-712 message for the given
+   * BIP-44-style account index → sign via wagmi → normalize bytes → derive root_secret → SDK
+   * load-or-create. The signing prompt is what users see in MetaMask / Rabby / etc; if they
+   * reject, the wagmi async call rejects and we propagate.
    *
-   * NOTE: The returned rootSecret is the SAME Uint8Array reference held by the keyManager — see
-   * the warning in `enrollFromSignature`. UI code that displays the secret should NOT mutate or
-   * `fill(0)` the buffer; let the keyManager own its lifetime.
+   * Returns the rootSecret to the caller so the onboarding flow can drive the optional backup-
+   * export ceremony. The returned `Uint8Array` is the SAME reference held by the keyManager —
+   * UI code MUST NOT mutate or `fill(0)` the buffer; the keyManager owns its lifetime.
+   *
+   * `account` defaults to 0 (the only value the v1 UI exposes); the plumbing accepts N ≥ 0 so
+   * multi-identity-per-EVM-wallet can ship later without another schema fork.
    */
-  const enroll = useCallback(async (): Promise<{
+  const signIn = useCallback(async (account: bigint = 0n): Promise<{
     rootSecret: Uint8Array
     state: ShieldedWalletState
   }> => {
     if (!evmAddress) {
-      throw new Error('Connect an EVM wallet before enrolling.')
+      throw new Error('Connect an EVM wallet before signing in.')
     }
     try {
-      const typedData = buildEnrollmentTypedData(Date.now())
+      const typedData = buildEnrollmentTypedData(account)
       const sigHex = await signTypedData(wagmiConfig, {
         domain: { ...typedData.domain },
         types: {
@@ -78,13 +81,23 @@ export function useShieldedWallet() {
       const out = await enrollFromSignature(signatureBytes)
       setWallets(prev => ({ ...prev, [out.state.id]: out.state }))
       setActiveId(out.state.id)
-      // `shielded.created` is emitted by `enrollFromSignature` itself; don't double-track here.
+      // `shielded.created` / `shielded.unlock` is emitted by `enrollFromSignature` itself;
+      // don't double-track here.
       return out
     } catch (err) {
-      trackError('useShieldedWallet.enroll', err, { scope: 'shielded.enroll', message: 'enroll failed' })
+      trackError('useShieldedWallet.signIn', err, { scope: 'shielded.unlock', message: 'signIn failed' })
       throw err
     }
   }, [evmAddress, setWallets, setActiveId])
+
+  /**
+   * Deprecated alias for `signIn(0n)`. Retained so the Phase 3 UI rewrite can flip callers
+   * over in one place without a separate Phase 2 sweep through OnboardingFlow* + tests. New
+   * code should call `signIn` directly.
+   *
+   * @deprecated Use `signIn(account?: bigint)` instead.
+   */
+  const enroll = useCallback(() => signIn(0n), [signIn])
 
   /**
    * Unlock from a pasted hex-encoded root_secret. Strips an optional `0x` prefix. The 64-hex-char
@@ -196,7 +209,8 @@ export function useShieldedWallet() {
 
   return {
     state: active,
-    enroll,
+    signIn,
+    enroll, // deprecated alias for signIn(0n); retained for the Phase 3 UI sweep
     unlockByPaste,
     unlockByBackup,
     exportBackup,

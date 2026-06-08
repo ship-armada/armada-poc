@@ -8,6 +8,7 @@ import { WalletButton, WalletPillMenu } from '@armada/ui'
 import { useBalances } from '@/hooks/useBalances'
 import { truncateAddress } from '@/lib/format'
 import { walletProviderFromConnector } from '@/lib/walletProvider'
+import styles from './WalletConnector.module.css'
 
 function totalUnshieldedUsdc(unshielded: Record<number, bigint>): number {
   let sum = 0n
@@ -78,6 +79,7 @@ export function WalletConnector() {
             walletProvider={walletProvider}
             usdcBalance={usdcBalance}
             onDisconnect={() => disconnect()}
+            triggerClassName={styles.trigger}
           />
         )
       }}

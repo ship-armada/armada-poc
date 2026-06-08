@@ -1,0 +1,8 @@
+/* ABOUTME: Local trigger override for the header's connected-wallet pill — solid black bg to match the ShieldedAddressPill alongside it. */
+/* ABOUTME: Applied via WalletPillMenu's `triggerClassName` so we don't fork the shared pill component. */
+
+.trigger,
+.trigger:hover:not(:disabled),
+.trigger:active:not(:disabled) {
+  background: #000;
+}

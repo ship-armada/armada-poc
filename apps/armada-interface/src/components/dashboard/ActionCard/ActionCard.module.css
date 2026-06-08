@@ -1,17 +1,22 @@
-/* ABOUTME: ActionCard styling — vertical stack with brand-tinted icon chip, title, and subtitle. */
-/* ABOUTME: Subtle hover lift via translateY; focus ring uses the lavender border-focus token. */
+/* ABOUTME: ActionCard styling — title row (label + arrow icon), subtitle, optional footer row separated by a divider. */
+/* ABOUTME: Hover/focus tokens match other dashboard chrome; reduced-motion disables the transition. */
 
 .card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--primitives-spacing-2);
+  justify-content: space-between;
   text-align: left;
   width: 100%;
-  background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-default);
+  /* Vertical stack inside ActionGrid sets the actual height via `repeat(3, 1fr)`; this
+     min-height is just a floor for cases where the grid can't compute a height
+     (e.g. narrow viewports where heroRow collapses to a single column). */
+  min-height: 124px;
+  /* Horizontal gradient — default card surface on the left fades to a slightly warmer
+     near-black at the right edge, giving the three action tiles a subtle directional
+     sheen that points toward the arrow icon. */
+  background: linear-gradient(90deg, var(--semantic-color-surface-default) 0%, #221D24 100%);
   border-radius: calc(var(--semantic-borderRadius-card) * 1px);
-  padding: var(--primitives-spacing-5);
+  padding: var(--primitives-spacing-4);
   color: inherit;
   cursor: pointer;
   transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
@@ -19,7 +24,6 @@
 
 .card:hover:not(:disabled) {
   background: var(--semantic-color-surface-raised);
-  border-color: rgba(196, 145, 229, 0.32);
   transform: translateY(-1px);
 }
 
@@ -37,24 +41,88 @@
   cursor: not-allowed;
 }
 
-.iconWrap {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(196, 145, 229, 0.12);
-  color: var(--semantic-color-brand-lavender);
+/* Body becomes a horizontal row: text block left, oversized arrow right.
+   The arrow takes ~half the inner height including padding, leaving the text
+   to occupy the remaining width as a two-line stack. */
+.body {
+  display: flex;
+  flex-direction: row;
+  /* `stretch` so the text column fills the body height — title hugs the top, subtitle
+     pinned to the bottom via `.text { justify-content: space-between }`. Icon explicitly
+     opts out of the stretch with its own `align-self: center` rule below. */
+  align-items: stretch;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  flex: 1;
 }
 
 .title {
-  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
   font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* Body uses `align-items: stretch` so the text column can pin its title/subtitle to the
+     card edges; the icon opts out and anchors to the top so it lines up with the title. */
+  align-self: flex-start;
+  color: var(--semantic-color-brand-lavender);
 }
 
 .subtitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
   color: var(--semantic-color-text-muted);
+  line-height: 1.4;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  margin-top: var(--primitives-spacing-2);
+  padding-top: var(--primitives-spacing-2);
+  border-top: 1px solid var(--semantic-color-border-default);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+}
+
+/* When a progress bar is rendered above the footer, the bar itself plays the divider's
+   visual role, so we drop the rule line. */
+.footerNoDivider {
+  border-top: none;
+  padding-top: 0;
+}
+
+.progressBar {
+  margin-top: var(--primitives-spacing-3);
+  height: 4px;
+  width: 100%;
+  background: var(--primitives-color-purple-900);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--semantic-color-brand-lavender);
+  border-radius: 999px;
+  transition: width 200ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {

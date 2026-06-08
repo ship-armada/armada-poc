@@ -36,6 +36,14 @@
  */
 :root {
   --rk-fonts-body: Geist, system-ui, -apple-system, sans-serif;
+
+  /* Header nav: this app's header sits over the dashboard gradient, so any nav-item background
+     (hover, active) reads as a heavy chip floating on the artwork. Flatten the navbar container
+     and both item states — the active item is still indicated by its bolder text weight inside
+     @armada/ui's NavItem. */
+  --semantic-component-navbar-bg: rgba(0, 0, 0, 0.12);
+  --semantic-component-navitem-default-bg-hover: transparent;
+  --semantic-component-navitem-active-bg: transparent;
 }
 
 html {

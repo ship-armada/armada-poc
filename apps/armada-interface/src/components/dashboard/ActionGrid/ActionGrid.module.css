@@ -1,14 +1,30 @@
-/* ABOUTME: ActionGrid layout — 4 equal columns on desktop, 2x2 on narrow viewports. */
-/* ABOUTME: Gap matches the dashboard's between-section spacing for visual rhythm. */
+/* ABOUTME: ActionGrid layout — 3 equal columns on desktop, stacked on narrow viewports. */
+/* ABOUTME: Earn footer cells (label muted, value primary) styled here since they're grid-specific copy. */
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--primitives-spacing-4);
+  /* Three action cards sit side-by-side in a single row at the BOTTOM of the heroRow column,
+     so the visual rhythm is: tall BalanceHero | three short cards aligned with its lower
+     edge. `align-self: end` on the wrapper handles the bottom alignment; this grid is purely
+     responsible for the 3-up split. */
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--primitives-spacing-3);
+  align-self: end;
+  width: 100%;
 }
 
 @media (max-width: 640px) {
   .grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
+}
+
+.earnFooterLabel {
+  color: var(--semantic-color-text-muted);
+  font-weight: var(--primitives-fontWeight-semibold);
+}
+
+.earnFooterValue {
+  color: var(--semantic-color-text-primary);
+  font-variant-numeric: tabular-nums;
 }

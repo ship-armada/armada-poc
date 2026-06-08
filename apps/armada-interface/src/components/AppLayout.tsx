@@ -7,6 +7,7 @@ import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
 import { ShieldedAddressPill } from './ShieldedAddressPill'
 import { SyncBanner } from './sync'
+import styles from './AppLayout.module.css'
 
 const NAV: ReadonlyArray<{ label: string; path: string }> = [
   { label: 'Dashboard', path: '/' },
@@ -29,14 +30,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col text-foreground">
       <header
-        className="fixed inset-x-6 top-6 z-40 flex h-14 items-center justify-between"
+        className="fixed inset-x-6 top-2 z-40 flex h-14 items-center justify-between"
       >
-        <Link to="/" aria-label="Home" className="flex shrink-0 items-center gap-2.5">
-          <ArmadaLogo />
+        <Link to="/" aria-label="Home" className="flex shrink-0 items-center gap-2.5 text-white">
+          <ArmadaLogo variant="mono" />
         </Link>
 
         <nav aria-label="Primary" className="absolute left-1/2 hidden -translate-x-1/2 items-center sm:flex">
-          <NavBar items={navItems} />
+          <NavBar items={navItems} className={styles.navBar} />
         </nav>
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
@@ -48,10 +49,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* Inline paddingTop instead of a Tailwind utility — `pt-28` was getting eaten somewhere
           in the cascade (either not generated, or overridden by global.css's universal-selector
           reset). Inline style has the highest specificity short of !important and bypasses
-          generation issues entirely. 112px = 80px header bottom (top-6 + h-14) + 32px breathing. */}
+          generation issues entirely. 80px = 64px header bottom (top-2 + h-14) + 16px breathing. */}
       <main
         className="flex flex-1 flex-col items-center justify-center"
-        style={{ paddingTop: '7rem' }}
+        style={{ paddingTop: '5rem' }}
       >
         <div className="w-full px-6">
           <SyncBanner />

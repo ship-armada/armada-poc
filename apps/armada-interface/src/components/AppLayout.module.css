@@ -1,0 +1,50 @@
+/* ABOUTME: AppLayout-local style overrides — feathered mask on the @armada/ui NavBar so the frosted-glass pill */
+/* ABOUTME: fades out at its left/right edges instead of cutting hard against the page gradient. */
+
+/* Applied via NavBar's `className` passthrough — merged with the shared `.navBar` class on the
+   same element, so the mask layers onto the existing pill (bg + backdrop-filter + border-radius).
+   Two linear-gradient mask layers combined via `intersect` so the visible region is the inner
+   rectangle where BOTH masks are opaque, with all four edges fading to transparent. The
+   horizontal fade (28px) sits inside the NavItem's 40px inner padding so item text stays opaque;
+   the vertical fade (6px) sits inside the 12px NavItem inner padding for the same reason. */
+.navBar {
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      black 14px,
+      black calc(100% - 14px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      black 6px,
+      black calc(100% - 6px),
+      transparent 100%
+    );
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      black 14px,
+      black calc(100% - 14px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      black 6px,
+      black calc(100% - 6px),
+      transparent 100%
+    );
+  -webkit-mask-composite: source-in;
+}
+
+/* Active page indicator — bolder weight only. Targets NavItem's `aria-current="page"`
+   attribute (set by the shared component when `active === true`) so this rule is scoped
+   without forking the design-system primitive. */
+.navBar [aria-current="page"] {
+  font-weight: var(--primitives-fontWeight-semibold);
+}

@@ -9,8 +9,16 @@ import styles from './Dashboard.module.css'
 export function Dashboard() {
   return (
     <div className={styles.page}>
-      <BalanceHero />
-      <ActionGrid />
+      {/* Decorative top-of-page gradient — purple → pink fading into the page background.
+          Fixed-positioned + pointer-events: none so it doesn't intercept clicks. Scoped to
+          the Dashboard page only; other routes stay flat. */}
+      <div className={styles.backdrop} aria-hidden />
+      {/* Hero + actions share a row on desktop: BalanceHero on the left at a fixed-ish width,
+          the 3-up ActionGrid filling the rest. Stacks vertically under 900px. */}
+      <div className={styles.heroRow}>
+        <BalanceHero />
+        <ActionGrid />
+      </div>
       <RecentActivityCard />
       {/* In-Progress section + 7/5 split — temporarily hidden. To restore:
             1. re-import InProgressCard above

@@ -46,14 +46,15 @@ export function ShieldedAddressPill() {
       aria-label={copied ? 'Shielded address copied' : `Copy shielded address ${fullAddress}`}
       title={fullAddress}
     >
+      <span className={styles.statusDot} aria-hidden />
+      <span className={styles.label}>{copied ? 'Copied' : display}</span>
       <span className={styles.icon} aria-hidden>
         {copied ? (
-          <CheckIcon width={14} height={14} />
+          <CheckIcon width={12} height={12} />
         ) : (
-          <ClipboardDocumentIcon width={14} height={14} />
+          <ClipboardDocumentIcon width={12} height={12} />
         )}
       </span>
-      <span className={styles.label}>{copied ? 'Copied' : display}</span>
     </button>
   )
 }

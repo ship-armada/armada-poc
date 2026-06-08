@@ -25,6 +25,12 @@ export interface WalletPillMenuProps {
   /** Optional wallet balance label (unshielded USDC total). */
   usdcBalance?: number
   onDisconnect?: () => void
+  /**
+   * Extra class applied to the trigger button so consumers can override its background, border,
+   * or other Button-derived secondary-variant defaults without forking the component. Used by
+   * armada-interface to swap the default transparent pill for a solid black background.
+   */
+  triggerClassName?: string
 }
 
 const PROVIDER_ICON_PX = 20
@@ -49,6 +55,7 @@ export function WalletPillMenu({
   walletProvider,
   usdcBalance = 0,
   onDisconnect,
+  triggerClassName,
 }: WalletPillMenuProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -109,7 +116,8 @@ export function WalletPillMenu({
           buttonStyles.md,
           buttonStyles.noIcon,
           styles.trigger,
-        ].join(' ')}
+          triggerClassName,
+        ].filter(Boolean).join(' ')}
         aria-expanded={open}
         aria-haspopup="menu"
         aria-controls={menuId}

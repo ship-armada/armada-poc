@@ -14,6 +14,17 @@
   overflow: hidden;
 }
 
+/* Whole card acts as the CTA — give a pointer cursor when a click handler
+ * is wired and a visible focus ring for keyboard users. */
+.card[role='button'] {
+  cursor: pointer;
+}
+
+.card[role='button']:focus-visible {
+  outline: 2px solid var(--semantic-color-brand-lavender);
+  outline-offset: 2px;
+}
+
 /* Image fills the entire card */
 .img,
 .video {

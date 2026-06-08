@@ -71,6 +71,13 @@ export function Participate({
     }
   }
 
+  const handleCardKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onCtaClick?.()
+    }
+  }
+
   return (
     <div
       className={[styles.card, className].filter(Boolean).join(' ')}
@@ -78,6 +85,11 @@ export function Participate({
       onMouseLeave={stop}
       onFocus={play}
       onBlur={stop}
+      role={onCtaClick ? 'button' : undefined}
+      tabIndex={onCtaClick ? 0 : undefined}
+      aria-label={onCtaClick ? `${ctaLabel}: ${heading}` : undefined}
+      onClick={onCtaClick}
+      onKeyDown={onCtaClick ? handleCardKey : undefined}
     >
       {videoSrc && (
         <video
@@ -113,14 +125,29 @@ export function Participate({
       <div className={styles.overlay} />
 
       {onClose && (
-        <button className={styles.close} onClick={onClose} aria-label="Close">
+        <button
+          className={styles.close}
+          // Stop propagation so closing the card doesn't also trigger the
+          // outer card's `onCtaClick` via bubbling.
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          aria-label="Close"
+        >
           <XMarkIcon width={16} height={16} aria-hidden />
         </button>
       )}
 
       <p className={styles.eyebrow}>{eyebrow}</p>
       <h2 className={[styles.heading, headingClassName].filter(Boolean).join(' ')}>{heading}</h2>
-      <div className={[styles.cta, ctaClassName].filter(Boolean).join(' ')}>
+      {/* Wrap the visible Button so a click on it doesn't fire `onCtaClick`
+       *  twice (once for the Button, once for the card via bubbling). The
+       *  Button still handles its own click; this just stops the bubble. */}
+      <div
+        className={[styles.cta, ctaClassName].filter(Boolean).join(' ')}
+        onClick={(e) => e.stopPropagation()}
+      >
         <Button
           variant="gradient"
           size="md"

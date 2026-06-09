@@ -48,3 +48,12 @@
 .navBar [aria-current="page"] {
   font-weight: var(--primitives-fontWeight-semibold);
 }
+
+/* App-local radius override — the design-system NavBar + NavItem both ship with full pill
+   corners (100px) which the crowdfund apps keep. armada-interface's chrome reads better with a
+   tight `xs` corner on both the container and each item. Scoped via the local .navBar class +
+   the button element inside it so the design-system tokens stay untouched. */
+.navBar,
+.navBar button {
+  border-radius: calc(var(--primitives-borderRadius-xs) * 1px);
+}

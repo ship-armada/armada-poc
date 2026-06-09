@@ -372,6 +372,10 @@
       }
     },
     "borderRadius": {
+      "xs": {
+        "value": "2",
+        "type": "borderRadius"
+      },
       "sm": {
         "value": "4",
         "type": "borderRadius"

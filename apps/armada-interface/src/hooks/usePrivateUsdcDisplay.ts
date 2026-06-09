@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { useAtomValue } from 'jotai'
 import { computePrivateUsdcFromTxHistory } from '@/lib/balance/computePrivateUsdcFromTxHistory'
 import { shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
-import { txListAtom } from '@/state/tx'
+import { activeTxListAtom } from '@/state/tx'
 
 export interface PrivateUsdcDisplay {
   /** Live chain balance when the Railgun sync has written the atom. */
@@ -20,7 +20,7 @@ export interface PrivateUsdcDisplay {
 export function usePrivateUsdcDisplay(): PrivateUsdcDisplay {
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
   const sync = useAtomValue(syncStateAtom)
-  const txList = useAtomValue(txListAtom)
+  const txList = useAtomValue(activeTxListAtom)
 
   const historyBalance = useMemo(
     () => computePrivateUsdcFromTxHistory(txList),

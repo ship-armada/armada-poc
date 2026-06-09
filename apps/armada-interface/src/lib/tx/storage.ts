@@ -42,9 +42,21 @@ export async function deleteTx(id: string): Promise<void> {
   await cacheDelete(STORE, id)
 }
 
-export async function loadAllTx(): Promise<TxRecord[]> {
+/**
+ * Hydrate tx records from IDB. When `walletId` is supplied (Phase 6: history scoping), only
+ * records bound to that walletId are returned — others are skipped without being deserialized
+ * into the in-memory atom. When omitted, returns [] (no wallet is active → nothing to surface).
+ *
+ * The pre-Phase-6 unscoped behavior is gone: callers MUST pass the active walletId. Anything
+ * else would re-leak records from prior wallets into the new session. Records on disk are still
+ * wallet-mixed in v1 (no IDB-key partitioning in Phase 6); Phase 7 layers per-wallet AES-GCM
+ * encryption that makes foreign records undecryptable, completing the isolation.
+ */
+export async function loadAllTx(walletId?: string): Promise<TxRecord[]> {
+  if (!walletId) return []
   const entries = await cacheAll<TxRecord>(STORE)
   return entries
     .map(e => e.value)
+    .filter(r => r.walletContext.railgunWalletId === walletId)
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }

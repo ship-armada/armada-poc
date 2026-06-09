@@ -6,6 +6,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { History } from './History'
 import { txListAtom } from '@/state/tx'
+import { activeRailgunWalletIdAtom } from '@/state/wallet'
 import type { TxExecutionState, TxRecord } from '@/lib/tx/types'
 
 function record(
@@ -30,6 +31,9 @@ function record(
 
 function renderHistory(records: TxRecord[]) {
   const store = createStore()
+  // V2 Phase 6 scoping: History now reads activeTxListAtom (filters by active walletId).
+  // Tests seed records bound to 'rg'; the active id must match for them to render.
+  store.set(activeRailgunWalletIdAtom, 'rg')
   store.set(txListAtom, records)
   render(
     <Provider store={store}>

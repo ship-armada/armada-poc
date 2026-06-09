@@ -1,12 +1,12 @@
 // ABOUTME: Activity (History) page — filter chips + list of TxRows with click-to-expand TxLifecycleStepper.
-// ABOUTME: Reads txListAtom directly; single-row expansion at a time. Pagination deferred — shows up to MAX_ROWS recent records.
+// ABOUTME: Reads activeTxListAtom (scoped to the active shielded wallet — V2 Phase 6) so a wallet switch doesn't leak prior history. Single-row expansion at a time. Pagination deferred — shows up to MAX_ROWS recent records.
 
 import { useAtomValue } from 'jotai'
 import { useMemo, useState } from 'react'
 import { History as HistoryIcon } from 'lucide-react'
 import { Card, EmptyState, SectionHeader, Tabs, type TabItem } from '@/components/ui'
 import { TxActions, TxLifecycleStepper, TxRow } from '@/components/tx'
-import { txListAtom } from '@/state/tx'
+import { activeTxListAtom } from '@/state/tx'
 import { preferencesAtom } from '@/state/preferences'
 import type { TxExecutionState, TxRecord } from '@/lib/tx/types'
 import styles from './History.module.css'
@@ -42,7 +42,7 @@ function matches(record: TxRecord, filter: FilterId): boolean {
 }
 
 export function History() {
-  const all = useAtomValue(txListAtom)
+  const all = useAtomValue(activeTxListAtom)
   const prefs = useAtomValue(preferencesAtom)
   const [filter, setFilter] = useState<FilterId>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)

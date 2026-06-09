@@ -6,7 +6,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, EmptyState, SectionHeader } from '@/components/ui'
 import { TxRow } from '@/components/tx'
-import { txListAtom } from '@/state/tx'
+import { activeTxListAtom } from '@/state/tx'
 import { History } from 'lucide-react'
 import type { TxRecord, TxExecutionState } from '@/lib/tx/types'
 import styles from './RecentActivityCard.module.css'
@@ -26,7 +26,7 @@ export interface RecentActivityCardProps {
 }
 
 export function RecentActivityCard({ onSelect }: RecentActivityCardProps) {
-  const list = useAtomValue(txListAtom)
+  const list = useAtomValue(activeTxListAtom)
   const rows = useMemo(() => {
     return list
       .filter(t => TERMINAL_STATES.has(t.executionState))

@@ -5,7 +5,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { BalanceHero } from './BalanceHero'
-import { shieldedUsdcAtom, syncStateAtom, yieldSharesAtom } from '@/state/wallet'
+import {
+  activeRailgunWalletIdAtom,
+  shieldedUsdcAtom,
+  syncStateAtom,
+  yieldSharesAtom,
+} from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
 import type { TxRecord } from '@/lib/tx/types'
 import { withTestQueryClient } from '@/test-utils/queryClient'
@@ -50,6 +55,9 @@ function renderWith(values: {
   sync?: { status: 'idle' | 'syncing'; progress: number }
 }) {
   const store = createStore()
+  // V2 Phase 6: BalanceHero's `usePrivateUsdcDisplay` reads activeTxListAtom (scoped to active
+  // walletId). Test fixtures use 'rg' as the walletId; seed the active id to match.
+  store.set(activeRailgunWalletIdAtom, 'rg')
   store.set(shieldedUsdcAtom, values.shielded)
   store.set(yieldSharesAtom, values.yieldShares)
   if (values.txs) store.set(txListAtom, [...values.txs])

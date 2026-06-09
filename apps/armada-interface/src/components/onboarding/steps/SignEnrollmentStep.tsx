@@ -102,12 +102,6 @@ export function SignEnrollmentStep({
         Before signing, check that your wallet's prompt shows this site's URL — that is the only
         reliable way to tell a real Armada session from a phishing site.
       </p>
-      {!isConnected ? (
-        <p className={styles.bodyMuted}>
-          Connect your EVM wallet to continue. Your signature stays in this browser — Armada
-          never receives your private key.
-        </p>
-      ) : null}
       {error ? (
         <p role="alert" className={styles.error}>
           {error}

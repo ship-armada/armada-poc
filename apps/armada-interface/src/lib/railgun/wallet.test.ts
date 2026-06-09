@@ -153,6 +153,27 @@ describe('enrollFromSignature', () => {
     expect(state.id).toBe(SAMPLE_WALLET_ID)
   })
 
+  it('zeroes the input signature buffer after HKDF derivation (signature-discipline guarantee)', async () => {
+    // Per V2 amendment §"Signature discipline" — the caller's reference to the signature
+    // buffer must point to all-zeros after enrollFromSignature returns, even on the happy
+    // path. This is best-effort (JS gives no zeroization guarantees), but the in-place
+    // .fill(0) closes the window during which a heap scrape could recover the bytes.
+    const sig = fixedSig(0)
+    // Sanity: the signature is non-zero going in, so the post-call assertion is meaningful.
+    expect(Array.from(sig).some(b => b !== 0)).toBe(true)
+    await enrollFromSignature(sig)
+    expect(Array.from(sig).every(b => b === 0)).toBe(true)
+  })
+
+  it('zeroes the input signature buffer even when derivation throws (try/finally guarantee)', async () => {
+    // A 64-byte input fails the length assertion inside deriveRootSecret. The signature
+    // buffer must still be zeroed before the exception propagates.
+    const badSig = new Uint8Array(64)
+    for (let i = 0; i < 64; i++) badSig[i] = 0xab
+    await expect(enrollFromSignature(badSig)).rejects.toThrow()
+    expect(Array.from(badSig).every(b => b === 0)).toBe(true)
+  })
+
   it('throws NonDeterministicSignerError when the re-sign derives a different identity than the cached one', async () => {
     // Simulate the post-Phase-2a returning-user determinism check: the previous session
     // stored a checksum for identity A; the user re-signs but the wallet now produces a

@@ -107,4 +107,26 @@ describe('verifySignatureDeterminism', () => {
     expect(out.deterministic).toBe(false)
     expect(() => out).not.toThrow()
   })
+
+  it('zeroes the second signature buffer after the comparison (signature discipline)', async () => {
+    // Per V2 amendment §"Signature discipline" — the verification helper owns the second
+    // signature exclusively (the caller never sees it), so it must zero its own copy after
+    // the comparison. We assert this by handing the helper a buffer we control and
+    // verifying it's been zeroed afterward.
+    const second = fixedSignature(0)
+    const reSign = vi.fn(async () => second)
+    await verifySignatureDeterminism(reSign, fixedSignature(0))
+    expect(Array.from(second).every(b => b === 0)).toBe(true)
+  })
+
+  it('does NOT zero the first signature buffer (caller owns it and hands it to enrollFromSignature)', async () => {
+    // The first signature belongs to the caller and is passed downstream to
+    // enrollFromSignature (which does its own .fill(0) after HKDF). Zeroing it here would
+    // be a use-after-free for the next consumer. This test pins that contract.
+    const first = fixedSignature(0)
+    const before = new Uint8Array(first)
+    const reSign = vi.fn(async () => fixedSignature(0))
+    await verifySignatureDeterminism(reSign, first)
+    expect(first).toEqual(before)
+  })
 })

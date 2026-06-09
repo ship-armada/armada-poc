@@ -101,10 +101,18 @@ export async function verifySignatureDeterminism(
   // signatures over identical messages must match byte-for-byte. Constant-time comparison isn't
   // needed: these are public signatures of a public message, not key material; the comparison
   // outcome is itself disclosed to the UI immediately.
+  let deterministic = true
   for (let i = 0; i < 65; i++) {
     if (firstSignature[i] !== secondSignature[i]) {
-      return { deterministic: false }
+      deterministic = false
+      break
     }
   }
-  return { deterministic: true }
+  // SECURITY (V2 §"Signature discipline"): zero our local copy of the second signature now
+  // that the comparison is done. The first signature is NOT zeroed here — the caller is the
+  // owner and will hand it on to `enrollFromSignature`, which zeros it after HKDF. Zeroing
+  // it here would be a use-after-free for the next caller. Best-effort, same caveat as
+  // elsewhere: JS gives no guarantees but the discipline closes the window meaningfully.
+  secondSignature.fill(0)
+  return { deterministic }
 }

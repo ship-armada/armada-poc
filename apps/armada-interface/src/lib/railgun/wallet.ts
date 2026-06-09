@@ -262,7 +262,19 @@ export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
   state: ShieldedWalletState
 }> {
   await ensureRailgunReady()
-  const rootSecret = deriveRootSecret(signatureBytes)
+  let rootSecret: Uint8Array
+  try {
+    rootSecret = deriveRootSecret(signatureBytes)
+  } finally {
+    // SECURITY (V2 §"Signature discipline"): zero the signature buffer immediately after
+    // derivation. The caller's reference points to the same buffer; after this `.fill(0)`
+    // any later read sees zeros, which closes the window during which a heap scrape could
+    // recover the bytes. Best-effort only — JS gives no zeroization guarantees (V8 may have
+    // copied during the HKDF pass), but the discipline is meaningful when followed across
+    // the codebase. Inside a `finally` so we cover the assertion-throws-on-bad-length path
+    // too.
+    signatureBytes.fill(0)
+  }
 
   // Determinism-mismatch guard: if the cached checksum exists and differs from what THIS
   // signature derives, the user's wallet is non-deterministic and re-signing isn't a valid

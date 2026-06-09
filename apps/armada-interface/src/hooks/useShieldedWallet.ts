@@ -72,6 +72,23 @@ export function useShieldedWallet() {
     if (!evmAddress) {
       throw new Error('Connect an EVM wallet before signing in.')
     }
+    // SECURITY (V2 amendment §"Signature discipline"): the bytes returned by `signTypedData`
+    // are the user's wallet's signature over the enrollment EIP-712 message — the entropy
+    // source from which root_secret (and every downstream private key) is derived. These bytes:
+    //
+    //   - MUST NOT be transmitted via `fetch` / `XMLHttpRequest` / `postMessage` / `WebSocket`
+    //     or any other off-device primitive. The signature lives in this closure and on the
+    //     keyManager's heap, and nowhere else.
+    //   - MUST NOT be persisted to localStorage / sessionStorage / IndexedDB / cookies.
+    //   - MUST NOT be logged to `console` / telemetry / Sentry / error reporters. The structured
+    //     `track`/`trackError` helpers in lib/telemetry.ts are allowlist-typed and won't accept
+    //     them; raw `console.*` is banned in lib/railgun/ + lib/crypto/ by convention.
+    //   - MUST be discarded immediately after HKDF derivation. `enrollFromSignature` zeros the
+    //     buffer internally; the `finally` block below covers the early-return paths where
+    //     enrollFromSignature wasn't reached (e.g. determinism check failed and we throw).
+    //
+    // The ESLint rule that would catch accidental violations is deferred — see plan §4 Phase
+    // 2b. Until it lands, code review is the enforcement.
     try {
       const typedData = buildEnrollmentTypedData(account)
       // Capture the wagmi sign call as a closure so the determinism verification can re-invoke
@@ -91,28 +108,36 @@ export function useShieldedWallet() {
       }
 
       const signatureBytes = await promptSign()
-
-      // First-ever sign-in for THIS browser (no cached walletId) is the moment to verify
-      // determinism — if we proceeded without checking and the wallet were non-deterministic,
-      // the first signature would derive an identity the user could never re-sign back into.
-      // Returning users (cached walletId present) get their determinism check via the cached-
-      // checksum-mismatch guard inside `enrollFromSignature`; we don't double-sign on every
-      // unlock because (a) the cached check is cheaper and (b) re-prompting on every visit is
-      // hostile UX.
-      const isFirstEverSignIn = readStoredWalletId() == null
-      if (isFirstEverSignIn) {
-        const { deterministic } = await verifySignatureDeterminism(promptSign, signatureBytes)
-        if (!deterministic) {
-          throw new NonDeterministicSignerError('first-sign-mismatch')
+      try {
+        // First-ever sign-in for THIS browser (no cached walletId) is the moment to verify
+        // determinism — if we proceeded without checking and the wallet were non-deterministic,
+        // the first signature would derive an identity the user could never re-sign back into.
+        // Returning users (cached walletId present) get their determinism check via the cached-
+        // checksum-mismatch guard inside `enrollFromSignature`; we don't double-sign on every
+        // unlock because (a) the cached check is cheaper and (b) re-prompting on every visit is
+        // hostile UX.
+        const isFirstEverSignIn = readStoredWalletId() == null
+        if (isFirstEverSignIn) {
+          const { deterministic } = await verifySignatureDeterminism(promptSign, signatureBytes)
+          if (!deterministic) {
+            throw new NonDeterministicSignerError('first-sign-mismatch')
+          }
         }
-      }
 
-      const out = await enrollFromSignature(signatureBytes)
-      setWallets(prev => ({ ...prev, [out.state.id]: out.state }))
-      setActiveId(out.state.id)
-      // `shielded.created` / `shielded.unlock` is emitted by `enrollFromSignature` itself;
-      // don't double-track here.
-      return out
+        const out = await enrollFromSignature(signatureBytes)
+        setWallets(prev => ({ ...prev, [out.state.id]: out.state }))
+        setActiveId(out.state.id)
+        // `shielded.created` / `shielded.unlock` is emitted by `enrollFromSignature` itself;
+        // don't double-track here.
+        return out
+      } finally {
+        // SECURITY: best-effort zeroize the signature buffer on EVERY exit path. The happy
+        // path is already covered (enrollFromSignature zeros it after HKDF); this block
+        // closes the gap when the determinism check throws before enrollFromSignature is
+        // called, or when enrollFromSignature itself throws BEFORE its own finally fires
+        // (it doesn't today, but defense in depth).
+        signatureBytes.fill(0)
+      }
     } catch (err) {
       trackError('useShieldedWallet.signIn', err, { scope: 'shielded.unlock', message: 'signIn failed' })
       throw err

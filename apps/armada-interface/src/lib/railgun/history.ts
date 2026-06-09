@@ -11,7 +11,7 @@ import {
 } from '@railgun-community/shared-models'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import type { TxKind, TxRecord } from '@/lib/tx/types'
-import { getHubChainDescriptor } from './network'
+import { getHubBlockTimestamps, getHubChainDescriptor } from './network'
 
 // Defer the SDK import to runtime — same jsdom-init-crash mitigation as wallet.ts / sync.ts.
 type RailgunSdk = typeof import('@railgun-community/wallet')
@@ -400,17 +400,53 @@ export async function runHistoryScan(
   fromBlock: number | undefined,
 ): Promise<HistoryScanResult> {
   const items = await scanWalletHistory(walletId, fromBlock)
-  const records = historyItemsToTxRecords(items, walletId, ctx)
+  // The SDK doesn't populate `item.timestamp` on every chain (observed on local Anvil and some
+  // public RPC providers) — without backfill, downstream rows render the Unix epoch ("Dec 31,
+  // 1969"). Look up block timestamps in bulk for items missing one so the activity feed shows
+  // the actual chain time. Failures degrade gracefully — items without a recovered timestamp
+  // keep their (possibly zero) value; the row sorts to the bottom of the feed.
+  const timestamped = await backfillItemTimestamps(items)
+  const records = historyItemsToTxRecords(timestamped, walletId, ctx)
   // Walk the raw items (not the mapped records) so an Unknown-category item still advances
   // the checkpoint — without this, an unmappable item near the head would keep the next
   // scan rewalking everything since the last mapped item.
   let highest: number | null = null
-  for (const item of items) {
+  for (const item of timestamped) {
     if (item.blockNumber !== undefined && item.blockNumber !== null) {
       if (highest === null || item.blockNumber > highest) highest = item.blockNumber
     }
   }
   return { records, highestBlock: highest, itemCount: items.length }
+}
+
+/**
+ * Fetch block timestamps for items where the SDK didn't supply one, then return a new array
+ * with `timestamp` patched in. Items where the lookup succeeds get a populated `timestamp`;
+ * items where it fails (or that have no `blockNumber`) pass through unchanged. Pure of side
+ * effects beyond the bulk RPC read inside `getHubBlockTimestamps`.
+ */
+async function backfillItemTimestamps(
+  items: ReadonlyArray<TransactionHistoryItem>,
+): Promise<TransactionHistoryItem[]> {
+  const needsBackfill: number[] = []
+  for (const item of items) {
+    if (
+      (item.timestamp === undefined || item.timestamp === null || item.timestamp === 0)
+      && item.blockNumber !== undefined
+      && item.blockNumber !== null
+    ) {
+      needsBackfill.push(item.blockNumber)
+    }
+  }
+  if (needsBackfill.length === 0) return items.slice()
+  const timestamps = await getHubBlockTimestamps(needsBackfill)
+  return items.map((item) => {
+    if (item.timestamp && item.timestamp > 0) return item
+    if (item.blockNumber === undefined || item.blockNumber === null) return item
+    const ts = timestamps.get(item.blockNumber)
+    if (ts === undefined) return item
+    return { ...item, timestamp: ts }
+  })
 }
 
 /* Re-export the SDK types so consumers don't import @railgun-community directly. */

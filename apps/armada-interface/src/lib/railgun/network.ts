@@ -192,3 +192,38 @@ export async function getCurrentHubBlock(): Promise<number | null> {
     return null
   }
 }
+
+/**
+ * Look up the chain timestamp (seconds since epoch) for one or more hub-chain block numbers.
+ * Used by `runHistoryScan` to backfill timestamps on SDK history items where the SDK didn't
+ * populate `item.timestamp` itself (observed on local Anvil chains and some RPC providers).
+ *
+ * Deduplicates input block numbers — N items sharing one block produce one RPC call. Results
+ * are returned as a `Map<blockNumber, timestampSeconds>`; missing entries mean the lookup
+ * failed and the caller should keep its existing (possibly zero) timestamp.
+ */
+export async function getHubBlockTimestamps(
+  blockNumbers: ReadonlyArray<number>,
+): Promise<Map<number, number>> {
+  const result = new Map<number, number>()
+  if (blockNumbers.length === 0) return result
+  const hubChain = getNetworkConfig().hub
+  const primaryRpc = hubChain.rpcUrls[0]
+  if (!primaryRpc) return result
+  // Dedup before issuing RPC calls — first-scan recovery on a busy wallet can hit dozens of
+  // items spread across a few blocks, and `eth_getBlockByNumber` is one of the more expensive
+  // public-RPC reads.
+  const unique = Array.from(new Set(blockNumbers))
+  const provider = new ethers.JsonRpcProvider(primaryRpc)
+  const blocks = await Promise.allSettled(
+    unique.map((bn) => provider.getBlock(bn)),
+  )
+  for (let i = 0; i < unique.length; i++) {
+    const settled = blocks[i]
+    const blockNumber = unique[i]
+    if (settled?.status === 'fulfilled' && settled.value && blockNumber !== undefined) {
+      result.set(blockNumber, settled.value.timestamp)
+    }
+  }
+  return result
+}

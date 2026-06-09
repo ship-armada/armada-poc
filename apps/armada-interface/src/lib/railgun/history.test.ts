@@ -12,6 +12,7 @@ import {
   historyItemToTxRecord,
   historyItemsToTxRecords,
   isSyntheticTxId,
+  runHistoryScan,
   syntheticTxId,
   type HistoryMapContext,
 } from './history'
@@ -287,6 +288,115 @@ describe('historyItemsToTxRecords', () => {
     expect(records.length).toBe(2)
     expect(records[0]!.id).toBe(syntheticTxId('newer', 'ShieldERC20s'))
     expect(records[1]!.id).toBe(syntheticTxId('older', 'UnshieldERC20s'))
+  })
+})
+
+describe('runHistoryScan — timestamp backfill', () => {
+  const hoistedScan = vi.hoisted(() => ({
+    getWalletTransactionHistory: vi.fn(),
+    getHubChainDescriptor: vi.fn(() => ({ type: 0 as const, id: 31337 })),
+    getHubBlockTimestamps: vi.fn(async () => new Map<number, number>()),
+  }))
+
+  vi.mock('@railgun-community/wallet', () => ({
+    getWalletTransactionHistory: hoistedScan.getWalletTransactionHistory,
+  }))
+  vi.mock('./network', () => ({
+    getHubChainDescriptor: hoistedScan.getHubChainDescriptor,
+    getHubBlockTimestamps: hoistedScan.getHubBlockTimestamps,
+  }))
+
+  beforeEach(() => {
+    hoistedScan.getWalletTransactionHistory.mockReset()
+    hoistedScan.getHubBlockTimestamps.mockReset()
+    hoistedScan.getHubBlockTimestamps.mockResolvedValue(new Map())
+  })
+
+  function withoutTimestamp(txid: string, blockNumber: number, amount: bigint): TransactionHistoryItem {
+    return {
+      ...baseItem({
+        txid,
+        blockNumber,
+        timestamp: undefined,
+        category: TransactionHistoryItemCategory.ShieldERC20s,
+        receiveERC20Amounts: [{
+          tokenAddress: '0xusdc',
+          amount,
+          senderAddress: null,
+          memoText: null,
+          shieldFee: undefined,
+          hasValidPOIForActiveLists: true,
+          balanceBucket: RailgunWalletBalanceBucket.Spendable,
+        }],
+      }),
+      timestamp: undefined,
+    }
+  }
+
+  it('fetches block timestamps for items missing one and patches them into the record (the "Dec 31, 1969" bug fix)', async () => {
+    // WHY: the SDK on local Anvil returns items with `timestamp: undefined`. Without backfill,
+    // `tsMs()` returns 0 and the row renders the Unix epoch (1969). The fix is to do a bulk
+    // RPC lookup so the recovered row shows the actual chain time.
+    hoistedScan.getWalletTransactionHistory.mockResolvedValue([
+      withoutTimestamp('aaa', 12_000, 1n),
+      withoutTimestamp('bbb', 12_005, 2n),
+    ])
+    hoistedScan.getHubBlockTimestamps.mockResolvedValue(new Map([
+      [12_000, 1_700_000_000],
+      [12_005, 1_700_000_300],
+    ]))
+    const result = await runHistoryScan(WALLET_ID, CTX, undefined)
+    expect(result.records.length).toBe(2)
+    expect(result.records[0]!.updatedAt).toBe(1_700_000_300_000)
+    expect(result.records[1]!.updatedAt).toBe(1_700_000_000_000)
+  })
+
+  it('dedupes block-number lookups (one RPC call per distinct block)', async () => {
+    // WHY: first-scan recovery on a busy wallet might surface many items in the same block.
+    // Without dedup we'd issue N redundant eth_getBlockByNumber calls. Verify the helper sees
+    // each block exactly once.
+    hoistedScan.getWalletTransactionHistory.mockResolvedValue([
+      withoutTimestamp('a', 12_000, 1n),
+      withoutTimestamp('b', 12_000, 2n),
+      withoutTimestamp('c', 12_005, 3n),
+    ])
+    await runHistoryScan(WALLET_ID, CTX, undefined)
+    expect(hoistedScan.getHubBlockTimestamps).toHaveBeenCalledTimes(1)
+    const args = hoistedScan.getHubBlockTimestamps.mock.calls[0]![0] as number[]
+    expect(args).toEqual([12_000, 12_000, 12_005])
+  })
+
+  it('skips the RPC lookup entirely when every item already has a timestamp', async () => {
+    // WHY: when the SDK does populate timestamps (Sepolia, mainnet, future Anvil versions),
+    // we shouldn't pay for an RPC round-trip we don't need. Verify the lookup is conditional.
+    hoistedScan.getWalletTransactionHistory.mockResolvedValue([
+      baseItem({
+        txid: 'a',
+        timestamp: 1_700_000_000,
+        blockNumber: 12_000,
+        category: TransactionHistoryItemCategory.ShieldERC20s,
+        receiveERC20Amounts: [{
+          tokenAddress: '0xusdc', amount: 1n, senderAddress: null, memoText: null,
+          shieldFee: undefined, hasValidPOIForActiveLists: true,
+          balanceBucket: RailgunWalletBalanceBucket.Spendable,
+        }],
+      }),
+    ])
+    await runHistoryScan(WALLET_ID, CTX, undefined)
+    expect(hoistedScan.getHubBlockTimestamps).not.toHaveBeenCalled()
+  })
+
+  it('leaves items unchanged when the RPC lookup returns nothing (graceful degrade)', async () => {
+    // WHY: a flaky RPC shouldn't crash the scan. The row still renders, just with the SDK's
+    // missing-timestamp default (0 → "Dec 31, 1969"). That's strictly better than failing the
+    // whole recovery for the user.
+    hoistedScan.getWalletTransactionHistory.mockResolvedValue([
+      withoutTimestamp('a', 12_000, 1n),
+    ])
+    hoistedScan.getHubBlockTimestamps.mockResolvedValue(new Map())
+    const result = await runHistoryScan(WALLET_ID, CTX, undefined)
+    expect(result.records.length).toBe(1)
+    expect(result.records[0]!.updatedAt).toBe(0)
   })
 })
 

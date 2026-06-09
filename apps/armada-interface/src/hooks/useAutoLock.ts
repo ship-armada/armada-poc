@@ -1,4 +1,4 @@
-// ABOUTME: Auto-lock enforcement — arms a single timer whose duration is preferencesAtom.autoLockMinutes; user activity resets it.
+// ABOUTME: Auto-lock enforcement — arms an idle timer (preferencesAtom.autoLockMinutes), plus tab-hidden grace + tab-unload sync locks per V2 redesign §"Phase 5".
 // ABOUTME: Pauses when wallet isn't unlocked, when a non-terminal tx is in flight (don't lock mid-flow), or when unmounted.
 
 import { useEffect, useRef } from 'react'
@@ -19,6 +19,20 @@ const ACTIVITY_EVENTS: ReadonlyArray<keyof WindowEventMap> = [
 
 /** How long to debounce activity resets — caps the cost of mousemove-style storms. */
 const RESET_THROTTLE_MS = 1000
+
+/**
+ * How long the tab can stay hidden before we auto-lock — 5 minutes.
+ *
+ * Hidden ≠ idle: a user may briefly switch tabs to copy an address, check a notification, or
+ * follow a link from a confirmation email. Locking instantly on `visibilityState === 'hidden'`
+ * would punish those legitimate flows. A 5-minute grace covers the common case while still
+ * locking faster than the idle timer for tabs the user has clearly walked away from.
+ *
+ * Not configurable in v1 — adding a preference here trades UX surface area for a marginal
+ * security tweak, and the 5-min default lands in the same ballpark as MetaMask's own
+ * background-tab behavior so most users won't notice the difference.
+ */
+const HIDDEN_GRACE_MS = 5 * 60_000
 
 /**
  * Mount once at the App root. Listens for user activity and locks the shielded wallet after the
@@ -69,14 +83,51 @@ export function useAutoLock() {
       timer = setTimeout(fire, timeoutMs)
     }
 
+    // Tab-hidden grace: when the document goes hidden, arm a 5-minute timer. If the user comes
+    // back before it fires, cancel it (resume normal idle behavior). If grace expires while
+    // still hidden, lock — deferring just like the idle path when a tx is in flight, so we
+    // don't yank the user out of mid-broadcast even when they've walked away.
+    let hiddenTimer: ReturnType<typeof setTimeout> | null = null
+    function onVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        if (hiddenTimer) clearTimeout(hiddenTimer)
+        hiddenTimer = setTimeout(() => {
+          if (hasInflightRef.current) {
+            // Same defer policy as the main fire() — re-check in a minute. Don't lock mid-flow.
+            hiddenTimer = setTimeout(onVisibilityChange, 60_000)
+            return
+          }
+          lockRef.current()
+        }, HIDDEN_GRACE_MS)
+      } else if (hiddenTimer) {
+        clearTimeout(hiddenTimer)
+        hiddenTimer = null
+      }
+    }
+
+    // Tab-unload sync lock: best-effort zeroize the keyManager before the page is torn down.
+    // `lockWallet` clears the keyManager synchronously before its own internal await; the SDK's
+    // unloadWalletByID promise gets orphaned but that's OK — the engine itself is dying with
+    // the page. The point is to clear the in-memory rootSecret buffer one extra time before
+    // V8 starts reclaiming everything, so a process-memory snapshot taken in the milliseconds
+    // around the close has fewer bytes to recover.
+    function onBeforeUnload() {
+      lockRef.current()
+    }
+
     ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('beforeunload', onBeforeUnload)
     // Arm the initial timer.
     store.set(autoLockDeadlineAtom, Date.now() + timeoutMs)
     timer = setTimeout(fire, timeoutMs)
 
     return () => {
       ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, reset))
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('beforeunload', onBeforeUnload)
       if (timer) clearTimeout(timer)
+      if (hiddenTimer) clearTimeout(hiddenTimer)
       store.set(autoLockDeadlineAtom, null)
     }
   }, [isUnlocked, timeoutMs])

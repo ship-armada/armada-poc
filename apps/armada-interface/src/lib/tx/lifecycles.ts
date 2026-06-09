@@ -79,6 +79,22 @@ const transferShielded: TxLifecycle<'transfer-shielded'> = {
   retry: SHORT_RETRY,
 }
 
+/**
+ * Synthetic received-transfer lifecycle. Single terminal stage — we reconstruct the record from
+ * chain only once the commitment is already on the merkle tree, so there's nothing to drive or
+ * resume. `maxDurationMs: 0` + empty retry means the executor's resume probe never touches it
+ * (records are born `completed`). No retry policy applies.
+ */
+const transferShieldedReceived: TxLifecycle<'transfer-shielded-received'> = {
+  kind: 'transfer-shielded-received',
+  stages: ['observed'],
+  terminalSuccess: 'observed',
+  retryableStages: [],
+  estDuration: { p50: 0, p90: 0 },
+  maxDurationMs: 0,
+  retry: { maxAttempts: 0, backoffMs: 0 },
+}
+
 const yieldDeposit: TxLifecycle<'yield-deposit'> = {
   kind: 'yield-deposit',
   stages: ['build-proof', 'submit-relayer', 'hub-confirmed'],
@@ -106,6 +122,7 @@ const LIFECYCLES = {
   'unshield-local': unshieldLocal,
   'unshield-xchain': unshieldXchain,
   'transfer-shielded': transferShielded,
+  'transfer-shielded-received': transferShieldedReceived,
   'yield-deposit': yieldDeposit,
   'yield-withdraw': yieldWithdraw,
 } as const

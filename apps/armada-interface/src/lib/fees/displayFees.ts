@@ -40,6 +40,11 @@ export function relayerFeeKeyForKind(kind: TxKind): RelayerFeeKey {
       return 'unshield'
     case 'transfer-shielded':
       return 'transfer'
+    case 'transfer-shielded-received':
+      // Synthetic received-transfer records are reconstructed from chain and never submitted, so
+      // they carry no relayer fee. Reaching here means a received record was fed into fee logic —
+      // a caller bug. Throw rather than invent a fee key.
+      throw new Error('relayerFeeKeyForKind: received transfers carry no relayer fee')
   }
 }
 

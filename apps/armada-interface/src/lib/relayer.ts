@@ -121,6 +121,10 @@ export function userFeeForKind(
       // ETH gas themselves and the wrapper doesn't enter the picture — fee is 0.
       if (opts?.gasless) return quote ? BigInt(quote.fees.shield) : 0n
       return 0n
+    case 'transfer-shielded-received':
+      // Synthetic received-transfer records are reconstructed from chain, never submitted —
+      // no fee applies. Reaching here is a caller bug; throw rather than fabricate a fee.
+      throw new Error('userFeeForKind: received transfers carry no fee')
   }
 }
 
@@ -174,6 +178,10 @@ export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
       // submit path stays `no-fee` (user pays ETH gas themselves; no USDC line item).
       if (opts?.gasless) return 'fee-from-recipient'
       return 'no-fee'
+    case 'transfer-shielded-received':
+      // Synthetic received-transfer records never reach fee-model logic (no modal, no submit).
+      // Throw to assert the invariant rather than fabricate a model.
+      throw new Error('feeModelForKind: received transfers have no fee model')
   }
 }
 

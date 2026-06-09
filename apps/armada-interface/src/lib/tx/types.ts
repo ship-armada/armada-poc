@@ -7,6 +7,7 @@ export type TxKind =
   | 'unshield-local'
   | 'unshield-xchain'
   | 'transfer-shielded'
+  | 'transfer-shielded-received'
   | 'yield-deposit'
   | 'yield-withdraw'
 
@@ -84,6 +85,15 @@ export type StageTransferShielded =
   | 'submit-relayer'
   | 'hub-confirmed'
 
+/**
+ * Synthetic received-transfer kind. These records are not authored by the user — they're
+ * reconstructed from chain via `getWalletTransactionHistory` when another wallet shields to our
+ * 0zk address. There's no proof/submit/confirm flow we drove, so the lifecycle collapses to a
+ * single terminal `observed` stage: by the time we synthesize the record, the commitment is
+ * already on the merkle tree.
+ */
+export type StageReceived = 'observed'
+
 export type StageYieldDeposit =
   | 'build-proof'
   | 'submit-relayer'
@@ -100,6 +110,7 @@ export type TxStage =
   | StageUnshieldLocal
   | StageUnshieldXchain
   | StageTransferShielded
+  | StageReceived
   | StageYieldDeposit
   | StageYieldWithdraw
 
@@ -110,6 +121,7 @@ export type StageFor<K extends TxKind> =
   : K extends 'unshield-local' ? StageUnshieldLocal
   : K extends 'unshield-xchain' ? StageUnshieldXchain
   : K extends 'transfer-shielded' ? StageTransferShielded
+  : K extends 'transfer-shielded-received' ? StageReceived
   : K extends 'yield-deposit' ? StageYieldDeposit
   : K extends 'yield-withdraw' ? StageYieldWithdraw
   : never
@@ -231,6 +243,19 @@ export interface MetaTransferShielded extends MetaCommon, MetaBroadcaster {
   recipient: string
 }
 
+/**
+ * Meta for a synthetic received transfer. Deliberately does NOT extend `MetaCommon` — a received
+ * transfer carries no fee (we didn't author it, so there's no `feeCacheId` to attach). The sender
+ * is private by Railgun's design and not recoverable, so we only keep the amount + any plaintext
+ * memo the sender chose to attach.
+ */
+export interface MetaTransferShieldedReceived {
+  /** USDC raw amount (6 decimals) credited to our shielded balance. */
+  amount: bigint
+  /** Optional plaintext memo the sender attached (`memoText` on the SDK history item). */
+  memoText?: string
+}
+
 export type MetaYieldDeposit = MetaCommon & MetaBroadcaster
 export interface MetaYieldWithdraw extends MetaCommon, MetaBroadcaster {
   /** Yield share amount to redeem; `amount` is the expected USDC output. */
@@ -243,6 +268,7 @@ export type MetaFor<K extends TxKind> =
   : K extends 'unshield-local' ? MetaUnshieldLocal
   : K extends 'unshield-xchain' ? MetaUnshieldXchain
   : K extends 'transfer-shielded' ? MetaTransferShielded
+  : K extends 'transfer-shielded-received' ? MetaTransferShieldedReceived
   : K extends 'yield-deposit' ? MetaYieldDeposit
   : K extends 'yield-withdraw' ? MetaYieldWithdraw
   : never

@@ -6,6 +6,7 @@ import {
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
+  Inbox,
   Plus,
   type LucideIcon,
 } from 'lucide-react'
@@ -26,6 +27,7 @@ import styles from './TxRow.module.css'
  *  - transfer-shielded      ArrowRight — payment.
  *  - yield-deposit          ArrowUpRight — into vault.
  *  - yield-withdraw         ArrowDownLeft — vault → available shielded.
+ *  - transfer-received      Inbox — someone shielded USDC to us (ties to the Receive button glyph).
  */
 function kindIcon(kind: TxKind): LucideIcon {
   switch (kind) {
@@ -37,6 +39,8 @@ function kindIcon(kind: TxKind): LucideIcon {
       return ArrowDown
     case 'transfer-shielded':
       return ArrowRight
+    case 'transfer-shielded-received':
+      return Inbox
     case 'yield-deposit':
       return ArrowUpRight
     case 'yield-withdraw':
@@ -46,7 +50,12 @@ function kindIcon(kind: TxKind): LucideIcon {
 
 /** Whether the tx adds to (true) or removes from (false) the user's private balance. */
 function isInflow(kind: TxKind): boolean {
-  return kind === 'shield' || kind === 'shield-xchain' || kind === 'yield-withdraw'
+  return (
+    kind === 'shield'
+    || kind === 'shield-xchain'
+    || kind === 'yield-withdraw'
+    || kind === 'transfer-shielded-received'
+  )
 }
 
 export interface TxRowProps {

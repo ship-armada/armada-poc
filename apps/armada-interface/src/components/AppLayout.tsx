@@ -29,7 +29,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col text-foreground">
       <header
-        className="fixed inset-x-6 top-2 z-40 flex h-14 items-center justify-between"
+        className="fixed inset-x-6 top-2 z-40 flex h-auto items-start justify-between"
       >
         <Link to="/" aria-label="Home" className="flex shrink-0 items-center gap-2.5 text-white">
           <ArmadaLogo variant="mono" />

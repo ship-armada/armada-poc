@@ -9,6 +9,7 @@ import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
 import { UnshieldModal } from '@/components/unshield'
 import { SendModal } from '@/components/payments'
+import { ReceiveDialog } from '@/components/receive'
 import { EarnModal } from '@/components/yield'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useNowTicker } from '@/hooks/useNowTicker'
@@ -208,6 +209,7 @@ export function App() {
       <UnshieldModal />
       <SendModal />
       <EarnModal />
+      <ReceiveDialog />
     </>
   )
 }

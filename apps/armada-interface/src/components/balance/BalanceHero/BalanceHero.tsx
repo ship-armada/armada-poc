@@ -1,13 +1,15 @@
 // ABOUTME: Dashboard hero — tall vertical card showing total private USDC, available sub-caption, and a gradient Deposit CTA.
 // ABOUTME: "Total" = shielded + sharesToUsdc(yieldShares, rate). "Available" = shielded only (excludes vault). Deposit click opens the shield modal via useOpenActionModal.
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { Inbox } from 'lucide-react'
 import { Button } from '@armada/ui'
 import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Card } from '@/components/ui'
 import { formatUsdcAmount } from '@/lib/format'
 import { sharesToUsdc } from '@/lib/yield'
-import { syncStateAtom, yieldSharesAtom } from '@/state/wallet'
+import { shieldedWalletAtom, syncStateAtom, yieldSharesAtom } from '@/state/wallet'
+import { openModalAtom } from '@/state/ui'
 import { usePrivateUsdcDisplay } from '@/hooks/usePrivateUsdcDisplay'
 import { useYieldRate } from '@/hooks/useYieldRate'
 import { useOpenActionModal } from '@/hooks/useOpenActionModal'
@@ -20,7 +22,14 @@ export function BalanceHero() {
   const yieldShares = useAtomValue(yieldSharesAtom)
   const { rate: yieldRate } = useYieldRate()
   const openActionModal = useOpenActionModal()
+  const setOpenModal = useSetAtom(openModalAtom)
   const sync = useAtomValue(syncStateAtom)
+  // Receive is a display-only modal (no EVM gating) — render the button only when there's an
+  // actual shielded address to show. Locked / missing states hide it so we don't promise a copy
+  // action we can't fulfill.
+  const shieldedWallet = useAtomValue(shieldedWalletAtom)
+  const canReceive =
+    shieldedWallet.status === 'unlocked' && Boolean(shieldedWallet.railgunAddress)
 
   const earningUsdc =
     yieldShares !== null && yieldRate !== null
@@ -82,6 +91,17 @@ export function BalanceHero() {
             className={styles.depositButton}
             onClick={() => openActionModal('shield')}
           />
+          {canReceive ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              label="Receive"
+              showIcon={false}
+              leadingIcon={<Inbox size={14} aria-hidden="true" />}
+              className={styles.receiveButton}
+              onClick={() => setOpenModal('receive')}
+            />
+          ) : null}
         </>
       )}
     </Card>

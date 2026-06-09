@@ -68,6 +68,14 @@
   padding-bottom: var(--primitives-spacing-3);
 }
 
+/* Secondary action sitting below the gradient Deposit CTA. Ghost variant keeps the chrome
+   transparent so the primary action keeps visual priority; the small footprint matches the
+   "share my address" intent (quieter than Deposit, surfaced when an address is available). */
+.receiveButton {
+  margin-top: var(--primitives-spacing-1);
+  color: var(--semantic-color-text-secondary);
+}
+
 /* In-card sync UI — replaces the total/available/Deposit block while the Railgun engine is
    mid-scan. Lives inside the same card chrome so the gradient + radius do the visual work;
    no extra surface needed. */

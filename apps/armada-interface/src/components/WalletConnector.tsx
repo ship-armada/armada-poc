@@ -1,7 +1,7 @@
 // ABOUTME: Header wallet control — RainbowKit connect flow; connected state uses crowdfund-parity WalletPillMenu.
 
 import { useMemo } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, LogIn } from 'lucide-react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
 import { Button, WalletButton, WalletPillMenu } from '@armada/ui'
@@ -82,6 +82,7 @@ export function WalletConnector() {
               size="md"
               label="Connect Wallet"
               showIcon={false}
+              leadingIcon={<LogIn aria-hidden="true" width={16} height={16} />}
               onClick={openConnectModal}
               className={styles.trigger}
             />

@@ -81,6 +81,13 @@
 .noIcon.md { padding-right: var(--semantic-component-button-primary-md-padding-x); }
 .noIcon.lg { padding-right: var(--semantic-component-button-primary-lg-padding-x); }
 
+/* Leading icon — mirror the trailing-icon left-padding token so the icon doesn't sit too tight
+   against the button's leading edge. Not in the mockup; added as a sibling to `.icon` to support
+   armada-interface's "Connect Wallet" pill. */
+.leading.sm { padding-left: var(--semantic-component-button-primary-sm-padding-x-icon); }
+.leading.md { padding-left: var(--semantic-component-button-primary-md-padding-x-icon); }
+.leading.lg { padding-left: var(--semantic-component-button-primary-lg-padding-x-icon); }
+
 /* Primary */
 .primary { background: var(--semantic-component-button-primary-bg); color: var(--semantic-component-button-primary-text); }
 .primary:hover:not(:disabled) { background: var(--semantic-component-button-primary-bg-hover); }

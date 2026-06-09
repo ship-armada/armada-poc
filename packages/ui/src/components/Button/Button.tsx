@@ -1,6 +1,7 @@
 // ABOUTME: Pill-shaped button primitive with primary/secondary/ghost/gradient variants and three sizes.
 // ABOUTME: Ported byte-identical from the armada-crowdfund mockup; restyle via tokens, not edits here.
 
+import type { ReactNode } from 'react'
 import styles from './Button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'gradient'
@@ -18,6 +19,13 @@ export interface ButtonProps {
   style?: React.CSSProperties
   className?: string
   type?: 'button' | 'submit' | 'reset'
+  /**
+   * Optional icon rendered before the label. Mockup buttons are label-only or
+   * label + trailing arrow; armada-interface's "Connect Wallet" pill ships with a leading
+   * `LogIn` glyph to read as an entry-action button. Same design-system-deviation precedent as
+   * `WalletPillMenu.extraSection` and `WalletButton.disabled`. See packages/ui/src/components/CLAUDE.md.
+   */
+  leadingIcon?: ReactNode
 }
 
 const Arrow = () => (
@@ -37,6 +45,7 @@ export function Button({
   className,
   type = 'button',
   style,
+  leadingIcon,
 }: ButtonProps) {
   const showTrailing = showIcon || loading
   const cls = [
@@ -45,6 +54,7 @@ export function Button({
     styles[size],
     showTrailing ? styles.icon : '',
     loading ? styles.loading : '',
+    leadingIcon ? styles.leading : '',
     className ?? '',
   ].filter(Boolean).join(' ')
 
@@ -57,6 +67,11 @@ export function Button({
       onClick={loading ? undefined : onClick}
       style={style}
     >
+      {leadingIcon ? (
+        <span className={styles.iconWrap} aria-hidden>
+          {leadingIcon}
+        </span>
+      ) : null}
       <span>{label}</span>
       {showTrailing ? (
         <span className={styles.iconWrap} aria-hidden={loading}>

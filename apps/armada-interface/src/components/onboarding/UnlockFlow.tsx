@@ -232,6 +232,9 @@ export function UnlockFlow({ onUnlocked, onCreateNew, createNewLabel }: UnlockFl
                     </button>
                   </Tooltip>
                 </p>
+                <p className={styles.bodyMuted}>
+                  Keep this secret safe — you may need it again for future unlocks on this device.
+                </p>
                 <div className={styles.secretField}>
                   <textarea
                     id={pasteInputId}
@@ -288,6 +291,9 @@ export function UnlockFlow({ onUnlocked, onCreateNew, createNewLabel }: UnlockFl
                 ) : null}
                 <p className={styles.body}>
                   Choose a backup file from Settings → Export and enter the passphrase you set.
+                </p>
+                <p className={styles.bodyMuted}>
+                  Keep this file safe — you may need it again for future unlocks on this device.
                 </p>
                 <div className={styles.field}>
                   <label htmlFor={backupFileId} className={styles.label}>

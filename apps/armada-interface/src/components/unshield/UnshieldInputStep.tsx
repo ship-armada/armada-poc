@@ -32,6 +32,12 @@ export interface UnshieldInputStepProps {
   flowBreakdown?: FlowFeeBreakdown
   feeLoading?: boolean
   gasChainId: number
+  /**
+   * When true, the relayer pays gas — suppresses the GasBalanceNotice. The default unshield path
+   * is relayer-mediated; the user only pays native gas themselves when they've explicitly toggled
+   * Preferences → "Submit transactions from my wallet". Mirrors `ShieldModal`'s `gaslessMode` prop.
+   */
+  gaslessMode?: boolean
   onCancel: () => void
   onContinue: () => void
 }
@@ -49,6 +55,7 @@ export function UnshieldInputStepContent({
   flowBreakdown,
   feeLoading = false,
   gasChainId,
+  gaslessMode = true,
 }: Pick<
   UnshieldInputStepProps,
   | 'destChainId'
@@ -63,6 +70,7 @@ export function UnshieldInputStepContent({
   | 'flowBreakdown'
   | 'feeLoading'
   | 'gasChainId'
+  | 'gaslessMode'
 >) {
   const hubChainId = getNetworkConfig().hub.chainId
   const isXchain = destChainId !== hubChainId
@@ -71,6 +79,10 @@ export function UnshieldInputStepContent({
     [],
   )
   const gasWarning = useGasBalanceWarning(gasChainId)
+  // Only surface the gas warning when the user actually pays gas themselves. On the relayer
+  // path (the default for unshield) the relayer covers it — a "you have 0 ETH" notice would be
+  // wrong AND would push users to top up native gas they'll never spend.
+  const showGasNotice = !gaslessMode && gasWarning.show
 
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
@@ -99,7 +111,7 @@ export function UnshieldInputStepContent({
           error={amountError}
           amountAriaLabel="Withdrawal amount"
         />
-        {gasWarning.show ? (
+        {showGasNotice ? (
           <GasBalanceNotice
             nativeSymbol={gasWarning.nativeSymbol}
             formattedBalance={gasWarning.formattedBalance}

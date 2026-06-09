@@ -34,6 +34,13 @@ export interface EarnInputStepProps {
   flowBreakdown?: FlowFeeBreakdown
   feeLoading?: boolean
   gasChainId: number
+  /**
+   * When true, the relayer pays gas — suppresses the GasBalanceNotice. `yield-deposit` defaults
+   * to the relayer path; `yield-withdraw` force-routes through the user's wallet (the
+   * multi-Transaction shape of `redeemAndShield` doesn't fit the broadcaster path today — see
+   * EarnModal). Modal passes the inverse of `effectiveUseWalletOverride`.
+   */
+  gaslessMode?: boolean
   rate: YieldRate | null
   /**
    * Optional pre-flight gate reason — set on the Withdraw tab when the user's private USDC
@@ -63,6 +70,7 @@ export function EarnInputStepContent({
   flowBreakdown,
   feeLoading = false,
   gasChainId,
+  gaslessMode = true,
   rate,
   continueBlockedReason,
 }: Pick<
@@ -77,6 +85,7 @@ export function EarnInputStepContent({
   | 'flowBreakdown'
   | 'feeLoading'
   | 'gasChainId'
+  | 'gaslessMode'
   | 'rate'
   | 'continueBlockedReason'
 >) {
@@ -87,6 +96,10 @@ export function EarnInputStepContent({
   )
 
   const gasWarning = useGasBalanceWarning(gasChainId)
+  // Only surface the gas notice when the user actually pays gas themselves. `yield-deposit`
+  // defaults to relayer-mediated; `yield-withdraw` is force-routed through the wallet today,
+  // so the parent passes `gaslessMode={false}` on that tab and the notice DOES show.
+  const showGasNotice = !gaslessMode && gasWarning.show
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
   const amountError =
@@ -119,7 +132,7 @@ export function EarnInputStepContent({
         error={amountError}
         amountAriaLabel={tab === 'add' ? 'Vault deposit amount' : 'Vault withdrawal amount'}
       />
-      {gasWarning.show ? (
+      {showGasNotice ? (
         <GasBalanceNotice
           nativeSymbol={gasWarning.nativeSymbol}
           formattedBalance={gasWarning.formattedBalance}

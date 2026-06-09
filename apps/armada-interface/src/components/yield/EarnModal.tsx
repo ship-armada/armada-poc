@@ -271,6 +271,11 @@ export function EarnModal() {
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}
             gasChainId={hubChainId}
+            // Add tab → relayer-mediated (gasless). Withdraw tab → force-routed through wallet
+            // because `redeemAndShield`'s multi-Transaction shape doesn't fit the broadcaster
+            // path today (tracked at ship-armada/armada-poc#312). `effectiveUseWalletOverride`
+            // already encodes this; the input step shows the gas notice when it's true.
+            gaslessMode={!effectiveUseWalletOverride}
             rate={yieldRate}
             continueBlockedReason={withdrawFeeBlockedReason}
           />

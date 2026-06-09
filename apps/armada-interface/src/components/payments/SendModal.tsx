@@ -293,7 +293,16 @@ export function SendModal() {
             displayFees={displayFees}
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}
-            gasChainId={tab === 'external' && isXchain ? destChainId : hubChainId}
+            // The user always signs on HUB regardless of tab — `transfer-shielded` runs the
+            // proof-bearing tx on hub, `unshield-local` likewise, and `unshield-xchain` signs
+            // `atomicCrossChainUnshield` on hub before CCTP delivers on the destination chain.
+            // Previously `tab === 'external' && isXchain ? destChainId : hubChainId` wrongly
+            // warned about ETH on the destination chain — no destination-chain tx is ever sent
+            // from the user's wallet.
+            gasChainId={hubChainId}
+            // SendModal's three kinds default to the relayer path; user pays gas only when
+            // they've toggled Preferences → "Submit transactions from my wallet".
+            gaslessMode={!prefs.submitFromWallet}
             destDeploymentError={destDeploymentError}
           />
           <SendInputStepFooter

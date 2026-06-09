@@ -233,7 +233,15 @@ export function UnshieldModal() {
             displayFees={displayFees}
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}
-            gasChainId={destChainId}
+            // The user signs `unshield` / `atomicCrossChainUnshield` on HUB regardless of where
+            // CCTP delivers; gas-balance check must therefore target the hub chain. Previously
+            // passed `destChainId`, which wrongly warned about ETH on the destination chain even
+            // though no destination-chain tx is ever sent from the user's wallet.
+            gasChainId={hubChainId}
+            // The unshield handler routes through the relayer by default; the user pays native
+            // gas only when they've explicitly toggled "Submit transactions from my wallet" in
+            // Settings. Suppress the gas notice on the relayer path.
+            gaslessMode={!prefs.submitFromWallet}
           />
           <UnshieldInputStepFooter
             walletAddress={connectedEvm ?? null}

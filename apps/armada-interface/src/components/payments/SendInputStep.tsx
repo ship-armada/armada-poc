@@ -47,6 +47,13 @@ export interface SendInputStepProps {
   flowBreakdown?: FlowFeeBreakdown
   feeLoading?: boolean
   gasChainId: number
+  /**
+   * When true, the relayer pays gas — suppresses the GasBalanceNotice. All three SendModal
+   * kinds (`transfer-shielded`, `unshield-local`, `unshield-xchain`) route through the relayer
+   * by default; the user pays native gas only when they've toggled Preferences →
+   * "Submit transactions from my wallet". Mirrors `ShieldModal` / `UnshieldModal`.
+   */
+  gaslessMode?: boolean
   destDeploymentError?: string
   onCancel: () => void
   onContinue: () => void
@@ -67,6 +74,7 @@ export function SendInputStepContent({
   flowBreakdown,
   feeLoading = false,
   gasChainId,
+  gaslessMode = true,
   destDeploymentError,
 }: Pick<
   SendInputStepProps,
@@ -84,6 +92,7 @@ export function SendInputStepContent({
   | 'flowBreakdown'
   | 'feeLoading'
   | 'gasChainId'
+  | 'gaslessMode'
   | 'destDeploymentError'
 >) {
   const hubChainId = getNetworkConfig().hub.chainId
@@ -101,6 +110,9 @@ export function SendInputStepContent({
 
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const gasWarning = useGasBalanceWarning(gasChainId)
+  // Only surface the gas notice when the user actually pays gas themselves. All three SendModal
+  // kinds default to the relayer path; the wallet-submit override flips `gaslessMode` to false.
+  const showGasNotice = !gaslessMode && gasWarning.show
   const tooMuch = amount > maxInput
   const amountError = usdcInputErrorMessage(parseError)
     ?? (tooMuch ? 'Amount exceeds your private balance after fees.' : undefined)
@@ -134,7 +146,7 @@ export function SendInputStepContent({
           error={amountError}
           amountAriaLabel="Send amount"
         />
-        {gasWarning.show ? (
+        {showGasNotice ? (
           <GasBalanceNotice
             nativeSymbol={gasWarning.nativeSymbol}
             formattedBalance={gasWarning.formattedBalance}

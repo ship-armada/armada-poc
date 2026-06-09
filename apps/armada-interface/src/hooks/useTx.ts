@@ -9,7 +9,7 @@ import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { putTxIfFresh } from '@/lib/tx/storage'
 import { cancelTx, executeTx } from '@/lib/tx/executor'
 import { txByIdAtom, upsertTxAtom } from '@/state/tx'
-import { evmAddressAtom, shieldedWalletAtom } from '@/state/wallet'
+import { activeRailgunWalletIdAtom, evmAddressAtom } from '@/state/wallet'
 import { getNetworkConfig } from '@/config/network'
 import { track } from '@/lib/telemetry'
 
@@ -31,10 +31,17 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
   const [id, setId] = useState<string | null>(null)
   const upsert = useSetAtom(upsertTxAtom)
   const evmAddress = useAtomValue(evmAddressAtom)
-  const shieldedWallet = useAtomValue(shieldedWalletAtom)
+  const activeWalletId = useAtomValue(activeRailgunWalletIdAtom)
   const record = useAtomValue(useMemo(() => txByIdAtom(id ?? ''), [id])) as TxRecord<K> | undefined
 
   const submit = useCallback(async (meta: MetaFor<K>) => {
+    // Hard guard: every tx record must be scoped to the active opaque walletId so
+    // `activeTxListAtom` and `loadTxsForWallet` can resolve it. Submitting without one
+    // would orphan the record (invisible in History, RecentActivityCard, balance derivation)
+    // and rejected at reload. Submit() can't be reached from the UI before unlock, but the
+    // guard makes the invariant explicit.
+    if (!activeWalletId) throw new Error('useTx.submit: no active shielded walletId')
+
     const lifecycle = lifecycleFor(opts.kind)
     const initialStage = lifecycle.stages[0] as StageFor<K>
     const newId = ulid()
@@ -42,9 +49,7 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
 
     const walletContext: TxWalletContext = {
       evmAddress: evmAddress ?? undefined,
-      // TODO(Bundle 2): plural-wallet schema lands the real `id`; for now use the
-      // 0zk address or a placeholder so the shape is enforced everywhere downstream.
-      railgunWalletId: shieldedWallet.railgunAddress ?? 'pending-wallet',
+      railgunWalletId: activeWalletId,
       // TODO(per-kind): if the kind's meta carries a more specific source chain
       // (e.g. shield.fromChainId), feature passes should override this default.
       sourceChainId: getNetworkConfig().hub.chainId,
@@ -72,7 +77,7 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
     // for this kind (feature passes do that at module load time).
     executeTx(newId)
     return newId
-  }, [opts.kind, upsert, evmAddress, shieldedWallet])
+  }, [opts.kind, upsert, evmAddress, activeWalletId])
 
   const retry = useCallback(async () => {
     if (!record) throw new Error('useTx.retry: no record')

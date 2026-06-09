@@ -6,7 +6,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ShieldModal } from './ShieldModal'
 import { openModalAtom } from '@/state/ui'
-import { usdcBalancesAtom } from '@/state/wallet'
+import { activeRailgunWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
 import { feeQuoteAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
@@ -63,6 +63,11 @@ function renderModal(opts?: { open?: boolean; max?: bigint }) {
   if (opts?.max !== undefined) {
     store.set(usdcBalancesAtom, { 31337: opts.max })
   }
+  // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
+  // scoping invariant — every TxRecord must be filterable by walletContext.railgunWalletId).
+  // Seed a placeholder id so the Confirm flow exercises the orchestration without tripping
+  // the guard. The id value isn't asserted; it just satisfies the invariant.
+  store.set(activeRailgunWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
   render(withTestQueryClient(
     <Provider store={store}>

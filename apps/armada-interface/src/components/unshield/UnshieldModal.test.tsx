@@ -5,7 +5,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { UnshieldModal } from './UnshieldModal'
 import { openModalAtom } from '@/state/ui'
-import { shieldedUsdcAtom, evmAddressAtom } from '@/state/wallet'
+import { activeRailgunWalletIdAtom, shieldedUsdcAtom, evmAddressAtom } from '@/state/wallet'
 import { feeQuoteAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
@@ -61,6 +61,9 @@ function renderModal(opts?: {
   if (opts?.open) store.set(openModalAtom, 'unshield')
   if (opts?.shielded !== undefined) store.set(shieldedUsdcAtom, opts.shielded)
   if (opts?.evm) store.set(evmAddressAtom, opts.evm)
+  // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
+  // scoping invariant). Seed a placeholder so the Confirm flow doesn't trip the guard.
+  store.set(activeRailgunWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
   render(withTestQueryClient(
     <Provider store={store}>

@@ -232,13 +232,16 @@ describe('V2 shielded-wallet lifecycle integration', () => {
       )
     })
 
-    // The shielded wallet should be locked (zeroized) and the atoms reset to empty.
+    // The shielded wallet should be locked (zeroized) and the wallet entry's status flipped
+    // to 'locked' (NOT removed). Keeping activeRailgunWalletIdAtom set is what lets App.tsx's
+    // lock-watch effect route from dashboard → UnlockFlow on disconnect/switch — wiping the
+    // atoms would produce `{ status: 'missing' }`, which the guard doesn't catch. Once the
+    // user signs in with the new EVM, the new walletId replaces the active id and the old
+    // wallet's records fall out of activeTxListAtom naturally.
     await waitFor(() => {
       expect(isUnlocked()).toBe(false)
-      expect(store.get(activeRailgunWalletIdAtom)).toBeNull()
-      expect(store.get(shieldedWalletsAtom)).toEqual({})
-      // Critical: prior wallet's history is gone from the active view.
-      expect(store.get(activeTxListAtom)).toEqual([])
+      expect(store.get(activeRailgunWalletIdAtom)).toBe(walletIdA)
+      expect(store.get(shieldedWalletsAtom)[walletIdA!]?.status).toBe('locked')
     })
   })
 

@@ -55,6 +55,30 @@ const mockDelete = deleteWalletByID as unknown as ReturnType<typeof vi.fn>
 
 const SAMPLE_WALLET_ID = '0d3a8e7c'
 const SAMPLE_RAILGUN_ADDRESS = '0zk1qexample…'
+const SAMPLE_EVM = '0xabcdef0123456789abcdef0123456789abcdef01' as `0x${string}`
+const SAMPLE_EVM_LC = SAMPLE_EVM.toLowerCase()
+
+// Helpers for seeding/reading the per-(EVM, account) localStorage map that wallet.ts uses now.
+function seedStoredWalletId(walletId: string, evmAddress: `0x${string}` = SAMPLE_EVM, account = '0'): void {
+  const key = 'armada.shielded.walletIds'
+  const raw = window.localStorage.getItem(key)
+  const map = raw ? JSON.parse(raw) : {}
+  const evm = evmAddress.toLowerCase()
+  map[evm] = { ...(map[evm] ?? {}), [account]: walletId }
+  window.localStorage.setItem(key, JSON.stringify(map))
+}
+function seedStoredChecksum(checksum: string, evmAddress: `0x${string}` = SAMPLE_EVM, account = '0'): void {
+  const key = 'armada.shielded.checksums'
+  const raw = window.localStorage.getItem(key)
+  const map = raw ? JSON.parse(raw) : {}
+  const evm = evmAddress.toLowerCase()
+  map[evm] = { ...(map[evm] ?? {}), [account]: checksum }
+  window.localStorage.setItem(key, JSON.stringify(map))
+}
+function readStoredMap(key: string): Record<string, Record<string, string>> {
+  const raw = window.localStorage.getItem(key)
+  return raw ? JSON.parse(raw) : {}
+}
 
 function fixedSig(seed = 0): Uint8Array {
   const out = new Uint8Array(65)
@@ -98,12 +122,21 @@ describe('enrollFromSignature', () => {
     expect(args[3]).toBe(0) // derivation index
   })
 
-  it('marks the keyManager unlocked + persists walletId to localStorage', async () => {
-    await enrollFromSignature(fixedSig())
+  it('marks the keyManager unlocked + persists walletId to the per-(EVM,account) localStorage map', async () => {
+    await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(isUnlocked()).toBe(true)
     expect(getWalletId()).toBe(SAMPLE_WALLET_ID)
     expect(getRailgunAddress()).toBe(SAMPLE_RAILGUN_ADDRESS)
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBe(SAMPLE_WALLET_ID)
+    const map = readStoredMap('armada.shielded.walletIds')
+    expect(map[SAMPLE_EVM_LC]?.['0']).toBe(SAMPLE_WALLET_ID)
+  })
+
+  it('skips the localStorage binding when no evmAddress is supplied (no-wallet-connected fallback)', async () => {
+    await enrollFromSignature(fixedSig())
+    expect(isUnlocked()).toBe(true)
+    expect(getWalletId()).toBe(SAMPLE_WALLET_ID)
+    // No entries in the map because we didn't pass an evmAddress.
+    expect(readStoredMap('armada.shielded.walletIds')).toEqual({})
   })
 
   it('is deterministic — same signature → same root_secret → same checksum', async () => {
@@ -132,12 +165,13 @@ describe('enrollFromSignature', () => {
     await expect(enrollFromSignature(new Uint8Array(64))).rejects.toThrow()
   })
 
-  it('try-loads an existing SDK wallet when a walletId is cached in localStorage', async () => {
-    // Simulates "Sign again" on UnlockFlow: same signature, but a walletId from a prior session
-    // is already persisted. Must call loadWalletByID, not createRailgunWallet, so the SDK
-    // preserves its scan cursor + UTXO set (otherwise shielded balance shows 0 after reload).
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
-    const { state } = await enrollFromSignature(fixedSig())
+  it('try-loads an existing SDK wallet when a walletId is cached for this (EVM,account) tuple', async () => {
+    // Simulates "Sign in" on UnlockFlow's primary tab: same signature, but a walletId from a
+    // prior session is already in the map. Must call loadWalletByID, not createRailgunWallet,
+    // so the SDK preserves its scan cursor + UTXO set (otherwise shielded balance shows 0
+    // after reload).
+    seedStoredWalletId(SAMPLE_WALLET_ID)
+    const { state } = await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).not.toHaveBeenCalled()
     expect(state.id).toBe(SAMPLE_WALLET_ID)
@@ -145,9 +179,9 @@ describe('enrollFromSignature', () => {
   })
 
   it('falls back to createRailgunWallet when the cached walletId fails to load (cleared IDB)', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+    seedStoredWalletId(SAMPLE_WALLET_ID)
     mockLoad.mockRejectedValueOnce(new Error('Could not load RAILGUN wallet'))
-    const { state } = await enrollFromSignature(fixedSig())
+    const { state } = await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).toHaveBeenCalledTimes(1)
     expect(state.id).toBe(SAMPLE_WALLET_ID)
@@ -180,11 +214,11 @@ describe('enrollFromSignature', () => {
     // signature for identity B. The cached-checksum-mismatch guard catches this before any
     // identity is bound to the device, and surfaces a typed error the UI can render as a
     // dedicated screen (rather than a generic toast).
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
-    window.localStorage.setItem('armada.shielded.checksum', 'aaaa bbbb cccc') // identity A
+    seedStoredWalletId(SAMPLE_WALLET_ID)
+    seedStoredChecksum('aaaa bbbb cccc') // identity A
     let captured: unknown
     try {
-      await enrollFromSignature(fixedSig(0)) // derives a checksum that won't match 'aaaa bbbb cccc'
+      await enrollFromSignature(fixedSig(0), { evmAddress: SAMPLE_EVM, account: 0n })
     } catch (err) {
       captured = err
     }
@@ -196,13 +230,25 @@ describe('enrollFromSignature', () => {
     expect(mockCreate).not.toHaveBeenCalled()
     expect(mockLoad).not.toHaveBeenCalled()
   })
+
+  it('the cached-checksum mismatch is scoped to (evmAddress, account) — a different EVM address gets a fresh enrollment, not a mismatch', async () => {
+    // Phase 4 guarantee: switching EVM addresses lets a user enroll a fresh shielded identity
+    // for the new address without tripping the cached-mismatch guard tied to the old address.
+    seedStoredWalletId(SAMPLE_WALLET_ID, SAMPLE_EVM)
+    seedStoredChecksum('aaaa bbbb cccc', SAMPLE_EVM)
+    const otherEvm = '0x1234567890abcdef1234567890abcdef12345678' as `0x${string}`
+    // Different EVM address → no entry for the (otherEvm, 0) tuple → fresh-create path runs.
+    const { state } = await enrollFromSignature(fixedSig(0), { evmAddress: otherEvm, account: 0n })
+    expect(state.id).toBe(SAMPLE_WALLET_ID)
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('unlockFromRootSecret', () => {
-  it('fast-paths via loadWalletByID when a walletId is cached in localStorage', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+  it('fast-paths via loadWalletByID when a walletId is cached for the (EVM, account) tuple', async () => {
+    seedStoredWalletId(SAMPLE_WALLET_ID)
     const root = deriveRootSecret(fixedSig())
-    const state = await unlockFromRootSecret(root)
+    const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
 
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).not.toHaveBeenCalled()
@@ -213,10 +259,10 @@ describe('unlockFromRootSecret', () => {
   })
 
   it('falls back to createRailgunWallet when loadWalletByID throws (wallet missing on this device)', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+    seedStoredWalletId(SAMPLE_WALLET_ID)
     mockLoad.mockRejectedValueOnce(new Error('Could not load RAILGUN wallet'))
     const root = deriveRootSecret(fixedSig())
-    const state = await unlockFromRootSecret(root)
+    const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
 
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).toHaveBeenCalledTimes(1)
@@ -271,12 +317,13 @@ describe('lockWallet', () => {
 })
 
 describe('resetWallet', () => {
-  it('deletes the SDK wallet and clears the cached walletId', async () => {
-    await enrollFromSignature(fixedSig())
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBe(SAMPLE_WALLET_ID)
+  it('deletes the SDK wallet and clears the entire per-(EVM,account) map', async () => {
+    await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
+    expect(readStoredMap('armada.shielded.walletIds')[SAMPLE_EVM_LC]?.['0']).toBe(SAMPLE_WALLET_ID)
     await resetWallet('whatever-id-arg-is-ignored')
     expect(mockDelete).toHaveBeenCalledWith(SAMPLE_WALLET_ID)
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.walletIds')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.checksums')).toBeNull()
     expect(isUnlocked()).toBe(false)
   })
 
@@ -285,16 +332,16 @@ describe('resetWallet', () => {
   })
 
   it('uses the cached walletId when locked but a previous session left state', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', 'cached-id-xyz')
+    seedStoredWalletId('cached-id-xyz')
     await resetWallet('whatever')
     expect(mockDelete).toHaveBeenCalledWith('cached-id-xyz')
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.walletIds')).toBeNull()
   })
 
   it('still clears localStorage even if SDK delete throws', async () => {
-    await enrollFromSignature(fixedSig())
+    await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     mockDelete.mockRejectedValueOnce(new Error('wallet not found'))
     await resetWallet('whatever')
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.walletIds')).toBeNull()
   })
 })

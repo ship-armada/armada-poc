@@ -19,10 +19,10 @@ vi.mock('@/lib/railgun/wallet', () => ({
   unlockFromBackup: vi.fn(),
   lockWallet: vi.fn(async () => {}),
   resetWallet: vi.fn(async () => {}),
-  // `readStoredWalletId` drives the signIn first-vs-subsequent branch. Default to null
-  // (= first-ever sign-in, double-sign determinism check fires); individual tests override
-  // the mock to simulate returning users.
-  readStoredWalletId: vi.fn(() => null),
+  // `readStoredWalletIdFor(evmAddress, account)` drives the signIn first-vs-subsequent branch.
+  // Default to null (= first-ever sign-in, double-sign determinism check fires); individual
+  // tests override the mock to simulate returning users.
+  readStoredWalletIdFor: vi.fn(() => null),
   // Deprecated shims — present so the hook compiles; never exercised here.
   createWallet: vi.fn(),
   unlockWallet: vi.fn(),
@@ -45,7 +45,7 @@ import {
   unlockFromRootSecret,
   unlockFromBackup,
   lockWallet,
-  readStoredWalletId,
+  readStoredWalletIdFor,
   resetWallet,
 } from '@/lib/railgun/wallet'
 import { getRootSecret } from '@/lib/railgun/keyManager'
@@ -57,7 +57,7 @@ const mockUnlockFromBackup = unlockFromBackup as unknown as ReturnType<typeof vi
 const mockLockWallet = lockWallet as unknown as ReturnType<typeof vi.fn>
 const mockResetWallet = resetWallet as unknown as ReturnType<typeof vi.fn>
 const mockGetRootSecret = getRootSecret as unknown as ReturnType<typeof vi.fn>
-const mockReadStoredWalletId = readStoredWalletId as unknown as ReturnType<typeof vi.fn>
+const mockReadStoredWalletIdFor = readStoredWalletIdFor as unknown as ReturnType<typeof vi.fn>
 const mockSignTypedData = signTypedData as unknown as ReturnType<typeof vi.fn>
 
 // Deterministic 65-byte sample sig hex (r||s||v with v=27). The exact value doesn't matter —
@@ -98,7 +98,7 @@ beforeEach(() => {
   mockResetWallet.mockReset()
   mockGetRootSecret.mockReset()
   mockSignTypedData.mockReset()
-  mockReadStoredWalletId.mockReset()
+  mockReadStoredWalletIdFor.mockReset()
   // Default: wagmi returns a successful signature.
   mockSignTypedData.mockResolvedValue(SAMPLE_SIG_HEX)
   mockLockWallet.mockResolvedValue(undefined)
@@ -107,7 +107,7 @@ beforeEach(() => {
   // determinism check so the existing signIn/enroll happy-path tests don't have to re-mock
   // signTypedData a second time. Tests that exercise the FIRST-ever-sign-in branch override
   // this to return null.
-  mockReadStoredWalletId.mockReturnValue('cached-wallet-id')
+  mockReadStoredWalletIdFor.mockReturnValue('cached-wallet-id')
 })
 
 describe('enroll', () => {
@@ -226,7 +226,7 @@ describe('signIn (v2 primary)', () => {
   it('first-ever sign-in double-signs and proceeds when the wallet is deterministic', async () => {
     const store = createStore()
     store.set(evmAddressAtom, '0xabc')
-    mockReadStoredWalletId.mockReturnValue(null) // no cached id = first-ever sign-in
+    mockReadStoredWalletIdFor.mockReturnValue(null) // no cached id = first-ever sign-in
     mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
     const capture = renderWithStore(store)
 
@@ -242,7 +242,7 @@ describe('signIn (v2 primary)', () => {
   it('first-ever sign-in throws NonDeterministicSignerError when the two signatures differ', async () => {
     const store = createStore()
     store.set(evmAddressAtom, '0xabc')
-    mockReadStoredWalletId.mockReturnValue(null)
+    mockReadStoredWalletIdFor.mockReturnValue(null)
     // First call returns SAMPLE_SIG_HEX (from beforeEach default), second returns a different
     // signature → bytes differ → typed error.
     const DIFFERENT_SIG_HEX = '0x' + '33'.repeat(32) + '44'.repeat(32) + '1b'
@@ -274,7 +274,7 @@ describe('signIn (v2 primary)', () => {
     // Default beforeEach already returns 'cached-wallet-id', but be explicit for the test's
     // intent. Returning users get their determinism check inside enrollFromSignature via the
     // cached-checksum comparison; the hook doesn't re-prompt.
-    mockReadStoredWalletId.mockReturnValue('cached-wallet-id')
+    mockReadStoredWalletIdFor.mockReturnValue('cached-wallet-id')
     mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
     const capture = renderWithStore(store)
 

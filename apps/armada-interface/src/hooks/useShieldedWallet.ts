@@ -14,7 +14,7 @@ import { wagmiConfig } from '@/config/wagmi'
 import {
   enrollFromSignature,
   lockWallet,
-  readStoredWalletId,
+  readStoredWalletIdFor,
   resetWallet,
   unlockFromBackup,
   unlockFromRootSecret,
@@ -109,14 +109,15 @@ export function useShieldedWallet() {
 
       const signatureBytes = await promptSign()
       try {
-        // First-ever sign-in for THIS browser (no cached walletId) is the moment to verify
+        // First-ever sign-in for THIS (EVM address, account) tuple is the moment to verify
         // determinism — if we proceeded without checking and the wallet were non-deterministic,
         // the first signature would derive an identity the user could never re-sign back into.
-        // Returning users (cached walletId present) get their determinism check via the cached-
-        // checksum-mismatch guard inside `enrollFromSignature`; we don't double-sign on every
-        // unlock because (a) the cached check is cheaper and (b) re-prompting on every visit is
-        // hostile UX.
-        const isFirstEverSignIn = readStoredWalletId() == null
+        // Returning users (cached walletId present for this tuple) get their determinism check
+        // via the cached-checksum-mismatch guard inside `enrollFromSignature`; we don't double-
+        // sign on every unlock because (a) the cached check is cheaper and (b) re-prompting on
+        // every visit is hostile UX.
+        const evmAddressLc = evmAddress as `0x${string}`
+        const isFirstEverSignIn = readStoredWalletIdFor(evmAddressLc, account) == null
         if (isFirstEverSignIn) {
           const { deterministic } = await verifySignatureDeterminism(promptSign, signatureBytes)
           if (!deterministic) {
@@ -124,7 +125,7 @@ export function useShieldedWallet() {
           }
         }
 
-        const out = await enrollFromSignature(signatureBytes)
+        const out = await enrollFromSignature(signatureBytes, { evmAddress: evmAddressLc, account })
         setWallets(prev => ({ ...prev, [out.state.id]: out.state }))
         setActiveId(out.state.id)
         // `shielded.created` / `shielded.unlock` is emitted by `enrollFromSignature` itself;
@@ -167,7 +168,14 @@ export function useShieldedWallet() {
       bytes[i] = parseInt(trimmed.slice(i * 2, i * 2 + 2), 16)
     }
     try {
-      const next = await unlockFromRootSecret(bytes)
+      // Pass the currently-connected EVM address (if any) so the keyManager records who's bound
+      // to this unlock and `useWallet`'s account-switch detection works against paste-restored
+      // wallets too. When no wallet is connected (rare — user pastes off-chain), the binding
+      // is skipped and account-switch detection becomes a no-op until the next sign-in.
+      const next = await unlockFromRootSecret(bytes, {
+        evmAddress: (evmAddress ?? undefined) as `0x${string}` | undefined,
+        account: 0n,
+      })
       setWallets(prev => ({ ...prev, [next.id]: next }))
       setActiveId(next.id)
     } catch (err) {
@@ -178,7 +186,7 @@ export function useShieldedWallet() {
       // local copy is safe and removes the duplicate from heap.
       bytes.fill(0)
     }
-  }, [setWallets, setActiveId])
+  }, [evmAddress, setWallets, setActiveId])
 
   /**
    * Unlock from a downloaded backup file + the user's passphrase. Reads the file as text, parses
@@ -194,14 +202,19 @@ export function useShieldedWallet() {
         throw new Error('Backup file is not valid JSON.')
       }
       const blob: BackupBlob = parseBackupBlob(parsed)
-      const next = await unlockFromBackup(blob, passphrase)
+      // Same evmAddress-binding rationale as unlockByPaste — record who's responsible for the
+      // unlock so account-switch detection covers backup-restored wallets too.
+      const next = await unlockFromBackup(blob, passphrase, {
+        evmAddress: (evmAddress ?? undefined) as `0x${string}` | undefined,
+        account: 0n,
+      })
       setWallets(prev => ({ ...prev, [next.id]: next }))
       setActiveId(next.id)
     } catch (err) {
       trackError('useShieldedWallet.unlockByBackup', err, { scope: 'shielded.unlock', message: 'backup unlock failed' })
       throw err
     }
-  }, [setWallets, setActiveId])
+  }, [evmAddress, setWallets, setActiveId])
 
   /**
    * Export the currently-unlocked wallet's root_secret + creationBlock as an encrypted v2

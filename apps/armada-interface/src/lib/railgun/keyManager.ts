@@ -27,6 +27,24 @@ interface UnlockedState {
    * chain rescan (correct, slow).
    */
   creationBlock: number | null
+  /**
+   * The EVM address this unlock is bound to. Set by signIn() to the connected wagmi address;
+   * set by paste/backup unlock paths to the EVM address connected at the time of unlock (so
+   * subsequent account-switch detection still works). `null` only when the unlock happened
+   * with no EVM wallet connected at all — rare; account-switch detection is a no-op in that
+   * case (`useWallet` compares against null and matches).
+   *
+   * Lowercase-normalized to match the per-EVM-address localStorage map keys. wagmi returns
+   * checksummed addresses; we lowercase here at the boundary and never round-trip the
+   * checksummed form so map lookups never miss due to case.
+   */
+  evmAddress: `0x${string}` | null
+  /**
+   * BIP-44-style account index used to derive this wallet. v1 UI exposes only `0n`; the
+   * plumbing supports N ≥ 0 for future multi-identity-per-EVM-wallet (each value of `account`
+   * produces a different signature → different root_secret → different shielded identity).
+   */
+  account: bigint
 }
 
 let unlocked: UnlockedState | null = null
@@ -77,6 +95,25 @@ export function getChecksum(): string {
  *  need a value should treat null as "scan from genesis". */
 export function getCreationBlock(): number | null {
   return unlocked?.creationBlock ?? null
+}
+
+/**
+ * Returns the EVM address this unlock is bound to. Does NOT throw when locked — the wagmi
+ * account-change effect in `useWallet` consults this value defensively before deciding whether
+ * to auto-lock. Callers receive `null` when either the wallet is locked OR the unlock happened
+ * with no EVM wallet connected.
+ *
+ * Always lowercase — wagmi gives checksummed addresses; we normalize at the keyManager boundary
+ * so comparisons against a freshly-arrived wagmi address are direct (also lowercased) without
+ * the caller having to remember the convention.
+ */
+export function getEvmAddress(): `0x${string}` | null {
+  return unlocked?.evmAddress ?? null
+}
+
+/** Returns the account index this unlock is bound to. Same lock-safe semantics as above. */
+export function getAccount(): bigint | null {
+  return unlocked?.account ?? null
 }
 
 /**

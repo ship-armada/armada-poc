@@ -64,62 +64,153 @@ export interface ShieldedWalletState {
   readonly unlockedAt?: number
 }
 
-/** Persisted across reloads so we can fast-path `loadWalletByID` instead of recreating. */
-const STORED_WALLET_ID_KEY = 'armada.shielded.walletId'
 /**
- * Persisted alongside the walletId so re-signing can detect a checksum mismatch (spec §
- * "Recovery & re-signing"). The anti-phish checksum is non-secret — safe to store in plaintext.
- * Without this, a second signature from a non-deterministic wallet would silently bind a
- * different identity to the same UI session.
+ * Per-(EVM address, account) walletId + anti-phish-checksum maps.
+ *
+ * Shape:
+ *   armada.shielded.walletIds  = { "0xabc...": { "0": "<walletId>", "1": "<walletId>" }, ... }
+ *   armada.shielded.checksums  = { "0xabc...": { "0": "<checksum>", "1": "<checksum>" }, ... }
+ *
+ * EVM addresses are stored lowercase so map lookups against freshly-arrived wagmi addresses
+ * (which are checksummed mixed-case) can normalize at one place and never miss.
+ *
+ * Account indices are decimal strings because JSON keys are strings; we round-trip through
+ * `accountKey(bigint)` so the convention is enforced in one place.
+ *
+ * Both maps are non-secret: walletId is an opaque SDK identifier (knowing it does not grant
+ * access; the encrypted wallet blob in IndexedDB requires sdkEncryptionKey to decrypt), and the
+ * checksum is a public anti-phish display string by spec.
+ *
+ * Schema-version-2 boot wipe (Phase 1) drops the old single-value keys ('armada.shielded.walletId'
+ * + 'armada.shielded.checksum'). No code path here reads those legacy keys — first run of v2
+ * starts from empty maps.
  */
-const STORED_CHECKSUM_KEY = 'armada.shielded.checksum'
+const STORED_WALLET_IDS_KEY = 'armada.shielded.walletIds'
+const STORED_CHECKSUMS_KEY = 'armada.shielded.checksums'
 
-/**
- * Public lookup — App.tsx uses this on cold boot to seed `shieldedWalletsAtom` with a `locked`
- * entry when a walletId is persisted but the keyManager is (necessarily) empty after reload.
- * Returning null is the signal to route to OnboardingFlow; non-null routes to UnlockFlow.
- */
-export function readStoredWalletId(): string | null {
-  return storedWalletId()
+type EvmKey = `0x${string}`
+type AccountKey = string
+type WalletIdMap = Record<EvmKey, Record<AccountKey, string>>
+type ChecksumMap = Record<EvmKey, Record<AccountKey, string>>
+
+function normalizeEvmAddress(addr: `0x${string}`): EvmKey {
+  return addr.toLowerCase() as EvmKey
 }
 
-function storedWalletId(): string | null {
+function accountKey(account: bigint): AccountKey {
+  if (account < 0n) throw new Error('account index must be a non-negative bigint')
+  return account.toString(10)
+}
+
+function readMap<T extends Record<string, unknown>>(key: string): T {
   try {
-    return window.localStorage.getItem(STORED_WALLET_ID_KEY)
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return {} as T
+    const parsed = JSON.parse(raw)
+    // Defensive: if the stored value isn't a plain object (corruption, manual tampering), drop
+    // it back to empty rather than corrupting downstream lookups with a misshaped read.
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as T
+    }
+    return {} as T
   } catch {
-    return null
+    return {} as T
   }
 }
-function storeWalletId(id: string): void {
+
+function writeMap(key: string, value: unknown): void {
   try {
-    window.localStorage.setItem(STORED_WALLET_ID_KEY, id)
+    window.localStorage.setItem(key, JSON.stringify(value))
   } catch {
     /* silent — quota errors are non-fatal */
   }
 }
-function clearStoredWalletId(): void {
-  try {
-    window.localStorage.removeItem(STORED_WALLET_ID_KEY)
-    window.localStorage.removeItem(STORED_CHECKSUM_KEY)
-  } catch {
-    /* silent */
-  }
+
+/**
+ * Read the cached walletId for a specific (EVM address, account) tuple. Returns null when no
+ * sign-in has happened for that pair on this device. Used by the sign-in fast path to skip
+ * `createRailgunWallet` and call `loadWalletByID` directly, preserving the SDK's merkle scan
+ * cursor + UTXO set across reloads.
+ */
+export function readStoredWalletIdFor(
+  evmAddress: `0x${string}`,
+  account: bigint = 0n,
+): string | null {
+  const map = readMap<WalletIdMap>(STORED_WALLET_IDS_KEY)
+  const evm = normalizeEvmAddress(evmAddress)
+  return map[evm]?.[accountKey(account)] ?? null
 }
 
-/** Dev/UX escape hatch: clear persisted wallet identity (forces onboarding on next boot). */
-export function clearStoredWalletIdentity(): void {
-  clearStoredWalletId()
-}
-function storedChecksum(): string | null {
-  try {
-    return window.localStorage.getItem(STORED_CHECKSUM_KEY)
-  } catch {
-    return null
+/**
+ * App.tsx cold-boot probe: does ANY walletId exist on this device?
+ *
+ * Returns null when the map is empty (route to onboarding) or the first cached walletId we
+ * encounter otherwise (route to unlock — App.tsx only needs the existence signal; UnlockFlow's
+ * Sign-in tab then asks the user to connect a wallet and looks up the actual entry per
+ * (evmAddress, account)).
+ *
+ * Deterministic-ish order: `Object.keys` returns insertion order, so the first sign-in's address
+ * wins. v1 UX is singular so this is "the user's address." Multi-account v2+ can revisit.
+ */
+export function readStoredWalletId(): string | null {
+  const map = readMap<WalletIdMap>(STORED_WALLET_IDS_KEY)
+  for (const evm of Object.keys(map)) {
+    const accounts = map[evm as EvmKey]
+    if (!accounts) continue
+    for (const acc of Object.keys(accounts)) {
+      const id = accounts[acc]
+      if (id) return id
+    }
   }
+  return null
 }
-function storeChecksum(checksum: string): void {
+
+function setStoredWalletId(
+  evmAddress: `0x${string}`,
+  account: bigint,
+  walletId: string,
+): void {
+  const map = readMap<WalletIdMap>(STORED_WALLET_IDS_KEY)
+  const evm = normalizeEvmAddress(evmAddress)
+  const entry = map[evm] ?? {}
+  entry[accountKey(account)] = walletId
+  map[evm] = entry
+  writeMap(STORED_WALLET_IDS_KEY, map)
+}
+
+/** Lookup checksum for a specific (EVM address, account). Used for cached-mismatch detection. */
+export function readStoredChecksumFor(
+  evmAddress: `0x${string}`,
+  account: bigint = 0n,
+): string | null {
+  const map = readMap<ChecksumMap>(STORED_CHECKSUMS_KEY)
+  const evm = normalizeEvmAddress(evmAddress)
+  return map[evm]?.[accountKey(account)] ?? null
+}
+
+function setStoredChecksum(
+  evmAddress: `0x${string}`,
+  account: bigint,
+  checksum: string,
+): void {
+  const map = readMap<ChecksumMap>(STORED_CHECKSUMS_KEY)
+  const evm = normalizeEvmAddress(evmAddress)
+  const entry = map[evm] ?? {}
+  entry[accountKey(account)] = checksum
+  map[evm] = entry
+  writeMap(STORED_CHECKSUMS_KEY, map)
+}
+
+/**
+ * Dev/UX escape hatch: clear ALL persisted wallet identities (forces onboarding on next boot).
+ * Wipes the full per-(EVM, account) maps — not surgical. Surgical removal isn't exposed because
+ * Phase 4's account-switch handler just auto-locks; the user can sign back in for any prior
+ * EVM address that's still in the map.
+ */
+export function clearStoredWalletIdentity(): void {
   try {
-    window.localStorage.setItem(STORED_CHECKSUM_KEY, checksum)
+    window.localStorage.removeItem(STORED_WALLET_IDS_KEY)
+    window.localStorage.removeItem(STORED_CHECKSUMS_KEY)
   } catch {
     /* silent */
   }
@@ -152,6 +243,19 @@ interface ApplyRootSecretOptions {
    * SDK runs a full-genesis scan — correct, just slow.
    */
   readonly creationBlock?: number
+  /**
+   * The EVM address this unlock is bound to. Used as the lookup key for the per-(EVM, account)
+   * walletId + checksum maps in localStorage. Required by the sign-in path (the connected wagmi
+   * address); paste/backup paths pass the *currently connected* EVM address so the resulting
+   * binding records who's responsible for the unlock — driving account-switch detection in
+   * useWallet.ts.
+   *
+   * When undefined (no EVM wallet connected — rare edge case), the map fast-path is skipped and
+   * the SDK wallet is always recreated from scratch. Functional, just slow on subsequent unlocks.
+   */
+  readonly evmAddress?: `0x${string}`
+  /** BIP-44-style account index. Default 0 (v1 UI only exposes 0). */
+  readonly account?: bigint
 }
 
 interface ApplyRootSecretResult {
@@ -177,7 +281,10 @@ async function applyRootSecret(
 
   const sdkEncryptionKey = deriveSdkEncryptionKeyHex(rootSecret)
   const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
-  const cachedWalletId = storedWalletId()
+  const account = opts.account ?? 0n
+  const cachedWalletId = opts.evmAddress
+    ? readStoredWalletIdFor(opts.evmAddress, account)
+    : null
 
   let walletId: string
   let railgunAddress: string
@@ -215,8 +322,10 @@ async function applyRootSecret(
     newlyCreated = true
   }
 
-  storeWalletId(walletId)
-  storeChecksum(checksum)
+  if (opts.evmAddress) {
+    setStoredWalletId(opts.evmAddress, account, walletId)
+    setStoredChecksum(opts.evmAddress, account, checksum)
+  }
   setUnlocked({
     rootSecret,
     walletId,
@@ -224,6 +333,8 @@ async function applyRootSecret(
     railgunAddress,
     checksum,
     creationBlock: effectiveCreationBlock,
+    evmAddress: opts.evmAddress ? normalizeEvmAddress(opts.evmAddress) : null,
+    account,
   })
 
   return {
@@ -257,7 +368,24 @@ async function applyRootSecret(
  * produces a deterministic 24-word BIP-39 from root_secret; we hand it to `createRailgunWallet`
  * and never expose it. Phase 2 drops the shim by going through the lower-level engine package.
  */
-export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
+/**
+ * Caller-supplied identity binding for sign-in / unlock entry points. Threading these through
+ * the lib lets the per-(EVM, account) localStorage maps key correctly and lets the keyManager
+ * record who's bound to the unlock for `useWallet`-driven account-switch detection.
+ *
+ * Optional everywhere: paths that don't have an EVM address (rare — only when no wallet is
+ * connected at all and a paste-restore happens off-chain) gracefully skip the binding and
+ * fall back to the always-recreate SDK path.
+ */
+export interface EnrollOptions {
+  readonly evmAddress?: `0x${string}`
+  readonly account?: bigint
+}
+
+export async function enrollFromSignature(
+  signatureBytes: Uint8Array,
+  opts: EnrollOptions = {},
+): Promise<{
   rootSecret: Uint8Array
   state: ShieldedWalletState
 }> {
@@ -276,32 +404,40 @@ export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
     signatureBytes.fill(0)
   }
 
-  // Determinism-mismatch guard: if the cached checksum exists and differs from what THIS
-  // signature derives, the user's wallet is non-deterministic and re-signing isn't a valid
-  // recovery path for them. Throw the typed `NonDeterministicSignerError` so the UI can render
-  // the dedicated error screen with the wallet compatibility list + paste/backup fallback CTAs
-  // (rather than dumping a stringified Error.message into a generic toast).
+  const account = opts.account ?? 0n
+
+  // Determinism-mismatch guard: if a checksum is cached for THIS (EVM, account) and differs
+  // from what the new signature derives, the wallet is non-deterministic for that tuple and
+  // re-signing isn't a valid recovery path. Throw the typed `NonDeterministicSignerError` so
+  // the UI can render the dedicated error screen with the compatibility list + paste/backup
+  // fallback CTAs (rather than dumping a stringified Error.message into a generic toast).
   //
-  // Note: this is the SUBSEQUENT-sign-in branch (cached identity already exists). The first-
-  // ever sign-in's double-sign verification lives in the hook layer where the wagmi signing
-  // primitive is available — see useShieldedWallet.ts::signIn.
-  const cachedChecksum = storedChecksum()
+  // Note: this is the SUBSEQUENT-sign-in branch (cached identity already exists for the
+  // tuple). The first-ever sign-in's double-sign verification lives in the hook layer where
+  // the wagmi signing primitive is available — see useShieldedWallet.ts::signIn.
+  const cachedChecksum = opts.evmAddress ? readStoredChecksumFor(opts.evmAddress, account) : null
   const derivedChecksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
   if (cachedChecksum && derivedChecksum !== cachedChecksum) {
     throw new NonDeterministicSignerError(
       'cached-checksum-mismatch',
-      `Signature produces identity ${derivedChecksum} but this device is bound to ${cachedChecksum}. ` +
+      `Signature produces identity ${derivedChecksum} but this device is bound to ${cachedChecksum} for this EVM account. ` +
         'Re-sign recovery requires a deterministic wallet; use Paste recovery secret or Restore from backup file.',
     )
   }
 
-  // First-time enrollment (no cached walletId) sets `creationBlock` to the current hub head so
-  // a future exportBackup can write a useful value into the v2 blob. Returning paths leave it
-  // unset and accept the slow-rescan fallback if the SDK load fails.
-  const wasFirstTimeEnrollment = storedWalletId() == null
+  // First-time enrollment (no cached walletId for this tuple) sets `creationBlock` to the
+  // current hub head so a future exportBackup can write a useful value into the v2 blob.
+  // Returning paths leave it unset and accept the slow-rescan fallback if the SDK load fails.
+  const wasFirstTimeEnrollment = opts.evmAddress
+    ? readStoredWalletIdFor(opts.evmAddress, account) == null
+    : true
   const creationBlock = wasFirstTimeEnrollment ? (await getCurrentHubBlock()) ?? undefined : undefined
 
-  const { state, newlyCreated } = await applyRootSecret(rootSecret, { creationBlock })
+  const { state, newlyCreated } = await applyRootSecret(rootSecret, {
+    creationBlock,
+    evmAddress: opts.evmAddress,
+    account,
+  })
 
   if (wasFirstTimeEnrollment && newlyCreated) {
     track('shielded.created', { walletId: state.id })
@@ -322,15 +458,24 @@ export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
  * starts at the correct tree position. When undefined (paste-secret path), the SDK runs a full
  * chain rescan — slower but correct.
  */
+export interface UnlockOptions {
+  /** Embedded v2-backup hub creation block, or omitted for paste-secret restores. */
+  readonly creationBlock?: number
+  /** Currently-connected EVM address — bound to the unlock for account-switch detection. */
+  readonly evmAddress?: `0x${string}`
+  /** Account index. Default 0. */
+  readonly account?: bigint
+}
+
 export async function unlockFromRootSecret(
   rootSecret: Uint8Array,
-  creationBlock?: number,
+  opts: UnlockOptions = {},
 ): Promise<ShieldedWalletState> {
   if (rootSecret.length !== 32) {
     throw new Error('unlockFromRootSecret: rootSecret must be 32 bytes')
   }
   await ensureRailgunReady()
-  const { state } = await applyRootSecret(rootSecret, { creationBlock })
+  const { state } = await applyRootSecret(rootSecret, opts)
   track('shielded.unlock', { walletId: state.id })
   return state
 }
@@ -341,9 +486,16 @@ export async function unlockFromRootSecret(
  * `creationBlock === 0` in the blob means "unknown" (set by an exportBackup that had no
  * in-session creationBlock); convert to `undefined` so the SDK falls back to a full chain scan.
  */
-export async function unlockFromBackup(blob: BackupBlob, passphrase: string): Promise<ShieldedWalletState> {
+export async function unlockFromBackup(
+  blob: BackupBlob,
+  passphrase: string,
+  opts: Omit<UnlockOptions, 'creationBlock'> = {},
+): Promise<ShieldedWalletState> {
   const { rootSecret, creationBlock } = decryptBackup(blob, passphrase)
-  return unlockFromRootSecret(rootSecret, creationBlock > 0 ? creationBlock : undefined)
+  return unlockFromRootSecret(rootSecret, {
+    ...opts,
+    creationBlock: creationBlock > 0 ? creationBlock : undefined,
+  })
 }
 
 /**
@@ -385,7 +537,7 @@ export async function resetWallet(_id: string): Promise<void> {
   try {
     id = kmGetWalletId()
   } catch {
-    id = storedWalletId()
+    id = readStoredWalletId()
   }
   if (!id) {
     throw new Error('resetWallet: no wallet to reset')
@@ -410,7 +562,7 @@ export async function resetWallet(_id: string): Promise<void> {
     // Surface but don't block — the wallet may already be absent.
     trackError('railgun.wallet.deleteByID', err, { scope: 'shielded.reset', message: 'delete failed' })
   }
-  clearStoredWalletId()
+  clearStoredWalletIdentity()
   track('shielded.reset', { walletId: id })
 }
 

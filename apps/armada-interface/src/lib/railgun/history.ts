@@ -370,6 +370,49 @@ export async function scanWalletHistory(
   return getWalletTransactionHistory(getHubChainDescriptor(), walletId, startingBlock)
 }
 
+/**
+ * High-level scan result handed back to the recovery hook + incoming-transfer detector.
+ *
+ *  - `records`      — mapped TxRecord[] (filter `Unknown` + corrupt items already applied).
+ *  - `highestBlock` — the max `blockNumber` across returned items; null when the scan was empty
+ *                     or every item had an undefined block. The caller persists this as the
+ *                     next checkpoint so subsequent scans resume from `highestBlock + 1`.
+ *  - `itemCount`    — total SDK items the scan returned (mapped + unmapped). Drives telemetry
+ *                     so we know if `Unknown`-heavy histories are slipping through.
+ */
+export interface HistoryScanResult {
+  records: TxRecord[]
+  highestBlock: number | null
+  itemCount: number
+}
+
+/**
+ * Single entry point for both first-time recovery (Phase 9.3) and ongoing incoming-transfer
+ * detection (Phase 9.4). Reads from the SDK, maps, and surfaces a checkpoint candidate.
+ *
+ * The function deliberately does NOT touch IDB or atoms — that's the hook's job. Keeping it
+ * pure-async (SDK + math, no side effects) lets tests stub `scanWalletHistory` with a fixture
+ * and assert the mapping + checkpoint math without an IDB harness.
+ */
+export async function runHistoryScan(
+  walletId: string,
+  ctx: HistoryMapContext,
+  fromBlock: number | undefined,
+): Promise<HistoryScanResult> {
+  const items = await scanWalletHistory(walletId, fromBlock)
+  const records = historyItemsToTxRecords(items, walletId, ctx)
+  // Walk the raw items (not the mapped records) so an Unknown-category item still advances
+  // the checkpoint — without this, an unmappable item near the head would keep the next
+  // scan rewalking everything since the last mapped item.
+  let highest: number | null = null
+  for (const item of items) {
+    if (item.blockNumber !== undefined && item.blockNumber !== null) {
+      if (highest === null || item.blockNumber > highest) highest = item.blockNumber
+    }
+  }
+  return { records, highestBlock: highest, itemCount: items.length }
+}
+
 /* Re-export the SDK types so consumers don't import @railgun-community directly. */
 export type {
   TransactionHistoryItem,

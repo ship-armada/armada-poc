@@ -58,6 +58,12 @@ export type EventRegistry = {
   'tx.engine.no-handler':     { kind: TxKind }
 
   'tx.history.hydrated':      { count: number }
+  // Chain-driven history recovery + incoming-transfer detection (Phase 9). `durationMs` covers
+  // the SDK call + mapping; `itemCount` is the raw SDK return size; `recordCount` is what we
+  // actually wrote (mapped + non-duplicate). Distinguishes Unknown-heavy chain history from
+  // genuinely-empty wallets.
+  'tx.history.scan.started':  { walletId: string; fromBlock: number | null }
+  'tx.history.scan.completed':{ walletId: string; itemCount: number; recordCount: number; durationMs: number }
   'tx.storage.stale-write':   { id: string; existingSeq: number; incomingSeq: number }
 
   'config.deployments.loaded':{ chainCount: number }

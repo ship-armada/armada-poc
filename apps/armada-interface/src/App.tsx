@@ -12,6 +12,7 @@ import { SendModal } from '@/components/payments'
 import { ReceiveDialog } from '@/components/receive'
 import { EarnModal } from '@/components/yield'
 import { useAutoLock } from '@/hooks/useAutoLock'
+import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useNowTicker } from '@/hooks/useNowTicker'
 import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
@@ -50,6 +51,7 @@ export function App() {
   useTabVisible()
   useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
+  useHistoryRecovery() // chain-recover synthetic rows on unlock + re-scan epoch (Phase 9.3)
   useAutoLock()  // idle-timer-driven lock for the shielded wallet
   // Mirror wagmi's connection state into evmAddressAtom for atom-consumers (OnboardingFlow's
   // SignEnrollment step, UnshieldModal's recipient pre-fill, useShieldedWallet.enroll). Mounted

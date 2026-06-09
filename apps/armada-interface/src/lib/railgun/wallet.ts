@@ -30,6 +30,7 @@ import {
   getWalletId as kmGetWalletId,
   setUnlocked,
 } from './keyManager'
+import { clearHistoryCheckpoint } from './history-checkpoint'
 import { initRailgunEngine } from './init'
 import { getCurrentHubBlock, loadHubNetwork } from './network'
 
@@ -565,6 +566,10 @@ export async function resetWallet(_id: string): Promise<void> {
     trackError('railgun.wallet.deleteByID', err, { scope: 'shielded.reset', message: 'delete failed' })
   }
   clearStoredWalletIdentity()
+  // Drop the history-scan checkpoint so a future re-enrollment on this device walks chain
+  // history from the hub deploy block again, not from a stale block that pre-dates the new
+  // wallet's first observable activity.
+  clearHistoryCheckpoint(id)
   track('shielded.reset', { walletId: id })
 }
 

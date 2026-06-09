@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { txListAtom } from '@/state/tx'
-import { activeRailgunWalletIdAtom } from '@/state/wallet'
+import { activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import type { TxRecord } from '@/lib/tx/types'
 
 const hoisted = vi.hoisted(() => ({
@@ -42,8 +42,13 @@ function Harness() {
   return null
 }
 
-function mount(activeWalletId: string | null) {
+function mount(activeWalletId: string | null, status: 'locked' | 'unlocked' = 'unlocked') {
   const store = createStore()
+  if (activeWalletId) {
+    store.set(shieldedWalletsAtom, {
+      [activeWalletId]: { id: activeWalletId, status, railgunAddress: '0zk-test' },
+    })
+  }
   store.set(activeRailgunWalletIdAtom, activeWalletId)
   const result = render(
     <Provider store={store}>
@@ -51,6 +56,19 @@ function mount(activeWalletId: string | null) {
     </Provider>,
   )
   return { store, ...result }
+}
+
+/** Flip the active wallet to a new id with an unlocked entry seeded. Mirrors the runtime
+ *  behaviour of useShieldedWallet.signIn: writes both the wallet entry and the active-id atom. */
+function setActiveWallet(
+  store: ReturnType<typeof createStore>,
+  walletId: string,
+  status: 'locked' | 'unlocked' = 'unlocked',
+) {
+  store.set(shieldedWalletsAtom, {
+    [walletId]: { id: walletId, status, railgunAddress: '0zk-test' },
+  })
+  store.set(activeRailgunWalletIdAtom, walletId)
 }
 
 beforeEach(() => {
@@ -75,6 +93,32 @@ describe('useTxHistory', () => {
     expect(hoisted.mockLoadAllTx).not.toHaveBeenCalled()
   })
 
+  it('does NOT hit IDB when the wallet is present but locked (keyManager has no decryption key)', () => {
+    // WHY: this is the bug fix from the cold-load / refresh-after-sign-in scenario. With a
+    // cached walletId restored at boot but the wallet still locked (no rootSecret yet), we
+    // MUST NOT call loadAllTx — it'd return [] (locked-guard) and emit a misleading
+    // `tx.history.hydrated: 0` event. The effect must re-fire when status flips to unlocked.
+    mount('rg-1', 'locked')
+    expect(hoisted.mockLoadAllTx).not.toHaveBeenCalled()
+  })
+
+  it('hydrates when the wallet flips from locked → unlocked (no walletId change)', async () => {
+    // WHY: the original cold-load failure. activeRailgunWalletIdAtom is set at boot from the
+    // cached walletId, but the wallet is locked until sign-in completes. The effect now
+    // depends on lock STATUS, not just id — sign-in flips the status, the effect re-runs.
+    hoisted.mockLoadAllTx.mockResolvedValueOnce([fixture('a', 'rg-1')])
+    const { store } = mount('rg-1', 'locked')
+    expect(hoisted.mockLoadAllTx).not.toHaveBeenCalled()
+    // Simulate sign-in: flip the entry to unlocked (same walletId).
+    setActiveWallet(store, 'rg-1', 'unlocked')
+    await waitFor(() => {
+      expect(hoisted.mockLoadAllTx).toHaveBeenCalledWith('rg-1')
+    })
+    await waitFor(() => {
+      expect(store.get(txListAtom).map(r => r.id)).toEqual(['a'])
+    })
+  })
+
   it('resets txListAtom and re-hydrates when the active walletId changes', async () => {
     hoisted.mockLoadAllTx.mockImplementation(async (id?: string) => {
       if (id === 'rg-1') return [fixture('a', 'rg-1')]
@@ -86,8 +130,8 @@ describe('useTxHistory', () => {
       expect(store.get(txListAtom).map(r => r.id)).toEqual(['a'])
     })
 
-    // Account switch (Phase 4 trigger): activeRailgunWalletIdAtom flips to rg-2.
-    store.set(activeRailgunWalletIdAtom, 'rg-2')
+    // Account switch (Phase 4 trigger): seed rg-2 + flip activeId to rg-2.
+    setActiveWallet(store, 'rg-2', 'unlocked')
     await waitFor(() => {
       expect(store.get(txListAtom).map(r => r.id)).toEqual(['c'])
     })
@@ -102,6 +146,7 @@ describe('useTxHistory', () => {
       expect(store.get(txListAtom)).toHaveLength(1)
     })
     store.set(activeRailgunWalletIdAtom, null)
+    store.set(shieldedWalletsAtom, {})
     await waitFor(() => {
       expect(store.get(txListAtom)).toEqual([])
     })

@@ -7,7 +7,7 @@ import { useAccount, useDisconnect } from 'wagmi'
 import { WalletButton, WalletPillMenu } from '@armada/ui'
 import { useBalances } from '@/hooks/useBalances'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
-import { truncateAddress } from '@/lib/format'
+import { truncateAddress, truncateAddressEnds } from '@/lib/format'
 import { walletProviderFromConnector } from '@/lib/walletProvider'
 import { ShieldedIdentitySection } from './ShieldedIdentitySection'
 import styles from './WalletConnector.module.css'
@@ -33,6 +33,14 @@ export function WalletConnector() {
   // shielded wallet by the time WalletConnector is mounted in AppLayout — but kept defensive).
   const shielded = useShieldedWallet()
   const hasShieldedWallet = shielded.state !== null && shielded.state !== undefined
+  // When the shielded wallet is unlocked, surface a truncated 0zk... underneath the EVM
+  // address in the pill trigger (V2 Phase 3a — the EVM + shielded addresses are 1:1
+  // representations of one identity). When locked or never-unlocked, the trigger stays
+  // single-row so the user isn't shown a stale shielded address from a prior session.
+  const shieldedDisplay =
+    shielded.state?.status === 'unlocked' && shielded.state.railgunAddress
+      ? truncateAddressEnds(shielded.state.railgunAddress, 6, 4)
+      : undefined
 
   return (
     <ConnectButton.Custom>
@@ -90,6 +98,7 @@ export function WalletConnector() {
             onDisconnect={() => disconnect()}
             triggerClassName={styles.trigger}
             extraSection={hasShieldedWallet ? <ShieldedIdentitySection /> : undefined}
+            shieldedAddress={shieldedDisplay}
           />
         )
       }}

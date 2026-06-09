@@ -9,6 +9,14 @@
   gap: var(--primitives-spacing-2);
 }
 
+/* V2 redesign: when a shielded address is supplied, the pill renders two rows of label text
+   (EVM on top, 0zk underneath). The button needs vertical-center alignment + a taller min-height
+   to keep the rows from feeling cramped. */
+.triggerTwoRow {
+  align-items: center;
+  padding-block: var(--primitives-spacing-2);
+}
+
 .triggerIcon {
   display: flex;
   align-items: center;
@@ -17,6 +25,21 @@
 
 .triggerLabel {
   font-variant-numeric: tabular-nums;
+}
+
+.triggerStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+/* Shielded (0zk) label sits below the EVM label, same font + size, lavender tint. The token
+   `--primitives-color-purple-300` is the closest semantic match in the existing palette; if a
+   future designer ships a dedicated "shielded-accent" token we'd switch to it here. */
+.triggerShieldedLabel {
+  color: var(--primitives-color-purple-300, #c4a8e8);
 }
 
 .chevron {

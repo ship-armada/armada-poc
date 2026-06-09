@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, ClipboardDocumentIcon } from '@heroicons/react/24/solid'
+import { ArmadaSymbol } from '@armada/ui'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { truncateAddressEnds } from '@/lib/format'
 import styles from './ShieldedIdentitySection.module.css'
@@ -77,7 +78,7 @@ export function ShieldedIdentitySection({ onRequestSignIn }: ShieldedIdentitySec
         aria-label={copied ? 'Shielded address copied' : `Copy shielded address ${fullAddress}`}
         title={fullAddress}
       >
-        <span className={styles.statusDot} aria-hidden />
+        <ArmadaSymbol size={18} className={styles.glyph} />
         <span className={styles.address}>{copied ? 'Copied' : display}</span>
         <span className={styles.icon} aria-hidden>
           {copied ? <CheckIcon width={14} height={14} /> : <ClipboardDocumentIcon width={14} height={14} />}

@@ -10,11 +10,11 @@
 
 .eyebrow {
   margin: 0;
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
-  font-weight: var(--primitives-fontWeight-medium);
-  letter-spacing: 0.04em;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--semantic-color-text-muted);
+  color: var(--semantic-color-text-secondary);
 }
 
 .row {
@@ -27,10 +27,17 @@
   border-radius: var(--primitives-radius-md, 6px);
   color: var(--semantic-color-text-primary);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  /* Larger than the surrounding card-body text — the shielded address is the prominent value
+     in this section and should read at the same weight as a primary identity. */
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
   cursor: pointer;
   text-align: start;
   outline: none;
+}
+
+.glyph {
+  flex-shrink: 0;
 }
 
 .row:hover .address {
@@ -39,15 +46,6 @@
 
 .row:focus-visible {
   box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
-}
-
-.statusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--semantic-color-status-success, #16a34a);
-  display: inline-block;
-  flex-shrink: 0;
 }
 
 .address {

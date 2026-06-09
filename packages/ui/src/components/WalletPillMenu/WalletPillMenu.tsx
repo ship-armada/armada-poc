@@ -13,6 +13,7 @@ import {
   WalletPhantom,
   WalletWalletConnect,
 } from '@web3icons/react'
+import { ArmadaSymbol } from '../ArmadaSymbol/ArmadaSymbol'
 import buttonStyles from '../Button/Button.module.css'
 import styles from './WalletPillMenu.module.css'
 
@@ -42,6 +43,16 @@ export interface WalletPillMenuProps {
    * for the design-system deviation rationale (same precedent as WalletButton's `disabled` prop).
    */
   extraSection?: ReactNode
+  /**
+   * Optional truncated shielded (0zk…) address to render as a second row beneath the EVM
+   * address on the pill trigger. When supplied, the provider icon is replaced with the
+   * `ArmadaSymbol` flotilla glyph (the trigger represents the user's Armada identity, not
+   * their wallet provider). When undefined, the trigger renders the original single-row
+   * EVM-only layout — crowdfund consumers without a shielded wallet are unaffected.
+   *
+   * Same design-system deviation precedent as `extraSection` / WalletButton's `disabled`.
+   */
+  shieldedAddress?: string
 }
 
 const PROVIDER_ICON_PX = 20
@@ -68,6 +79,7 @@ export function WalletPillMenu({
   onDisconnect,
   triggerClassName,
   extraSection,
+  shieldedAddress,
 }: WalletPillMenuProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -128,6 +140,7 @@ export function WalletPillMenu({
           buttonStyles.md,
           buttonStyles.noIcon,
           styles.trigger,
+          shieldedAddress && styles.triggerTwoRow,
           triggerClassName,
         ].filter(Boolean).join(' ')}
         aria-expanded={open}
@@ -136,9 +149,22 @@ export function WalletPillMenu({
         onClick={() => setOpen(prev => !prev)}
       >
         <span className={styles.triggerIcon}>
-          <WalletProviderIcon provider={walletProvider} size={16} />
+          {shieldedAddress ? (
+            <ArmadaSymbol size={20} />
+          ) : (
+            <WalletProviderIcon provider={walletProvider} size={16} />
+          )}
         </span>
-        <span className={styles.triggerLabel}>{displayAddress}</span>
+        {shieldedAddress ? (
+          <span className={styles.triggerStack}>
+            <span className={styles.triggerLabel}>{displayAddress}</span>
+            <span className={[styles.triggerLabel, styles.triggerShieldedLabel].join(' ')}>
+              {shieldedAddress}
+            </span>
+          </span>
+        ) : (
+          <span className={styles.triggerLabel}>{displayAddress}</span>
+        )}
         <ChevronDownIcon
           className={[styles.chevron, open && styles.chevronOpen].filter(Boolean).join(' ')}
           aria-hidden

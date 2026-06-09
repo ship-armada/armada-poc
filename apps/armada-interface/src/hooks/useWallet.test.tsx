@@ -26,10 +26,11 @@ const hoisted = vi.hoisted(() => {
   const mockLockWallet = vi.fn(async () => {})
   const mockIsUnlocked = vi.fn(() => false)
   const mockGetEvmAddress = vi.fn<() => string | null>(() => null)
+  const mockGetWalletId = vi.fn<() => string>(() => 'mock-active-wallet-id')
   const mockToast = vi.fn()
-  return { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockToast }
+  return { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockGetWalletId, mockToast }
 })
-const { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockToast } = hoisted
+const { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockGetWalletId, mockToast } = hoisted
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({
@@ -52,6 +53,7 @@ vi.mock('@/lib/railgun/wallet', () => ({
 vi.mock('@/lib/railgun/keyManager', () => ({
   isUnlocked: hoisted.mockIsUnlocked,
   getEvmAddress: hoisted.mockGetEvmAddress,
+  getWalletId: hoisted.mockGetWalletId,
 }))
 
 vi.mock('@/lib/wagmi-adapter', () => ({
@@ -85,6 +87,8 @@ beforeEach(() => {
   mockIsUnlocked.mockReturnValue(false)
   mockGetEvmAddress.mockReset()
   mockGetEvmAddress.mockReturnValue(null)
+  mockGetWalletId.mockReset()
+  mockGetWalletId.mockReturnValue('mock-active-wallet-id')
   mockToast.mockReset()
 })
 
@@ -125,14 +129,12 @@ describe('useWallet — account-switch detection', () => {
     expect(mockToast).not.toHaveBeenCalled()
   })
 
-  it('LOCKS when the wagmi address differs from the bound EVM address and clears the active wallet atoms', () => {
+  it('LOCKS when the wagmi address differs from the bound EVM address', () => {
     wagmiState.address = '0xnewAddress'
     wagmiState.isConnected = true
     mockIsUnlocked.mockReturnValue(true)
     mockGetEvmAddress.mockReturnValue('0xoldaddress')
-    const store = renderWithStore()
-    store.set(activeRailgunWalletIdAtom, 'some-wallet-id')
-    store.set(shieldedWalletsAtom, { 'some-wallet-id': { id: 'some-wallet-id', status: 'unlocked' } })
+    renderWithStore()
     // The lock is fired synchronously on render via the effect's first run.
     expect(mockLockWallet).toHaveBeenCalledTimes(1)
   })
@@ -144,5 +146,34 @@ describe('useWallet — account-switch detection', () => {
     mockGetEvmAddress.mockReturnValue('0xoldaddress')
     renderWithStore()
     expect(mockLockWallet).toHaveBeenCalledTimes(1)
+  })
+
+  it('flips the active wallet entry status to "locked" (NOT "missing") so App.tsx routes to UnlockFlow on disconnect', () => {
+    // Seed the store with an active, unlocked wallet BEFORE rendering so the effect's first run
+    // sees the entry and flips its status. Reproduces the disconnect-routing scenario: wagmi
+    // address goes undefined while a wallet is unlocked and bound to a prior EVM address.
+    wagmiState.address = undefined
+    wagmiState.isConnected = false
+    mockIsUnlocked.mockReturnValue(true)
+    mockGetEvmAddress.mockReturnValue('0xoldaddress')
+    mockGetWalletId.mockReturnValue('seeded-wallet-id')
+
+    const store = createStore()
+    store.set(activeRailgunWalletIdAtom, 'seeded-wallet-id')
+    store.set(shieldedWalletsAtom, {
+      'seeded-wallet-id': { id: 'seeded-wallet-id', status: 'unlocked' },
+    })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+
+    expect(mockLockWallet).toHaveBeenCalledTimes(1)
+    // activeRailgunWalletIdAtom must remain set so shieldedWalletAtom resolves the entry below.
+    expect(store.get(activeRailgunWalletIdAtom)).toBe('seeded-wallet-id')
+    // The entry's status must be 'locked' (not removed) — App.tsx only routes to UnlockFlow on
+    // 'locked', not on 'missing'. Wiping the entry would leave the user stranded on the dashboard.
+    expect(store.get(shieldedWalletsAtom)['seeded-wallet-id']?.status).toBe('locked')
   })
 })

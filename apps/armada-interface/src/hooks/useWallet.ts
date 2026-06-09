@@ -9,7 +9,7 @@ import type { JsonRpcSigner } from 'ethers'
 import { walletClientToSigner } from '@/lib/wagmi-adapter'
 import { evmAddressAtom, activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import { track, trackError } from '@/lib/telemetry'
-import { isUnlocked, getEvmAddress } from '@/lib/railgun/keyManager'
+import { isUnlocked, getEvmAddress, getWalletId } from '@/lib/railgun/keyManager'
 import { lockWallet } from '@/lib/railgun/wallet'
 
 export interface UseWalletResult {
@@ -69,21 +69,50 @@ export function useWallet(): UseWalletResult {
     if (isUnlocked()) {
       const boundEvmAddress = getEvmAddress()
       if (boundEvmAddress && normalized !== boundEvmAddress) {
+        // Capture the active walletId BEFORE `lockWallet` clears the keyManager — we need it
+        // to flip the wallet's status from 'unlocked' to 'locked' in the atom (see below). If
+        // the read fails we still proceed with the lock; we just can't preserve the locked
+        // record in the atom (downstream the app will route through onboarding instead of
+        // unlock — acceptable fallback for the rare "we couldn't read the walletId" branch).
+        let lockedWalletId: string | null = null
+        try {
+          lockedWalletId = getWalletId()
+        } catch {
+          // keyManager isn't unlocked (race with another lock). Nothing to preserve.
+        }
+
         // The mismatch is the trigger. Lock first (zeroizes keyManager + unloads SDK wallet
-        // best-effort), then clear the active wallet atom so any consumer that read it during
-        // the lock can re-derive against the locked state.
-        //
-        // lockWallet's `_id` parameter is API-consistency baggage; the implementation always
-        // locks whichever wallet the keyManager holds, so the string we pass is informational
-        // for telemetry only. Empty here because we don't need to look it up.
+        // best-effort). `lockWallet`'s `_id` parameter is API-consistency baggage; the
+        // implementation always locks whichever wallet the keyManager holds.
         lockWallet('').catch((err) => {
           trackError('useWallet.account-switch-lock', err, {
             scope: 'shielded.lock',
             message: 'lock-on-account-switch failed',
           })
         })
-        setActiveWalletId(null)
-        setShieldedWallets({})
+
+        // Flip the active wallet's status to 'locked' (keep the entry + the activeId) so the
+        // derived `shieldedWalletAtom` reports `{ status: 'locked', ... }` and App.tsx's
+        // lock-watch effect routes the user from the dashboard to UnlockFlow. Wiping the atoms
+        // entirely produces `{ status: 'missing' }`, which App.tsx's existing guard doesn't
+        // catch — the user would see the toast but stay on the dashboard. The cached walletId
+        // in localStorage also persists, so re-signing with the original EVM restores the same
+        // identity (no re-enroll).
+        if (lockedWalletId) {
+          const idForUpdate = lockedWalletId
+          setShieldedWallets(prev => {
+            const existing = prev[idForUpdate]
+            if (!existing) return prev
+            return { ...prev, [idForUpdate]: { ...existing, status: 'locked' } }
+          })
+          // Keep activeRailgunWalletIdAtom pointing at the locked entry.
+        } else {
+          // Defensive fallback: couldn't read the walletId. Clear the atoms so we don't leave
+          // a stale 'unlocked' entry in place.
+          setActiveWalletId(null)
+          setShieldedWallets({})
+        }
+
         // One-time toast — only fire when this is a *change* event (not the first render).
         // `previous === null` AND a wagmi address arriving means initial connect, which is a
         // legitimate first-unlock signal, not an account-switch. The keyManager-bound check

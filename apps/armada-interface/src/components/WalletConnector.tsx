@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
-import { WalletButton, WalletPillMenu } from '@armada/ui'
+import { Button, WalletButton, WalletPillMenu } from '@armada/ui'
 import { useBalances } from '@/hooks/useBalances'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { truncateAddress, truncateAddressEnds } from '@/lib/format'
@@ -71,7 +71,21 @@ export function WalletConnector() {
         }
 
         if (!isConnected) {
-          return <WalletButton label="Connect Wallet" onClick={openConnectModal} />
+          // V2 redesign: the disconnected-state pill uses the same `secondary md` chrome as the
+          // connected `WalletPillMenu` trigger (solid black bg via `styles.trigger`), so the
+          // transition from "Connect Wallet" → "0xabcd…1234" reads as a state change on the
+          // same pill rather than a swap to a different component. Replaces the legacy
+          // `WalletButton` whose built-in radial-gradient circle icon no longer fits the design.
+          return (
+            <Button
+              variant="secondary"
+              size="md"
+              label="Connect Wallet"
+              showIcon={false}
+              onClick={openConnectModal}
+              className={styles.trigger}
+            />
+          )
         }
 
         if (chain.unsupported) {

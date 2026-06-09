@@ -9,8 +9,10 @@ import {
   Plus,
   type LucideIcon,
 } from 'lucide-react'
+import { useAtomValue } from 'jotai'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { formatUsdc, formatRelativeTime } from '@/lib/format'
+import { nowAtom } from '@/state/time'
 import type { TxKind, TxRecord } from '@/lib/tx/types'
 import { TxStatusChip } from './TxStatusChip'
 import { stageCopy, recordTitle } from './stageCopy'
@@ -71,6 +73,9 @@ export function TxRow({
   className,
 }: TxRowProps) {
   const lifecycle = lifecycleFor(record.kind)
+  // `nowAtom` is bumped every 60s by useNowTicker (App root). Reading it here causes a row
+  // re-render alongside the bump so "3m ago" labels stay current without user navigation.
+  const now = useAtomValue(nowAtom)
   const cls = [styles.root, onClick ? styles.clickable : '', className].filter(Boolean).join(' ')
 
   const title = recordTitle(record)
@@ -134,7 +139,7 @@ export function TxRow({
         {showChip ? (
           <TxStatusChip state={record.executionState} error={record.artifacts.error ?? null} />
         ) : (
-          <span className={styles.time}>{formatRelativeTime(record.updatedAt)}</span>
+          <span className={styles.time}>{formatRelativeTime(record.updatedAt, now)}</span>
         )}
       </div>
     </Tag>

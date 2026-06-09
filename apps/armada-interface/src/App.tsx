@@ -11,6 +11,7 @@ import { UnshieldModal } from '@/components/unshield'
 import { SendModal } from '@/components/payments'
 import { EarnModal } from '@/components/yield'
 import { useAutoLock } from '@/hooks/useAutoLock'
+import { useNowTicker } from '@/hooks/useNowTicker'
 import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
@@ -46,6 +47,7 @@ type GuardMode = 'pre-migration' | 'pre-init' | 'onboarding' | 'unlock' | 'app'
 
 export function App() {
   useTabVisible()
+  useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
   useAutoLock()  // idle-timer-driven lock for the shielded wallet
   // Mirror wagmi's connection state into evmAddressAtom for atom-consumers (OnboardingFlow's

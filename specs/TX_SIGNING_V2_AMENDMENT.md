@@ -193,6 +193,61 @@ The parent spec's §"Implementation Checklist → Spec blockers" remain open:
 
 This amendment does not resolve them; it does not introduce new ones.
 
+## Outstanding compliance gaps from this redesign
+
+These gaps were known and accepted during the V2 redesign work. Each
+should land before mainnet:
+
+### Web Worker isolation for spending key operations
+
+Parent spec §"Key Material Handling → Web Worker Isolation" mandates that
+spending-key derivation, field mapping, and proof signing run in a
+dedicated Web Worker, with the main thread never seeing spending-key bytes.
+
+**Current state:** the `keyManager` holds `sdkEncryptionKey` on the main
+thread; every feature handler (`features/shield`, `features/unshield`,
+`features/unshield-xchain`, `features/transfer-shielded`,
+`features/yield-deposit`, `features/yield-withdraw`) calls into the
+Railgun SDK on the main thread for proof generation + transaction signing.
+
+**Why deferred:** the Railgun SDK isn't architected for a parallel
+instance inside a Web Worker against the same `armada-shielded`
+IndexedDB. Each worker has its own module graph (the SDK must be
+re-imported inside the worker, including the level-js DB open and
+artifact store init), and the SDK doesn't expose proof + key-decrypt
+primitives independently of its wallet context. A v1 attempt would have
+been a multi-day refactor with high regression risk across every
+feature handler.
+
+**What v2 needs:**
+- Either a parallel SDK instance in a Web Worker (with whatever
+  coordination is required against the main thread's SDK)
+- Or upstream changes to `@railgun-community/wallet` to expose the
+  spending-key primitives independently of the wallet context
+- A `lib/railgun/spending-worker/` module pair (`worker.ts` + `host.ts`
+  + RPC protocol)
+- Migration of every feature handler to dispatch via the host
+- Cross-thread tests
+
+### Custom ESLint rule for signature discipline
+
+V2 Phase 2b's signature-discipline guardrails were partly delivered:
+SECURITY comment blocks at signing call sites + best-effort zeroization
+of the signature buffer after derivation. The `no-restricted-syntax`
+ESLint rule that would mechanically catch accidental
+`fetch(sig)` / `console.log(sig)` / `localStorage.setItem('x', sig)`
+patterns was deferred because `apps/armada-interface` has no eslint
+config yet.
+
+**Current state:** code review is the only enforcement.
+
+**What v2 needs:**
+- Bootstrap ESLint in `apps/armada-interface` (likely a one-time setup
+  inheriting from a workspace root config)
+- Add a `no-restricted-syntax` rule (or a small custom rule under a
+  new `eslint-plugin-armada`) matching identifiers `/sig(nature)?/i`
+  passed to network / persistence / log primitives
+
 ---
 
 ## Implementation cross-reference

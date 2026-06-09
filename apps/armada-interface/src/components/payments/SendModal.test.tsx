@@ -31,6 +31,15 @@ vi.mock('@/hooks/useGasBalanceWarning', () => ({
   }),
 }))
 
+// Phase 7: tx/storage requires an unlocked keyManager (encrypted writes). UI tests don't drive
+// onboarding; mock storage to no-op. Storage encryption is covered in lib/tx/storage.test.ts.
+vi.mock('@/lib/tx/storage', () => ({
+  putTxIfFresh: vi.fn(async () => true),
+  putTx: vi.fn(async () => {}),
+  deleteTx: vi.fn(async () => {}),
+  loadAllTx: vi.fn(async () => []),
+}))
+
 const VALID_EVM = '0x1234567890abcdef1234567890abcdef12345678'
 const VALID_0ZK = '0zk' + 'a'.repeat(40)
 

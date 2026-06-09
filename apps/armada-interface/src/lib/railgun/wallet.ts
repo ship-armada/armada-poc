@@ -13,6 +13,7 @@ import {
   antiPhishChecksumBytes,
   assertEntropyFloor,
   decryptBackup,
+  deriveHistoryEncryptionKey,
   deriveInternalMnemonic,
   deriveRootSecret,
   deriveSdkEncryptionKeyHex,
@@ -335,6 +336,7 @@ async function applyRootSecret(
     creationBlock: effectiveCreationBlock,
     evmAddress: opts.evmAddress ? normalizeEvmAddress(opts.evmAddress) : null,
     account,
+    historyEncryptionKey: deriveHistoryEncryptionKey(rootSecret),
   })
 
   return {

@@ -37,6 +37,18 @@ vi.mock('@/hooks/useGasBalanceWarning', () => ({
   }),
 }))
 
+// Phase 7: tx/storage now requires an unlocked keyManager (records are AES-256-GCM encrypted
+// at rest under the active wallet's historyEncryptionKey). Modal tests don't drive the
+// onboarding flow, so the keyManager is locked here. Mock storage to no-op the writes so the
+// Confirm-clicks-through-to-progress assertions exercise the UI orchestration without
+// tripping the "wallet locked" guard. Storage encryption itself is covered in lib/tx/storage.test.ts.
+vi.mock('@/lib/tx/storage', () => ({
+  putTxIfFresh: vi.fn(async () => true),
+  putTx: vi.fn(async () => {}),
+  deleteTx: vi.fn(async () => {}),
+  loadAllTx: vi.fn(async () => []),
+}))
+
 const FAKE_QUOTE = {
   cacheId: 'test-cache',
   expiresAt: Date.now() + 5 * 60_000,

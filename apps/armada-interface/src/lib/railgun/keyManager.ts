@@ -45,6 +45,13 @@ interface UnlockedState {
    * produces a different signature → different root_secret → different shielded identity).
    */
   account: bigint
+  /**
+   * 32-byte AES-256 key for at-rest encryption of cache records (tx history, in Phase 7).
+   * Derived from root_secret via HKDF-Expand with `info='armada-tx-history:v1'` — distinct
+   * from sdkEncryptionKey so a leak of one doesn't compromise the other. Same lifecycle as
+   * rootSecret: zeroized on `clear()`.
+   */
+  historyEncryptionKey: Uint8Array
 }
 
 let unlocked: UnlockedState | null = null
@@ -117,6 +124,16 @@ export function getAccount(): bigint | null {
 }
 
 /**
+ * Returns the 32-byte AES-256 history-encryption key. Throws when locked — there's no safe
+ * fallback for the storage layer; refusing to operate on the cache when no key is available
+ * is correct (an unencrypted write would create an unrecoverable plaintext record on disk).
+ */
+export function getHistoryEncryptionKey(): Uint8Array {
+  if (!unlocked) throw new Error('keyManager: wallet is locked')
+  return unlocked.historyEncryptionKey
+}
+
+/**
  * Re-compute the checksum from the current rootSecret. Used by UI surfaces that need to compare
  * against a stored value (mismatch → possible compromise). Cheap (one SHA256).
  */
@@ -133,6 +150,10 @@ export function deriveChecksum(): string {
 export function clear(): void {
   if (unlocked) {
     unlocked.rootSecret.fill(0)
+    // Same best-effort zeroize for the history-encryption key — once we drop the reference V8
+    // will reclaim it on the next GC, but explicitly clobbering the bytes closes the window
+    // during which a heap scrape could recover the key.
+    unlocked.historyEncryptionKey.fill(0)
   }
   unlocked = null
 }

@@ -30,6 +30,7 @@ import {
   getWalletId as kmGetWalletId,
   setUnlocked,
 } from './keyManager'
+import { loadDeployments } from '@/config/deployments'
 import { clearHistoryCheckpoint } from './history-checkpoint'
 import { initRailgunEngine } from './init'
 import { getCurrentHubBlock, loadHubNetwork } from './network'
@@ -428,13 +429,23 @@ export async function enrollFromSignature(
     )
   }
 
-  // First-time enrollment (no cached walletId for this tuple) sets `creationBlock` to the
-  // current hub head so a future exportBackup can write a useful value into the v2 blob.
-  // Returning paths leave it unset and accept the slow-rescan fallback if the SDK load fails.
+  // First-time enrollment on THIS device (no cached walletId for this tuple) sets
+  // `creationBlock` to the hub deploy block — NOT the current head. The earlier value is
+  // critical for chain-history recovery: a user who previously enrolled this wallet on another
+  // device (or cleared local storage and re-signed) has on-chain activity at blocks prior to
+  // "now", and the SDK's merkletree scan starts at `creationBlockNumbers` and skips earlier
+  // commitments. Anchoring at the deploy block ensures every shield/transact/unshield this
+  // wallet ever authored is discoverable by `getWalletTransactionHistory`.
+  // Fallback chain: deploy block from the manifest → current head (older manifests without a
+  // deploy block) → undefined (SDK does a full rescan from genesis — slowest but correct).
+  // Returning paths (cached walletId exists in localStorage) leave creationBlock undefined so
+  // the SDK reuses the value it stored at original creation.
   const wasFirstTimeEnrollment = opts.evmAddress
     ? readStoredWalletIdFor(opts.evmAddress, account) == null
     : true
-  const creationBlock = wasFirstTimeEnrollment ? (await getCurrentHubBlock()) ?? undefined : undefined
+  const creationBlock = wasFirstTimeEnrollment
+    ? await resolveCreationBlock()
+    : undefined
 
   const { state, newlyCreated } = await applyRootSecret(rootSecret, {
     creationBlock,
@@ -571,6 +582,27 @@ export async function resetWallet(_id: string): Promise<void> {
   // wallet's first observable activity.
   clearHistoryCheckpoint(id)
   track('shielded.reset', { walletId: id })
+}
+
+/**
+ * Resolve the `creationBlock` to hand to the SDK for a first-time-on-this-device enrollment.
+ * Priority order:
+ *
+ *   1. `hub.deployBlock` from the deployment manifest — guarantees full chain-history coverage
+ *      regardless of when this wallet was originally enrolled or how many cleared-storage
+ *      cycles have happened since.
+ *   2. `getCurrentHubBlock()` — fallback for legacy manifests that don't carry deployBlock;
+ *      preserves the pre-Phase-9 behavior but loses old activity on re-enrollment.
+ *   3. `undefined` — SDK falls back to full genesis rescan; slowest but always correct.
+ */
+async function resolveCreationBlock(): Promise<number | undefined> {
+  try {
+    const deployments = await loadDeployments()
+    if (deployments.hub.deployBlock !== undefined) return deployments.hub.deployBlock
+  } catch {
+    // Manifest load failed (offline, dev plugin down) — fall through to head-block fallback.
+  }
+  return (await getCurrentHubBlock()) ?? undefined
 }
 
 /**

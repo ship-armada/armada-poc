@@ -35,7 +35,9 @@ export function SyncBanner() {
   return (
     <div className={`${styles.banner} ${styles.syncing}`} role="status" aria-live="polite">
       <span className={styles.message}>
-        Loading your private balance — {pct}%. Subsequent visits will be much faster.
+        First sign-in on this device — loading your private balance ({pct}%). This walks the
+        chain from deploy so any prior activity for your wallet is fully discovered. Subsequent
+        visits are instant.
       </span>
       <span
         className={styles.progressTrack}

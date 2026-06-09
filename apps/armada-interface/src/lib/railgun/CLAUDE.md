@@ -55,6 +55,21 @@ See `specs/TX_SIGNING_V2_AMENDMENT.md` §"Outstanding compliance gaps from this 
 
 V2 redesign accepted "deterministic re-sign from EVM wallet" as the primary recovery path. WebAuthn-wrapped key storage is the right v2 hardening (origin-bound, addresses the malicious-extension threat the current in-memory model doesn't fully cover). Future work; see plan §7 non-goals.
 
+## `creationBlock` invariant: always anchor at hub deploy block
+
+A deterministic-re-sign wallet identity is purely a function of the EOA signature — there is no local bit that distinguishes "first ever creation" from "re-creation after the user cleared local storage on a wallet that already has chain activity." Both produce the same root_secret → same SDK walletId.
+
+Consequence: if first-time enrollment seeded the SDK's `creationBlockNumbers` at the *current* head (the obvious "fast path" choice), then a user who cleared local storage and re-signed would have their prior shields, transacts, unshields, and yield deposits silently amputated from `getWalletTransactionHistory` AND from balance — the SDK's merkletree scan starts at `creationBlockNumbers` and never walks back.
+
+**The fix:** `resolveCreationBlock()` always picks `hub.deployBlock` (falling back to current head only when older manifests omit it). Trade-off: every first-sign-in on a device pays the full chain scan cost (~10–30s on Sepolia, longer on mainnet at scale). Trade-off accepted because the alternatives have worse properties:
+
+- **On-chain registry** (`EOA → first commitment block`) re-links the EOA to "has a shielded wallet," undoing the privacy property the EIP-712 sign just paid for.
+- **Relayer-side registry** requires sharing the walletId with our infra, enabling cross-session correlation.
+- **Optimistic + lazy backfill** (sign in fast, deep-scan in the background) is appealing but the SDK doesn't currently expose a clean API to extend `creationBlockNumbers` backwards on an existing wallet — would require deleting + recreating, which has its own footguns.
+- **Asking the user** ("have you used this wallet before?") trades a slow scan for a silent-data-loss footgun if they answer wrong.
+
+If a future SDK release ships a `walletForID(id).extendSyncRange(fromBlock)`-style API, switching to lazy backfill becomes viable — until then, anchoring at deploy block is correct.
+
 ## What we explicitly DON'T do
 
 - Custodial fallback. No server-side key escrow, ever.

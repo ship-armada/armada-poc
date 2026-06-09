@@ -15,6 +15,8 @@ Wrappers around `@railgun-community/wallet` / `@railgun-community/engine` for sh
 | `artifacts.ts` | IndexedDB-backed ArtifactStore that caches ZK circuit artifacts across reloads. | Working |
 | `prover.ts` | Lazy-initialise the proving engine; expose proof generation entry points. | Stub |
 | `sync.ts` | Subscribe + multiplex SDK balance-update events; `refreshShieldedBalances` + `getShieldedERC20Balance` helpers. Bridge hook lives in `hooks/useShieldedBalanceSync.ts`. | Working |
+| `history.ts` | V1 Phase 9 — wraps the SDK's `getWalletTransactionHistory` and maps `TransactionHistoryItem` → `TxRecord` for chain-driven recovery. Exports `runHistoryScan` (high-level), `historyItemToTxRecord` (pure mapper), `syntheticTxId` (deterministic id encoding). Yield ops detected via the configured adapter address. | Working |
+| `history-checkpoint.ts` | Per-wallet localStorage checkpoint (`armada.shielded.historyScanBlock.<walletId>`) so incremental scans only walk the delta since the last `block`. Wiped on Settings → Reset wallet and Settings → Re-scan history. | Working |
 
 ## Secret-handling rules (HARD)
 

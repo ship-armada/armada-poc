@@ -3,10 +3,11 @@
 
 import { useAtomValue } from 'jotai'
 import { useMemo, useState } from 'react'
-import { History as HistoryIcon } from 'lucide-react'
+import { History as HistoryIcon, Loader2 } from 'lucide-react'
 import { Card, EmptyState, SectionHeader, Tabs, type TabItem } from '@/components/ui'
 import { TxActions, TxLifecycleStepper, TxRow } from '@/components/tx'
 import { activeTxListAtom } from '@/state/tx'
+import { historyRecoveryAtom } from '@/state/history'
 import { preferencesAtom } from '@/state/preferences'
 import type { TxExecutionState, TxRecord } from '@/lib/tx/types'
 import styles from './History.module.css'
@@ -44,6 +45,7 @@ function matches(record: TxRecord, filter: FilterId): boolean {
 export function History() {
   const all = useAtomValue(activeTxListAtom)
   const prefs = useAtomValue(preferencesAtom)
+  const recovery = useAtomValue(historyRecoveryAtom)
   const [filter, setFilter] = useState<FilterId>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -71,13 +73,23 @@ export function History() {
       />
       {rows.length === 0 ? (
         <Card>
-          <EmptyState
-            icon={<HistoryIcon size={28} />}
-            title="No matching activity"
-            description={filter === 'all'
-              ? 'Your transactions will appear here as they happen.'
-              : 'Try a different filter to see other transactions.'}
-          />
+          {recovery.state === 'scanning' && filter === 'all' ? (
+            // While the first-ever scan is in flight, surface the work being done. Stops users
+            // from concluding "I have no activity" when really we just haven't fetched it yet.
+            <EmptyState
+              icon={<Loader2 size={28} className={styles.spin} />}
+              title="Scanning chain for prior activity…"
+              description="Recently-received transfers and past deposits/withdrawals will appear here as the scan finishes."
+            />
+          ) : (
+            <EmptyState
+              icon={<HistoryIcon size={28} />}
+              title="No matching activity"
+              description={filter === 'all'
+                ? 'Your transactions will appear here as they happen.'
+                : 'Try a different filter to see other transactions.'}
+            />
+          )}
         </Card>
       ) : (
         <Card className={styles.listCard}>

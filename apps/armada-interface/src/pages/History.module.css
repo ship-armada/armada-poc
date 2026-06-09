@@ -41,3 +41,14 @@
   background: var(--semantic-color-surface-default);
   border-top: 1px solid var(--semantic-color-border-default);
 }
+
+/* Spinner glyph shown next to the empty-state title while the chain-recovery scan is in flight. */
+.spin {
+  animation: historySpin 700ms linear infinite;
+}
+
+@keyframes historySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

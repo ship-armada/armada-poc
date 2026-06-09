@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
 import { SyncBanner } from './sync'
+import { HistoryRecoveryBanner } from './history'
 import styles from './AppLayout.module.css'
 
 const NAV: ReadonlyArray<{ label: string; path: string }> = [
@@ -57,6 +58,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       >
         <div className="w-full px-6">
           <SyncBanner />
+          <HistoryRecoveryBanner />
         </div>
         {children}
       </main>

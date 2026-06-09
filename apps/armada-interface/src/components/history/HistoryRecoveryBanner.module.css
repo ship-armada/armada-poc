@@ -1,0 +1,47 @@
+/* ABOUTME: HistoryRecoveryBanner styling — slim status strip matching SyncBanner's rhythm so the two coexist visually when both are active. */
+/* ABOUTME: Reuses the same border-radius + max-width to keep horizontal alignment with sync feedback. */
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  border: 1px solid var(--semantic-color-border-default);
+}
+
+.scanning {
+  background: rgba(196, 145, 229, 0.08);
+  border-color: var(--semantic-color-border-lavender);
+  color: var(--semantic-color-text-secondary);
+}
+
+.failed {
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.24);
+  color: var(--semantic-color-status-error);
+}
+
+.message {
+  flex: 1;
+  min-width: 0;
+}
+
+.retry {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.retry:hover {
+  background: rgba(255, 255, 255, 0.06);
+}

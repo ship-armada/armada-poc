@@ -10,11 +10,15 @@
 }
 
 /* V2 redesign: when a shielded address is supplied, the pill renders two rows — each row is
-   its own glyph+label pair (MetaMask + EVM on top, ArmadaSymbol + 0zk underneath). Extra
-   vertical padding keeps the rows from feeling cramped against the pill border. */
+   its own glyph+label pair (MetaMask + EVM on top, ArmadaSymbol + 0zk underneath).
+   The base Button.md class locks `height` to a fixed token, so two rows of content get
+   clipped. Override to `auto` and let vertical padding drive the actual size: `spacing-4`
+   above and below comes to ~16px each, producing a comfortable "double pill" ~64-68px tall
+   depending on the rendered font metrics. The pill grows taller, not just visually padded. */
 .triggerTwoRow {
   align-items: center;
-  padding-block: var(--primitives-spacing-3);
+  height: auto;
+  padding-block: var(--primitives-spacing-4);
 }
 
 .triggerIcon {

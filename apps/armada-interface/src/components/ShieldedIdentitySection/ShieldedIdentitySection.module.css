@@ -1,0 +1,100 @@
+/* ABOUTME: Styling for ShieldedIdentitySection — sits inside @armada/ui WalletPillMenu's dropdown card; visual rhythm matches the rest of the card. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  padding-block-start: var(--primitives-spacing-3);
+  border-block-start: 1px solid var(--semantic-color-border-muted, rgba(0, 0, 0, 0.08));
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-2) 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--primitives-radius-md, 6px);
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  cursor: pointer;
+  text-align: start;
+  outline: none;
+}
+
+.row:hover .address {
+  color: var(--semantic-color-text-secondary);
+}
+
+.row:focus-visible {
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--semantic-color-status-success, #16a34a);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.address {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--semantic-color-text-muted);
+}
+
+.checksum {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-mono, ui-monospace), monospace;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  letter-spacing: 0.06em;
+  color: var(--semantic-color-text-muted);
+}
+
+.signInCta {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--semantic-color-text-link, var(--semantic-color-text-primary));
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.signInCta:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.signInCta:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+.locked {
+  margin: 0;
+  color: var(--semantic-color-text-muted);
+  font-style: italic;
+}

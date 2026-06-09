@@ -1,1 +1,0 @@
-export { ShieldedAddressPill } from './ShieldedAddressPill'

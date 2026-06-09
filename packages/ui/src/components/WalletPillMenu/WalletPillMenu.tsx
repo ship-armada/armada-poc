@@ -1,6 +1,6 @@
 // ABOUTME: Connected-wallet pill + dropdown — copy address and disconnect (crowdfund Header parity).
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRightOnRectangleIcon,
   ChevronDownIcon,
@@ -31,6 +31,17 @@ export interface WalletPillMenuProps {
    * armada-interface to swap the default transparent pill for a solid black background.
    */
   triggerClassName?: string
+  /**
+   * Optional content rendered inside the dropdown card, below the copy/disconnect actions.
+   * Consumer-supplied. `armada-interface` uses this to surface a "Shielded identity" section
+   * (post V2 redesign: the EVM and shielded addresses are 1:1, so they share one pill).
+   * Consumers without a shielded wallet (crowdfund observer/committer/admin) omit the prop and
+   * render no extra section — back-compat.
+   *
+   * See packages/ui/src/components/CLAUDE.md "Approved deviations from byte-identical port"
+   * for the design-system deviation rationale (same precedent as WalletButton's `disabled` prop).
+   */
+  extraSection?: ReactNode
 }
 
 const PROVIDER_ICON_PX = 20
@@ -56,6 +67,7 @@ export function WalletPillMenu({
   usdcBalance = 0,
   onDisconnect,
   triggerClassName,
+  extraSection,
 }: WalletPillMenuProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -187,6 +199,8 @@ export function WalletPillMenu({
                 </button>
               ) : null}
             </div>
+
+            {extraSection}
           </div>
         </div>
       ) : null}

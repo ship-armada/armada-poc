@@ -6,8 +6,10 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
 import { WalletButton, WalletPillMenu } from '@armada/ui'
 import { useBalances } from '@/hooks/useBalances'
+import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { truncateAddress } from '@/lib/format'
 import { walletProviderFromConnector } from '@/lib/walletProvider'
+import { ShieldedIdentitySection } from './ShieldedIdentitySection'
 import styles from './WalletConnector.module.css'
 
 function totalUnshieldedUsdc(unshielded: Record<number, bigint>): number {
@@ -24,6 +26,13 @@ export function WalletConnector() {
   const { unshielded } = useBalances()
   const usdcBalance = useMemo(() => totalUnshieldedUsdc(unshielded), [unshielded])
   const walletProvider = walletProviderFromConnector(connector)
+  // V2 Phase 3a: the EVM + shielded addresses share one pill. We only render the shielded
+  // section when the consuming app actually has a shielded-wallet record on hand; collapsing
+  // to undefined keeps the WalletPillMenu's dropdown looking native for the non-shielded path
+  // (which is unreachable from this component in practice — armada-interface always has a
+  // shielded wallet by the time WalletConnector is mounted in AppLayout — but kept defensive).
+  const shielded = useShieldedWallet()
+  const hasShieldedWallet = shielded.state !== null && shielded.state !== undefined
 
   return (
     <ConnectButton.Custom>
@@ -80,6 +89,7 @@ export function WalletConnector() {
             usdcBalance={usdcBalance}
             onDisconnect={() => disconnect()}
             triggerClassName={styles.trigger}
+            extraSection={hasShieldedWallet ? <ShieldedIdentitySection /> : undefined}
           />
         )
       }}

@@ -5,7 +5,6 @@ import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
-import { ShieldedAddressPill } from './ShieldedAddressPill'
 import { SyncBanner } from './sync'
 import styles from './AppLayout.module.css'
 
@@ -41,7 +40,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
-          <ShieldedAddressPill />
+          {/* V2 Phase 3a: merged pill — the 0zk shielded identity now lives inside
+              `WalletConnector`'s `WalletPillMenu` dropdown (via the `extraSection` prop), so
+              the separate `ShieldedAddressPill` previously sat here is gone. */}
           <WalletConnector />
         </div>
       </header>

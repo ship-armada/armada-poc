@@ -148,22 +148,33 @@ export function WalletPillMenu({
         aria-controls={menuId}
         onClick={() => setOpen(prev => !prev)}
       >
-        <span className={styles.triggerIcon}>
-          {shieldedAddress ? (
-            <ArmadaSymbol size={20} />
-          ) : (
-            <WalletProviderIcon provider={walletProvider} size={16} />
-          )}
-        </span>
         {shieldedAddress ? (
+          // Two-row layout: each row pairs an identity-specific glyph with its address. The
+          // outer stack handles vertical layout; each `.triggerRow` is its own flex line with
+          // the glyph and label aligned to a shared baseline.
           <span className={styles.triggerStack}>
-            <span className={styles.triggerLabel}>{displayAddress}</span>
-            <span className={[styles.triggerLabel, styles.triggerShieldedLabel].join(' ')}>
-              {shieldedAddress}
+            <span className={styles.triggerRow}>
+              <span className={styles.triggerIcon}>
+                <WalletProviderIcon provider={walletProvider} size={14} />
+              </span>
+              <span className={styles.triggerLabel}>{displayAddress}</span>
+            </span>
+            <span className={styles.triggerRow}>
+              <span className={styles.triggerIcon}>
+                <ArmadaSymbol size={14} />
+              </span>
+              <span className={[styles.triggerLabel, styles.triggerShieldedLabel].join(' ')}>
+                {shieldedAddress}
+              </span>
             </span>
           </span>
         ) : (
-          <span className={styles.triggerLabel}>{displayAddress}</span>
+          <>
+            <span className={styles.triggerIcon}>
+              <WalletProviderIcon provider={walletProvider} size={16} />
+            </span>
+            <span className={styles.triggerLabel}>{displayAddress}</span>
+          </>
         )}
         <ChevronDownIcon
           className={[styles.chevron, open && styles.chevronOpen].filter(Boolean).join(' ')}

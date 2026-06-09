@@ -19,7 +19,7 @@ describe('<WelcomeStep>', () => {
 
   it('hides the Restore secondary CTA when onRestore is not supplied', () => {
     render(<WelcomeStep onContinue={() => {}} />)
-    expect(screen.queryByRole('button', { name: /I have a backup/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Restore an account/i })).toBeNull()
   })
 
   it('renders the Restore CTA when onRestore is supplied and fires it on click', () => {
@@ -29,7 +29,7 @@ describe('<WelcomeStep>', () => {
     // (orphaning) account.
     const onRestore = vi.fn()
     render(<WelcomeStep onContinue={() => {}} onRestore={onRestore} />)
-    fireEvent.click(screen.getByRole('button', { name: /I have a backup/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Restore an account/i }))
     expect(onRestore).toHaveBeenCalledTimes(1)
   })
 })

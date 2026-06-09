@@ -1,5 +1,5 @@
 // ABOUTME: Step 1 of onboarding — welcomes the user and explains the private account before any keys are generated.
-// ABOUTME: Primary CTA "Create account"; optional ghost "I have a backup" when onRestore is supplied (new device path).
+// ABOUTME: Primary CTA "Create account"; optional ghost "Restore an account" when onRestore is supplied (returning user / new device path — routes to UnlockFlow whose Sign-in tab covers re-sign + the Backup/Paste tabs cover the recovery-material paths).
 
 import { Button, Text } from '@armada/ui'
 import styles from './WelcomeStep.module.css'
@@ -7,9 +7,12 @@ import styles from './WelcomeStep.module.css'
 export interface WelcomeStepProps {
   onContinue: () => void
   /**
-   * Switch to the restore-from-backup flow. Only passed by App.tsx when the user has no
-   * existing wallet on this device — handles the "new device" / "cleared storage" case where
-   * the user already has a backup but the app would otherwise route them through Create.
+   * Switch to the UnlockFlow (Sign in / Backup file / Paste secret). Only passed by App.tsx
+   * when the user has no existing wallet on this device — handles the "new device" / "cleared
+   * storage" case where the user is actually a returning user the app would otherwise route
+   * through Create. Covers all three v2 recovery paths: re-sign with the same EVM wallet is
+   * the default, backup-file + paste-secret cover the cases where the EVM wallet isn't
+   * available on this device.
    */
   onRestore?: () => void
 }
@@ -41,7 +44,7 @@ export function WelcomeStep({ onContinue, onRestore }: WelcomeStepProps) {
           <Button
             variant="ghost"
             size="md"
-            label="I have a backup"
+            label="Restore an account"
             showIcon={false}
             onClick={onRestore}
           />

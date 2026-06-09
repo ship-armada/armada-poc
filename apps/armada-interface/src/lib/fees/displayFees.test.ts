@@ -16,18 +16,19 @@ const quote: FeeSchedule = {
 }
 
 describe('computeDisplayFees', () => {
-  it('shows CCTP protocol fee only for cross-chain shield (native gas separate)', () => {
+  it('returns zero protocolFee for cross-chain shield until useDisplayFees overrides with calculateShieldFee', () => {
     // WHY: `computeDisplayFees` is the pure baseline fed into `useDisplayFees`. For
-    // `shield-xchain` it surfaces the CCTP fast-fee until `useDisplayFees` overrides with the
-    // on-chain `calculateShieldFee` value. The override is what makes the cross-chain Fee row
-    // actually match what `ShieldModule._transferTokenIn` deducts on hub — see
-    // `apps/armada-interface/src/hooks/useDisplayFees.ts` for the wagmi read that fires for
-    // BOTH `shield` and `shield-xchain`.
+    // `shield-xchain` it now reports 0 because the CCTP fast-fee was moved to its own channel
+    // (`flowBreakdown.cctpFee`) so the fee-breakdown tooltip can label it "CCTP fee" instead of
+    // the previous misleading "Relayer fee". The user-visible protocolFee is the on-chain
+    // `IArmadaFeeModule.calculateShieldFee` 50 bps, which `useDisplayFees` overlays via a wagmi
+    // `useReadContract` for BOTH `shield` and `shield-xchain` (see
+    // `apps/armada-interface/src/hooks/useDisplayFees.ts`).
     const amount = 1_000_000_000n // 1000 USDC
     const fees = computeDisplayFees('shield-xchain', amount, quote)
-    expect(fees.protocolFee).toBe(200_000n) // 2 bps
+    expect(fees.protocolFee).toBe(0n)
     expect(fees.gasFee).toBe(0n)
-    expect(fees.totalFee).toBe(200_000n)
+    expect(fees.totalFee).toBe(0n)
     expect(fees.feeInclusive).toBe(true)
   })
 

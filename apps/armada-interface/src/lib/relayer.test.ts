@@ -140,19 +140,24 @@ describe('userFeeForKind', () => {
     })
   })
 
-  it('returns CCTP fast-fee (2 bps of amount) for shield-xchain', () => {
-    // 2 bps of 100 USDC = 0.02 USDC = 20_000 raw
-    expect(userFeeForKind('shield-xchain', HUNDRED_USDC)).toBe(20_000n)
+  it('returns 0 for direct-submit shield-xchain — CCTP fast-fee moved to its own channel', () => {
+    // WHY: pre-fee-bundling, `userFeeForKind('shield-xchain', !gasless)` returned the CCTP fast-
+    // fee and the tooltip labeled it "Relayer fee" — misleading on the direct path where no
+    // broadcaster is involved. CCTP is now surfaced via `flowBreakdown.cctpFee` in the modal so
+    // the tooltip can show it as "CCTP fee" alongside Protocol fee. `userFeeForKind` here means
+    // strictly the broadcaster/relayer fee; 0 when no relayer participates.
+    expect(userFeeForKind('shield-xchain', HUNDRED_USDC)).toBe(0n)
   })
 
   describe('shield-xchain — Phase B4 gasless mode', () => {
-    it('returns CCTP fast-fee estimate when gasless flag is omitted (direct-submit default)', () => {
-      // WHY: any caller pre-dating B4 (or explicitly direct-submitting) must keep seeing the
-      // proportional CCTP fast-fee. A regression here would double-charge — the modal would
-      // surface a relayer-tier fee even on the direct path where no relayer is involved.
+    it('returns 0n on direct-submit even when a quote is present (CCTP is its own channel)', () => {
+      // WHY: regression guard for the broadcaster/CCTP split. Direct shield-xchain takes no
+      // broadcaster fee; the CCTP fast-fee lives in `flowBreakdown.cctpFee` and is added to the
+      // displayed total by ShieldModal. A regression here that re-routed CCTP through the
+      // broadcaster slot would re-introduce the misleading "Relayer fee" label on direct.
       const quote = quoteWith({ shieldXchain: '500000' })
-      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote)).toBe(20_000n)
-      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote, { gasless: false })).toBe(20_000n)
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote)).toBe(0n)
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote, { gasless: false })).toBe(0n)
     })
 
     it('reads quote.fees.shieldXchain when gasless flag is set', () => {
@@ -188,22 +193,15 @@ describe('userFeeForKind', () => {
     expect(userFeeForKind('unshield-xchain', HUNDRED_USDC, null)).toBe(0n)
   })
 
-  it('shield-xchain rounds toward zero for small amounts (bigint integer division)', () => {
-    // 2 bps of 1 USDC = 200 raw → no rounding issue here
-    expect(userFeeForKind('shield-xchain', ONE_USDC)).toBe(200n)
-    // 2 bps of 4999 raw = 9999 / 10000 = 0 (rounds down)
-    expect(userFeeForKind('shield-xchain', 4_999n)).toBe(0n)
-    // 2 bps of 5000 raw = 10000 / 10000 = 1
-    expect(userFeeForKind('shield-xchain', 5_000n)).toBe(1n)
-  })
-
-  it('returns 0n when amount is 0n for shield-xchain (no rejection, just nothing to fee)', () => {
+  it('returns 0n on direct shield-xchain regardless of amount magnitude', () => {
+    // WHY: post-CCTP-channel-split, direct shield-xchain has no broadcaster fee — the user pays
+    // native gas themselves and CCTP fees flow through `flowBreakdown.cctpFee`. Independence
+    // from amount distinguishes "no broadcaster" from "a small broadcaster fee that rounded to
+    // zero," which would still scale with amount on bigger inputs. The amount-proportional
+    // CCTP fast-fee math + rounding edges are covered by the `cctpFastFeeForAmount` test below.
     expect(userFeeForKind('shield-xchain', 0n)).toBe(0n)
-  })
-
-  it('shield-xchain scales linearly with amount', () => {
-    const big = HUNDRED_USDC * 10_000n // 1M USDC
-    expect(userFeeForKind('shield-xchain', big)).toBe(big * 2n / 10_000n)
+    expect(userFeeForKind('shield-xchain', ONE_USDC)).toBe(0n)
+    expect(userFeeForKind('shield-xchain', HUNDRED_USDC * 10_000n)).toBe(0n)
   })
 })
 

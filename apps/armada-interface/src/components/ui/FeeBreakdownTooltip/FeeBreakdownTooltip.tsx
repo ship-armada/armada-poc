@@ -57,16 +57,33 @@ export function FeeBreakdownTooltip({
   flowBreakdown,
 }: FeeBreakdownTooltipProps) {
   const broadcasterFee = flowBreakdown?.broadcasterFee ?? 0n
-  const description =
-    broadcasterFee > 0n
-      ? "Protocol fee + relayer fee come out of your USDC. Network gas is paid by the relayer (you don't pay native gas)."
-      : 'Protocol fee is taken from your deposit in USDC. Network gas is paid separately from your wallet.'
+  const cctpFee = flowBreakdown?.cctpFee ?? 0n
+  // Description varies by which of the three fee components are non-zero. CCTP and relayer
+  // legs are independent on cross-chain flows: a direct cross-chain shield has CCTP but no
+  // broadcaster; gasless has both. Spelling it out per branch keeps the user's mental model
+  // aligned with what they'll see deducted on chain.
+  const description = (() => {
+    if (broadcasterFee > 0n && cctpFee > 0n) {
+      return "Protocol fee, relayer fee, and the CCTP network fee all come out of your USDC. You don't pay native gas — the relayer covers it."
+    }
+    if (broadcasterFee > 0n) {
+      return "Protocol fee + relayer fee come out of your USDC. Network gas is paid by the relayer (you don't pay native gas)."
+    }
+    if (cctpFee > 0n) {
+      return 'Protocol fee + CCTP network fee come out of your USDC. Native gas is paid separately from your wallet.'
+    }
+    return 'Protocol fee is taken from your deposit in USDC. Network gas is paid separately from your wallet.'
+  })()
 
   const bullets: string[] = isLoading
     ? ['Loading fee estimate…']
     : [
         formatUsdcLine('Protocol fee', fees.protocolFee),
         ...(broadcasterFee > 0n ? [formatUsdcLine('Relayer fee', broadcasterFee)] : []),
+        ...(cctpFee > 0n ? [formatUsdcLine('CCTP fee', cctpFee)] : []),
+        // Network-gas line is only shown when the user actually pays native gas themselves —
+        // gasless paths cover it via the broadcaster; direct cross-chain still has the user
+        // pay native gas on the source chain.
         ...(broadcasterFee > 0n ? [] : [formatGasLine(fees)]),
         ...(flowBreakdown?.recipientLabel && flowBreakdown.recipientReceives !== undefined
           ? [formatUsdcLine(flowBreakdown.recipientLabel, flowBreakdown.recipientReceives)]
@@ -75,7 +92,7 @@ export function FeeBreakdownTooltip({
         flowBreakdown.recipientReceives !== flowBreakdown.totalDeducted
           ? [formatUsdcLine('Total deducted', flowBreakdown.totalDeducted)]
           : []),
-        ...(fees.feeInclusive && fees.protocolFee > 0n && broadcasterFee === 0n
+        ...(fees.feeInclusive && fees.protocolFee > 0n && broadcasterFee === 0n && cctpFee === 0n
           ? ['Protocol fee is deducted from your deposit amount']
           : []),
       ]

@@ -129,13 +129,13 @@ export function ShieldModal() {
     quote,
   )
   const protocolFee = displayFees.protocolFee
-  // CCTP fast-fee on gasless cross-chain shield. On the DIRECT shield-xchain path, the
-  // `userFeeForKind('shield-xchain', !gasless)` return value already carries this number — it's
-  // the only deduction beyond protocolFee. On the GASLESS path, `fee` carries the relayer fee
-  // instead, so CCTP needs its own channel so the Fee row still totals
-  // `relayer + protocolFee + cctp`. 0n when no CCTP applies (any same-chain shield).
+  // CCTP fast-fee — applies to BOTH direct and gasless cross-chain shield (CCTP V2 always
+  // charges its fast-fee on a cross-chain mint regardless of how the burn was initiated).
+  // Routed through its own channel rather than the broadcaster slot so the tooltip can label it
+  // "CCTP fee" instead of "Relayer fee" (which would be misleading on the direct path where
+  // there's no broadcaster). Zero on any same-chain shield.
   const cctpFee: bigint =
-    computedKind === 'shield-xchain' && useGasless ? cctpFastFeeForAmount(amount) : 0n
+    computedKind === 'shield-xchain' ? cctpFastFeeForAmount(amount) : 0n
   // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
   // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
   // the entered `amount` IS what's deducted from the user's USDC balance, and the shielded

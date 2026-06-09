@@ -81,7 +81,10 @@ export interface UserFeeOpts {
 
 export function userFeeForKind(
   kind: TxKind,
-  amount: bigint,
+  // Reserved for future kinds whose broadcaster fee is amount-proportional. All current
+  // kinds source their broadcaster fee from a flat per-op `quote.fees.<tier>` value or
+  // return 0 (no broadcaster involved on this path), so `amount` is unused today.
+  _amount: bigint,
   quote?: FeeSchedule | null,
   opts?: UserFeeOpts,
 ): bigint {
@@ -91,10 +94,13 @@ export function userFeeForKind(
       // chain, burns `amount` through CCTP, transfers `fee` to the relayer. The relayer's
       // `shieldXchain` fee is per-chain (Base Sepolia ≠ Ethereum Sepolia — see the relayer's
       // FeeCalculator), so the modal MUST pass the quote for the SOURCE chain via
-      // `fetchFees(chainId)`. Direct path keeps the CCTP fast-fee estimate (~2 bps of amount)
-      // since no relayer fee applies — the user pays gas in ETH themselves.
+      // `fetchFees(chainId)`. Direct path returns 0 — the user pays native gas themselves and
+      // there's no broadcaster involved. The CCTP fast-fee (which still applies on the destination
+      // mint) is surfaced as a separate `cctpFee` channel via `cctpFastFeeForAmount`, NOT shoved
+      // into the broadcaster slot, so the fee-breakdown tooltip can label it "CCTP fee" rather
+      // than the misleading "Relayer fee".
       if (opts?.gasless) return quote ? BigInt(quote.fees.shieldXchain) : 0n
-      return (amount * CCTP_FAST_FEE_BPS) / 10_000n
+      return 0n
     case 'unshield-xchain':
       // A5 — relayer-mediated hub burn. The visible "fee" is the relayer's broadcaster fee from
       // the `crossChainUnshield` tier (covers proof verification + the CCTP burn). The CCTP

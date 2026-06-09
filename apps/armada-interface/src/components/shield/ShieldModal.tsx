@@ -10,7 +10,7 @@ import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
-import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { useBalances } from '@/hooks/useBalances'
 import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
@@ -129,18 +129,26 @@ export function ShieldModal() {
     quote,
   )
   const protocolFee = displayFees.protocolFee
+  // CCTP fast-fee on gasless cross-chain shield. On the DIRECT shield-xchain path, the
+  // `userFeeForKind('shield-xchain', !gasless)` return value already carries this number — it's
+  // the only deduction beyond protocolFee. On the GASLESS path, `fee` carries the relayer fee
+  // instead, so CCTP needs its own channel so the Fee row still totals
+  // `relayer + protocolFee + cctp`. 0n when no CCTP applies (any same-chain shield).
+  const cctpFee: bigint =
+    computedKind === 'shield-xchain' && useGasless ? cctpFastFeeForAmount(amount) : 0n
   // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
   // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
   // the entered `amount` IS what's deducted from the user's USDC balance, and the shielded
-  // value is `amount - fee - protocolFee`. The wrapper splits on-chain: `(amount - fee)` to the
-  // pool, which the pool then takes `protocolFee` from before crediting the shielded balance.
-  // Direct hub shield is `no-fee` so only `protocolFee` deducts from the shielded value.
+  // value is `amount - fee - protocolFee - cctpFee` (gasless xchain) or `amount - fee - protocolFee`
+  // (everything else). The wrapper splits on-chain: `(amount - fee)` to the pool, which then
+  // takes `protocolFee` from the shielded credit. Direct hub shield is `no-fee` so only
+  // `protocolFee` deducts from the shielded value.
   const {
     recipientReceives: netAmount,
     totalDeducted,
     inputMax,
   } = computeFeeBreakdown(computedKind, amount, fee, max, {
-    protocolFee,
+    protocolFee: protocolFee + cctpFee,
     // Routes the `shield` kind through the gasless `fee-from-recipient` model when the wrapper
     // path is active — without this the helper falls back to `no-fee` and the tooltip's
     // "You'll deposit" line skips the broadcaster fee (recipientReceives misses one deduction).
@@ -150,6 +158,7 @@ export function ShieldModal() {
   // bullets inside FeeBreakdownTooltip so the input UI stays clean (no inline FeeSummary rows).
   const flowBreakdown = {
     broadcasterFee: fee,
+    cctpFee: cctpFee > 0n ? cctpFee : undefined,
     recipientReceives: netAmount,
     totalDeducted,
     recipientLabel: "You'll deposit",
@@ -334,10 +343,11 @@ export function ShieldModal() {
         <ShieldReviewStep
           fromChainId={fromChainId}
           amount={amount}
-          // Display "Fee" as the inclusive total — broadcaster + on-chain protocol fee — so the
-          // user sees the same number that's used to derive `netAmount`. The tooltip below the
-          // amount card already breaks it out into individual rows.
-          fee={fee + protocolFee}
+          // Display "Fee" as the inclusive total — broadcaster + on-chain protocol fee + CCTP
+          // (gasless shield-xchain only; direct shield-xchain already has CCTP in `fee`) — so
+          // the user sees the same number that's used to derive `netAmount`. The tooltip below
+          // the amount card already breaks it out into individual rows.
+          fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}

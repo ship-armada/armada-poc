@@ -31,7 +31,14 @@ export function useDisplayFees(
     staleTime: Infinity,
   })
 
-  const needsOnChainShieldFee = kind === 'shield' && amount > 0n && Boolean(feeModuleAddress)
+  // The hub `PrivacyPool.shield()` path runs `_transferTokenIn` which always calls
+  // `IArmadaFeeModule.calculateShieldFee` regardless of how the USDC reached hub — so the same
+  // 50 bps armadaTake applies whether the user deposited directly on hub (`shield`) or arrived
+  // via CCTP from a client chain (`shield-xchain`). The on-chain read must cover both kinds;
+  // gating on `shield` alone made the cross-chain Fee row miss the protocol component and
+  // surface only the much-smaller CCTP fast-fee ("<0.01 USDC" on a $10 client deposit).
+  const isShieldKind = kind === 'shield' || kind === 'shield-xchain'
+  const needsOnChainShieldFee = isShieldKind && amount > 0n && Boolean(feeModuleAddress)
 
   const { data: shieldFeeResult, isLoading: shieldFeeLoading } = useReadContract({
     address: feeModuleAddress ?? undefined,
@@ -47,10 +54,12 @@ export function useDisplayFees(
   const fees = useMemo(() => {
     const base = computeDisplayFees(kind, amount, quote)
     let protocolFee = base.protocolFee
-    if (kind === 'shield' && shieldFeeResult) {
+    if (isShieldKind && shieldFeeResult) {
       protocolFee = shieldFeeResult[2]
-    } else if (kind === 'shield' && feeModuleAddress && amount > 0n && !shieldFeeResult) {
-      // Fallback while loading: ~50 bps default matches deployed fee module baseArmadaTakeBps
+    } else if (isShieldKind && feeModuleAddress && amount > 0n && !shieldFeeResult) {
+      // Fallback while the on-chain read is loading: ~50 bps matches deployed fee module
+      // `baseArmadaTakeBps` so the Fee row doesn't flash a misleading lower value during the
+      // brief async window before the wagmi result lands.
       protocolFee = (amount * 50n) / 10_000n
     }
     const feeInclusive =
@@ -62,7 +71,7 @@ export function useDisplayFees(
       totalFee: protocolFee,
       feeInclusive,
     }
-  }, [kind, amount, quote, shieldFeeResult, feeModuleAddress, nativeGas])
+  }, [kind, amount, quote, shieldFeeResult, feeModuleAddress, isShieldKind, nativeGas])
 
   const isLoading = needsOnChainShieldFee && shieldFeeLoading
 

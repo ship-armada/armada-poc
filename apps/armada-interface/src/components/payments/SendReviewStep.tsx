@@ -14,9 +14,8 @@ export interface SendReviewStepProps {
   destChainId: number
   recipient: string
   amount: bigint
+  /** Inclusive Fee total — broadcaster + protocol + CCTP. Tooltip breaks it down on the input card. */
   fee: bigint | null
-  /** CCTP fast-fee for xchain. Surfaced as the FeeSummary secondary row when applicable. */
-  cctpFee: bigint
   /** USDC deducted from the user's shielded balance — `amount + fee` across all three kinds. */
   totalDeducted: bigint
   isXchain: boolean
@@ -40,7 +39,6 @@ export function SendReviewStep({
   recipient,
   amount,
   fee,
-  cctpFee,
   totalDeducted,
   isXchain,
   submitBlockedReason,
@@ -80,13 +78,8 @@ export function SendReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        // Mirrors SendInputStep — single "Total deducted from balance" line across all kinds.
         netAmount={totalDeducted}
         netLabel="Total deducted from balance"
-        // All three SendModal kinds are relayer-mediated post-A4/A5 — call the fee what it is.
-        feeLabel="Relayer fee"
-        secondaryFee={isXchain ? cctpFee : undefined}
-        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
       />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

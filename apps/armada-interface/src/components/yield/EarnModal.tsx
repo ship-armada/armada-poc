@@ -288,7 +288,8 @@ export function EarnModal() {
           tab={tab}
           amount={amount}
           rate={yieldRate}
-          fee={fee}
+          // Inclusive Fee total — broadcaster + protocol. No CCTP on yield kinds.
+          fee={fee + displayFees.protocolFee}
           netAmount={displayNetAmount}
           netLabel={displayNetLabel}
           submitBlockedReason={submitBlockedReason}

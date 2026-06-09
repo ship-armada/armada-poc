@@ -334,7 +334,10 @@ export function ShieldModal() {
         <ShieldReviewStep
           fromChainId={fromChainId}
           amount={amount}
-          fee={fee}
+          // Display "Fee" as the inclusive total — broadcaster + on-chain protocol fee — so the
+          // user sees the same number that's used to derive `netAmount`. The tooltip below the
+          // amount card already breaks it out into individual rows.
+          fee={fee + protocolFee}
           netAmount={netAmount}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}

@@ -107,10 +107,15 @@ export function UnshieldModal() {
   // inside FeeBreakdownTooltip so the input UI stays clean.
   const flowBreakdown = {
     broadcasterFee: fee,
+    cctpFee: isXchain ? cctpFee : undefined,
     recipientReceives,
     totalDeducted,
     recipientLabel: 'Recipient receives',
   }
+  // Inclusive Fee total surfaced on both the input card's FEE row and the review FeeSummary —
+  // broadcaster + on-chain protocol + CCTP (when applicable). The breakdown tooltip exposes the
+  // individual components.
+  const displayedFee = fee + displayFees.protocolFee + cctpFee
 
   // Reset local state on close.
   useEffect(() => {
@@ -245,8 +250,7 @@ export function UnshieldModal() {
           destChainId={destChainId}
           recipient={recipient}
           amount={amount}
-          fee={fee}
-          cctpFee={cctpFee}
+          fee={displayedFee}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}

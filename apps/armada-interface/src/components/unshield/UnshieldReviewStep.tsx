@@ -11,9 +11,8 @@ export interface UnshieldReviewStepProps {
   destChainId: number
   recipient: string
   amount: bigint
+  /** Inclusive Fee total — broadcaster + protocol + CCTP. Tooltip breaks it down on the input card. */
   fee: bigint | null
-  /** CCTP fast-fee on xchain. Surfaced as the FeeSummary secondary row when applicable. */
-  cctpFee: bigint
   /** USDC deducted from the user's shielded balance. Both kinds post-A5: `amount + fee`. */
   totalDeducted: bigint
   isXchain: boolean
@@ -29,7 +28,6 @@ export function UnshieldReviewStep({
   recipient,
   amount,
   fee,
-  cctpFee,
   totalDeducted,
   isXchain,
   submitBlockedReason,
@@ -61,14 +59,8 @@ export function UnshieldReviewStep({
       </dl>
       <FeeSummary
         fee={fee}
-        // Mirrors UnshieldInputStep — single "Total deducted from balance" net line on both
-        // paths. Recipient mint on xchain differs by the CCTP fast-fee, already broken out as
-        // the secondary fee row above.
         netAmount={totalDeducted}
         netLabel="Total deducted from balance"
-        feeLabel="Relayer fee"
-        secondaryFee={isXchain ? cctpFee : undefined}
-        secondaryFeeLabel={isXchain ? 'CCTP delivery fee' : undefined}
       />
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

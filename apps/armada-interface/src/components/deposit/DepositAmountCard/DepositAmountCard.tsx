@@ -202,7 +202,7 @@ export function DepositAmountCard({
         {displayFees ? (
           <span className={styles.feeGroup}>
             <span className={styles.feeText}>
-              FEE {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n))}{' '}
+              FEE {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n))}{' '}
               {token}
             </span>
             <FeeBreakdownTooltip

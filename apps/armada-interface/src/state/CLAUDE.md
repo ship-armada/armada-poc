@@ -4,7 +4,7 @@ Jotai atoms. **Read-mostly from components.** Write paths go through hooks or `s
 
 | File | Atoms |
 |---|---|
-| `tx.ts` | `txListAtom` (root) + `pendingTxsAtom`, `txByIdAtom(id)`, `txsForKindAtom(K)`, `txsForStatusAtom(s)`, `upsertTxAtom` (write-only) |
+| `tx.ts` | `txListAtom` (root, all wallets) + `activeTxListAtom` (V2 Phase 6: filtered to `activeRailgunWalletIdAtom`) + `pendingTxsAtom` (sources from `activeTxListAtom`), `txByIdAtom(id)`, `txsForKindAtom(K)`, `txsForStatusAtom(s)`, `upsertTxAtom` (write-only). UI surfaces (History page, RecentActivityCard, InProgressCard, usePrivateUsdcDisplay) MUST read `activeTxListAtom` so wallet switches can't leak prior history. |
 | `wallet.ts` | `evmAddressAtom`, `shieldedWalletAtom`, `usdcBalancesAtom`, `shieldedUsdcAtom`, `yieldSharesAtom` |
 | `fees.ts` | `feeQuoteAtom`, `feeQuoteIsStaleAtom` (derived) |
 | `visibility.ts` | `tabVisibleAtom` (updated only by `useTabVisible()` — single listener) |

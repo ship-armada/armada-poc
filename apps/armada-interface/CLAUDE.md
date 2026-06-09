@@ -2,7 +2,7 @@
 
 USDC user app on the Armada protocol — shield, unshield, yield, payments, cross-chain. Replaces the legacy `usdc-v2-frontend` app.
 
-**Status:** Phase 1 Railgun integration landed — EIP-712-signature-derived wallet enroll/unlock/lock/reset wired through `lib/crypto` + `lib/railgun`. OnboardingFlow runs the full sign → checksum → backup ceremony; UnlockFlow offers paste / backup / sign-again. Tx flows (shield/unshield/payments/yield) still stub through `telemetry.track('stub.*')`.
+**Status:** V2 shielded-wallet redesign landed (Path C). Deterministic re-sign is the primary unlock path; backup-file + paste-secret remain as secondary recovery for smart-account wallets and cross-device portability. `OnboardingFlowV2` runs welcome → sign → checksum → complete (4 steps); `UnlockFlow` exposes three tabs (Sign in / Backup file / Paste secret). Per-(EVM address, account) walletId map in localStorage drives account-switch detection + auto-lock. Tx history is scoped to the active walletId and AES-256-GCM-encrypted at rest under a per-wallet key. See `specs/TX_SIGNING.md` + `specs/TX_SIGNING_V2_AMENDMENT.md`. Tx flows (shield/unshield/payments/yield) are wired end-to-end.
 
 ## Plan
 

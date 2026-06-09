@@ -12,8 +12,11 @@ Pure logic — **no React imports allowed.** These modules are unit-testable wit
 | `telemetry.ts` | `track / trackTxTransition / trackError`. Console-only initially; sink swappable later. | Working |
 | `relayer.ts` | HTTP client for `/fees`, `/relay`, `/status/:txHash`. **Stub** — signatures only. | Stub |
 | `cctp.ts` | `MessageSent` log parsing + `pollIrisOnce`. **Stub.** | Stub |
-| `railgun/wallet.ts` | EIP-712-signature-derived enroll/unlock/lock/reset. Plural-ready (`id` arg accepted but ignored — singular UX). | Working |
-| `railgun/keyManager.ts` | Module-scope unlocked-state singleton: `rootSecret`, `walletId`, SDK encryption key, address, checksum. Getters throw when locked. | Working |
+| `railgun/wallet.ts` | V2 signIn / unlockFromRootSecret / unlockFromBackup / lockWallet / resetWallet. Per-(EVM address, account) `armada.shielded.walletIds` + `armada.shielded.checksums` localStorage maps. | Working |
+| `railgun/schema-migration.ts` | V2 cold-boot migration — drops legacy v1 localStorage keys + the SDK/cache IndexedDB databases when `armada.shielded.schemaVersion < 2`. | Working |
+| `railgun/keyManager.ts` | Module-scope unlocked-state singleton: `rootSecret`, `walletId`, `sdkEncryptionKey`, `historyEncryptionKey` (Phase 7), `evmAddress` + `account` binding, address, checksum. Getters throw when locked; `clear()` zeroizes secret buffers. | Working |
+| `crypto/cache-cipher.ts` | V2 Phase 7 — AES-256-GCM `wrap` / `unwrap` envelope helpers used by `lib/tx/storage` for at-rest encryption of tx records under `historyEncryptionKey`. BigInt round-trip via JSON sentinel. | Working |
+| `crypto/determinism.ts` | V2 Phase 2a — typed `NonDeterministicSignerError` + `verifySignatureDeterminism(reSign, firstSig)` used by `useShieldedWallet.signIn` to double-sign on first-ever sign-in for an EVM address. | Working |
 | `railgun/init.ts` | `startRailgunEngine` + POI dummy + level-js DB + IndexedDB artifact store. Idempotent. | Working |
 | `railgun/network.ts` | Patches the SDK's `NETWORK_CONFIG.Hardhat` entry with our PrivacyPool address; loads the hub provider. | Working |
 | `railgun/prover.ts` | Proof generation entry points (shield/unshield/transfer). **Stub.** | Stub |

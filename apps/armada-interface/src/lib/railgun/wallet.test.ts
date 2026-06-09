@@ -152,6 +152,29 @@ describe('enrollFromSignature', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1)
     expect(state.id).toBe(SAMPLE_WALLET_ID)
   })
+
+  it('throws NonDeterministicSignerError when the re-sign derives a different identity than the cached one', async () => {
+    // Simulate the post-Phase-2a returning-user determinism check: the previous session
+    // stored a checksum for identity A; the user re-signs but the wallet now produces a
+    // signature for identity B. The cached-checksum-mismatch guard catches this before any
+    // identity is bound to the device, and surfaces a typed error the UI can render as a
+    // dedicated screen (rather than a generic toast).
+    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+    window.localStorage.setItem('armada.shielded.checksum', 'aaaa bbbb cccc') // identity A
+    let captured: unknown
+    try {
+      await enrollFromSignature(fixedSig(0)) // derives a checksum that won't match 'aaaa bbbb cccc'
+    } catch (err) {
+      captured = err
+    }
+    expect(captured).toBeDefined()
+    const errObj = captured as { kind?: string; reason?: string }
+    expect(errObj.kind).toBe('NonDeterministicSignerError')
+    expect(errObj.reason).toBe('cached-checksum-mismatch')
+    // Critical: must NOT have called the SDK at all (no wallet bound on this device).
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockLoad).not.toHaveBeenCalled()
+  })
 })
 
 describe('unlockFromRootSecret', () => {

@@ -21,6 +21,7 @@ import {
   formatChecksumDisplay,
   type BackupBlob,
 } from '@/lib/crypto/kdf'
+import { NonDeterministicSignerError } from '@/lib/crypto/determinism'
 import { track, trackError } from '@/lib/telemetry'
 import {
   clear as clearKeyManager,
@@ -265,16 +266,20 @@ export async function enrollFromSignature(signatureBytes: Uint8Array): Promise<{
 
   // Determinism-mismatch guard: if the cached checksum exists and differs from what THIS
   // signature derives, the user's wallet is non-deterministic and re-signing isn't a valid
-  // recovery path for them. Hard-fail with a directional message (Phase 2a upgrades this to
-  // a typed error so the UI can render the wallet compatibility list + paste/backup fallback
-  // CTAs in their own screen).
+  // recovery path for them. Throw the typed `NonDeterministicSignerError` so the UI can render
+  // the dedicated error screen with the wallet compatibility list + paste/backup fallback CTAs
+  // (rather than dumping a stringified Error.message into a generic toast).
+  //
+  // Note: this is the SUBSEQUENT-sign-in branch (cached identity already exists). The first-
+  // ever sign-in's double-sign verification lives in the hook layer where the wagmi signing
+  // primitive is available — see useShieldedWallet.ts::signIn.
   const cachedChecksum = storedChecksum()
   const derivedChecksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
   if (cachedChecksum && derivedChecksum !== cachedChecksum) {
-    throw new Error(
-      `This signature produces a different identity (${derivedChecksum}) than your stored wallet (${cachedChecksum}). ` +
-        'This wallet appears to produce a different signature every time — sign-in recovery requires a deterministic wallet. ' +
-        'Use Paste recovery secret or Restore from backup file instead.',
+    throw new NonDeterministicSignerError(
+      'cached-checksum-mismatch',
+      `Signature produces identity ${derivedChecksum} but this device is bound to ${cachedChecksum}. ` +
+        'Re-sign recovery requires a deterministic wallet; use Paste recovery secret or Restore from backup file.',
     )
   }
 

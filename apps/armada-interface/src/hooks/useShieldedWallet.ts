@@ -14,6 +14,7 @@ import { wagmiConfig } from '@/config/wagmi'
 import {
   enrollFromSignature,
   lockWallet,
+  readStoredWalletId,
   resetWallet,
   unlockFromBackup,
   unlockFromRootSecret,
@@ -27,6 +28,10 @@ import {
   buildEnrollmentTypedData,
   normalizeSignature,
 } from '@/lib/crypto/eip712'
+import {
+  NonDeterministicSignerError,
+  verifySignatureDeterminism,
+} from '@/lib/crypto/determinism'
 import {
   encryptBackup,
   parseBackupBlob,
@@ -69,15 +74,39 @@ export function useShieldedWallet() {
     }
     try {
       const typedData = buildEnrollmentTypedData(account)
-      const sigHex = await signTypedData(wagmiConfig, {
-        domain: { ...typedData.domain },
-        types: {
-          Enrollment: typedData.types.Enrollment.map(f => ({ ...f })),
-        },
-        primaryType: typedData.primaryType,
-        message: { ...typedData.message },
-      })
-      const signatureBytes = normalizeSignature(sigHex)
+      // Capture the wagmi sign call as a closure so the determinism verification can re-invoke
+      // the same prompt without us hand-marshaling the typed-data shape twice. The wallet may
+      // re-prompt the user; that's intentional and the only way to verify determinism for a
+      // wallet we don't yet trust.
+      const promptSign = async (): Promise<Uint8Array> => {
+        const hex = await signTypedData(wagmiConfig, {
+          domain: { ...typedData.domain },
+          types: {
+            Enrollment: typedData.types.Enrollment.map(f => ({ ...f })),
+          },
+          primaryType: typedData.primaryType,
+          message: { ...typedData.message },
+        })
+        return normalizeSignature(hex)
+      }
+
+      const signatureBytes = await promptSign()
+
+      // First-ever sign-in for THIS browser (no cached walletId) is the moment to verify
+      // determinism — if we proceeded without checking and the wallet were non-deterministic,
+      // the first signature would derive an identity the user could never re-sign back into.
+      // Returning users (cached walletId present) get their determinism check via the cached-
+      // checksum-mismatch guard inside `enrollFromSignature`; we don't double-sign on every
+      // unlock because (a) the cached check is cheaper and (b) re-prompting on every visit is
+      // hostile UX.
+      const isFirstEverSignIn = readStoredWalletId() == null
+      if (isFirstEverSignIn) {
+        const { deterministic } = await verifySignatureDeterminism(promptSign, signatureBytes)
+        if (!deterministic) {
+          throw new NonDeterministicSignerError('first-sign-mismatch')
+        }
+      }
+
       const out = await enrollFromSignature(signatureBytes)
       setWallets(prev => ({ ...prev, [out.state.id]: out.state }))
       setActiveId(out.state.id)

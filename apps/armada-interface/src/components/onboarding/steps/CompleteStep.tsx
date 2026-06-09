@@ -16,7 +16,8 @@ export function CompleteStep({ onDone }: CompleteStepProps) {
       </Text>
       <p className={styles.body}>
         Your private USDC account is ready. You can now deposit, withdraw, send, and earn —
-        all privately.
+        all privately. Sign back in any time with this wallet. If you want a cross-device
+        recovery option, export an encrypted backup file from Settings → Export recovery.
       </p>
       <div className={styles.actions}>
         <Button

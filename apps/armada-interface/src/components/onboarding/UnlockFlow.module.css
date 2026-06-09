@@ -159,6 +159,19 @@
   color: var(--semantic-color-status-error);
 }
 
+.banner {
+  padding: var(--primitives-spacing-3);
+  border-radius: var(--primitives-radius-md, 8px);
+  background: var(--semantic-color-surface-elevated, rgba(0, 0, 0, 0.04));
+  color: var(--semantic-color-text-secondary);
+  border-left: 3px solid var(--semantic-color-status-warning, var(--semantic-color-text-secondary));
+}
+
+.bodyMuted {
+  margin: 0;
+  color: var(--semantic-color-text-muted);
+}
+
 .footer {
   align-self: stretch;
   margin-top: var(--primitives-spacing-6);

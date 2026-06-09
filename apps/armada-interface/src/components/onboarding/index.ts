@@ -33,3 +33,6 @@ export type { ConfirmBackupStepProps } from './steps/ConfirmBackupStep'
 
 export { CompleteStep } from './steps/CompleteStep'
 export type { CompleteStepProps } from './steps/CompleteStep'
+
+export { NonDeterministicSignerScreen } from './NonDeterministicSignerScreen'
+export type { NonDeterministicSignerScreenProps } from './NonDeterministicSignerScreen'

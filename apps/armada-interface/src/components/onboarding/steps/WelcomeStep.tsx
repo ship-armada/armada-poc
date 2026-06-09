@@ -25,8 +25,9 @@ export function WelcomeStep({ onContinue, onRestore }: WelcomeStepProps) {
       </Text>
       <p className={styles.body}>
         Armada keeps your USDC balance and activity private. Your privacy keys are derived from a
-        signature your EVM wallet produces — no extra recovery phrase to write down. You'll create
-        an optional encrypted backup so you can restore from any device.
+        signature your EVM wallet produces — no passphrase, no recovery phrase to write down. You
+        can sign back in any time from any device with the same wallet. An encrypted backup file
+        is available later in Settings for belt-and-suspenders recovery.
       </p>
       <div className={styles.actions}>
         <Button

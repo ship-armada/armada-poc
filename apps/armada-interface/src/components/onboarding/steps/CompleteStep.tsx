@@ -16,8 +16,9 @@ export function CompleteStep({ onDone }: CompleteStepProps) {
       </Text>
       <p className={styles.body}>
         Your private USDC account is ready. You can now deposit, withdraw, send, and earn —
-        all privately. Sign back in any time with this wallet. If you want a cross-device
-        recovery option, export an encrypted backup file from Settings → Export recovery.
+        all privately. Sign back in any time, on any device, with the same EVM wallet. If you
+        ever lose access to this wallet, an encrypted backup file (Settings → Export recovery)
+        is a separate way to restore your account.
       </p>
       <div className={styles.actions}>
         <Button

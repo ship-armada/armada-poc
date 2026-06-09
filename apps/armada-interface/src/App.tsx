@@ -173,8 +173,8 @@ export function App() {
       if (
         hadPersistedWalletAtBoot &&
         !window.confirm(
-          'Start a new account? The wallet saved in this browser will no longer be used. ' +
-            'Only continue if you have a backup or want to enroll again.',
+          "Clear the saved login on this device? If you sign in again with the same EVM wallet, your account is restored — your shielded funds are not affected. " +
+            'Only continue if you want to switch wallets. If you originally restored from a backup file or recovery secret, make sure you still have it before continuing.',
         )
       ) {
         return
@@ -190,7 +190,7 @@ export function App() {
         onUnlocked={() => setMode('app')}
         onCreateNew={handleStartOver}
         createNewLabel={
-          hadPersistedWalletAtBoot ? 'Start over and create a new account' : undefined
+          hadPersistedWalletAtBoot ? "Clear this browser's saved login" : undefined
         }
       />
     )

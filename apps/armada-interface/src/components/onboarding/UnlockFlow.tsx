@@ -11,7 +11,6 @@ import { Tabs, Tooltip } from '@/components/ui'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { isNonDeterministicSignerError } from '@/lib/crypto/determinism'
 import { normalizeEnrollmentError } from '@/lib/railgun/enrollmentErrors'
-import { clearStoredWalletIdentity } from '@/lib/railgun/wallet'
 import styles from './UnlockFlow.module.css'
 
 export interface UnlockFlowProps {
@@ -354,10 +353,7 @@ export function UnlockFlow({ onUnlocked, onCreateNew, createNewLabel }: UnlockFl
             <button
               type="button"
               className={styles.createNewLink}
-              onClick={() => {
-                clearStoredWalletIdentity()
-                onCreateNew()
-              }}
+              onClick={onCreateNew}
             >
               {createNewLabel ?? 'Create a new account instead'}
             </button>

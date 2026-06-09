@@ -74,7 +74,7 @@ describe('<OnboardingFlowV2>', () => {
     expect(screen.getByRole('heading', { name: /Sign to generate your keys/i })).toBeInTheDocument()
   })
 
-  it('advances sign → checksum on a successful signIn', async () => {
+  it('advances sign → complete on a successful signIn (V2 amendment dropped the intermediate checksum step)', async () => {
     mockSignIn.mockResolvedValueOnce({
       rootSecret: new Uint8Array(32),
       state: { id: 'x', status: 'unlocked' },
@@ -86,7 +86,7 @@ describe('<OnboardingFlowV2>', () => {
     })
     await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1))
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /anti-phishing code/i })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /you'?re in/i })).toBeInTheDocument()
     })
   })
 

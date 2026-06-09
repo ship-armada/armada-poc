@@ -90,9 +90,17 @@ export function SignEnrollmentStep({
         Sign to generate your keys
       </Text>
       <p className={styles.body}>
-        Your privacy keys are derived from a signature your EVM wallet produces against a fixed
-        message. The signing prompt explains that this is <strong>not a transaction</strong> — no
+        Your shielded wallet keys are derived from a signature your EVM wallet produces against a fixed
+        message. This is <strong>not a transaction</strong> — no
         funds move, no chain state changes.
+      </p>
+      <p className={styles.bodyMuted}>
+        Your wallet will prompt twice on first setup — we use both signatures to confirm sign-in
+        recovery will work later.
+      </p>
+      <p className={styles.bodyMuted}>
+        Before signing, check that your wallet's prompt shows this site's URL — that is the only
+        reliable way to tell a real Armada session from a phishing site.
       </p>
       {!isConnected ? (
         <p className={styles.bodyMuted}>

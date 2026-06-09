@@ -1,5 +1,5 @@
-// ABOUTME: First-run onboarding in the split-panel layout (OnboardingLayout) — 4 mandatory steps post V2 amendment: welcome → sign → checksum → complete.
-// ABOUTME: Drives useShieldedWallet().signIn() at the Sign step; backup-file export is opt-in via Settings → Export recovery (not gated on first-run). NonDeterministicSignerError routes to a dedicated screen that points users at paste/backup recovery.
+// ABOUTME: First-run onboarding in the split-panel layout (OnboardingLayout) — 3 mandatory steps: welcome → sign → complete.
+// ABOUTME: Drives useShieldedWallet().signIn() at the Sign step; backup-file export is opt-in via Settings → Export recovery (not gated on first-run). NonDeterministicSignerError routes to a dedicated screen that points users at paste/backup recovery. Anti-phish checksum step removed — see specs/TX_SIGNING_V2_AMENDMENT.md for the rationale (the user-facing display offered no defense against perfect-clone phishing, and the lib-level cached-checksum-mismatch detection covers wallet-drift automatically).
 
 import { useState } from 'react'
 import { useDisconnect } from 'wagmi'
@@ -7,7 +7,6 @@ import { FlowStepIndicator } from '@/components/flow/FlowStepIndicator'
 import { OnboardingLayout } from '@/components/OnboardingLayout/OnboardingLayout'
 import { WelcomeStep } from './steps/WelcomeStep'
 import { SignEnrollmentStep } from './steps/SignEnrollmentStep'
-import { AntiPhishChecksumStep } from './steps/AntiPhishChecksumStep'
 import { CompleteStep } from './steps/CompleteStep'
 import { NonDeterministicSignerScreen } from './NonDeterministicSignerScreen'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
@@ -17,18 +16,16 @@ import flowStyles from './OnboardingFlowV2.module.css'
 // `signer-error` is a terminal state inside the flow but lives off the step indicator — it's
 // reached from `sign` when the determinism check fails, and exits to either the unlock flow
 // (paste/backup) or the entry screen (try a different wallet).
-type Step = 'welcome' | 'sign' | 'checksum' | 'complete' | 'signer-error'
+type Step = 'welcome' | 'sign' | 'complete' | 'signer-error'
 
 const STEP_INDEX: Record<Exclude<Step, 'signer-error'>, number> = {
   welcome: 0,
   sign: 1,
-  checksum: 2,
-  complete: 3,
+  complete: 2,
 }
 
-const TOTAL_STEPS = 3
+const TOTAL_STEPS = 2
 const STEP_LABELS = [
-  'Set up account',
   'Set up account',
   'Set up account',
 ] as const
@@ -46,13 +43,11 @@ export interface OnboardingFlowV2Props {
 }
 
 export function OnboardingFlowV2({ onDone, onRestore }: OnboardingFlowV2Props) {
-  const { state, signIn, reset } = useShieldedWallet()
+  const { signIn } = useShieldedWallet()
   const { disconnect } = useDisconnect()
   const [step, setStep] = useState<Step>('welcome')
   const [signerErrorReason, setSignerErrorReason] =
     useState<NonDeterministicSignerErrorReason>('first-sign-mismatch')
-
-  const checksum = state?.checksum ?? null
 
   const showStepIndicator = step !== 'welcome' && step !== 'signer-error'
 
@@ -79,22 +74,11 @@ export function OnboardingFlowV2({ onDone, onRestore }: OnboardingFlowV2Props) {
               onBack={() => setStep('welcome')}
               onSign={async () => {
                 await signIn()
-                setStep('checksum')
+                setStep('complete')
               }}
               onSignerIncompatible={(reason) => {
                 setSignerErrorReason(reason)
                 setStep('signer-error')
-              }}
-            />
-          )}
-
-          {step === 'checksum' && (
-            <AntiPhishChecksumStep
-              checksum={checksum ?? '—'}
-              onContinue={() => setStep('complete')}
-              onCancelSetup={async () => {
-                await reset()
-                setStep('welcome')
               }}
             />
           )}

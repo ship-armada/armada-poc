@@ -29,7 +29,7 @@ describe('<ShieldedIdentitySection>', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders the address + checksum when unlocked', () => {
+  it('renders the address row when unlocked (no checksum — V2 amendment dropped the user-facing anti-phish display)', () => {
     hoisted.mockState = {
       id: 'rg-1',
       status: 'unlocked',
@@ -38,10 +38,11 @@ describe('<ShieldedIdentitySection>', () => {
     }
     render(<ShieldedIdentitySection />)
     expect(screen.getByText('Shielded identity')).toBeInTheDocument()
-    expect(screen.getByLabelText('Anti-phishing checksum')).toHaveTextContent('a3f2 91c8 b7e0')
     // The address gets truncated to e.g. "0zk1qex…1234"; we don't assert the exact form because
     // truncateAddressEnds is a separate concern — just verify a copy button is present.
     expect(screen.getByRole('button', { name: /Copy shielded address/i })).toBeInTheDocument()
+    // Anti-phish checksum is no longer displayed to the user (see specs/TX_SIGNING_V2_AMENDMENT.md).
+    expect(screen.queryByLabelText('Anti-phishing checksum')).not.toBeInTheDocument()
   })
 
   it('copies the full railgun address to the clipboard on click', async () => {

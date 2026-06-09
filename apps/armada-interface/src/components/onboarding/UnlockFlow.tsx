@@ -294,16 +294,25 @@ export function UnlockFlow({ onUnlocked, onCreateNew, createNewLabel }: UnlockFl
                   <label htmlFor={backupFileId} className={styles.label}>
                     Backup file
                   </label>
-                  <input
-                    id={backupFileId}
-                    type="file"
-                    accept="application/json,.json"
-                    className={styles.input}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      setBackupFile(e.target.files?.[0] ?? null)
-                      setError(null)
-                    }}
-                  />
+                  {/* Visually hidden native input + styled container as the click target. The
+                      label above already says "Backup file"; the browser's default "Choose file"
+                      button text is redundant. The transparent input spans the full container so
+                      clicking anywhere in the box opens the picker. */}
+                  <div className={styles.fileInputArea}>
+                    <input
+                      id={backupFileId}
+                      type="file"
+                      accept="application/json,.json"
+                      className={styles.fileInput}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                        setBackupFile(e.target.files?.[0] ?? null)
+                        setError(null)
+                      }}
+                    />
+                    <span className={styles.fileInputDisplay}>
+                      {backupFile?.name ?? ''}
+                    </span>
+                  </div>
                 </div>
                 <div className={styles.field}>
                   <label htmlFor={backupPassphraseId} className={styles.label}>

@@ -128,6 +128,68 @@ Item 3 ("Encrypted local storage") is unchanged.
 > Backup export is always available in Settings as a recommended belt-
 > and-suspenders option for cross-device portability.
 
+### Anti-Phish Checksum → user-facing display dropped (lib-level invariant retained)
+
+**Original (parent §"Anti-Phish Checksum"):**
+
+> A short, human-recognizable fingerprint derived from the root secret...
+> Six bytes (48 bits) provides sufficient collision resistance for a
+> compromise-detection canary while remaining human-checkable...
+> ### When Displayed
+>  - Immediately after enrollment (prominent)
+>  - In "Security / Privacy Settings" (always accessible)
+>  - Optionally on transaction confirmation screens
+> ### User Guidance
+> "This is your privacy fingerprint. If it ever changes unexpectedly, assume
+> your keys are compromised..."
+> The checksum doesn't prevent phishing -- it makes successful phishing
+> *detectable*.
+
+**Revised (v2):** The user-facing display is dropped. The 6-byte checksum
+is still derived (`lib/crypto/kdf.ts::antiPhishChecksumBytes`), still cached
+in `localStorage` per `(evmAddress, account)`, and still used internally as
+a deterministic invariant: `enrollFromSignature` compares the freshly-
+derived value against the cached one and throws `NonDeterministicSignerError
+('cached-checksum-mismatch')` when they disagree. That branch catches
+wallet-identity drift automatically (different MetaMask account selected,
+wallet extension regression, etc.) without any user interaction.
+
+**Rationale:** the threat-model analysis is:
+
+| Phishing scenario | Caught by user-facing checksum? |
+|---|---|
+| Perfect EIP-712 clone (same `verifyingContract` + `DOMAIN_NAME` + `version`) | No — same signature → same root_secret → **identical checksum displayed**. The wallet's origin popup is the only defense. |
+| Imperfect EIP-712 clone (different message) | Marginally — the phisher derives a *different* shielded identity than the user's real one, so funds aren't immediately stolen. The phisher would also need to deceive the user into depositing into the phishing-derived wallet in the same session, AND the phisher could just render any checksum string they want in their fake UI (the value isn't a server-side secret). |
+| Wallet identity drift (different MetaMask account, wallet extension change) | Yes — but already caught **automatically** at the lib level via `NonDeterministicSignerError('cached-checksum-mismatch')`. No user-visible comparison needed. |
+
+The user-facing display sat in a narrow protective band (imperfect clone +
+observant user who memorized the checksum + phisher who fails to spoof a
+displayed value) while creating a false sense of security ("there's a code
+to verify the site is legitimate" — there isn't, the URL in the wallet
+popup is the only one). Net: removing the display reduces theater + the
+overstatement of protection; keeping the automatic lib-level invariant
+preserves the genuine wallet-drift detection.
+
+**UX replacement:** `SignEnrollmentStep` now includes a short instruction
+to verify the URL shown in the wallet's signing prompt as the actual
+phishing defense. That advice scales to every signing operation across
+the user's lifetime, not just the first enrollment.
+
+**What stays:**
+
+- `lib/crypto/kdf.ts::antiPhishChecksumBytes` + `formatChecksumDisplay` —
+  derivation primitives, still in use by the lib-level invariant.
+- `keyManager.getChecksum()` / `ShieldedWalletState.checksum` — exposed for
+  any future use; cheap to retain and deletable later.
+- `enrollFromSignature` cached-checksum-mismatch guard — load-bearing for
+  wallet-drift detection.
+
+**What's removed:**
+
+- `OnboardingFlowV2`'s checksum step (welcome → sign → complete is now 3
+  mandatory steps).
+- `ShieldedIdentitySection`'s checksum row in the merged wallet pill.
+
 ### Enrollment Flow → Backup confirmation round-trip (downgraded)
 
 **Original (parent §"Enrollment Flow" step 7):**

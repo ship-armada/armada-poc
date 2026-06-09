@@ -55,7 +55,6 @@ export function ShieldedIdentitySection({ onRequestSignIn }: ShieldedIdentitySec
 
   const fullAddress = state.railgunAddress
   const display = truncateAddressEnds(fullAddress, 7, 4)
-  const checksum = state.checksum
 
   async function handleCopy() {
     try {
@@ -84,11 +83,6 @@ export function ShieldedIdentitySection({ onRequestSignIn }: ShieldedIdentitySec
           {copied ? <CheckIcon width={14} height={14} /> : <ClipboardDocumentIcon width={14} height={14} />}
         </span>
       </button>
-      {checksum ? (
-        <p className={styles.checksum} aria-label="Anti-phishing checksum">
-          {checksum}
-        </p>
-      ) : null}
     </div>
   )
 }

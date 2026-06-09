@@ -1,0 +1,62 @@
+// ABOUTME: Bumps historyRecoveryEpochAtom whenever the SDK signals a balance change, so useHistoryRecovery runs an incremental scan and picks up freshly-received transfers from other wallets.
+// ABOUTME: Mount once at App root. Shares the scan path with useHistoryRecovery via the epoch atom — no parallel SDK calls, no separate persistence pipeline.
+
+import { useEffect } from 'react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { activeShieldedWalletAtom } from '@/state/wallet'
+import { historyRecoveryEpochAtom } from '@/state/history'
+import { subscribeBalanceUpdates } from '@/lib/railgun/sync'
+import { trackError } from '@/lib/telemetry'
+
+/**
+ * Subscribe to SDK balance-update events while the wallet is unlocked. On each event, bump
+ * `historyRecoveryEpochAtom` — `useHistoryRecovery`'s effect re-runs and fetches the delta
+ * since the persisted checkpoint. The dedup guard inside `runScanAndPersist` skips items
+ * whose `sourceTxHash` already matches a record in `txListAtom`, so the user's own outgoing
+ * tx doesn't get a duplicate synthetic row tacked on.
+ *
+ * Rationale for piggybacking on balance events vs polling: every relevant on-chain event for
+ * the wallet (shield, transact, incoming transfer, yield deposit/withdraw) already produces a
+ * balance-update notification through the SDK. Polling would either duplicate that signal or
+ * miss it. Sharing the existing subscription costs one extra listener.
+ */
+export function useIncomingTransferDetector(): void {
+  const active = useAtomValue(activeShieldedWalletAtom)
+  const setEpoch = useSetAtom(historyRecoveryEpochAtom)
+
+  useEffect(() => {
+    if (active?.status !== 'unlocked') return
+
+    const walletId = active.id
+    let unsubscribe: (() => void) | null = null
+    let cancelled = false
+
+    void (async () => {
+      try {
+        unsubscribe = await subscribeBalanceUpdates((event) => {
+          // The SDK's global callback fans out across every subscribed listener; filter to
+          // events for our wallet so a multi-wallet setup (future) doesn't trigger spurious
+          // scans on the wrong session.
+          if (event.railgunWalletID !== walletId) return
+          // Bump the epoch as a function-update so concurrent bumps (rare but possible during
+          // a burst of SDK events) compose rather than racing on a stale read.
+          setEpoch((prev) => prev + 1)
+        })
+        if (cancelled && unsubscribe) {
+          unsubscribe()
+          unsubscribe = null
+        }
+      } catch (err) {
+        trackError('history.incoming.subscribe', err, {
+          scope: 'history.incoming',
+          message: 'failed to subscribe to balance updates',
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (unsubscribe) unsubscribe()
+    }
+  }, [active?.id, active?.status, setEpoch])
+}

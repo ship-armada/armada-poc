@@ -228,6 +228,49 @@ describe('useHistoryRecovery', () => {
     })
   })
 
+  it('skips synthesizing rows for txHashes already represented by an authored record', async () => {
+    // WHY: this is the dedup invariant. When the user submits a shield, useTx writes a real
+    // record with `artifacts.sourceTxHash` set. When the SDK later returns the same tx in its
+    // history sweep, mapping it would create a synthetic row beside the authored one — two
+    // entries for one event. The authored row carries the full lifecycle / fee breakdown; the
+    // synthetic row would be lossy. We keep the authored, drop the synth.
+    const AUTHORED_HASH = '0xabc123'
+    const store = makeStore({ unlocked: true })
+    // Seed an authored record for the same tx the SDK will return.
+    store.set(txListAtom, [{
+      id: '01J-authored',
+      kind: 'shield',
+      executionState: 'completed',
+      stage: 'hub-confirmed',
+      stagesCompleted: ['build-proof', 'submit-relayer', 'hub-confirmed'],
+      updatedSeq: 5,
+      createdAt: 1,
+      updatedAt: 1,
+      meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 31337 },
+      artifacts: { sourceTxHash: AUTHORED_HASH as `0x${string}` },
+      walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+    }])
+    hoisted.scanWalletHistory.mockResolvedValue([
+      // Same txid as the authored record — must be skipped.
+      shieldItem('abc123', 100_001, 1_000_000n),
+      // Different tx — must be synthesized.
+      shieldItem('def456', 100_002, 2_000_000n),
+    ])
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    await waitFor(() => {
+      // Original authored + one new synth = 2. Without the guard we'd get 3.
+      expect(store.get(txListAtom).length).toBe(2)
+    })
+    const ids = store.get(txListAtom).map(r => r.id).sort()
+    expect(ids).toContain('01J-authored')
+    expect(ids).toContain('synth:def456:ShieldERC20s')
+    expect(ids).not.toContain('synth:abc123:ShieldERC20s')
+  })
+
   it('flips state to "failed" with the error message when the SDK throws', async () => {
     // WHY: the banner reads `state === 'failed'` to surface a retry CTA. A silent failure
     // would leave the user staring at an empty activity feed with no signal.

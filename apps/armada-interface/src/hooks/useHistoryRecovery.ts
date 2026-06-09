@@ -2,14 +2,14 @@
 // ABOUTME: Mount once at App root. Idempotent across re-mounts (effect re-runs only on walletId / epoch change). Shares the scan path with useIncomingTransferDetector (Phase 9.4) via lib/railgun/history.ts::runHistoryScan.
 
 import { useEffect, useRef } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom, useStore } from 'jotai'
 import { activeShieldedWalletAtom } from '@/state/wallet'
 import {
   historyRecoveryAtom,
   historyRecoveryEpochAtom,
   type HistoryRecoveryStatus,
 } from '@/state/history'
-import { upsertTxAtom } from '@/state/tx'
+import { txListAtom, upsertTxAtom } from '@/state/tx'
 import { putTxIfFresh } from '@/lib/tx/storage'
 import {
   runHistoryScan,
@@ -35,10 +35,14 @@ async function runScanAndPersist(args: {
   ctx: HistoryMapContext
   fromBlock: number | undefined
   isCancelled: () => boolean
+  /** Snapshot of txHashes already represented by an authored (non-synthetic) record. The scan
+   *  skips synthesizing over these so the user's own outgoing tx keeps its rich record (full
+   *  lifecycle + fee breakdown) rather than getting clobbered by a lossy synth row. */
+  existingTxHashes: ReadonlySet<string>
   upsert: (record: import('@/lib/tx/types').TxRecord) => void
   setStatus: (status: HistoryRecoveryStatus) => void
 }): Promise<void> {
-  const { walletId, ctx, fromBlock, isCancelled, upsert, setStatus } = args
+  const { walletId, ctx, fromBlock, isCancelled, existingTxHashes, upsert, setStatus } = args
   const start = performance.now()
   track('tx.history.scan.started', {
     walletId,
@@ -56,6 +60,12 @@ async function runScanAndPersist(args: {
   let written = 0
   for (const record of result.records) {
     if (isCancelled()) return
+    // Dedup guard: if any authored record already carries this on-chain hash, skip. The
+    // authored record's lifecycle (kind-specific stages, real fee breakdown, signer EVM) is
+    // strictly richer than what we can reconstruct from chain — replacing it with a synth row
+    // would degrade the user's history view.
+    const sourceHash = record.artifacts.sourceTxHash?.toLowerCase()
+    if (sourceHash && existingTxHashes.has(sourceHash)) continue
     try {
       const fresh = await putTxIfFresh(record)
       if (fresh) {
@@ -132,11 +142,29 @@ async function resolveScanInputs(): Promise<{
  * within a session: a re-render of App.tsx doesn't trigger a duplicate scan because the
  * `runOnceRef` guard skips the effect body when the same walletId+epoch ran already.
  */
+/**
+ * Build a snapshot of `sourceTxHash` values across the active wallet's records (whether
+ * authored or previously synthesized). The recovery / detector loops consult this set to
+ * skip re-synthesizing over records we already have. Hashes are lowercased so on-chain
+ * hex-case variance can't bypass the guard.
+ */
+function snapshotExistingTxHashes(
+  records: ReadonlyArray<import('@/lib/tx/types').TxRecord>,
+): Set<string> {
+  const out = new Set<string>()
+  for (const r of records) {
+    const h = r.artifacts.sourceTxHash
+    if (h) out.add(h.toLowerCase())
+  }
+  return out
+}
+
 export function useHistoryRecovery(): void {
   const active = useAtomValue(activeShieldedWalletAtom)
   const epoch = useAtomValue(historyRecoveryEpochAtom)
   const setStatus = useSetAtom(historyRecoveryAtom)
   const upsert = useSetAtom(upsertTxAtom)
+  const store = useStore()
   // Tracks the most recent (walletId, epoch) pair we kicked a scan for. Guards against
   // duplicate runs inside the same session (e.g. StrictMode double-mount in dev).
   const lastRunRef = useRef<string | null>(null)
@@ -182,6 +210,12 @@ export function useHistoryRecovery(): void {
           ctx: inputs.ctx,
           fromBlock,
           isCancelled,
+          // Snapshot is captured at scan-kickoff time. A record written DURING the scan (e.g.
+          // a new tx the user submits) won't be in the snapshot, but the synth row for it
+          // can't reach IDB anyway — putTxIfFresh's OCC check sees the authored record's
+          // updatedSeq and rejects. So at worst the synth row appears in the atom briefly
+          // and is then rejected on persist; the upsert atom's OCC also catches it.
+          existingTxHashes: snapshotExistingTxHashes(store.get(txListAtom)),
           upsert,
           setStatus,
         })

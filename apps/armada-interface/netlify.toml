@@ -19,15 +19,16 @@
   # Build flow:
   #   1. cd to workspace root (npm needs the root package.json + lockfile)
   #   2. clean any cached node_modules from a previous deploy attempt
-  #   3. install with --legacy-peer-deps (Railgun SDK peer-dep conflict)
+  #   3. install with `npm ci` (respects the committed lockfile — never re-resolves the dep graph
+  #      fresh; --legacy-peer-deps for the Railgun SDK peer-dep conflict) (P0-9)
   #   4. fetch the selected deployment instance's manifests from the
   #      armada-deployments repo and write them under public/api/deployments/
   #      with the legacy filenames the interface fetches today
   #   5. build the workspace
   command = """
     cd ../.. && \
-    rm -rf node_modules package-lock.json && \
-    npm install --legacy-peer-deps && \
+    rm -rf node_modules && \
+    npm ci --legacy-peer-deps && \
     cd apps/armada-interface && \
     mkdir -p public/api/deployments && \
     INSTANCE="${DEPLOYMENT_INSTANCE:-demo1}" && \

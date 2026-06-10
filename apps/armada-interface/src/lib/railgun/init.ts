@@ -10,6 +10,7 @@ import { createWebDatabase } from './database'
 import { createBrowserArtifactStore } from './artifacts'
 import { initializeProver } from './prover'
 import { syncStateAtom } from '@/state/wallet'
+import { trackError } from '@/lib/telemetry'
 
 const ENGINE_DB_NAME = 'armada-shielded'
 const ENGINE_WALLET_SOURCE = 'armadainf' // ≤16 chars, lowercase, no special chars — SDK constraint
@@ -106,18 +107,28 @@ async function doInit(): Promise<void> {
     import('@railgun-community/shared-models'),
   ])
 
-  // SDK logging — wire to console for v1, but never inside a function that handles secrets.
-  // Phase 1 secret-handling rules: secrets-bearing scopes (wallet.ts, keyManager.ts) MUST NOT
-  // log through console; the SDK's internal logs are about engine lifecycle, not key material.
+  // SDK logging is verbose by design (engine lifecycle + per-block scan progress). Gate it on DEV
+  // so production builds don't stream SDK internals to the console, where a future SDK change
+  // could surface sensitive material (P1-27). In prod the info log is a no-op and the error path
+  // routes to the sanctioned telemetry channel rather than console — keeping errors visible
+  // without the verbose leak. Secret-handling rules still hold: secrets-bearing scopes
+  // (wallet.ts, keyManager.ts) never log; the SDK's logs are about engine lifecycle, not keys.
+  const debugLogging = import.meta.env.DEV
   setLoggers(
-    (msg: string) => {
-      // eslint-disable-next-line no-console
-      console.log('[railgun]', msg)
-    },
-    (err: Error) => {
-      // eslint-disable-next-line no-console
-      console.error('[railgun]', err)
-    },
+    debugLogging
+      ? (msg: string) => {
+          // eslint-disable-next-line no-console
+          console.log('[railgun]', msg)
+        }
+      : () => {},
+    debugLogging
+      ? (err: Error) => {
+          // eslint-disable-next-line no-console
+          console.error('[railgun]', err)
+        }
+      : (err: Error) => {
+          trackError('railgun.sdk', err)
+        },
   )
 
   const db = createWebDatabase(ENGINE_DB_NAME)
@@ -126,13 +137,13 @@ async function doInit(): Promise<void> {
   await startRailgunEngine(
     ENGINE_WALLET_SOURCE,
     db as never, // level-js export shape isn't typed; SDK accepts the leveldown-compatible API
-    true, // shouldDebug
+    debugLogging, // shouldDebug — gated on DEV (P1-27)
     artifactStore,
     false, // useNativeArtifacts (false = WASM for browser)
     false, // skipMerkletreeScans (false = enable balance scanning)
     undefined, // poiNodeURLs (POI disabled; see POI.init below)
     undefined, // customPOILists
-    true, // verboseScanLogging
+    debugLogging, // verboseScanLogging — gated on DEV (P1-27)
   )
 
   // Wire SDK merkletree scan progress into syncStateAtom so the UI can show a banner +

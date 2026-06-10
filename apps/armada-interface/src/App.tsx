@@ -36,6 +36,7 @@ import { startEngine } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
 import { appModeForWalletStatus, type GuardMode } from '@/lib/app-mode'
 import { initRailgunEngine } from '@/lib/railgun/init'
+import { preloadArtifactsFromOrigin } from '@/lib/railgun/artifacts'
 import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
 import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
 import { isLocalMode } from '@/config/network'
@@ -121,7 +122,13 @@ export function App() {
     // this, the first proof-generating tx pays a 1-2s warmup before the SDK can do anything.
     // Idempotent: a later enroll/unlock call also goes through ensureRailgunReady() which is a
     // no-op once initialized.
+    //
+    // After init resolves, preload the demo-critical circuit artifacts from our own origin into
+    // the SDK cache (P0-12) so the first proof doesn't fetch ~10 MB from IPFS at click time.
+    // Fire-and-forget, sequenced after init, off the critical path — failures fall back to IPFS.
     void initRailgunEngine()
+      .then(() => preloadArtifactsFromOrigin())
+      .catch((err) => trackError('railgun.artifacts.preload', err))
   }, [mode])
   // Sticky flag: true when this device boot started with NO persisted walletId. Drives whether
   // we offer the bidirectional Onboarding ↔ Unlock fork. A returning user (had a wallet at boot)

@@ -7,15 +7,13 @@ import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
 import { SyncBanner } from './sync'
 import { HistoryRecoveryBanner } from './history'
-import { StatusChip } from '@/components/ui'
 import { getNetworkMode } from '@/config/network'
 import styles from './AppLayout.module.css'
 
 // Persistent network badge (P1-22) so a user can never mistake a testnet build for mainnet. Sepolia
-// → amber "Testnet — Sepolia"; local → neutral "Local" (harmless, helps devs tell builds apart).
-const NETWORK_BADGE = getNetworkMode() === 'sepolia'
-  ? { label: 'Testnet — Sepolia', variant: 'warning' as const }
-  : { label: 'Local', variant: 'neutral' as const }
+// → "Testnet"; local → "Local" (harmless, helps devs tell builds apart). Styled as a flat pill
+// matching the wallet pill, with a brand-lavender dot.
+const NETWORK_BADGE_LABEL = getNetworkMode() === 'sepolia' ? 'Testnet' : 'Local'
 
 // Debug is intentionally NOT in the primary nav for the public demo (P2/WS4.6) — it exposes
 // contract addresses + per-chain balances + (local-only) faucet tools. The `/debug` route stays
@@ -51,7 +49,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
-          <StatusChip label={NETWORK_BADGE.label} variant={NETWORK_BADGE.variant} />
+          <span className={styles.networkBadge} role="status">
+            <span className={styles.networkDot} aria-hidden="true" />
+            {NETWORK_BADGE_LABEL}
+          </span>
           {/* V2 Phase 3a: merged pill — the 0zk shielded identity now lives inside
               `WalletConnector`'s `WalletPillMenu` dropdown (via the `extraSection` prop), so
               the separate `ShieldedAddressPill` previously sat here is gone. */}

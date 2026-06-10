@@ -16,6 +16,13 @@ Hosted Sepolia builds work without `VITE_RELAYER_URL` for deposit/send (user wal
 
 When `VITE_RELAYER_URL` is unset on a Sepolia build, the app now resolves the relayer URL to `''` (never `localhost:3001`): `isRelayerConfigured()` is false, so fee quotes don't fetch, gasless toggles disable, and the modals show a **"No relayer is configured"** banner steering the user to wallet-submit. Set `VITE_RELAYER_URL` to the public **HTTPS** relayer origin and redeploy to enable relayer-mediated flows. (An `http://` relayer from an `https://` page is blocked as mixed content — HTTPS is mandatory.)
 
+## Pre-demo checklist (human actions)
+
+- [ ] **`DEPLOYMENT_REF`** set to the intended `ship-armada/armada-deployments` commit SHA on Netlify + Vercel (build fails without it — P1-23).
+- [ ] **`VITE_RELAYER_URL`** set to the relayer's **HTTPS** origin and the VPS relayer confirmed reachable over HTTPS (P0-10).
+- [ ] **WalletConnect** (P2): set a real `VITE_WALLETCONNECT_PROJECT_ID` and enable the **domain allowlist (Verify API)** for the deploy origin in WalletConnect Cloud, so the project ID can't be used from other origins.
+- [ ] **CSP** promoted from `Content-Security-Policy-Report-Only` to enforcing only after a preview click-through with devtools open, and after adding the relayer origin + any IPFS gateway host to `connect-src` in both `netlify.toml` and `vercel.json` (P0-8).
+
 ## Running the relayer for Sepolia
 
 On a VPS or your machine (with a tunnel if you need HTTPS for Vercel):

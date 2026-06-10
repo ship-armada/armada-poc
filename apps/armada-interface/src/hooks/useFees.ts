@@ -12,6 +12,7 @@ import {
 } from '@/state/fees'
 import { tabVisibleAtom } from '@/state/visibility'
 import { fetchFees, type FeeSchedule } from '@/lib/relayer'
+import { isRelayerConfigured } from '@/config/network'
 import { trackError } from '@/lib/telemetry'
 
 export interface UseFeesOptions {
@@ -75,6 +76,9 @@ export function useFees(opts: UseFeesOptions = {}): UseFeesResult {
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => fetchFees(signal, chainId),
+    // Don't fetch when no relayer is configured (sepolia + unset VITE_RELAYER_URL) — otherwise the
+    // empty base URL resolves to the app's own origin and retries an HTML 404 forever. (P0-10)
+    enabled: isRelayerConfigured(),
     // Fixed client-clock cadence; pauses when the tab is hidden (resumes on visibility flip).
     refetchInterval: () => (tabVisible ? AUTO_REFETCH_MS : false),
     refetchIntervalInBackground: false,
@@ -119,6 +123,8 @@ export function useFees(opts: UseFeesOptions = {}): UseFeesResult {
   }, [isUnavailable, query.isSuccess, query.failureReason, query.failureCount])
 
   const refresh = async (): Promise<FeeSchedule | null> => {
+    // No relayer configured → nothing to fetch (and the empty URL would hit our own origin).
+    if (!isRelayerConfigured()) return null
     const result = await queryClient.fetchQuery({
       queryKey,
       queryFn: ({ signal }) => fetchFees(signal, chainId),

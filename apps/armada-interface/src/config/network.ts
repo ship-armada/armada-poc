@@ -50,12 +50,12 @@ export function isLocalMode(): boolean {
 
 /**
  * Whether the UI should call the relayer HTTP API (`/fees`, `/relay`, `/health`, …). True when
- * the resolved `relayerUrl` is non-empty. Today the local-mode default is `localhost:3001` even
- * when no relayer is running — the call simply fails and downstream code surfaces that.
+ * the resolved `relayerUrl` is non-empty.
  *
- * TODO (Packet F follow-up): tighten `relayerUrl` resolution so sepolia + unset env yields an
- * empty string (per LOCAL_VS_DEPLOY.md), making this gate a clean boolean rather than relying
- * on the fetch failure to communicate "no relayer".
+ * Sepolia + unset `VITE_RELAYER_URL` now resolves to `''` → this is honestly `false` (P0-10), so
+ * callers can disable gasless toggles, gate fee fetches, and render a "relayer not configured"
+ * banner rather than firing requests at `localhost:3001`. Local mode keeps its `localhost:3001`
+ * default (a relayer is expected to be running locally).
  */
 export function isRelayerConfigured(): boolean {
   return getNetworkConfig().relayerUrl.length > 0
@@ -132,7 +132,11 @@ function sepoliaConfig(): NetworkConfig {
         explorerUrl: 'https://sepolia.arbiscan.io',
       },
     ],
-    relayerUrl: (import.meta.env.VITE_RELAYER_URL as string | undefined) ?? 'http://localhost:3001',
+    // NO localhost fallback on sepolia (P0-10): a missing VITE_RELAYER_URL must yield '' so
+    // `isRelayerConfigured()` is honestly false — not silently point the DEPLOYED app at the
+    // visitor's own machine (and an http:// URL from an https:// page is blocked as mixed content
+    // anyway). Set VITE_RELAYER_URL to the public HTTPS relayer for sepolia builds.
+    relayerUrl: (import.meta.env.VITE_RELAYER_URL as string | undefined) ?? '',
     irisUrl: (import.meta.env.VITE_IRIS_URL as string | undefined) ?? 'https://iris-api-sandbox.circle.com',
     indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? null,
     pollIntervalMs: 15_000,

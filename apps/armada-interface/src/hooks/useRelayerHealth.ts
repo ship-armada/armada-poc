@@ -3,6 +3,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { fetchHealth, type RelayerHealthResponse } from '@/lib/relayer'
+import { isRelayerConfigured } from '@/config/network'
 
 export interface UseRelayerHealthOptions {
   /**
@@ -21,12 +22,15 @@ export interface UseRelayerHealthOptions {
  * total-unreachable state as the most-degraded signal — same UX as `unhealthy`.
  */
 export function useRelayerHealth(opts: UseRelayerHealthOptions = {}) {
+  // No relayer configured (sepolia + unset VITE_RELAYER_URL) → don't poll /health against the
+  // empty/own-origin URL; callers branch on `isConfigured` to show a "not configured" state. (P0-10)
+  const isConfigured = isRelayerConfigured()
   const query = useQuery<RelayerHealthResponse>({
     queryKey: ['relayer-health'],
     queryFn: ({ signal }) => fetchHealth(signal),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
-    enabled: opts.enabled !== false,
+    enabled: opts.enabled !== false && isConfigured,
     // Don't aggressively retry — if the relayer is down, the banner should reflect that and the
     // user opts into the wallet path. A 30-second retry would mask a real outage.
     retry: 1,
@@ -43,6 +47,9 @@ export function useRelayerHealth(opts: UseRelayerHealthOptions = {}) {
     error: query.error,
     isLoading: query.isLoading,
     isDegraded,
+    /** False when no relayer URL is configured for this build — callers render a distinct
+     *  "relayer not configured" state rather than a transient "degraded". (P0-10) */
+    isConfigured,
     refetch: query.refetch,
   }
 }

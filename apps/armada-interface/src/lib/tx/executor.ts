@@ -6,6 +6,7 @@ import { track, trackError } from '../telemetry'
 import { lifecycleFor } from './lifecycles'
 import { markCancelled, markDismissed, markExpired, markRetrying, shouldResume } from './reducer'
 import { loadAllTx, putTxIfFresh } from './storage'
+import { isTerminalState } from './types'
 import type { StageFor, TxKind, TxRecord } from './types'
 import { txListAtom, upsertTxAtom } from '@/state/tx'
 import { tabVisibleAtom } from '@/state/visibility'
@@ -286,10 +287,7 @@ async function runHandlerChain(
       }
 
       // Terminal? Stop the chain.
-      if (current.executionState === 'completed'
-        || current.executionState === 'failed'
-        || current.executionState === 'expired'
-        || current.executionState === 'cancelled') {
+      if (isTerminalState(current.executionState)) {
         break
       }
 
@@ -307,6 +305,13 @@ async function runHandlerChain(
       const next = store.get(txListAtom).find(t => t.id === current.id)
       if (!next) break
       current = next
+
+      // Terminal? The handler just reached a settled state (completed / failed / cancelled /
+      // expired). Stop the chain WITHOUT running the expiry check below — otherwise a record
+      // that reached a terminal state after maxDurationMs (e.g. a long hidden-tab pause counted
+      // against the wall-clock cap) would be clobbered from `completed`/`failed` to `expired`,
+      // losing the success or the original TxError. (P0-5)
+      if (isTerminalState(current.executionState)) break
 
       // Handler put us in 'waiting'? Pause the chain; external trigger (e.g. a
       // poller completing, or executeTx being called again) will resume.

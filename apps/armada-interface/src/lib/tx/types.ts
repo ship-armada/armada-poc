@@ -40,6 +40,16 @@ export const NON_TERMINAL_STATES: ReadonlyArray<TxExecutionState> = [
   'pending', 'active', 'waiting', 'retrying',
 ]
 
+/** A terminal state is settled — resume, cancel, and expiry must never move a record out of it. */
+export const TERMINAL_STATES: ReadonlyArray<TxExecutionState> = [
+  'completed', 'failed', 'expired', 'cancelled',
+]
+
+/** True when the execution state is terminal (no further transitions expected). */
+export function isTerminalState(state: TxExecutionState): boolean {
+  return (TERMINAL_STATES as ReadonlyArray<string>).includes(state)
+}
+
 /* Stage unions — every TxKind declares its own sequence. Adding a stage means
  * adding to the union AND to the lifecycle definition in `lifecycles.ts`. */
 

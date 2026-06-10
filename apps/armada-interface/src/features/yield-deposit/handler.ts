@@ -16,7 +16,8 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
-import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
+import { advance, markFailed } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { createProofProgressWriter } from '@/lib/tx/progress'
@@ -94,7 +95,7 @@ async function runBuildProof(
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  const progress = createProofProgressWriter(record)
+  const progress = createProofProgressWriter(record, ctx.signal)
   const built = await buildYieldAdaptTransaction({
     walletId,
     encryptionKey,
@@ -141,9 +142,9 @@ async function runSubmitAndConfirm(
       data: yieldTx.data as `0x${string}`,
       value: BigInt(yieldTx.value),
     })
-    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
-    await ctx.upsert(broadcastRecord)
-    if (ctx.signal.aborted) throw new Error('cancelled')
+    const broadcast = await recordBroadcastHash(record, hash, ctx)
+    if (broadcast.dismissed) return
+    const broadcastRecord = broadcast.record
     await waitForReceiptOrFail({ hash, signal: ctx.signal })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
@@ -172,9 +173,9 @@ async function runSubmitAndConfirm(
 
   track('tx.relayer.submitted', { id: record.id, kind: record.kind })
 
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, submitResponse.txHash as `0x${string}`, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   const pollResult = await poll(
     (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),

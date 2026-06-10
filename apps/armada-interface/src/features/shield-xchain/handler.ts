@@ -30,6 +30,7 @@ import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll } from '@/lib/tx/poller'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { classifyHandlerError } from '@/lib/tx/errors'
@@ -471,9 +472,9 @@ async function finalizeBurnAndAdvance(
   // record MUST be threaded into the final advance below — `record` is now stale (lower
   // updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq write that
   // OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, hash, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   // Use the client chain's public client to wait for the receipt + extract the CCTP MessageSent
   // event. The receipt is on the source chain regardless of who broadcast the tx, so this works
@@ -600,6 +601,9 @@ async function runWaitForDelivery(
       if (outcome.kind === 'no-new-blocks') return null
 
       scanFromBlock = outcome.nextScanFromBlock
+      // A cancel/dismiss may have fired during the async scan above. Skip the cursor persist so we
+      // don't resurrect a record abortAndMark has already moved to a terminal state. (P0-3 WS1.2b)
+      if (signal.aborted) return null
       cursor = patchArtifacts(cursor, { destFromBlock: scanFromBlock.toString() })
       await ctx.upsert(cursor)
       return null

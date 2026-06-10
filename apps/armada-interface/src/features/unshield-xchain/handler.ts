@@ -46,6 +46,7 @@ type EthersScanLog = {
   data: string
 }
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { scanCctpDeliveryWindow } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
@@ -197,7 +198,7 @@ async function runBuildProof(
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  const progress = createProofProgressWriter(record)
+  const progress = createProofProgressWriter(record, ctx.signal)
   await generateXchainUnshieldProof({
     walletId,
     encryptionKey,
@@ -279,9 +280,9 @@ async function runSubmitAndBurn(
       data: calldata,
       value: 0n,
     })
-    const broadcastRecord = patchArtifacts(record, { sourceTxHash: userHash })
-    await ctx.upsert(broadcastRecord)
-    if (ctx.signal.aborted) throw new Error('cancelled')
+    const broadcast = await recordBroadcastHash(record, userHash, ctx)
+    if (broadcast.dismissed) return
+    const broadcastRecord = broadcast.record
     await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal })
     await extractCctpRefAndAdvance({
       ctx,
@@ -328,9 +329,9 @@ async function runSubmitAndBurn(
   // patched record MUST be threaded into the final advance below — `record` is now stale (lower
   // updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq write that
   // OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, submitResponse.txHash as `0x${string}`, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   // Poll the relayer's /status until terminal. Same shape as unshield-local — the generic poll
   // loop handles jittered backoff + abort propagation.
@@ -538,6 +539,11 @@ async function runWaitForDelivery(
       // Advance the cursor and persist so a crash + resume starts where we left off rather than
       // re-scanning everything back to burn-time head.
       scanFromBlock = outcome.nextScanFromBlock
+      // A cancel/dismiss may have fired during the async scan above. Skip the cursor persist so we
+      // don't resurrect a record abortAndMark has already moved to a terminal state — the terminal-
+      // write guard in upsertTxAtom would refuse it anyway, but skipping is clearer + avoids a
+      // pointless write. (P0-3 WS1.2b)
+      if (signal.aborted) return null
       cursor = patchArtifacts(cursor, { destFromBlock: scanFromBlock.toString() })
       await ctx.upsert(cursor)
       return null

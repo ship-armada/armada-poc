@@ -129,6 +129,25 @@ describe('encrypted writes', () => {
     const ok = await putTxIfFresh(fixture('tx-1', 'rg-1', 2))
     expect(ok).toBe(true)
   })
+
+  it('terminal-write guard: refuses terminal→non-terminal even with a higher seq (P0-3 WS1.2a)', async () => {
+    unlock('rg-1')
+    await putTxIfFresh({ ...fixture('tx-1', 'rg-1', 5), executionState: 'cancelled' })
+    // A stale in-flight write carrying a higher seq but a non-terminal state.
+    const ok = await putTxIfFresh({ ...fixture('tx-1', 'rg-1', 99), executionState: 'active' })
+    expect(ok).toBe(false)
+    const records = await loadAllTx('rg-1')
+    expect(records[0]!.executionState).toBe('cancelled')
+  })
+
+  it('terminal-write guard: allows a terminal→terminal upgrade (recovery path)', async () => {
+    unlock('rg-1')
+    await putTxIfFresh({ ...fixture('tx-1', 'rg-1', 5), executionState: 'expired' })
+    const ok = await putTxIfFresh({ ...fixture('tx-1', 'rg-1', 6), executionState: 'completed' })
+    expect(ok).toBe(true)
+    const records = await loadAllTx('rg-1')
+    expect(records[0]!.executionState).toBe('completed')
+  })
 })
 
 describe('encrypted reads (loadAllTx)', () => {

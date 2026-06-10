@@ -5,6 +5,7 @@ import { cacheAll, cacheDelete, cacheGet, cachePut } from '../cache'
 import { isEncryptedBlob, unwrap, wrap, type EncryptedBlob } from '../crypto/cache-cipher'
 import { getHistoryEncryptionKey, isUnlocked } from '../railgun/keyManager'
 import { trackError } from '../telemetry'
+import { isTerminalState } from './types'
 import type { TxRecord } from './types'
 
 const STORE = 'txHistory' as const
@@ -64,6 +65,17 @@ export async function putTxIfFresh(record: TxRecord): Promise<boolean> {
     const existingRaw = await cacheGet<unknown>(STORE, record.id)
     if (existingRaw !== undefined) {
       const existing = tryUnwrap(existingRaw, key)
+      // Terminal-state write guard (mirrors state/tx.ts::upsertTxAtom): refuse any write that
+      // would move a settled record back to a non-terminal state, regardless of updatedSeq, so a
+      // late poller/progress write can't resurrect a cancelled/failed/expired record on disk.
+      // Terminal→terminal is allowed (history-recovery upgrade path). (P0-3 WS1.2a)
+      if (existing && isTerminalState(existing.executionState) && !isTerminalState(record.executionState)) {
+        trackError('tx.storage.terminal-write', new Error('terminal→non-terminal'), {
+          scope: 'tx.storage',
+          message: `refused terminal→non-terminal write for ${record.id}`,
+        })
+        return false
+      }
       if (existing && existing.updatedSeq >= record.updatedSeq) {
         trackError('tx.storage.stale-write', new Error('stale updatedSeq'), {
           scope: 'tx.storage',

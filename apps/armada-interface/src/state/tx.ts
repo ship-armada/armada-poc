@@ -3,7 +3,7 @@
 
 import { atom } from 'jotai'
 import type { TxExecutionState, TxKind, TxRecord } from '@/lib/tx/types'
-import { NON_TERMINAL_STATES } from '@/lib/tx/types'
+import { NON_TERMINAL_STATES, isTerminalState } from '@/lib/tx/types'
 import { activeRailgunWalletIdAtom } from './wallet'
 
 /**
@@ -70,6 +70,14 @@ export const upsertTxAtom = atom(null, (get, set, record: TxRecord) => {
     return
   }
   const existing = list[idx]
+  // Terminal-state write guard: never resurrect a settled record into a non-terminal state,
+  // regardless of updatedSeq. A cancel/dismiss writes the terminal record with a fresh seq, but
+  // a poller or proof-progress writer holding a stale in-flight reference can still bump its own
+  // seq higher and would otherwise flip `cancelled`/`failed`/`expired` back to `active`/`waiting`.
+  // Terminal→terminal is allowed (the history-recovery upgrade path; see lib/tx/CLAUDE.md). (P0-3)
+  if (existing && isTerminalState(existing.executionState) && !isTerminalState(record.executionState)) {
+    return
+  }
   if (existing && existing.updatedSeq >= record.updatedSeq) {
     // Silently drop stale writes. Telemetry is emitted at the storage layer
     // (see lib/tx/storage.ts::putTxIfFresh) so we don't double-log.

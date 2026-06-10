@@ -28,15 +28,23 @@ export interface ProofProgressWriter<K extends TxKind> {
  * Bucket size = 10% so we write ~10 times per proof gen, not the hundreds of intermediate
  * callbacks the SDK can fire. The first bucket (0.1) lands quickly and gives the user
  * "something is happening" feedback within the first second or two.
+ *
+ * Pass the handler's `ctx.signal` so the writer no-ops once the tx is cancelled mid-proof. The
+ * SDK can fire `onProgress` callbacks after `cancelTx` has already written the terminal record;
+ * without this guard those late writes carry the writer's own (higher) `updatedSeq` and an
+ * `active`/`build-proof` body, which would flip the cancelled record back to in-flight. The
+ * terminal-write guard in upsertTxAtom is the belt; this is the braces. (P0-3 WS1.2b)
  */
 export function createProofProgressWriter<K extends TxKind>(
   initial: TxRecord<K>,
+  signal?: AbortSignal,
 ): ProofProgressWriter<K> {
   const store = getDefaultStore()
   let liveRecord: TxRecord<K> = initial
   let lastBucket = -1
   return {
     write(fraction: number) {
+      if (signal?.aborted) return
       const clamped = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction
       const bucket = Math.floor(clamped * 10)
       if (bucket === lastBucket) return

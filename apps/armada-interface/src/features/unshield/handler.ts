@@ -19,7 +19,8 @@ import {
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
-import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
+import { advance, markFailed } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { createProofProgressWriter } from '@/lib/tx/progress'
@@ -103,7 +104,7 @@ async function runBuildProof(
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  const progress = createProofProgressWriter(record)
+  const progress = createProofProgressWriter(record, ctx.signal)
   await generateUnshieldProofForRecipient({
     walletId,
     encryptionKey,
@@ -160,9 +161,9 @@ async function runSubmitAndConfirm(
       data: populated.data,
       value: populated.value,
     })
-    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
-    await ctx.upsert(broadcastRecord)
-    if (ctx.signal.aborted) throw new Error('cancelled')
+    const broadcast = await recordBroadcastHash(record, hash, ctx)
+    if (broadcast.dismissed) return
+    const broadcastRecord = broadcast.record
     await waitForReceiptOrFail({ hash, signal: ctx.signal })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
@@ -206,9 +207,9 @@ async function runSubmitAndConfirm(
   // hash forward into the dismissed-with-explorer-link UX. Threading the patched record forward
   // matters: `record` is now stale (lower updatedSeq than the atom/IDB) and a later advance from
   // it would equal-seq write that OCC silently drops, leaving the executor looping here.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, submitResponse.txHash as `0x${string}`, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   // Poll the relayer's /status until terminal. The adapter returns null while pending (loop keeps
   // waiting) and the full StatusResponse once confirmed/failed. The generic poll loop handles

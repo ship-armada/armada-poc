@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { createStore } from 'jotai'
-import { txListAtom, activeTxListAtom, pendingTxsAtom } from './tx'
+import { txListAtom, activeTxListAtom, pendingTxsAtom, upsertTxAtom } from './tx'
 import { activeRailgunWalletIdAtom } from './wallet'
 import type { TxRecord } from '@/lib/tx/types'
 
@@ -89,5 +89,35 @@ describe('pendingTxsAtom (sources from activeTxListAtom)', () => {
     store.set(txListAtom, [fixture('a', 'rg-1', 'active')])
     store.set(activeRailgunWalletIdAtom, null)
     expect(store.get(pendingTxsAtom)).toEqual([])
+  })
+})
+
+describe('upsertTxAtom terminal-write guard (P0-3 WS1.2a)', () => {
+  function withSeq(id: string, walletId: string, state: TxRecord['executionState'], seq: number): TxRecord {
+    return { ...fixture(id, walletId, state), updatedSeq: seq }
+  }
+
+  it('refuses to resurrect a terminal record into a non-terminal state, even with a higher seq', () => {
+    const store = createStore()
+    store.set(txListAtom, [withSeq('a', 'rg-1', 'cancelled', 5)])
+    // A late progress-writer write carrying a higher seq but a non-terminal state.
+    store.set(upsertTxAtom, withSeq('a', 'rg-1', 'active', 99))
+    const after = store.get(txListAtom).find(t => t.id === 'a')
+    expect(after?.executionState).toBe('cancelled')
+    expect(after?.updatedSeq).toBe(5)
+  })
+
+  it('allows a terminal→terminal upgrade (recovery path) with a higher seq', () => {
+    const store = createStore()
+    store.set(txListAtom, [withSeq('a', 'rg-1', 'expired', 5)])
+    store.set(upsertTxAtom, withSeq('a', 'rg-1', 'completed', 6))
+    expect(store.get(txListAtom).find(t => t.id === 'a')?.executionState).toBe('completed')
+  })
+
+  it('still allows normal non-terminal progression', () => {
+    const store = createStore()
+    store.set(txListAtom, [withSeq('a', 'rg-1', 'active', 1)])
+    store.set(upsertTxAtom, withSeq('a', 'rg-1', 'waiting', 2))
+    expect(store.get(txListAtom).find(t => t.id === 'a')?.executionState).toBe('waiting')
   })
 })

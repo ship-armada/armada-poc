@@ -207,17 +207,20 @@ function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
     running.delete(id)
   }
   const store = getDefaultStore()
+  // Re-read the LATEST record — a broadcast may have raced this abort and just patched the hash.
   const record = store.get(txListAtom).find(t => t.id === id)
   if (!record) return
   // Don't clobber an already-terminal record. OCC accepts the bumped seq, so without this guard
   // a cancel on a completed/failed/expired tx would rewrite its terminal state in atom + IDB.
-  if (record.executionState === 'completed'
-    || record.executionState === 'failed'
-    || record.executionState === 'expired'
-    || record.executionState === 'cancelled') {
+  if (isTerminalState(record.executionState)) {
     return
   }
-  const next = kind === 'dismiss' ? markDismissed(record) : markCancelled(record)
+  // Honest routing: if the tx already broadcast (we have a sourceTxHash), the on-chain tx runs
+  // regardless of what the user clicked — labelling it "Cancelled before submission" would be a
+  // lie and would drop the explorer link. Route to dismissed so the hash + "Stopped tracking"
+  // copy survive, even when the caller asked to cancel. (P0-3 WS1.2c)
+  const hasHash = Boolean((record.artifacts as { sourceTxHash?: `0x${string}` }).sourceTxHash)
+  const next = (kind === 'dismiss' || hasHash) ? markDismissed(record) : markCancelled(record)
   store.set(upsertTxAtom, next)
   void putTxIfFresh(next)
   track('tx.cancelled', { id: next.id, kind: next.kind })

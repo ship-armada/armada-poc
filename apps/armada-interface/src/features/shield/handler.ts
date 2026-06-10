@@ -26,7 +26,8 @@ import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
 import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { ensureChain } from '@/lib/network-switch'
-import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
+import { advance, markFailed } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
 import type { TxError, TxRecord } from '@/lib/tx/types'
@@ -322,9 +323,9 @@ async function runDirectSubmit(
   // patched record forward to the final advance: `record` is now stale (updatedSeq lower than
   // what's in the atom/IDB), so building advance from `record` would produce an equal-seq
   // write that OCC silently drops, leaving the executor stuck re-entering this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: shieldHash })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, shieldHash, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   // 3. Wait for confirmation. The SDK's merkle scan will pick up the new commitment via the
   //    onBalanceUpdate callback — but we also kick a refresh explicitly so the UI doesn't have
@@ -419,9 +420,9 @@ async function runGaslessSubmit(
   // Persist the relayer-broadcast txHash immediately — same OCC-correct patch-then-advance
   // dance the unshield handler uses. Building the final advance from the stale `record` would
   // race the patch's updatedSeq increment and silently drop the terminal transition.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, submitResponse.txHash as `0x${string}`, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   const pollResult = await poll(
     (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),

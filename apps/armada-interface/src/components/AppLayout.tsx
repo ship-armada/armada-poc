@@ -17,11 +17,13 @@ const NETWORK_BADGE = getNetworkMode() === 'sepolia'
   ? { label: 'Testnet — Sepolia', variant: 'warning' as const }
   : { label: 'Local', variant: 'neutral' as const }
 
+// Debug is intentionally NOT in the primary nav for the public demo (P2/WS4.6) — it exposes
+// contract addresses + per-chain balances + (local-only) faucet tools. The `/debug` route stays
+// registered in main.tsx and reachable by direct URL for devs.
 const NAV: ReadonlyArray<{ label: string; path: string }> = [
   { label: 'Dashboard', path: '/' },
   { label: 'History', path: '/history' },
   { label: 'Settings', path: '/settings' },
-  { label: 'Debug', path: '/debug' },
 ]
 
 export function AppLayout({ children }: { children: ReactNode }) {

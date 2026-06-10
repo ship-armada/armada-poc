@@ -9,6 +9,8 @@
 | `VITE_NETWORK` | `sepolia` | Use Sepolia manifests and RPCs (set in `vercel.json` for Vercel; `netlify.toml` for Netlify). |
 | `VITE_RELAYER_URL` | **Public HTTPS URL** (optional) | Live `/fees` quotes. **Omit on Vercel** unless you host a relayer — wallet-submit flows use offline placeholders. Never use `localhost:3001` on hosted previews. |
 | `VITE_WALLETCONNECT_PROJECT_ID` | Project ID | WalletConnect modal (optional for MetaMask-only testing). |
+| `DEPLOYMENT_REF` | **Required, commit SHA** (build-step, non-VITE) | Pins which `ship-armada/armada-deployments` commit the manifests are fetched from. **The build fails if unset** — these manifests carry fund-receiving contract addresses, so we never float on a mutable branch like `main`. Set to a specific SHA and bump deliberately per release. |
+| `DEPLOYMENT_INSTANCE` | Optional, defaults `demo1` (build-step, non-VITE) | Which instance directory under `testnet/` to fetch. |
 
 Hosted Sepolia builds work without `VITE_RELAYER_URL` for deposit/send (user wallet submits). Cross-chain completion still requires your team’s relayer process running on infrastructure.
 

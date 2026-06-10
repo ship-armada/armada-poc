@@ -7,10 +7,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${ROOT}/public/api/deployments"
 INSTANCE="${DEPLOYMENT_INSTANCE:-demo1}"
-BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/main/testnet/${INSTANCE}"
+# Pin the manifest ref deliberately (P1-23). These manifests carry fund-receiving contract
+# addresses; fetching from a mutable branch (main) means a repo change silently rewires the build.
+# Require DEPLOYMENT_REF (a commit SHA) and fail loudly when unset rather than defaulting to main.
+REF="${DEPLOYMENT_REF:?DEPLOYMENT_REF is required — pin it to a commit SHA of ship-armada/armada-deployments (NOT a mutable branch like main). See apps/armada-interface/DEPLOYMENT.md.}"
+BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/testnet/${INSTANCE}"
 
 mkdir -p "${OUT}"
-echo "Fetching deployment manifests (instance: ${INSTANCE})…"
+echo "Fetching deployment manifests (instance: ${INSTANCE}, ref: ${REF})…"
 
 curl -sfL -o "${OUT}/hub-sepolia-v3.json" "${BASE}/sepolia/cctp.json"
 curl -sfL -o "${OUT}/client-sepolia-v3.json" "${BASE}/base-sepolia/cctp.json"

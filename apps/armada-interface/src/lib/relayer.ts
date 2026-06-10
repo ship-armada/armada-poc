@@ -340,6 +340,41 @@ async function parseError(res: Response): Promise<RelayerError> {
 }
 
 /**
+ * Wrap a relayer fetch with a hard timeout (P0-11). A stalled VPS relayer would otherwise pin a tx
+ * flow in an undismissable progress modal up to the lifecycle cap. Combines the caller's signal
+ * (user cancel) with `AbortSignal.timeout` via `AbortSignal.any`. Discrimination on rejection:
+ *   - caller's signal aborted → user cancel; rethrow untouched so cancel stays cancel.
+ *   - our timeout fired → throw a transient `RelayerError` (RELAYER_BUSY, httpStatus 0) so it
+ *     surfaces honest copy / backs off rather than a raw TimeoutError string.
+ *   - anything else (DNS, connection refused) → propagate as before.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal
+  try {
+    return await fetch(url, { ...init, signal })
+  } catch (err) {
+    if (callerSignal?.aborted) throw err
+    if (timeoutSignal.aborted) {
+      throw new RelayerError(
+        'RELAYER_BUSY',
+        0,
+        `Relayer didn't respond within ${Math.round(timeoutMs / 1000)}s. It may be down or overloaded — try again.`,
+      )
+    }
+    throw err
+  }
+}
+
+// Internal — exported for tests only. Do not import from app code.
+export { fetchWithTimeout as _fetchWithTimeout }
+
+/**
  * Fetch the current fee schedule from the relayer. The relayer caches its own schedule with a
  * 5-min TTL and returns the cached value when valid; the client caches at the atom layer via
  * `useFees`. Both can re-fetch independently — relayer is the source of truth.
@@ -356,11 +391,10 @@ export async function fetchFees(
     chainId === undefined
       ? relayerEndpoint(RELAYER_ENDPOINTS.fees)
       : `${relayerEndpoint(RELAYER_ENDPOINTS.fees)}?chainId=${chainId}`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    signal,
-  })
+  }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as FeeSchedule
 }
@@ -378,12 +412,11 @@ export async function fetchFees(
  * A4 (transfer + yield), then A5 (`unshield-xchain` hub burn). See `.claude/RELAYER_MEDIATION_PLAN.md`.
  */
 export async function submitRelay(req: RelayRequest, signal?: AbortSignal): Promise<RelayResponse> {
-  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.relay), {
+  const res = await fetchWithTimeout(relayerEndpoint(RELAYER_ENDPOINTS.relay), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(req),
-    signal,
-  })
+  }, signal, 30_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as RelayResponse
 }
@@ -419,11 +452,10 @@ export interface RelayerHealthResponse {
  * the status. AbortSignal forwards to fetch so a hook can cancel on unmount.
  */
 export async function fetchHealth(signal?: AbortSignal): Promise<RelayerHealthResponse> {
-  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.health), {
+  const res = await fetchWithTimeout(relayerEndpoint(RELAYER_ENDPOINTS.health), {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    signal,
-  })
+  }, signal, 10_000)
   // 503 still carries a JSON body — both status codes parse the same shape.
   if (!res.ok && res.status !== 503) throw await parseError(res)
   return (await res.json()) as RelayerHealthResponse
@@ -431,11 +463,10 @@ export async function fetchHealth(signal?: AbortSignal): Promise<RelayerHealthRe
 
 /** Poll a previously-submitted relay tx's status. */
 export async function pollStatus(txHash: string, signal?: AbortSignal): Promise<StatusResponse> {
-  const res = await fetch(`${relayerEndpoint(RELAYER_ENDPOINTS.status)}/${txHash}`, {
+  const res = await fetchWithTimeout(`${relayerEndpoint(RELAYER_ENDPOINTS.status)}/${txHash}`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    signal,
-  })
+  }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as StatusResponse
 }

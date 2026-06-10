@@ -11,6 +11,7 @@ import {
   feeModelForKind,
   submitRelay,
   RelayerError,
+  _fetchWithTimeout,
   type FeeSchedule,
   type RelayRequest,
   type RelayResponse,
@@ -541,7 +542,9 @@ describe('submitRelay', () => {
     expect(err.message).toBe('Relayer request failed (500)')
   })
 
-  it('forwards the caller-supplied AbortSignal to fetch (so cancelTx propagates)', async () => {
+  it('aborts the underlying fetch when the caller signal aborts (cancelTx propagates through the combined signal)', async () => {
+    // P0-11: fetchWithTimeout now passes a COMBINED signal (caller ∪ timeout) to fetch, so we no
+    // longer assert identity — instead verify the caller's abort still drives the fetch signal.
     const ctrl = new AbortController()
     fetchMock.mockResolvedValueOnce(
       new Response('{"txHash":"0x00","status":"pending"}', { status: 200 }),
@@ -550,6 +553,41 @@ describe('submitRelay', () => {
     await submitRelay(validRequest, ctrl.signal)
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(init.signal).toBe(ctrl.signal)
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(init.signal!.aborted).toBe(false)
+    ctrl.abort()
+    expect(init.signal!.aborted).toBe(true)
+  })
+
+  it('throws a transient RelayerError when the relayer does not respond within the timeout (P0-11)', async () => {
+    // fetch that only ever settles when its signal aborts — i.e. a hung relayer.
+    fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+    )
+
+    const err = await _fetchWithTimeout('http://relayer.test', { method: 'GET' }, undefined, 20)
+      .then(() => null, (e) => e)
+
+    expect(err).toBeInstanceOf(RelayerError)
+    expect(err.code).toBe('RELAYER_BUSY')
+    expect(err.httpStatus).toBe(0)
+  })
+
+  it('rethrows a caller-initiated abort untouched (not a RelayerError) so cancel stays cancel (P0-11)', async () => {
+    const ctrl = new AbortController()
+    fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+    )
+
+    const p = _fetchWithTimeout('http://relayer.test', { method: 'GET' }, ctrl.signal, 10_000)
+      .catch((e) => e)
+    ctrl.abort()
+    const err = await p
+
+    expect(err).not.toBeInstanceOf(RelayerError)
   })
 })

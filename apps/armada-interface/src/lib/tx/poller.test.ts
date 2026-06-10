@@ -83,13 +83,19 @@ describe('pollRelayStatusOnce', () => {
   })
 
   it('propagates the caller-supplied AbortSignal to the underlying fetch', async () => {
+    // P0-11: pollStatus now wraps the signal via fetchWithTimeout (caller ∪ timeout), so the fetch
+    // receives a COMBINED signal rather than the caller's identity — assert the caller's abort
+    // still drives it instead.
     const ctrl = new AbortController()
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'pending' }))
 
     await pollRelayStatusOnce(TX_HASH, ctrl.signal)
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(init.signal).toBe(ctrl.signal)
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(init.signal!.aborted).toBe(false)
+    ctrl.abort()
+    expect(init.signal!.aborted).toBe(true)
   })
 
   it('throws a RelayerError on non-2xx, surfacing the poll loop\'s backoff path', async () => {

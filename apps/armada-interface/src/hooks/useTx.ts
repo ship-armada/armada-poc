@@ -7,7 +7,7 @@ import { ulid } from 'ulid'
 import type { MetaFor, StageFor, TxKind, TxRecord, TxWalletContext } from '@/lib/tx/types'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { putTxIfFresh } from '@/lib/tx/storage'
-import { cancelTx, executeTx } from '@/lib/tx/executor'
+import { cancelTx, executeTx, retryTx } from '@/lib/tx/executor'
 import { txByIdAtom, upsertTxAtom } from '@/state/tx'
 import { activeRailgunWalletIdAtom, evmAddressAtom } from '@/state/wallet'
 import { getNetworkConfig } from '@/config/network'
@@ -21,8 +21,12 @@ export interface UseTxResult<K extends TxKind> {
   record: TxRecord<K> | undefined
   /** Submit a new tx. Generates the id, persists the initial record, dispatches to the executor (Bundle 3). */
   submit: (meta: MetaFor<K>) => Promise<string>
-  /** Retry from a retryable stage. Dispatches the executor again with the existing record id. */
-  retry: () => Promise<void>
+  /**
+   * Retry from a retryable stage via the executor's `retryTx` (marks the record `retrying` and
+   * re-dispatches). Returns true if the retry was accepted, false if refused (no record or the
+   * stage isn't retryable) so callers don't flip a modal to its progress step on a no-op.
+   */
+  retry: () => Promise<boolean>
   /** Cancel polling for this record. Does not roll back on-chain state. */
   cancel: () => void
 }
@@ -79,10 +83,11 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
     return newId
   }, [opts.kind, upsert, evmAddress, activeWalletId])
 
-  const retry = useCallback(async () => {
-    if (!record) throw new Error('useTx.retry: no record')
-    // Re-dispatch — the engine picks up from the current retryable stage.
-    executeTx(record.id)
+  const retry = useCallback(async (): Promise<boolean> => {
+    if (!record) return false
+    // Delegate to the executor's retryTx — it enforces canRetryTx + markRetrying so the chain
+    // loop actually re-enters the stage (a bare executeTx on a `failed` record just breaks).
+    return retryTx(record.id)
   }, [record])
 
   const cancel = useCallback(() => {

@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { cancelTx, executeTx, registerHandler, startEngine, type StageHandler } from './executor'
+import { cancelTx, executeTx, registerHandler, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
 import { tabVisibleAtom } from '@/state/visibility'
@@ -187,5 +187,49 @@ describe('expiry guard (P0-5)', () => {
     expect(after?.artifacts.error?.code).toBe('TX_REVERTED')
     expect(after?.artifacts.error?.message).toBe('reverted on chain')
     expect(after?.updatedSeq).toBe(2)
+  })
+})
+
+describe('retryTx (P0-4)', () => {
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    // Park the chain at the visibility gate so the (module-registered) handler doesn't run and
+    // mutate the record out from under the synchronous assertions below.
+    store.set(tabVisibleAtom, false)
+    await cacheClear('txHistory')
+    clearKeyManager()
+    unlockForTest()
+  })
+
+  it('accepts a retry from a retryable failed stage and marks the record retrying', () => {
+    const store = getDefaultStore()
+    // shield's retryableStages = ['submit-relayer'].
+    const rec = makeRecord({ id: 'retry-ok', executionState: 'failed', stage: 'submit-relayer', updatedSeq: 4 })
+    store.set(upsertTxAtom, rec)
+
+    const accepted = retryTx('retry-ok')
+
+    expect(accepted).toBe(true)
+    const after = store.get(txListAtom).find(t => t.id === 'retry-ok')
+    expect(after?.executionState).toBe('retrying')
+    expect(after?.updatedSeq).toBe(5)
+  })
+
+  it('refuses a retry from a non-retryable stage and leaves the record failed', () => {
+    const store = getDefaultStore()
+    const rec = makeRecord({ id: 'retry-no', executionState: 'failed', stage: 'build-proof', updatedSeq: 4 })
+    store.set(upsertTxAtom, rec)
+
+    const accepted = retryTx('retry-no')
+
+    expect(accepted).toBe(false)
+    const after = store.get(txListAtom).find(t => t.id === 'retry-no')
+    expect(after?.executionState).toBe('failed')
+    expect(after?.updatedSeq).toBe(4)
+  })
+
+  it('refuses a retry for an unknown id', () => {
+    expect(retryTx('does-not-exist')).toBe(false)
   })
 })

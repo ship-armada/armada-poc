@@ -68,8 +68,14 @@ export async function putTxIfFresh(record: TxRecord): Promise<boolean> {
       // Terminal-state write guard (mirrors state/tx.ts::upsertTxAtom): refuse any write that
       // would move a settled record back to a non-terminal state, regardless of updatedSeq, so a
       // late poller/progress write can't resurrect a cancelled/failed/expired record on disk.
-      // Terminal→terminal is allowed (history-recovery upgrade path). (P0-3 WS1.2a)
-      if (existing && isTerminalState(existing.executionState) && !isTerminalState(record.executionState)) {
+      // Exceptions: terminal→terminal (history-recovery upgrade path) and terminal→`retrying` (an
+      // intentional retry). Stale writes only ever produce `active`/`waiting`, never `retrying`. (P0-3)
+      if (
+        existing
+        && isTerminalState(existing.executionState)
+        && !isTerminalState(record.executionState)
+        && record.executionState !== 'retrying'
+      ) {
         trackError('tx.storage.terminal-write', new Error('terminal→non-terminal'), {
           scope: 'tx.storage',
           message: `refused terminal→non-terminal write for ${record.id}`,

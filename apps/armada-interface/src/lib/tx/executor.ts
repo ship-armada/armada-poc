@@ -148,10 +148,14 @@ export function canRetryTx(record: TxRecord): boolean {
 }
 
 /**
- * Mark the record as retrying and re-dispatch the handler chain. No-op if the record doesn't
- * exist, the stage isn't retryable, or the record is already in a non-terminal state.
+ * Mark the record as retrying and re-dispatch the handler chain. Returns true if the retry was
+ * accepted (record exists, stage is retryable) and dispatched; false if it was refused — callers
+ * (e.g. `useTx.retry`) use this to avoid flipping a modal to its progress step on a no-op retry.
+ *
+ * Safe re-broadcast: WS1.3 made every submit stage idempotent, so re-entering `submit-relayer`
+ * with a known `sourceTxHash` resumes the receipt/status wait instead of broadcasting again.
  */
-export function retryTx(id: string): void {
+export function retryTx(id: string): boolean {
   const store = getDefaultStore()
   const record = store.get(txListAtom).find(t => t.id === id)
   if (!record) {
@@ -159,19 +163,20 @@ export function retryTx(id: string): void {
       scope: 'tx.executor',
       message: `retryTx called for unknown id ${id}`,
     })
-    return
+    return false
   }
   if (!canRetryTx(record)) {
     trackError('tx.executor.retry', new Error('not retryable'), {
       scope: 'tx.executor',
       message: `retry rejected: state=${record.executionState} stage=${record.stage} kind=${record.kind}`,
     })
-    return
+    return false
   }
   const retried = markRetrying(record)
   store.set(upsertTxAtom, retried)
   void putTxIfFresh(retried)
   executeTx(id)
+  return true
 }
 
 /**

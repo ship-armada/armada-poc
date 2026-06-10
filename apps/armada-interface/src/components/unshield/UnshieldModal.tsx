@@ -292,13 +292,14 @@ export function UnshieldModal() {
                   setStep('review')
                 }
               : () => {
-                  // Move the UI back to the progress step BEFORE calling retry — otherwise the
-                  // executor re-dispatches but the local `step` stays at 'error' so the user sees
-                  // nothing happen. The effect that watches executionState only transitions on
-                  // terminal states (completed/failed/expired), not back out of them.
+                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                  // the user on the error step with the honest error + explorer link, not flip to a
+                  // stuck spinner — that was the P0-4 no-op bug.
                   setErrorAtStep(undefined)
-                  setStep('progress')
-                  void activeTx?.retry()
+                  void activeTx?.retry()?.then((accepted) => {
+                    if (accepted) setStep('progress')
+                  })
                 }
           }
         />

@@ -74,8 +74,15 @@ export const upsertTxAtom = atom(null, (get, set, record: TxRecord) => {
   // regardless of updatedSeq. A cancel/dismiss writes the terminal record with a fresh seq, but
   // a poller or proof-progress writer holding a stale in-flight reference can still bump its own
   // seq higher and would otherwise flip `cancelled`/`failed`/`expired` back to `active`/`waiting`.
-  // Terminal→terminal is allowed (the history-recovery upgrade path; see lib/tx/CLAUDE.md). (P0-3)
-  if (existing && isTerminalState(existing.executionState) && !isTerminalState(record.executionState)) {
+  // Two exceptions: terminal→terminal (the history-recovery upgrade path; see lib/tx/CLAUDE.md),
+  // and terminal→`retrying` (an intentional `retryTx`/`markRetrying`). Stale poller/progress
+  // writes only ever produce `active`/`waiting`, never `retrying`, so the carve-out is safe. (P0-3)
+  if (
+    existing
+    && isTerminalState(existing.executionState)
+    && !isTerminalState(record.executionState)
+    && record.executionState !== 'retrying'
+  ) {
     return
   }
   if (existing && existing.updatedSeq >= record.updatedSeq) {

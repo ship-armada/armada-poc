@@ -114,6 +114,13 @@ describe('upsertTxAtom terminal-write guard (P0-3 WS1.2a)', () => {
     expect(store.get(txListAtom).find(t => t.id === 'a')?.executionState).toBe('completed')
   })
 
+  it('allows a terminal→retrying transition (intentional retry, the one carve-out)', () => {
+    const store = createStore()
+    store.set(txListAtom, [withSeq('a', 'rg-1', 'failed', 5)])
+    store.set(upsertTxAtom, withSeq('a', 'rg-1', 'retrying', 6))
+    expect(store.get(txListAtom).find(t => t.id === 'a')?.executionState).toBe('retrying')
+  })
+
   it('still allows normal non-terminal progression', () => {
     const store = createStore()
     store.set(txListAtom, [withSeq('a', 'rg-1', 'active', 1)])

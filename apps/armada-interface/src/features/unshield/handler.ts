@@ -21,7 +21,7 @@ import {
 import { submitRelay, RelayerError } from '@/lib/relayer'
 import { advance, markFailed } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
-import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import { track } from '@/lib/telemetry'
@@ -237,8 +237,8 @@ async function runSubmitAndConfirm(
   // waiting) and the full StatusResponse once confirmed/failed. The generic poll loop handles
   // jittered backoff + abort propagation; we just branch on the returned status.
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(txHash, signal),
-    { signal: ctx.signal },
+    (signal) => pollRelayStatusOnce(txHash, signal, hubChainId),
+    { signal: ctx.signal, timeoutMs: pollBudgetMs(record) },
   )
 
   if (pollResult.status === 'aborted') throw new Error('cancelled')

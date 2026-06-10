@@ -24,7 +24,7 @@ import {
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
-import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
@@ -448,8 +448,8 @@ async function runGaslessSubmit(
   }
 
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(txHash, signal),
-    { signal: ctx.signal },
+    (signal) => pollRelayStatusOnce(txHash, signal, record.meta.fromChainId),
+    { signal: ctx.signal, timeoutMs: pollBudgetMs(record) },
   )
 
   if (pollResult.status === 'aborted') throw new Error('cancelled')

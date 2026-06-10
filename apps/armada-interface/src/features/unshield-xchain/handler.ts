@@ -47,7 +47,7 @@ type EthersScanLog = {
 }
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
-import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { scanCctpDeliveryWindow } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -358,8 +358,8 @@ async function runSubmitAndBurn(
   // Poll the relayer's /status until terminal. Same shape as unshield-local — the generic poll
   // loop handles jittered backoff + abort propagation.
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(txHash, signal),
-    { signal: ctx.signal },
+    (signal) => pollRelayStatusOnce(txHash, signal, hubChainId),
+    { signal: ctx.signal, timeoutMs: pollBudgetMs(record) },
   )
 
   if (pollResult.status === 'aborted') throw new Error('cancelled')

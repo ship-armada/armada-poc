@@ -4,7 +4,6 @@
 import { hkdf } from '@noble/hashes/hkdf'
 import { expand as hkdfExpand } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha2'
-import { pbkdf2 } from '@noble/hashes/pbkdf2'
 import { gcm } from '@noble/ciphers/aes'
 import { entropyToMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english'
@@ -245,6 +244,15 @@ export interface BackupPayload {
 }
 
 export const PBKDF2_ITERATIONS_V1 = 600_000
+
+/**
+ * Hard cap on PBKDF2 iterations accepted from an untrusted backup blob. A malicious or corrupt
+ * file could otherwise specify an astronomically large count (e.g. 2^53) that pins the browser
+ * inside `deriveBits` for minutes — a denial-of-service on the unlock path. 10M is ~16× the
+ * spec-mandated 600k, leaving headroom for a future hardening bump while still bounding worst-case
+ * unlock latency to a few seconds.
+ */
+const PBKDF2_ITERATIONS_MAX = 10_000_000
 const PAYLOAD_BYTES = 40 // 32 rootSecret + 8 creationBlock(uint64 BE)
 
 export interface EncryptOptions {
@@ -291,11 +299,11 @@ function decodePayload(plain: Uint8Array): BackupPayload {
  * Encrypt a backup payload with a user-chosen passphrase. Returns a v2 blob suitable for
  * serializing to JSON and saving to disk.
  */
-export function encryptBackup(
+export async function encryptBackup(
   payload: BackupPayload,
   passphrase: string,
   options?: EncryptOptions,
-): BackupBlob {
+): Promise<BackupBlob> {
   if (!passphrase || passphrase.length < 8) {
     throw new Error('encryptBackup: passphrase must be at least 8 characters')
   }
@@ -305,7 +313,7 @@ export function encryptBackup(
   }
   const salt = randomBytes(32)
   const nonce = randomBytes(12)
-  const key = deriveBackupKey(passphrase, salt, iterations)
+  const key = await deriveBackupKey(passphrase, salt, iterations)
   const plain = encodePayload(payload)
   const cipher = gcm(key, nonce)
   // @noble/ciphers gcm: tag is appended to the ciphertext; we split it for spec compliance.
@@ -333,7 +341,7 @@ export function encryptBackup(
  * `undefined` when calling into the SDK, producing a slow full-genesis rescan. This preserves
  * existing v1 backups as a "correct but slow" restore path rather than rejecting outright.
  */
-export function decryptBackup(blob: BackupBlob, passphrase: string): BackupPayload {
+export async function decryptBackup(blob: BackupBlob, passphrase: string): Promise<BackupPayload> {
   if (blob.format !== 'armada-backup-v1' && blob.format !== 'armada-backup-v2') {
     throw new Error(`decryptBackup: unsupported format "${blob.format}"`)
   }
@@ -350,7 +358,7 @@ export function decryptBackup(blob: BackupBlob, passphrase: string): BackupPaylo
   if (tag.length !== 16) throw new Error('decryptBackup: tag must be 16 bytes')
   if (nonce.length !== 12) throw new Error('decryptBackup: nonce must be 12 bytes')
 
-  const key = deriveBackupKey(passphrase, salt, blob.kdf_params.iterations)
+  const key = await deriveBackupKey(passphrase, salt, blob.kdf_params.iterations)
   const combined = new Uint8Array(ciphertext.length + tag.length)
   combined.set(ciphertext, 0)
   combined.set(tag, ciphertext.length)
@@ -459,6 +467,11 @@ export function parseBackupBlob(json: unknown): BackupBlob {
   if (o.kdf === 'pbkdf2-sha256' && (typeof iterations !== 'number' || iterations < 1)) {
     throw new Error('parseBackupBlob: pbkdf2 iterations missing or invalid')
   }
+  // Cap iterations from an untrusted file so a malicious/corrupt blob can't pin the unlock path
+  // inside PBKDF2 for minutes (DoS). See PBKDF2_ITERATIONS_MAX.
+  if (o.kdf === 'pbkdf2-sha256' && (iterations as number) > PBKDF2_ITERATIONS_MAX) {
+    throw new Error(`parseBackupBlob: pbkdf2 iterations exceeds the safe maximum (${PBKDF2_ITERATIONS_MAX})`)
+  }
   // We only construct the strict Phase 1 shape; argon2id/scrypt parsing lands in Phase 2.
   if (o.kdf !== 'pbkdf2-sha256') {
     throw new Error(`parseBackupBlob: Phase 1 SDK cannot decrypt ${o.kdf} backups`)
@@ -475,8 +488,31 @@ export function parseBackupBlob(json: unknown): BackupBlob {
   }
 }
 
-function deriveBackupKey(passphrase: string, salt: Uint8Array, iterations = PBKDF2_ITERATIONS_V1): Uint8Array {
-  return pbkdf2(sha256, utf8(passphrase), salt, { c: iterations, dkLen: 32 })
+/**
+ * Derive the 32-byte AES key from the passphrase via PBKDF2-SHA-256.
+ *
+ * Uses the platform WebCrypto `subtle.deriveBits` rather than @noble's synchronous `pbkdf2` so the
+ * 600k-iteration stretch runs off the main thread instead of janking the UI for hundreds of ms
+ * during backup encrypt/decrypt (P1-20). The output is byte-identical to the previous @noble
+ * implementation for the same (passphrase, salt, iterations) — a frozen invariant locked by
+ * kdf.test.ts so the backup format stays interoperable. Algorithm and params are unchanged; only
+ * the implementation moved.
+ */
+async function deriveBackupKey(
+  passphrase: string,
+  salt: Uint8Array,
+  iterations = PBKDF2_ITERATIONS_V1,
+): Promise<Uint8Array> {
+  // Copy into fresh ArrayBuffer-backed views: WebCrypto's `BufferSource` typing requires an
+  // ArrayBuffer (not the ArrayBufferLike the @noble/TextEncoder helpers return, which TS widens
+  // to include SharedArrayBuffer). The copies are tiny (passphrase + 32-byte salt).
+  const keyMaterial = await crypto.subtle.importKey('raw', new Uint8Array(utf8(passphrase)), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new Uint8Array(salt), iterations },
+    keyMaterial,
+    256, // 32-byte key, expressed in bits
+  )
+  return new Uint8Array(bits)
 }
 
 // ============================================================================

@@ -248,7 +248,7 @@ export function useShieldedWallet() {
     try {
       const rootSecret = kmGetRootSecret() // throws when locked
       const creationBlock = kmGetCreationBlock() ?? 0
-      const blob = encryptBackup({ rootSecret, creationBlock }, passphrase)
+      const blob = await encryptBackup({ rootSecret, creationBlock }, passphrase)
       if (activeId) track('shielded.exported', { walletId: activeId })
       return blob
     } catch (err) {

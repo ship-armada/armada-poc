@@ -76,7 +76,7 @@ beforeEach(() => {
     }
   })
   mockExportBackup.mockImplementation(async (passphrase: string) =>
-    encryptBackup({ rootSecret: FIXED_ROOT, creationBlock: 0 }, passphrase, { iterations: 1000 }),
+    await encryptBackup({ rootSecret: FIXED_ROOT, creationBlock: 0 }, passphrase, { iterations: 1000 }),
   )
 })
 
@@ -165,7 +165,7 @@ describe.skip('<OnboardingFlow>', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Continue$/ })) // backup → confirm
 
     // ConfirmBackupStep: upload an equivalent encrypted file + same passphrase.
-    const blob = encryptBackup({ rootSecret: FIXED_ROOT, creationBlock: 0 }, passphrase, { iterations: 1000 })
+    const blob = await encryptBackup({ rootSecret: FIXED_ROOT, creationBlock: 0 }, passphrase, { iterations: 1000 })
     const file = new File([JSON.stringify(blob)], 'armada-backup.json', { type: 'application/json' })
     fireEvent.change(screen.getByLabelText('Backup file'), { target: { files: [file] } })
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: passphrase } })
@@ -213,7 +213,7 @@ describe.skip('<OnboardingFlow>', () => {
 
     // Upload a backup for a DIFFERENT root_secret — checksum mismatch.
     const wrongRoot = new Uint8Array(32).fill(42)
-    const wrongBlob = encryptBackup({ rootSecret: wrongRoot, creationBlock: 0 }, 'pw-here-strong', { iterations: 1000 })
+    const wrongBlob = await encryptBackup({ rootSecret: wrongRoot, creationBlock: 0 }, 'pw-here-strong', { iterations: 1000 })
     const wrongFile = new File([JSON.stringify(wrongBlob)], 'wrong.json', { type: 'application/json' })
     fireEvent.change(screen.getByLabelText('Backup file'), { target: { files: [wrongFile] } })
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'pw-here-strong' } })

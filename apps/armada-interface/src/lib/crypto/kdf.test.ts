@@ -205,49 +205,49 @@ describe('assertEntropyFloor (IC-2)', () => {
 // slower than real V8, so these tests routinely hit the default 5s timeout. Bump per-describe;
 // in production each backup encrypt/decrypt runs once per user action.
 describe('backup encryption round-trip (v2)', { timeout: 30_000 }, () => {
-  it('encrypts and decrypts a payload (rootSecret + creationBlock) with the same passphrase', () => {
+  it('encrypts and decrypts a payload (rootSecret + creationBlock) with the same passphrase', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
     const creationBlock = 12_345_678
-    const blob = encryptBackup({ rootSecret, creationBlock }, 'correct-horse', TEST_OPTS)
-    const recovered = decryptBackup(blob, 'correct-horse')
+    const blob = await encryptBackup({ rootSecret, creationBlock }, 'correct-horse', TEST_OPTS)
+    const recovered = await decryptBackup(blob, 'correct-horse')
     expect(recovered.rootSecret).toEqual(rootSecret)
     expect(recovered.creationBlock).toBe(creationBlock)
   })
 
-  it('round-trips a creationBlock of 0 (the "unknown" sentinel for paste-restored exports)', () => {
+  it('round-trips a creationBlock of 0 (the "unknown" sentinel for paste-restored exports)', async () => {
     // WHY: paste-secret restores have no creationBlock available; exportBackup writes 0 in
     // that case to signal "scan from genesis" on the next restore. The encoder must accept 0
     // and the decoder must round-trip it bit-exactly so the unlockFromBackup path can detect
     // the sentinel and pass `undefined` to the SDK.
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 0 }, 'right-passphrase', TEST_OPTS)
-    const recovered = decryptBackup(blob, 'right-passphrase')
+    const blob = await encryptBackup({ rootSecret, creationBlock: 0 }, 'right-passphrase', TEST_OPTS)
+    const recovered = await decryptBackup(blob, 'right-passphrase')
     expect(recovered.creationBlock).toBe(0)
   })
 
-  it('round-trips a large creationBlock near Number.MAX_SAFE_INTEGER', () => {
+  it('round-trips a large creationBlock near Number.MAX_SAFE_INTEGER', async () => {
     // WHY: pin the 8-byte uint64-BE encoding. A naive 32-bit encoding would silently truncate
     // any block past 2^32, leaving the restore path with a wrong scan-start position. Sepolia
     // is well under 2^32 today but future-proofing is cheap.
     const rootSecret = deriveRootSecret(fixedSignature())
     const creationBlock = Number.MAX_SAFE_INTEGER - 1
-    const blob = encryptBackup({ rootSecret, creationBlock }, 'right-passphrase', TEST_OPTS)
-    const recovered = decryptBackup(blob, 'right-passphrase')
+    const blob = await encryptBackup({ rootSecret, creationBlock }, 'right-passphrase', TEST_OPTS)
+    const recovered = await decryptBackup(blob, 'right-passphrase')
     expect(recovered.creationBlock).toBe(creationBlock)
   })
 
-  it('rejects negative or non-integer creationBlock at encrypt', () => {
+  it('rejects negative or non-integer creationBlock at encrypt', async () => {
     // WHY: BigInt uint64 has no signed slot, and fractional blocks make no sense. Loud failure
     // at encrypt-time means a bug elsewhere (e.g. accidental Date.now() in a creationBlock
     // slot) doesn't silently land in a backup that then fails to restore correctly.
     const rootSecret = deriveRootSecret(fixedSignature())
-    expect(() => encryptBackup({ rootSecret, creationBlock: -1 }, 'pw-here-now', TEST_OPTS)).toThrow(/non-negative integer/)
-    expect(() => encryptBackup({ rootSecret, creationBlock: 1.5 }, 'pw-here-now', TEST_OPTS)).toThrow(/non-negative integer/)
+    await expect(encryptBackup({ rootSecret, creationBlock: -1 }, 'pw-here-now', TEST_OPTS)).rejects.toThrow(/non-negative integer/)
+    await expect(encryptBackup({ rootSecret, creationBlock: 1.5 }, 'pw-here-now', TEST_OPTS)).rejects.toThrow(/non-negative integer/)
   })
 
-  it('produces the v2 spec backup format shape', () => {
+  it('produces the v2 spec backup format shape', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 100 }, 'passphrase-here', TEST_OPTS)
+    const blob = await encryptBackup({ rootSecret, creationBlock: 100 }, 'passphrase-here', TEST_OPTS)
     expect(blob.format).toBe('armada-backup-v2')
     expect(blob.kdf).toBe('pbkdf2-sha256')
     expect(blob.kdf_params.iterations).toBeGreaterThanOrEqual(1) // test uses TEST_OPTS = 1000
@@ -259,50 +259,88 @@ describe('backup encryption round-trip (v2)', { timeout: 30_000 }, () => {
     expect(blob.tag).toMatch(/^[0-9a-f]{32}$/) // 16 bytes
   })
 
-  it('defaults to PBKDF2_ITERATIONS_V1 (600k) when options is omitted — spec-mandated', () => {
+  it('defaults to PBKDF2_ITERATIONS_V1 (600k) when options is omitted — spec-mandated', async () => {
     // Slow test by design: this is the only spot we exercise the production iteration count.
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 0 }, 'production-defaults')
+    const blob = await encryptBackup({ rootSecret, creationBlock: 0 }, 'production-defaults')
     expect(blob.kdf_params.iterations).toBe(PBKDF2_ITERATIONS_V1)
     expect(PBKDF2_ITERATIONS_V1).toBe(600_000)
   })
 
-  it('fails decryption with the wrong passphrase', () => {
+  it('WebCrypto PBKDF2 is byte-identical to @noble — decrypts a blob whose key was derived by @noble', async () => {
+    // WHY (P1-20): the implementation moved from @noble's synchronous pbkdf2 to WebCrypto
+    // `subtle.deriveBits` to keep the 600k-iteration stretch off the main thread. The derived key
+    // MUST stay byte-identical or every existing backup becomes undecryptable and the format
+    // forks. We hand-build a v2 blob using a key derived by @noble (the prior implementation),
+    // then decrypt it through the production (WebCrypto) path. A successful AES-GCM auth + correct
+    // payload proves the two implementations produce the same 32 bytes for the same inputs.
+    const { gcm } = await import('@noble/ciphers/aes')
+    const { pbkdf2 } = await import('@noble/hashes/pbkdf2')
+    const { sha256 } = await import('@noble/hashes/sha2')
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 42 }, 'right-passphrase', TEST_OPTS)
-    expect(() => decryptBackup(blob, 'wrong-passphrase')).toThrow(/authentication failed/)
+    const passphrase = 'byte-identical-pw'
+    const salt = new Uint8Array(32).fill(3)
+    const nonce = new Uint8Array(12).fill(5)
+    const iterations = 1000
+    // Encode the v2 payload exactly as encryptBackup does: 32-byte rootSecret + uint64-BE block.
+    const creationBlock = 987_654
+    const plain = new Uint8Array(40)
+    plain.set(rootSecret, 0)
+    new DataView(plain.buffer).setBigUint64(32, BigInt(creationBlock), false)
+    const nobleKey = pbkdf2(sha256, new TextEncoder().encode(passphrase), salt, { c: iterations, dkLen: 32 })
+    const combined = gcm(nobleKey, nonce).encrypt(plain) // ciphertext(40) ‖ tag(16)
+    const toHex = (b: Uint8Array) => Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('')
+    const blob: BackupBlob = {
+      format: 'armada-backup-v2',
+      kdf: 'pbkdf2-sha256',
+      kdf_params: { iterations },
+      kdf_salt: toHex(salt),
+      nonce: toHex(nonce),
+      cipher: 'aes-256-gcm',
+      ciphertext: toHex(combined.slice(0, 40)),
+      tag: toHex(combined.slice(40)),
+    }
+    const recovered = await decryptBackup(blob, passphrase)
+    expect(recovered.rootSecret).toEqual(rootSecret)
+    expect(recovered.creationBlock).toBe(creationBlock)
   })
 
-  it('produces different ciphertexts for repeated encryptions (random salt + nonce)', () => {
+  it('fails decryption with the wrong passphrase', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    const a = encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
-    const b = encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
+    const blob = await encryptBackup({ rootSecret, creationBlock: 42 }, 'right-passphrase', TEST_OPTS)
+    await expect(decryptBackup(blob, 'wrong-passphrase')).rejects.toThrow(/authentication failed/)
+  })
+
+  it('produces different ciphertexts for repeated encryptions (random salt + nonce)', async () => {
+    const rootSecret = deriveRootSecret(fixedSignature())
+    const a = await encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
+    const b = await encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
     expect(a.kdf_salt).not.toBe(b.kdf_salt)
     expect(a.nonce).not.toBe(b.nonce)
     expect(a.ciphertext).not.toBe(b.ciphertext)
     // But both decrypt to the same payload
-    expect(decryptBackup(a, 'pw-here-now').rootSecret).toEqual(rootSecret)
-    expect(decryptBackup(b, 'pw-here-now').rootSecret).toEqual(rootSecret)
+    expect((await decryptBackup(a, 'pw-here-now')).rootSecret).toEqual(rootSecret)
+    expect((await decryptBackup(b, 'pw-here-now')).rootSecret).toEqual(rootSecret)
   })
 
-  it('rejects short passphrases on encrypt', () => {
+  it('rejects short passphrases on encrypt', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    expect(() => encryptBackup({ rootSecret, creationBlock: 0 }, 'short')).toThrow(/at least 8/)
+    await expect(encryptBackup({ rootSecret, creationBlock: 0 }, 'short')).rejects.toThrow(/at least 8/)
   })
 
-  it('rejects a tampered ciphertext (AES-GCM auth tag)', () => {
+  it('rejects a tampered ciphertext (AES-GCM auth tag)', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 7 }, 'right-here', TEST_OPTS)
+    const blob = await encryptBackup({ rootSecret, creationBlock: 7 }, 'right-here', TEST_OPTS)
     // Flip a bit in the ciphertext
     const tampered: BackupBlob = { ...blob, ciphertext: '00' + blob.ciphertext.slice(2) }
-    expect(() => decryptBackup(tampered, 'right-here')).toThrow(/authentication failed/)
+    await expect(decryptBackup(tampered, 'right-here')).rejects.toThrow(/authentication failed/)
   })
 
-  it('rejects a tampered auth tag', () => {
+  it('rejects a tampered auth tag', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 7 }, 'right-here', TEST_OPTS)
+    const blob = await encryptBackup({ rootSecret, creationBlock: 7 }, 'right-here', TEST_OPTS)
     const tampered: BackupBlob = { ...blob, tag: '00' + blob.tag.slice(2) }
-    expect(() => decryptBackup(tampered, 'right-here')).toThrow(/authentication failed/)
+    await expect(decryptBackup(tampered, 'right-here')).rejects.toThrow(/authentication failed/)
   })
 
   it('decrypts a v1 backup with synthesized creationBlock = 0', async () => {
@@ -332,20 +370,20 @@ describe('backup encryption round-trip (v2)', { timeout: 30_000 }, () => {
       ciphertext: Array.from(combined.slice(0, 32)).map((b) => b.toString(16).padStart(2, '0')).join(''),
       tag: Array.from(combined.slice(32)).map((b) => b.toString(16).padStart(2, '0')).join(''),
     }
-    const payload = decryptBackup(v1Blob, passphrase)
+    const payload = await decryptBackup(v1Blob, passphrase)
     expect(payload.rootSecret).toEqual(rootSecret)
     expect(payload.creationBlock).toBe(0)
   })
 
-  it('rejects a v1 blob whose decrypted payload is not 32 bytes', () => {
+  it('rejects a v1 blob whose decrypted payload is not 32 bytes', async () => {
     // WHY: belt-and-suspenders length check — a corrupted v1 blob that decrypts to a longer
     // payload would otherwise be mistakenly accepted with a truncated rootSecret. Loud failure
     // makes the corruption obvious.
     const rootSecret = deriveRootSecret(fixedSignature())
     // Encrypt as v2 (40 bytes) but flag it as v1 — synthetic corruption.
-    const v2 = encryptBackup({ rootSecret, creationBlock: 0 }, 'right-here', TEST_OPTS)
+    const v2 = await encryptBackup({ rootSecret, creationBlock: 0 }, 'right-here', TEST_OPTS)
     const mislabeled: BackupBlob = { ...v2, format: 'armada-backup-v1' }
-    expect(() => decryptBackup(mislabeled, 'right-here')).toThrow(/v1 expected 32-byte payload/)
+    await expect(decryptBackup(mislabeled, 'right-here')).rejects.toThrow(/v1 expected 32-byte payload/)
   })
 })
 
@@ -358,9 +396,9 @@ describe('parseBackupJsonText', () => {
     expect(() => parseBackupJsonText('   ')).toThrow(/empty/i)
   })
 
-  it('unwraps a one-element JSON array (common duplicate-download shape)', () => {
+  it('unwraps a one-element JSON array (common duplicate-download shape)', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 42 }, 'pw-here-now', TEST_OPTS)
+    const blob = await encryptBackup({ rootSecret, creationBlock: 42 }, 'pw-here-now', TEST_OPTS)
     const wrapped = JSON.stringify([JSON.parse(JSON.stringify(blob))])
     const parsed = parseBackupJsonText(wrapped)
     expect(parsed.format).toBe('armada-backup-v2')
@@ -368,18 +406,49 @@ describe('parseBackupJsonText', () => {
 })
 
 describe('parseBackupBlob', { timeout: 30_000 }, () => {
-  it('parses a valid pbkdf2 v2 blob', () => {
+  it('parses a valid pbkdf2 v2 blob', async () => {
     const rootSecret = deriveRootSecret(fixedSignature())
-    const blob = encryptBackup({ rootSecret, creationBlock: 100 }, 'right-here', TEST_OPTS)
+    const blob = await encryptBackup({ rootSecret, creationBlock: 100 }, 'right-here', TEST_OPTS)
     const json = JSON.parse(JSON.stringify(blob))
     const parsed = parseBackupBlob(json)
     expect(parsed).toEqual(blob)
   })
 
-  it('rejects unknown top-level fields (per spec interop contract)', () => {
-    const blob = encryptBackup({ rootSecret: deriveRootSecret(fixedSignature()), creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
+  it('rejects unknown top-level fields (per spec interop contract)', async () => {
+    const blob = await encryptBackup({ rootSecret: deriveRootSecret(fixedSignature()), creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
     const extended = { ...blob, extra: 'field' }
     expect(() => parseBackupBlob(extended)).toThrow(/unknown top-level field/)
+  })
+
+  it('rejects pbkdf2 iterations above the safe maximum (DoS guard)', () => {
+    // WHY (WS6/P1-20): a malicious or corrupt backup file could specify an astronomically large
+    // iteration count (e.g. 2^53) that pins the unlock path inside PBKDF2 for minutes. The parser
+    // is the untrusted-input gate, so the cap lives here. 10,000,001 is one past the ceiling.
+    const overCap = {
+      format: 'armada-backup-v2',
+      kdf: 'pbkdf2-sha256',
+      kdf_params: { iterations: 10_000_001 },
+      kdf_salt: 'aa'.repeat(32),
+      nonce: 'bb'.repeat(12),
+      cipher: 'aes-256-gcm',
+      ciphertext: 'cc'.repeat(40),
+      tag: 'dd'.repeat(16),
+    }
+    expect(() => parseBackupBlob(overCap)).toThrow(/exceeds the safe maximum/)
+  })
+
+  it('accepts pbkdf2 iterations exactly at the safe maximum', () => {
+    const atCap = {
+      format: 'armada-backup-v2',
+      kdf: 'pbkdf2-sha256',
+      kdf_params: { iterations: 10_000_000 },
+      kdf_salt: 'aa'.repeat(32),
+      nonce: 'bb'.repeat(12),
+      cipher: 'aes-256-gcm',
+      ciphertext: 'cc'.repeat(40),
+      tag: 'dd'.repeat(16),
+    }
+    expect(parseBackupBlob(atCap).kdf_params.iterations).toBe(10_000_000)
   })
 
   it('rejects unknown formats', () => {

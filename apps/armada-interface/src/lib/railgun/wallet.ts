@@ -539,7 +539,7 @@ export async function unlockFromBackup(
   passphrase: string,
   opts: Omit<UnlockOptions, 'creationBlock'> = {},
 ): Promise<ShieldedWalletState> {
-  const { rootSecret, creationBlock } = decryptBackup(blob, passphrase)
+  const { rootSecret, creationBlock } = await decryptBackup(blob, passphrase)
   return unlockFromRootSecret(rootSecret, {
     ...opts,
     creationBlock: creationBlock > 0 ? creationBlock : undefined,

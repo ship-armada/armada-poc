@@ -44,7 +44,7 @@ export function ConfirmBackupStep({ expectedChecksum, onBack, onConfirmed }: Con
     try {
       const text = await file.text()
       const blob = parseBackupJsonText(text)
-      const payload = decryptBackup(blob, passphrase)
+      const payload = await decryptBackup(blob, passphrase)
       rootSecret = payload.rootSecret
       const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
       if (checksum !== expectedChecksum) {

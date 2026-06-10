@@ -475,24 +475,19 @@ export interface TxRecord<K extends TxKind = TxKind> {
 
 /* Lifecycle metadata — drives steppers, retry buttons, expiry rules. */
 
-export interface TxRetryPolicy {
-  /** Maximum total retry attempts across the lifecycle's retryable stages. */
-  maxAttempts: number
-  /** Base backoff between retries (ms). Pollers add jitter on top. */
-  backoffMs: number
-}
-
 export interface TxLifecycle<K extends TxKind = TxKind> {
   kind: K
   stages: ReadonlyArray<StageFor<K>>
   /** The stage that means "fully successful". */
   terminalSuccess: StageFor<K>
-  /** Stages from which user can retry without restarting from scratch. */
+  /**
+   * Stages from which the user can MANUALLY retry (via ErrorStep's "Try Again" → useTx.retry)
+   * without restarting from scratch. There is intentionally NO automatic retry policy: a buggy
+   * auto-resubmit could double-submit a shielded tx and lose funds. Retry is always user-driven.
+   */
   retryableStages: ReadonlyArray<StageFor<K>>
   /** Heuristic durations for ETA UI (milliseconds). */
   estDuration: { p50: number; p90: number }
   /** Hard cap on total lifecycle duration. After this, executionState → expired. */
   maxDurationMs: number
-  /** Retry policy applied within retryableStages. */
-  retry: TxRetryPolicy
 }

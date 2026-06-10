@@ -3,10 +3,6 @@
 
 import type { TxKind, TxLifecycle } from './types'
 
-/* Standard retry policies — shared across kinds with similar shapes. */
-const SHORT_RETRY = { maxAttempts: 3, backoffMs: 5_000 } as const
-const LONG_RETRY = { maxAttempts: 5, backoffMs: 10_000 } as const
-
 /* Standard duration caps. */
 const SHORT_CAP = 10 * 60_000   // 10 min — same-chain operations
 const YIELD_CAP = 15 * 60_000   // 15 min — yield ops can wait for the next block batch
@@ -19,7 +15,6 @@ const shield: TxLifecycle<'shield'> = {
   retryableStages: ['submit-relayer'],
   estDuration: { p50: 8_000, p90: 25_000 },
   maxDurationMs: SHORT_CAP,
-  retry: SHORT_RETRY,
 }
 
 const unshieldLocal: TxLifecycle<'unshield-local'> = {
@@ -29,7 +24,6 @@ const unshieldLocal: TxLifecycle<'unshield-local'> = {
   retryableStages: ['submit-relayer'],
   estDuration: { p50: 8_000, p90: 25_000 },
   maxDurationMs: SHORT_CAP,
-  retry: SHORT_RETRY,
 }
 
 const unshieldXchain: TxLifecycle<'unshield-xchain'> = {
@@ -47,7 +41,6 @@ const unshieldXchain: TxLifecycle<'unshield-xchain'> = {
   retryableStages: ['submit-relayer', 'iris-attestation-pending'],
   estDuration: { p50: 30_000, p90: 120_000 },
   maxDurationMs: XCHAIN_CAP,
-  retry: LONG_RETRY,
 }
 
 const shieldXchain: TxLifecycle<'shield-xchain'> = {
@@ -66,7 +59,6 @@ const shieldXchain: TxLifecycle<'shield-xchain'> = {
   retryableStages: ['submit-relayer', 'iris-attestation-pending'],
   estDuration: { p50: 30_000, p90: 120_000 },
   maxDurationMs: XCHAIN_CAP,
-  retry: LONG_RETRY,
 }
 
 const transferShielded: TxLifecycle<'transfer-shielded'> = {
@@ -76,14 +68,13 @@ const transferShielded: TxLifecycle<'transfer-shielded'> = {
   retryableStages: ['submit-relayer'],
   estDuration: { p50: 8_000, p90: 25_000 },
   maxDurationMs: SHORT_CAP,
-  retry: SHORT_RETRY,
 }
 
 /**
  * Synthetic received-transfer lifecycle. Single terminal stage — we reconstruct the record from
  * chain only once the commitment is already on the merkle tree, so there's nothing to drive or
- * resume. `maxDurationMs: 0` + empty retry means the executor's resume probe never touches it
- * (records are born `completed`). No retry policy applies.
+ * resume. `maxDurationMs: 0` + empty `retryableStages` means the executor's resume probe never
+ * touches it (records are born `completed`).
  */
 const transferShieldedReceived: TxLifecycle<'transfer-shielded-received'> = {
   kind: 'transfer-shielded-received',
@@ -92,7 +83,6 @@ const transferShieldedReceived: TxLifecycle<'transfer-shielded-received'> = {
   retryableStages: [],
   estDuration: { p50: 0, p90: 0 },
   maxDurationMs: 0,
-  retry: { maxAttempts: 0, backoffMs: 0 },
 }
 
 const yieldDeposit: TxLifecycle<'yield-deposit'> = {
@@ -102,7 +92,6 @@ const yieldDeposit: TxLifecycle<'yield-deposit'> = {
   retryableStages: ['submit-relayer'],
   estDuration: { p50: 10_000, p90: 30_000 },
   maxDurationMs: YIELD_CAP,
-  retry: SHORT_RETRY,
 }
 
 const yieldWithdraw: TxLifecycle<'yield-withdraw'> = {
@@ -112,7 +101,6 @@ const yieldWithdraw: TxLifecycle<'yield-withdraw'> = {
   retryableStages: ['submit-relayer'],
   estDuration: { p50: 10_000, p90: 30_000 },
   maxDurationMs: YIELD_CAP,
-  retry: SHORT_RETRY,
 }
 
 /** Lookup table keyed by TxKind. Use `lifecycleFor(kind)` rather than indexing directly. */

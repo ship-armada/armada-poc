@@ -72,7 +72,7 @@ apps/armada-interface/
     │   │   └── sync.ts               shielded balance sync hooks
     │   └── tx/                       CLAUDE.md (tx lifecycle modeling — see §7)
     │       ├── types.ts              TxRecord, TxKind, TxStage discriminated unions
-    │       ├── lifecycles.ts         per-kind stage definitions + retry/terminal rules
+    │       ├── lifecycles.ts         per-kind stage definitions + terminal/retryable-stage rules
     │       ├── reducer.ts            pure state transitions
     │       ├── storage.ts            IndexedDB persistence + hydration
     │       └── poller.ts             abortable, jittered, backoff-aware
@@ -181,7 +181,7 @@ type TxRecord<K extends TxKind = TxKind> = {
 }
 ```
 
-Each `TxKind` declares its **stage sequence + retry policy + duration cap** in `lib/tx/lifecycles.ts`. Per-kind expiry (reviewer #7) replaces the original global 30 min cap. Example (cross-chain unshield):
+Each `TxKind` declares its **stage sequence + retryable stages + duration cap** in `lib/tx/lifecycles.ts`. Per-kind expiry (reviewer #7) replaces the original global 30 min cap. Retry is MANUAL only — there is deliberately no automatic-retry policy (a buggy auto-resubmit could double-submit a shielded tx and lose funds); `retryableStages` just gates the user-driven "Try Again". Example (cross-chain unshield):
 
 ```ts
 const unshieldXchain: TxLifecycle = {
@@ -195,7 +195,6 @@ const unshieldXchain: TxLifecycle = {
   retryableStages: ['submit-relayer', 'iris-attestation-pending'],
   estDuration: { p50: 30_000, p90: 120_000 },
   maxDurationMs: 60 * 60_000,                                    // xchain: 60 min cap
-  retry: { maxAttempts: 5, backoffMs: 10_000 },
 }
 ```
 

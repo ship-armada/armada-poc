@@ -6,8 +6,8 @@ Transaction lifecycle model. The most important architectural surface in this ap
 
 | File | Purpose |
 |---|---|
-| `types.ts` | `TxKind` discriminated union; per-kind stage unions; `TxRecord<K>` with `executionState` + `stage` + `updatedSeq` + `walletContext`; `TxLifecycle<K>` with `maxDurationMs` + `retry`. |
-| `lifecycles.ts` | One `TxLifecycle` per `TxKind` — stage sequence, terminal-success stage, retryable stages, per-kind expiry cap + retry policy. |
+| `types.ts` | `TxKind` discriminated union; per-kind stage unions; `TxRecord<K>` with `executionState` + `stage` + `updatedSeq` + `walletContext`; `TxLifecycle<K>` with `maxDurationMs` + `retryableStages` (no auto-retry policy). |
+| `lifecycles.ts` | One `TxLifecycle` per `TxKind` — stage sequence, terminal-success stage, retryable stages (for the user-driven "Try Again"), per-kind expiry cap. |
 | `reducer.ts` | Pure transitions: `advance`, `markWaiting`, `markRetrying`, `markFailed`, `markExpired`, `markCancelled`, `shouldResume`. Every transition increments `updatedSeq`. |
 | `storage.ts` | IDB persistence: `putTxIfFresh` (OCC enforced via `updatedSeq`), `putTx` (unconditional, hydration only), `loadAllTx`, `deleteTx`. |
 | `executor.ts` | **Module-scope** execution engine. Runs stage handlers outside React, owns AbortControllers, leader-elected via `navigator.locks`. |
@@ -28,7 +28,7 @@ Transaction lifecycle model. The most important architectural surface in this ap
 2. Add a `Stage<NewKind>` union + extend `StageFor<K>`.
 3. Add a `Meta<NewKind>` interface + extend `MetaFor<K>`.
 4. (If cross-chain) extend `ArtifactsFor<K>` or reuse `ArtifactsXchain`.
-5. Add a `TxLifecycle<NewKind>` entry in `lifecycles.ts` with `maxDurationMs` + `retry`.
+5. Add a `TxLifecycle<NewKind>` entry in `lifecycles.ts` with `maxDurationMs` + `retryableStages`.
 6. Register a `StageHandler<NewKind>` somewhere that gets imported on app load (typically a `features/<area>/handler.ts` module that side-effects `registerHandler(...)`).
 7. Optionally: custom rendering in `components/tx/<NewKind>/`. The default stepper handles it if you skip.
 

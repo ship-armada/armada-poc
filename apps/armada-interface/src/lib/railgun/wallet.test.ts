@@ -5,11 +5,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the Railgun SDK at the module boundary so we don't need a live engine to test our wrapper.
 // We capture the per-test mock impls below for assertion.
+// Shared spy for the per-wallet decrypted-balance clear (WS7.2 Option A) so tests can assert it.
+const sdkHooks = vi.hoisted(() => ({
+  clearDecryptedBalances: vi.fn(async () => {}),
+}))
+
 vi.mock('@railgun-community/wallet', () => ({
   createRailgunWallet: vi.fn(),
   loadWalletByID: vi.fn(),
   unloadWalletByID: vi.fn(),
   deleteWalletByID: vi.fn(),
+  walletForID: vi.fn(() => ({
+    clearDecryptedBalancesAllTXIDVersions: sdkHooks.clearDecryptedBalances,
+  })),
 }))
 
 // Also mock our engine bootstrap modules — they eagerly import the SDK at top-level, which
@@ -347,6 +355,31 @@ describe('lockWallet', () => {
     expect(isUnlocked()).toBe(false)
     await lockWallet('whatever')
     expect(mockUnload).not.toHaveBeenCalled()
+  })
+
+  it('clears decrypted balances before unloading the wallet (WS7.2 Option A)', async () => {
+    // WHY: the Railgun engine persists decrypted note plaintext (value, 0zk addresses, memo)
+    // unencrypted under wallet:<id>. On lock we wipe it so it doesn't sit at rest while locked;
+    // it must run while the SDK wallet handle is still loaded (i.e. before unloadWalletByID).
+    sdkHooks.clearDecryptedBalances.mockClear()
+    await enrollFromSignature(fixedSig())
+    await lockWallet('ignored')
+    expect(sdkHooks.clearDecryptedBalances).toHaveBeenCalledTimes(1)
+    expect(mockUnload).toHaveBeenCalledWith(SAMPLE_WALLET_ID)
+    // Ordering: the clear resolves before the unload is invoked.
+    expect(sdkHooks.clearDecryptedBalances.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockUnload.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('does not block the lock when the decrypted-balance clear throws', async () => {
+    // WHY: best-effort — a clear failure (wallet not loaded, SDK hiccup) must never strand the
+    // user in an unlocked state. The keyManager is already zeroized synchronously regardless.
+    sdkHooks.clearDecryptedBalances.mockRejectedValueOnce(new Error('clear failed'))
+    await enrollFromSignature(fixedSig())
+    await lockWallet('ignored')
+    expect(isUnlocked()).toBe(false)
+    expect(mockUnload).toHaveBeenCalledWith(SAMPLE_WALLET_ID)
   })
 })
 

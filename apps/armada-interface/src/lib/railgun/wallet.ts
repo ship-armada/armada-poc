@@ -31,6 +31,7 @@ import {
   setUnlocked,
 } from './keyManager'
 import { loadDeployments } from '@/config/deployments'
+import { getNetworkConfig } from '@/config/network'
 import { clearHistoryCheckpoint } from './history-checkpoint'
 import { initRailgunEngine } from './init'
 import { getCurrentHubBlock, loadHubNetwork } from './network'
@@ -561,8 +562,17 @@ export async function lockWallet(_id: string): Promise<void> {
       return null
     }
   })()
+  // Clear the keyManager FIRST and synchronously — the tab-unload (`beforeunload`) lock path
+  // relies on the rootSecret buffer being zeroized before the page tears down; an `await` ahead of
+  // this would orphan that guarantee. Clearing our keys does not unload the SDK's wallet handle.
   clearKeyManager()
   if (!id) return
+  // WS7.2 Option A: wipe the SDK's decrypted note plaintext (value, 0zk addresses, memo) from IDB
+  // while the wallet handle is still loaded and before we unload it, so it doesn't persist at rest
+  // while locked. The public merkletree is left intact — the next unlock re-decrypts locally from
+  // it (no network rescan). Best-effort: a failure must never block the lock; abrupt termination
+  // (tab kill) skips it, which is the accepted limitation of this mitigation.
+  await clearDecryptedBalancesOnLock(id)
   try {
     const { unloadWalletByID } = await railgunSdk()
     unloadWalletByID(id)
@@ -570,6 +580,22 @@ export async function lockWallet(_id: string): Promise<void> {
     /* SDK throws if the wallet isn't loaded; ignore. */
   }
   track('shielded.locked', { walletId: id })
+}
+
+/**
+ * Best-effort clear of a wallet's decrypted balances (note plaintext + scan heights) from IDB.
+ * Leaves the public merkletree. See `lockWallet` for why this runs on lock (WS7.2 Option A).
+ */
+async function clearDecryptedBalancesOnLock(id: string): Promise<void> {
+  try {
+    const { walletForID } = await railgunSdk()
+    const wallet = walletForID(id)
+    // ChainType.EVM === 0; mirror the chain shape network.ts patches into NETWORK_CONFIG.
+    const chain = { type: 0, id: getNetworkConfig().hub.chainId }
+    await wallet.clearDecryptedBalancesAllTXIDVersions(chain)
+  } catch {
+    /* wallet not loaded / SDK unavailable — nothing to clear */
+  }
 }
 
 /**

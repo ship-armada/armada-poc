@@ -37,6 +37,11 @@ export function useUsdcBalances(): void {
     queryFn: () => loadDeployments(),
     staleTime: Infinity,
     gcTime: Infinity,
+    // A flaky first manifest load otherwise leaves `pairs` empty (no balances, blank MAX) until a
+    // window refocus happens to retrigger. Retry with capped exponential backoff so it self-heals.
+    // `staleTime: Infinity` still means it never re-fetches once it has succeeded. (P2/WS3.4)
+    retry: true,
+    retryDelay: attempt => Math.min(1_000 * 2 ** attempt, 30_000),
   })
 
   const pairs = deployments.data

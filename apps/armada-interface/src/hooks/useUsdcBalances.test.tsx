@@ -123,6 +123,27 @@ describe('useUsdcBalances', () => {
     await waitFor(() => expect(store.get(usdcBalancesAtom)).toEqual({}))
   })
 
+  it('retries a flaky deployments load so balances still populate (P2/WS3.4)', async () => {
+    // Without retry, a single manifest-fetch hiccup leaves `pairs` empty (blank balances) until a
+    // window refocus. The query's retry (1s backoff) self-heals it.
+    mockUseWallet.mockReturnValue({ address: TEST_ADDR })
+    mockReadContract.mockResolvedValue(1_000_000n)
+    mockLoadDeployments.mockReset()
+    mockLoadDeployments
+      .mockRejectedValueOnce(new Error('manifest fetch failed'))
+      .mockResolvedValue(DEPLOYMENTS)
+
+    const { store } = renderHarness()
+
+    // First attempt fails; the retry (~1s) succeeds and balances land. Real timers + a longer
+    // waitFor budget than the 1s backoff.
+    await waitFor(
+      () => expect(store.get(usdcBalancesAtom)[31337]).toBe(1_000_000n),
+      { timeout: 5_000 },
+    )
+    expect(mockLoadDeployments.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('does not refetch on the interval while tab is hidden', async () => {
     mockUseWallet.mockReturnValue({ address: TEST_ADDR })
     mockReadContract.mockResolvedValue(1_000_000n)

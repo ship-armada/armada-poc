@@ -1,5 +1,5 @@
 // ABOUTME: App-wide layout — fixed @armada/ui-style header with our routes, body padding to clear the inset header.
-// ABOUTME: Header is local to this app (not the crowdfund-shared AppHeader) — different nav, no network badge, custom right-side chrome.
+// ABOUTME: Header is local to this app (not the crowdfund-shared AppHeader) — different nav, a network badge, custom right-side chrome.
 
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -7,7 +7,15 @@ import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
 import { SyncBanner } from './sync'
 import { HistoryRecoveryBanner } from './history'
+import { StatusChip } from '@/components/ui'
+import { getNetworkMode } from '@/config/network'
 import styles from './AppLayout.module.css'
+
+// Persistent network badge (P1-22) so a user can never mistake a testnet build for mainnet. Sepolia
+// → amber "Testnet — Sepolia"; local → neutral "Local" (harmless, helps devs tell builds apart).
+const NETWORK_BADGE = getNetworkMode() === 'sepolia'
+  ? { label: 'Testnet — Sepolia', variant: 'warning' as const }
+  : { label: 'Local', variant: 'neutral' as const }
 
 const NAV: ReadonlyArray<{ label: string; path: string }> = [
   { label: 'Dashboard', path: '/' },
@@ -41,6 +49,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
+          <StatusChip label={NETWORK_BADGE.label} variant={NETWORK_BADGE.variant} />
           {/* V2 Phase 3a: merged pill — the 0zk shielded identity now lives inside
               `WalletConnector`'s `WalletPillMenu` dropdown (via the `extraSection` prop), so
               the separate `ShieldedAddressPill` previously sat here is gone. */}

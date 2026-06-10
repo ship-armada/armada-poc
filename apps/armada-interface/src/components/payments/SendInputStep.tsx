@@ -10,7 +10,7 @@ import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
 import { getAllChainIdentities, getNetworkConfig } from '@/config/network'
 import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
-import { isEvmAddress, isShieldedAddress } from '@/lib/address'
+import { isEvmAddress, isShieldedAddress, validateEvmAddress } from '@/lib/address'
 import { hasActiveAmount } from '@/utils/amountInput'
 import shieldStyles from '@/components/shield/ShieldInputStep.module.css'
 import styles from './SendInputStep.module.css'
@@ -118,13 +118,16 @@ export function SendInputStepContent({
     ?? (tooMuch ? 'Amount exceeds your private balance after fees.' : undefined)
 
   const recipientTrimmed = recipient.trim()
+  const evmValidation = tab === 'external' ? validateEvmAddress(recipientTrimmed) : null
   const recipientValid =
-    tab === 'private' ? isShieldedAddress(recipientTrimmed) : isEvmAddress(recipientTrimmed)
+    tab === 'private' ? isShieldedAddress(recipientTrimmed) : (evmValidation?.valid ?? false)
   const recipientInvalid = recipientTrimmed.length > 0 && !recipientValid
   const recipientError = recipientInvalid
     ? tab === 'private'
       ? 'Enter a valid shielded address (0zk…).'
-      : 'Enter a valid EVM address (0x… 42 chars).'
+      : evmValidation?.error === 'checksum'
+        ? 'Address checksum mismatch — double-check for typos.'
+        : 'Enter a valid EVM address (0x… 42 chars).'
     : undefined
 
   return (

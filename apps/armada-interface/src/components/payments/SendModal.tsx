@@ -17,7 +17,7 @@ import {
 } from '@/config/deployments'
 import { parseUsdcInput } from '@/lib/format'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
-import { isShieldedAddress } from '@/lib/address'
+import { isShieldedAddress, validateShieldedAddressStrict } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { trackError } from '@/lib/telemetry'
 import {
@@ -202,6 +202,16 @@ export function SendModal() {
       }
       const feeCacheId = activeQuote.cacheId
       if (computedKind === 'transfer-shielded') {
+        // Strict-validate the user's typed 0zk recipient (bech32m checksum, not just shape) at the
+        // funds-committing boundary — a transposed character would otherwise send a private
+        // transfer to a valid-shaped but wrong/unspendable address. The input step's regex is only
+        // a fast pre-filter; this is the authoritative check.
+        if (!(await validateShieldedAddressStrict(recipient))) {
+          throw new Error(
+            'That shielded (0zk) address is not valid — double-check it for typos. Funds sent to a ' +
+              'malformed shielded address cannot be recovered.',
+          )
+        }
         // Same address-shape guard as unshield-local — both paths now embed a broadcaster
         // output, so a malformed published address would doom proof gen the same way.
         if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {

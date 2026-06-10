@@ -345,7 +345,10 @@ export function UnlockFlow({ onUnlocked, onCreateNew, createNewLabel }: UnlockFl
                 primary={{
                   label: submitting ? 'Unlocking…' : 'Unlock',
                   type: 'submit',
-                  disabled: !backupFile || !backupPassphrase,
+                  // Backup passphrases are always ≥8 (encryptBackup's floor), so a shorter entry
+                  // can't be valid — gate it out rather than burn a decrypt attempt. Mirrors the
+                  // export dialog's minimum.
+                  disabled: !backupFile || backupPassphrase.length < 8,
                   loading: submitting,
                   showIcon: false,
                 }}

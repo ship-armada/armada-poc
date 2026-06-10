@@ -4,13 +4,7 @@
 import { useEffect, useId, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Text } from '@armada/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
-import {
-  antiPhishChecksumBytes,
-  decryptBackup,
-  formatChecksumDisplay,
-  normalizeBackupUnlockError,
-  parseBackupJsonText,
-} from '@/lib/crypto/kdf'
+import { normalizeBackupUnlockError, verifyBackupFileText } from '@/lib/crypto/kdf'
 import styles from './PassphraseStep.module.css'
 
 export interface ConfirmBackupStepProps {
@@ -40,26 +34,15 @@ export function ConfirmBackupStep({ expectedChecksum, onBack, onConfirmed }: Con
     setError(null)
     setVerifying(true)
     setVerified(false)
-    let rootSecret: Uint8Array | null = null
     try {
       const text = await file.text()
-      const blob = parseBackupJsonText(text)
-      const payload = await decryptBackup(blob, passphrase)
-      rootSecret = payload.rootSecret
-      const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
-      if (checksum !== expectedChecksum) {
-        throw new Error(
-          `Backup checksum (${checksum}) does not match your live wallet (${expectedChecksum}). ` +
-            'Did you upload the right file?',
-        )
-      }
+      // Shared round-trip verifier (parse → decrypt → checksum match → zeroize). Same helper as
+      // Settings → Export recovery so the two verification paths can't drift.
+      await verifyBackupFileText(text, passphrase, expectedChecksum)
       setVerified(true)
     } catch (err) {
       setError(normalizeBackupUnlockError(err).message)
     } finally {
-      // Zero out the recovered root_secret — it's a local-only verification copy; the keyManager
-      // already holds the authoritative reference.
-      if (rootSecret) rootSecret.fill(0)
       setVerifying(false)
     }
   }

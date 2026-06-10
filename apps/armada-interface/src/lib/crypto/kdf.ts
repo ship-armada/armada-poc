@@ -7,6 +7,7 @@ import { sha256 } from '@noble/hashes/sha2'
 import { gcm } from '@noble/ciphers/aes'
 import { entropyToMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english'
+import { bytesToHexNoPrefix, hexToBytesNoPrefix } from './hex'
 
 // ============================================================================
 // Constants (identity-determining — see specs/TX_SIGNING.md §"Enrollment Flow")
@@ -381,6 +382,36 @@ export async function decryptBackup(blob: BackupBlob, passphrase: string): Promi
   return decodePayload(plain)
 }
 
+/**
+ * Round-trip-verify a backup file's text: parse + decrypt with `passphrase`, then confirm the
+ * recovered secret's anti-phish checksum equals `expectedChecksum` (the live wallet's). Throws a
+ * user-facing error on parse / decrypt / mismatch. The recovered rootSecret is a local
+ * verification copy and is zeroized before returning. Shared by onboarding's ConfirmBackupStep and
+ * Settings → Export recovery's verify step so the two verification paths can't drift.
+ */
+export async function verifyBackupFileText(
+  text: string,
+  passphrase: string,
+  expectedChecksum: string,
+): Promise<void> {
+  const blob = parseBackupJsonText(text)
+  let rootSecret: Uint8Array | null = null
+  try {
+    const payload = await decryptBackup(blob, passphrase)
+    rootSecret = payload.rootSecret
+    const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
+    if (checksum !== expectedChecksum) {
+      throw new Error(
+        `Backup checksum (${checksum}) does not match your wallet (${expectedChecksum}). ` +
+          'Did you upload the right file and enter the matching passphrase?',
+      )
+    }
+  } finally {
+    // Local verification copy only — the keyManager holds the authoritative secret.
+    if (rootSecret) rootSecret.fill(0)
+  }
+}
+
 const BACKUP_JSON_INVALID_MSG =
   'Backup file is not valid JSON. The file may be corrupted, incomplete, or not an Armada export. ' +
   'Open it in a text editor — it should be one object with `"format": "armada-backup-v2"`. ' +
@@ -535,33 +566,3 @@ function randomBytes(n: number): Uint8Array {
   return out
 }
 
-/** Lowercase hex string, no 0x prefix. */
-function bytesToHexNoPrefix(bytes: Uint8Array): string {
-  let s = ''
-  for (const b of bytes) {
-    s += b.toString(16).padStart(2, '0')
-  }
-  return s
-}
-
-function hexToBytesNoPrefix(hex: string): Uint8Array {
-  const s = hex.startsWith('0x') || hex.startsWith('0X') ? hex.slice(2) : hex
-  if (s.length % 2 !== 0) throw new Error('hex string must have even length')
-  if (!/^[0-9a-fA-F]*$/.test(s)) throw new Error('invalid hex characters')
-  const out = new Uint8Array(s.length / 2)
-  for (let i = 0; i < out.length; i++) {
-    const hi = hexNibble(s.charCodeAt(i * 2))
-    const lo = hexNibble(s.charCodeAt(i * 2 + 1))
-    out[i] = (hi << 4) | lo
-  }
-  return out
-}
-
-function hexNibble(charCode: number): number {
-  // IC-1: this never touches signature/key material directly — it's pure hex decoding for
-  // backup-blob hex fields. Used here instead of parseInt() to keep lint guards clean.
-  if (charCode >= 48 && charCode <= 57) return charCode - 48 // '0'-'9'
-  if (charCode >= 97 && charCode <= 102) return charCode - 87 // 'a'-'f'
-  if (charCode >= 65 && charCode <= 70) return charCode - 55 // 'A'-'F'
-  throw new Error('invalid hex character')
-}

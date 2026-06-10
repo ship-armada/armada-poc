@@ -65,12 +65,15 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
     const newId = ulid()
     const now = Date.now()
 
+    // Kinds whose source isn't the hub (shield / shield-xchain) carry `fromChainId` in their meta;
+    // use it so ErrorStep's block-explorer link points at the chain the user's tx actually lives on
+    // (a cross-chain shield originates on a client chain, not the hub). Other kinds have no
+    // fromChainId and fall back to the hub. Narrowed at the boundary since meta is per-kind.
+    const metaSourceChainId = (meta as { fromChainId?: number }).fromChainId
     const walletContext: TxWalletContext = {
       evmAddress: evmAddress ?? undefined,
       railgunWalletId: activeWalletId,
-      // TODO(per-kind): if the kind's meta carries a more specific source chain
-      // (e.g. shield.fromChainId), feature passes should override this default.
-      sourceChainId: getNetworkConfig().hub.chainId,
+      sourceChainId: metaSourceChainId ?? getNetworkConfig().hub.chainId,
     }
 
     const initial: TxRecord<K> = {

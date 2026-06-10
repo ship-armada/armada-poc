@@ -37,6 +37,7 @@ import {
   parseBackupBlob,
   type BackupBlob,
 } from '@/lib/crypto/kdf'
+import { hexToBytesNoPrefix } from '@/lib/crypto/hex'
 import { track, trackError } from '@/lib/telemetry'
 
 /**
@@ -178,10 +179,8 @@ export function useShieldedWallet() {
     if (!/^[0-9a-fA-F]{64}$/.test(trimmed)) {
       throw new Error('Recovery secret must be 64 hexadecimal characters (32 bytes).')
     }
-    const bytes = new Uint8Array(32)
-    for (let i = 0; i < 32; i++) {
-      bytes[i] = parseInt(trimmed.slice(i * 2, i * 2 + 2), 16)
-    }
+    // Shared nibble decoder (not parseInt) for key-material hex — see lib/crypto/hex.ts.
+    const bytes = hexToBytesNoPrefix(trimmed)
     try {
       // Pass the currently-connected EVM address (if any) so the keyManager records who's bound
       // to this unlock and `useWallet`'s account-switch detection works against paste-restored

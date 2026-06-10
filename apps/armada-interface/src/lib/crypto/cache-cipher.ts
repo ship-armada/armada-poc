@@ -2,6 +2,7 @@
 // ABOUTME: BigInt support via a __bigint sentinel in the JSON. Unwrap throws on auth failure (wrong key OR corrupted blob); storage layer interprets the throw as "skip this record".
 
 import { gcm } from '@noble/ciphers/aes'
+import { bytesToHexNoPrefix, hexToBytesNoPrefix } from './hex'
 
 /**
  * Envelope shape persisted in IndexedDB (or anywhere else the cache layer puts it). Both fields
@@ -49,22 +50,6 @@ function jsonReviver(_key: string, value: unknown): unknown {
     return BigInt((value as Record<string, string>)[BIGINT_SENTINEL_KEY]!)
   }
   return value
-}
-
-function bytesToHexNoPrefix(bytes: Uint8Array): string {
-  let s = ''
-  for (const b of bytes) s += b.toString(16).padStart(2, '0')
-  return s
-}
-
-function hexToBytesNoPrefix(hex: string): Uint8Array {
-  if (hex.length % 2 !== 0) throw new Error('hex string must have even length')
-  if (!/^[0-9a-fA-F]*$/.test(hex)) throw new Error('invalid hex characters')
-  const out = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-  }
-  return out
 }
 
 function randomBytes(n: number): Uint8Array {

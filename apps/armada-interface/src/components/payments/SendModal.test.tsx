@@ -37,6 +37,14 @@ vi.mock('@/hooks/useGasBalanceWarning', () => ({
   }),
 }))
 
+// The private-send submit path strict-validates the 0zk recipient via the Railgun SDK
+// (validateShieldedAddressStrict → dynamic import), which crashes jsdom at load. Keep the sync
+// validators real; stub only the strict async check to pass for the test's fake 0zk fixture.
+vi.mock('@/lib/address', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/address')>()),
+  validateShieldedAddressStrict: vi.fn(async () => true),
+}))
+
 // Phase 7: tx/storage requires an unlocked keyManager (encrypted writes). UI tests don't drive
 // onboarding; mock storage to no-op. Storage encryption is covered in lib/tx/storage.test.ts.
 vi.mock('@/lib/tx/storage', () => ({

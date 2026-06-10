@@ -13,6 +13,7 @@ import {
   assertEntropyFloor,
   encryptBackup,
   decryptBackup,
+  verifyBackupFileText,
   parseBackupBlob,
   parseBackupJsonText,
   PBKDF2_ITERATIONS_V1,
@@ -384,6 +385,36 @@ describe('backup encryption round-trip (v2)', { timeout: 30_000 }, () => {
     const v2 = await encryptBackup({ rootSecret, creationBlock: 0 }, 'right-here', TEST_OPTS)
     const mislabeled: BackupBlob = { ...v2, format: 'armada-backup-v1' }
     await expect(decryptBackup(mislabeled, 'right-here')).rejects.toThrow(/v1 expected 32-byte payload/)
+  })
+})
+
+describe('verifyBackupFileText', { timeout: 30_000 }, () => {
+  it('resolves when the file decrypts and its checksum matches the expected one', async () => {
+    // WHY: the shared round-trip verifier behind both onboarding's ConfirmBackupStep and
+    // Settings → Export recovery's verify step. A genuine export must verify clean.
+    const rootSecret = deriveRootSecret(fixedSignature())
+    const blob = await encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
+    const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
+    await expect(
+      verifyBackupFileText(JSON.stringify(blob), 'pw-here-now', checksum),
+    ).resolves.toBeUndefined()
+  })
+
+  it('rejects when the checksum does not match the live wallet (wrong file)', async () => {
+    const rootSecret = deriveRootSecret(fixedSignature())
+    const blob = await encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
+    await expect(
+      verifyBackupFileText(JSON.stringify(blob), 'pw-here-now', 'ffff ffff ffff'),
+    ).rejects.toThrow(/does not match/)
+  })
+
+  it('rejects when the passphrase is wrong (decrypt fails before checksum check)', async () => {
+    const rootSecret = deriveRootSecret(fixedSignature())
+    const blob = await encryptBackup({ rootSecret, creationBlock: 0 }, 'pw-here-now', TEST_OPTS)
+    const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
+    await expect(
+      verifyBackupFileText(JSON.stringify(blob), 'wrong-passphrase', checksum),
+    ).rejects.toThrow(/authentication failed/)
   })
 })
 

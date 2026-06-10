@@ -87,7 +87,7 @@ This model fixes the crowdfund-committer's `useTransactionFlow` single-tx limita
 
 ## What's intentionally NOT in the scaffold
 
-- Real contract/relayer/CCTP integration for tx flows (shield/unshield/payments/yield). Those hooks still stub through `telemetry.track('stub.*')`. Phase 1 Railgun wallet lifecycle IS real.
+- Tx flows (shield/shield-xchain/unshield-local/unshield-xchain/transfer/yield) are wired end-to-end against real contracts + CCTP and run real ZK proofs; what's NOT done: the relayer-*mediated* submit path (`lib/relayer.ts::submitRelay` — today every handler submits from the user's own wallet via wagmi) and finer-grained real-CCTP-mode Iris polling (the xchain handler collapses the last delivery stages on a single destination-balance detection).
 - e2e tests.
 - Real telemetry sink (console-only for now).
 - Service worker / offline support.

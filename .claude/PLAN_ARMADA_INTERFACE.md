@@ -138,13 +138,14 @@ This is the most important section. The committer's `useTransactionFlow` is sing
 
 ```ts
 type TxKind =
-  | 'shield'              // EVM USDC → shielded USDC (hub)
-  | 'unshield-local'      // shielded USDC → EVM USDC (hub)
-  | 'unshield-xchain'     // shielded USDC → EVM USDC (client chain, via CCTP)
-  | 'transfer-shielded'   // shielded → shielded
-  | 'yield-deposit'       // shielded USDC → shielded yield shares
-  | 'yield-withdraw'      // shielded yield shares → shielded USDC
-  | 'payment-xchain'      // shielded → EVM (client chain, via CCTP)
+  | 'shield'                      // EVM USDC → shielded USDC (hub)
+  | 'shield-xchain'               // EVM USDC on a client chain → shielded USDC (via CCTP to hub)
+  | 'unshield-local'              // shielded USDC → EVM USDC (hub)
+  | 'unshield-xchain'             // shielded USDC → EVM USDC (client chain, via CCTP)
+  | 'transfer-shielded'           // shielded → shielded (outgoing)
+  | 'transfer-shielded-received'  // incoming shielded transfer (synthesized from chain history)
+  | 'yield-deposit'               // shielded USDC → shielded yield shares
+  | 'yield-withdraw'              // shielded yield shares → shielded USDC
 
 // Reviewer rec #1 — execution state is separate from protocol stage to avoid
 // semantic overlap (e.g. `stage = iris-attestation-pending` + `status = submitted`

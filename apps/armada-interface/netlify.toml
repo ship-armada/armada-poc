@@ -67,3 +67,21 @@
   from   = "/*"
   to     = "/index.html"
   status = 200
+
+# Security headers (P0-8). KEEP IN SYNC with vercel.json's "headers" — the CSP value below must be
+# byte-identical across both deploy targets. COOP/COEP are deliberately omitted: snarkjs here runs
+# without SharedArrayBuffer, and COEP would break Google Fonts + WalletConnect iframes.
+#
+# The CSP ships as Content-Security-Policy-Report-Only FIRST so it can't break a flow before a
+# human has clicked through every path on a preview deploy with devtools open. Promote to the
+# enforcing `Content-Security-Policy` header only after that sweep — and AFTER adding the runtime
+# relayer origin (VITE_RELAYER_URL host) and any IPFS artifact-gateway host to connect-src, neither
+# of which is statically known here.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://sepolia.base.org https://sepolia-rollup.arbitrum.io https://iris-api-sandbox.circle.com wss://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.rainbow.me; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"

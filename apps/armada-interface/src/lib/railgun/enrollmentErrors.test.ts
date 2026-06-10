@@ -14,4 +14,10 @@ describe('normalizeEnrollmentError', () => {
     )
     expect(out.message).toMatch(/VITE_NETWORK=sepolia|npm run setup/i)
   })
+
+  it('maps a declined wallet signature to friendly "both signatures" copy (P1-17)', () => {
+    const out = normalizeEnrollmentError(Object.assign(new Error('User rejected the request.'), { code: 4001 }))
+    expect(out.message).toMatch(/declined/i)
+    expect(out.message).toMatch(/both signatures/i)
+  })
 })

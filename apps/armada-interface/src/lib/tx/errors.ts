@@ -2,23 +2,9 @@
 // ABOUTME: Handlers' outer try/catch funnels everything through `classifyHandlerError(err)` instead of `err.message` strings, so we never lose the distinction between "tx reverted" / "we lost track" / "user rejected" / "unexpected".
 
 import { extractTxError } from './receipt'
+import { isUserRejection } from '../errors'
+import { mapRevertToMessage } from '../revert'
 import type { TxError } from './types'
-
-/**
- * Detect user-declined-wallet-prompt errors across wallet stacks. Mirrors the heuristic in
- * lib/network-switch.ts — kept independent so the tx layer doesn't take a network-switch
- * dependency. Both copies match the same shapes; if either grows a case, mirror to the other.
- */
-function isUserRejection(err: unknown): boolean {
-  if (!err) return false
-  const e = err as { code?: number | string; name?: string; message?: string; cause?: unknown }
-  if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true
-  if (e.name === 'UserRejectedRequestError') return true
-  const msg = e.message ?? ''
-  if (/user (rejected|denied|cancelled)/i.test(msg)) return true
-  if (e.cause && e.cause !== err) return isUserRejection(e.cause)
-  return false
-}
 
 /**
  * Convert anything thrown inside a handler into a typed TxError suitable for `markFailed`.
@@ -49,6 +35,9 @@ export function classifyHandlerError(
     return { code: 'USER_REJECTED', message: 'You declined the action in your wallet.' }
   }
 
-  const message = err instanceof Error ? err.message : fallbackMessage
+  // Run the raw message through mapRevertToMessage: it maps known revert/wallet patterns to short
+  // copy and truncates at 200 chars, so a multi-line viem dump (RPC payload, stack frames) doesn't
+  // reach ErrorStep verbatim. (P2 — wire the previously-dead mapRevertToMessage.)
+  const message = mapRevertToMessage(err instanceof Error ? err.message : fallbackMessage)
   return sourceTxHash ? { code: 'OTHER', message, txHash: sourceTxHash } : { code: 'OTHER', message }
 }

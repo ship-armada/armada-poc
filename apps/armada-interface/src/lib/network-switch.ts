@@ -4,6 +4,7 @@
 import { getAccount } from 'wagmi/actions'
 import { wagmiConfig } from '@/config/wagmi'
 import { getChainById } from '@/config/network'
+import { isUserRejection } from '@/lib/errors'
 
 /** Minimal EIP-1193 surface — what `connector.getProvider()` returns. */
 interface Eip1193Provider {
@@ -45,24 +46,6 @@ function addEthereumChainParams(targetChainId: number): Record<string, unknown> 
     rpcUrls,
     ...(explorerUrl ? { blockExplorerUrls: [explorerUrl] } : {}),
   }
-}
-
-/**
- * Heuristic for user-rejected-request errors across wallet stacks. viem throws
- * `UserRejectedRequestError` (code 4001). MetaMask sometimes surfaces it with code 4001 or as
- * a plain Error with "User rejected" / "User denied" in the message. Cover all the common
- * shapes — false positives here are harmless (we throw a friendlier message anyway).
- */
-function isUserRejection(err: unknown): boolean {
-  if (!err) return false
-  const e = err as { code?: number | string; name?: string; message?: string; cause?: unknown }
-  if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true
-  if (e.name === 'UserRejectedRequestError') return true
-  const msg = e.message ?? ''
-  if (/user (rejected|denied|cancelled)/i.test(msg)) return true
-  // viem wraps the underlying provider error in `.cause`; recurse one level.
-  if (e.cause && e.cause !== err) return isUserRejection(e.cause)
-  return false
 }
 
 /**
@@ -204,4 +187,5 @@ async function waitForConnectorChainId(
 }
 
 // Internal — exported for tests only. Do not import from app code.
-export { isUserRejection as _isUserRejection, isChainNotAdded as _isChainNotAdded }
+export { isChainNotAdded as _isChainNotAdded }
+export { isUserRejection as _isUserRejection } from '@/lib/errors'

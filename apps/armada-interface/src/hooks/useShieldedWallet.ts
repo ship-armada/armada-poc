@@ -104,7 +104,22 @@ export function useShieldedWallet() {
           primaryType: typedData.primaryType,
           message: { ...typedData.message },
         })
-        return normalizeSignature(hex)
+        try {
+          return normalizeSignature(hex)
+        } catch (err) {
+          // ERC-1271 / smart-account wallets (Safe, etc.) return variable-length contract
+          // signatures that aren't the 64/65-byte EOA shape our deterministic derivation needs.
+          // Route to the dedicated incompatible-signer screen instead of surfacing a raw
+          // byte-length error in a generic toast. (P1-17)
+          if (err instanceof Error && /expected 64 or 65 byte input/i.test(err.message)) {
+            throw new NonDeterministicSignerError(
+              'first-sign-mismatch',
+              'This wallet returned a signature this app can\'t use for deterministic sign-in ' +
+                '(typically a smart-account / ERC-1271 wallet).',
+            )
+          }
+          throw err
+        }
       }
 
       const signatureBytes = await promptSign()

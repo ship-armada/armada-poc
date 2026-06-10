@@ -56,7 +56,7 @@ function headlineFor(reason: NonDeterministicSignerErrorReason): string {
 function bodyFor(reason: NonDeterministicSignerErrorReason): string {
   switch (reason) {
     case 'first-sign-mismatch':
-      return "Armada's sign-in needs a wallet that produces a consistent signature each time. This wallet appears to randomize signatures, which sign-in can't recover. You can still unlock with your encrypted backup file or your recovery secret."
+      return "Armada's sign-in needs a wallet that produces a consistent signature each time. This wallet appears to randomize signatures (or is a smart-account wallet), which sign-in can't use. New to Armada? Connect one of the supported wallets listed here to create your account — you don't need a backup yet. Already have an account? Unlock with your encrypted backup file or recovery secret."
     case 'cached-checksum-mismatch':
       return 'Re-signing with this wallet produces a different identity than the one this device is bound to. This often means your wallet has changed underlying accounts. Sign-in cannot recover the original identity here — unlock with your encrypted backup file or your recovery secret.'
   }

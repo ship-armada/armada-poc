@@ -125,9 +125,13 @@ export function useWallet(): UseWalletResult {
         // legitimate first-unlock signal, not an account-switch. The keyManager-bound check
         // above already ruled out initial-render (keyManager wasn't unlocked at boot).
         if (previous !== null && previous !== normalized) {
-          toast('Switched EVM accounts — please sign in with the new wallet.', {
-            id: 'shielded-account-switch', // dedup if wagmi re-fires
-          })
+          // Disconnect (address → null) reads differently from an account switch — say so. (P1-17)
+          toast(
+            normalized === null
+              ? 'Wallet disconnected — your private account was locked.'
+              : 'Switched EVM accounts — please sign in with the new wallet.',
+            { id: 'shielded-account-switch' }, // dedup if wagmi re-fires
+          )
         }
       }
     }

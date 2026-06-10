@@ -1,5 +1,7 @@
 // ABOUTME: User-facing error messages for enrollment / unlock paths (Sign step, backup restore).
 
+import { isUserRejection } from '@/lib/errors'
+
 const DEPLOYMENT_SETUP_MSG =
   'Deployment manifests are missing. From the armada-poc repo root run `npm run setup` (local Anvil) ' +
   'or set `VITE_NETWORK=sepolia` in apps/armada-interface/.env.development and restart the dev server.'
@@ -20,6 +22,12 @@ const RELAYER_MSG =
 export function normalizeEnrollmentError(err: unknown): Error {
   if (!(err instanceof Error)) {
     return new Error('Enrollment failed. Check the browser console for details.')
+  }
+
+  // Declined the wallet signature prompt — the most-hit error on the onboarding/unlock path.
+  // First-ever sign-in double-signs, so make the "both signatures" expectation explicit. (P1-17)
+  if (isUserRejection(err)) {
+    return new Error('Signature request declined. Both signatures are needed to set up sign-in — try again.')
   }
 
   const msg = err.message

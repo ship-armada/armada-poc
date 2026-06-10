@@ -12,6 +12,8 @@ import { Toaster } from 'sonner'
 
 import { wagmiConfig } from '@/config/wagmi'
 import { installBisectingGetLogs } from '@/lib/rpc-bisecting'
+import { AppErrorBoundary } from '@/components/AppErrorBoundary'
+import { trackError } from '@/lib/telemetry'
 import { App } from '@/App'
 
 // Install at the earliest possible point — before any provider is constructed. Patches
@@ -31,8 +33,19 @@ import './index.css'
 
 const queryClient = new QueryClient()
 
+// Last-resort handler for promise rejections that escape their call site (a `void`-ed async path,
+// a missing .catch). Routes them to telemetry so they're visible instead of only a console warning.
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    trackError('unhandled', event.reason)
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    {/* Error boundary OUTSIDE the providers (it needs none of them) but inside StrictMode, so a
+        render error anywhere in the app surfaces a recoverable card instead of a white screen. */}
+    <AppErrorBoundary>
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
@@ -75,5 +88,6 @@ createRoot(document.getElementById('root')!).render(
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
+    </AppErrorBoundary>
   </StrictMode>,
 )

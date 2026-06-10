@@ -33,6 +33,7 @@ import '@/features/transfer-shielded'
 import '@/features/yield-deposit'
 import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
+import { trackError } from '@/lib/telemetry'
 import { initRailgunEngine } from '@/lib/railgun/init'
 import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
 import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
@@ -101,9 +102,11 @@ export function App() {
   useEffect(() => {
     if (mode !== 'pre-migration') return
     let cancelled = false
-    void runSchemaMigrationIfNeeded().finally(() => {
-      if (!cancelled) setMode('pre-init')
-    })
+    void runSchemaMigrationIfNeeded()
+      .catch((err) => trackError('schema-migration', err))
+      .finally(() => {
+        if (!cancelled) setMode('pre-init')
+      })
     return () => {
       cancelled = true
     }

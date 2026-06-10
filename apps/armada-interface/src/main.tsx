@@ -1,4 +1,4 @@
-// ABOUTME: Mount + provider tree for @armada/interface — Wagmi → Query → RainbowKit → Router → Motion.
+// ABOUTME: Mount + provider tree for @armada/interface — Wagmi → Query → RainbowKit → Router.
 // ABOUTME: Jotai intentionally has no Provider so React hooks share `getDefaultStore()` with the module-scope tx executor.
 
 import { StrictMode } from 'react'
@@ -7,7 +7,6 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { WagmiProvider } from 'wagmi'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MotionConfig } from 'framer-motion'
 import { Toaster } from 'sonner'
 
 import { wagmiConfig } from '@/config/wagmi'
@@ -69,21 +68,19 @@ createRoot(document.getElementById('root')!).render(
               writes to be invisible to the executor. Tests still wrap with Provider+createStore
               for isolation (overriding the default store via context). */}
           <BrowserRouter>
-            <MotionConfig reducedMotion="user">
-              <Routes>
-                <Route element={<App />}>
-                  <Route index element={<Dashboard />} />
-                  <Route path="history" element={<History />} />
-                  <Route path="settings" element={<Settings />} />
-                  <Route path="address-book" element={<AddressBook />} />
-                  {/* Debug page is available in both modes — contract addresses + per-chain
-                      balances are useful diagnostics regardless. The local-only faucet UI is
-                      gated inside the page itself. */}
-                  <Route path="debug" element={<Debug />} />
-                </Route>
-              </Routes>
-              <Toaster theme="dark" position="bottom-right" />
-            </MotionConfig>
+            <Routes>
+              <Route element={<App />}>
+                <Route index element={<Dashboard />} />
+                <Route path="history" element={<History />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="address-book" element={<AddressBook />} />
+                {/* Debug page is available in both modes — contract addresses + per-chain
+                    balances are useful diagnostics regardless. The local-only faucet UI is
+                    gated inside the page itself. */}
+                <Route path="debug" element={<Debug />} />
+              </Route>
+            </Routes>
+            <Toaster theme="dark" position="bottom-right" />
           </BrowserRouter>
         </RainbowKitProvider>
       </QueryClientProvider>

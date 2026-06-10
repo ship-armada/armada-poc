@@ -67,28 +67,52 @@ describe('useIncomingTransferDetector', () => {
     expect(hoisted.subscribe).not.toHaveBeenCalled()
   })
 
-  it('subscribes on unlock and bumps the epoch on each matching balance event', async () => {
-    // WHY: every SDK balance event is the canonical "something changed on chain" signal. Each
-    // bump triggers useHistoryRecovery to fetch the delta — that's how a received transfer
-    // surfaces in the activity feed live. Two events → two epoch bumps.
-    const store = makeStore({ unlocked: true })
-    render(
-      <Provider store={store}>
-        <Harness />
-      </Provider>,
-    )
-    await waitFor(() => {
+  it('coalesces a burst of matching balance events into a single debounced epoch bump', async () => {
+    // WHY (P1-29): the SDK fires several balance events during one scan (one per affected tree /
+    // token). Bumping the epoch per-event triggered N back-to-back delta scans. A 2s trailing
+    // debounce collapses the burst into one bump → one scan. The bump still happens (received
+    // transfers surface live), just once per quiet window instead of once per raw event.
+    vi.useFakeTimers()
+    try {
+      const store = makeStore({ unlocked: true })
+      render(
+        <Provider store={store}>
+          <Harness />
+        </Provider>,
+      )
+      // Flush the async subscribe IIFE (microtasks aren't faked, only timers).
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
       expect(hoisted.isSubscribed()).toBe(true)
-    })
-    expect(store.get(historyRecoveryEpochAtom)).toBe(0)
-    await act(async () => {
-      hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
-    })
-    expect(store.get(historyRecoveryEpochAtom)).toBe(1)
-    await act(async () => {
-      hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
-    })
-    expect(store.get(historyRecoveryEpochAtom)).toBe(2)
+      expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+
+      // Three rapid events within the window — no bump yet.
+      act(() => {
+        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
+        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
+        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
+      })
+      expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+
+      // After the 2s quiet window, exactly one bump.
+      act(() => {
+        vi.advanceTimersByTime(2_000)
+      })
+      expect(store.get(historyRecoveryEpochAtom)).toBe(1)
+
+      // A later, separate event bumps again after its own window.
+      act(() => {
+        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
+      })
+      act(() => {
+        vi.advanceTimersByTime(2_000)
+      })
+      expect(store.get(historyRecoveryEpochAtom)).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('ignores balance events for a different wallet', async () => {

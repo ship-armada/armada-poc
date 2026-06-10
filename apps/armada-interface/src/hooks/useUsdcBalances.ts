@@ -16,6 +16,28 @@ import { trackError } from '@/lib/telemetry'
 const POLL_INTERVAL_MS = 15_000
 
 /**
+ * Fold fulfilled per-chain query results into the prior balances map. Returns the SAME `prev`
+ * reference when nothing actually changed, so a poll tick that re-reads identical balances does
+ * not create a new object and therefore does not notify `usdcBalancesAtom` subscribers (no
+ * downstream re-render). Unfulfilled entries (no `data`) are skipped so one slow chain doesn't
+ * blank the others.
+ */
+export function mergeUsdcBalances(
+  prev: Record<number, bigint>,
+  results: ReadonlyArray<{ data?: { chainId: number; balance: bigint } }>,
+): Record<number, bigint> {
+  let changed = false
+  const next = { ...prev }
+  for (const r of results) {
+    if (r.data && next[r.data.chainId] !== r.data.balance) {
+      next[r.data.chainId] = r.data.balance
+      changed = true
+    }
+  }
+  return changed ? next : prev
+}
+
+/**
  * Reads the connected wallet's public USDC balance on every configured chain (hub + clients)
  * every 15s and mirrors them into `usdcBalancesAtom`. The ShieldModal reads this atom to
  * populate its MAX based on the currently-selected `fromChainId`.
@@ -89,18 +111,13 @@ export function useUsdcBalances(): void {
     if (!address) setBalances({})
   }, [address, setBalances])
 
-  // Mirror fulfilled results into the atom. Re-runs on every render whose results array changes
-  // (i.e. on each fulfilled query). Skipping unfulfilled (loading / error) entries so a single
-  // slow chain doesn't blank the others.
+  // Mirror fulfilled results into the atom. Re-runs on every render whose `results` array changes
+  // (React Query hands back a fresh array each poll tick even when the values are identical), so
+  // `mergeUsdcBalances` returns the SAME map reference when nothing changed — no atom write, no
+  // re-render of MAX-button consumers on a steady-state poll.
   useEffect(() => {
     if (!address) return
-    setBalances(prev => {
-      const next = { ...prev }
-      for (const r of results) {
-        if (r.data) next[r.data.chainId] = r.data.balance
-      }
-      return next
-    })
+    setBalances(prev => mergeUsdcBalances(prev, results))
   }, [results, address, setBalances])
 
   // Surface persistent failures via telemetry (once per error transition per chain).

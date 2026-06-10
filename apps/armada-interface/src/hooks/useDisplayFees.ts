@@ -13,8 +13,17 @@ import {
 import type { FeeSchedule } from '@/lib/relayer'
 import type { TxKind } from '@/lib/tx/types'
 import { useNativeGasEstimate } from './useNativeGasEstimate'
+import { useDebouncedValue } from './useDebouncedValue'
 
 const FEE_MODULE_QUERY_KEY = ['fee-module-address'] as const
+
+/**
+ * Debounce window for the on-chain shield-fee read. The ShieldModal calls this hook on every
+ * keystroke of the amount field; without debouncing, each keystroke fired a `calculateShieldFee`
+ * `eth_call`. A 400ms trailing window collapses a typing burst into one read once the amount
+ * settles, while the local 50 bps fallback covers the Fee row in the interim. (P2 perf)
+ */
+const SHIELD_FEE_DEBOUNCE_MS = 400
 
 export function useDisplayFees(
   kind: TxKind,
@@ -38,13 +47,17 @@ export function useDisplayFees(
   // gating on `shield` alone made the cross-chain Fee row miss the protocol component and
   // surface only the much-smaller CCTP fast-fee ("<0.01 USDC" on a $10 client deposit).
   const isShieldKind = kind === 'shield' || kind === 'shield-xchain'
-  const needsOnChainShieldFee = isShieldKind && amount > 0n && Boolean(feeModuleAddress)
+  // Debounce the amount the on-chain read keys off so a typing burst fires one eth_call, not one
+  // per keystroke. The displayed Fee row still tracks the live amount via the 50 bps fallback below
+  // until the debounced read for the settled amount resolves.
+  const debouncedAmount = useDebouncedValue(amount, SHIELD_FEE_DEBOUNCE_MS)
+  const needsOnChainShieldFee = isShieldKind && debouncedAmount > 0n && Boolean(feeModuleAddress)
 
   const { data: shieldFeeResult, isLoading: shieldFeeLoading } = useReadContract({
     address: feeModuleAddress ?? undefined,
     abi: feeModuleAbi,
     functionName: 'calculateShieldFee',
-    args: [integrator, amount],
+    args: [integrator, debouncedAmount],
     chainId: hubChainId,
     query: { enabled: needsOnChainShieldFee },
   })
@@ -54,12 +67,16 @@ export function useDisplayFees(
   const fees = useMemo(() => {
     const base = computeDisplayFees(kind, amount, quote)
     let protocolFee = base.protocolFee
-    if (isShieldKind && shieldFeeResult) {
+    // Only trust the on-chain result when it was computed for the amount currently displayed —
+    // while the user is mid-keystroke the debounced read lags the live amount, so we fall back to
+    // the 50 bps estimate rather than show a fee for a stale amount.
+    const onChainMatchesLive = debouncedAmount === amount
+    if (isShieldKind && shieldFeeResult && onChainMatchesLive) {
       protocolFee = shieldFeeResult[2]
-    } else if (isShieldKind && feeModuleAddress && amount > 0n && !shieldFeeResult) {
-      // Fallback while the on-chain read is loading: ~50 bps matches deployed fee module
-      // `baseArmadaTakeBps` so the Fee row doesn't flash a misleading lower value during the
-      // brief async window before the wagmi result lands.
+    } else if (isShieldKind && feeModuleAddress && amount > 0n) {
+      // Fallback while the on-chain read is loading or the amount is still settling: ~50 bps
+      // matches deployed fee module `baseArmadaTakeBps` so the Fee row doesn't flash a misleading
+      // lower value during the async window before the wagmi result lands.
       protocolFee = (amount * 50n) / 10_000n
     }
     const feeInclusive =
@@ -71,7 +88,7 @@ export function useDisplayFees(
       totalFee: protocolFee,
       feeInclusive,
     }
-  }, [kind, amount, quote, shieldFeeResult, feeModuleAddress, isShieldKind, nativeGas])
+  }, [kind, amount, debouncedAmount, quote, shieldFeeResult, feeModuleAddress, isShieldKind, nativeGas])
 
   const isLoading = needsOnChainShieldFee && shieldFeeLoading
 

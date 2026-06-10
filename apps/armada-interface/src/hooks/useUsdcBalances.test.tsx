@@ -19,7 +19,7 @@ vi.mock('@/hooks/useWallet', () => ({
   useWallet: vi.fn(),
 }))
 
-import { useUsdcBalances } from './useUsdcBalances'
+import { useUsdcBalances, mergeUsdcBalances } from './useUsdcBalances'
 import { readContract } from 'wagmi/actions'
 import { loadDeployments } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -160,5 +160,42 @@ describe('useUsdcBalances', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('mergeUsdcBalances', () => {
+  it('returns the SAME reference when no balance changed (steady-state poll → no re-render)', () => {
+    // WHY: React Query hands back a fresh `results` array on every poll tick even when the on-chain
+    // balances are unchanged. Without this bail-out the mirror effect wrote a new object each tick,
+    // notifying every usdcBalancesAtom subscriber (the MAX button, etc.) for nothing.
+    const prev = { 31337: 1_000_000n, 31338: 2_000_000n }
+    const results = [
+      { data: { chainId: 31337, balance: 1_000_000n } },
+      { data: { chainId: 31338, balance: 2_000_000n } },
+    ]
+    expect(mergeUsdcBalances(prev, results)).toBe(prev)
+  })
+
+  it('returns a new map with merged values when a balance changed', () => {
+    const prev = { 31337: 1_000_000n }
+    const results = [{ data: { chainId: 31337, balance: 1_500_000n } }]
+    const next = mergeUsdcBalances(prev, results)
+    expect(next).not.toBe(prev)
+    expect(next[31337]).toBe(1_500_000n)
+  })
+
+  it('adds a chain that was not present before', () => {
+    const prev = { 31337: 1_000_000n }
+    const results = [{ data: { chainId: 31338, balance: 7n } }]
+    const next = mergeUsdcBalances(prev, results)
+    expect(next).not.toBe(prev)
+    expect(next[31338]).toBe(7n)
+    expect(next[31337]).toBe(1_000_000n)
+  })
+
+  it('ignores unfulfilled (no data) entries and keeps the prior reference', () => {
+    const prev = { 31337: 1_000_000n }
+    const results = [{ data: undefined }, { data: { chainId: 31337, balance: 1_000_000n } }]
+    expect(mergeUsdcBalances(prev, results)).toBe(prev)
   })
 })

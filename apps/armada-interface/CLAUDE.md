@@ -27,7 +27,7 @@ Architectural decisions and rationale: `../../.claude/PLAN_ARMADA_INTERFACE.md`.
 
 ```
 src/
-├── main.tsx                 provider tree (StrictMode → Wagmi → Query → RainbowKit → Jotai → Router → Motion)
+├── main.tsx                 provider tree (StrictMode → Wagmi → Query → RainbowKit → Jotai → Router)
 ├── App.tsx                  installs visibility listener + hydrates tx history; renders <AppLayout>
 ├── index.css                @import tailwindcss + @armada/ui tokens.css + global.css
 ├── config/                  env-driven config — network, wagmi, deployments, relayer

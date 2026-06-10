@@ -9,6 +9,14 @@ import { subscribeBalanceUpdates } from '@/lib/railgun/sync'
 import { trackError } from '@/lib/telemetry'
 
 /**
+ * Trailing debounce window for coalescing balance-event bursts into one epoch bump. The SDK fires
+ * several balance-update events in quick succession during a single scan (one per affected tree /
+ * token); without coalescing, each would trigger a separate `useHistoryRecovery` delta scan. A 2s
+ * quiet window collapses the burst into one scan while keeping received-transfer latency low. (P1-29)
+ */
+const SCAN_DEBOUNCE_MS = 2_000
+
+/**
  * Subscribe to SDK balance-update events while the wallet is unlocked. On each event, bump
  * `historyRecoveryEpochAtom` — `useHistoryRecovery`'s effect re-runs and fetches the delta
  * since the persisted checkpoint. The dedup guard inside `runScanAndPersist` skips items
@@ -30,6 +38,7 @@ export function useIncomingTransferDetector(): void {
     const walletId = active.id
     let unsubscribe: (() => void) | null = null
     let cancelled = false
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
     void (async () => {
       try {
@@ -38,9 +47,14 @@ export function useIncomingTransferDetector(): void {
           // events for our wallet so a multi-wallet setup (future) doesn't trigger spurious
           // scans on the wrong session.
           if (event.railgunWalletID !== walletId) return
-          // Bump the epoch as a function-update so concurrent bumps (rare but possible during
-          // a burst of SDK events) compose rather than racing on a stale read.
-          setEpoch((prev) => prev + 1)
+          // Trailing-debounce the epoch bump: each event resets the timer, so a burst of SDK
+          // events during one scan collapses into a single bump after the quiet window. Bump as
+          // a function-update so it composes rather than racing on a stale read.
+          if (debounceTimer) clearTimeout(debounceTimer)
+          debounceTimer = setTimeout(() => {
+            debounceTimer = null
+            setEpoch((prev) => prev + 1)
+          }, SCAN_DEBOUNCE_MS)
         })
         if (cancelled && unsubscribe) {
           unsubscribe()
@@ -56,6 +70,7 @@ export function useIncomingTransferDetector(): void {
 
     return () => {
       cancelled = true
+      if (debounceTimer) clearTimeout(debounceTimer)
       if (unsubscribe) unsubscribe()
     }
   }, [active?.id, active?.status, setEpoch])

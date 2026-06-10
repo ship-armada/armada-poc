@@ -229,9 +229,15 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
       hoisted.fireBalanceEvent('rg-1')
     })
 
-    await waitFor(() => {
-      expect(store.get(txListAtom).length).toBe(1)
-    })
+    // useIncomingTransferDetector trailing-debounces the epoch bump by 2s (P1-29), so the
+    // incremental scan fires after the quiet window — give waitFor more than that budget on real
+    // timers rather than mixing fake timers into the SDK-mock + waitFor flow.
+    await waitFor(
+      () => {
+        expect(store.get(txListAtom).length).toBe(1)
+      },
+      { timeout: 3_000 },
+    )
     const newRecord = store.get(txListAtom)[0]!
     expect(newRecord.kind).toBe('transfer-shielded-received')
     expect(newRecord.id).toBe('synth:rcv-1:TransferReceiveERC20s')

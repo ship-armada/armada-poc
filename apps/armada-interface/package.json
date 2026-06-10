@@ -25,7 +25,6 @@
     "@tanstack/react-query": "^5.96.0",
     "clsx": "^2.1.1",
     "ethers": "^6.15.0",
-    "framer-motion": "^12.0.0",
     "jotai": "^2.15.1",
     "level-js": "^6.1.0",
     "lucide-react": "^0.552.0",

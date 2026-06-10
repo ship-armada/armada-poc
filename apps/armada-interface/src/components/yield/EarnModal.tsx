@@ -1,7 +1,7 @@
 // ABOUTME: EarnModal — vault deposit + withdrawal. Add Funds tab uses yield-deposit; Withdraw tab uses yield-withdraw.
 // ABOUTME: Matches either openModalAtom === 'yield-deposit' or === 'yield-withdraw'; the entry point picks the initial tab.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom, type ModalKind } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
@@ -51,6 +51,9 @@ export function EarnModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<'yield-deposit' | 'yield-withdraw' | null>(null)
+  // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Source data
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -188,6 +191,9 @@ export function EarnModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
       // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
@@ -243,6 +249,9 @@ export function EarnModal() {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
@@ -302,6 +311,7 @@ export function EarnModal() {
           netLabel={displayNetLabel}
           submitBlockedReason={submitBlockedReason}
           onBack={() => setStep('input')}
+          isSubmitting={isSubmitting}
           onConfirm={handleSubmit}
         />
       )}

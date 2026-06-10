@@ -8,6 +8,7 @@ import { ShieldModal } from './ShieldModal'
 import { openModalAtom } from '@/state/ui'
 import { activeRailgunWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
 import { feeQuoteAtom } from '@/state/fees'
+import { txListAtom } from '@/state/tx'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
 // useDisplayFees calls wagmi's useReadContract which requires a WagmiProvider; these tests
@@ -131,5 +132,22 @@ describe('<ShieldModal>', () => {
     await waitFor(() => {
       expect(screen.getByText('Pending')).toBeInTheDocument()
     })
+  })
+
+  it('does not create a second record when Confirm is double-clicked (P0-7)', async () => {
+    const store = renderModal({ open: true, max: 10_000_000n })
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
+    const confirm = screen.getByRole('button', { name: /Confirm deposit/ })
+    // Fire twice before React can flush the disabled state — the synchronous submittingRef guard
+    // must make the second click a no-op. Without it, a fast double-click = two real deposits.
+    await act(async () => {
+      fireEvent.click(confirm)
+      fireEvent.click(confirm)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Pending')).toBeInTheDocument()
+    })
+    expect(store.get(txListAtom).length).toBe(1)
   })
 })

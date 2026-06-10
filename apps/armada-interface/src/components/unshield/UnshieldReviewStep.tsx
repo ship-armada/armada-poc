@@ -19,6 +19,8 @@ export interface UnshieldReviewStepProps {
   /** When set, Confirm is disabled and the reason is shown inline. Used to gate the submit
    *  while the shielded-balance sync is still in progress. */
   submitBlockedReason?: string | null
+  /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
+  isSubmitting?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -31,6 +33,7 @@ export function UnshieldReviewStep({
   totalDeducted,
   isXchain,
   submitBlockedReason,
+  isSubmitting,
   onBack,
   onConfirm,
 }: UnshieldReviewStepProps) {
@@ -72,7 +75,7 @@ export function UnshieldReviewStep({
         primary={{
           label: 'Confirm withdrawal',
           onClick: onConfirm,
-          disabled: Boolean(submitBlockedReason),
+          disabled: Boolean(submitBlockedReason) || isSubmitting,
         }}
         secondary={{ label: 'Back', onClick: onBack }}
       />

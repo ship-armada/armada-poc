@@ -1,7 +1,7 @@
 // ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders DepositOverlayShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
 // ABOUTME: Dispatches between same-chain shield (hub source) and cross-chain shield-xchain (client source) based on fromChainId; B3 routes hub shield through GaslessShieldWrapper when available.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { useQuery } from '@tanstack/react-query'
 import { openModalAtom } from '@/state/ui'
@@ -61,6 +61,11 @@ export function ShieldModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Double-submit guard (P0-7). The ref is the synchronous gate (state updates are async, so a
+  // rapid second click would otherwise pass an `isSubmitting` state check); the state drives the
+  // Confirm button's disabled prop so the button visibly locks during the pre-submit refresh().
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const balances = useBalances()
   const max = balances.unshielded[fromChainId] ?? 0n
@@ -207,6 +212,9 @@ export function ShieldModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
       // null ⇒ submit was refused on a follower tab (useTx.submit toasts + persists nothing); we
@@ -297,6 +305,9 @@ export function ShieldModal() {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
@@ -353,6 +364,7 @@ export function ShieldModal() {
           // the amount card already breaks it out into individual rows.
           fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
+          isSubmitting={isSubmitting}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
         />

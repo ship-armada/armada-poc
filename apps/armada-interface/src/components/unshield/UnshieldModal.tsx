@@ -1,7 +1,7 @@
 // ABOUTME: UnshieldModal — withdraw private USDC to an EVM address. Selects unshield-local or unshield-xchain based on destination chain.
 // ABOUTME: Two useTx hooks are mounted (one per kind); submit picks the right one. Record subscription follows the kind that was submitted.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
@@ -55,6 +55,9 @@ export function UnshieldModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Source data.
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -145,6 +148,9 @@ export function UnshieldModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
       // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
@@ -207,6 +213,9 @@ export function UnshieldModal() {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
@@ -266,6 +275,7 @@ export function UnshieldModal() {
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
+          isSubmitting={isSubmitting}
           onConfirm={handleSubmit}
         />
       )}

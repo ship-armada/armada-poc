@@ -20,6 +20,8 @@ export interface SendReviewStepProps {
   totalDeducted: bigint
   isXchain: boolean
   submitBlockedReason?: string | null
+  /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
+  isSubmitting?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -42,6 +44,7 @@ export function SendReviewStep({
   totalDeducted,
   isXchain,
   submitBlockedReason,
+  isSubmitting,
   onBack,
   onConfirm,
 }: SendReviewStepProps) {
@@ -91,7 +94,7 @@ export function SendReviewStep({
         primary={{
           label: 'Confirm send',
           onClick: onConfirm,
-          disabled: Boolean(submitBlockedReason),
+          disabled: Boolean(submitBlockedReason) || isSubmitting,
         }}
         secondary={{ label: 'Back', onClick: onBack }}
       />

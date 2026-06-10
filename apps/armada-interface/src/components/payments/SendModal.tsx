@@ -1,7 +1,7 @@
 // ABOUTME: SendModal — pay someone in USDC, either privately (0zk → 0zk) or to an external wallet (0x). Picks among three kinds based on the tab + destination chain.
 // ABOUTME: Mounts three useTx hooks (transfer-shielded / unshield-local / unshield-xchain); submitted-kind state locks the subscription for the rest of the flow. External-tab + xchain reuses unshield-xchain — same contract path, different UI entry.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
@@ -62,6 +62,9 @@ export function SendModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Source data
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -185,6 +188,9 @@ export function SendModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
       // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
@@ -262,6 +268,9 @@ export function SendModal() {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
@@ -330,6 +339,7 @@ export function SendModal() {
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
+          isSubmitting={isSubmitting}
           onConfirm={handleSubmit}
         />
       )}

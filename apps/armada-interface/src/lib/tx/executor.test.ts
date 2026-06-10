@@ -2,13 +2,14 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { cancelTx, executeTx, registerHandler, retryTx, startEngine, type StageHandler } from './executor'
+import { cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
+import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
 import { tabVisibleAtom } from '@/state/visibility'
 import { cacheClear } from '../cache'
 import { setUnlocked, clear as clearKeyManager } from '../railgun/keyManager'
-import type { TxError, TxRecord } from './types'
+import { isTerminalState, type TxError, type TxRecord } from './types'
 
 function makeRecord(overrides: Partial<TxRecord> = {}): TxRecord {
   return {
@@ -231,5 +232,113 @@ describe('retryTx (P0-4)', () => {
 
   it('refuses a retry for an unknown id', () => {
     expect(retryTx('does-not-exist')).toBe(false)
+  })
+})
+
+describe('resumeForWallet (P0-2)', () => {
+  const SHORT_CAP = 10 * 60_000
+
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    // Park the chain at the visibility gate so a resumed (has-hash) record's handler doesn't run
+    // and mutate it — we only assert which resume branch was taken.
+    store.set(tabVisibleAtom, false)
+    await cacheClear('txHistory')
+    clearKeyManager()
+  })
+
+  // Each test uses a fresh walletId — resumeForWallet is idempotent per (walletId, session) via a
+  // module-scope Set with no test reset, so reusing an id would early-return.
+  function recordFor(walletId: string, overrides: Partial<TxRecord> = {}): TxRecord {
+    return makeRecord({
+      walletContext: { evmAddress: '0xabc', railgunWalletId: walletId, sourceChainId: 31337 },
+      ...overrides,
+    })
+  }
+
+  it('resumes a broadcast (has-hash) record without terminalizing it', async () => {
+    const store = getDefaultStore()
+    const walletId = 'rw-resume-hash'
+    unlockForTest(walletId)
+    startEngine() // elect leader (no navigator.locks in jsdom)
+    const rec = recordFor(walletId, {
+      id: 'res-hash',
+      executionState: 'waiting',
+      stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'],
+      updatedSeq: 4,
+      createdAt: Date.now() - 30_000, // within budget
+      artifacts: { sourceTxHash: '0xfeed' },
+    })
+    await putTx(rec)
+
+    await resumeForWallet(walletId)
+
+    // Has-hash branch: re-attach the watcher (executeTx). It must NOT be marked failed/expired.
+    const after = await loadAllTx(walletId)
+    expect(after).toHaveLength(1)
+    expect(isTerminalState(after[0]!.executionState)).toBe(false)
+    expect(after[0]!.artifacts.sourceTxHash).toBe('0xfeed')
+  })
+
+  it('marks a pre-broadcast (no-hash) record failed with INTERRUPTED', async () => {
+    const walletId = 'rw-resume-nohash'
+    unlockForTest(walletId)
+    startEngine()
+    const rec = recordFor(walletId, {
+      id: 'res-nohash',
+      executionState: 'active',
+      stage: 'build-proof',
+      stagesCompleted: [],
+      updatedSeq: 1,
+      createdAt: Date.now() - 30_000,
+      artifacts: {},
+    })
+    await putTx(rec)
+
+    await resumeForWallet(walletId)
+
+    const after = await loadAllTx(walletId)
+    expect(after[0]!.executionState).toBe('failed')
+    expect(after[0]!.artifacts.error?.code).toBe('INTERRUPTED')
+    // Auto-lock regression guard: a terminalized record can't keep pendingTxsAtom non-empty.
+    expect(isTerminalState(after[0]!.executionState)).toBe(true)
+  })
+
+  it('expires a record past its lifecycle budget (even with a hash)', async () => {
+    const walletId = 'rw-resume-expired'
+    unlockForTest(walletId)
+    startEngine()
+    const rec = recordFor(walletId, {
+      id: 'res-expired',
+      executionState: 'waiting',
+      stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'],
+      updatedSeq: 4,
+      createdAt: Date.now() - (SHORT_CAP + 60_000), // over the 10-min cap
+      artifacts: { sourceTxHash: '0xfeed' },
+    })
+    await putTx(rec)
+
+    await resumeForWallet(walletId)
+
+    const after = await loadAllTx(walletId)
+    expect(after[0]!.executionState).toBe('expired')
+  })
+
+  it('is a no-op while locked (no key to decrypt records)', async () => {
+    const store = getDefaultStore()
+    // Seed under one wallet, then lock.
+    const walletId = 'rw-resume-locked'
+    unlockForTest(walletId)
+    await putTx(recordFor(walletId, { id: 'res-locked', executionState: 'active', stage: 'build-proof', updatedSeq: 1, artifacts: {} }))
+    clearKeyManager()
+    store.set(txListAtom, [])
+
+    await resumeForWallet(walletId)
+
+    // Locked → loadAllTx returns [] → nothing seeded or written.
+    expect(store.get(txListAtom)).toEqual([])
   })
 })

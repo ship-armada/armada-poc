@@ -18,6 +18,7 @@ One concern per hook. Hooks own the React lifecycle (effects, subscriptions, tim
 | `useFees()` | `/fees` quote via React Query — auto-refreshes near expiry, exponential cold-start backoff, dedups across consumers. | Working |
 | `useTx({ kind })` | Per-tx submit/track/retry/cancel. Multi-instance — each call owns a ulid. | Skeleton (state writes work, stage pipeline TODO) |
 | `useTxHistory()` | Hydrates `txListAtom` from IDB on `activeRailgunWalletIdAtom` change (V2 Phase 6); clears the atom on lock. Only hydrates records belonging to the active walletId. | Working |
+| `useTxResume()` | On unlock (leader tab only), calls `executor.resumeForWallet(walletId)` — re-attaches watchers to already-broadcast txs (has `sourceTxHash`) and fails pre-broadcast interruptions as `INTERRUPTED`. Idempotent per (walletId, session). Mount once at App root. | Working |
 | `useCctpAttestation(record)` | Polls Iris for a specific xchain tx record. | Stub |
 
 ## Conventions

@@ -296,6 +296,10 @@ export type MetaFor<K extends TxKind> =
  *                      the user should check their wallet or the explorer. Distinct from TX_REVERTED.
  *  RPC_ERROR         — wagmi/viem call threw before we got any tx hash. Usually safe to retry.
  *  USER_REJECTED     — the user declined a wallet signature or chain switch.
+ *  INTERRUPTED       — a non-terminal record was found on resume (app reload / crash) that never
+ *                      reached a broadcast (no sourceTxHash). Nothing was sent; resuming would
+ *                      re-prompt the wallet out of nowhere, so we fail honestly and ask the user
+ *                      to start a new transaction.
  *  CANCELLED         — user-initiated cancel on a record that hadn't broadcast yet. Nothing on-chain.
  *  DISMISSED         — user "stopped tracking" a record that HAD broadcast. The on-chain tx will run
  *                      to completion; we just stopped watching it. We persist the txHash so the user
@@ -308,6 +312,7 @@ export type TxErrorCode =
   | 'POLL_TIMEOUT'
   | 'RPC_ERROR'
   | 'USER_REJECTED'
+  | 'INTERRUPTED'
   | 'CANCELLED'
   | 'DISMISSED'
   | 'OTHER'

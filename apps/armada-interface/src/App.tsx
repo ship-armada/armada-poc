@@ -20,6 +20,7 @@ import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
+import { useTxResume } from '@/hooks/useTxResume'
 import { useUsdcBalances } from '@/hooks/useUsdcBalances'
 import { useWallet } from '@/hooks/useWallet'
 // Side-effect imports: register each feature's stage handler with the tx executor at module load.
@@ -52,6 +53,7 @@ export function App() {
   useTabVisible()
   useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
+  useTxResume() // on unlock (leader only), resume watchers for broadcast txs / fail pre-broadcast interruptions (P0-2)
   useHistoryRecovery() // chain-recover synthetic rows on unlock + re-scan epoch (Phase 9.3)
   useIncomingTransferDetector() // re-scan on balance events so received transfers surface live (Phase 9.4)
   useAutoLock()  // idle-timer-driven lock for the shielded wallet

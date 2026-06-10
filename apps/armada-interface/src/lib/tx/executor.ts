@@ -4,7 +4,7 @@
 import { getDefaultStore } from 'jotai'
 import { track, trackError } from '../telemetry'
 import { lifecycleFor } from './lifecycles'
-import { markCancelled, markDismissed, markExpired, markRetrying, shouldResume } from './reducer'
+import { markCancelled, markDismissed, markExpired, markFailed, markRetrying } from './reducer'
 import { loadAllTx, putTxIfFresh } from './storage'
 import { isTerminalState } from './types'
 import type { StageFor, TxKind, TxRecord } from './types'
@@ -46,6 +46,9 @@ const handlers = new Map<TxKind, StageHandler<TxKind>>()
 const running = new Map<string, AbortController>()
 let isLeader = false
 let engineStarted = false
+// Wallets we've already run resume for this session — resume is idempotent per (walletId, session)
+// so a lock/unlock cycle or a re-render of the resume hook can't double-dispatch.
+const resumedWallets = new Set<string>()
 
 /* ----- Public API ----- */
 
@@ -236,45 +239,69 @@ function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
 function onBecomeLeader(): void {
   isLeader = true
   track('tx.engine.started', { isLeader: true })
-  void resumeNonTerminal()
+  // Resume is NOT kicked here. The leader lock is acquired pre-unlock (from App mount), when no
+  // walletId / decryption key is available yet — `loadAllTx` would return []. Resume runs from
+  // `useTxResume` once the active wallet unlocks (and only on the leader). See resumeForWallet.
 }
 
 /**
- * Walk persisted records on app load; resume non-terminal ones; expire stale.
+ * Resume persisted, non-terminal tx records for `walletId` after an app reload / crash. Called
+ * from `useTxResume` on unlock, leader-gated and idempotent per (walletId, session). (P0-2)
  *
- * Reads from IDB directly rather than `txListAtom` because hydration
- * (`useTxHistory`) races against leader-lock acquisition. If the lock is
- * acquired before hydration completes, the atom is still empty and we'd miss
- * everything. `upsertTxAtom` is OCC-safe so seeding records here cannot
- * regress any newer in-memory state that hydration produces later.
+ * Reads from IDB directly rather than `txListAtom` because hydration (`useTxHistory`) races this;
+ * `upsertTxAtom` is OCC-safe so seeding records here can't regress newer in-memory state.
+ *
+ * Policy — what we resume is deliberately narrow:
+ *  - past the per-kind wall-clock budget → `expired` (now actually reachable; resume used to be
+ *    dead code that ran pre-unlock with no walletId and silently did nothing).
+ *  - has a `sourceTxHash` → the tx is ON CHAIN; re-attach the watcher (receipt / relayer status /
+ *    cross-chain delivery polling). Safe because every submit stage is idempotent (WS1.3): a
+ *    re-entry with a known hash never re-broadcasts. This is the ONLY thing we resume.
+ *  - otherwise (no hash) → we never confirmed a broadcast: interrupted at build-proof, or at
+ *    submit-relayer before the tx hit the wire. Resuming would re-prompt the wallet / re-POST out
+ *    of nowhere, so we fail honestly with `INTERRUPTED` ("nothing was sent") rather than resume.
  */
-async function resumeNonTerminal(): Promise<void> {
+export async function resumeForWallet(walletId: string): Promise<void> {
+  if (!isLeader) return
+  if (!walletId) return
+  if (resumedWallets.has(walletId)) return
+  resumedWallets.add(walletId)
+
   const store = getDefaultStore()
   let records: TxRecord[]
   try {
-    records = await loadAllTx()
+    records = await loadAllTx(walletId)
   } catch (err) {
+    resumedWallets.delete(walletId) // let a later unlock retry
     trackError('tx.executor.resume', err, { scope: 'tx.executor', message: 'loadAllTx failed' })
     return
   }
+
   for (const record of records) {
-    if (record.executionState === 'completed'
-      || record.executionState === 'failed'
-      || record.executionState === 'expired'
-      || record.executionState === 'cancelled') {
-      continue
-    }
-    // Seed the atom so executeTx() can find the record even if useTxHistory
-    // hasn't finished hydrating yet. OCC ensures we don't clobber newer state.
-    store.set(upsertTxAtom, record)
-    if (shouldResume(record)) {
-      executeTx(record.id)
-    } else {
+    if (isTerminalState(record.executionState)) continue
+
+    if (Date.now() - record.createdAt > lifecycleFor(record.kind).maxDurationMs) {
       const expired = markExpired(record)
       store.set(upsertTxAtom, expired)
       await putTxIfFresh(expired)
       track('tx.expired', { id: expired.id, kind: expired.kind })
+      continue
     }
+
+    if ((record.artifacts as { sourceTxHash?: `0x${string}` }).sourceTxHash) {
+      // Seed the atom so executeTx() can find the record even if hydration hasn't landed yet.
+      store.set(upsertTxAtom, record)
+      executeTx(record.id)
+      continue
+    }
+
+    const failed = markFailed(record, {
+      code: 'INTERRUPTED',
+      message: 'This transaction was interrupted before it was sent — nothing left your wallet. Start a new transaction.',
+    })
+    store.set(upsertTxAtom, failed)
+    await putTxIfFresh(failed)
+    track('tx.interrupted', { id: record.id, kind: record.kind })
   }
 }
 

@@ -39,6 +39,7 @@ export type EventRegistry = {
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }
   'tx.expired':               { id: string; kind: TxKind }
   'tx.cancelled':             { id: string; kind: TxKind }
+  'tx.interrupted':           { id: string; kind: TxKind }
 
   // Relayer-mediated submit (Phase A). Fired by handlers that delegate broadcast to the relayer
   // instead of sending from the user's wallet. errorCode on `rejected` is the typed RelayerErrorCode

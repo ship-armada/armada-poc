@@ -12,13 +12,30 @@ vi.mock('wagmi/actions', () => ({
 }))
 
 vi.mock('@/config/wagmi', () => ({
-  wagmiConfig: { _mock: true },
+  wagmiConfig: {
+    chains: [
+      {
+        id: 11155111,
+        name: 'Ethereum Sepolia',
+        nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+        rpcUrls: { default: { http: ['https://wagmi-default.example'] } },
+        blockExplorers: { default: { name: 'Etherscan', url: 'https://sepolia.etherscan.io' } },
+      },
+    ],
+  },
 }))
 
 vi.mock('@/config/network', () => ({
   getChainById: (id: number) => {
-    if (id === 11155111) return { chainId: 11155111, name: 'Ethereum Sepolia' }
-    if (id === 84532) return { chainId: 84532, name: 'Base Sepolia' }
+    if (id === 11155111) {
+      return {
+        chainId: 11155111,
+        name: 'Ethereum Sepolia',
+        rpcUrls: ['https://app-config.example'],
+        explorerUrl: 'https://sepolia.etherscan.io',
+      }
+    }
+    if (id === 84532) return { chainId: 84532, name: 'Base Sepolia', rpcUrls: ['https://base.example'] }
     return undefined
   },
 }))
@@ -107,14 +124,47 @@ describe('ensureChain', () => {
     await expect(ensureChain(11155111)).rejects.toThrow(/Ethereum Sepolia/)
   })
 
-  it('throws an actionable error when the wallet does not have the chain configured (4902)', async () => {
-    // EIP-3326: wallets return code 4902 when they don't know about the requested chain. The
-    // user has to add it — we don't auto-add since the RPC URL we'd suggest may differ from the
-    // user's preferred endpoint.
+  it('adds the chain then retries the switch when the wallet returns 4902 (P1-16)', async () => {
+    // EIP-3326: switch returns 4902 (unknown chain) → we send wallet_addEthereumChain from our
+    // config, then retry the switch. The connector then acknowledges the new chain and we resolve.
     const notAdded = Object.assign(new Error('Unrecognized chain ID "0xaa36a7"'), { code: 4902 })
+    const requestMock = vi.fn()
+      .mockRejectedValueOnce(notAdded) // 1: wallet_switchEthereumChain → 4902
+      .mockResolvedValueOnce(null) // 2: wallet_addEthereumChain → ok
+      .mockResolvedValueOnce(null) // 3: wallet_switchEthereumChain retry → ok
+    getAccountMock.mockReturnValue(fakeConnected({ liveChainIds: [84532, 11155111], requestMock }))
+
+    await expect(ensureChain(11155111)).resolves.toBeUndefined()
+
+    expect(requestMock).toHaveBeenCalledTimes(3)
+    const addCall = requestMock.mock.calls[1]![0] as { method: string; params: unknown[] }
+    expect(addCall.method).toBe('wallet_addEthereumChain')
+    expect(addCall.params[0]).toMatchObject({
+      chainId: '0xaa36a7',
+      chainName: 'Ethereum Sepolia',
+      nativeCurrency: { symbol: 'ETH', decimals: 18 },
+      // RPC comes from the app's network config, not the wagmi chain default.
+      rpcUrls: ['https://app-config.example'],
+      blockExplorerUrls: ['https://sepolia.etherscan.io'],
+    })
+  })
+
+  it('surfaces a friendly error when the user rejects the add (P1-16)', async () => {
+    const notAdded = Object.assign(new Error('Unrecognized chain ID'), { code: 4902 })
+    const rejectedAdd = Object.assign(new Error('User rejected the request.'), { code: 4001 })
+    const requestMock = vi.fn()
+      .mockRejectedValueOnce(notAdded) // switch → 4902
+      .mockRejectedValueOnce(rejectedAdd) // add → user rejects
+    getAccountMock.mockReturnValue(fakeConnected({ liveChainIds: [84532], requestMock }))
+    await expect(ensureChain(11155111)).rejects.toThrow(/Adding Ethereum Sepolia was declined/i)
+  })
+
+  it('falls back to manual-add guidance when we have no metadata for the chain (4902)', async () => {
+    // Chain 9999 isn't in our wagmi chains list → no add params → keep the original guidance.
+    const notAdded = Object.assign(new Error('Unrecognized chain ID'), { code: 4902 })
     const requestMock = vi.fn().mockRejectedValueOnce(notAdded)
     getAccountMock.mockReturnValue(fakeConnected({ liveChainIds: [84532], requestMock }))
-    await expect(ensureChain(11155111)).rejects.toThrow(/Ethereum Sepolia isn't configured in your wallet/i)
+    await expect(ensureChain(9999)).rejects.toThrow(/isn't configured in your wallet/i)
   })
 
   it('wraps unknown switch errors with chain context', async () => {

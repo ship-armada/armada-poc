@@ -24,6 +24,30 @@ function toHexChainId(chainId: number): `0x${string}` {
 }
 
 /**
+ * Build `wallet_addEthereumChain` params for a chain the wallet doesn't yet know about (EIP-3326
+ * 4902). Name + nativeCurrency + block explorer come from the registered wagmi chain object; the
+ * RPC URL comes from the app's own network config so the wallet talks to the same endpoint the
+ * app uses. Returns null when we have no metadata for the chain — the caller then falls back to
+ * the manual-add guidance. (P1-16)
+ */
+function addEthereumChainParams(targetChainId: number): Record<string, unknown> | null {
+  const chain = (wagmiConfig.chains ?? []).find(c => c.id === targetChainId)
+  if (!chain) return null
+  const identity = getChainById(targetChainId)
+  const rpcUrls = identity && identity.rpcUrls.length > 0
+    ? [...identity.rpcUrls]
+    : [...chain.rpcUrls.default.http]
+  const explorerUrl = identity?.explorerUrl ?? chain.blockExplorers?.default?.url
+  return {
+    chainId: toHexChainId(targetChainId),
+    chainName: chain.name,
+    nativeCurrency: chain.nativeCurrency,
+    rpcUrls,
+    ...(explorerUrl ? { blockExplorerUrls: [explorerUrl] } : {}),
+  }
+}
+
+/**
  * Heuristic for user-rejected-request errors across wallet stacks. viem throws
  * `UserRejectedRequestError` (code 4001). MetaMask sometimes surfaces it with code 4001 or as
  * a plain Error with "User rejected" / "User denied" in the message. Cover all the common
@@ -120,6 +144,28 @@ export async function ensureChain(targetChainId: number): Promise<void> {
       )
     }
     if (isChainNotAdded(err)) {
+      // The wallet doesn't know this chain. Offer to add it (EIP-3085) from our config, then retry
+      // the switch once — rather than dead-ending the user with "add it yourself". (P1-16)
+      const addParams = addEthereumChainParams(targetChainId)
+      if (addParams) {
+        try {
+          await provider.request({ method: 'wallet_addEthereumChain', params: [addParams] })
+          // Most wallets auto-switch after adding; some don't — retry the switch once to be sure.
+          await provider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: toHexChainId(targetChainId) }],
+          })
+          await waitForConnectorChainId(targetChainId, connector)
+          return
+        } catch (addErr) {
+          if (isUserRejection(addErr)) {
+            throw new Error(
+              `Adding ${chainLabel(targetChainId)} was declined. Approve it in your wallet and try again.`,
+            )
+          }
+          // Add failed for another reason — fall through to the manual-add guidance below.
+        }
+      }
       throw new Error(
         `${chainLabel(targetChainId)} isn't configured in your wallet. Add the network and try again.`,
       )

@@ -271,6 +271,27 @@ interface ApplyRootSecretResult {
   readonly newlyCreated: boolean
 }
 
+/**
+ * Thrown when a paste-secret / backup restore derives an identity that doesn't match the one this
+ * device is already bound to for (evmAddress, account). We refuse rather than silently overwriting
+ * the localStorage binding maps — a wrong-secret rebind would make the NEXT deterministic sign-in
+ * throw a confusing `NonDeterministicSignerError('cached-checksum-mismatch')`. The unlock entry
+ * points let this propagate; the UnlockFlow renders `message`. (P1-13)
+ */
+export class MismatchedRecoverySecretError extends Error {
+  readonly boundChecksum: string
+  readonly providedChecksum: string
+  constructor(boundChecksum: string, providedChecksum: string) {
+    super(
+      "This recovery secret doesn't match the account previously used on this device. " +
+        'Double-check the secret — or reset this device first if you mean to switch to a different wallet.',
+    )
+    this.name = 'MismatchedRecoverySecretError'
+    this.boundChecksum = boundChecksum
+    this.providedChecksum = providedChecksum
+  }
+}
+
 async function applyRootSecret(
   rootSecret: Uint8Array,
   opts: ApplyRootSecretOptions = {},
@@ -285,6 +306,19 @@ async function applyRootSecret(
   const sdkEncryptionKey = deriveSdkEncryptionKeyHex(rootSecret)
   const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
   const account = opts.account ?? 0n
+
+  // Identity-binding guard (P1-13): if this device is already bound to a DIFFERENT identity for
+  // (evmAddress, account), refuse before touching the SDK or the binding maps. This stops a wrong
+  // pasted secret (or a backup for another wallet) from silently rebinding the device. Sign-in
+  // never reaches a mismatch here — enrollFromSignature throws its own typed error first; when the
+  // checksums match (or none is stored) this is a no-op. No evmAddress (off-chain paste) → skip.
+  if (opts.evmAddress) {
+    const boundChecksum = readStoredChecksumFor(opts.evmAddress, account)
+    if (boundChecksum && boundChecksum !== checksum) {
+      throw new MismatchedRecoverySecretError(boundChecksum, checksum)
+    }
+  }
+
   const cachedWalletId = opts.evmAddress
     ? readStoredWalletIdFor(opts.evmAddress, account)
     : null

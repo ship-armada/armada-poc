@@ -44,6 +44,7 @@ import {
   unlockFromBackup,
   lockWallet,
   resetWallet,
+  MismatchedRecoverySecretError,
 } from './wallet'
 import { isUnlocked, getWalletId, getRailgunAddress, clear as clearKeyManager } from './keyManager'
 import { encryptBackup, deriveRootSecret } from '@/lib/crypto/kdf'
@@ -280,6 +281,39 @@ describe('unlockFromRootSecret', () => {
 
   it('rejects rootSecret of the wrong length', async () => {
     await expect(unlockFromRootSecret(new Uint8Array(16))).rejects.toThrow()
+  })
+
+  // P1-13: a wrong pasted secret (or a backup for a different wallet) must NOT silently rebind the
+  // device. Refuse with a typed error and leave the binding maps untouched so the next correct
+  // sign-in doesn't hit the scary cached-checksum-mismatch.
+  it('refuses when the derived identity differs from the device binding, without rebinding', async () => {
+    seedStoredChecksum('aaaa bbbb cccc') // device bound to a different identity for (EVM, account)
+    const root = deriveRootSecret(fixedSig())
+
+    await expect(
+      unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n }),
+    ).rejects.toBeInstanceOf(MismatchedRecoverySecretError)
+
+    // Binding maps untouched, no SDK work attempted, wallet stays locked.
+    expect(readStoredMap('armada.shielded.checksums')[SAMPLE_EVM_LC]?.['0']).toBe('aaaa bbbb cccc')
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockLoad).not.toHaveBeenCalled()
+    expect(isUnlocked()).toBe(false)
+  })
+
+  it('unlocks + writes the binding on a fresh device (no stored checksum)', async () => {
+    const root = deriveRootSecret(fixedSig())
+    const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
+    expect(isUnlocked()).toBe(true)
+    expect(readStoredMap('armada.shielded.checksums')[SAMPLE_EVM_LC]?.['0']).toBe(state.checksum)
+  })
+
+  it('unlocks when the pasted secret matches the device binding (re-paste of the same secret)', async () => {
+    const first = await unlockFromRootSecret(deriveRootSecret(fixedSig()), { evmAddress: SAMPLE_EVM, account: 0n })
+    clearKeyManager()
+    const again = await unlockFromRootSecret(deriveRootSecret(fixedSig()), { evmAddress: SAMPLE_EVM, account: 0n })
+    expect(again.checksum).toBe(first.checksum)
+    expect(isUnlocked()).toBe(true)
   })
 })
 

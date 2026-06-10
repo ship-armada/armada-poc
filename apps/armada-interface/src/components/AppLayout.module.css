@@ -42,27 +42,17 @@
   -webkit-mask-composite: source-in;
 }
 
-/* Network badge — flat fill + white text to match the wallet pill (no border); the leading dot is
-   brand-lavender. Sourced from the same tokens as @armada/ui's WalletButton so the two read as a
-   set in the header. */
+/* Network badge — flat fill + white text to match the wallet pill (no border). Sourced from the
+   same tokens as @armada/ui's WalletButton so the two read as a set in the header. */
 .networkBadge {
   display: inline-flex;
   align-items: center;
-  gap: var(--primitives-spacing-2);
   height: 24px;
   padding: 0 10px;
   border-radius: var(--semantic-component-navitem-radius);
   background: var(--semantic-component-navbar-bg);
   color: var(--semantic-color-text-primary);
   white-space: nowrap;
-}
-
-.networkDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--semantic-color-brand-lavender);
 }
 
 /* Active page indicator — bolder weight only. Targets NavItem's `aria-current="page"`

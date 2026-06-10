@@ -50,7 +50,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
           <span className={styles.networkBadge} role="status">
-            <span className={styles.networkDot} aria-hidden="true" />
             {NETWORK_BADGE_LABEL}
           </span>
           {/* V2 Phase 3a: merged pill — the 0zk shielded identity now lives inside

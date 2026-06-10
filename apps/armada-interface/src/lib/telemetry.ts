@@ -1,7 +1,8 @@
-// ABOUTME: Structured console-only telemetry — typed event registry (compile-time privacy enforcement) + scoped error reporter.
-// ABOUTME: Plan §16 + reviewer #12. Never emit amounts, recipients, mnemonics, attestation bytes, addresses, memo fields.
+// ABOUTME: Structured telemetry — typed event registry (compile-time privacy enforcement) + scoped error reporter.
+// ABOUTME: Console always; `trackError` also forwards to Sentry (no-op unless a DSN is configured). Plan §16 + reviewer #12. Never emit amounts, recipients, mnemonics, attestation bytes, addresses, memo fields.
 
 import type { TxKind, TxRecord, TxStage } from './tx/types'
+import { captureError } from './sentry'
 
 /* ------------------------------------------------------------------ *
  *  EventRegistry — the canonical, allowlisted set of telemetry events.
@@ -130,11 +131,15 @@ const ERROR_MESSAGE_MAX_CHARS = 200
  * primitives only (`ErrorProps`) so an accidental object dump doesn't slip
  * sensitive data through.
  *
- * The message is reduced to its first line, capped at 200 chars. SDK / RPC / wallet errors can
- * carry long multi-line payloads (request bodies, calldata, stack-laden strings) that may embed
- * sensitive material; truncating bounds what we retain. Today the sink is console-only, so this is
- * belt-and-suspenders — but it MUST be re-reviewed before any remote/persistent sink is wired,
- * since at that point the retained text leaves the device.
+ * Two sinks with different payloads:
+ *  - Console: the message reduced to its first line, capped at 200 chars. SDK / RPC / wallet errors
+ *    carry long multi-line payloads (request bodies, calldata, stack-laden strings) that may embed
+ *    sensitive material; truncating bounds what we print.
+ *  - Sentry (only when a DSN is configured — otherwise a no-op): the FULL error object, so stacks
+ *    are useful for triage. The remote-sink leak risk this guards against is handled at that
+ *    boundary by `lib/sentry.ts`'s `beforeSend` scrubber (redacts 0zk / EVM addresses + long hex)
+ *    plus `sendDefaultPii: false`. Keep the two in lockstep: widen the scrubber before widening
+ *    what reaches Sentry.
  */
 export function trackError(scope: string, err: unknown, props: ErrorProps = {}): void {
   const raw = err instanceof Error ? err.message : String(err)
@@ -144,4 +149,5 @@ export function trackError(scope: string, err: unknown, props: ErrorProps = {}):
       ? `${firstLine.slice(0, ERROR_MESSAGE_MAX_CHARS)}…`
       : firstLine
   emit('error', 'error', { scope, message, ...props })
+  captureError(err, { scope, context: props })
 }

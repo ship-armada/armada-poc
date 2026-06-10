@@ -9,7 +9,8 @@ Pure logic — **no React imports allowed.** These modules are unit-testable wit
 | `format.ts` | `formatUsdc`, `truncateAddress`, etc. Duplicated from crowdfund-shared. | Working |
 | `revert.ts` | `mapRevertToMessage(err)` for wallet + relayer errors. | Working |
 | `wagmi-adapter.ts` | `walletClientToSigner(walletClient)` — viem → ethers v6 signer. Duplicated from committer. | Working |
-| `telemetry.ts` | `track / trackTxTransition / trackError`. Console-only initially; sink swappable later. | Working |
+| `telemetry.ts` | `track / trackTxTransition / trackError`. Console always; `trackError` also forwards the full error to Sentry via `sentry.ts::captureError` (no-op unless a DSN is configured). | Working |
+| `sentry.ts` | `initSentry` (DSN-gated no-op) + `captureError` + `scrubString`/`scrubEvent`. Errors-only, `sendDefaultPii: false`, `beforeSend` redacts 0zk/EVM addresses + long hex. Source-map upload is configured in `vite.config.ts` (`@sentry/vite-plugin`, gated on `SENTRY_AUTH_TOKEN`). | Working |
 | `relayer.ts` | HTTP client for `/fees`, `/relay`, `/status/:txHash`. **Stub** — signatures only. | Stub |
 | `cctp.ts` | `MessageSent` log parsing + `pollIrisOnce`. **Stub.** | Stub |
 | `railgun/wallet.ts` | V2 signIn / unlockFromRootSecret / unlockFromBackup / lockWallet / resetWallet. Per-(EVM address, account) `armada.shielded.walletIds` + `armada.shielded.checksums` localStorage maps. | Working |

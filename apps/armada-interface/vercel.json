@@ -19,7 +19,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
-        { "key": "Content-Security-Policy-Report-Only", "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://sepolia.base.org https://sepolia-rollup.arbitrum.io https://iris-api-sandbox.circle.com wss://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.rainbow.me; frame-ancestors 'none'; base-uri 'self'; object-src 'none'" }
+        { "key": "Content-Security-Policy-Report-Only", "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://sepolia.base.org https://sepolia-rollup.arbitrum.io https://iris-api-sandbox.circle.com wss://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.rainbow.me https://*.sentry.io; frame-ancestors 'none'; base-uri 'self'; object-src 'none'" }
       ]
     }
   ]

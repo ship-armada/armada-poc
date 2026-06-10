@@ -89,7 +89,7 @@ This model fixes the crowdfund-committer's `useTransactionFlow` single-tx limita
 
 - Tx flows (shield/shield-xchain/unshield-local/unshield-xchain/transfer/yield) are wired end-to-end against real contracts + CCTP and run real ZK proofs; what's NOT done: the relayer-*mediated* submit path (`lib/relayer.ts::submitRelay` — today every handler submits from the user's own wallet via wagmi) and finer-grained real-CCTP-mode Iris polling (the xchain handler collapses the last delivery stages on a single destination-balance detection).
 - e2e tests.
-- Real telemetry sink (console-only for now).
+- A remote telemetry sink beyond Sentry. Sentry error capture IS wired (`lib/sentry.ts`, DSN-gated via `VITE_SENTRY_DSN` — see DEPLOYMENT.md), but the structured `track()` info events remain console-only.
 - Service worker / offline support.
 - i18n.
 - Mnemonic import flow (only generate-on-first-run, per Plan §15.7).

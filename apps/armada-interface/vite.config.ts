@@ -4,6 +4,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
@@ -181,6 +182,26 @@ export default defineConfig({
     }),
     serveDeployments(),
     fundGasEndpoint(),
+    // Sentry sourcemap upload + release. Self-disables when SENTRY_AUTH_TOKEN is unset, so local
+    // dev builds and previews without Sentry env vars build cleanly with zero overhead. Must run
+    // LAST so the bundle + sourcemaps are finalised before upload. `filesToDeleteAfterUpload`
+    // removes the .map files from dist/ once uploaded so they're never published — defence in
+    // depth for a privacy app on top of `build.sourcemap: 'hidden'` (which already strips the
+    // sourceMappingURL reference). Release name defaults to the plugin's git auto-detection when
+    // VITE_SENTRY_RELEASE is unset, keeping the uploaded maps aligned with the runtime release.
+    sentryVitePlugin({
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+      release: process.env.VITE_SENTRY_RELEASE
+        ? { name: process.env.VITE_SENTRY_RELEASE }
+        : undefined,
+      sourcemaps: {
+        assets: ['./dist/**'],
+        filesToDeleteAfterUpload: ['./dist/**/*.map'],
+      },
+    }),
   ],
   build: {
     // Bump the browser baseline above Vite's default 'modules' target
@@ -192,6 +213,14 @@ export default defineConfig({
     // wallet dapps (RainbowKit, viem, wagmi) already require a similar baseline
     // at runtime; matching it here just removes the bundler-side hoop-jumping.
     target: 'es2022',
+    // Emit sourcemaps ONLY when a Sentry auth token is present (i.e. the upload will actually
+    // run). `hidden` strips the `//# sourceMappingURL=` reference from the shipped JS, and the
+    // plugin's `filesToDeleteAfterUpload` removes the .map files from dist/ once uploaded — so a
+    // Sentry-configured build publishes NO maps yet Sentry symbolicates server-side. Without a
+    // token the plugin is disabled and `filesToDeleteAfterUpload` would never fire, so we must
+    // not emit maps at all here — otherwise an un-configured deploy would publish unreferenced
+    // (but fetchable) maps, which a privacy app should never ship.
+    sourcemap: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false,
   },
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),

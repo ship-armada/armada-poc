@@ -9,7 +9,7 @@
 | `VITE_NETWORK` | `sepolia` | Use Sepolia manifests and RPCs (set in `vercel.json` for Vercel; `netlify.toml` for Netlify). |
 | `VITE_RELAYER_URL` | **Public HTTPS URL** (optional) | Live `/fees` quotes. **Omit on Vercel** unless you host a relayer — wallet-submit flows use offline placeholders. Never use `localhost:3001` on hosted previews. |
 | `VITE_WALLETCONNECT_PROJECT_ID` | Project ID | WalletConnect modal (optional for MetaMask-only testing). |
-| `DEPLOYMENT_REF` | **Required, commit SHA** (build-step, non-VITE) | Pins which `ship-armada/armada-deployments` commit the manifests are fetched from. **The build fails if unset** — these manifests carry fund-receiving contract addresses, so we never float on a mutable branch like `main`. Set to a specific SHA and bump deliberately per release. |
+| `DEPLOYMENT_REF` | Optional, commit SHA (build-step, non-VITE) | Which `ship-armada/armada-deployments` commit the manifests are fetched from. **Defaults to the mutable `main` branch when unset.** These manifests carry fund-receiving contract addresses, so **pin to a specific SHA for production** to freeze them into the build (and bump deliberately per release); leaving it on `main` is convenient but means a repo change flows into the next build. |
 | `DEPLOYMENT_INSTANCE` | Optional, defaults `demo1` (build-step, non-VITE) | Which instance directory under `testnet/` to fetch. |
 
 Hosted Sepolia builds work without `VITE_RELAYER_URL` for deposit/send (user wallet submits). Cross-chain completion still requires your team’s relayer process running on infrastructure.
@@ -18,8 +18,8 @@ When `VITE_RELAYER_URL` is unset on a Sepolia build, the app now resolves the re
 
 ## Pre-demo checklist (human actions)
 
-- [ ] **`DEPLOYMENT_REF`** set to the intended `ship-armada/armada-deployments` commit SHA on Netlify + Vercel (build fails without it — P1-23).
-- [ ] **`VITE_RELAYER_URL`** set to the relayer's **HTTPS** origin and the VPS relayer confirmed reachable over HTTPS (P0-10).
+- [ ] **`DEPLOYMENT_REF`** (recommended for production) pinned to a specific `ship-armada/armada-deployments` commit SHA on Netlify + Vercel — otherwise the build floats on `main` (P1-23).
+- [ ] **`VITE_RELAYER_URL`** set to the relayer's **HTTPS** origin and the VPS relayer confirmed reachable over HTTPS, if you want relayer-mediated flows (fees / gasless). Unset → wallet-submit only + a "no relayer configured" banner (P0-10).
 - [ ] **WalletConnect** (P2): set a real `VITE_WALLETCONNECT_PROJECT_ID` and enable the **domain allowlist (Verify API)** for the deploy origin in WalletConnect Cloud, so the project ID can't be used from other origins.
 - [ ] **CSP** promoted from `Content-Security-Policy-Report-Only` to enforcing only after a preview click-through with devtools open, and after adding the relayer origin + any IPFS gateway host to `connect-src` in both `netlify.toml` and `vercel.json` (P0-8).
 

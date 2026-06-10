@@ -12,10 +12,11 @@
 #   DEPLOYMENT_INSTANCE            optional override; defaults to "demo1"
 #                                  (build-step variable only, no VITE_ prefix
 #                                   because it's never exposed to bundled JS)
-#   DEPLOYMENT_REF                 REQUIRED — commit SHA of ship-armada/armada-deployments to
-#                                  fetch manifests from. The build FAILS if unset (P1-23): these
-#                                  manifests carry fund-receiving addresses, so we never float on
-#                                  a mutable branch. Bump deliberately per release. Non-VITE.
+#   DEPLOYMENT_REF                 optional — commit SHA of ship-armada/armada-deployments to
+#                                  fetch manifests from; defaults to the mutable `main` branch
+#                                  when unset (P1-23). These manifests carry fund-receiving
+#                                  addresses, so PIN to a SHA for production to freeze them; the
+#                                  `main` default is convenient but floats. Bump per release. Non-VITE.
 
 [build]
   base    = "apps/armada-interface"
@@ -36,7 +37,7 @@
     cd apps/armada-interface && \
     mkdir -p public/api/deployments && \
     INSTANCE="${DEPLOYMENT_INSTANCE:-demo1}" && \
-    REF="${DEPLOYMENT_REF:?DEPLOYMENT_REF is required — pin it to a commit SHA of ship-armada/armada-deployments (NOT a mutable branch like main). See DEPLOYMENT.md.}" && \
+    REF="${DEPLOYMENT_REF:-main}" && \
     BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/testnet/${INSTANCE}" && \
     echo "Fetching deployment manifests from instance: ${INSTANCE} (ref: ${REF})" && \
     curl -sfL -o public/api/deployments/hub-sepolia-v3.json               "${BASE}/sepolia/cctp.json" && \

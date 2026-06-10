@@ -7,10 +7,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${ROOT}/public/api/deployments"
 INSTANCE="${DEPLOYMENT_INSTANCE:-demo1}"
-# Pin the manifest ref deliberately (P1-23). These manifests carry fund-receiving contract
-# addresses; fetching from a mutable branch (main) means a repo change silently rewires the build.
-# Require DEPLOYMENT_REF (a commit SHA) and fail loudly when unset rather than defaulting to main.
-REF="${DEPLOYMENT_REF:?DEPLOYMENT_REF is required — pin it to a commit SHA of ship-armada/armada-deployments (NOT a mutable branch like main). See apps/armada-interface/DEPLOYMENT.md.}"
+# Manifest ref (P1-23). These manifests carry fund-receiving contract addresses, so for production
+# pin DEPLOYMENT_REF to a commit SHA of ship-armada/armada-deployments — that freezes the addresses
+# into the build. Optional: defaults to the mutable `main` branch when unset (convenient, but a
+# repo change then flows into the next build, which is the supply-chain risk pinning avoids).
+REF="${DEPLOYMENT_REF:-main}"
+if [ -z "${DEPLOYMENT_REF:-}" ]; then
+  echo "WARNING: DEPLOYMENT_REF unset — fetching from mutable 'main'. Pin to a commit SHA for production."
+fi
 BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/testnet/${INSTANCE}"
 
 mkdir -p "${OUT}"

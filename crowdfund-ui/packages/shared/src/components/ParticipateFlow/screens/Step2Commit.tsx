@@ -43,6 +43,13 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   maxArm?: number
   /** Already committed USDC — bar shows this before new input. */
   existingCommittedUsdc?: number
+  /** Single-hop only: label of the hop being committed to (e.g. 'SEED',
+   *  'HOP-1', 'HOP-2'). When provided, renders a hop badge above the title.
+   *  Ignored in the multi-hop variant (each row already shows its own hop). */
+  hopLabel?: string
+  /** Single-hop only: dot color for the hop badge, from the canonical hop
+   *  palette (`graphHopColors.ts`). Omit to render the label without a dot. */
+  hopColor?: string
   showBack?: boolean
   /** Per-hop rows for the multi-hop variant. When length > 1, replaces the
    *  single amount input with stacked entries. Omit (or pass length ≤ 1) to
@@ -64,6 +71,8 @@ export default function Step2Commit({
   availableBalance = 215154.14,
   maxArm = 4000,
   existingCommittedUsdc = 0,
+  hopLabel,
+  hopColor,
   showBack = true,
   steps = DEFAULT_STEPS,
   stepIndex = 2,
@@ -88,6 +97,8 @@ export default function Step2Commit({
       availableBalance={availableBalance}
       maxArm={maxArm}
       existingCommittedUsdc={existingCommittedUsdc}
+      hopLabel={hopLabel}
+      hopColor={hopColor}
       showBack={showBack}
       steps={steps}
       stepIndex={stepIndex}
@@ -104,6 +115,8 @@ function SingleHopVariant({
   availableBalance,
   maxArm,
   existingCommittedUsdc,
+  hopLabel,
+  hopColor,
   showBack,
   steps,
   stepIndex,
@@ -114,6 +127,8 @@ function SingleHopVariant({
   availableBalance: number
   maxArm: number
   existingCommittedUsdc: number
+  hopLabel?: string
+  hopColor?: string
   showBack: boolean
   steps: readonly string[]
   stepIndex: number
@@ -172,6 +187,18 @@ function SingleHopVariant({
       <div className={styles.content}>
         <div className={styles.inputBlock}>
           <div className={styles.titleBlock}>
+            {hopLabel && (
+              <span className={styles.hopBadge}>
+                {hopColor && (
+                  <span
+                    className={styles.hopBadgeDot}
+                    style={{ background: hopColor }}
+                    aria-hidden
+                  />
+                )}
+                <span className={styles.hopBadgeLabel}>{hopLabel}</span>
+              </span>
+            )}
             <h2 className={styles.title} id="commit-title">How much USDC?</h2>
             <p className={styles.maxLabel} id="commit-max">
               {hasExisting

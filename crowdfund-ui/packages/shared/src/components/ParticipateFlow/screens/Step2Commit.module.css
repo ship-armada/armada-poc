@@ -50,6 +50,31 @@
   align-items: center;
 }
 
+/* Hop badge above the title in the single-hop variant — colored dot + label
+ * mirroring the multi-hop variant's row styling so the two paths read the
+ * same. */
+.hopBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.hopBadgeDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hopBadgeLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+}
+
 .title {
   font-family: var(--primitives-fontFamily-ui);
   font-size: calc(var(--primitives-fontSize-xl) * 1px);

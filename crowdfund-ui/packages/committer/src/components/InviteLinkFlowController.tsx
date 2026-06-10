@@ -22,6 +22,7 @@ import {
   formatUsdc,
   formatUsdcPlain,
   hopLabel,
+  hopPillDotColor,
   useContractEvents,
   useGraphState,
   HOP_CONFIGS,
@@ -311,6 +312,8 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             maxAmount={maxAmount}
             availableBalance={availableBalance}
             maxArm={maxAmount}
+            hopLabel={hopLabel(targetHop)}
+            hopColor={hopPillDotColor(targetHop === 2 ? 'hop-2' : 'hop-1')}
           />
         )
       }

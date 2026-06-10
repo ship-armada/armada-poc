@@ -209,6 +209,9 @@ export function ShieldModal() {
   async function handleSubmit() {
     setSubmitError(null)
     try {
+      // null ⇒ submit was refused on a follower tab (useTx.submit toasts + persists nothing); we
+      // keep the user on the review step rather than advancing to a never-driven progress spinner.
+      let submittedId: string | null = null
       // Submit with a fresh cacheId — if the cached quote is within the staleness window the
       // modal sat through, re-quote first so the relayer doesn't reject with FEE_EXPIRED.
       const activeQuote = quote && !isStale ? quote : await refresh()
@@ -236,7 +239,7 @@ export function ShieldModal() {
               `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
             )
           }
-          await txShield.submit({
+          submittedId = await txShield.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
@@ -246,7 +249,7 @@ export function ShieldModal() {
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
           })
         } else {
-          await txShield.submit({
+          submittedId = await txShield.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
@@ -271,7 +274,7 @@ export function ShieldModal() {
               `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
             )
           }
-          await txShieldXchain.submit({
+          submittedId = await txShieldXchain.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
@@ -281,13 +284,14 @@ export function ShieldModal() {
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
           })
         } else {
-          await txShieldXchain.submit({
+          submittedId = await txShieldXchain.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
           })
         }
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')

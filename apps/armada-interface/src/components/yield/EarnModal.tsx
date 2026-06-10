@@ -190,6 +190,8 @@ export function EarnModal() {
   async function handleSubmit() {
     setSubmitError(null)
     try {
+      // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
+      let submittedId: string | null = null
       const activeQuote = quote && !isStale ? quote : await refresh()
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
@@ -207,7 +209,7 @@ export function EarnModal() {
       const broadcasterRailgunAddress = activeQuote.broadcasterRailgunAddress
       if (tab === 'add') {
         setSubmittedKind('yield-deposit')
-        await txDeposit.submit({
+        submittedId = await txDeposit.submit({
           amount,
           feeCacheId,
           broadcasterFeeAmount,
@@ -226,7 +228,7 @@ export function EarnModal() {
           effectiveRate !== null && effectiveRate.rate > 0n
             ? (amount * 1_000_000_000_000_000_000n) / effectiveRate.rate
             : 0n
-        await txWithdraw.submit({
+        submittedId = await txWithdraw.submit({
           amount,
           feeCacheId,
           shares,
@@ -235,6 +237,7 @@ export function EarnModal() {
           useWalletOverride: effectiveUseWalletOverride,
         })
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')

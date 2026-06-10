@@ -13,6 +13,12 @@ import { withTestQueryClient } from '@/test-utils/queryClient'
 // useDisplayFees calls wagmi's useReadContract which requires a WagmiProvider; these tests
 // don't mount one, so stub the hook with a deterministic DisplayFees value. The protocolFee
 // arithmetic is exercised by relayer.test.ts; this mock just keeps the modal renderable.
+// This tab is the executor leader (single-tab test env) so useTx.submit isn't refused (P1-26).
+vi.mock('@/lib/tx/executor', async (importActual) => ({
+  ...await importActual<typeof import('@/lib/tx/executor')>(),
+  getIsLeader: () => true,
+}))
+
 vi.mock('@/hooks/useDisplayFees', () => ({
   useDisplayFees: () => ({
     fees: {

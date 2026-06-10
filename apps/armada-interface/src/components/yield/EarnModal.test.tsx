@@ -11,6 +11,12 @@ import { withTestQueryClient } from '@/test-utils/queryClient'
 
 // useDisplayFees + useGasBalanceWarning hit wagmi hooks that require a WagmiProvider; these
 // tests don't mount one. Stub with neutral defaults.
+// This tab is the executor leader (single-tab test env) so useTx.submit isn't refused (P1-26).
+vi.mock('@/lib/tx/executor', async (importActual) => ({
+  ...await importActual<typeof import('@/lib/tx/executor')>(),
+  getIsLeader: () => true,
+}))
+
 vi.mock('@/hooks/useDisplayFees', () => ({
   useDisplayFees: () => ({
     fees: {

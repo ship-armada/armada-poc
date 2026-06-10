@@ -187,6 +187,8 @@ export function SendModal() {
   async function handleSubmit() {
     setSubmitError(null)
     try {
+      // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
+      let submittedId: string | null = null
       // Re-quote if the cached fee is stale — see ShieldModal for the rationale.
       const activeQuote = quote && !isStale ? quote : await refresh()
       if (!activeQuote) {
@@ -203,7 +205,7 @@ export function SendModal() {
           )
         }
         setSubmittedKind('transfer-shielded')
-        await txTransfer.submit({
+        submittedId = await txTransfer.submit({
           amount,
           feeCacheId,
           recipient,
@@ -224,7 +226,7 @@ export function SendModal() {
         setSubmittedKind('unshield-local')
         // Freeze the broadcaster context with the rest of the submit state — same rationale as
         // UnshieldModal: the proof must embed these EXACT values to pass the relayer's verifier.
-        await txUnshieldLocal.submit({
+        submittedId = await txUnshieldLocal.submit({
           amount,
           feeCacheId,
           recipient,
@@ -244,7 +246,7 @@ export function SendModal() {
           )
         }
         setSubmittedKind('unshield-xchain')
-        await txUnshieldXchain.submit({
+        submittedId = await txUnshieldXchain.submit({
           amount,
           feeCacheId,
           toChainId: destChainId,
@@ -254,6 +256,7 @@ export function SendModal() {
           useWalletOverride: prefs.submitFromWallet,
         })
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')

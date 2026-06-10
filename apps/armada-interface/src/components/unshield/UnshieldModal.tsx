@@ -147,6 +147,8 @@ export function UnshieldModal() {
   async function handleSubmit() {
     setSubmitError(null)
     try {
+      // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
+      let submittedId: string | null = null
       const activeQuote = quote && !isStale ? quote : await refresh()
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
@@ -170,7 +172,7 @@ export function UnshieldModal() {
         // would risk drift if the quote rolls over between submit and proof-build. The
         // wallet-override flag is also frozen so a mid-flight preference toggle doesn't strand
         // the handler.
-        await txLocal.submit({
+        submittedId = await txLocal.submit({
           amount,
           feeCacheId,
           recipient,
@@ -189,7 +191,7 @@ export function UnshieldModal() {
           )
         }
         setSubmittedKind('unshield-xchain')
-        await txXchain.submit({
+        submittedId = await txXchain.submit({
           amount,
           feeCacheId,
           toChainId: destChainId,
@@ -199,6 +201,7 @@ export function UnshieldModal() {
           useWalletOverride: prefs.submitFromWallet,
         })
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')

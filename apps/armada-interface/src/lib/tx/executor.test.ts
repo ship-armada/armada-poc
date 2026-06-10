@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
+import { cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
 import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
@@ -340,5 +340,55 @@ describe('resumeForWallet (P0-2)', () => {
 
     // Locked → loadAllTx returns [] → nothing seeded or written.
     expect(store.get(txListAtom)).toEqual([])
+  })
+})
+
+describe('cancelAllRunning (P1-15)', () => {
+  // A handler that parks until aborted — keeps the record in the executor's `running` set so
+  // cancelAllRunning has something to tear down, then resolves cleanly when the signal fires.
+  const parkUntilAbort: StageHandler<'shield'> = {
+    kind: 'shield',
+    resumableFrom: ['submit-relayer'],
+    run: (_record, ctx) =>
+      new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) return resolve()
+        ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+      }),
+  }
+
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    store.set(tabVisibleAtom, true)
+    await cacheClear('txHistory')
+    clearKeyManager()
+    unlockForTest()
+    startEngine()
+    registerHandler(parkUntilAbort)
+  })
+
+  it('cancels a pre-broadcast record and dismisses a broadcast one (keeping the hash)', () => {
+    const store = getDefaultStore()
+    const pre = makeRecord({ id: 'ca-pre', executionState: 'active', stage: 'submit-relayer', updatedSeq: 1, artifacts: {} })
+    const post = makeRecord({ id: 'ca-post', executionState: 'active', stage: 'submit-relayer', updatedSeq: 1, artifacts: { sourceTxHash: '0xfeed' } })
+    store.set(upsertTxAtom, pre)
+    store.set(upsertTxAtom, post)
+    executeTx('ca-pre')
+    executeTx('ca-post')
+
+    cancelAllRunning('account-switch')
+
+    // abortAndMark writes the atom synchronously; assert immediately.
+    const after = (id: string) => store.get(txListAtom).find(t => t.id === id)
+    expect(after('ca-pre')?.executionState).toBe('cancelled')
+    expect(after('ca-pre')?.artifacts.error?.code).toBe('CANCELLED')
+    expect(after('ca-post')?.executionState).toBe('cancelled')
+    expect(after('ca-post')?.artifacts.error?.code).toBe('DISMISSED')
+    expect(after('ca-post')?.artifacts.error?.txHash).toBe('0xfeed')
+  })
+
+  it('is a no-op when nothing is running', () => {
+    // No executeTx calls → empty running set → no throw, no writes.
+    expect(() => cancelAllRunning('account-switch')).not.toThrow()
   })
 })

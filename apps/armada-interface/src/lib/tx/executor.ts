@@ -208,6 +208,29 @@ export function dismissTx(id: string): void {
   abortAndMark(id, 'dismiss')
 }
 
+/**
+ * Abort + terminalize every in-flight tx. Used on session-teardown triggers like an EVM
+ * account switch (`useWallet`): the executor is module-scope, so without this it would keep
+ * running a handler bound to the OLD account under the new unlock screen — orphaned wallet
+ * prompts, and a gasless permit signed by the wrong signer. Each record routes through
+ * `abortAndMark`, so a pre-broadcast record becomes `cancelled` and an already-broadcast one
+ * becomes `dismissed` (hash preserved for the explorer). (P1-15)
+ *
+ * MUST be called while the wallet is still unlocked — the terminal-record persist
+ * (`putTxIfFresh`) needs the historyEncryptionKey. Call it BEFORE `lockWallet`.
+ */
+export function cancelAllRunning(reason: string): void {
+  // Snapshot ids first — abortAndMark mutates `running` (deletes each controller) as it goes.
+  const ids = [...running.keys()]
+  if (ids.length === 0) return
+  track('tx.cancel-all', { reason, count: ids.length })
+  for (const id of ids) {
+    // 'cancel' intent; abortAndMark routes a record that already has a sourceTxHash to dismissed
+    // (honest "Stopped tracking" + explorer link) automatically — see WS1.2c.
+    abortAndMark(id, 'cancel')
+  }
+}
+
 function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
   const controller = running.get(id)
   if (controller) {

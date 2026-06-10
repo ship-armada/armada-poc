@@ -280,6 +280,49 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     expect(ids).not.toContain('synth:abc:ShieldERC20s')
   })
 
+  it('reconciles a terminated-but-confirmed authored record to completed, without a synth duplicate', async () => {
+    // WHY (P1-24): the user's shield expired locally (we lost the watcher past the lifecycle cap),
+    // but the chain shows it actually landed. The scan must UPGRADE the authored record to
+    // completed in place — not skip (leaving a permanent false "expired") and not add a parallel
+    // synth row. The terminal-write guard permits expired→completed (terminal→terminal).
+    const CONFIRMED_HASH = '0xabc' as `0x${string}`
+    const expired: TxRecord<'shield'> = {
+      id: '01J-expired',
+      kind: 'shield',
+      executionState: 'expired',
+      stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'],
+      updatedSeq: 4,
+      createdAt: 1,
+      updatedAt: 1,
+      meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 31337 },
+      artifacts: { sourceTxHash: CONFIRMED_HASH, error: { code: 'POLL_TIMEOUT', message: 'lost track' } },
+      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+    }
+    const store = unlockedStore()
+    store.set(txListAtom, [expired])
+
+    hoisted.scanWalletHistory.mockResolvedValue([shieldItem('abc', 100_001, 1_000_000n)])
+
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+
+    await waitFor(() => {
+      expect(store.get(txListAtom).find(r => r.id === '01J-expired')?.executionState).toBe('completed')
+    })
+    const list = store.get(txListAtom)
+    // No duplicate synth row beside the upgraded authored record.
+    expect(list.length).toBe(1)
+    const upgraded = list[0]!
+    expect(upgraded.id).toBe('01J-expired')
+    expect(upgraded.stage).toBe('hub-confirmed')
+    expect(upgraded.artifacts.sourceTxHash).toBe(CONFIRMED_HASH)
+    expect(upgraded.artifacts.error).toBeUndefined()
+  })
+
   it('subsequent scans resume from checkpoint+1, not the hub deploy block', async () => {
     // WHY: this is the perf invariant. The whole point of the checkpoint is to avoid re-walking
     // hub history. A regression here turns a cheap incremental into a full-history rewalk on

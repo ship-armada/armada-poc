@@ -1,7 +1,8 @@
 // ABOUTME: Reducer tests — patchArtifacts cursor pattern + typed-error mark transitions (markFailed string|TxError, markCancelled, markDismissed).
 
 import { describe, it, expect } from 'vitest'
-import { advance, markCancelled, markDismissed, markFailed, markWaiting, patchArtifacts } from './reducer'
+import { advance, markCancelled, markDismissed, markFailed, markRecoveredComplete, markWaiting, patchArtifacts } from './reducer'
+import { lifecycleFor } from './lifecycles'
 import type { TxRecord } from './types'
 
 function baseXchainRecord(): TxRecord<'unshield-xchain'> {
@@ -199,5 +200,28 @@ describe('markCancelled vs markDismissed', () => {
     const dismissed = markDismissed(r)
     expect(dismissed.artifacts.error?.code).toBe('DISMISSED')
     expect(dismissed.artifacts.error?.txHash).toBeUndefined()
+  })
+})
+
+describe('markRecoveredComplete (P1-24)', () => {
+  it('upgrades a terminated-but-confirmed record to completed, dropping the stale error', () => {
+    // WHY: history recovery found this tx on chain, but locally it had expired/failed because we
+    // lost the watcher. Upgrade IN PLACE — terminal-success stage, no stale error, sourceTxHash
+    // preserved — rather than leaving a permanent false "expired" or inserting a duplicate row.
+    const r: TxRecord<'unshield-xchain'> = {
+      ...baseXchainRecord(),
+      executionState: 'expired',
+      stage: 'iris-attestation-pending',
+      artifacts: {
+        sourceTxHash: '0xabc' as `0x${string}`,
+        error: { code: 'POLL_TIMEOUT', message: 'lost track' },
+      },
+    }
+    const upgraded = markRecoveredComplete(r)
+    expect(upgraded.executionState).toBe('completed')
+    expect(upgraded.stage).toBe(lifecycleFor('unshield-xchain').terminalSuccess)
+    expect(upgraded.artifacts.error).toBeUndefined()
+    expect(upgraded.artifacts.sourceTxHash).toBe('0xabc')
+    expect(upgraded.updatedSeq).toBe(r.updatedSeq + 1)
   })
 })

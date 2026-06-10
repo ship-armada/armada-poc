@@ -276,6 +276,15 @@ async function runDirectSubmit(
   ctx: Parameters<typeof shieldXchainHandler.run>[1],
 ): Promise<void> {
   const artifacts = record.artifacts
+
+  // Idempotency guard (P0-1): once the client-chain crossChainShield broadcast we persist its
+  // hash. NEVER re-send — a second crossChainShield is a second real USDC burn. On re-entry
+  // (Retry after a delivery timeout / resume-on-reload) finalize on the known hash instead.
+  if (artifacts.sourceTxHash) {
+    await finalizeBurnAndAdvance(record, ctx, artifacts.sourceTxHash)
+    return
+  }
+
   const shieldRequest = artifacts.shieldRequest!
   const privacyPoolClientAddress = artifacts.privacyPoolClientAddress!
   const clientUsdcAddress = artifacts.clientUsdcAddress!
@@ -356,6 +365,15 @@ async function runGaslessSubmit(
   ctx: Parameters<typeof shieldXchainHandler.run>[1],
 ): Promise<void> {
   const artifacts = record.artifacts
+
+  // Idempotency guard (P0-1): never re-POST a gasless cross-chain shield we already submitted —
+  // a duplicate gets a 409 and a fresh POST against an expired permit is doomed. On re-entry
+  // finalize on the known hash instead.
+  if (artifacts.sourceTxHash) {
+    await finalizeBurnAndAdvance(record, ctx, artifacts.sourceTxHash)
+    return
+  }
+
   const shieldRequest = artifacts.shieldRequest!
   const permitV = artifacts.permitV
   const permitR = artifacts.permitR
@@ -373,6 +391,15 @@ async function runGaslessSubmit(
   const ownerCaptured = record.walletContext.evmAddress
   if (!ownerCaptured) {
     throw new Error('Shield-xchain gasless submit requires a connected EVM wallet; none captured at submit time.')
+  }
+
+  // Permit-deadline guard (P0-1): an expired EIP-2612 permit makes the wrapper call revert, so
+  // POSTing is doomed. Fail with honest copy. Nothing was sent (PRE_FLIGHT_REVERT).
+  if (record.meta.permitDeadline * 1000 <= Date.now()) {
+    throw asTxError({
+      code: 'PRE_FLIGHT_REVERT',
+      message: 'This quote expired before it could be submitted. Start a new transaction.',
+    })
   }
 
   const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)

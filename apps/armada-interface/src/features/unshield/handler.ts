@@ -132,38 +132,50 @@ async function runSubmitAndConfirm(
   if (!kmIsUnlocked()) {
     throw new Error('Unshield requires an unlocked shielded wallet.')
   }
-  const walletId = kmGetWalletId()
-  const deployments = await loadDeployments()
-  const tokenAddress = deployments.hub.cctp.usdc
   const hubChainId = getNetworkConfig().hub.chainId
+  const existingHash = record.artifacts.sourceTxHash
 
-  // Re-populate must use the EXACT same args as the proof (the SDK's in-memory proof cache is
-  // keyed by them; mismatched broadcasterFee throws "proof not found"). Reading from meta keeps
-  // the values immutable across resumes-after-crash.
-  const populated = await populateUnshieldTransaction({
-    walletId,
-    tokenAddress,
-    recipient: record.meta.recipient,
-    amount: record.meta.amount,
-    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
-  })
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  // Re-populate the proof calldata only when we still need to broadcast. On re-entry (Retry after
+  // a POLL_TIMEOUT / resume-on-reload) the hash is already persisted; re-populating is pointless
+  // and would throw anyway — the SDK's in-memory proof cache doesn't survive a reload. (P0-1)
+  let populated: Awaited<ReturnType<typeof populateUnshieldTransaction>> | undefined
+  if (!existingHash) {
+    const walletId = kmGetWalletId()
+    const deployments = await loadDeployments()
+    const tokenAddress = deployments.hub.cctp.usdc
+    // Re-populate must use the EXACT same args as the proof (the SDK's in-memory proof cache is
+    // keyed by them; mismatched broadcasterFee throws "proof not found"). Reading from meta keeps
+    // the values immutable across resumes-after-crash.
+    populated = await populateUnshieldTransaction({
+      walletId,
+      tokenAddress,
+      recipient: record.meta.recipient,
+      amount: record.meta.amount,
+      broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+  }
 
   // A6 wallet-override path — bypass the relayer entirely and submit through the user's EVM
   // wallet. Builds the same populated calldata (just with a different proof shape), waits for
   // the receipt directly, and advances to the same `hub-confirmed` terminal stage so the rest
   // of the lifecycle (UI, history, balance refresh) is uniform across both paths.
   if (record.meta.useWalletOverride) {
-    await ensureChain(hubChainId)
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    const hash = await sendTransaction(wagmiConfig, {
-      to: populated.to,
-      data: populated.data,
-      value: populated.value,
-    })
-    const broadcast = await recordBroadcastHash(record, hash, ctx)
-    if (broadcast.dismissed) return
-    const broadcastRecord = broadcast.record
+    let hash = existingHash
+    let broadcastRecord = record
+    if (!hash) {
+      const tx = populated!
+      await ensureChain(hubChainId)
+      if (ctx.signal.aborted) throw new Error('cancelled')
+      hash = await sendTransaction(wagmiConfig, {
+        to: tx.to,
+        data: tx.data,
+        value: tx.value,
+      })
+      const broadcast = await recordBroadcastHash(record, hash, ctx)
+      if (broadcast.dismissed) return
+      broadcastRecord = broadcast.record
+    }
     await waitForReceiptOrFail({ hash, signal: ctx.signal })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
@@ -183,39 +195,49 @@ async function runSubmitAndConfirm(
   //   GAS_ESTIMATION_FAILED — the tx would revert on-chain; the relayer's RPC eth_estimateGas
   //                            saw the revert and refused to broadcast.
   //   SUBMISSION_FAILED — the relayer's wallet couldn't broadcast (nonce, RPC down, etc.).
-  let submitResponse
-  try {
-    submitResponse = await submitRelay(
-      {
-        chainId: hubChainId,
-        to: populated.to,
-        data: populated.data,
-        feesCacheId: record.meta.feeCacheId,
-      },
-      ctx.signal,
-    )
-  } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+  // Idempotency guard (P0-1): once the relayer accepted the POST we persist the returned txHash.
+  // NEVER re-POST — a duplicate gets a 409 and surfaces a false failure. On re-entry skip to the
+  // status poll for the known hash.
+  let txHash = existingHash
+  let broadcastRecord = record
+  if (!txHash) {
+    const tx = populated!
+    let submitResponse
+    try {
+      submitResponse = await submitRelay(
+        {
+          chainId: hubChainId,
+          to: tx.to,
+          data: tx.data,
+          feesCacheId: record.meta.feeCacheId,
+        },
+        ctx.signal,
+      )
+    } catch (err) {
+      if (err instanceof RelayerError) {
+        track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+      }
+      throw err
     }
-    throw err
+
+    track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+    // Persist the txHash before the polling loop so cancel/dismiss after this point carries the
+    // hash forward into the dismissed-with-explorer-link UX, and so the guard above sees it on
+    // re-entry. Threading the patched record forward matters: `record` is now stale (lower
+    // updatedSeq than the atom/IDB) and a later advance from it would equal-seq write that OCC
+    // silently drops, leaving the executor looping here.
+    txHash = submitResponse.txHash as `0x${string}`
+    const broadcast = await recordBroadcastHash(record, txHash, ctx)
+    if (broadcast.dismissed) return
+    broadcastRecord = broadcast.record
   }
-
-  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
-
-  // Persist the txHash before the polling loop so cancel/dismiss after this point carries the
-  // hash forward into the dismissed-with-explorer-link UX. Threading the patched record forward
-  // matters: `record` is now stale (lower updatedSeq than the atom/IDB) and a later advance from
-  // it would equal-seq write that OCC silently drops, leaving the executor looping here.
-  const broadcast = await recordBroadcastHash(record, submitResponse.txHash as `0x${string}`, ctx)
-  if (broadcast.dismissed) return
-  const broadcastRecord = broadcast.record
 
   // Poll the relayer's /status until terminal. The adapter returns null while pending (loop keeps
   // waiting) and the full StatusResponse once confirmed/failed. The generic poll loop handles
   // jittered backoff + abort propagation; we just branch on the returned status.
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
+    (signal) => pollRelayStatusOnce(txHash, signal),
     { signal: ctx.signal },
   )
 
@@ -225,7 +247,7 @@ async function runSubmitAndConfirm(
       code: 'POLL_TIMEOUT',
       message:
         'The relayer hasn\'t reported a final status. The transaction may still complete on chain — check the explorer.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     const failed = markFailed(broadcastRecord, error)
     await ctx.upsert(failed)
@@ -244,7 +266,7 @@ async function runSubmitAndConfirm(
     const error: TxError = {
       code: 'TX_REVERTED',
       message: final.error ?? 'Relayer-broadcast tx reverted on chain.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     const failed = markFailed(broadcastRecord, error)
     await ctx.upsert(failed)
@@ -261,7 +283,7 @@ async function runSubmitAndConfirm(
   }
 
   const completed = advance(broadcastRecord, 'hub-confirmed', {
-    sourceTxHash: submitResponse.txHash as `0x${string}`,
+    sourceTxHash: txHash,
   })
   await ctx.upsert(completed)
 }

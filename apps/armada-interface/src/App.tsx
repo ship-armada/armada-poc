@@ -34,6 +34,7 @@ import '@/features/yield-deposit'
 import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
+import { appModeForWalletStatus, type GuardMode } from '@/lib/app-mode'
 import { initRailgunEngine } from '@/lib/railgun/init'
 import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
 import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
@@ -47,8 +48,6 @@ import {
   shieldedWalletAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
-
-type GuardMode = 'pre-migration' | 'pre-init' | 'onboarding' | 'unlock' | 'app'
 
 export function App() {
   useTabVisible()
@@ -159,9 +158,14 @@ export function App() {
     setMode('onboarding')
   }, [mode, wallet.status, setShieldedWallets, setActiveWalletId])
 
-  // After initial derivation, react to subsequent lock events (auto-lock timer).
+  // After initial derivation, react to subsequent wallet-status changes while in app mode:
+  //   locked  → auto-lock timer / account-switch locked the wallet → back to the unlock screen.
+  //   missing → Settings → Reset wiped the wallet, or an account-switch landed on an account with
+  //             no wallet on this device → back to onboarding. Without this, the app shell renders
+  //             with no active wallet and the first action throws 'no active shielded walletId'. (P1-14)
   useEffect(() => {
-    if (mode === 'app' && wallet.status === 'locked') setMode('unlock')
+    const next = appModeForWalletStatus(mode, wallet.status)
+    if (next) setMode(next)
   }, [mode, wallet.status])
 
   if (mode === 'pre-migration' || mode === 'pre-init') {

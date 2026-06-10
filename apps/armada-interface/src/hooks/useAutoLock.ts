@@ -2,7 +2,7 @@
 // ABOUTME: Pauses when wallet isn't unlocked, when a non-terminal tx is in flight (don't lock mid-flow), or when unmounted.
 
 import { useEffect, useRef } from 'react'
-import { getDefaultStore, useAtomValue } from 'jotai'
+import { useAtomValue, useStore } from 'jotai'
 import { useShieldedWallet } from './useShieldedWallet'
 import { preferencesAtom } from '@/state/preferences'
 import { pendingTxsAtom } from '@/state/tx'
@@ -41,20 +41,23 @@ const HIDDEN_GRACE_MS = 5 * 60_000
  */
 export function useAutoLock() {
   const prefs = useAtomValue(preferencesAtom)
-  const pending = useAtomValue(pendingTxsAtom)
   const { state, lock } = useShieldedWallet()
+  // The contextual store (default store in the app — no jotai Provider; the test's createStore
+  // under a Provider). We read pendingTxsAtom from it LIVE inside fire() rather than subscribing
+  // via useAtomValue — subscribing here re-rendered the whole App shell on every tx write. (P1-19)
+  const store = useStore()
 
   const isUnlocked = state?.status === 'unlocked'
   const timeoutMs = prefs.autoLockMinutes * 60_000
 
-  // Refs for values that should be read at fire time without re-arming the effect on every change.
-  const hasInflightRef = useRef(pending.length > 0)
-  hasInflightRef.current = pending.length > 0
+  // Read at fire time without re-arming the effect on every change.
   const lockRef = useRef(lock)
   lockRef.current = lock
 
+  // Any non-terminal tx in flight? Read live from the store so we don't subscribe (re-render) here.
+  const hasInflight = () => store.get(pendingTxsAtom).length > 0
+
   useEffect(() => {
-    const store = getDefaultStore()
     if (!isUnlocked) {
       store.set(autoLockDeadlineAtom, null)
       return
@@ -64,7 +67,7 @@ export function useAutoLock() {
     let timer: ReturnType<typeof setTimeout> | null = null
 
     function fire() {
-      if (hasInflightRef.current) {
+      if (hasInflight()) {
         // Defer for a minute and re-check; locking mid-flow is worse than waiting a bit.
         const next = Date.now() + 60_000
         store.set(autoLockDeadlineAtom, next)
@@ -92,7 +95,7 @@ export function useAutoLock() {
       if (document.visibilityState === 'hidden') {
         if (hiddenTimer) clearTimeout(hiddenTimer)
         hiddenTimer = setTimeout(() => {
-          if (hasInflightRef.current) {
+          if (hasInflight()) {
             // Same defer policy as the main fire() — re-check in a minute. Don't lock mid-flow.
             hiddenTimer = setTimeout(onVisibilityChange, 60_000)
             return
@@ -130,5 +133,5 @@ export function useAutoLock() {
       if (hiddenTimer) clearTimeout(hiddenTimer)
       store.set(autoLockDeadlineAtom, null)
     }
-  }, [isUnlocked, timeoutMs])
+  }, [isUnlocked, timeoutMs, store])
 }

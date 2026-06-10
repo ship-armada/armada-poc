@@ -8,8 +8,11 @@ import { txListAtom, upsertTxAtom } from '@/state/tx'
 import { loadAllTx } from '@/lib/tx/storage'
 import { track, trackError } from '@/lib/telemetry'
 
-export function useTxHistory() {
-  const list = useAtomValue(txListAtom)
+export function useTxHistory(): void {
+  // Hydrator only — deliberately does NOT subscribe to txListAtom (P1-19). This hook is mounted at
+  // the App root; subscribing would re-render the whole app shell on every tx write (≈10 proof-
+  // progress writes land while snarkjs saturates the main thread). Components that DISPLAY the list
+  // (History page, RecentActivityCard) subscribe to activeTxListAtom themselves.
   const setList = useSetAtom(txListAtom)
   const upsert = useSetAtom(upsertTxAtom)
   // Reading the full active-wallet object lets us re-run on lock-status flips, not just on
@@ -57,6 +60,4 @@ export function useTxHistory() {
       cancelled = true
     }
   }, [activeWalletId, activeStatus, setList, upsert])
-
-  return { list }
 }

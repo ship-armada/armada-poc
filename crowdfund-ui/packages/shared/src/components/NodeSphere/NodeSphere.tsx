@@ -868,6 +868,11 @@ export function NodeSphere({
     let targetFocusQuat: THREE.Quaternion | null = null
     let lastCenteredAddress: string | null = null
     let hadSelection = false
+    // Cache the selected mesh so the per-frame tooltip/centering logic doesn't
+    // scan `nodeMeshes` every frame. Refreshed only when the selection changes
+    // (nodeMeshes is rebuilt with the effect, which resets this scope).
+    let cachedSelectedAddr: string | null = null
+    let cachedSelectedMesh: THREE.Mesh | null = null
     let cameraResetActive = false
     let userAdjustedView = false
 
@@ -959,6 +964,15 @@ export function NodeSphere({
       const selectedAddr = highlightRef.current
       updateEdgeHighlight(selectedAddr ?? null)
 
+      // Refresh the cached selected mesh only when the selection changes.
+      const selectedAddrNorm = selectedAddr ?? null
+      if (selectedAddrNorm !== cachedSelectedAddr) {
+        cachedSelectedAddr = selectedAddrNorm
+        cachedSelectedMesh = selectedAddrNorm
+          ? nodeMeshes.find((m) => (m.userData as NodeMeta).address === selectedAddrNorm) ?? null
+          : null
+      }
+
       // Bake the focused orientation into root the moment we deselect, then
       // reset focus to identity so the visible frame doesn't snap. Also kick
       // off the camera-Z ease back to the unfocused default.
@@ -1025,8 +1039,7 @@ export function NodeSphere({
         hadSelection = true
         if (lastCenteredAddress !== selectedAddr) {
           userAdjustedView = false
-          const selectedMesh =
-            nodeMeshes.find((m) => (m.userData as NodeMeta).address === selectedAddr) ?? null
+          const selectedMesh = cachedSelectedMesh
           if (selectedMesh) {
             const desiredWorld = getFocusTargetWorld(true)
             const desiredInFocusSpace = desiredWorld
@@ -1061,7 +1074,7 @@ export function NodeSphere({
 
       // Keep selected tooltip pinned near the selected node (when not hovering other nodes).
       if (selectedAddr && !hoverActiveRef.current) {
-        const selectedMesh = nodeMeshes.find((m) => (m.userData as NodeMeta).address === selectedAddr) ?? null
+        const selectedMesh = cachedSelectedMesh
         if (selectedMesh) {
           const meta = selectedMesh.userData as NodeMeta
           const world = new THREE.Vector3()

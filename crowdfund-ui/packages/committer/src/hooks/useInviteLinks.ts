@@ -1,7 +1,7 @@
 // ABOUTME: Hook for creating, storing, and revoking EIP-712 invite links.
 // ABOUTME: Manages IndexedDB-backed invite link lifecycle with on-chain revocation.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Contract } from 'ethers'
 import type { Signer } from 'ethers'
 import { toast } from 'sonner'
@@ -42,47 +42,83 @@ export function useInviteLinks(
    *  seed nonces past any already-consumed on-chain nonce. */
   events: CrowdfundEvent[] = [],
 ): UseInviteLinksResult {
-  const [links, setLinks] = useState<StoredInviteLink[]>([])
+  // Raw stored links — read from IndexedDB only on address change (and after an
+  // explicit create/revoke via refreshLinks), NOT on every poll tick.
+  const [storedLinks, setStoredLinks] = useState<StoredInviteLink[]>([])
   const [loading, setLoading] = useState(true)
 
   const refreshLinks = useCallback(async () => {
     if (!address) {
-      setLinks([])
+      setStoredLinks([])
       setLoading(false)
       return
     }
-
     try {
-      const lowerAddr = address.toLowerCase()
-      const stored = await getStoredInviteLinks(lowerAddr)
-      // Nonces this inviter has had redeemed on-chain (Invited with nonce > 0).
-      const redeemedNonces = new Set<number>()
-      for (const e of events) {
-        if (e.type !== 'Invited') continue
-        if (String(e.args.inviter).toLowerCase() !== lowerAddr) continue
-        const n = Number(e.args.nonce)
-        if (n > 0) redeemedNonces.add(n)
-      }
-
-      const updated = classifyStoredLinks(stored, redeemedNonces, blockTimestamp)
-      // Persist newly-redeemed links so they survive past their deadline
-      // (a redeemed slot must never revert to "available").
-      for (let i = 0; i < stored.length; i += 1) {
-        if (stored[i].status !== 'redeemed' && updated[i].status === 'redeemed') {
-          await updateInviteLinkStatus(lowerAddr, stored[i].nonce, 'redeemed').catch(() => {})
-        }
-      }
-      setLinks(updated.sort((a, b) => b.createdAt - a.createdAt))
+      setStoredLinks(await getStoredInviteLinks(address.toLowerCase()))
     } catch {
       // Non-fatal
     } finally {
       setLoading(false)
     }
-  }, [address, blockTimestamp, events])
+  }, [address])
 
   useEffect(() => {
     refreshLinks()
   }, [refreshLinks])
+
+  const lowerAddr = address ? address.toLowerCase() : null
+
+  // Redeemed nonces from chain truth, content-stable so a fresh `events` array
+  // identity each poll doesn't churn downstream when the set is unchanged.
+  const redeemedSig = useMemo(() => {
+    if (!lowerAddr) return ''
+    const ns: number[] = []
+    for (const e of events) {
+      if (e.type === 'Invited' && String(e.args.inviter).toLowerCase() === lowerAddr) {
+        const n = Number(e.args.nonce)
+        if (n > 0) ns.push(n)
+      }
+    }
+    return ns.sort((a, b) => a - b).join(',')
+  }, [events, lowerAddr])
+
+  const redeemedNonces = useMemo<Set<number>>(
+    () => new Set(redeemedSig ? redeemedSig.split(',').map(Number) : []),
+    [redeemedSig],
+  )
+
+  // Signature of which pending links have crossed their deadline — drives
+  // re-classification only when expiry actually changes, not every timestamp tick.
+  const expirySig = useMemo(
+    () =>
+      storedLinks
+        .filter((l) => l.status === 'pending' && l.deadline < blockTimestamp)
+        .map((l) => l.nonce)
+        .join(','),
+    [storedLinks, blockTimestamp],
+  )
+
+  // Classify expiry/redeemed at render time. `blockTimestamp` is intentionally
+  // not a dep — `expirySig` captures the only blockTimestamp-driven change.
+  const links = useMemo(
+    () =>
+      classifyStoredLinks(storedLinks, redeemedNonces, blockTimestamp).sort(
+        (a, b) => b.createdAt - a.createdAt,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [storedLinks, redeemedNonces, expirySig],
+  )
+
+  // Persist newly-redeemed links to IDB so they survive a cold load where the
+  // event stream isn't available yet. Display already reflects redeemedNonces.
+  useEffect(() => {
+    if (!lowerAddr) return
+    for (const l of storedLinks) {
+      if (redeemedNonces.has(l.nonce) && l.status !== 'redeemed' && l.status !== 'revoked') {
+        void updateInviteLinkStatus(lowerAddr, l.nonce, 'redeemed').catch(() => {})
+      }
+    }
+  }, [storedLinks, redeemedNonces, lowerAddr])
 
   const createLink = useCallback(async (fromHop: number, deadlineSeconds?: number): Promise<string | null> => {
     if (!address || !signer || !crowdfundAddress) return null

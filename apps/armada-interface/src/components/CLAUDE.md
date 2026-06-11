@@ -14,7 +14,8 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 
 | File / dir | Purpose |
 |---|---|
-| `AppLayout.tsx` | Fixed-inset header + nav + body wrap |
+| `AppLayout.tsx` | Fixed-inset header + nav + body wrap + global `AppFooter` |
+| `AppFooter/` | Minimal global footer — centered Discord / X / homepage icon links (inline brand SVGs + lucide `Globe`); links configured in `SOCIAL_LINKS` |
 | `WalletConnector.tsx` | Header wallet button — RainbowKit render-prop wired to `@armada/ui` `WalletButton` (all 4 states) |
 | `ui/` | App-local primitives (Card, Modal, AmountInput, ChainSelect, FeeSummary, RecipientInput, SectionHeader, StatusChip, Tabs, TechnicalDetailsDisclosure, EmptyState) — see `ui/CLAUDE.md` |
 | `flow/` | ActionFlowShell + FlowHeader + FlowFooter + FlowStepIndicator + ProgressStep + ErrorStep — see `flow/CLAUDE.md` |

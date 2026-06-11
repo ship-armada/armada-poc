@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
 import { WalletConnector } from './WalletConnector'
+import { AppFooter } from './AppFooter/AppFooter'
 import { SyncBanner } from './sync'
 import { HistoryRecoveryBanner } from './history'
 import { getNetworkMode } from '@/config/network'
@@ -75,6 +76,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
         {children}
       </main>
+      <AppFooter />
     </div>
   )
 }

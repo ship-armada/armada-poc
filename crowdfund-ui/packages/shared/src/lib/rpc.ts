@@ -14,18 +14,48 @@ import type { RawLog } from './events.js'
  * Note: overrides ethers v6 internal _send() method. If ethers changes
  * its internal transport API, this class will need updating.
  */
+/** Base/cap for rate-limit backoff between endpoint rotations (ms). */
+const RATE_LIMIT_BACKOFF_BASE_MS = 250
+const RATE_LIMIT_BACKOFF_MAX_MS = 2_000
+
+/** Detect rate limiting (HTTP 429 / JSON-RPC -32005) so we back off rather than
+ *  instantly hammering the next endpoint (which converts one hot RPC into two). */
+function isRateLimitError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as {
+    code?: unknown
+    error?: { code?: unknown }
+    info?: { responseStatus?: unknown }
+    message?: unknown
+    shortMessage?: unknown
+  }
+  if (e.code === -32005 || e.error?.code === -32005) return true
+  const status = e.info?.responseStatus
+  if (typeof status === 'number' && status === 429) return true
+  if (typeof status === 'string' && status.includes('429')) return true
+  const text = `${typeof e.message === 'string' ? e.message : ''} ${
+    typeof e.shortMessage === 'string' ? e.shortMessage : ''
+  }`.toLowerCase()
+  return /\b429\b|rate limit|too many requests/.test(text)
+}
+
 export class FallbackJsonRpcProvider extends JsonRpcProvider {
   /** @internal Exposed for testing — the internal providers for each URL */
   readonly _providers: JsonRpcProvider[]
   private _currentIndex: number = 0
 
   constructor(urls: string[]) {
-    super(urls[0])
-    this._providers = urls.map((url) => new JsonRpcProvider(url))
+    // staticNetwork: this is a fixed-chain deployment, so skip the per-call
+    // eth_chainId probe ethers would otherwise issue.
+    super(urls[0], undefined, { staticNetwork: true })
+    this._providers = urls.map(
+      (url) => new JsonRpcProvider(url, undefined, { staticNetwork: true }),
+    )
   }
 
   async _send(payload: JsonRpcPayload | JsonRpcPayload[]): Promise<(JsonRpcResult)[]> {
     let lastError: unknown
+    let rateLimitHits = 0
 
     for (let attempt = 0; attempt < this._providers.length; attempt++) {
       const index = (this._currentIndex + attempt) % this._providers.length
@@ -37,7 +67,17 @@ export class FallbackJsonRpcProvider extends JsonRpcProvider {
         return result
       } catch (err) {
         lastError = err
-        // Continue to next provider on transport errors
+        // On rate limiting, back off (exponential + jitter) before rotating to
+        // the next endpoint. Plain transport errors rotate immediately.
+        if (isRateLimitError(err)) {
+          const backoff = Math.min(
+            RATE_LIMIT_BACKOFF_MAX_MS,
+            RATE_LIMIT_BACKOFF_BASE_MS * 2 ** rateLimitHits,
+          )
+          const jitter = Math.random() * backoff * 0.5
+          await sleep(backoff + jitter)
+          rateLimitHits++
+        }
       }
     }
 

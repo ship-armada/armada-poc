@@ -97,6 +97,23 @@ describe('FallbackJsonRpcProvider', () => {
     expect(provider._providers[1]._send).not.toHaveBeenCalled()
   })
 
+  it('backs off then rotates on a rate-limit (-32005) error', async () => {
+    const provider = new FallbackJsonRpcProvider([
+      'http://url1:8545',
+      'http://url2:8545',
+    ])
+
+    vi.spyOn(provider._providers[0], '_send').mockRejectedValue(
+      Object.assign(new Error('rate limit exceeded'), { code: -32005 }),
+    )
+    vi.spyOn(provider._providers[1], '_send').mockResolvedValue([{ id: 1, result: '0x1' }])
+
+    const result = await provider._send(testPayload)
+    expect(result).toEqual([{ id: 1, result: '0x1' }])
+    expect(provider._providers[0]._send).toHaveBeenCalledTimes(1)
+    expect(provider._providers[1]._send).toHaveBeenCalledTimes(1)
+  })
+
   it('throws when all URLs are exhausted', async () => {
     const provider = new FallbackJsonRpcProvider([
       'http://url1:8545',

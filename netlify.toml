@@ -8,6 +8,12 @@
 #                                  VITE_DEPLOYMENT_INSTANCE so the bundled
 #                                  committer reads the matching instance file
 #                                  at runtime.
+#   VITE_CROWDFUND_INDEXER_URL     REQUIRED — indexer API base URL for the active
+#                                  instance (e.g. https://api.knowable.run).
+#                                  Without it every visitor falls back to a slow
+#                                  cold-start RPC backfill; the bundle's startup
+#                                  env validation hard-fails a PROD build at
+#                                  runtime when it is missing.
 
 [build]
   base    = "."

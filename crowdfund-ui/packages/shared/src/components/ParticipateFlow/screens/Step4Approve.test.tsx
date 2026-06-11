@@ -2,7 +2,7 @@
 // ABOUTME: A real flow (no showcase) must never auto-complete into a fake success.
 // @vitest-environment jsdom
 
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import Step4Approve from './Step4Approve.js'
 
@@ -34,6 +34,23 @@ describe('Step4Approve showcase gate', () => {
       vi.advanceTimersByTime(4_500)
     })
     expect(onDone).toHaveBeenCalled()
+  })
+
+  it('renders Back + Retry on an errored row and fires their callbacks', () => {
+    const onBack = vi.fn()
+    const onRetry = vi.fn()
+    render(
+      <Step4Approve
+        onDone={vi.fn()}
+        onBack={onBack}
+        onRetry={onRetry}
+        txs={[{ label: 'Commit', status: 'error', errorMessage: 'Transaction reverted' }]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onBack).toHaveBeenCalledOnce()
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 
   it('renders controlled tx rows without auto-completing', () => {

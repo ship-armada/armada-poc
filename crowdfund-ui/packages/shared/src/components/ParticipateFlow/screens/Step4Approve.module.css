@@ -176,6 +176,13 @@
   justify-content: center;
 }
 
+.footerActions {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  justify-content: center;
+  align-items: center;
+}
+
 .footerText {
   font-family: var(--primitives-fontFamily-ui);
   font-size: calc(var(--primitives-fontSize-base) * 1px);

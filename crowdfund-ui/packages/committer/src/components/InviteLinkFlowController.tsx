@@ -420,6 +420,16 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             amount={amount}
             txs={txs ?? undefined}
             onDone={() => transitionTo('confirmation')}
+            onBack={() => {
+              // Back to review preserves the entered amount; also the only escape
+              // on the /invite page (no close button).
+              setTxs(null)
+              transitionTo('review')
+            }}
+            onRetry={() => {
+              setTxs(null)
+              void runPipeline()
+            }}
           />
         )
 

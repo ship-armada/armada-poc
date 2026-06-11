@@ -485,6 +485,14 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           amount={mode === 'arm' ? Number(formatArm(armAmount).replace(/[, ARM]/g, '')) : 0}
           txs={txs ?? undefined}
           onDone={() => setStep('done')}
+          onBack={() => {
+            setTxs(null)
+            setStep('review')
+          }}
+          onRetry={() => {
+            setTxs(null)
+            void runClaim()
+          }}
         />
       </div>
     )

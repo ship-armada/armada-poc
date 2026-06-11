@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import styles from './Step4Approve.module.css'
-import { Steps } from '@armada/ui'
+import { Steps, Button } from '@armada/ui'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
 
 export type TransactionStatus = 'pending' | 'loading' | 'done' | 'error'
@@ -23,6 +23,12 @@ export interface Transaction {
 
 export interface Step4ApproveProps extends ParticipateStepBarProps {
   onDone: () => void
+  /** Shown as a "Back" button when any tx row errored — returns to the review
+   *  step with entered amounts preserved. */
+  onBack?: () => void
+  /** Shown as a "Retry" button when any tx row errored — re-runs the pipeline
+   *  (which re-reads allowance so a successful approve isn't repeated). */
+  onRetry?: () => void
   amount?: number
   /**
    * Controlled list of transactions. The consumer drives status updates and
@@ -56,6 +62,8 @@ const STATUS_LABEL: Record<TransactionStatus, string> = {
 
 export default function Step4Approve({
   onDone,
+  onBack,
+  onRetry,
   amount = 1000,
   txs: controlledTxs,
   showcase = false,
@@ -96,6 +104,7 @@ export default function Step4Approve({
   // Not showcase and no transactions yet → the consumer is still preparing the
   // pipeline (or bailed). Show a neutral state; never auto-complete.
   const preparing = !showcase && txs.length === 0
+  const hasError = txs.some((t) => t.status === 'error')
 
   return (
     <div className={styles.shell}>
@@ -196,17 +205,28 @@ export default function Step4Approve({
       </div>
 
       <div className={styles.footer}>
-        <p
-          className={styles.footerText}
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {preparing
-            ? 'Preparing transaction…'
-            : txs.some((t) => t.status === 'error')
-              ? 'Transaction failed. Go back to retry.'
-              : 'Waiting for wallet confirmation'}
-        </p>
+        {hasError && (onBack || onRetry) ? (
+          <div className={styles.footerActions}>
+            {onBack && (
+              <Button variant="secondary" size="md" label="Back" showIcon={false} onClick={onBack} />
+            )}
+            {onRetry && (
+              <Button variant="primary" size="md" label="Retry" showIcon={false} onClick={onRetry} />
+            )}
+          </div>
+        ) : (
+          <p
+            className={styles.footerText}
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {preparing
+              ? 'Preparing transaction…'
+              : hasError
+                ? 'Transaction failed. Go back to retry.'
+                : 'Waiting for wallet confirmation'}
+          </p>
+        )}
       </div>
     </div>
   )

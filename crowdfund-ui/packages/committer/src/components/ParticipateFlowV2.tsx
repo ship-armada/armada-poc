@@ -479,6 +479,17 @@ export function ParticipateFlowV2({
         amount={totalNewAmountUsd}
         txs={txs ?? undefined}
         onDone={() => setStep('confirmation')}
+        onBack={() => {
+          // Return to review with entered amounts preserved (amounts state is untouched).
+          setTxs(null)
+          setStep('review')
+        }}
+        onRetry={() => {
+          // Re-run the pipeline; runPipeline re-reads allowance so a succeeded
+          // approve isn't repeated.
+          setTxs(null)
+          void runPipeline()
+        }}
       />
     )
   }

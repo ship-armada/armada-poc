@@ -65,7 +65,18 @@ export default defineConfig({
       release: process.env.VITE_SENTRY_RELEASE
         ? { name: process.env.VITE_SENTRY_RELEASE }
         : undefined,
-      sourcemaps: { assets: ['./dist/**'] },
+      // Upload sourcemaps to Sentry, then delete the .map files from dist/ so
+      // they are never published with the deployed bundle (sourcemap: 'hidden'
+      // already strips the //# sourceMappingURL reference, but the files
+      // themselves would otherwise ship at guessable names).
+      // CAVEAT: this whole plugin no-ops when SENTRY_AUTH_TOKEN is unset
+      // (`disable` above), so a build without the token still emits .map files
+      // into dist/. SENTRY_AUTH_TOKEN must be set as a Netlify build var for
+      // production deploys — see netlify.toml.
+      sourcemaps: {
+        assets: ['./dist/**'],
+        filesToDeleteAfterUpload: ['./dist/**/*.map'],
+      },
     }),
   ],
   define: {

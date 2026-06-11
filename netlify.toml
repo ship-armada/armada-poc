@@ -14,6 +14,15 @@
 #                                  cold-start RPC backfill; the bundle's startup
 #                                  env validation hard-fails a PROD build at
 #                                  runtime when it is missing.
+#   VITE_SENTRY_DSN                error monitoring DSN; if unset, Sentry is a
+#                                  silent no-op (and the root error fallback
+#                                  stops claiming "the team has been notified").
+#   VITE_SENTRY_RELEASE            release tag used to group events.
+#   VITE_SENTRY_ENVIRONMENT        deploy environment, e.g. "production".
+#   SENTRY_AUTH_TOKEN              build-time only — lets the Sentry Vite plugin
+#                                  upload and then DELETE sourcemaps. If unset the
+#                                  plugin no-ops and .map files would ship
+#                                  publicly in dist/.
 
 [build]
   base    = "."

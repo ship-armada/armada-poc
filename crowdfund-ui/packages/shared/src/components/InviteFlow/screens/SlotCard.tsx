@@ -34,6 +34,9 @@ export interface SlotData {
   /** Reverse-resolved ENS name for `redeemedBy`. Optional; falls back to
    *  truncated address when absent. */
   redeemedEnsName?: string
+  /** True when the invitee is the connected wallet itself (a self-invite to the
+   *  next hop) — the row reads "Self-invited" instead of "Invited". */
+  isSelf?: boolean
 }
 
 /**
@@ -382,7 +385,7 @@ export default function SlotCard({
                   </span>
                 )}
               </div>
-              <Tag label="Invited" dot="lavender" />
+              <Tag label={slot.isSelf ? 'Self-invited' : 'Invited'} dot="lavender" />
             </div>
           )}
 

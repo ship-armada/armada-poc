@@ -83,6 +83,33 @@ describe('buildSlotRows', () => {
     expect(redeemed[0]).toMatchObject({ redeemedBy: A })
   })
 
+  it('flags a self-invite (invitee === connected address)', () => {
+    const { slots } = buildSlotRows({
+      totalSlots: 2,
+      startId: 1,
+      activeLinks: [],
+      linkRedemptions: new Map(),
+      directInvitedAddresses: [A, B],
+      selfAddress: A.toUpperCase(), // case-insensitive
+    })
+    const selfRow = slots.find((s) => s.invitedAddress === A)
+    const otherRow = slots.find((s) => s.invitedAddress === B)
+    expect(selfRow?.isSelf).toBe(true)
+    expect(otherRow?.isSelf).toBe(false)
+  })
+
+  it('flags a self-redeemed link', () => {
+    const { slots } = buildSlotRows({
+      totalSlots: 1,
+      startId: 1,
+      activeLinks: [],
+      linkRedemptions: new Map([[3, A]]),
+      directInvitedAddresses: [],
+      selfAddress: A,
+    })
+    expect(slots[0]).toMatchObject({ status: 'redeemed', isSelf: true })
+  })
+
   it('pads with empty rows up to totalSlots', () => {
     const { slots } = buildSlotRows({
       totalSlots: 4,

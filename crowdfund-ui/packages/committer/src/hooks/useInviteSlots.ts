@@ -144,8 +144,9 @@ function useHopSection(args: {
         activeLinks,
         linkRedemptions,
         directInvitedAddresses,
+        selfAddress: address,
       }),
-    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId],
+    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId, address],
   )
 
   const onGenerateLink = useCallback(

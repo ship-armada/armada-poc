@@ -15,6 +15,9 @@ export interface BuildSlotRowsArgs {
   linkRedemptions: Map<number, string>
   /** Invitee addresses from direct on-chain `invite()` calls (nonce === 0). */
   directInvitedAddresses: string[]
+  /** The connected (inviter) address — used to flag self-invites so the row
+   *  reads "self-invited" instead of "invited". Case-insensitive. */
+  selfAddress?: string | null
 }
 
 export interface BuildSlotRowsResult {
@@ -40,13 +43,17 @@ export interface BuildSlotRowsResult {
  */
 export function buildSlotRows(args: BuildSlotRowsArgs): BuildSlotRowsResult {
   const { totalSlots, startId, activeLinks, linkRedemptions, directInvitedAddresses } = args
+  const self = args.selfAddress ? args.selfAddress.toLowerCase() : null
+  const isSelf = (addr: string | undefined): boolean =>
+    self != null && addr != null && addr.toLowerCase() === self
 
   const rows: Array<{ slot: Omit<SlotData, 'id'>; link?: StoredInviteLink }> = []
   const redeemedNonces = new Set<number>()
 
   // 1a. On-chain redemptions (have a redeemer address). Stable order by nonce.
   for (const nonce of [...linkRedemptions.keys()].sort((a, b) => a - b)) {
-    rows.push({ slot: { status: 'redeemed', redeemedBy: linkRedemptions.get(nonce) } })
+    const redeemedBy = linkRedemptions.get(nonce)
+    rows.push({ slot: { status: 'redeemed', redeemedBy, isSelf: isSelf(redeemedBy) } })
     redeemedNonces.add(nonce)
   }
   // 1b. Locally-persisted redeemed links not (yet) reflected in the events.
@@ -59,7 +66,7 @@ export function buildSlotRows(args: BuildSlotRowsArgs): BuildSlotRowsResult {
 
   // 2. Direct on-chain invites.
   for (const invitedAddress of directInvitedAddresses) {
-    rows.push({ slot: { status: 'onchain-pending', invitedAddress } })
+    rows.push({ slot: { status: 'onchain-pending', invitedAddress, isSelf: isSelf(invitedAddress) } })
   }
 
   // 3. Pending local links not yet redeemed.

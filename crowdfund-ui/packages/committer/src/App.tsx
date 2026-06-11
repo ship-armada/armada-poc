@@ -765,7 +765,7 @@ export function App() {
   // Wallet-specific hooks
   const eligibility = useEligibility(wallet.address, nodes)
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider, pollInterval)
-  const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp)
+  const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp, events)
 
   // Per-hop invite-slot sections derived from real eligibility + invite-link
   // state. Multi-hop wallets get a section per eligible hop; single-hop

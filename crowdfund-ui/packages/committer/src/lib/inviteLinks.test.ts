@@ -11,9 +11,51 @@ import {
   getStoredInviteLinks,
   updateInviteLinkStatus,
   getNextNonce,
+  inviterOnChainNonces,
+  effectiveTimestamp,
+  classifyStoredLinks,
   type InviteLinkData,
   type StoredInviteLink,
 } from './inviteLinks'
+import type { CrowdfundEvent } from '@armada/crowdfund-shared'
+
+const TEST_INVITER = '0x1111111111111111111111111111111111111111'
+
+function invitedEvent(inviter: string, nonce: number): CrowdfundEvent {
+  return {
+    type: 'Invited',
+    blockNumber: nonce + 1,
+    transactionHash: '0x' + (nonce + 1).toString(16).padStart(64, '0'),
+    logIndex: 0,
+    args: { inviter, invitee: '0x' + '22'.repeat(20), hop: 1, nonce: BigInt(nonce) },
+  }
+}
+
+function revokedEvent(inviter: string, nonce: number): CrowdfundEvent {
+  return {
+    type: 'InviteNonceRevoked',
+    blockNumber: nonce + 500,
+    transactionHash: '0x' + (nonce + 500).toString(16).padStart(64, '0'),
+    logIndex: 0,
+    args: { inviter, nonce: BigInt(nonce) },
+  }
+}
+
+function storedLink(
+  nonce: number,
+  status: StoredInviteLink['status'],
+  deadline: number,
+): StoredInviteLink {
+  return {
+    inviter: TEST_INVITER.toLowerCase(),
+    fromHop: 0,
+    nonce,
+    deadline,
+    signature: '0x' + 'ab'.repeat(65),
+    createdAt: 1000,
+    status,
+  }
+}
 
 describe('getEIP712Domain', () => {
   it('returns correct domain structure', () => {
@@ -230,5 +272,79 @@ describe('IndexedDB CRUD', () => {
     })
     const nonce = await getNextNonce(inviter)
     expect(nonce).toBe(6)
+  })
+})
+
+describe('inviterOnChainNonces', () => {
+  it('collects redeemed (Invited) and revoked nonces for the inviter', () => {
+    const events: CrowdfundEvent[] = [
+      invitedEvent(TEST_INVITER, 1),
+      revokedEvent(TEST_INVITER, 2),
+      invitedEvent('0x9999999999999999999999999999999999999999', 7), // other inviter
+    ]
+    expect(inviterOnChainNonces(events, TEST_INVITER).sort((a, b) => a - b)).toEqual([1, 2])
+  })
+
+  it('is case-insensitive on the inviter address', () => {
+    const events = [invitedEvent(TEST_INVITER.toUpperCase(), 3)]
+    expect(inviterOnChainNonces(events, TEST_INVITER.toLowerCase())).toEqual([3])
+  })
+})
+
+describe('getNextNonce with on-chain history', () => {
+  it('returns 1 for empty local + empty on-chain', async () => {
+    expect(await getNextNonce('0xempty-' + Math.random().toString(16))).toBe(1)
+  })
+
+  it('seeds past consumed on-chain nonces on a fresh device (1-3 → 4)', async () => {
+    // Fresh inviter key (no local links) but nonces 1..3 consumed on-chain.
+    const fresh = '0x' + 'ab'.repeat(20)
+    expect(await getNextNonce(fresh, [1, 2, 3])).toBe(4)
+  })
+})
+
+describe('effectiveTimestamp', () => {
+  it('passes through a real block timestamp', () => {
+    expect(effectiveTimestamp(1_700_000_000)).toBe(1_700_000_000)
+  })
+
+  it('falls back to wall-clock when block timestamp is 0 (not 1970)', () => {
+    const ts = effectiveTimestamp(0)
+    const nowish = Math.floor(Date.now() / 1000)
+    expect(Math.abs(ts - nowish)).toBeLessThan(5)
+  })
+})
+
+describe('classifyStoredLinks', () => {
+  it('marks a redeemed nonce as redeemed even past its deadline', () => {
+    const out = classifyStoredLinks([storedLink(1, 'pending', 100)], new Set([1]), 999_999)
+    expect(out[0].status).toBe('redeemed')
+  })
+
+  it('expires only still-pending links past the deadline', () => {
+    const out = classifyStoredLinks([storedLink(2, 'pending', 100)], new Set(), 999_999)
+    expect(out[0].status).toBe('expired')
+  })
+
+  it('leaves a revoked link revoked even if its nonce appears redeemed', () => {
+    const out = classifyStoredLinks([storedLink(3, 'revoked', 100)], new Set([3]), 999_999)
+    expect(out[0].status).toBe('revoked')
+  })
+})
+
+describe('storeInviteLink inviter normalization', () => {
+  it('stores a checksummed inviter under its lowercase key', async () => {
+    const checksummed = '0xAbC0000000000000000000000000000000000abc'
+    await storeInviteLink({
+      inviter: checksummed,
+      fromHop: 0,
+      nonce: 42,
+      deadline: 1_700_000_000,
+      signature: '0x' + 'cd'.repeat(65),
+      createdAt: 1000,
+      status: 'pending',
+    })
+    const found = await getStoredInviteLinks(checksummed.toLowerCase())
+    expect(found.some((l) => l.nonce === 42)).toBe(true)
   })
 })

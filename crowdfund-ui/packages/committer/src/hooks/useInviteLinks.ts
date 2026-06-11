@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Contract } from 'ethers'
 import type { Signer } from 'ethers'
-import { CROWDFUND_ABI_FRAGMENTS } from '@armada/crowdfund-shared'
+import { CROWDFUND_ABI_FRAGMENTS, type CrowdfundEvent } from '@armada/crowdfund-shared'
 import {
   type StoredInviteLink,
   getEIP712Domain,
@@ -14,6 +14,9 @@ import {
   getStoredInviteLinks,
   updateInviteLinkStatus,
   getNextNonce,
+  inviterOnChainNonces,
+  effectiveTimestamp,
+  classifyStoredLinks,
 } from '@/lib/inviteLinks'
 import { getHubChainId } from '@/config/network'
 import { TX_WAIT_TIMEOUT_MS } from '@/lib/txWait'
@@ -33,6 +36,9 @@ export function useInviteLinks(
   signer: Signer | null,
   crowdfundAddress: string | null,
   blockTimestamp: number,
+  /** Full event stream — lets the hook persist `redeemed` from chain truth and
+   *  seed nonces past any already-consumed on-chain nonce. */
+  events: CrowdfundEvent[] = [],
 ): UseInviteLinksResult {
   const [links, setLinks] = useState<StoredInviteLink[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,21 +51,32 @@ export function useInviteLinks(
     }
 
     try {
-      const stored = await getStoredInviteLinks(address.toLowerCase())
-      // Update expired status
-      const updated = stored.map((link) => {
-        if (link.status === 'pending' && link.deadline < blockTimestamp) {
-          return { ...link, status: 'expired' as const }
+      const lowerAddr = address.toLowerCase()
+      const stored = await getStoredInviteLinks(lowerAddr)
+      // Nonces this inviter has had redeemed on-chain (Invited with nonce > 0).
+      const redeemedNonces = new Set<number>()
+      for (const e of events) {
+        if (e.type !== 'Invited') continue
+        if (String(e.args.inviter).toLowerCase() !== lowerAddr) continue
+        const n = Number(e.args.nonce)
+        if (n > 0) redeemedNonces.add(n)
+      }
+
+      const updated = classifyStoredLinks(stored, redeemedNonces, blockTimestamp)
+      // Persist newly-redeemed links so they survive past their deadline
+      // (a redeemed slot must never revert to "available").
+      for (let i = 0; i < stored.length; i += 1) {
+        if (stored[i].status !== 'redeemed' && updated[i].status === 'redeemed') {
+          await updateInviteLinkStatus(lowerAddr, stored[i].nonce, 'redeemed').catch(() => {})
         }
-        return link
-      })
+      }
       setLinks(updated.sort((a, b) => b.createdAt - a.createdAt))
     } catch {
       // Non-fatal
     } finally {
       setLoading(false)
     }
-  }, [address, blockTimestamp])
+  }, [address, blockTimestamp, events])
 
   useEffect(() => {
     refreshLinks()
@@ -70,8 +87,15 @@ export function useInviteLinks(
 
     try {
       const chainId = getHubChainId()
-      const nonce = await getNextNonce(address.toLowerCase())
-      const deadline = blockTimestamp + (deadlineSeconds ?? FIVE_DAYS)
+      // Seed the nonce from chain truth so a fresh device / cleared storage
+      // doesn't re-sign a nonce already consumed on-chain.
+      const nonce = await getNextNonce(
+        address.toLowerCase(),
+        inviterOnChainNonces(events, address),
+      )
+      // Never sign a 1970-relative deadline before block time hydrates.
+      const baseTs = effectiveTimestamp(blockTimestamp)
+      const deadline = baseTs + (deadlineSeconds ?? FIVE_DAYS)
 
       const domain = getEIP712Domain(chainId, crowdfundAddress)
       const value = { inviter: address, fromHop, nonce, deadline }
@@ -83,7 +107,7 @@ export function useInviteLinks(
         nonce,
         deadline,
         signature,
-        createdAt: blockTimestamp,
+        createdAt: baseTs,
         status: 'pending',
       }
 

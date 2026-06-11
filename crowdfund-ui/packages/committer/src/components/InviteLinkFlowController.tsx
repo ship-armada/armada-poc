@@ -132,6 +132,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     signer,
     deployment?.contracts.crowdfund ?? null,
     localBlockTimestamp,
+    events,
   )
   const inviteSlots = useInviteSlots(
     eligibility.positions,

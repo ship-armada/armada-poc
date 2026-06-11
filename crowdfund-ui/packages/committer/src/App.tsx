@@ -764,6 +764,7 @@ export function App() {
             inviteSlotSections={inviteSlots.empty ? undefined : inviteSlots.sections}
             liveData={crowdfundLiveData}
             myPositionData={myPositionData}
+            connectedAddress={wallet.address ?? undefined}
             onConnectWallet={openConnectModal}
             onParticipate={openParticipate}
             // Hide the Participate CTA (and the My Position invite card) once

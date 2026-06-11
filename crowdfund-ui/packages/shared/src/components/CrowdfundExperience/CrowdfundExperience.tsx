@@ -280,6 +280,11 @@ export interface CrowdfundExperienceProps {
    */
   myPositionData?: CrowdfundExperienceMyPositionData
   /**
+   * Connected wallet address. When it matches a participant row, that row is
+   * highlighted as "you" in the participants panel. Case-insensitive.
+   */
+  connectedAddress?: string
+  /**
    * Fires when the disconnected-state's "Connect wallet" CTA is clicked.
    * When omitted, the empty state renders text-only guidance pointing the
    * user to the header's connect button.
@@ -349,6 +354,7 @@ export function CrowdfundExperience({
   inviteSlotSections,
   liveData,
   myPositionData,
+  connectedAddress,
   onConnectWallet,
   onParticipate,
   participationEnabled = true,
@@ -406,14 +412,17 @@ export function CrowdfundExperience({
   // address in `HeroParticipantsPanel`. Atom updates re-render the panel
   // naturally as resolutions land.
   const ensMap = useAtomValue(ensMapAtom)
+  const selfAddress = connectedAddress?.toLowerCase() ?? null
   const participants = useMemo<HeroParticipant[]>(() => {
     const base = toHeroParticipants(dashRows) as HeroParticipant[]
-    if (ensMap.size === 0) return base
     return base.map((p) => {
-      const name = ensMap.get(p.address.toLowerCase())
-      return name ? { ...p, displayName: name } : p
+      const lower = p.address.toLowerCase()
+      const isSelf = selfAddress != null && lower === selfAddress
+      const name = ensMap.get(lower)
+      if (!name && !isSelf) return p
+      return { ...p, ...(name ? { displayName: name } : {}), ...(isSelf ? { isSelf } : {}) }
     })
-  }, [dashRows, ensMap])
+  }, [dashRows, ensMap, selfAddress])
 
   // Derived MyPosition display values. The `ready` status produces live
   // numbers; `disconnected` / `no-position` short-circuit into the

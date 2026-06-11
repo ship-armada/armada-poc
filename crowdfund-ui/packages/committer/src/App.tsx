@@ -728,9 +728,18 @@ export function App() {
   // `daysLeftLabel` derives the Progress card's countdown tag from the
   // contract's commit window — replaces the Progress primitive's hardcoded
   // "3 DAYS LEFT" default. Uppercased to match the designer's tag styling.
+  // Participant rows are O(N) to build — memoize them on the event-derived
+  // `summaryArray` ONLY, so a 5–15s poll tick (which changes blockTimestamp)
+  // doesn't rebuild the array and cascade into CrowdfundExperience / NodeSphere.
+  const dashRows = useMemo(
+    () => (eventsLoading ? [] : toDashboardParticipantsFromGraph(summaryArray)),
+    [eventsLoading, summaryArray],
+  )
+
+  // Cheap scalars + labels recompute on the poll tick, but reuse the stable
+  // `dashRows` reference above so no O(N) work runs per tick.
   const crowdfundLiveData = useMemo<CrowdfundExperienceLiveData>(() => {
     if (eventsLoading) return { status: 'loading' }
-    const dashRows = toDashboardParticipantsFromGraph(summaryArray)
     const totalCommitted = Number(contractState.cappedDemand / 1_000_000n)
     const windowEnd = Number(contractState.windowEnd)
     const remaining = windowEnd - contractState.blockTimestamp
@@ -752,7 +761,7 @@ export function App() {
     }
   }, [
     eventsLoading,
-    summaryArray,
+    dashRows,
     contractState.cappedDemand,
     contractState.windowEnd,
     contractState.windowStart,

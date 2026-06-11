@@ -83,10 +83,53 @@ export interface FetchLogsResult {
   resolvedTo: number
 }
 
+export interface FetchLogsChunk {
+  /** Raw logs for this chunk only. */
+  logs: RawLog[]
+  /** The first block of the whole scan (the original fromBlock). */
+  fromBlock: number
+  /** The resolved upper bound of the whole scan. */
+  toBlock: number
+  /** The block this chunk scanned up to — a safe cursor for resuming. */
+  scannedTo: number
+}
+
+export interface FetchLogsOptions {
+  /** Max blocks per eth_getLogs request. */
+  maxBlockRange?: number
+  /** Called after each chunk completes. Lets callers persist partial progress
+   *  (events + cursor) so an interrupted backfill resumes instead of restarting,
+   *  and drive a coarse sync-progress UI. */
+  onChunk?: (chunk: FetchLogsChunk) => void
+}
+
+/** Heuristic: does this RPC error mean the requested block range was too large?
+ *  Such errors are retryable with a smaller range (halve-and-retry). Distinct
+ *  from rate limiting, which is handled by the provider's backoff. */
+function isBlockRangeError(err: unknown): boolean {
+  const message = (
+    (err as { message?: string })?.message ??
+    (err as { error?: { message?: string } })?.error?.message ??
+    ''
+  ).toLowerCase()
+  return (
+    /range/.test(message) ||
+    /more than \d+ results/.test(message) ||
+    /too many results/.test(message) ||
+    /too large/.test(message) ||
+    /response size/.test(message) ||
+    /result set/.test(message) ||
+    /exceed/.test(message)
+  )
+}
+
 /**
  * Fetch raw logs from the provider for a given contract address and block range.
- * Automatically chunks large ranges into maxBlockRange-sized requests with
- * a small delay between chunks to avoid RPC rate limits.
+ * Chunks large ranges into maxBlockRange-sized requests with a small delay
+ * between chunks. On a "block range too large" RPC error, halves the chunk size
+ * and retries the same range. Calls `onChunk` after each successful chunk so the
+ * caller can persist partial progress and show sync status.
+ *
  * Returns logs in the RawLog format expected by parseCrowdfundEvent, plus the
  * resolved upper bound of the scan so the caller can advance its cursor exactly.
  */
@@ -95,22 +138,37 @@ export async function fetchLogs(
   address: string,
   fromBlock: number,
   toBlock: number | 'latest',
-  maxBlockRange: number = DEFAULT_MAX_BLOCK_RANGE,
+  options: FetchLogsOptions = {},
 ): Promise<FetchLogsResult> {
+  const { maxBlockRange = DEFAULT_MAX_BLOCK_RANGE, onChunk } = options
   const resolvedTo = toBlock === 'latest' ? await provider.getBlockNumber() : toBlock
   if (fromBlock > resolvedTo) return { logs: [], resolvedTo }
 
   const allLogs: RawLog[] = []
   let cursor = fromBlock
+  let range = Math.max(1, maxBlockRange)
   let isFirstChunk = true
 
   while (cursor <= resolvedTo) {
     if (!isFirstChunk) await sleep(CHUNK_DELAY_MS)
     isFirstChunk = false
 
-    const chunkEnd = Math.min(cursor + maxBlockRange - 1, resolvedTo)
-    const logs = await provider.getLogs({ address, fromBlock: cursor, toBlock: chunkEnd })
-    for (const log of logs) allLogs.push(toRawLog(log))
+    const chunkEnd = Math.min(cursor + range - 1, resolvedTo)
+    let logs
+    try {
+      logs = await provider.getLogs({ address, fromBlock: cursor, toBlock: chunkEnd })
+    } catch (err) {
+      if (isBlockRangeError(err) && range > 1) {
+        // Range too large for this endpoint — shrink and retry the same cursor.
+        range = Math.max(1, Math.floor(range / 2))
+        continue
+      }
+      throw err
+    }
+
+    const chunk = logs.map(toRawLog)
+    for (const log of chunk) allLogs.push(log)
+    onChunk?.({ logs: chunk, fromBlock, toBlock: resolvedTo, scannedTo: chunkEnd })
     cursor = chunkEnd + 1
   }
 

@@ -1,7 +1,7 @@
 // ABOUTME: Event fetching pipeline with polling and IndexedDB caching.
 // ABOUTME: Backed by react-query; IDB seeds initial data, cursor is stored in query data.
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { atom, useSetAtom } from 'jotai'
 import type { JsonRpcProvider } from 'ethers'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -33,8 +33,19 @@ export interface UseContractEventsConfig {
   /** Chain id of the deployment. Used to namespace the IndexedDB event cache so
    *  switching networks/contracts can't mix histories. Defaults to 0 when unset. */
   chainId?: number
+  /** Max blocks per eth_getLogs request during backfill. Defaults to the rpc
+   *  module's conservative default; pass a wider value for capable RPCs. */
+  maxBlockRange?: number
   /** Optional indexer API base URL. When provided, Sepolia loads use indexed snapshots before RPC fallback. */
   indexerBaseUrl?: string | null
+}
+
+/** Coarse cold-start backfill progress, for a "syncing history" UI line. */
+export interface BackfillProgress {
+  active: boolean
+  fromBlock: number
+  currentBlock: number
+  toBlock: number
 }
 
 export interface UseContractEventsResult {
@@ -43,6 +54,8 @@ export interface UseContractEventsResult {
   error: string | null
   indexerHealth: IndexerHealth | null
   ingestReceiptLogs: (logs: readonly ReceiptLogLike[]) => void
+  /** Non-null while a multi-chunk cold-start backfill is in progress. */
+  backfill: BackfillProgress | null
 }
 
 interface EventsSnapshot {
@@ -120,9 +133,11 @@ function toRawReceiptLog(log: ReceiptLogLike) {
  * Then polls for new events on the configured interval, extending the cursor.
  */
 export function useContractEvents(config: UseContractEventsConfig): UseContractEventsResult {
-  const { provider, contractAddress, pollIntervalMs, startBlock, chainId, indexerBaseUrl } = config
+  const { provider, contractAddress, pollIntervalMs, startBlock, chainId, maxBlockRange, indexerBaseUrl } = config
   const effectiveStartBlock = startBlock ?? 0
   const effectiveChainId = chainId ?? 0
+
+  const [backfill, setBackfill] = useState<BackfillProgress | null>(null)
 
   const setEventsAtom = useSetAtom(crowdfundEventsAtom)
   const setLastBlockAtom = useSetAtom(lastFetchedBlockAtom)
@@ -202,12 +217,28 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
         }
       }
 
+      const fromBlock = prior.cursor + 1
       const { logs: rawLogs, resolvedTo } = await fetchLogs(
         provider,
         contractAddress,
-        prior.cursor + 1,
+        fromBlock,
         'latest',
+        {
+          maxBlockRange,
+          onChunk: ({ logs: chunkLogs, toBlock, scannedTo }) => {
+            // Persist each chunk + its cursor as the scan proceeds so an
+            // interrupted backfill resumes from here (idempotent put).
+            const chunkEvents = parseCrowdfundEvents(chunkLogs)
+            cacheEvents(chunkEvents, scannedTo, deployment).catch(() => {})
+            // Only surface progress for a genuine multi-chunk backfill, not the
+            // 1-block deltas a normal poll scans.
+            if (toBlock - fromBlock > (maxBlockRange ?? 0)) {
+              setBackfill({ active: true, fromBlock, currentBlock: scannedTo, toBlock })
+            }
+          },
+        },
       )
+      setBackfill(null)
       const newEvents = parseCrowdfundEvents(rawLogs)
 
       // Merge against the CURRENT query data at resolution time — not the
@@ -288,11 +319,17 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
     setErrorAtom(errorMessage)
   }, [errorMessage, setErrorAtom])
 
+  // A failed/aborted scan must not leave a stale "syncing" indicator up.
+  useEffect(() => {
+    if (query.isError) setBackfill(null)
+  }, [query.isError])
+
   return {
     events,
     loading,
     error: errorMessage,
     indexerHealth: healthQuery.data ?? null,
     ingestReceiptLogs,
+    backfill,
   }
 }

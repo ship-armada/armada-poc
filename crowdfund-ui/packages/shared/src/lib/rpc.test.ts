@@ -2,8 +2,30 @@
 // ABOUTME: Tests ordered fallback across multiple RPC endpoints.
 
 import { describe, it, expect, vi } from 'vitest'
-import { createProvider, FallbackJsonRpcProvider } from './rpc.js'
+import { createProvider, FallbackJsonRpcProvider, fetchLogs } from './rpc.js'
 import { JsonRpcProvider } from 'ethers'
+
+/** Minimal provider stand-in for fetchLogs (only getBlockNumber + getLogs used). */
+function makeFakeProvider(opts: {
+  head: number
+  getLogs: (args: { fromBlock: number; toBlock: number }) => Promise<unknown[]>
+}) {
+  return {
+    getBlockNumber: async () => opts.head,
+    getLogs: async (args: { address: string; fromBlock: number; toBlock: number }) =>
+      opts.getLogs(args),
+  } as unknown as JsonRpcProvider
+}
+
+function mkLog(blockNumber: number, index: number) {
+  return {
+    blockNumber,
+    transactionHash: '0x' + blockNumber.toString(16).padStart(64, '0'),
+    index,
+    topics: ['0xtopic'],
+    data: '0x',
+  }
+}
 
 describe('createProvider', () => {
   it('creates a provider from a single URL', () => {
@@ -94,5 +116,60 @@ describe('FallbackJsonRpcProvider', () => {
   })
 })
 
-// fetchLogs and getBlockTimestamp require a live provider, so they are tested
-// via integration tests with Anvil rather than unit tests.
+describe('fetchLogs', () => {
+  it('chunks the range and reports resolvedTo + per-chunk progress', async () => {
+    const calls: Array<{ fromBlock: number; toBlock: number }> = []
+    const provider = makeFakeProvider({
+      head: 25,
+      getLogs: async ({ fromBlock, toBlock }) => {
+        calls.push({ fromBlock, toBlock })
+        return fromBlock === 1 ? [mkLog(5, 0)] : []
+      },
+    })
+    const chunks: number[] = []
+    const result = await fetchLogs(provider, '0xabc', 1, 'latest', {
+      maxBlockRange: 10,
+      onChunk: ({ scannedTo }) => chunks.push(scannedTo),
+    })
+    // 1-10, 11-20, 21-25 → three chunks.
+    expect(calls).toEqual([
+      { fromBlock: 1, toBlock: 10 },
+      { fromBlock: 11, toBlock: 20 },
+      { fromBlock: 21, toBlock: 25 },
+    ])
+    expect(chunks).toEqual([10, 20, 25])
+    expect(result.resolvedTo).toBe(25)
+    expect(result.logs).toHaveLength(1)
+    expect(result.logs[0].blockNumber).toBe(5)
+  })
+
+  it('returns empty + resolvedTo when fromBlock is past the head', async () => {
+    const provider = makeFakeProvider({ head: 5, getLogs: async () => [] })
+    const result = await fetchLogs(provider, '0xabc', 10, 'latest', { maxBlockRange: 10 })
+    expect(result).toEqual({ logs: [], resolvedTo: 5 })
+  })
+
+  it('halves the range and retries on a block-range-too-large error', async () => {
+    const widths: number[] = []
+    let failedOnce = false
+    const provider = makeFakeProvider({
+      head: 10,
+      getLogs: async ({ fromBlock, toBlock }) => {
+        widths.push(toBlock - fromBlock + 1)
+        if (!failedOnce && toBlock - fromBlock + 1 > 5) {
+          failedOnce = true
+          throw new Error('query returned more than 10000 results, reduce your block range')
+        }
+        return []
+      },
+    })
+    const result = await fetchLogs(provider, '0xabc', 1, 'latest', { maxBlockRange: 10 })
+    // First attempt width 10 fails → halves to 5, then proceeds.
+    expect(widths[0]).toBe(10)
+    expect(widths.slice(1).every((w) => w <= 5)).toBe(true)
+    expect(result.resolvedTo).toBe(10)
+  })
+})
+
+// getBlockTimestamp requires a live provider, so it is tested via integration
+// tests with Anvil rather than unit tests.

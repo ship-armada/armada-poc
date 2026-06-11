@@ -62,6 +62,16 @@ export function getPollIntervalMs(): number {
   return isLocalMode() ? 5_000 : 15_000
 }
 
+/**
+ * Max blocks per eth_getLogs request. Local Anvil is tiny so 10 is plenty;
+ * Sepolia public RPCs (publicnode) handle far larger ranges, so use a wide
+ * range to keep cold-start backfills from taking thousands of requests.
+ * fetchLogs halves this on a range-too-large error, so an over-estimate is safe.
+ */
+export function getMaxBlockRange(): number {
+  return isLocalMode() ? 10 : 2_000
+}
+
 /** Block explorer base URL. Returns undefined for local mode (no explorer). */
 export function getExplorerUrl(): string | undefined {
   if (isLocalMode()) return undefined

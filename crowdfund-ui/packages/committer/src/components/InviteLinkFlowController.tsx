@@ -37,7 +37,7 @@ import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
-import { getHubRpcUrls, getHubChainId, getIndexerUrl, getPollIntervalMs } from '@/config/network'
+import { getHubRpcUrls, getHubChainId, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
@@ -111,6 +111,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     // Same chainId the main App passes so the /invite page and the main app
     // share one IndexedDB cache namespace instead of clearing each other's.
     chainId: getHubChainId(),
+    maxBlockRange: getMaxBlockRange(),
     indexerBaseUrl: getIndexerUrl(),
   })
   const { nodes } = useGraphState()

@@ -41,7 +41,7 @@ import {
   type CrowdfundExperienceMyPositionData,
 } from '@armada/crowdfund-shared'
 import { Button as ArmadaButton, NavBar, WalletPillMenu, type NavBarItem } from '@armada/ui'
-import { getExplorerUrl, getHubChainId, getHubRpcUrls, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
+import { getExplorerUrl, getHubChainId, getHubRpcUrls, getMaxBlockRange, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -656,12 +656,13 @@ export function App() {
   const armTokenAddress = deployment?.contracts.armToken ?? null
 
   // Shared data layer
-  const { events, loading: eventsLoading, indexerHealth, ingestReceiptLogs } = useContractEvents({
+  const { events, loading: eventsLoading, indexerHealth, ingestReceiptLogs, backfill } = useContractEvents({
     provider,
     contractAddress: crowdfundAddress,
     pollIntervalMs: pollInterval,
     startBlock: deployment?.deployBlock,
     chainId: getHubChainId(),
+    maxBlockRange: getMaxBlockRange(),
     indexerBaseUrl: indexerUrl,
   })
   const { summaries, nodes } = useGraphState()
@@ -938,13 +939,30 @@ export function App() {
   const isHeroPage = page === 'network' || page === 'my-position'
 
   if ((!deployment || contractState.loading) && !isHeroPage) {
+    const backfillPct =
+      backfill && backfill.toBlock > backfill.fromBlock
+        ? Math.min(
+            99,
+            Math.round(
+              ((backfill.currentBlock - backfill.fromBlock) /
+                (backfill.toBlock - backfill.fromBlock)) *
+                100,
+            ),
+          )
+        : null
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center space-y-2">
           <div className="">Loading...</div>
-          <div className="text-muted-foreground">
-            Connecting to {getNetworkMode()} network
-          </div>
+          {backfill?.active ? (
+            <div className="text-muted-foreground">
+              Syncing history…{backfillPct !== null ? ` ${backfillPct}%` : ''}
+            </div>
+          ) : (
+            <div className="text-muted-foreground">
+              Connecting to {getNetworkMode()} network
+            </div>
+          )}
         </div>
       </div>
     )

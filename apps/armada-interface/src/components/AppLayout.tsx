@@ -65,10 +65,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
           reset). Inline style has the highest specificity short of !important and bypasses
           generation issues entirely. 80px = 64px header bottom (top-2 + h-14) + 16px breathing. */}
       <main
-        className="flex flex-1 flex-col items-center justify-start"
+        className="relative flex flex-1 flex-col items-center justify-start"
         style={{ paddingTop: '5rem' }}
       >
-        <div className="w-full px-6">
+        {/* Status strips are overlaid (absolute) rather than in flow, so a transient banner
+            appearing/disappearing never reflows the page content beneath it. pointer-events are
+            off on the wrapper and back on for the strips, so clicks pass through empty space. */}
+        <div className={styles.bannerOverlay}>
           {/* The dashboard renders its own prominent full-area SyncGate, so the thin strip would
               be redundant there — show it only on the other routes (History/Settings). */}
           {location.pathname !== '/' && <SyncBanner />}

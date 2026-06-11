@@ -55,6 +55,28 @@
   white-space: nowrap;
 }
 
+/* Status-strip overlay — pulled out of flow so a transient sync/recovery banner appearing or
+   disappearing never reflows the page content beneath it (was the source of a momentary
+   dashboard "jump"). Pinned just below the fixed header (top matches <main>'s 5rem padding),
+   below the header's z-40 and any modal. pointer-events pass through the empty area; the strips
+   themselves stay interactive (e.g. the Retry button). */
+.bannerOverlay {
+  position: absolute;
+  top: 5rem;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--primitives-spacing-6);
+  pointer-events: none;
+}
+
+.bannerOverlay > * {
+  pointer-events: auto;
+}
+
 /* Active page indicator — bolder weight only. Targets NavItem's `aria-current="page"`
    attribute (set by the shared component when `active === true`) so this rule is scoped
    without forking the design-system primitive. */

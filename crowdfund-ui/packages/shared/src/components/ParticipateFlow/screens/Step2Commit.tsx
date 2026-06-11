@@ -223,7 +223,6 @@ function SingleHopVariant({
               {hasExisting
                 ? `${remainingCap.toLocaleString()} remaining · ${maxAmount.toLocaleString()} cap`
                 : `Max ${maxAmount.toLocaleString()}`}
-              {MIN_COMMIT_USD > 0 ? ` · Min ${MIN_COMMIT_USD.toLocaleString()}` : ''}
             </p>
           </div>
 
@@ -494,7 +493,6 @@ function MultiHopVariant({
                   {hasExisting
                     ? `${remaining.toLocaleString()} remaining`
                     : `Max ${row.maxAmount.toLocaleString()}`}
-                  {MIN_COMMIT_USD > 0 ? ` · Min ${MIN_COMMIT_USD.toLocaleString()}` : ''}
                 </span>
                 <span className={styles.visuallyHidden}>
                   USDC amount for {row.hopLabel}

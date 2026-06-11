@@ -543,7 +543,10 @@ Interactions disabled — no signer or contract state in stress mode.
 }
 
 function getMockSizeFromUrl(): number {
-if (typeof window ==='undefined') return 0
+  // Dev-only stress harness — never let a production origin render a synthetic
+  // full-looking sale (screenshot-phishing surface).
+  if (!import.meta.env.DEV) return 0
+  if (typeof window === 'undefined') return 0
   const p = new URLSearchParams(window.location.search).get('mock')
   if (!p) return 0
   const n = parseInt(p.replace(/^stress/, ''), 10)

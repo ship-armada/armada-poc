@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Contract, type JsonRpcProvider, type Signer } from 'ethers'
 import { toast } from 'sonner'
 import { encodeInviteUrl, type StoredInviteLink } from '@/lib/inviteLinks'
+import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import {
   CROWDFUND_ABI_FRAGMENTS,
   HOP_CONFIGS,
@@ -224,7 +225,7 @@ function useHopSection(args: {
       try {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
         const tx = await crowdfund.invite(invitee, hop)
-        const receipt = await tx.wait()
+        const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
         if (!receipt || receipt.status === 0) {
           throw new Error('Transaction reverted')
         }
@@ -234,8 +235,13 @@ function useHopSection(args: {
         await inviteLinks.refreshLinks()
         toast.success(`Invite sent to ${ensName ?? truncateAddress(invitee)}`)
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        toast.error('Invite failed', { description: message })
+        if (isTxTimeoutError(err)) {
+          // The invite tx may still confirm — don't claim failure.
+          toast.error('Invite still pending', { description: TX_PENDING_MESSAGE })
+        } else {
+          const message = err instanceof Error ? err.message : String(err)
+          toast.error('Invite failed', { description: message })
+        }
       } finally {
         setLoadingId((cur) => (cur === slotId ? null : cur))
       }

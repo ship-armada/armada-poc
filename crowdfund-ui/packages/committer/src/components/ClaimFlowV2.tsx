@@ -16,6 +16,7 @@ import {
 import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { mapRevertToMessage } from '@/lib/revertMessages'
+import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import styles from './ClaimFlowV2.module.css'
 
 type ClaimMode = 'arm' | 'refund'
@@ -163,11 +164,13 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const setRowStatus = (patch: Partial<Step4Transaction>) =>
       setTxs((prev) => (prev ? [{ ...prev[0], ...patch }] : prev))
 
+    let txHash: string | undefined
     try {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
       const tx: TransactionResponse =
         mode === 'arm' ? await crowdfund.claim(delegate) : await crowdfund.claimRefund()
-      const receipt = await tx.wait()
+      txHash = tx.hash
+      const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
       if (!receipt || receipt.status === 0) {
         setRowStatus({ status: 'error', errorMessage: 'Transaction reverted' })
         return
@@ -182,6 +185,14 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       void refreshAllowance?.()
       setTimeout(() => setStep('done'), 600)
     } catch (err) {
+      if (isTxTimeoutError(err)) {
+        setRowStatus({
+          status: 'error',
+          errorMessage: TX_PENDING_MESSAGE,
+          errorDetails: txHash ? `Transaction hash: ${txHash}` : undefined,
+        })
+        return
+      }
       setRowStatus({
         status: 'error',
         errorMessage: mapRevertToMessage(err),

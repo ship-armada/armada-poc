@@ -16,6 +16,7 @@ import {
   getNextNonce,
 } from '@/lib/inviteLinks'
 import { getHubChainId } from '@/config/network'
+import { TX_WAIT_TIMEOUT_MS } from '@/lib/txWait'
 
 export interface UseInviteLinksResult {
   links: StoredInviteLink[]
@@ -101,7 +102,7 @@ export function useInviteLinks(
     try {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
       const tx = await crowdfund.revokeInviteNonce(nonce)
-      const receipt = await tx.wait()
+      const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
       if (!receipt || receipt.status === 0) return false
       await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked')
       await refreshLinks()

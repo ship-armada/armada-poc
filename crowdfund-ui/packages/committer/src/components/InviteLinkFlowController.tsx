@@ -36,6 +36,7 @@ import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
+import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { getHubRpcUrls, getHubRpcUrl, getIndexerUrl, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
@@ -220,9 +221,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
     ): Promise<boolean> => {
       setRowStatus(index, { label, status: 'loading' })
+      let txHash: string | undefined
       try {
         const tx = await send()
-        const receipt = await tx.wait()
+        txHash = tx.hash
+        const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
         if (!receipt || receipt.status === 0) {
           setRowStatus(index, { status: 'error', errorMessage: 'Transaction reverted' })
           return false
@@ -233,6 +236,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         onSuccess?.(receipt.logs as unknown as readonly ReceiptLogLike[])
         return true
       } catch (err) {
+        if (isTxTimeoutError(err)) {
+          setRowStatus(index, {
+            status: 'error',
+            errorMessage: TX_PENDING_MESSAGE,
+            errorDetails: txHash ? `Transaction hash: ${txHash}` : undefined,
+          })
+          return false
+        }
         setRowStatus(index, {
           status: 'error',
           errorMessage: mapRevertToMessage(err),

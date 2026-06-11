@@ -88,9 +88,14 @@ export function reviveIndexedEvent(raw: unknown): CrowdfundEvent {
   }
 }
 
+/** Abort indexer requests that hang so a stuck fetch can't freeze the UI. */
+const INDEXER_FETCH_TIMEOUT_MS = 10_000
+
 export async function fetchIndexedEventsSnapshot(baseUrl: string): Promise<IndexedEventsSnapshot> {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  const response = await fetch(`${trimmed}/snapshot`)
+  const response = await fetch(`${trimmed}/snapshot`, {
+    signal: AbortSignal.timeout(INDEXER_FETCH_TIMEOUT_MS),
+  })
   if (!response.ok) {
     throw new Error(`Indexer snapshot request failed: ${response.status}`)
   }
@@ -106,7 +111,9 @@ export async function fetchIndexedEventsSnapshot(baseUrl: string): Promise<Index
 
 export async function fetchIndexerHealth(baseUrl: string): Promise<IndexerHealth> {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  const response = await fetch(`${trimmed}/health`)
+  const response = await fetch(`${trimmed}/health`, {
+    signal: AbortSignal.timeout(INDEXER_FETCH_TIMEOUT_MS),
+  })
   if (!response.ok) {
     throw new Error(`Indexer health request failed: ${response.status}`)
   }

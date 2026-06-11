@@ -2,6 +2,7 @@
 // ABOUTME: Revives JSON snapshot event values into the bigint-rich event shape used by graph logic.
 
 import type { CrowdfundEvent } from './events.js'
+import { VALID_EVENT_TYPES } from './events.js'
 
 export interface IndexedSnapshotMetadata {
   schemaVersion: number
@@ -76,15 +77,56 @@ function reviveArgs(type: CrowdfundEvent['type'], args: Record<string, unknown>)
   return out
 }
 
+function assertEvent(condition: unknown, detail: string): asserts condition {
+  if (!condition) throw new Error(`Invalid indexed event: ${detail}`)
+}
+
+/**
+ * Revive a JSON snapshot event into the bigint-rich CrowdfundEvent shape, with
+ * shape validation. Throws on a wrong `type`, a missing/bad core field, or a
+ * required bigint arg that isn't a parseable integer string. Throwing here lets
+ * the caller (useContractEvents) fall back to RPC instead of feeding malformed
+ * data into graph math.
+ */
 export function reviveIndexedEvent(raw: unknown): CrowdfundEvent {
-  if (!raw || typeof raw !== 'object') throw new Error('Invalid indexed event')
-  const event = raw as CrowdfundEvent
+  assertEvent(raw && typeof raw === 'object', 'not an object')
+  const event = raw as Record<string, unknown>
+
+  const type = event.type
+  assertEvent(
+    typeof type === 'string' && VALID_EVENT_TYPES.has(type),
+    `unknown type "${String(type)}"`,
+  )
+
+  assertEvent(
+    typeof event.transactionHash === 'string' && event.transactionHash.length > 0,
+    'missing transactionHash',
+  )
+  const blockNumber = Number(event.blockNumber)
+  assertEvent(Number.isFinite(blockNumber), 'invalid blockNumber')
+  const logIndex = Number(event.logIndex)
+  assertEvent(Number.isFinite(logIndex), 'invalid logIndex')
+
+  assertEvent(event.args !== null && typeof event.args === 'object', 'missing args')
+  const args = event.args as Record<string, unknown>
+
+  // Every required bigint arg for this event type must be a parseable integer
+  // string — the snapshot serializes bigints as strings.
+  const eventType = type as CrowdfundEvent['type']
+  for (const field of BIGINT_FIELDS_BY_EVENT[eventType] ?? []) {
+    const value = args[field]
+    assertEvent(
+      typeof value === 'string' && /^-?\d+$/.test(value),
+      `field "${field}" must be a bigint string`,
+    )
+  }
+
   return {
-    type: event.type,
-    blockNumber: Number(event.blockNumber),
+    type: eventType,
+    blockNumber,
     transactionHash: String(event.transactionHash),
-    logIndex: Number(event.logIndex),
-    args: reviveArgs(event.type, event.args as Record<string, unknown>),
+    logIndex,
+    args: reviveArgs(eventType, args),
   }
 }
 

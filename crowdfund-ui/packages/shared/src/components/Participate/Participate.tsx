@@ -97,11 +97,24 @@ export function Participate({
       onClick={onCtaClick}
       onKeyDown={onCtaClick ? handleCardKey : undefined}
     >
+      {/* Static image base layer — always rendered when provided. It's the
+          card background before the video lazy-loads on hover (preload="none"),
+          and shows through whenever the video isn't playing (the video sits on
+          top at opacity 0 until ready). */}
+      {imageSrc && (
+        <img
+          src={hoverImageSrc && isHovered ? hoverImageSrc : imageSrc}
+          alt=""
+          className={styles.img}
+        />
+      )}
+
       {videoSrc && (
         <video
           ref={videoRef}
           className={[styles.video, videoReady ? styles.videoReady : ''].filter(Boolean).join(' ')}
           src={videoSrc}
+          poster={imageSrc}
           muted
           loop
           playsInline
@@ -126,14 +139,6 @@ export function Participate({
         />
       )}
 
-      {/* Fallback: if no video, use static/hover image swap */}
-      {!videoSrc && imageSrc && (
-        <img
-          src={hoverImageSrc && isHovered ? hoverImageSrc : imageSrc}
-          alt=""
-          className={styles.img}
-        />
-      )}
       <div className={styles.overlay} />
 
       {onClose && (

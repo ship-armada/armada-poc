@@ -12,6 +12,7 @@ import {
   formatArm,
   formatUsdc,
   formatCountdown,
+  tryGetChecksumAddress,
 } from '@armada/crowdfund-shared'
 import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
@@ -168,6 +169,15 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       ])
       return
     }
+    // Checksum the delegate (ethers EIP-55) and submit the canonical form. A
+    // mixed-case address with a bad checksum is rejected rather than delegated wrong.
+    const delegateChecksum = tryGetChecksumAddress(delegate)
+    if (mode === 'arm' && !delegateChecksum) {
+      setTxs([
+        { label: opLabel, status: 'error', errorMessage: 'Enter a valid delegate address.' },
+      ])
+      return
+    }
     runningRef.current = true
     setSubmitting(true)
     setTxs([{ label: opLabel, status: 'loading' }])
@@ -179,7 +189,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     try {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
       const tx: TransactionResponse =
-        mode === 'arm' ? await crowdfund.claim(delegate) : await crowdfund.claimRefund()
+        mode === 'arm' ? await crowdfund.claim(delegateChecksum) : await crowdfund.claimRefund()
       txHash = tx.hash
       const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
       if (!receipt || receipt.status === 0) {
@@ -358,7 +368,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // ── Active flow ─────────────────────────────────────────────────
 
   if (step === 'review') {
-    const delegateValid = /^0x[a-fA-F0-9]{40}$/.test(delegate)
+    const delegateValid = tryGetChecksumAddress(delegate) !== null
     const armHasRefund = mode === 'arm' && refundAmount > 0n
     return (
       <FlowShell stepsLabels={stepsLabels} currentStep={currentStepIndex}>

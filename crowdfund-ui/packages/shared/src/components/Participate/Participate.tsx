@@ -55,8 +55,14 @@ export function Participate({
   const play = () => {
     setIsHovered(true)
     const v = videoRef.current
-    if (!v || !videoReady) return
-    void v.play()
+    if (!v) return
+    // preload="none": the media isn't fetched until first interaction. Kick off
+    // loading on hover; onLoadedData plays it once buffered (if still hovered).
+    if (videoReady) {
+      void v.play()
+    } else {
+      v.load()
+    }
   }
 
   const stop = () => {
@@ -99,16 +105,22 @@ export function Participate({
           muted
           loop
           playsInline
-          preload="auto"
+          preload="none"
           onLoadedData={(e) => {
             const v = e.currentTarget
-            v.pause()
-            try {
-              v.currentTime = 0
-            } catch {
-              // ignore
-            }
             setVideoReady(true)
+            // If the user is still hovering when buffering finishes, start
+            // playing; otherwise leave it reset at the first frame.
+            if (isHovered) {
+              void v.play()
+            } else {
+              v.pause()
+              try {
+                v.currentTime = 0
+              } catch {
+                // ignore
+              }
+            }
           }}
           aria-hidden="true"
         />

@@ -19,7 +19,19 @@ import './index.css'
 
 initSentry()
 
-const queryClient = new QueryClient()
+// Every data hook already sets its own retry + refetchInterval; these defaults
+// make the baseline policy explicit without changing observed behavior:
+//  - retry:false — a polling UI self-heals on the next interval, so surface
+//    errors immediately rather than retrying behind a spinner.
+//  - refetchIntervalInBackground:false — pause background polling in hidden tabs.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+      refetchIntervalInBackground: false,
+    },
+  },
+})
 
 const root = createRoot(document.getElementById('root')!)
 

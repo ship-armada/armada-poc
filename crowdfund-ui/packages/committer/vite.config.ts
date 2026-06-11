@@ -62,6 +62,8 @@ export default defineConfig({
       project: process.env.SENTRY_PROJECT,
       authToken: process.env.SENTRY_AUTH_TOKEN,
       disable: !process.env.SENTRY_AUTH_TOKEN,
+      // Don't phone home build telemetry to Sentry.
+      telemetry: false,
       release: process.env.VITE_SENTRY_RELEASE
         ? { name: process.env.VITE_SENTRY_RELEASE }
         : undefined,

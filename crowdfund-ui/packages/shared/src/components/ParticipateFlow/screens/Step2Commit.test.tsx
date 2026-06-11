@@ -43,3 +43,36 @@ describe('Step2Commit MIN_COMMIT gate (single hop)', () => {
     expect(review().disabled).toBe(true)
   })
 })
+
+describe('Step2Commit fully-committed state (single hop)', () => {
+  it('shows a max-committed message instead of the input when the cap is reached', () => {
+    render(
+      <Step2Commit
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+        maxAmount={4000}
+        existingCommittedUsdc={4000}
+        availableBalance={1000}
+      />,
+    )
+    expect(screen.getByText(/fully committed/i)).toBeTruthy()
+    expect(screen.getByText(/committed the maximum/i)).toBeTruthy()
+    // No amount input and no Review button in this state.
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull()
+  })
+
+  it('still renders the input when capacity remains', () => {
+    render(
+      <Step2Commit
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+        maxAmount={4000}
+        existingCommittedUsdc={1000}
+        availableBalance={1000}
+      />,
+    )
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    expect(screen.queryByText(/fully committed/i)).toBeNull()
+  })
+})

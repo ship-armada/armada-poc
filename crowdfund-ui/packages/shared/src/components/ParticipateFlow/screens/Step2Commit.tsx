@@ -166,6 +166,9 @@ function SingleHopVariant({
   const hasNewAmount = amount > 0
   const belowMin = hasNewAmount && amount < MIN_COMMIT_USD
   const hasExisting = existingCommittedUsdc > 0
+  // Already committed the full hop cap — there's nothing left to enter, so show
+  // a message instead of a dead 0-capped input.
+  const fullyCommitted = hasExisting && remainingCap <= 0
   // Wallet-balance gate. `remainingCap` caps the typed input at the user's
   // *hop cap*, not their *wallet balance*; without this check a user with
   // $100 of USDC could enter $4,000 and click Review. Mirrors the
@@ -197,6 +200,43 @@ function SingleHopVariant({
     }
     const capped = Math.min(val, remainingCap)
     setAmountInput(hasActiveAmount(String(capped)) ? String(capped) : '')
+  }
+
+  if (fullyCommitted) {
+    return (
+      <div className={styles.shell}>
+        <Steps steps={[...steps]} currentStep={stepIndex} />
+
+        <div className={styles.content}>
+          <div className={styles.inputBlock}>
+            <div className={styles.titleBlock}>
+              {hopLabel && (
+                <span className={styles.hopBadge}>
+                  {hopColor && (
+                    <span
+                      className={styles.hopBadgeDot}
+                      style={{ background: hopColor }}
+                      aria-hidden
+                    />
+                  )}
+                  <span className={styles.hopBadgeLabel}>{hopLabel}</span>
+                </span>
+              )}
+              <h2 className={styles.title}>You're fully committed</h2>
+              <p className={styles.maxLabel}>
+                You've committed the maximum {maxAmount.toLocaleString()} USDC for this hop.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.buttonRow}>
+          {showBack && (
+            <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -460,6 +500,38 @@ function MultiHopVariant({
   const safeTotalCap = totalCap > 0 ? totalCap : 1
   const existingRatio = Math.min(totalExisting / safeTotalCap, 1)
   const newRatio = Math.min((totalExisting + totalNew) / safeTotalCap, 1) - existingRatio
+
+  // Every eligible hop is already at its cap — nothing left to commit anywhere.
+  const allFullyCommitted =
+    hopRows.length > 0 &&
+    hopRows.every(
+      (row) => row.existingCommittedUsdc > 0 && row.maxAmount - row.existingCommittedUsdc <= 0,
+    )
+
+  if (allFullyCommitted) {
+    return (
+      <div className={styles.shell}>
+        <Steps steps={[...steps]} currentStep={stepIndex} />
+
+        <div className={styles.content}>
+          <div className={styles.inputBlock}>
+            <div className={styles.titleBlock}>
+              <h2 className={styles.title}>You're fully committed</h2>
+              <p className={styles.maxLabel}>
+                You've committed the maximum {totalCap.toLocaleString()} USDC across your hops.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.buttonRow}>
+          {showBack && (
+            <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.shell}>

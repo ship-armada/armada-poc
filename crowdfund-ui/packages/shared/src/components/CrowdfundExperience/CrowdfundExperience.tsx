@@ -32,6 +32,7 @@ import {
   toDashboardParticipants,
   toHeroParticipants,
   type DashboardParticipant,
+  type CrowdfundSnapshot,
 } from '../../lib/mockParticipants'
 import { HeroLoadingSkeleton } from './HeroLoadingSkeleton'
 import { MyPositionEmptyState } from './MyPositionEmptyState'
@@ -362,7 +363,16 @@ export function CrowdfundExperience({
   if (seedRef.current === null) {
     seedRef.current = Math.floor(Math.random() * 1_000_000_000)
   }
-  const snapshot = useMemo(() => generateCrowdfund(seedRef.current!), [])
+  // The ~1k-entry mock dataset is only shown when there's no ready live data
+  // (showcase / observer / committer-loading). In live-ready mode it's
+  // discarded, so skip the generation entirely.
+  const snapshot = useMemo<CrowdfundSnapshot>(
+    () =>
+      liveData?.status === 'ready'
+        ? { cap: 0, totalCommitted: 0, participants: [] }
+        : generateCrowdfund(seedRef.current!),
+    [liveData?.status],
+  )
 
   const [view, setView] = useState<CrowdfundView>(() =>
     readInitialView(controlledView ?? initialView),

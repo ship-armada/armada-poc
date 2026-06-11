@@ -60,3 +60,38 @@
   from   = "/*"
   to     = "/index.html"
   status = 200
+
+# Security headers — this site publishes only the committer (publish dir above),
+# so /* scopes to the wallet app alone.
+#
+# The first four are ENFORCED immediately. Referrer-Policy is no-referrer so the
+# invite-link signature (a bearer token in the /invite query string) is never
+# leaked via the Referer header to RPCs, the indexer, WalletConnect, or Sentry.
+#
+# The CSP ships as Content-Security-Policy-Report-Only for launch week: it
+# reports violations without breaking the app, so a missing origin surfaces as a
+# console report instead of a dead wallet. Flip to Content-Security-Policy
+# (enforce) after a clean launch-week run. connect-src lists both Sepolia RPC
+# origins (primary + fallback), the indexer origin, the WalletConnect/web3modal
+# endpoints, and Sentry ingest. script-src is 'self' (no inline scripts in
+# index.html); style-src needs 'unsafe-inline' for RainbowKit/sonner.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options        = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "no-referrer"
+    Permissions-Policy     = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy-Report-Only = """\
+default-src 'self'; \
+script-src 'self'; \
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+font-src 'self' https://fonts.gstatic.com; \
+img-src 'self' data: https:; \
+connect-src 'self' https://sepolia.drpc.org https://ethereum-sepolia-rpc.publicnode.com https://api.knowable.run wss://relay.walletconnect.com wss://relay.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://api.web3modal.org https://pulse.walletconnect.org https://*.ingest.sentry.io; \
+frame-src https://verify.walletconnect.com https://verify.walletconnect.org; \
+frame-ancestors 'none'; \
+base-uri 'self'; \
+form-action 'self'; \
+object-src 'none'; \
+worker-src 'self' blob:"""

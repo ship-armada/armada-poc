@@ -60,7 +60,7 @@ export function encodeInviteUrl(data: InviteLinkData): string {
   })
   const path = `/invite?${params.toString()}`
   // Emit an absolute URL so a pasted link resolves to the current deployment
-  // (e.g. https://committer.armada.wtf/invite?…) instead of being interpreted
+  // (e.g. https://fund.armada.blue/invite?…) instead of being interpreted
   // as a relative path against whatever destination the user pastes into —
   // most notably the browser address bar, which falls back to `file:///` for
   // a bare leading-slash path.

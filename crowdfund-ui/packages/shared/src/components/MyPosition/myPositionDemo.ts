@@ -36,7 +36,7 @@ export const DEMO_SLOTS: SlotData[] = [
   {
     id: 2,
     status: 'link-active',
-    link: 'https://armada.wtf/join?invite=abc123&hop=hop-1',
+    link: 'https://fund.armada.blue/join?invite=abc123&hop=hop-1',
     expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
   },
   { id: 3, status: 'empty' },

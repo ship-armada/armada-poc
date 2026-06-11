@@ -461,7 +461,7 @@ export default function SlotCard({
           )}
           <p className={styles.hint}>
             This sends an onchain transaction. The invitee can then visit
-            armada.wtf and commit. Requires gas.
+            fund.armada.blue and commit. Requires gas.
           </p>
           <div className={styles.expandedAction}>
             <Button

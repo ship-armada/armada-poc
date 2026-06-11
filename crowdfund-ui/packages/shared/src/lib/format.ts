@@ -54,7 +54,18 @@ export function parseUsdcInput(input: string): UsdcInputResult {
   // without the isFinite guard, BigInt(Infinity) throws RangeError.
   if (!Number.isFinite(num)) return { value: 0n, error: 'invalid' }
   if (num < 0) return { value: 0n, error: 'negative' }
-  return { value: BigInt(Math.floor(num * 1e6)) }
+
+  // Scale to 6 decimals via string surgery, not float math: `8469.8 * 1e6` is
+  // `8469799999.999…`, so `Math.floor` would yield 8469799999n (off by 1 µUSDC).
+  // Decimals are already guaranteed ≤ 6 by the check above.
+  const [wholePart, fracPart = ''] = trimmed.split('.')
+  const whole = wholePart.replace(/^\+/, '') || '0'
+  if (!/^\d+$/.test(whole) || !/^\d*$/.test(fracPart)) {
+    // Non-plain-decimal (e.g. scientific notation) — fall back to a rounded
+    // numeric scale rather than producing a malformed BigInt string.
+    return { value: BigInt(Math.round(num * 1e6)) }
+  }
+  return { value: BigInt(whole + fracPart.padEnd(6, '0')) }
 }
 
 /** Format an ARM amount (18 decimals) as a token string, e.g. "1,200,000 ARM" */

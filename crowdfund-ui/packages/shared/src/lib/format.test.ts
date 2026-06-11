@@ -80,6 +80,17 @@ describe('parseUsdcInput', () => {
     expect(parseUsdcInput('1.123456')).toEqual({ value: 1_123_456n })
   })
 
+  it('scales without float error (string-based, not Math.floor)', () => {
+    // 8469.8 * 1e6 === 8469799999.999… — Math.floor would drop a µUSDC.
+    expect(parseUsdcInput('8469.8')).toEqual({ value: 8_469_800_000n })
+    expect(parseUsdcInput('1026.82')).toEqual({ value: 1_026_820_000n })
+  })
+
+  it('handles a leading decimal and trailing dot', () => {
+    expect(parseUsdcInput('.5')).toEqual({ value: 500_000n })
+    expect(parseUsdcInput('5.')).toEqual({ value: 5_000_000n })
+  })
+
   it('parses zero', () => {
     expect(parseUsdcInput('0')).toEqual({ value: 0n })
   })

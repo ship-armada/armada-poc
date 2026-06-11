@@ -65,7 +65,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           reset). Inline style has the highest specificity short of !important and bypasses
           generation issues entirely. 80px = 64px header bottom (top-2 + h-14) + 16px breathing. */}
       <main
-        className="flex flex-1 flex-col items-center justify-center"
+        className="flex flex-1 flex-col items-center justify-start"
         style={{ paddingTop: '5rem' }}
       >
         <div className="w-full px-6">

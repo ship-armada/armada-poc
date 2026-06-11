@@ -1,13 +1,15 @@
 /* ABOUTME: SyncGate styling — centered, prominent initial-sync panel that stands in for the dashboard. */
 /* ABOUTME: Fills the main content area and centers a single narrow panel (progress meter or retry). */
 
+/* Top-anchored (not vertically centered) so the gate → dashboard handoff doesn't jump: the
+   dashboard content is top-aligned, so the gate must be too. A generous top pad keeps the panel
+   prominent in the upper-center while sharing that top anchor. */
 .root {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   width: 100%;
-  min-height: 60vh;
-  padding: var(--primitives-spacing-6) var(--primitives-spacing-4);
+  padding: var(--primitives-spacing-16) var(--primitives-spacing-4) var(--primitives-spacing-6);
 }
 
 .panel {

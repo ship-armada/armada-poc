@@ -4,9 +4,9 @@
 .page {
   width: 100%;
   max-width: 1100px;
-  /* AppLayout's <main> uses justify-content: center, which would otherwise center
-     the page vertically. margin-bottom: auto pushes us to the top while leaving
-     the horizontal centering (margin: 0 auto) intact. */
+  /* AppLayout's <main> top-aligns its content (justify-start), so this just needs horizontal
+     auto-centering. The trailing `auto` (margin-bottom) is a harmless holdover from when <main>
+     centered vertically and each page opted out to the top. */
   margin: 0 auto auto;
   /* Vertical padding kept full-size; horizontal trimmed so the hero + action row breathe
      closer to the viewport edges. */

@@ -77,6 +77,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const runningRef = useRef(false)
+  // True when the allocation read fails — so we show a retry, not a false "0 ARM".
+  const [readError, setReadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const [step, setStep] = useState<FlowStep>('review')
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
@@ -108,6 +111,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       return
     }
     let cancelled = false
+    setReadError(false)
     const fetchAllocation = async () => {
       const contract = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, provider)
 
@@ -137,7 +141,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
             setRefundAmount(allocation[1])
           }
         } catch {
-          // Non-fatal — keep zero values; UI shows "no allocation" state.
+          // RPC failure (not a contract "no allocation") — flag it so the UI
+          // shows a retry instead of a misleading "0 ARM".
+          if (!cancelled) setReadError(true)
         }
       }
 
@@ -147,7 +153,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     return () => {
       cancelled = true
     }
-  }, [provider, crowdfundAddress, walletAddress, phase])
+  }, [provider, crowdfundAddress, walletAddress, phase, reloadKey])
 
   // What the user actually gets back.
   const armDisplay = useMemo(() => formatArm(armAmount), [armAmount])
@@ -284,6 +290,23 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         onGoToMyPosition={onGoToMyPosition}
         onGoToNetwork={onGoToNetwork}
       />
+    )
+  }
+
+  // Allocation read failed (RPC error, not a contract "no allocation"). Don't
+  // render a misleading "0 ARM" — offer a retry.
+  if (readError) {
+    return (
+      <CardShell title="Couldn't load your allocation">
+        <p className={styles.gateBody}>Something went wrong fetching your share. Try again.</p>
+        <ArmadaButton
+          variant="secondary"
+          size="md"
+          label="Retry"
+          showIcon={false}
+          onClick={() => setReloadKey((k) => k + 1)}
+        />
+      </CardShell>
     )
   }
 

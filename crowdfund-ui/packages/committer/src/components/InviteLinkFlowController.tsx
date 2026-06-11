@@ -79,6 +79,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   }, [walletClient])
 
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
+  const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
 
   // Balance + allowance via the shared hook so this flow inherits the same
@@ -148,7 +149,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   const hopCap = targetHop <= 2 ? HOP_CONFIGS[targetHop as 0 | 1 | 2].capUsdc : 0n
 
   // Load deployment + JSON-RPC provider for balance/allowance + tx submission.
-  useEffect(() => {
+  // The failure is surfaced (deployError) with a Retry rather than swallowed —
+  // otherwise the invitee steps through Commit/Review against a null deployment
+  // and lands in a no-op pipeline.
+  const loadDeploymentData = useCallback(() => {
+    setDeployError(null)
     loadDeployment()
       .then((d) => {
         setDeployment(d)
@@ -157,8 +162,16 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         // primary RPC is down.
         setProvider(createProvider(getHubRpcUrls()))
       })
-      .catch(() => {})
+      .catch((err) => {
+        setDeployError(
+          err instanceof Error ? err.message : 'Could not load the crowdfund deployment.',
+        )
+      })
   }, [])
+
+  useEffect(() => {
+    loadDeploymentData()
+  }, [loadDeploymentData])
 
   // Auto-advance past the wallet step once the user connects (matches the
   // ParticipateFlowV2 pattern). Going back to disconnected drops to wallet.
@@ -313,6 +326,26 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // ── Step renderers ─────────────────────────────────────────────────────
 
   const renderCurrentStep = () => {
+    if (deployError) {
+      return (
+        <div className="space-y-3 p-6 text-center">
+          <h2 className="text-destructive text-lg font-semibold">Couldn't load the crowdfund</h2>
+          <p className="text-muted-foreground text-sm">{deployError}</p>
+          <button
+            type="button"
+            onClick={loadDeploymentData}
+            className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted"
+          >
+            Retry
+          </button>
+        </div>
+      )
+    }
+    // Don't let the user act on commit/review/approve until the deployment is
+    // loaded (the wallet step needs no deployment, so it stays available).
+    if (renderStep !== 'wallet' && !deployment) {
+      return <div className="text-muted-foreground p-6 text-center">Loading…</div>
+    }
     switch (renderStep) {
       case 'wallet':
         return (

@@ -157,8 +157,14 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // controlled status. Mirrors the v1 ClaimTab pipeline but simplified (single
   // op, no toasts at this layer — toasts can be re-added in 3.3.x).
   const runClaim = async () => {
-    if (!signer || !crowdfundAddress) return
     const opLabel = mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
+    if (!signer || !crowdfundAddress) {
+      // Surface an error row instead of bailing into Step4's neutral state.
+      setTxs([
+        { label: opLabel, status: 'error', errorMessage: 'Wallet not ready — reconnect and retry.' },
+      ])
+      return
+    }
     setTxs([{ label: opLabel, status: 'loading' }])
 
     const setRowStatus = (patch: Partial<Step4Transaction>) =>

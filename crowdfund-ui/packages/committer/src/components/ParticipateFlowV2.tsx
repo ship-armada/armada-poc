@@ -205,6 +205,15 @@ export function ParticipateFlowV2({
   // stop the pipeline at the failing row.
   const runPipeline = async () => {
     if (!signer || !crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
+      // Don't bail silently into Step4's neutral state — surface an actionable
+      // error row so the user reconnects rather than waiting on nothing.
+      setTxs([
+        {
+          label: 'Commit participation',
+          status: 'error',
+          errorMessage: 'Wallet not ready — reconnect and retry.',
+        },
+      ])
       return
     }
     const totalBig = totalNewAmountUsdc

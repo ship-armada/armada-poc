@@ -194,7 +194,18 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // confirms each transaction. Mirrors the Path 2 pipeline in
   // ParticipateFlowV2 but with the inviter signature args on the commit call.
   const runPipeline = async () => {
-    if (!signer || !deployment || amount <= 0) return
+    if (!signer || !deployment || amount <= 0) {
+      // Surface an actionable error row rather than dropping into Step4's
+      // neutral state with no transaction sent.
+      setTxs([
+        {
+          label: 'Join & commit',
+          status: 'error',
+          errorMessage: 'Wallet not ready — reconnect and retry.',
+        },
+      ])
+      return
+    }
     const amountBig = numberToUsdc(amount)
     const approveLabel = `Approve ${formatUsdc(amountBig)} USDC`
     const commitLabel = `Join & commit ${formatUsdc(amountBig)} at ${hopLabel(targetHop)}`

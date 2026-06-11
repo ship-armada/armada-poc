@@ -25,11 +25,18 @@ export interface Step4ApproveProps extends ParticipateStepBarProps {
   onDone: () => void
   amount?: number
   /**
-   * Controlled list of transactions. When provided, replaces the internal mock
-   * animation — the consumer drives status updates and decides when to call
-   * `onDone`. Omit for the standalone showcase/mock-preview behavior.
+   * Controlled list of transactions. The consumer drives status updates and
+   * decides when to call `onDone`.
    */
   txs?: Transaction[]
+  /**
+   * Standalone showcase/mock-preview mode: runs the canned approve→commit
+   * animation and auto-calls `onDone`. ONLY for design previews — never set this
+   * in a real flow, or a confirmation would render with no transaction sent.
+   * When false/omitted and `txs` is empty, a neutral "Preparing transaction…"
+   * state renders and `onDone` is never called automatically.
+   */
+  showcase?: boolean
   /**
    * Optional headline override. Defaults to the designer's two-line plural
    * copy ("Confirm transactions / on your wallet"). The claim flow swaps in
@@ -51,6 +58,7 @@ export default function Step4Approve({
   onDone,
   amount = 1000,
   txs: controlledTxs,
+  showcase = false,
   steps = DEFAULT_STEPS,
   stepIndex = 4,
   title,
@@ -65,8 +73,9 @@ export default function Step4Approve({
   const liveRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Controlled mode: the consumer owns timing + status. Skip the mock animation.
-    if (controlledTxs) return
+    // Only the showcase preview runs the canned animation + auto-onDone. In a
+    // real flow this never runs, so a missing `txs` can't fake a success.
+    if (!showcase) return
     const t1 = setTimeout(() => {
       setInternalTxs([
         { label: `Approve ${amount.toLocaleString()} USDC`, status: 'done' },
@@ -81,9 +90,12 @@ export default function Step4Approve({
       setTimeout(onDone, 400)
     }, 4000)
     return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [amount, onDone, controlledTxs])
+  }, [amount, onDone, showcase])
 
-  const txs = controlledTxs ?? internalTxs
+  const txs = controlledTxs ?? (showcase ? internalTxs : [])
+  // Not showcase and no transactions yet → the consumer is still preparing the
+  // pipeline (or bailed). Show a neutral state; never auto-complete.
+  const preparing = !showcase && txs.length === 0
 
   return (
     <div className={styles.shell}>
@@ -105,6 +117,14 @@ export default function Step4Approve({
           aria-label="Transaction status"
           ref={liveRef}
         >
+          {preparing && (
+            <div className={styles.txRow}>
+              <span className={styles.txLabel}>Preparing transaction…</span>
+              <div className={styles.txStatus} aria-label={STATUS_LABEL.loading}>
+                <div className={styles.spinner} role="status" aria-label="Loading" />
+              </div>
+            </div>
+          )}
           {txs.map((tx, i) => (
             <div key={i} role="listitem">
               {i > 0 && <div className={styles.divider} aria-hidden="true" />}
@@ -181,9 +201,11 @@ export default function Step4Approve({
           aria-live="polite"
           aria-atomic="true"
         >
-          {txs.some((t) => t.status === 'error')
-            ? 'Transaction failed. Go back to retry.'
-            : 'Waiting for wallet confirmation'}
+          {preparing
+            ? 'Preparing transaction…'
+            : txs.some((t) => t.status === 'error')
+              ? 'Transaction failed. Go back to retry.'
+              : 'Waiting for wallet confirmation'}
         </p>
       </div>
     </div>

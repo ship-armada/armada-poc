@@ -34,6 +34,8 @@ export type EventRegistry = {
   // One-shot schema-version migration on cold boot. `from`/`to` are integers (the schemaVersion
   // tags). Emitted once per cold boot when the local schema is older than the bundled version.
   'shielded.schema-migration': { from: number; to: number }
+  // User pressed "Try Again" on a failed initial balance sync. No identifiers — just the action.
+  'shielded.syncRetry':       Record<string, never>
 
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }

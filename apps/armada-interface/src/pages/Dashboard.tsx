@@ -1,12 +1,24 @@
 // ABOUTME: Dashboard page — BalanceHero + ActionGrid + RecentActivity. The visual anchor of the app.
 // ABOUTME: The In-Progress side + footnote tagline are temporarily commented out below; uncomment to restore the 7/5 split layout.
 
+import { useAtomValue } from 'jotai'
 import { BalanceHero } from '@/components/balance/BalanceHero'
 import { ActionGrid, RecentActivityCard } from '@/components/dashboard'
+import { SyncGate, isInitialSyncGated } from '@/components/sync'
+import { shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
 // TODO: re-import `InProgressCard` from '@/components/dashboard' when re-enabling the split layout below.
 import styles from './Dashboard.module.css'
 
 export function Dashboard() {
+  // Gate the whole dashboard body behind the initial shielded-balance sync — until the first scan
+  // completes we don't know the user's balance, so the hero/actions/activity would show
+  // placeholder/zero values. The navbar (in AppLayout) stays visible above this.
+  const shielded = useAtomValue(shieldedUsdcAtom)
+  const sync = useAtomValue(syncStateAtom)
+  if (isInitialSyncGated(shielded, sync.status)) {
+    return <SyncGate />
+  }
+
   return (
     <div className={styles.page}>
       {/* Decorative top-of-page gradient — purple → pink fading into the page background.

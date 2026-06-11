@@ -68,7 +68,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         style={{ paddingTop: '5rem' }}
       >
         <div className="w-full px-6">
-          <SyncBanner />
+          {/* The dashboard renders its own prominent full-area SyncGate, so the thin strip would
+              be redundant there — show it only on the other routes (History/Settings). */}
+          {location.pathname !== '/' && <SyncBanner />}
           <HistoryRecoveryBanner />
         </div>
         {children}

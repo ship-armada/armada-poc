@@ -13,6 +13,7 @@ import { openModalAtom } from '@/state/ui'
 import { usePrivateUsdcDisplay } from '@/hooks/usePrivateUsdcDisplay'
 import { useYieldRate } from '@/hooks/useYieldRate'
 import { useOpenActionModal } from '@/hooks/useOpenActionModal'
+import { useSyncRetry } from '@/hooks/useSyncRetry'
 import styles from './BalanceHero.module.css'
 
 const USDC_ICON_SIZE = 60
@@ -24,6 +25,7 @@ export function BalanceHero() {
   const openActionModal = useOpenActionModal()
   const setOpenModal = useSetAtom(openModalAtom)
   const sync = useAtomValue(syncStateAtom)
+  const retrySync = useSyncRetry()
   // Receive is a display-only modal (no EVM gating) — render the button only when there's an
   // actual shielded address to show. Locked / missing states hide it so we don't promise a copy
   // action we can't fulfill.
@@ -52,7 +54,13 @@ export function BalanceHero() {
         sync.status === 'failed' ? (
           <div className={styles.syncBlock}>
             <div className={styles.syncMessage}>Sync interrupted</div>
-            <div className={styles.syncFootnote}>Reload the page to retry.</div>
+            <Button
+              variant="secondary"
+              size="sm"
+              label="Try again"
+              showIcon={false}
+              onClick={retrySync}
+            />
           </div>
         ) : (
           <div className={styles.syncBlock}>

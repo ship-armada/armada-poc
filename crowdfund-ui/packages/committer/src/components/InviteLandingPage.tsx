@@ -15,6 +15,7 @@ import {
 } from '@armada/crowdfund-shared'
 import { InviteLinkFlowController } from '@/components/InviteLinkFlowController'
 import { decodeInviteUrl, type InviteLinkData } from '@/lib/inviteLinks'
+import { hasNoInviteSlots } from '@/lib/inviteSlots'
 import { getHubRpcUrls } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import styles from './InviteLanding.module.css'
@@ -152,8 +153,8 @@ export function InviteLandingPage() {
         const remaining = (await contract.getInvitesRemaining(
           inviteData.inviter,
           inviteData.fromHop,
-        )) as number
-        if (remaining === 0) {
+        )) as bigint
+        if (hasNoInviteSlots(remaining)) {
           if (!cancelled) setPreCheckError('no_slots')
           return
         }

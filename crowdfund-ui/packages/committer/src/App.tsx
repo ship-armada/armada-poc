@@ -1093,6 +1093,8 @@ export function App() {
     >
       {participateOpen && (
         <ParticipateFlowV2
+          // Remount on account switch so mount-frozen baselines can't mix accounts.
+          key={wallet.address ?? 'disconnected'}
           onRunningChange={setParticipateRunning}
           eventsLoading={eventsLoading}
           walletConnected={wallet.connected}

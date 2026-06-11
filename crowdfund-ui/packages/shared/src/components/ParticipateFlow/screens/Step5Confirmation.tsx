@@ -77,7 +77,7 @@ export default function Step5Confirmation({
           <p className={styles.nextText}>
             {isAdditionalCommit
               ? 'Your updated allocation will be recalculated when the window closes. You can claim your tokens then.'
-              : 'The window stays open for 3 weeks. When it closes, your ARM allocation is calculated and you can claim your tokens.'}
+              : 'The commitment window stays open until it closes. Then your ARM allocation is calculated and you can claim your tokens.'}
           </p>
         </div>
       </div>

@@ -156,7 +156,7 @@ export function useInviteLinks(
     } catch (err) {
       // Quiet on a user-rejected signature; surface real failures.
       if (!isUserRejection(err)) {
-        toast.error('Could not create invite link', { description: mapRevertToMessage(err) })
+        toast.error('Could not create invite link', { description: mapRevertToMessage(err), duration: 10_000 })
       }
       return null
     }
@@ -176,7 +176,7 @@ export function useInviteLinks(
     } catch (err) {
       // Quiet on a user-rejected tx; surface real failures.
       if (!isUserRejection(err)) {
-        toast.error('Could not revoke invite', { description: mapRevertToMessage(err) })
+        toast.error('Could not revoke invite', { description: mapRevertToMessage(err), duration: 10_000 })
       }
       return false
     }

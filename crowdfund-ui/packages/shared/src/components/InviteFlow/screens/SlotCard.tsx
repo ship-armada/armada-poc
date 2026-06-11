@@ -462,8 +462,9 @@ export default function SlotCard({
             <span className={styles.errorMsg}>ENS name not found</span>
           )}
           <p className={styles.hint}>
-            This sends an onchain transaction. The invitee can then visit
-            fund.armada.blue and commit. Requires gas.
+            This sends an onchain transaction. The invitee can then visit{' '}
+            {typeof window !== 'undefined' ? window.location.host : 'the app'} and commit.
+            Requires gas.
           </p>
           <div className={styles.expandedAction}>
             <Button

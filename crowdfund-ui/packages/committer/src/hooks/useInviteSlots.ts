@@ -202,11 +202,11 @@ function useHopSection(args: {
       } catch (err) {
         if (isTxTimeoutError(err)) {
           // The invite tx may still confirm — don't claim failure.
-          toast.error('Invite still pending', { description: TX_PENDING_MESSAGE })
+          toast.error('Invite still pending', { description: TX_PENDING_MESSAGE, duration: 10_000 })
         } else {
           // Route through the revert mapper so the toast shows a friendly
           // message, not raw calldata/internal error text.
-          toast.error('Invite failed', { description: mapRevertToMessage(err) })
+          toast.error('Invite failed', { description: mapRevertToMessage(err), duration: 10_000 })
         }
       } finally {
         setLoadingId((cur) => (cur === slotId ? null : cur))

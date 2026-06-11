@@ -55,7 +55,9 @@ export default function Step0Invite({
       <div className={[styles.content, isLanding && styles.contentLanding].filter(Boolean).join(' ')}>
         <div className={styles.meta}>
           <span className={styles.metaLabel}>ARMADA CROWDFUND</span>
-          <span className={styles.metaLabel}>{daysLeft} DAYS LEFT</span>
+          <span className={styles.metaLabel}>
+            {daysLeft <= 0 ? 'ENDS TODAY' : `${daysLeft} ${daysLeft === 1 ? 'DAY' : 'DAYS'} LEFT`}
+          </span>
         </div>
         <div className={styles.bottom}>
           <div className={styles.copy}>

@@ -2,8 +2,55 @@
 // ABOUTME: No-op when VITE_SENTRY_DSN is unset so local/dev runs incur no overhead.
 
 import * as Sentry from '@sentry/react'
+import type { ErrorEvent, Breadcrumb } from '@sentry/react'
 
 let initialized = false
+
+/**
+ * Remove the query string (and everything after it) from a URL-like string.
+ * The /invite query string carries a redeemable invite signature (a bearer
+ * token), so nothing with a query string may leave the app.
+ */
+export function stripQueryString(url: string): string {
+  const i = url.indexOf('?')
+  return i === -1 ? url : url.slice(0, i)
+}
+
+/**
+ * Strip query strings from an error event's request URL and from any URLs in
+ * its exception stack frames. Mutates and returns the event.
+ */
+export function scrubEventUrls(event: ErrorEvent): ErrorEvent {
+  if (event.request?.url) {
+    event.request.url = stripQueryString(event.request.url)
+  }
+  for (const value of event.exception?.values ?? []) {
+    for (const frame of value.stacktrace?.frames ?? []) {
+      if (frame.abs_path) frame.abs_path = stripQueryString(frame.abs_path)
+      if (frame.filename) frame.filename = stripQueryString(frame.filename)
+    }
+  }
+  return event
+}
+
+/**
+ * Strip query strings from a breadcrumb's URL-bearing data fields
+ * (navigation `from`/`to`, fetch/xhr `url`). Mutates and returns the crumb.
+ */
+export function scrubBreadcrumbUrls(breadcrumb: Breadcrumb): Breadcrumb {
+  const data = breadcrumb.data
+  if (data) {
+    if (typeof data.url === 'string') data.url = stripQueryString(data.url)
+    if (typeof data.from === 'string') data.from = stripQueryString(data.from)
+    if (typeof data.to === 'string') data.to = stripQueryString(data.to)
+  }
+  return breadcrumb
+}
+
+/** Whether Sentry was actually initialized (DSN present). */
+export function isSentryEnabled(): boolean {
+  return initialized
+}
 
 /**
  * Parse VITE_SENTRY_TRACES_SAMPLE_RATE into a number in [0, 1]. Anything
@@ -53,6 +100,17 @@ export function initSentry(): void {
         event.request.url = event.request.url.split('?')[0]
       }
       return event
+    },
+    // Error events (unlike transactions) carry request.url = the full
+    // window.location.href and stack-frame source URLs. Strip query strings so
+    // an invite-link signature can't ride out on a render error.
+    beforeSend(event) {
+      return scrubEventUrls(event)
+    },
+    // Default breadcrumbs capture navigation/fetch/xhr URLs verbatim. Scrub
+    // their query strings for the same reason.
+    beforeBreadcrumb(breadcrumb) {
+      return scrubBreadcrumbUrls(breadcrumb)
     },
   })
   initialized = true

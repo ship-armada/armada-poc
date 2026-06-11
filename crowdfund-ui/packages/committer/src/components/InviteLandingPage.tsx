@@ -164,8 +164,10 @@ export function InviteLandingPage() {
           return
         }
 
-        const now = Math.floor(Date.now() / 1000)
-        if (inviteData.deadline < now) {
+        // Use the chain's block time (already fetched above) for the deadline
+        // check too — a skewed local clock shouldn't falsely expire an invite.
+        const nowSec = block ? Number(block.timestamp) : Math.floor(Date.now() / 1000)
+        if (inviteData.deadline < nowSec) {
           if (!cancelled) setPreCheckError('expired')
           return
         }

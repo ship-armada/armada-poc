@@ -4,7 +4,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Contract, type JsonRpcProvider, type Signer } from 'ethers'
 import { toast } from 'sonner'
-import { encodeInviteUrl, type StoredInviteLink } from '@/lib/inviteLinks'
+import { type StoredInviteLink } from '@/lib/inviteLinks'
+import { buildSlotRows } from '@/lib/slotRows'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import {
@@ -18,7 +19,6 @@ import {
   type CrowdfundInviteSlotSection,
   type ReceiptLogLike,
   type SlotCardEnsResult,
-  type SlotData,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
@@ -131,58 +131,22 @@ function useHopSection(args: {
     return { directInvitedAddresses: directs, linkRedemptions: redemptions }
   }, [events, address, hop])
 
-  // Build visible slot rows. Slot IDs run globally 1..N across all the
-  // wallet's sections — `startId` is supplied by the parent based on the
-  // cumulative slot count of preceding hops, so the shared copiedId /
-  // loadingId state never collides across sections.
-  const slots = useMemo<SlotData[]>(() => {
-    const out: SlotData[] = []
-    const linkRowsUsed = Math.min(activeLinks.length, totalSlots)
-    for (let i = 0; i < linkRowsUsed; i += 1) {
-      const slotId = startId + i
-      const link = activeLinks[i]
-      const redeemedBy = linkRedemptions.get(link.nonce)
-      if (redeemedBy) {
-        out.push({ id: slotId, status: 'redeemed', redeemedBy })
-        continue
-      }
-      if (link.status === 'redeemed') {
-        out.push({ id: slotId, status: 'redeemed' })
-        continue
-      }
-      out.push({
-        id: slotId,
-        status: 'link-active',
-        link: encodeInviteUrl(link),
-        expiresAt: new Date(link.deadline * 1000),
-      })
-    }
-    let directIndex = 0
-    for (let i = linkRowsUsed; i < totalSlots; i += 1) {
-      const slotId = startId + i
-      const invitedAddress = directInvitedAddresses[directIndex]
-      directIndex += 1
-      if (!invitedAddress) {
-        out.push({ id: slotId, status: 'empty' })
-        continue
-      }
-      out.push({
-        id: slotId,
-        status: 'onchain-pending',
-        invitedAddress,
-      })
-    }
-    return out
-  }, [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId])
-
-  // Map slotId → matching link record (for revoke nonce lookup). Keyed off
-  // the globally-unique slotId so the section's onRevoke can find the right
-  // nonce even though the global state may hold a slotId from another hop.
-  const linkBySlotId = useMemo(() => {
-    const m = new Map<number, StoredInviteLink>()
-    activeLinks.forEach((l, i) => m.set(startId + i, l))
-    return m
-  }, [activeLinks, startId])
+  // Build visible slot rows. On-chain consumption (redemptions + direct
+  // invites) takes priority over local pending links, and cross-device
+  // redemptions (no matching local link) still render as redeemed rows. Slot
+  // IDs run globally 1..N across the wallet's sections via `startId`. See
+  // buildSlotRows for the full ordering rules.
+  const { slots, linkBySlotId } = useMemo(
+    () =>
+      buildSlotRows({
+        totalSlots,
+        startId,
+        activeLinks,
+        linkRedemptions,
+        directInvitedAddresses,
+      }),
+    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId],
+  )
 
   const onGenerateLink = useCallback(
     async (slotId: number) => {

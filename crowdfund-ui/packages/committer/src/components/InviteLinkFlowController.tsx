@@ -25,8 +25,11 @@ import {
   hopLabel,
   hopPillDotColor,
   useContractEvents,
+  useContractState,
   useGraphState,
+  estimateUserArmAllocation,
   HOP_CONFIGS,
+  type UserHopPosition,
 } from '@armada/crowdfund-shared'
 // CSS modules are co-located rather than imported from `@armada/crowdfund-shared`
 // because that package's `exports` field doesn't expose internal sub-paths.
@@ -44,6 +47,7 @@ import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
+import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 
@@ -65,6 +69,14 @@ function usdcToNumber(amount: bigint): number {
 
 function numberToUsdc(amount: number): bigint {
   return BigInt(Math.round(amount * 1_000_000))
+}
+
+// ARM (18 decimals) bigint → plain number, splitting whole/frac to avoid
+// precision loss past Number.MAX_SAFE_INTEGER. Mirrors ParticipateFlowV2.
+function armToNumber(amount: bigint): number {
+  const whole = amount / 10n ** 18n
+  const frac = amount % 10n ** 18n
+  return Number(whole) + Number(frac) / 1e18
 }
 
 export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControllerProps) {
@@ -159,6 +171,49 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
 
   const targetHop = inviteData.fromHop + 1
   const hopCap = targetHop <= 2 ? HOP_CONFIGS[targetHop as 0 | 1 | 2].capUsdc : 0n
+
+  // Sale state for the pro-rata ARM estimate (mirrors ParticipateFlowV2's Step3).
+  const contractState = useContractState(
+    provider,
+    deployment?.contracts.crowdfund ?? null,
+    getPollIntervalMs(),
+  )
+
+  // The redeemer's existing position at the target hop (a re-invited user has
+  // one; a first-time invitee doesn't). Redeeming this invite bumps their
+  // invitesReceived to (current + 1), which scales the cap — so the input must
+  // not be clamped to the 1× HOP_CONFIGS cap.
+  const targetPosition = useMemo(
+    () => eligibility.positions.find((p) => p.hop === targetHop) ?? null,
+    [eligibility.positions, targetHop],
+  )
+  const existingInvitesReceived = targetPosition?.invitesReceived ?? 0
+  const existingCommittedUsdc = targetPosition?.committed ?? 0n
+  const effectiveCapUsdc = effectiveInviteCapUsdc(existingInvitesReceived, hopCap)
+
+  // Pro-rata ARM for a given new USD commit at the target hop — same math as
+  // ParticipateFlowV2's Step3, so all /invite screens show one consistent number.
+  const estimateArmForAmount = useCallback(
+    (newAmountUsd: number): number => {
+      if (newAmountUsd <= 0) return 0
+      const newBig = numberToUsdc(newAmountUsd)
+      const projected: UserHopPosition[] = [
+        {
+          hop: targetHop,
+          committed: existingCommittedUsdc + newBig,
+          effectiveCap: effectiveCapUsdc,
+        },
+      ]
+      const alloc = estimateUserArmAllocation(
+        projected,
+        contractState.hopStats,
+        contractState.cappedDemand + newBig,
+        contractState.saleSize,
+      )
+      return armToNumber(alloc)
+    },
+    [targetHop, existingCommittedUsdc, effectiveCapUsdc, contractState.hopStats, contractState.cappedDemand, contractState.saleSize],
+  )
 
   // Load deployment + JSON-RPC provider for balance/allowance + tx submission.
   // The failure is surfaced (deployError) with a Retry rather than swallowed —
@@ -386,7 +441,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         )
 
       case 'commit': {
-        const maxAmount = usdcToNumber(hopCap)
+        // Cap scales with invitesReceived (stacked re-invites are part of the
+        // launch motion), so use the effective cap, not the 1× HOP_CONFIGS cap.
+        const maxAmount = usdcToNumber(effectiveCapUsdc)
+        const existingCommitted = usdcToNumber(existingCommittedUsdc)
+        const remaining = Math.max(0, maxAmount - existingCommitted)
         const availableBalance = usdcToNumber(balance)
         return (
           <Step2Commit
@@ -398,8 +457,10 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             }}
             onBack={() => transitionTo('wallet')}
             maxAmount={maxAmount}
+            existingCommittedUsdc={existingCommitted}
             availableBalance={availableBalance}
-            maxArm={maxAmount}
+            maxArm={Math.round(estimateArmForAmount(remaining))}
+            estimateArm={estimateArmForAmount}
             hopLabel={hopLabel(targetHop)}
             hopColor={hopPillDotColor(targetHop === 2 ? 'hop-2' : 'hop-1')}
           />
@@ -407,7 +468,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       }
 
       case 'review': {
-        const estimatedArm = Math.round(amount)
+        const estimatedArm = Math.round(estimateArmForAmount(amount))
         return (
           <Step3Review
             steps={MODAL_STEPS}
@@ -448,7 +509,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         )
 
       case 'confirmation': {
-        const estimatedArm = Math.round(amount)
+        const estimatedArm = Math.round(estimateArmForAmount(amount))
         return (
           <Step5Confirmation
             steps={MODAL_STEPS}

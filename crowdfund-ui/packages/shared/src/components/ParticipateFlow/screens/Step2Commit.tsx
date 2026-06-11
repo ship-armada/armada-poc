@@ -56,6 +56,10 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   /** Single-hop only: dot color for the hop badge, from the canonical hop
    *  palette (`graphHopColors.ts`). Omit to render the label without a dot. */
   hopColor?: string
+  /** Single-hop only: pro-rata ARM estimate for a given new USD amount. When
+   *  provided, the live "EST. ARM" counter uses it instead of the 1:1 default,
+   *  so it agrees with the Review/confirmation screens. */
+  estimateArm?: (newAmountUsd: number) => number
   showBack?: boolean
   /** Per-hop rows for the multi-hop variant. When length > 1, replaces the
    *  single amount input with stacked entries. Omit (or pass length ≤ 1) to
@@ -79,6 +83,7 @@ export default function Step2Commit({
   existingCommittedUsdc = 0,
   hopLabel,
   hopColor,
+  estimateArm,
   showBack = true,
   steps = DEFAULT_STEPS,
   stepIndex = 2,
@@ -105,6 +110,7 @@ export default function Step2Commit({
       existingCommittedUsdc={existingCommittedUsdc}
       hopLabel={hopLabel}
       hopColor={hopColor}
+      estimateArm={estimateArm}
       showBack={showBack}
       steps={steps}
       stepIndex={stepIndex}
@@ -123,6 +129,7 @@ function SingleHopVariant({
   existingCommittedUsdc,
   hopLabel,
   hopColor,
+  estimateArm,
   showBack,
   steps,
   stepIndex,
@@ -135,6 +142,7 @@ function SingleHopVariant({
   existingCommittedUsdc: number
   hopLabel?: string
   hopColor?: string
+  estimateArm?: (newAmountUsd: number) => number
   showBack: boolean
   steps: readonly string[]
   stepIndex: number
@@ -152,7 +160,9 @@ function SingleHopVariant({
   const existingRatio = Math.min(existingCommittedUsdc / maxAmount, 1)
   const newRatio = Math.min(amount / maxAmount, 1)
   const totalCommitted = existingCommittedUsdc + amount
-  const totalArm = Math.round(totalCommitted)
+  // Pro-rata estimate when supplied (e.g. the /invite flow), else the 1:1
+  // default. estimateArm(amount) already includes any existing commitment.
+  const totalArm = estimateArm ? Math.round(estimateArm(amount)) : Math.round(totalCommitted)
   const hasNewAmount = amount > 0
   const belowMin = hasNewAmount && amount < MIN_COMMIT_USD
   const hasExisting = existingCommittedUsdc > 0
@@ -287,7 +297,7 @@ function SingleHopVariant({
                 title="EST. ARM Allocation"
                 description="Your estimated allocation based on the amount committed."
                 bullets={[
-                  '1 ARM per 1 USDC committed',
+                  estimateArm ? 'Pro-rata to total pool demand' : '1 ARM per 1 USDC committed',
                   'Final allocation confirmed at close',
                   'Subject to pool cap',
                 ]}

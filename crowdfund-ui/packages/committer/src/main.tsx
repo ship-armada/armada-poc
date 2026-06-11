@@ -1,6 +1,6 @@
 // ABOUTME: Entry point for the crowdfund committer app.
 // ABOUTME: Renders with wagmi, RainbowKit, Jotai, routing, toast providers, and Sentry error boundary.
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Provider as JotaiProvider } from 'jotai'
@@ -10,12 +10,20 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MotionConfig } from 'framer-motion'
 import { wagmiConfig } from '@/config/wagmi'
-import { App } from '@/App'
-import { InviteLandingPage } from '@/components/InviteLandingPage'
+import { getMockSizeFromUrl } from '@/appNav'
 import { initSentry, SentryErrorBoundary, isSentryEnabled } from '@/lib/sentry'
 import { validateEnv } from '@/config/validateEnv'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
+
+// Lazy-load the routes so each lands in its own chunk: the /invite landing page
+// and the dev-only MockCommitterApp (TreeView/TableView → d3 + react-table) stay
+// out of the main bundle.
+const App = lazy(() => import('@/App').then((m) => ({ default: m.App })))
+const InviteLandingPage = lazy(() =>
+  import('@/components/InviteLandingPage').then((m) => ({ default: m.InviteLandingPage })),
+)
+const MockCommitterApp = lazy(() => import('@/MockCommitterApp'))
 
 initSentry()
 
@@ -77,6 +85,14 @@ if (!envCheck.ok) {
     </div>
   )
 
+  // Dev-only stress harness selection (0 in production).
+  const mockSize = getMockSizeFromUrl()
+  const suspenseFallback = (
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 text-muted-foreground">
+      Loading…
+    </div>
+  )
+
   root.render(
     <StrictMode>
       <SentryErrorBoundary fallback={rootFallback}>
@@ -86,17 +102,23 @@ if (!envCheck.ok) {
               <JotaiProvider>
                 <BrowserRouter>
                   <MotionConfig reducedMotion="user">
-                    <Routes>
-                      <Route path="/" element={<App />} />
-                      <Route
-                        path="/invite"
-                        element={
-                          <SentryErrorBoundary fallback={inviteFallback}>
-                            <InviteLandingPage />
-                          </SentryErrorBoundary>
-                        }
-                      />
-                    </Routes>
+                    <Suspense fallback={suspenseFallback}>
+                      {mockSize > 0 ? (
+                        <MockCommitterApp size={mockSize} />
+                      ) : (
+                        <Routes>
+                          <Route path="/" element={<App />} />
+                          <Route
+                            path="/invite"
+                            element={
+                              <SentryErrorBoundary fallback={inviteFallback}>
+                                <InviteLandingPage />
+                              </SentryErrorBoundary>
+                            }
+                          />
+                        </Routes>
+                      )}
+                    </Suspense>
                   </MotionConfig>
                 </BrowserRouter>
                 <CrowdfundToaster />

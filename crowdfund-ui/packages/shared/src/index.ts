@@ -232,6 +232,8 @@ export type {
 export {
   Step0Invite,
   Step1Wallet,
+  Step1Connect,
+  Step1SwitchNetwork,
   Step1WalletNotWhitelisted,
   Step2Commit,
   Step3Review,

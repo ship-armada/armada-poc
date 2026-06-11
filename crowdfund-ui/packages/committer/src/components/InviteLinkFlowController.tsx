@@ -1,14 +1,15 @@
-// ABOUTME: Path 1 invite-link flow controller — runs the designer's Step1Wallet → Step2Commit → Step3Review → Step4Approve → Step5Confirmation step machine inline within the /invite landing page, wired to real approve + commitWithInvite transactions.
+// ABOUTME: Path 1 invite-link flow controller — runs the designer's Connect → Step2Commit → Step3Review → Step4Approve → Step5Confirmation step machine inline within the /invite landing page, wired to real approve + commitWithInvite transactions.
 // ABOUTME: Self-contained: pulls wagmi wallet state, deployment, provider, balance, allowance internally so the landing page can mount it with just `inviteData`.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { JsonRpcProvider, Contract, type TransactionResponse } from 'ethers'
-import { useAccount, useWalletClient } from 'wagmi'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { useAccount, useChainId, useWalletClient } from 'wagmi'
+import { useConnectModal, useChainModal } from '@rainbow-me/rainbowkit'
 import {
   ParticipateFlowInviteSlots,
-  Step1Wallet,
+  Step1Connect,
+  Step1SwitchNetwork,
   Step2Commit,
   Step3Review,
   Step4Approve,
@@ -37,7 +38,7 @@ import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
-import { getHubRpcUrls, getHubChainId, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
+import { getHubRpcUrls, getHubChainId, getHubNetworkLabel, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
@@ -69,14 +70,21 @@ function numberToUsdc(amount: number): bigint {
 export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControllerProps) {
   const navigate = useNavigate()
   const { address: rawAddress } = useAccount()
+  const activeChainId = useChainId()
   const { data: walletClient } = useWalletClient()
   const { openConnectModal } = useConnectModal()
+  const { openChainModal } = useChainModal()
 
-  const walletConnected = Boolean(rawAddress)
+  // Chain-aware: a wallet on the wrong chain is NOT "connected" for flow
+  // purposes — otherwise we'd advance to commit and build a signer against the
+  // wrong network. The wallet step renders a switch-network prompt instead.
+  const isConnected = Boolean(rawAddress)
+  const wrongChain = isConnected && activeChainId !== getHubChainId()
+  const walletConnected = isConnected && !wrongChain
   const signer = useMemo(() => {
-    if (!walletClient) return null
+    if (!walletClient || wrongChain) return null
     try { return walletClientToSigner(walletClient) } catch { return null }
-  }, [walletClient])
+  }, [walletClient, wrongChain])
 
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
@@ -348,10 +356,19 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     }
     switch (renderStep) {
       case 'wallet':
+        if (wrongChain) {
+          return (
+            <Step1SwitchNetwork
+              showSteps
+              networkLabel={getHubNetworkLabel()}
+              onSwitch={() => openChainModal?.()}
+            />
+          )
+        }
         return (
-          <Step1Wallet
+          <Step1Connect
             showSteps
-            onNext={() => openConnectModal?.()}
+            onConnect={() => openConnectModal?.()}
           />
         )
 

@@ -6,7 +6,8 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { Contract, type Signer, type TransactionResponse } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
-  Step1Wallet,
+  Step1Connect,
+  Step1SwitchNetwork,
   Step1WalletNotWhitelisted,
   Step2Commit,
   Step3Review,
@@ -28,6 +29,7 @@ import {
 } from '@armada/crowdfund-shared'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
+import { getHubNetworkLabel } from '@/config/network'
 import type { HopPosition } from '@/hooks/useEligibility'
 
 type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation' | 'invites'
@@ -326,20 +328,33 @@ export function ParticipateFlowV2({
   // ── Step renderers ───────────────────────────────────────────────
 
   if (step === 'wallet') {
-    if (!walletConnected) {
-      return (
-        <ConnectButton.Custom>
-          {({ openConnectModal }) => (
-            <Step1Wallet
-              compact
-              showSteps={false}
-              onNext={() => openConnectModal()}
-            />
-          )}
-        </ConnectButton.Custom>
-      )
-    }
-    return null
+    return (
+      <ConnectButton.Custom>
+        {({ account, chain, openConnectModal, openChainModal }) => {
+          if (!account || !chain) {
+            return (
+              <Step1Connect
+                compact
+                showSteps={false}
+                onConnect={() => openConnectModal()}
+              />
+            )
+          }
+          if (chain.unsupported) {
+            return (
+              <Step1SwitchNetwork
+                compact
+                showSteps={false}
+                networkLabel={getHubNetworkLabel()}
+                onSwitch={() => openChainModal()}
+              />
+            )
+          }
+          // Connected + correct chain: the connect step auto-advances to commit.
+          return null
+        }}
+      </ConnectButton.Custom>
+    )
   }
 
   if (!eligible) {

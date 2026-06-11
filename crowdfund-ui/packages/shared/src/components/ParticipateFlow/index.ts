@@ -4,6 +4,8 @@
 export { default as Step0Invite } from './steps/Step0Invite/Step0Invite'
 export type { Step0InviteProps } from './steps/Step0Invite/Step0Invite'
 export { default as Step1Wallet } from './screens/Step1Wallet'
+export { default as Step1Connect } from './screens/Step1Connect'
+export { default as Step1SwitchNetwork } from './screens/Step1SwitchNetwork'
 export { default as Step1WalletNotWhitelisted } from './screens/Step1WalletNotWhitelisted'
 export { default as Step2Commit } from './screens/Step2Commit'
 export type { Step2CommitHopRow } from './screens/Step2Commit'

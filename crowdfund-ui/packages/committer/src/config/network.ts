@@ -41,6 +41,24 @@ export function getHubChainId(): number {
 }
 
 /**
+ * Human-readable name of the deployment's chain, derived from the chain id so
+ * it stays correct across environments (testnet today, mainnet later) without
+ * hardcoding a network into UI copy.
+ */
+export function getHubNetworkLabel(): string {
+  switch (getHubChainId()) {
+    case 1:
+      return 'Ethereum'
+    case 11155111:
+      return 'Sepolia'
+    case 31337:
+      return 'the local network'
+    default:
+      return 'the correct network'
+  }
+}
+
+/**
  * Returns the path (relative to the Vite serveDeployments middleware) of the
  * crowdfund deployment manifest to load.
  *

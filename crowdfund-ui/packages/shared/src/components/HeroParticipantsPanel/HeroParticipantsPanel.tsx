@@ -77,12 +77,6 @@ export function HeroParticipantsPanel({
   layoutExpanded: layoutExpandedProp,
   onParticipate,
 }: HeroParticipantsPanelProps) {
-  // `collapsedMaxRows` is part of the mockup's API surface but the verbatim
-  // body never reads it (the row truncation is handled purely via CSS). Touch
-  // it here so consumers of crowdfund-shared (`noUnusedParameters: true`) are
-  // happy until the prop either gets wired up or removed upstream.
-  void collapsedMaxRows
-
   const [uncontrolledShowList, setUncontrolledShowList] = useState(false)
   const showList = controlledShowList ?? uncontrolledShowList
   const [query, setQuery] = useState('')
@@ -119,6 +113,10 @@ export function HeroParticipantsPanel({
 
   const isEmpty = participants.length === 0
   const noResults = !isEmpty && rows.length === 0
+  // Collapsed: only mount a handful of rows (the list is hidden anyway), so we
+  // don't reconcile thousands of DOM nodes every poll. Expanded: render all
+  // (rows carry `content-visibility: auto` so off-screen rows skip layout).
+  const visibleRows = showList ? rows : rows.slice(0, collapsedMaxRows)
 
   return (
     <section className={[styles.panel, layoutExpanded && styles.expanded].filter(Boolean).join(' ')} aria-label="Participants">
@@ -165,7 +163,7 @@ export function HeroParticipantsPanel({
                   <div className={styles.emptySub}>Try a different address or filter.</div>
                 </div>
               ) : (
-                rows.map((p, idx) => {
+                visibleRows.map((p, idx) => {
                   const selected = p.address === selectedAddress
                   return (
                     <button

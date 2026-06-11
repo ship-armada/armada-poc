@@ -240,6 +240,11 @@
   text-align: left;
   width: 100%;
   box-sizing: border-box;
+  /* Off-screen rows in the expanded (scrolling) list skip layout/paint until
+     near the viewport. contain-intrinsic-size reserves height so the scrollbar
+     stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
 }
 
 .row + .row {

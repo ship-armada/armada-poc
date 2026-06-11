@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Contract } from 'ethers'
 import type { Signer } from 'ethers'
+import { toast } from 'sonner'
 import { CROWDFUND_ABI_FRAGMENTS, type CrowdfundEvent } from '@armada/crowdfund-shared'
 import {
   type StoredInviteLink,
@@ -19,7 +20,8 @@ import {
   classifyStoredLinks,
 } from '@/lib/inviteLinks'
 import { getHubChainId } from '@/config/network'
-import { TX_WAIT_TIMEOUT_MS } from '@/lib/txWait'
+import { TX_WAIT_TIMEOUT_MS, isUserRejection } from '@/lib/txWait'
+import { mapRevertToMessage } from '@/lib/revertMessages'
 
 export interface UseInviteLinksResult {
   links: StoredInviteLink[]
@@ -115,10 +117,14 @@ export function useInviteLinks(
       await refreshLinks()
 
       return encodeInviteUrl(linkData)
-    } catch {
+    } catch (err) {
+      // Quiet on a user-rejected signature; surface real failures.
+      if (!isUserRejection(err)) {
+        toast.error('Could not create invite link', { description: mapRevertToMessage(err) })
+      }
       return null
     }
-  }, [address, signer, crowdfundAddress, blockTimestamp, refreshLinks])
+  }, [address, signer, crowdfundAddress, blockTimestamp, events, refreshLinks])
 
   const revokeLink = useCallback(async (nonce: number): Promise<boolean> => {
     if (!crowdfundAddress || !address || !signer) return false
@@ -131,7 +137,11 @@ export function useInviteLinks(
       await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked')
       await refreshLinks()
       return true
-    } catch {
+    } catch (err) {
+      // Quiet on a user-rejected tx; surface real failures.
+      if (!isUserRejection(err)) {
+        toast.error('Could not revoke invite', { description: mapRevertToMessage(err) })
+      }
       return false
     }
   }, [crowdfundAddress, address, signer, refreshLinks])

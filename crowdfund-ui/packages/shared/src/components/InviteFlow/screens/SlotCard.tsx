@@ -340,6 +340,7 @@ export default function SlotCard({
                 <button
                   className={styles.textBtn}
                   onClick={() => onCopy(slot.id, slot.link!)}
+                  disabled={loading}
                 >
                   {copied ? 'Copied' : 'Copy'}
                 </button>
@@ -349,6 +350,7 @@ export default function SlotCard({
                   className={[styles.textBtn, styles.textBtnDanger].join(' ')}
                   aria-expanded={revokeConfirmOpen}
                   aria-haspopup="dialog"
+                  disabled={loading}
                   onClick={() => {
                     if (revokeConfirmOpen) {
                       setRevokeConfirmOpen(false)
@@ -361,7 +363,7 @@ export default function SlotCard({
                     setRevokeConfirmOpen(true)
                   }}
                 >
-                  Revoke
+                  {loading ? 'Revoking…' : 'Revoke'}
                 </button>
               </div>
             </div>
@@ -491,7 +493,8 @@ export default function SlotCard({
               Revoke invite link?
             </p>
             <p className={styles.revokeBody}>
-              This link will stop working. You can generate a new one anytime.
+              This link will stop working. Revoking is an on-chain transaction and costs gas.
+              You can generate a new one anytime.
             </p>
             <div className={styles.revokeActions}>
               <Button

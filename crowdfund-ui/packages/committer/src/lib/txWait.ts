@@ -21,3 +21,16 @@ export function isTxTimeoutError(err: unknown): boolean {
   const message = (err as { message?: unknown }).message
   return typeof message === 'string' && /timeout/i.test(message)
 }
+
+/**
+ * Detect a user-rejected wallet action (rejected signature or tx). These are
+ * intentional, not failures — callers should stay quiet rather than toast an
+ * error. ethers v6 uses code 'ACTION_REJECTED'; some wallets use EIP-1193 4001.
+ */
+export function isUserRejection(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: unknown }).code
+  if (code === 'ACTION_REJECTED' || code === 4001) return true
+  const message = (err as { message?: unknown }).message
+  return typeof message === 'string' && /user rejected|user denied|rejected the request/i.test(message)
+}

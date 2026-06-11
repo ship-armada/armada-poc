@@ -1,7 +1,7 @@
 // ABOUTME: Unit tests for transaction-wait timeout detection.
 // ABOUTME: A timeout must be distinguishable from a revert so the UI says "pending", not "failed".
 import { describe, it, expect } from 'vitest'
-import { isTxTimeoutError, TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE } from './txWait'
+import { isTxTimeoutError, isUserRejection, TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE } from './txWait'
 
 describe('isTxTimeoutError', () => {
   it('detects the ethers v6 TIMEOUT error code', () => {
@@ -23,5 +23,23 @@ describe('isTxTimeoutError', () => {
   it('exposes a 120s wait budget and pending copy', () => {
     expect(TX_WAIT_TIMEOUT_MS).toBe(120_000)
     expect(TX_PENDING_MESSAGE).toMatch(/pending/i)
+  })
+})
+
+describe('isUserRejection', () => {
+  it('detects ethers ACTION_REJECTED and EIP-1193 4001', () => {
+    expect(isUserRejection({ code: 'ACTION_REJECTED' })).toBe(true)
+    expect(isUserRejection({ code: 4001 })).toBe(true)
+  })
+
+  it('detects rejection via message text', () => {
+    expect(isUserRejection(new Error('MetaMask Tx Signature: User denied transaction'))).toBe(true)
+    expect(isUserRejection(new Error('user rejected action'))).toBe(true)
+  })
+
+  it('does not flag a genuine failure', () => {
+    expect(isUserRejection(new Error('execution reverted'))).toBe(false)
+    expect(isUserRejection({ code: 'CALL_EXCEPTION' })).toBe(false)
+    expect(isUserRejection(null)).toBe(false)
   })
 })

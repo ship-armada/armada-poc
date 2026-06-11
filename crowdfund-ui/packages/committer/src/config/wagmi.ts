@@ -21,9 +21,17 @@ const hubChainId = getHubChainId()
 const chains = isLocalMode() ? [anvilChain] : [sepolia]
 const rpcUrls = getHubRpcUrls()
 
+// In dev, fall back to a placeholder project id so the app boots without a
+// real WalletConnect id. In PROD we never ship the placeholder (it silently
+// breaks WalletConnect) — startup validateEnv() hard-fails a build that is
+// missing VITE_WALLETCONNECT_PROJECT_ID before this config is ever used.
+const walletConnectProjectId =
+  import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ||
+  (import.meta.env.PROD ? '' : 'armada-dev-placeholder')
+
 export const wagmiConfig = getDefaultConfig({
   appName: 'Armada Crowdfund',
-  projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'armada-dev-placeholder',
+  projectId: walletConnectProjectId,
   chains: chains as any,
   transports: {
     [hubChainId]: http(rpcUrls[0]),

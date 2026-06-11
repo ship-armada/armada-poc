@@ -6,7 +6,12 @@ export type NetworkMode = 'local' | 'sepolia'
 export function getNetworkMode(): NetworkMode {
   const env = import.meta.env.VITE_NETWORK as string | undefined
   if (env === 'sepolia') return 'sepolia'
-  return 'local'
+  if (env === 'local') return 'local'
+  // No explicit network. A production bundle must never silently fall back to
+  // local (which points at localhost:8545) — default unset to sepolia in PROD.
+  // (Startup validateEnv() hard-fails such a build before render anyway.)
+  // Dev keeps the local default.
+  return import.meta.env.PROD ? 'sepolia' : 'local'
 }
 
 export function isLocalMode(): boolean {

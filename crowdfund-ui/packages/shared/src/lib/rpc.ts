@@ -75,11 +75,20 @@ function toRawLog(log: { blockNumber: number; transactionHash: string; index: nu
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+export interface FetchLogsResult {
+  logs: RawLog[]
+  /** The block number `toBlock` resolved to — the upper bound actually scanned.
+   *  Callers should use this as their next cursor, not a separate getBlockNumber()
+   *  call (which can drift past the range this fetch covered). */
+  resolvedTo: number
+}
+
 /**
  * Fetch raw logs from the provider for a given contract address and block range.
  * Automatically chunks large ranges into maxBlockRange-sized requests with
  * a small delay between chunks to avoid RPC rate limits.
- * Returns logs in the RawLog format expected by parseCrowdfundEvent.
+ * Returns logs in the RawLog format expected by parseCrowdfundEvent, plus the
+ * resolved upper bound of the scan so the caller can advance its cursor exactly.
  */
 export async function fetchLogs(
   provider: JsonRpcProvider,
@@ -87,9 +96,9 @@ export async function fetchLogs(
   fromBlock: number,
   toBlock: number | 'latest',
   maxBlockRange: number = DEFAULT_MAX_BLOCK_RANGE,
-): Promise<RawLog[]> {
+): Promise<FetchLogsResult> {
   const resolvedTo = toBlock === 'latest' ? await provider.getBlockNumber() : toBlock
-  if (fromBlock > resolvedTo) return []
+  if (fromBlock > resolvedTo) return { logs: [], resolvedTo }
 
   const allLogs: RawLog[] = []
   let cursor = fromBlock
@@ -105,7 +114,7 @@ export async function fetchLogs(
     cursor = chunkEnd + 1
   }
 
-  return allLogs
+  return { logs: allLogs, resolvedTo }
 }
 
 /** Get the latest block timestamp in seconds */

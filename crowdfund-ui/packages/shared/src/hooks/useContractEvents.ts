@@ -65,6 +65,45 @@ function dedupEventKey(e: CrowdfundEvent): string {
   return `${e.transactionHash}-${e.logIndex}`
 }
 
+/**
+ * Merge freshly polled events into the current snapshot. Dedups against the
+ * current events and advances the cursor to the resolved scan upper bound —
+ * never backwards, and never past what was actually scanned. Returns the new
+ * snapshot plus the unique (newly added) events so the caller can persist them.
+ */
+export function mergePolledEvents(
+  current: EventsSnapshot,
+  newEvents: CrowdfundEvent[],
+  resolvedTo: number,
+): { snapshot: EventsSnapshot; unique: CrowdfundEvent[] } {
+  const existing = new Set(current.events.map(dedupEventKey))
+  const unique = newEvents.filter((e) => !existing.has(dedupEventKey(e)))
+  const events = unique.length === 0 ? current.events : [...current.events, ...unique]
+  const cursor = Math.max(current.cursor, resolvedTo)
+  return { snapshot: { events, cursor }, unique }
+}
+
+/**
+ * Merge receipt-derived events into the prior snapshot WITHOUT advancing the
+ * cursor: re-fetching those blocks is idempotent (dedup), and advancing here
+ * would skip other participants' events between the cursor and the receipt
+ * block. Returns the new snapshot plus the unique events.
+ */
+export function mergeReceiptEvents(
+  prior: EventsSnapshot | undefined,
+  receiptEvents: CrowdfundEvent[],
+  startBlock: number,
+): { snapshot: EventsSnapshot; unique: CrowdfundEvent[] } {
+  const priorEvents = prior?.events ?? []
+  const existing = new Set(priorEvents.map(dedupEventKey))
+  const unique = receiptEvents.filter((e) => !existing.has(dedupEventKey(e)))
+  const events = [...priorEvents, ...unique].sort(
+    (a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex,
+  )
+  const cursor = prior?.cursor ?? startBlock
+  return { snapshot: { events, cursor }, unique }
+}
+
 function toRawReceiptLog(log: ReceiptLogLike) {
   return {
     blockNumber: log.blockNumber ?? 0,
@@ -163,25 +202,27 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
         }
       }
 
-      const rawLogs = await fetchLogs(provider, contractAddress, prior.cursor + 1, 'latest')
+      const { logs: rawLogs, resolvedTo } = await fetchLogs(
+        provider,
+        contractAddress,
+        prior.cursor + 1,
+        'latest',
+      )
       const newEvents = parseCrowdfundEvents(rawLogs)
 
-      if (newEvents.length === 0) {
-        // Advance cursor to current block to avoid re-scanning — matches prior behavior.
-        const currentBlock = await provider.getBlockNumber()
-        return { events: prior.events, cursor: currentBlock }
-      }
+      // Merge against the CURRENT query data at resolution time — not the
+      // snapshot captured at fetch start — so an in-flight ingestReceiptLogs
+      // update isn't wiped by this poll. The cursor comes from resolvedTo (the
+      // range we actually scanned), not a second getBlockNumber() call.
+      const current = queryClient.getQueryData<EventsSnapshot>(queryKey) ?? prior
+      const { snapshot, unique } = mergePolledEvents(current, newEvents, resolvedTo)
 
-      // Dedup by txHash + logIndex against prior events.
-      const existing = new Set(prior.events.map(dedupEventKey))
-      const unique = newEvents.filter((e) => !existing.has(dedupEventKey(e)))
-      const merged = unique.length === 0 ? prior.events : [...prior.events, ...unique]
-      const latestBlock = Math.max(...newEvents.map((e) => e.blockNumber))
+      // Persist new events + the advanced cursor (idempotent put). Persisting on
+      // every poll — even with zero new events — lets an interrupted backfill
+      // resume from the cursor rather than restart.
+      cacheEvents(unique, snapshot.cursor, deployment).catch(() => {})
 
-      // Persist to IndexedDB (non-fatal on failure).
-      cacheEvents(newEvents, latestBlock, deployment).catch(() => {})
-
-      return { events: merged, cursor: latestBlock }
+      return snapshot
     },
     enabled: !!provider && !!contractAddress,
     refetchInterval: pollIntervalMs,
@@ -210,13 +251,12 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
       const deployment = { chainId: effectiveChainId, contractAddress }
 
       queryClient.setQueryData<EventsSnapshot>(queryKey, (prior) => {
-        const existing = new Set((prior?.events ?? []).map(dedupEventKey))
-        const unique = receiptEvents.filter((event) => !existing.has(dedupEventKey(event)))
+        const { snapshot, unique } = mergeReceiptEvents(prior, receiptEvents, effectiveStartBlock)
         if (unique.length === 0) return prior
-        const merged = [...(prior?.events ?? []), ...unique].sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
-        const latestBlock = Math.max(prior?.cursor ?? effectiveStartBlock, ...unique.map((event) => event.blockNumber))
-        cacheEvents(unique, latestBlock, deployment).catch(() => {})
-        return { events: merged, cursor: latestBlock }
+        // Persist the new events but keep the cursor where it was (snapshot.cursor
+        // is prior's cursor) so the next poll still re-scans the interim range.
+        cacheEvents(unique, snapshot.cursor, deployment).catch(() => {})
+        return snapshot
       })
     },
     [contractAddress, effectiveChainId, effectiveStartBlock, queryClient, queryKey],

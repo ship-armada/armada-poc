@@ -635,6 +635,8 @@ export function App() {
   // uses the dedicated `?page=participate` page. `openParticipate()` routes
   // based on the active design flag.
   const [participateOpen, setParticipateOpen] = useState(false)
+  // True while the participate pipeline is in flight — gates modal close confirm.
+  const [participateRunning, setParticipateRunning] = useState(false)
 
   const pollInterval = getPollIntervalMs()
   const indexerUrl = getIndexerUrl()
@@ -1060,9 +1062,11 @@ export function App() {
       open={participateOpen}
       onClose={closeParticipate}
       ariaLabel="Participate in the Armada crowdfund"
+      confirmBeforeClose={participateRunning}
     >
       {participateOpen && (
         <ParticipateFlowV2
+          onRunningChange={setParticipateRunning}
           walletConnected={wallet.connected}
           walletAddress={wallet.address}
           signer={wallet.signer}

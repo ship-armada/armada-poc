@@ -1,7 +1,7 @@
 // ABOUTME: v2 Claim flow page-level controller — ARM claim (with mandatory delegate) + USDC refund, dressed in @armada/ui primitives.
 // ABOUTME: Provisional design: no designer mockup exists yet for Claim, so this composes Steps/Button/Tag with v1 ClaimTab behavior. Revisit when the designer ships claim screens.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Contract, type Signer, type TransactionResponse, type JsonRpcProvider } from 'ethers'
 import {
   Step4Approve,
@@ -74,6 +74,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const [refundAmount, setRefundAmount] = useState<bigint>(0n)
   const [hasClaimed, setHasClaimed] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const runningRef = useRef(false)
 
   const [step, setStep] = useState<FlowStep>('review')
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
@@ -157,6 +159,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // controlled status. Mirrors the v1 ClaimTab pipeline but simplified (single
   // op, no toasts at this layer — toasts can be re-added in 3.3.x).
   const runClaim = async () => {
+    if (runningRef.current) return
     const opLabel = mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
     if (!signer || !crowdfundAddress) {
       // Surface an error row instead of bailing into Step4's neutral state.
@@ -165,6 +168,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       ])
       return
     }
+    runningRef.current = true
+    setSubmitting(true)
     setTxs([{ label: opLabel, status: 'loading' }])
 
     const setRowStatus = (patch: Partial<Step4Transaction>) =>
@@ -204,6 +209,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         errorMessage: mapRevertToMessage(err),
         errorDetails: err instanceof Error ? err.message : String(err),
       })
+    } finally {
+      runningRef.current = false
+      setSubmitting(false)
     }
   }
 
@@ -455,7 +463,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
             size="lg"
             label={mode === 'arm' ? 'Claim ARM' : 'Claim refund'}
             showIcon={false}
-            disabled={mode === 'arm' && !delegateValid}
+            disabled={(mode === 'arm' && !delegateValid) || submitting}
             onClick={() => {
               setTxs(null)
               setStep('submit')

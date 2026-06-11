@@ -8,12 +8,17 @@ import styles from './ParticipateFlowModal.module.css'
 
 const EXIT_MS = 280
 
+const CLOSE_CONFIRM_MESSAGE = 'Transaction in progress — close anyway?'
+
 export interface ParticipateFlowModalProps {
   open: boolean
   onClose: () => void
   children: ReactNode
   /** Accessible name for the dialog (e.g. step headline). */
   ariaLabel: string
+  /** When true, Escape / the X button ask for confirmation before closing —
+   *  used while an approve/commit pipeline is in flight. */
+  confirmBeforeClose?: boolean
 }
 
 export function ParticipateFlowModal({
@@ -21,6 +26,7 @@ export function ParticipateFlowModal({
   onClose,
   children,
   ariaLabel,
+  confirmBeforeClose = false,
 }: ParticipateFlowModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const [mounted, setMounted] = useState(open)
@@ -34,6 +40,20 @@ export function ParticipateFlowModal({
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
+
+  // Held in a ref for the same reason as onClose — the keydown effect reads the
+  // latest value without re-subscribing.
+  const confirmBeforeCloseRef = useRef(confirmBeforeClose)
+  useEffect(() => {
+    confirmBeforeCloseRef.current = confirmBeforeClose
+  }, [confirmBeforeClose])
+
+  // Confirm before closing if a transaction is in flight, so Escape / X can't
+  // silently unmount the modal mid-pipeline.
+  const requestClose = () => {
+    if (confirmBeforeCloseRef.current && !window.confirm(CLOSE_CONFIRM_MESSAGE)) return
+    onCloseRef.current()
+  }
 
   useEffect(() => {
     if (open) {
@@ -58,7 +78,10 @@ export function ParticipateFlowModal({
     closeRef.current?.focus()
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCloseRef.current()
+      if (e.key !== 'Escape') return
+      // Read refs directly so this effect needn't depend on requestClose.
+      if (confirmBeforeCloseRef.current && !window.confirm(CLOSE_CONFIRM_MESSAGE)) return
+      onCloseRef.current()
     }
     window.addEventListener('keydown', onKeyDown)
 
@@ -85,7 +108,7 @@ export function ParticipateFlowModal({
           ref={closeRef}
           type="button"
           className={styles.close}
-          onClick={onClose}
+          onClick={requestClose}
           aria-label="Close participate flow"
         >
           <XMarkIcon width={16} height={16} aria-hidden />

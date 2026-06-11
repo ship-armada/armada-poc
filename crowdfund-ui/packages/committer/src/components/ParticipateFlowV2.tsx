@@ -1,7 +1,7 @@
 // ABOUTME: v2 Participate flow page-level controller — wires the designer's Step1–Step5 screens to the committer's eligibility/balance/tx hooks.
 // ABOUTME: Multi-hop aware — per-hop amount entry, single approve(total) + one commit(hop, amount) per non-zero hop. Real approve + commit transactions through the controlled Step4Approve.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useDisconnect } from 'wagmi'
 import { Contract, type Signer, type TransactionResponse } from 'ethers'
@@ -62,6 +62,9 @@ export interface ParticipateFlowV2Props {
    *  immediately on confirmation instead of waiting for the next event poll.
    *  Mirrors how v1 `CommitTab` plugs into `useContractEvents.ingestReceiptLogs`. */
   onReceiptLogs?: (logs: readonly ReceiptLogLike[]) => void
+  /** Notifies the parent when the approve/commit pipeline starts/stops, so the
+   *  enclosing modal can confirm before closing mid-transaction. */
+  onRunningChange?: (running: boolean) => void
 }
 
 // Convert a bigint USDC amount (6 decimals) into a plain number for the
@@ -109,12 +112,22 @@ export function ParticipateFlowV2({
   onGoToNetwork,
   inviteSlotSections,
   onReceiptLogs,
+  onRunningChange,
 }: ParticipateFlowV2Props) {
   const [step, setStep] = useState<FlowStep>('wallet')
   const [amounts, setAmounts] = useState<AmountsByHop>(EMPTY_AMOUNTS)
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  // Synchronous re-entrancy guard — blocks a double-click from running the
+  // pipeline twice (state updates are async and wouldn't guard in time).
+  const runningRef = useRef(false)
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
+
+  // Surface in-flight status so the modal can confirm before closing.
+  useEffect(() => {
+    onRunningChange?.(submitting)
+  }, [submitting, onRunningChange])
 
   // Eligible positions, filtered to renderable hops and ordered ascending.
   // Drives the per-hop entry rows in Step2 and the per-hop summary in Step3.
@@ -209,6 +222,7 @@ export function ParticipateFlowV2({
   // multi-hop commit. Each non-zero hop gets its own commit tx; failures
   // stop the pipeline at the failing row.
   const runPipeline = async () => {
+    if (runningRef.current) return
     if (!signer || !crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
       // Don't bail silently into Step4's neutral state — surface an actionable
       // error row so the user reconnects rather than waiting on nothing.
@@ -220,6 +234,13 @@ export function ParticipateFlowV2({
         },
       ])
       return
+    }
+    runningRef.current = true
+    setSubmitting(true)
+    // Reset the in-flight guard on every exit so Retry can re-run.
+    const finish = () => {
+      runningRef.current = false
+      setSubmitting(false)
     }
     const totalBig = totalNewAmountUsdc
     const approveLabel = `Approve ${formatUsdc(totalBig)} USDC`
@@ -303,7 +324,7 @@ export function ParticipateFlowV2({
       const ok = await sendAndWait(pipelineIndex, approveLabel, () =>
         usdc.approve(crowdfundAddress, totalBig),
       )
-      if (!ok) return
+      if (!ok) { finish(); return }
       await refreshAllowance()
       pipelineIndex += 1
     }
@@ -316,7 +337,7 @@ export function ParticipateFlowV2({
         () => crowdfund.commit(commit.hop, commit.amountBig),
         (logs) => onReceiptLogs?.(logs),
       )
-      if (!ok) return
+      if (!ok) { finish(); return }
       pipelineIndex += 1
     }
 
@@ -325,6 +346,7 @@ export function ParticipateFlowV2({
     // skip approval based on the now-consumed allowance.
     await refreshAllowance()
 
+    finish()
     setTimeout(() => setStep('confirmation'), 600)
   }
 
@@ -451,6 +473,7 @@ export function ParticipateFlowV2({
             void runPipeline()
           }}
           onBack={() => setStep('commit')}
+          disabled={submitting}
           hopCommits={hopCommits}
           amount={totalNewAmountUsd}
           estimatedArm={estimatedArm}
@@ -466,6 +489,7 @@ export function ParticipateFlowV2({
           void runPipeline()
         }}
         onBack={() => setStep('commit')}
+        disabled={submitting}
         hopLevel={HOP_LABELS[primaryPosition.hop]}
         amount={totalNewAmountUsd}
         estimatedArm={estimatedArm}

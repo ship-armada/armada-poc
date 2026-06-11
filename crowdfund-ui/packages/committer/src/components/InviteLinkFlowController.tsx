@@ -151,6 +151,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   const [fading, setFading] = useState(false)
   const [amount, setAmount] = useState(0)
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  // Synchronous re-entrancy guard — blocks a double-click re-running the pipeline.
+  const runningRef = useRef(false)
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const targetHop = inviteData.fromHop + 1
@@ -215,6 +218,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // confirms each transaction. Mirrors the Path 2 pipeline in
   // ParticipateFlowV2 but with the inviter signature args on the commit call.
   const runPipeline = async () => {
+    if (runningRef.current) return
     if (!signer || !deployment || amount <= 0) {
       // Surface an actionable error row rather than dropping into Step4's
       // neutral state with no transaction sent.
@@ -226,6 +230,13 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         },
       ])
       return
+    }
+    runningRef.current = true
+    setSubmitting(true)
+    // Reset the in-flight guard on every exit so Retry can re-run.
+    const finish = () => {
+      runningRef.current = false
+      setSubmitting(false)
     }
     const amountBig = numberToUsdc(amount)
     const approveLabel = `Approve ${formatUsdc(amountBig)} USDC`
@@ -294,7 +305,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         const usdc = new Contract(deployment.contracts.usdc, ERC20_ABI_FRAGMENTS, signer)
         return usdc.approve(deployment.contracts.crowdfund, amountBig)
       })
-      if (!ok) return
+      if (!ok) { finish(); return }
       // Re-read from chain so the next step's `skipApproval` decision (and
       // any subsequent attempt) sees the real allowance, not an optimistic guess.
       await allowanceState.refresh()
@@ -321,13 +332,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       // and the post-commit invite-slots step wouldn't have a config.
       (logs) => ingestReceiptLogs(logs),
     )
-    if (!commitOk) return
+    if (!commitOk) { finish(); return }
 
     // Refresh balance + allowance after the commit consumes the spend cap so
     // the navbar wallet badge and any subsequent action see the post-tx state
     // immediately, not on the next poll tick.
     await allowanceState.refresh()
 
+    finish()
     setTimeout(() => transitionTo('confirmation'), 600)
   }
 
@@ -402,6 +414,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             hopLevel={hopLabel(targetHop)}
             amount={amount}
             estimatedArm={estimatedArm}
+            disabled={submitting}
             onBack={() => transitionTo('commit')}
             onNext={() => {
               setTxs(null)

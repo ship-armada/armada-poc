@@ -24,6 +24,8 @@ export interface Step3ReviewHopCommit {
 interface Step3ReviewProps extends ParticipateStepBarProps {
   onNext: () => void
   onBack: () => void
+  /** Disables the "Approve and commit" CTA (e.g. while a pipeline is in flight). */
+  disabled?: boolean
   /** Single-hop label (e.g. 'Hop 1'). Ignored when `hopCommits` is provided. */
   hopLevel?: string
   /** Single-hop committed amount (USD). Ignored when `hopCommits` is provided. */
@@ -49,6 +51,7 @@ function formatUsd(value: number): string {
 export default function Step3Review({
   onNext,
   onBack,
+  disabled = false,
   hopLevel = 'Hop 1',
   amount = 1000,
   estimatedArm = 1000,
@@ -169,6 +172,7 @@ export default function Step3Review({
           size="lg"
           label="Approve and commit"
           showIcon={false}
+          disabled={disabled}
           onClick={onNext}
         />
       </div>

@@ -22,7 +22,10 @@ const DEPLOYMENT_META_KEY = 'deployment'
 const ENS_TTL_MS = 24 * 60 * 60 * 1000
 
 interface EnsCacheEntry {
-  name: string
+  /** Resolved ENS name, or null for a cached *negative* (address has no ENS) —
+   *  negatives are cached too so the majority of addresses don't re-query every
+   *  reload. */
+  name: string | null
   timestamp: number
 }
 
@@ -133,19 +136,30 @@ export async function cacheEvents(
   await tx.done
 }
 
-/** Get a cached ENS name for an address (respects TTL) */
+/** Get a cached ENS name for an address (respects TTL). Returns null for a
+ *  cache miss, an expired entry, OR a cached negative. */
 export async function getCachedENS(address: string): Promise<string | null> {
+  const entry = await getCachedENSEntry(address)
+  return entry ? entry.name : null
+}
+
+/** Get the cached ENS entry, distinguishing a cached negative ({ name: null })
+ *  from a cache miss / expiry (returns null). Lets callers skip re-querying
+ *  addresses already known to have no ENS. */
+export async function getCachedENSEntry(
+  address: string,
+): Promise<{ name: string | null } | null> {
   const db = await getDB()
   const entry = (await db.get(ENS_STORE, address.toLowerCase())) as
     | EnsCacheEntry
     | undefined
   if (!entry) return null
   if (Date.now() - entry.timestamp > ENS_TTL_MS) return null
-  return entry.name
+  return { name: entry.name }
 }
 
-/** Cache an ENS name for an address */
-export async function cacheENS(address: string, name: string): Promise<void> {
+/** Cache an ENS resolution for an address. Pass `null` to cache a negative. */
+export async function cacheENS(address: string, name: string | null): Promise<void> {
   const db = await getDB()
   const entry: EnsCacheEntry = { name, timestamp: Date.now() }
   await db.put(ENS_STORE, entry, address.toLowerCase())
@@ -162,7 +176,7 @@ export async function batchGetCachedENS(
     const entry = (await db.get(ENS_STORE, addr.toLowerCase())) as
       | EnsCacheEntry
       | undefined
-    if (entry && now - entry.timestamp <= ENS_TTL_MS) {
+    if (entry && entry.name && now - entry.timestamp <= ENS_TTL_MS) {
       result.set(addr.toLowerCase(), entry.name)
     }
   }

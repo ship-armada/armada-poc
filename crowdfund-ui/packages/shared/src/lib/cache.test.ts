@@ -7,6 +7,7 @@ import {
   getCachedEvents,
   cacheEvents,
   getCachedENS,
+  getCachedENSEntry,
   cacheENS,
   batchGetCachedENS,
   clearCache,
@@ -106,6 +107,15 @@ describe('ENS cache', () => {
     await cacheENS('0xAbCd', 'alice.eth')
     const name = await getCachedENS('0xabcd')
     expect(name).toBe('alice.eth')
+  })
+
+  it('caches a negative (no ENS) distinctly from a cache miss', async () => {
+    await cacheENS('0xno0000000000000000000000000000000000ens0', null)
+    // getCachedENS returns null for both, but the entry getter distinguishes them.
+    const cachedNegative = await getCachedENSEntry('0xno0000000000000000000000000000000000ens0')
+    expect(cachedNegative).toEqual({ name: null })
+    const miss = await getCachedENSEntry('0xnevercached00000000000000000000000000000')
+    expect(miss).toBeNull()
   })
 
   it('batch retrieves cached ENS names', async () => {

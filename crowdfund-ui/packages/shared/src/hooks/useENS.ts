@@ -5,7 +5,7 @@ import { useEffect, useMemo, useCallback } from 'react'
 import { atom, useAtom } from 'jotai'
 import type { JsonRpcProvider } from 'ethers'
 import { useQueries } from '@tanstack/react-query'
-import { cacheENS, getCachedENS } from '../lib/cache.js'
+import { cacheENS, getCachedENSEntry } from '../lib/cache.js'
 import { truncateAddress } from '../lib/format.js'
 
 /** Map of address (lowercase) → ENS name. Mirrors react-query's cache for legacy consumers. */
@@ -28,19 +28,47 @@ function ensQueryKey(addr: string): [string, string] {
   return ['ens', addr.toLowerCase()]
 }
 
+// Concurrency cap for reverse lookups so ~1,500 addresses don't fire as many
+// simultaneous RPC calls (and get the keyless endpoint throttled). Cache hits
+// don't count — only the actual `lookupAddress` calls are gated.
+const MAX_CONCURRENT_LOOKUPS = 5
+let activeLookups = 0
+const lookupQueue: Array<() => void> = []
+
+function pumpLookupQueue(): void {
+  if (activeLookups >= MAX_CONCURRENT_LOOKUPS) return
+  const job = lookupQueue.shift()
+  if (!job) return
+  activeLookups += 1
+  job()
+}
+
+function withLookupLimit<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    lookupQueue.push(() => {
+      fn()
+        .then(resolve, reject)
+        .finally(() => {
+          activeLookups -= 1
+          pumpLookupQueue()
+        })
+    })
+    pumpLookupQueue()
+  })
+}
+
 async function resolveEnsName(
   provider: JsonRpcProvider,
   address: string,
 ): Promise<string | null> {
   const lower = address.toLowerCase()
-  const cached = await getCachedENS(lower)
-  if (cached !== null) return cached
-  const name = await provider.lookupAddress(address)
-  if (name) {
-    await cacheENS(lower, name).catch(() => {})
-    return name
-  }
-  return null
+  // A cached entry (positive OR negative) short-circuits the RPC lookup.
+  const cached = await getCachedENSEntry(lower)
+  if (cached) return cached.name
+  const name = await withLookupLimit(() => provider.lookupAddress(address))
+  // Cache the result either way — negatives too, so we don't re-query every reload.
+  await cacheENS(lower, name ?? null).catch(() => {})
+  return name ?? null
 }
 
 /**
@@ -65,7 +93,10 @@ export function useENS(config: UseENSConfig): UseENSResult {
     return out
   }, [addresses])
 
-  const results = useQueries({
+  // `combine` lets react-query apply structural sharing to the derived value,
+  // so `resolvedPairs` keeps a stable reference across renders until a new name
+  // actually resolves — no per-render O(N) signal string to churn the effect.
+  const resolvedPairs = useQueries({
     queries: uniqueAddresses.map((addr) => ({
       queryKey: ensQueryKey(addr),
       queryFn: () => resolveEnsName(provider!, addr),
@@ -74,34 +105,26 @@ export function useENS(config: UseENSConfig): UseENSResult {
       gcTime: ENS_GC_MS,
       retry: 2,
     })),
+    combine: (results) => {
+      const pairs: Array<[string, string]> = []
+      for (let i = 0; i < results.length; i += 1) {
+        const name = results[i]?.data
+        if (typeof name === 'string' && name.length > 0) {
+          pairs.push([uniqueAddresses[i].toLowerCase(), name])
+        }
+      }
+      return pairs
+    },
   })
 
-  // Serialize the resolution signal into a single string so the deps array
-  // stays fixed-length across renders. `results` has one entry per address;
-  // `dataUpdatedAt` ticks when a query settles.
-  const resolutionSignal = useMemo(
-    () =>
-      results
-        .map((r, i) => `${uniqueAddresses[i]?.toLowerCase() ?? ''}:${r.dataUpdatedAt}:${r.data ?? ''}`)
-        .join('|'),
-    [results, uniqueAddresses],
-  )
-
   // Mirror successful resolutions into ensMapAtom so the resolve/displayName
-  // callbacks below (and any legacy consumers) see the same data.
+  // callbacks (and any legacy consumers) see the same data. Runs only when
+  // `resolvedPairs` changes (stable across renders otherwise).
   useEffect(() => {
-    const resolved = new Map<string, string>()
-    for (let i = 0; i < uniqueAddresses.length; i++) {
-      const result = results[i]
-      const name = result?.data
-      if (typeof name === 'string' && name.length > 0) {
-        resolved.set(uniqueAddresses[i].toLowerCase(), name)
-      }
-    }
-    if (resolved.size === 0) return
+    if (resolvedPairs.length === 0) return
     setEnsMap((prev) => {
       let changed = false
-      for (const [addr, name] of resolved) {
+      for (const [addr, name] of resolvedPairs) {
         if (prev.get(addr) !== name) {
           changed = true
           break
@@ -109,13 +132,12 @@ export function useENS(config: UseENSConfig): UseENSResult {
       }
       if (!changed) return prev
       const next = new Map(prev)
-      for (const [addr, name] of resolved) {
+      for (const [addr, name] of resolvedPairs) {
         next.set(addr, name)
       }
       return next
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolutionSignal, setEnsMap])
+  }, [resolvedPairs, setEnsMap])
 
   const resolve = useCallback(
     (addr: string): string | null => {

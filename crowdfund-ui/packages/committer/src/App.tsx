@@ -622,6 +622,22 @@ function deriveLifecycleStage(
   return 'commit-invite'
 }
 
+/** Map the `?view=` query param to a page. Drives deep links like the
+ *  post-invite "View your position" button (`/?view=myposition`). */
+function pageFromViewParam(): Page | null {
+  if (typeof window === 'undefined') return null
+  switch (new URLSearchParams(window.location.search).get('view')) {
+    case 'myposition':
+      return 'my-position'
+    case 'claim':
+      return 'claim'
+    case 'network':
+      return 'network'
+    default:
+      return null
+  }
+}
+
 export function App() {
   const [mockSize] = useState(getMockSizeFromUrl)
   if (mockSize > 0) return <MockCommitterApp size={mockSize} />
@@ -630,7 +646,18 @@ export function App() {
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
-  const [page, setPage] = useState<Page>('network')
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [page, setPage] = useState<Page>(() => pageFromViewParam() ?? 'network')
+  // Keep `page` in sync with back/forward navigation that changes `?view=`.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    const onPopState = () => {
+      const next = pageFromViewParam()
+      if (next) setPage(next)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
   // Phase 6 — v2 Participate flow runs as a modal overlay; v1 fallback still
   // uses the dedicated `?page=participate` page. `openParticipate()` routes
   // based on the active design flag.

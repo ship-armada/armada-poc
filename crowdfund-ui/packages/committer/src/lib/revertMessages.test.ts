@@ -61,17 +61,65 @@ describe('mapRevertToMessage', () => {
     expect(mapRevertToMessage(new Error('insufficient balance'))).toBe('Your USDC balance is insufficient.')
   })
 
-  it('truncates long unknown errors', () => {
-    const longMsg = 'x'.repeat(300)
-    const result = mapRevertToMessage(new Error(longMsg))
-    expect(result).toHaveLength(203) // 200 + '...'
+  it('maps window closed', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: window closed'))).toBe(
+      'The commitment window has closed.',
+    )
+  })
+
+  it('maps invite expired', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: invite expired'))).toBe(
+      'This invite link has expired.',
+    )
+  })
+
+  it('maps invite limit reached', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: invite limit reached'))).toBe(
+      'The inviter has no remaining invite slots.',
+    )
+  })
+
+  it('maps already whitelisted', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: already whitelisted'))).toBe(
+      'This address is already invited.',
+    )
+  })
+
+  it('maps max hop reached', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: max hop reached'))).toBe(
+      'You are already at the deepest hop level.',
+    )
+  })
+
+  it('maps OZ insufficient allowance', () => {
+    expect(mapRevertToMessage(new Error('ERC20: insufficient allowance'))).toBe(
+      'USDC approval is too low — approve and retry.',
+    )
+  })
+
+  it('maps OZ transfer amount exceeds balance', () => {
+    expect(mapRevertToMessage(new Error('ERC20: transfer amount exceeds balance'))).toBe(
+      'Your USDC balance is insufficient.',
+    )
+  })
+
+  it('maps a bare ethers CALL_EXCEPTION (missing revert data)', () => {
+    expect(mapRevertToMessage(new Error('missing revert data'))).toBe(
+      'The transaction was reverted by the contract.',
+    )
+    expect(mapRevertToMessage({ code: 'CALL_EXCEPTION', message: 'call revert exception' })).toBe(
+      'The transaction was reverted by the contract.',
+    )
   })
 
   it('handles string errors', () => {
     expect(mapRevertToMessage('deadline passed')).toBe('The commitment deadline has passed.')
   })
 
-  it('returns raw message for unknown errors', () => {
-    expect(mapRevertToMessage(new Error('something unexpected'))).toBe('something unexpected')
+  it('returns a generic message for unknown errors (no raw leak)', () => {
+    expect(mapRevertToMessage(new Error('something unexpected with 0xdeadbeef calldata'))).toBe(
+      'Transaction failed',
+    )
+    expect(mapRevertToMessage(new Error('x'.repeat(300)))).toBe('Transaction failed')
   })
 })

@@ -6,6 +6,7 @@ import { Contract, type JsonRpcProvider, type Signer } from 'ethers'
 import { toast } from 'sonner'
 import { encodeInviteUrl, type StoredInviteLink } from '@/lib/inviteLinks'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
+import { mapRevertToMessage } from '@/lib/revertMessages'
 import {
   CROWDFUND_ABI_FRAGMENTS,
   HOP_CONFIGS,
@@ -239,8 +240,9 @@ function useHopSection(args: {
           // The invite tx may still confirm — don't claim failure.
           toast.error('Invite still pending', { description: TX_PENDING_MESSAGE })
         } else {
-          const message = err instanceof Error ? err.message : String(err)
-          toast.error('Invite failed', { description: message })
+          // Route through the revert mapper so the toast shows a friendly
+          // message, not raw calldata/internal error text.
+          toast.error('Invite failed', { description: mapRevertToMessage(err) })
         }
       } finally {
         setLoadingId((cur) => (cur === slotId ? null : cur))

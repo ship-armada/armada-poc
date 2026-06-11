@@ -2,7 +2,8 @@
 // ABOUTME: Multi-hop aware — per-hop amount entry, single approve(total) + one commit(hop, amount) per non-zero hop. Real approve + commit transactions through the controlled Step4Approve.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
+import { useDisconnect } from 'wagmi'
 import { Contract, type Signer, type TransactionResponse } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
@@ -112,6 +113,8 @@ export function ParticipateFlowV2({
   const [step, setStep] = useState<FlowStep>('wallet')
   const [amounts, setAmounts] = useState<AmountsByHop>(EMPTY_AMOUNTS)
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
+  const { disconnect } = useDisconnect()
+  const { openConnectModal } = useConnectModal()
 
   // Eligible positions, filtered to renderable hops and ordered ascending.
   // Drives the per-hop entry rows in Step2 and the per-hop summary in Step3.
@@ -361,7 +364,12 @@ export function ParticipateFlowV2({
     return (
       <Step1WalletNotWhitelisted
         address={walletAddress ?? '0x0000000000000000000000000000000000000000'}
-        onSelectAnother={onGoToNetwork}
+        onSelectAnother={() => {
+          // The button says "Connect a different wallet" — make it honest:
+          // disconnect the current address and reopen the wallet picker.
+          disconnect()
+          openConnectModal?.()
+        }}
       />
     )
   }

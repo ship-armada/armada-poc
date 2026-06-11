@@ -3,18 +3,19 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { JsonRpcProvider, Contract } from 'ethers'
+import { Contract } from 'ethers'
 // `Button` is dormant alongside the commented-out landing footer below;
 // restore it here when re-enabling the project / crowdfund nav.
 import { ArmadaLogo } from '@armada/ui'
 import {
   Step0Invite,
   CROWDFUND_ABI_FRAGMENTS,
+  createProvider,
   type Step0InviteProps,
 } from '@armada/crowdfund-shared'
 import { InviteLinkFlowController } from '@/components/InviteLinkFlowController'
 import { decodeInviteUrl, type InviteLinkData } from '@/lib/inviteLinks'
-import { getHubRpcUrl } from '@/config/network'
+import { getHubRpcUrls } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import styles from './InviteLanding.module.css'
 
@@ -99,7 +100,7 @@ export function InviteLandingPage() {
       setPreCheckLoading(true)
       try {
         const deployment = await loadDeployment()
-        const provider = new JsonRpcProvider(getHubRpcUrl())
+        const provider = createProvider(getHubRpcUrls())
         const contract = new Contract(
           deployment.contracts.crowdfund,
           CROWDFUND_ABI_FRAGMENTS,

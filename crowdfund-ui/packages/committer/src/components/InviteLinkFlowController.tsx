@@ -37,7 +37,7 @@ import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
-import { getHubRpcUrls, getHubRpcUrl, getIndexerUrl, getPollIntervalMs } from '@/config/network'
+import { getHubRpcUrls, getHubChainId, getIndexerUrl, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
@@ -103,15 +103,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // for the post-commit invite-slots screen. Block timestamp falls back to
   // local time — close enough for the link-expiry checks `useInviteLinks`
   // performs (deadlines are multi-day windows).
-  const eventsPollProvider = useMemo(
-    () => (deployment ? createProvider(getHubRpcUrls()) : null),
-    [deployment],
-  )
   const { events, ingestReceiptLogs } = useContractEvents({
-    provider: eventsPollProvider,
+    provider,
     contractAddress: deployment?.contracts.crowdfund ?? null,
     pollIntervalMs: getPollIntervalMs(),
     startBlock: deployment?.deployBlock,
+    // Same chainId the main App passes so the /invite page and the main app
+    // share one IndexedDB cache namespace instead of clearing each other's.
+    chainId: getHubChainId(),
     indexerBaseUrl: getIndexerUrl(),
   })
   const { nodes } = useGraphState()
@@ -152,7 +151,10 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     loadDeployment()
       .then((d) => {
         setDeployment(d)
-        setProvider(new JsonRpcProvider(getHubRpcUrl()))
+        // One shared fallback provider for the whole page (events poll, allowance,
+        // and tx submission) instead of a single-URL provider that dies when the
+        // primary RPC is down.
+        setProvider(createProvider(getHubRpcUrls()))
       })
       .catch(() => {})
   }, [])

@@ -1,12 +1,13 @@
 # Netlify build config — committer app deploy.
 #
-# Env vars set in the Netlify UI (not committed):
-#   VITE_WALLETCONNECT_PROJECT_ID  required for WalletConnect modal
+# Env vars set in the Netlify UI (not committed) — all of the following matter,
+# not just the instance:
+#   VITE_WALLETCONNECT_PROJECT_ID  required — WalletConnect modal is dead without it
 #   DEPLOYMENT_INSTANCE            optional override; defaults to "medi2".
 #                                  The build script re-exports it as
 #                                  VITE_DEPLOYMENT_INSTANCE so the bundled
 #                                  committer reads the matching instance file
-#                                  at runtime — set this one var only.
+#                                  at runtime.
 
 [build]
   base    = "."
@@ -42,6 +43,11 @@
   # hub RPC, chain ID 11155111, sepolia.etherscan, 15s poll). VITE_WALLETCONNECT_PROJECT_ID
   # and VITE_DEPLOYMENT_INSTANCE are set via the Netlify UI as deploy-context env vars.
   VITE_NETWORK = "sepolia"
+  # Sale-parameter profile. MUST match the deployed instance's scale: the
+  # medi-family Sepolia instances are ~$1k-scale and use the "medi" profile.
+  # Without this, constants.ts defaults to mainnet ($1.2M sale, $15k hop caps)
+  # and the UI grossly misrepresents the contract.
+  VITE_CROWDFUND_PROFILE = "medi"
 
 # SPA fallback — react-router serves /invite?... and other dynamic paths.
 [[redirects]]

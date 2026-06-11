@@ -65,6 +65,9 @@ export interface ParticipateFlowV2Props {
   /** Notifies the parent when the approve/commit pipeline starts/stops, so the
    *  enclosing modal can confirm before closing mid-transaction. */
   onRunningChange?: (running: boolean) => void
+  /** True while contract events are still hydrating. Avoids flashing the
+   *  "not whitelisted" screen at an eligible user before their positions load. */
+  eventsLoading?: boolean
 }
 
 // Convert a bigint USDC amount (6 decimals) into a plain number for the
@@ -113,6 +116,7 @@ export function ParticipateFlowV2({
   inviteSlotSections,
   onReceiptLogs,
   onRunningChange,
+  eventsLoading,
 }: ParticipateFlowV2Props) {
   const [step, setStep] = useState<FlowStep>('wallet')
   const [amounts, setAmounts] = useState<AmountsByHop>(EMPTY_AMOUNTS)
@@ -383,6 +387,15 @@ export function ParticipateFlowV2({
   }
 
   if (!eligible) {
+    // Events still hydrating — don't flash the rejection screen at an eligible
+    // user before their on-chain positions have loaded.
+    if (eventsLoading) {
+      return (
+        <div className="flex min-h-[200px] items-center justify-center p-6 text-muted-foreground">
+          Checking eligibility…
+        </div>
+      )
+    }
     return (
       <Step1WalletNotWhitelisted
         address={walletAddress ?? '0x0000000000000000000000000000000000000000'}

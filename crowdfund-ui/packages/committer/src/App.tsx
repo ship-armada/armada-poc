@@ -1067,6 +1067,7 @@ export function App() {
       {participateOpen && (
         <ParticipateFlowV2
           onRunningChange={setParticipateRunning}
+          eventsLoading={eventsLoading}
           walletConnected={wallet.connected}
           walletAddress={wallet.address}
           signer={wallet.signer}

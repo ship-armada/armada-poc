@@ -12,7 +12,12 @@ import {
   parseActiveAmount,
   sanitizeAmountInput,
 } from '../../../lib/amountInput'
+import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
+
+/** Per-commit minimum (USD), from the active profile's MIN_COMMIT. The contract
+ *  reverts a commit below this, so each hop's commit must individually clear it. */
+const MIN_COMMIT_USD = Number(CROWDFUND_CONSTANTS.MIN_COMMIT) / 1e6
 
 /** One per-hop input row for the multi-hop variant. The single-hop path is
  *  triggered when `hopRows` is omitted or length === 1 — passing a single
@@ -147,6 +152,7 @@ function SingleHopVariant({
   const totalCommitted = existingCommittedUsdc + amount
   const totalArm = Math.round(totalCommitted)
   const hasNewAmount = amount > 0
+  const belowMin = hasNewAmount && amount < MIN_COMMIT_USD
   const hasExisting = existingCommittedUsdc > 0
   // Wallet-balance gate. `remainingCap` caps the typed input at the user's
   // *hop cap*, not their *wallet balance*; without this check a user with
@@ -204,6 +210,7 @@ function SingleHopVariant({
               {hasExisting
                 ? `${remainingCap.toLocaleString()} remaining · ${maxAmount.toLocaleString()} cap`
                 : `Max ${maxAmount.toLocaleString()}`}
+              {MIN_COMMIT_USD > 0 ? ` · Min ${MIN_COMMIT_USD.toLocaleString()}` : ''}
             </p>
           </div>
 
@@ -239,6 +246,11 @@ function SingleHopVariant({
           </p>
           {overBalance && hasNewAmount && (
             <p className={styles.overBalance}>Amount exceeds your wallet balance.</p>
+          )}
+          {belowMin && !overBalance && (
+            <p className={styles.overBalance}>
+              Minimum {MIN_COMMIT_USD.toLocaleString()} USDC per commit.
+            </p>
           )}
         </div>
 
@@ -310,7 +322,7 @@ function SingleHopVariant({
           label="Review"
           showIcon={false}
           onClick={() => onNext(amount)}
-          disabled={!hasNewAmount || overBalance}
+          disabled={amount < MIN_COMMIT_USD || overBalance}
         />
       </div>
     </div>
@@ -382,7 +394,12 @@ function MultiHopVariant({
     const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
     return parsedByHop[row.hop] > remaining
   })
-  const canReview = totalNew > 0 && !overBalance && !anyOverHopCap
+  // Each hop the user commits to (amount > 0) must individually clear MIN_COMMIT.
+  const anyBelowMin = hopRows.some((row) => {
+    const a = parsedByHop[row.hop]
+    return a > 0 && a < MIN_COMMIT_USD
+  })
+  const canReview = totalNew > 0 && !overBalance && !anyOverHopCap && !anyBelowMin
 
   const handleInputChange = (hop: 0 | 1 | 2, row: Step2CommitHopRow) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -459,6 +476,7 @@ function MultiHopVariant({
                   {hasExisting
                     ? `${remaining.toLocaleString()} remaining`
                     : `Max ${row.maxAmount.toLocaleString()}`}
+                  {MIN_COMMIT_USD > 0 ? ` · Min ${MIN_COMMIT_USD.toLocaleString()}` : ''}
                 </span>
                 <span className={styles.visuallyHidden}>
                   USDC amount for {row.hopLabel}
@@ -537,6 +555,11 @@ function MultiHopVariant({
           {overBalance && (
             <p className={styles.overBalance}>
               Total exceeds your wallet balance.
+            </p>
+          )}
+          {anyBelowMin && !overBalance && (
+            <p className={styles.overBalance}>
+              Each hop you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
             </p>
           )}
         </div>

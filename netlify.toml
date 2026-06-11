@@ -35,6 +35,9 @@
   # Required: Railgun SDK peer-dep conflict forces legacy resolution.
   NPM_FLAGS    = "--legacy-peer-deps"
   NODE_VERSION = "20"
+  # Sourcemap generation over the main chunk pushes V8 past the default heap
+  # limit and the build dies with "Reached heap limit" (exit 134). Raise it.
+  NODE_OPTIONS = "--max-old-space-size=4096"
   # Switches all network-dependent decisions in the app (manifest path,
   # hub RPC, chain ID 11155111, sepolia.etherscan, 15s poll). VITE_WALLETCONNECT_PROJECT_ID
   # and VITE_DEPLOYMENT_INSTANCE are set via the Netlify UI as deploy-context env vars.

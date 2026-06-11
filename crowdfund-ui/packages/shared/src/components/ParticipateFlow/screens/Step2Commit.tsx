@@ -11,6 +11,7 @@ import {
   hasActiveAmount,
   parseActiveAmount,
   sanitizeAmountInput,
+  isInvalidCommaInput,
 } from '../../../lib/amountInput'
 import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
@@ -143,6 +144,7 @@ function SingleHopVariant({
   // `parseActiveAmount` to a capped numeric for downstream math. Ported from
   // the armada-crowdfund mockup's Step2Commit (commit 214b972).
   const [amountInput, setAmountInput] = useState('')
+  const [commaError, setCommaError] = useState(false)
 
   const remainingCap = Math.max(0, maxAmount - existingCommittedUsdc)
   const showActiveAmount = hasActiveAmount(amountInput)
@@ -161,6 +163,7 @@ function SingleHopVariant({
   const overBalance = amount > availableBalance
 
   function handleInput(raw: string) {
+    setCommaError(isInvalidCommaInput(raw))
     const next = sanitizeAmountInput(raw)
     if (!hasActiveAmount(next)) {
       setAmountInput('')
@@ -251,6 +254,9 @@ function SingleHopVariant({
             <p className={styles.overBalance}>
               Minimum {MIN_COMMIT_USD.toLocaleString()} USDC per commit.
             </p>
+          )}
+          {commaError && (
+            <p className={styles.overBalance}>Use a period for decimals.</p>
           )}
         </div>
 
@@ -356,6 +362,7 @@ function MultiHopVariant({
     1: '',
     2: '',
   })
+  const [commaError, setCommaError] = useState(false)
 
   // Reset row state if the input set changes mid-flow (e.g. eligibility
   // refresh adds a new hop). Keyed on the hop list so re-mounting isn't
@@ -403,6 +410,7 @@ function MultiHopVariant({
 
   const handleInputChange = (hop: 0 | 1 | 2, row: Step2CommitHopRow) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      setCommaError(isInvalidCommaInput(e.target.value))
       const next = sanitizeAmountInput(e.target.value)
       const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
       if (!hasActiveAmount(next)) {
@@ -561,6 +569,9 @@ function MultiHopVariant({
             <p className={styles.overBalance}>
               Each hop you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
             </p>
+          )}
+          {commaError && (
+            <p className={styles.overBalance}>Use a period for decimals.</p>
           )}
         </div>
       </div>

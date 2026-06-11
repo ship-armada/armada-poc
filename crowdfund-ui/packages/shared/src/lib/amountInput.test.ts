@@ -2,7 +2,12 @@
 // ABOUTME: Covers mid-decimal entry, comma handling, capping, and zero/empty boundaries.
 
 import { describe, it, expect } from 'vitest'
-import { sanitizeAmountInput, hasActiveAmount, parseActiveAmount } from './amountInput'
+import {
+  sanitizeAmountInput,
+  hasActiveAmount,
+  parseActiveAmount,
+  isInvalidCommaInput,
+} from './amountInput'
 
 describe('sanitizeAmountInput', () => {
   it('passes through digits unchanged', () => {
@@ -31,6 +36,32 @@ describe('sanitizeAmountInput', () => {
 
   it('allows a leading decimal point', () => {
     expect(sanitizeAmountInput('.5')).toBe('.5')
+  })
+
+  it('accepts valid thousands grouping', () => {
+    expect(parseActiveAmount(sanitizeAmountInput('1,000'))).toBe(1000)
+    expect(sanitizeAmountInput('12,345.67')).toBe('12345.67')
+  })
+
+  it('rejects ambiguous comma usage instead of reinterpreting it', () => {
+    // Must NOT become 15 / 25 (European decimal) or 100.
+    expect(sanitizeAmountInput('1,5')).toBe('')
+    expect(sanitizeAmountInput('2,5')).toBe('')
+    expect(sanitizeAmountInput('1,00')).toBe('')
+  })
+})
+
+describe('isInvalidCommaInput', () => {
+  it('flags ambiguous comma usage', () => {
+    expect(isInvalidCommaInput('1,5')).toBe(true)
+    expect(isInvalidCommaInput('1,00')).toBe(true)
+  })
+
+  it('does not flag valid grouping or comma-free input', () => {
+    expect(isInvalidCommaInput('1,000')).toBe(false)
+    expect(isInvalidCommaInput('$1,000 USD')).toBe(false)
+    expect(isInvalidCommaInput('1000')).toBe(false)
+    expect(isInvalidCommaInput('12.5')).toBe(false)
   })
 })
 

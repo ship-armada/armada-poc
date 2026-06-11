@@ -2,7 +2,7 @@
 // ABOUTME: Defines supported chains, RPC transports, and wallet connectors.
 
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
-import { http } from 'wagmi'
+import { http, fallback } from 'wagmi'
 import { sepolia, hardhat } from 'wagmi/chains'
 import { getHubRpcUrls, getHubChainId, isLocalMode } from './network'
 
@@ -33,7 +33,9 @@ export const wagmiConfig = getDefaultConfig({
   appName: 'Armada Crowdfund',
   projectId: walletConnectProjectId,
   chains: chains as any,
+  // Use every configured RPC URL with ordered fallback so a single dead/throttled
+  // endpoint doesn't break wallet reads — mirrors the events path's createProvider.
   transports: {
-    [hubChainId]: http(rpcUrls[0]),
+    [hubChainId]: fallback(rpcUrls.map((url) => http(url))),
   },
 })

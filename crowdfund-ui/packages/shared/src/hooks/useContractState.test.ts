@@ -113,8 +113,44 @@ describe('useContractState', () => {
     expect(result.current.blockTimestamp).toBe(1700000000)
   })
 
-  it('handles errors gracefully', async () => {
+  it('carries a single failed read forward without erroring the whole tick', async () => {
+    // Only `phase` fails; every other read succeeds → no error, phase carries
+    // forward (stays at the initial 0), and the rest populate normally.
     mockContract.phase.mockRejectedValue(new Error('RPC connection failed'))
+    mockContract.armLoaded.mockResolvedValue(true)
+    mockContract.getParticipantCount.mockResolvedValue(7n)
+
+    const { result } = renderHook(
+      () => useContractState(mockProvider, '0xcontract', 60000),
+      { wrapper: makeWrapper() },
+    )
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.error).toBeNull()
+    expect(result.current.phase).toBe(0) // carried forward
+    expect(result.current.armLoaded).toBe(true) // fresh
+    expect(result.current.participantCount).toBe(7) // fresh
+  })
+
+  it('surfaces an error only when every read fails', async () => {
+    const reject = () => Promise.reject(new Error('RPC connection failed'))
+    mockContract.phase.mockImplementation(reject)
+    mockContract.armLoaded.mockImplementation(reject)
+    mockContract.totalCommitted.mockImplementation(reject)
+    mockContract.getEstimatedCappedDemand.mockImplementation(reject)
+    mockContract.saleSize.mockImplementation(reject)
+    mockContract.windowStart.mockImplementation(reject)
+    mockContract.windowEnd.mockImplementation(reject)
+    mockContract.launchTeamInviteEnd.mockImplementation(reject)
+    mockContract.finalizedAt.mockImplementation(reject)
+    mockContract.claimDeadline.mockImplementation(reject)
+    mockContract.refundMode.mockImplementation(reject)
+    mockContract.getParticipantCount.mockImplementation(reject)
+    mockContract.getHopStats.mockImplementation(reject)
+    ;(mockProvider as any).getBlock.mockImplementation(reject)
 
     const { result } = renderHook(
       () => useContractState(mockProvider, '0xcontract', 60000),
@@ -124,7 +160,6 @@ describe('useContractState', () => {
     await waitFor(() => {
       expect(result.current.error).toBe('RPC connection failed')
     })
-
     expect(result.current.loading).toBe(false)
   })
 

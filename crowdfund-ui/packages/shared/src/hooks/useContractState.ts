@@ -4,7 +4,7 @@
 import { useMemo } from 'react'
 import { Contract } from 'ethers'
 import type { JsonRpcProvider } from 'ethers'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CROWDFUND_ABI_FRAGMENTS } from '../lib/constants.js'
 import type { HopStatsData } from '../components/StatsBar.js'
 
@@ -50,28 +50,17 @@ const INITIAL_STATE: Omit<ContractState, 'loading' | 'error'> = {
   seedCount: 0,
 }
 
+type ContractSnapshot = Omit<ContractState, 'loading' | 'error'>
+
 async function fetchContractState(
   provider: JsonRpcProvider,
   contract: Contract,
-): Promise<Omit<ContractState, 'loading' | 'error'>> {
-  const [
-    phase,
-    armLoaded,
-    totalCommitted,
-    estimatedCapped,
-    saleSize,
-    windowStart,
-    windowEnd,
-    launchTeamInviteEnd,
-    finalizedAt,
-    claimDeadline,
-    refundMode,
-    participantCount,
-    hopStats0,
-    hopStats1,
-    hopStats2,
-    block,
-  ] = await Promise.all([
+  prev: ContractSnapshot,
+): Promise<ContractSnapshot> {
+  // allSettled (not Promise.all) so one flaky read doesn't void the whole tick:
+  // each field carries forward its previous value when its read fails. If EVERY
+  // read fails (RPC down), we still throw so the error surfaces.
+  const settled = await Promise.allSettled([
     contract.phase() as Promise<bigint>,
     contract.armLoaded() as Promise<boolean>,
     contract.totalCommitted() as Promise<bigint>,
@@ -90,42 +79,69 @@ async function fetchContractState(
     provider.getBlock('latest'),
   ])
 
-  const estimated = estimatedCapped as [bigint, bigint[]]
-  const perHopCapped = estimated[1]
+  if (settled.every((s) => s.status === 'rejected')) {
+    throw (settled[0] as PromiseRejectedResult).reason
+  }
 
+  const ok = <T,>(i: number): T | undefined =>
+    settled[i].status === 'fulfilled'
+      ? (settled[i] as PromiseFulfilledResult<T>).value
+      : undefined
+
+  const phase = ok<bigint>(0)
+  const armLoaded = ok<boolean>(1)
+  const totalCommitted = ok<bigint>(2)
+  const estimatedCapped = ok<[bigint, bigint[]]>(3)
+  const saleSize = ok<bigint>(4)
+  const windowStart = ok<bigint>(5)
+  const windowEnd = ok<bigint>(6)
+  const launchTeamInviteEnd = ok<bigint>(7)
+  const finalizedAt = ok<bigint>(8)
+  const claimDeadline = ok<bigint>(9)
+  const refundMode = ok<boolean>(10)
+  const participantCount = ok<bigint>(11)
+  const hopStats0 = ok<[bigint, bigint, bigint, bigint]>(12)
+  const hopStats1 = ok<[bigint, bigint, bigint, bigint]>(13)
+  const hopStats2 = ok<[bigint, bigint, bigint, bigint]>(14)
+  const block = ok<Awaited<ReturnType<JsonRpcProvider['getBlock']>>>(15)
+
+  const perHopCapped = estimatedCapped?.[1]
   const parseHopStats = (
-    raw: [bigint, bigint, bigint, bigint],
+    raw: [bigint, bigint, bigint, bigint] | undefined,
     hop: number,
-  ): HopStatsData => ({
-    totalCommitted: raw[0],
-    cappedCommitted: perHopCapped[hop] ?? raw[1],
-    uniqueCommitters: Number(raw[2]),
-    whitelistCount: Number(raw[3]),
-  })
-
-  // Seed count is hop-0 whitelist count
-  const seedCount = Number(hopStats0[3])
+    prevHop: HopStatsData,
+  ): HopStatsData =>
+    raw
+      ? {
+          totalCommitted: raw[0],
+          cappedCommitted: perHopCapped?.[hop] ?? raw[1],
+          uniqueCommitters: Number(raw[2]),
+          whitelistCount: Number(raw[3]),
+        }
+      : prevHop
 
   return {
-    phase: Number(phase),
-    armLoaded,
-    totalCommitted,
-    cappedDemand: estimated[0],
-    saleSize,
-    windowStart: Number(windowStart),
-    windowEnd: Number(windowEnd),
-    launchTeamInviteEnd: Number(launchTeamInviteEnd),
-    finalizedAt: Number(finalizedAt),
-    claimDeadline: Number(claimDeadline),
-    refundMode,
-    blockTimestamp: block?.timestamp ?? 0,
+    phase: phase !== undefined ? Number(phase) : prev.phase,
+    armLoaded: armLoaded ?? prev.armLoaded,
+    totalCommitted: totalCommitted ?? prev.totalCommitted,
+    cappedDemand: estimatedCapped ? estimatedCapped[0] : prev.cappedDemand,
+    saleSize: saleSize ?? prev.saleSize,
+    windowStart: windowStart !== undefined ? Number(windowStart) : prev.windowStart,
+    windowEnd: windowEnd !== undefined ? Number(windowEnd) : prev.windowEnd,
+    launchTeamInviteEnd:
+      launchTeamInviteEnd !== undefined ? Number(launchTeamInviteEnd) : prev.launchTeamInviteEnd,
+    finalizedAt: finalizedAt !== undefined ? Number(finalizedAt) : prev.finalizedAt,
+    claimDeadline: claimDeadline !== undefined ? Number(claimDeadline) : prev.claimDeadline,
+    refundMode: refundMode ?? prev.refundMode,
+    blockTimestamp: block?.timestamp ?? prev.blockTimestamp,
     hopStats: [
-      parseHopStats(hopStats0, 0),
-      parseHopStats(hopStats1, 1),
-      parseHopStats(hopStats2, 2),
+      parseHopStats(hopStats0, 0, prev.hopStats[0]),
+      parseHopStats(hopStats1, 1, prev.hopStats[1]),
+      parseHopStats(hopStats2, 2, prev.hopStats[2]),
     ],
-    participantCount: Number(participantCount),
-    seedCount,
+    participantCount:
+      participantCount !== undefined ? Number(participantCount) : prev.participantCount,
+    seedCount: hopStats0 ? Number(hopStats0[3]) : prev.seedCount,
   }
 }
 
@@ -139,9 +155,16 @@ export function useContractState(
     return new Contract(contractAddress, CROWDFUND_ABI_FRAGMENTS, provider)
   }, [provider, contractAddress])
 
+  const queryClient = useQueryClient()
+  const queryKey = useMemo(() => ['crowdfundContractState', contractAddress] as const, [contractAddress])
+
   const query = useQuery({
-    queryKey: ['crowdfundContractState', contractAddress],
-    queryFn: () => fetchContractState(provider!, contract!),
+    queryKey,
+    queryFn: () => {
+      // Carry forward the last good snapshot for any field whose read fails.
+      const prev = queryClient.getQueryData<ContractSnapshot>(queryKey) ?? INITIAL_STATE
+      return fetchContractState(provider!, contract!, prev)
+    },
     enabled: !!provider && !!contract,
     refetchInterval: pollIntervalMs,
     refetchIntervalInBackground: false,

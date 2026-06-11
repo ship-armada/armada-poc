@@ -50,11 +50,10 @@ import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
-import { InviteSlotsPage } from '@/components/InviteSlotsPage'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 
 type ActionTab = 'commit' | 'invite'
-type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'invite-slots'
+type Page = 'network' | 'participate' | 'claim' | 'my-position'
 
 /**
  * Desktop horizontal nav items (left side of header).
@@ -1183,20 +1182,6 @@ export function App() {
       <div className="container mx-auto p-4 space-y-4">
         <StaleDataBanner indexerHealth={indexerHealth} />
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
-
-        {page === 'invite-slots' && (
-          <div key="page-invite-slots" className="animate-page-enter">
-            <ErrorBoundary>
-              <InviteSlotsPage
-                walletConnected={wallet.connected}
-                empty={inviteSlots.empty}
-                sections={inviteSlots.sections}
-                onBack={() => setPage('network')}
-              />
-            </ErrorBoundary>
-          </div>
-        )}
-
 
         {page === 'claim' && (
           <div key="page-claim" className="animate-page-enter">

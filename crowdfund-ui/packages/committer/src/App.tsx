@@ -41,7 +41,7 @@ import {
   type CrowdfundExperienceMyPositionData,
 } from '@armada/crowdfund-shared'
 import { Button as ArmadaButton, NavBar, WalletPillMenu, type NavBarItem } from '@armada/ui'
-import { getExplorerUrl, getHubRpcUrls, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
+import { getExplorerUrl, getHubChainId, getHubRpcUrls, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -661,6 +661,7 @@ export function App() {
     contractAddress: crowdfundAddress,
     pollIntervalMs: pollInterval,
     startBlock: deployment?.deployBlock,
+    chainId: getHubChainId(),
     indexerBaseUrl: indexerUrl,
   })
   const { summaries, nodes } = useGraphState()

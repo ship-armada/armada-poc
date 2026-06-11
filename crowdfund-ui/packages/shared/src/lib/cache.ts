@@ -6,10 +6,17 @@ import type { IDBPDatabase } from 'idb'
 import type { CrowdfundEvent } from './events.js'
 
 const DB_NAME = 'armada-crowdfund'
-const DB_VERSION = 1
+// v2: events store moved from autoIncrement (append-only, duplicating) to a
+// composite [transactionHash, logIndex] keyPath so re-fetched logs are
+// idempotent. Bumping the version drops + recreates the events store — safe,
+// it's only a cache.
+const DB_VERSION = 2
 const EVENTS_STORE = 'events'
 const ENS_STORE = 'ens'
 const META_STORE = 'meta'
+
+/** Meta key holding the deployment the events store currently belongs to. */
+const DEPLOYMENT_META_KEY = 'deployment'
 
 /** 24 hours in milliseconds */
 const ENS_TTL_MS = 24 * 60 * 60 * 1000
@@ -19,15 +26,43 @@ interface EnsCacheEntry {
   timestamp: number
 }
 
+/** Identifies the deployment a cached event set belongs to. The event cache is
+ *  namespaced by this so switching networks/contracts can't mix histories. */
+export interface CacheDeployment {
+  chainId: number
+  contractAddress: string
+}
+
+function normalizeDeployment(d: CacheDeployment): CacheDeployment {
+  return { chainId: d.chainId, contractAddress: d.contractAddress.toLowerCase() }
+}
+
+/** Meta key for this deployment's block cursor — namespaced so a switch can't
+ *  reuse another deployment's cursor against an empty/foreign event store. */
+function cursorKey(d: CacheDeployment): string {
+  const n = normalizeDeployment(d)
+  return `lastBlock:${n.chainId}:${n.contractAddress}`
+}
+
+function sameDeployment(a: CacheDeployment | undefined, b: CacheDeployment): boolean {
+  if (!a) return false
+  const na = normalizeDeployment(a)
+  const nb = normalizeDeployment(b)
+  return na.chainId === nb.chainId && na.contractAddress === nb.contractAddress
+}
+
 let dbPromise: Promise<IDBPDatabase> | null = null
 
 function getDB(): Promise<IDBPDatabase> {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        if (!db.objectStoreNames.contains(EVENTS_STORE)) {
-          db.createObjectStore(EVENTS_STORE, { autoIncrement: true })
+        // Drop + recreate the events store with a composite keyPath so writes
+        // are idempotent (put() dedups on [transactionHash, logIndex]).
+        if (db.objectStoreNames.contains(EVENTS_STORE)) {
+          db.deleteObjectStore(EVENTS_STORE)
         }
+        db.createObjectStore(EVENTS_STORE, { keyPath: ['transactionHash', 'logIndex'] })
         if (!db.objectStoreNames.contains(ENS_STORE)) {
           db.createObjectStore(ENS_STORE)
         }
@@ -40,29 +75,61 @@ function getDB(): Promise<IDBPDatabase> {
   return dbPromise
 }
 
-/** Get cached events and the last fetched block number */
-export async function getCachedEvents(): Promise<{
+/**
+ * Ensure the events store belongs to the active deployment. If the stored
+ * deployment differs (or is absent), clear the events store and reset this
+ * deployment's cursor, then record the active deployment. A no-op once the
+ * stored deployment matches.
+ */
+async function ensureDeployment(
+  db: IDBPDatabase,
+  deployment: CacheDeployment,
+): Promise<void> {
+  const stored = (await db.get(META_STORE, DEPLOYMENT_META_KEY)) as
+    | CacheDeployment
+    | undefined
+  if (sameDeployment(stored, deployment)) return
+
+  const tx = db.transaction([EVENTS_STORE, META_STORE], 'readwrite')
+  await tx.objectStore(EVENTS_STORE).clear()
+  // Reset the cursor for the deployment we are switching TO, so a return visit
+  // (A → B → A) re-scans from scratch rather than trusting a stale cursor
+  // against the now-cleared event store.
+  await tx.objectStore(META_STORE).delete(cursorKey(deployment))
+  await tx.objectStore(META_STORE).put(normalizeDeployment(deployment), DEPLOYMENT_META_KEY)
+  await tx.done
+}
+
+/** Get cached events (oldest first) and the last fetched block for a deployment */
+export async function getCachedEvents(deployment: CacheDeployment): Promise<{
   events: CrowdfundEvent[]
   lastBlock: number
 }> {
   const db = await getDB()
+  await ensureDeployment(db, deployment)
   const events = (await db.getAll(EVENTS_STORE)) as CrowdfundEvent[]
-  const lastBlock = ((await db.get(META_STORE, 'lastBlock')) as number) ?? 0
+  // getAll() returns key order ([txHash, logIndex]); restore chronological
+  // order so the "oldest first" contract holds for graph logic.
+  events.sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
+  const lastBlock = ((await db.get(META_STORE, cursorKey(deployment))) as number) ?? 0
   return { events, lastBlock }
 }
 
-/** Append new events to cache and update last block */
+/** Idempotently store events and advance the deployment's block cursor */
 export async function cacheEvents(
   events: CrowdfundEvent[],
   lastBlock: number,
+  deployment: CacheDeployment,
 ): Promise<void> {
   const db = await getDB()
+  await ensureDeployment(db, deployment)
   const tx = db.transaction([EVENTS_STORE, META_STORE], 'readwrite')
   const eventStore = tx.objectStore(EVENTS_STORE)
   for (const event of events) {
-    await eventStore.add(event)
+    // put() (not add()) — idempotent on the [transactionHash, logIndex] key.
+    await eventStore.put(event)
   }
-  await tx.objectStore(META_STORE).put(lastBlock, 'lastBlock')
+  await tx.objectStore(META_STORE).put(lastBlock, cursorKey(deployment))
   await tx.done
 }
 

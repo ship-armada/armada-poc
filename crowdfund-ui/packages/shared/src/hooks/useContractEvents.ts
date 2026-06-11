@@ -30,6 +30,9 @@ export interface UseContractEventsConfig {
   pollIntervalMs: number
   /** Block number to start fetching from (e.g. contract deploy block). Defaults to 0. */
   startBlock?: number
+  /** Chain id of the deployment. Used to namespace the IndexedDB event cache so
+   *  switching networks/contracts can't mix histories. Defaults to 0 when unset. */
+  chainId?: number
   /** Optional indexer API base URL. When provided, Sepolia loads use indexed snapshots before RPC fallback. */
   indexerBaseUrl?: string | null
 }
@@ -78,8 +81,9 @@ function toRawReceiptLog(log: ReceiptLogLike) {
  * Then polls for new events on the configured interval, extending the cursor.
  */
 export function useContractEvents(config: UseContractEventsConfig): UseContractEventsResult {
-  const { provider, contractAddress, pollIntervalMs, startBlock, indexerBaseUrl } = config
+  const { provider, contractAddress, pollIntervalMs, startBlock, chainId, indexerBaseUrl } = config
   const effectiveStartBlock = startBlock ?? 0
+  const effectiveChainId = chainId ?? 0
 
   const setEventsAtom = useSetAtom(crowdfundEventsAtom)
   const setLastBlockAtom = useSetAtom(lastFetchedBlockAtom)
@@ -91,8 +95,9 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
   // queryKey is stable per contract address + start block. Cursor lives inside
   // query data so it survives refetches without a parallel ref.
   const queryKey = useMemo(
-    () => ['crowdfundEvents', contractAddress, effectiveStartBlock, indexerBaseUrl ?? null] as const,
-    [contractAddress, effectiveStartBlock, indexerBaseUrl],
+    () =>
+      ['crowdfundEvents', effectiveChainId, contractAddress, effectiveStartBlock, indexerBaseUrl ?? null] as const,
+    [effectiveChainId, contractAddress, effectiveStartBlock, indexerBaseUrl],
   )
 
   const query = useQuery<EventsSnapshot, Error>({
@@ -101,6 +106,8 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
       if (!provider || !contractAddress) {
         return { events: EMPTY_EVENTS, cursor: effectiveStartBlock }
       }
+
+      const deployment = { chainId: effectiveChainId, contractAddress }
 
       let prior = queryClient.getQueryData<EventsSnapshot>(queryKey)
       if (prior === undefined) {
@@ -118,7 +125,7 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
               indexed.metadata.contractAddress.toLowerCase() === contractAddress.toLowerCase()
             const startBlockCovered = indexed.metadata.deployBlock <= effectiveStartBlock
             if (addressMatches && startBlockCovered) {
-              cacheEvents(indexed.events, indexed.metadata.verifiedBlock).catch(() => {})
+              cacheEvents(indexed.events, indexed.metadata.verifiedBlock, deployment).catch(() => {})
               return {
                 events: indexed.events,
                 cursor: indexed.metadata.verifiedBlock,
@@ -146,7 +153,7 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
         }
 
         // First run — seed cursor + events from IndexedDB.
-        const cached = await getCachedEvents().catch(() => ({
+        const cached = await getCachedEvents(deployment).catch(() => ({
           events: [] as CrowdfundEvent[],
           lastBlock: 0,
         }))
@@ -172,7 +179,7 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
       const latestBlock = Math.max(...newEvents.map((e) => e.blockNumber))
 
       // Persist to IndexedDB (non-fatal on failure).
-      cacheEvents(newEvents, latestBlock).catch(() => {})
+      cacheEvents(newEvents, latestBlock, deployment).catch(() => {})
 
       return { events: merged, cursor: latestBlock }
     },
@@ -196,8 +203,11 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
 
   const ingestReceiptLogs = useCallback(
     (logs: readonly ReceiptLogLike[]) => {
+      if (!contractAddress) return
       const receiptEvents = parseCrowdfundEvents(logs.map(toRawReceiptLog))
       if (receiptEvents.length === 0) return
+
+      const deployment = { chainId: effectiveChainId, contractAddress }
 
       queryClient.setQueryData<EventsSnapshot>(queryKey, (prior) => {
         const existing = new Set((prior?.events ?? []).map(dedupEventKey))
@@ -205,11 +215,11 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
         if (unique.length === 0) return prior
         const merged = [...(prior?.events ?? []), ...unique].sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
         const latestBlock = Math.max(prior?.cursor ?? effectiveStartBlock, ...unique.map((event) => event.blockNumber))
-        cacheEvents(unique, latestBlock).catch(() => {})
+        cacheEvents(unique, latestBlock, deployment).catch(() => {})
         return { events: merged, cursor: latestBlock }
       })
     },
-    [effectiveStartBlock, queryClient, queryKey],
+    [contractAddress, effectiveChainId, effectiveStartBlock, queryClient, queryKey],
   )
 
   const events = query.data?.events ?? EMPTY_EVENTS

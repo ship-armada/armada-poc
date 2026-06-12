@@ -43,6 +43,7 @@ import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { useWallet } from '@/hooks/useWallet'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
+import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
 import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
@@ -155,19 +156,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   const pipeline = useTxPipeline(lowerAddress)
   const phase = pipeline.state.phase
   const submitting = phase === 'running' || phase === 'paused'
-  // Latest phase + a stable reset handle, read by the close-cleanup below so a
-  // finished pipeline clears instead of re-attaching to a stale confirmation.
-  const phaseRef = useRef(phase)
-  phaseRef.current = phase
-  const resetPipeline = pipeline.reset
-  useEffect(() => {
-    return () => {
-      if (phaseRef.current !== 'running' && phaseRef.current !== 'paused') {
-        resetPipeline()
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Clear a finished pipeline when the /invite flow closes, so returning to the
+  // crowdfund page starts a fresh commit instead of re-attaching to the stale
+  // confirmation. (This flow isn't keyed by address, so the hook's ref handling
+  // is what makes the reset target the connected address.)
+  useResetPipelineOnClose(pipeline)
 
   // Step machine + transition state (mirrors the designer's
   // ParticipateFlowInviteLink — fading wraps each step swap). Re-attach: a live

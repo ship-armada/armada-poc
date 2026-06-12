@@ -25,6 +25,35 @@ const InviteLandingPage = lazy(() =>
 )
 const MockCommitterApp = lazy(() => import('@/MockCommitterApp'))
 
+// TODO: replace with the real Armada Discord invite link once it exists.
+const DISCORD_URL = 'https://discord.gg'
+
+// Crash-help footer for the Sentry error fallbacks: a copyable event reference
+// (only when Sentry actually captured + sent the event, so the user can quote
+// an id we can find in the feed) plus a Discord link for support.
+function CrashHelp({ eventId }: { eventId?: string }) {
+  return (
+    <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+      {isSentryEnabled() && eventId ? (
+        <div>
+          Reference: <code>{eventId}</code>
+        </div>
+      ) : null}
+      <div>
+        For help, visit our Discord server:{' '}
+        <a
+          href={DISCORD_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary underline"
+        >
+          {DISCORD_URL}
+        </a>
+      </div>
+    </div>
+  )
+}
+
 initSentry()
 
 // Every data hook already sets its own retry + refetchInterval; these defaults
@@ -66,20 +95,22 @@ if (!envCheck.ok) {
     </StrictMode>,
   )
 } else {
-  // Only claim the team was notified if Sentry is actually wired up.
-  const notified = isSentryEnabled() ? ' The team has been notified.' : ' Please refresh the page.'
-  const rootFallback = <div className="p-6">An unexpected error occurred.{notified}</div>
+  const rootFallback = ({ eventId }: { eventId: string }) => (
+    <div className="p-6">
+      An unexpected error occurred. Please refresh the page.
+      <CrashHelp eventId={eventId} />
+    </div>
+  )
 
   // The /invite landing page is the highest-stakes entry point and has no close
   // button — give it its own boundary with an escape hatch back to the app so a
   // landing-page crash doesn't drop the user into the bare root fallback.
-  const inviteFallback = (
+  const inviteFallback = ({ eventId }: { eventId: string }) => (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <div className="max-w-md space-y-4 text-center">
         <h1 className="text-destructive text-xl font-semibold">Something went wrong</h1>
-        <p className="text-muted-foreground">
-          This invite link couldn't be loaded.{isSentryEnabled() ? ' The team has been notified.' : ''}
-        </p>
+        <p className="text-muted-foreground">This invite link couldn't be loaded.</p>
+        <CrashHelp eventId={eventId} />
         <a href="/" className="text-primary underline">Go to the crowdfund</a>
       </div>
     </div>

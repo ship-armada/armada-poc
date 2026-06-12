@@ -144,6 +144,8 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     deployment?.contracts.crowdfund ?? null,
     lowerAddress,
     events,
+    wallet.isWrongNetwork,
+    wallet.switchNetwork,
     ingestReceiptLogs,
   )
 

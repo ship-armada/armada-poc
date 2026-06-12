@@ -447,6 +447,8 @@ export function App() {
     crowdfundAddress,
     wallet.address,
     events,
+    wallet.isWrongNetwork,
+    wallet.switchNetwork,
     ingestReceiptLogs,
   )
 
@@ -866,6 +868,8 @@ export function App() {
                 // (hasClaimed, allocation) can't show under another.
                 key={wallet.address ?? 'disconnected'}
                 walletConnected={wallet.connected}
+                isWrongNetwork={wallet.isWrongNetwork}
+                switchNetwork={wallet.switchNetwork}
                 walletAddress={wallet.address}
                 signer={wallet.signer}
                 provider={provider}

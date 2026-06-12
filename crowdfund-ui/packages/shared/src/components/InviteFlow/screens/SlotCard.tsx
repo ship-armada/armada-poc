@@ -64,6 +64,12 @@ interface SlotCardProps {
    * the internal mock (random address — preview only).
    */
   resolveEns?: (input: string) => Promise<SlotCardEnsResult>
+  /** Wallet is on a chain other than the hub. Empty slots replace the invite /
+   *  create-link buttons with a single "Switch network" action so the user
+   *  can't start a chain operation against the wrong network. */
+  isWrongNetwork?: boolean
+  /** Open the chain-switch affordance (RainbowKit chain modal). */
+  onSwitchNetwork?: () => void
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -105,6 +111,8 @@ export default function SlotCard({
   loading = false,
   defaultExpandedAction,
   resolveEns,
+  isWrongNetwork = false,
+  onSwitchNetwork,
 }: SlotCardProps) {
   const [expandedAction, setExpandedAction] = useState<ExpandedAction>(
     slot.status === 'empty' ? (defaultExpandedAction ?? null) : null
@@ -304,25 +312,38 @@ export default function SlotCard({
         {/* Right content */}
         <div className={styles.right}>
 
-          {/* Empty — action buttons */}
-          {slot.status === 'empty' && (
-            <div className={styles.actions}>
-              <Button
-                variant="secondary"
-                size="sm"
-                label="Create link"
-                showIcon={false}
-                onClick={() => toggleExpand('link')}
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                label="Invite onchain"
-                showIcon={false}
-                onClick={() => toggleExpand('onchain')}
-              />
-            </div>
-          )}
+          {/* Empty — action buttons. On the wrong network, both invite paths
+              need the hub chain, so offer a single "Switch network" action
+              (opens the RainbowKit chain modal) instead. */}
+          {slot.status === 'empty' &&
+            (isWrongNetwork ? (
+              <div className={styles.actions}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  label="Switch network"
+                  showIcon={false}
+                  onClick={() => onSwitchNetwork?.()}
+                />
+              </div>
+            ) : (
+              <div className={styles.actions}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  label="Create link"
+                  showIcon={false}
+                  onClick={() => toggleExpand('link')}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  label="Invite onchain"
+                  showIcon={false}
+                  onClick={() => toggleExpand('onchain')}
+                />
+              </div>
+            ))}
 
           {/* Link active */}
           {slot.status === 'link-active' && slot.link && (

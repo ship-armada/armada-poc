@@ -101,11 +101,13 @@ describe('useWallet', () => {
     // A wrong-network wallet is not "connected" for flow purposes.
     expect(result.current.connected).toBe(false)
     expect(result.current.error).toContain(String(HUB_CHAIN_ID))
-    // No signer is built against the wrong chain.
-    expect(result.current.signer).toBeNull()
+    // The signer reflects wallet connection, not chain correctness — it stays
+    // available so on-chain actions fail loudly (or prompt a switch) rather than
+    // silently no-op'ing. Chain correctness is conveyed via isWrongNetwork.
+    expect(result.current.signer).not.toBeNull()
   })
 
-  it('switchNetwork requests a switch to the hub chain', () => {
+  it('switchNetwork opens the RainbowKit chain modal', () => {
     mockUseAccount.mockReturnValue({
       address: '0xAbCdEf0000000000000000000000000000000001',
       isConnected: true,
@@ -114,6 +116,6 @@ describe('useWallet', () => {
     })
     const { result } = renderHook(() => useWallet())
     result.current.switchNetwork()
-    expect(switchChainAsync).toHaveBeenCalledWith({ chainId: HUB_CHAIN_ID })
+    expect(openChainModal).toHaveBeenCalled()
   })
 })

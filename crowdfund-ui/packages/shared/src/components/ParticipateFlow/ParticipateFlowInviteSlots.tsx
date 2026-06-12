@@ -73,6 +73,8 @@ export function ParticipateFlowInviteSlots({
                       copied={section.config.copiedId === slot.id}
                       loading={section.config.loadingId === slot.id}
                       resolveEns={section.config.resolveEns}
+                      isWrongNetwork={section.config.isWrongNetwork}
+                      onSwitchNetwork={section.config.onSwitchNetwork}
                     />
                   ))}
                 </div>

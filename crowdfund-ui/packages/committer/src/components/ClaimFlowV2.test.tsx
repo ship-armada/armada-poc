@@ -160,3 +160,27 @@ describe('ClaimFlowV2 read semantics', () => {
     expect(alloc).not.toHaveBeenCalled()
   })
 })
+
+describe('ClaimFlowV2 wrong-network gate', () => {
+  it('prompts a network switch (not "connect wallet") when connected on the wrong chain', () => {
+    const switchNetwork = vi.fn()
+    renderClaim(
+      <ClaimFlowV2
+        {...baseProps}
+        walletConnected={false}
+        isWrongNetwork
+        switchNetwork={switchNetwork}
+      />,
+    )
+    expect(screen.getByText('Wrong network')).toBeTruthy()
+    expect(screen.queryByText('Connect your wallet to claim')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /switch to/i }))
+    expect(switchNetwork).toHaveBeenCalled()
+  })
+
+  it('shows the connect-wallet copy when simply disconnected', () => {
+    renderClaim(<ClaimFlowV2 {...baseProps} walletConnected={false} isWrongNetwork={false} />)
+    expect(screen.getByText('Connect your wallet to claim')).toBeTruthy()
+    expect(screen.queryByText('Wrong network')).toBeNull()
+  })
+})

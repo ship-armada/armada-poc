@@ -20,6 +20,7 @@ import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { getExplorerUrl } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
+import { getHubNetworkLabel } from '@/config/network'
 import styles from './ClaimFlowV2.module.css'
 
 type ClaimMode = 'arm' | 'refund'
@@ -27,6 +28,11 @@ type FlowStep = 'review' | 'submit' | 'done'
 
 export interface ClaimFlowV2Props {
   walletConnected: boolean
+  /** Connected but on a chain other than the hub — gates to a "switch network"
+   *  prompt instead of the misleading "connect your wallet" copy. */
+  isWrongNetwork?: boolean
+  /** Trigger the hub-chain switch from the wrong-network gate. */
+  switchNetwork?: () => void
   walletAddress: string | null
   signer: Signer | null
   provider: JsonRpcProvider | null
@@ -57,6 +63,8 @@ const REFUND_STEPS = ['Review', 'Submit', 'Done']
 export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const {
     walletConnected,
+    isWrongNetwork,
+    switchNetwork,
     walletAddress,
     signer,
     provider,
@@ -237,6 +245,27 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // ── Gate states ─────────────────────────────────────────────────
 
   if (!walletConnected) {
+    // `walletConnected` is false both when disconnected and when on the wrong
+    // chain. Distinguish them so a connected-but-wrong-chain user gets a switch
+    // prompt rather than the misleading "connect your wallet" copy.
+    if (isWrongNetwork) {
+      return (
+        <CardShell title="Wrong network">
+          <p className={styles.gateBody}>
+            Switch to {getHubNetworkLabel()} to claim your ARM tokens or USDC refund.
+          </p>
+          <div className={styles.gateActions}>
+            <ArmadaButton
+              variant="secondary"
+              size="md"
+              label={`Switch to ${getHubNetworkLabel()}`}
+              showIcon={false}
+              onClick={() => switchNetwork?.()}
+            />
+          </div>
+        </CardShell>
+      )
+    }
     return (
       <CardShell title="Connect your wallet to claim">
         <p className={styles.gateBody}>

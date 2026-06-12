@@ -69,6 +69,11 @@ export interface CrowdfundInviteSlotConfig {
   resolveEns?: (
     input: string,
   ) => Promise<import('../InviteFlow/screens/SlotCard').SlotCardEnsResult>
+  /** Wallet is on a chain other than the hub. Empty slots show a "Switch
+   *  network" action instead of the invite / create-link buttons. */
+  isWrongNetwork?: boolean
+  /** Open the chain-switch affordance (RainbowKit chain modal). */
+  onSwitchNetwork?: () => void
 }
 
 /** One hop's worth of invite slots, paired with its display label / color +
@@ -1081,6 +1086,8 @@ export function CrowdfundExperience({
                             copied={section.config.copiedId === slot.id}
                             loading={section.config.loadingId === slot.id}
                             resolveEns={section.config.resolveEns}
+                            isWrongNetwork={section.config.isWrongNetwork}
+                            onSwitchNetwork={section.config.onSwitchNetwork}
                           />
                         ))}
                       </div>

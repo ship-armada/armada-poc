@@ -8,6 +8,7 @@ import { type StoredInviteLink } from '@/lib/inviteLinks'
 import { buildSlotRows } from '@/lib/slotRows'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { mapRevertToMessage } from '@/lib/revertMessages'
+import { getHubNetworkLabel } from '@/config/network'
 import {
   CROWDFUND_ABI_FRAGMENTS,
   HOP_CONFIGS,
@@ -55,6 +56,11 @@ function useHopSection(args: {
   crowdfundAddress: string | null
   address: string | null
   events: CrowdfundEvent[]
+  /** Wallet is on a chain other than the hub — invite actions must switch
+   *  networks before signing rather than send to (or sign for) the wrong chain. */
+  isWrongNetwork: boolean
+  /** Trigger the hub-chain switch (wagmi switchChain + RainbowKit fallback). */
+  switchNetwork: () => void
   copiedId: number | null
   loadingId: number | null
   setCopiedId: React.Dispatch<React.SetStateAction<number | null>>
@@ -70,6 +76,8 @@ function useHopSection(args: {
     crowdfundAddress,
     address,
     events,
+    isWrongNetwork,
+    switchNetwork,
     copiedId,
     loadingId,
     setCopiedId,
@@ -77,6 +85,18 @@ function useHopSection(args: {
     resolveEns,
     onReceiptLogs,
   } = args
+
+  // Invite actions (on-chain invite, link generation, revoke) all touch the
+  // signer, which targets the hub chain. On the wrong network, prompt a switch
+  // instead of signing/sending against the wrong chain.
+  const guardNetwork = useCallback((): boolean => {
+    if (!isWrongNetwork) return true
+    switchNetwork()
+    toast.error('Wrong network', {
+      description: `Switch to ${getHubNetworkLabel()} to manage invites.`,
+    })
+    return false
+  }, [isWrongNetwork, switchNetwork])
 
   const hop = position.hop
   // Total slot budget for this hop = `invitesReceived * maxInvites[hop]`.
@@ -151,6 +171,7 @@ function useHopSection(args: {
 
   const onGenerateLink = useCallback(
     async (slotId: number) => {
+      if (!guardNetwork()) return
       setLoadingId(slotId)
       try {
         await inviteLinks.createLink(hop)
@@ -158,7 +179,7 @@ function useHopSection(args: {
         setLoadingId((cur) => (cur === slotId ? null : cur))
       }
     },
-    [inviteLinks, hop, setLoadingId],
+    [inviteLinks, hop, setLoadingId, guardNetwork],
   )
 
   const onCopy = useCallback(
@@ -174,6 +195,7 @@ function useHopSection(args: {
 
   const onRevoke = useCallback(
     (slotId: number) => {
+      if (!guardNetwork()) return
       const link = linkBySlotId.get(slotId)
       if (!link) return
       setLoadingId(slotId)
@@ -181,11 +203,12 @@ function useHopSection(args: {
         .revokeLink(link.nonce)
         .finally(() => setLoadingId((cur) => (cur === slotId ? null : cur)))
     },
-    [linkBySlotId, inviteLinks, setLoadingId],
+    [linkBySlotId, inviteLinks, setLoadingId, guardNetwork],
   )
 
   const onInviteOnchain = useCallback(
     async (slotId: number, invitee: string, ensName?: string) => {
+      if (!guardNetwork()) return
       if (!signer || !crowdfundAddress) return
       setLoadingId(slotId)
       try {
@@ -213,7 +236,7 @@ function useHopSection(args: {
         setLoadingId((cur) => (cur === slotId ? null : cur))
       }
     },
-    [hop, signer, crowdfundAddress, inviteLinks, onReceiptLogs, setLoadingId],
+    [hop, signer, crowdfundAddress, inviteLinks, onReceiptLogs, setLoadingId, guardNetwork],
   )
 
   const config: CrowdfundInviteSlotConfig = {
@@ -225,6 +248,8 @@ function useHopSection(args: {
     onRevoke,
     onInviteOnchain,
     resolveEns,
+    isWrongNetwork,
+    onSwitchNetwork: switchNetwork,
   }
 
   return {
@@ -262,6 +287,11 @@ export function useInviteSlots(
    *  invite slots state survives page reload — derived from chain truth, not
    *  in-flight local state. */
   events: CrowdfundEvent[],
+  /** Wallet is on a chain other than the hub. Invite actions prompt a network
+   *  switch instead of signing/sending against the wrong chain. */
+  isWrongNetwork: boolean,
+  /** Trigger the hub-chain switch (wagmi switchChain + RainbowKit fallback). */
+  switchNetwork: () => void,
   /** `useContractEvents.ingestReceiptLogs` — when supplied, the on-chain
    *  invite path forwards the tx receipt's logs so the graph state (and any
    *  derived UI like the multi-hop green halo on the inviter node) updates
@@ -340,6 +370,8 @@ export function useInviteSlots(
     crowdfundAddress,
     address,
     events,
+    isWrongNetwork,
+    switchNetwork,
     copiedId,
     loadingId,
     setCopiedId,
@@ -356,6 +388,8 @@ export function useInviteSlots(
     crowdfundAddress,
     address,
     events,
+    isWrongNetwork,
+    switchNetwork,
     copiedId,
     loadingId,
     setCopiedId,
@@ -372,6 +406,8 @@ export function useInviteSlots(
     crowdfundAddress,
     address,
     events,
+    isWrongNetwork,
+    switchNetwork,
     copiedId,
     loadingId,
     setCopiedId,

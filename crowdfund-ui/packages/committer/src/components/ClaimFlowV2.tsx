@@ -2,6 +2,7 @@
 // ABOUTME: Provisional design: no designer mockup exists yet for Claim, so this composes Steps/Button/Tag with v1 ClaimTab behavior. Revisit when the designer ships claim screens.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Contract, type Signer, type JsonRpcProvider } from 'ethers'
 import {
   Step4Approve,
@@ -72,10 +73,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   } = props
 
   const [delegate, setDelegate] = useState<string>(walletAddress ?? '')
-  const [armAmount, setArmAmount] = useState<bigint>(0n)
-  const [refundAmount, setRefundAmount] = useState<bigint>(0n)
-  const [hasClaimed, setHasClaimed] = useState(false)
-  const [loading, setLoading] = useState(true)
+  // Set locally the instant a claim confirms, so the done screen shows without
+  // waiting for the `claimed` read to refetch.
+  const [justClaimed, setJustClaimed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const runningRef = useRef(false)
   // Once the user edits the delegate input, stop auto-filling it from the
@@ -90,9 +90,6 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
   // Warn before a refresh/tab-close drops the user while a claim is broadcasting.
   useBeforeUnloadGuard(submitting)
-  // True when the allocation read fails — so we show a retry, not a false "0 ARM".
-  const [readError, setReadError] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
 
   const [step, setStep] = useState<FlowStep>('review')
   const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
@@ -110,70 +107,53 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     }
   }, [walletAddress, delegate])
 
-  // Load allocation + claimed state on mount (and when prerequisites change).
-  // Read directly from the contract — same approach as v1 ClaimTab.
-  //
-  // The two reads are issued independently rather than via `Promise.all` so a
-  // revert on one doesn't sink the other. `computeAllocation()` reverts when
-  // the sale is cancelled (phase === 2) — without this split, a successful
-  // `claimRefund()` would never flip `hasClaimed` to true on revisit, leaving
-  // the user staring at the review screen and able to re-submit a tx the
-  // contract will reject.
-  useEffect(() => {
-    if (!provider || !crowdfundAddress || !walletAddress || phase < 1) {
-      setLoading(false)
-      return
-    }
-    let cancelled = false
-    setReadError(false)
-    // Reset to loading on every (re)run so a prior account's resolved state
-    // (hasClaimed / allocation) can't leak into the screen while the new
-    // prerequisites' reads are still in flight. The App-level address key
-    // remounts this component on account switch; this guards the same-mount
-    // refetch paths (reloadKey retry, phase/provider changes).
-    setLoading(true)
-    const fetchAllocation = async () => {
-      const contract = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, provider)
-
-      // `claimed[user]` is set by both `claim()` and `claimRefund()` — same
-      // gate for both success-path and refund-mode flows. Read it first so
-      // the post-claim short-circuit still fires when the allocation read
-      // can't run.
-      try {
-        const claimed = (await contract.claimed(walletAddress)) as boolean
-        if (!cancelled) setHasClaimed(claimed)
-      } catch {
-        // Non-fatal — leave `hasClaimed` at its initial value.
-      }
-
-      // `computeAllocation()` is only callable in `Phase.Finalized`. Skip the
-      // call entirely for cancelled (phase === 2) since it would revert; the
-      // refund-mode codepath only needs `totalCommitted` from props, not the
-      // allocation tuple.
+  // Load allocation + claimed state via react-query, keyed by account/contract/
+  // phase. The two reads run in parallel via `allSettled` so a revert on one
+  // doesn't sink the other: `claimed` failure is non-fatal (stays false) so the
+  // post-claim short-circuit still works, while a `computeAllocation()` RPC
+  // failure flags `readError` to show a retry instead of a misleading "0 ARM".
+  // `computeAllocation()` is only callable in `Phase.Finalized` (phase === 1);
+  // for cancelled (phase === 2) it's skipped (would revert), the refund path
+  // using `totalCommitted` from props. Keying by walletAddress means an account
+  // switch starts a fresh (loading) query — no prior account's state leaks.
+  const claimReadsEnabled = !!provider && !!crowdfundAddress && !!walletAddress && phase >= 1
+  const claimQuery = useQuery({
+    queryKey: ['claimReads', walletAddress, crowdfundAddress, phase],
+    enabled: claimReadsEnabled,
+    staleTime: 0,
+    retry: false,
+    queryFn: async () => {
+      const contract = new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, provider!)
+      const [claimedRes, allocRes] = await Promise.allSettled([
+        contract.claimed(walletAddress) as Promise<boolean>,
+        phase === 1
+          ? (contract.computeAllocation(walletAddress) as Promise<[bigint, bigint]>)
+          : Promise.resolve(null),
+      ])
+      const hasClaimed = claimedRes.status === 'fulfilled' ? claimedRes.value : false
+      let armAmount = 0n
+      let refundAmount = 0n
+      let readError = false
       if (phase === 1) {
-        try {
-          const allocation = (await contract.computeAllocation(walletAddress)) as [
-            bigint,
-            bigint,
-          ]
-          if (!cancelled) {
-            setArmAmount(allocation[0])
-            setRefundAmount(allocation[1])
-          }
-        } catch {
-          // RPC failure (not a contract "no allocation") — flag it so the UI
-          // shows a retry instead of a misleading "0 ARM".
-          if (!cancelled) setReadError(true)
+        if (allocRes.status === 'fulfilled' && allocRes.value) {
+          armAmount = allocRes.value[0]
+          refundAmount = allocRes.value[1]
+        } else if (allocRes.status === 'rejected') {
+          readError = true
         }
       }
+      return { hasClaimed, armAmount, refundAmount, readError }
+    },
+  })
 
-      if (!cancelled) setLoading(false)
-    }
-    fetchAllocation()
-    return () => {
-      cancelled = true
-    }
-  }, [provider, crowdfundAddress, walletAddress, phase, reloadKey])
+  const reads = claimQuery.data ?? { hasClaimed: false, armAmount: 0n, refundAmount: 0n, readError: false }
+  const hasClaimed = reads.hasClaimed || justClaimed
+  const armAmount = reads.armAmount
+  const refundAmount = reads.refundAmount
+  const readError = reads.readError
+  // `loading` only while an enabled query has no data yet (false when disabled,
+  // so the gate states render). An account switch re-keys the query → loading.
+  const loading = claimReadsEnabled && claimQuery.isPending
 
   // What the user actually gets back.
   const armDisplay = useMemo(() => formatArm(armAmount), [armAmount])
@@ -227,7 +207,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
     if (result.outcome === 'success') {
       setTxs([{ label: opLabel, status: 'done', hash: result.hash, explorerUrl }])
-      setHasClaimed(true)
+      setJustClaimed(true)
       // Fast-path the Allocated / RefundClaimed receipt log into the event store
       // and refresh balances.
       onReceiptLogs?.(result.logs ?? [])
@@ -327,7 +307,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           size="md"
           label="Retry"
           showIcon={false}
-          onClick={() => setReloadKey((k) => k + 1)}
+          onClick={() => void claimQuery.refetch()}
         />
       </CardShell>
     )

@@ -4,8 +4,19 @@
 
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { createElement, type ReactElement, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { JsonRpcProvider } from 'ethers'
 import { ClaimFlowV2, type ClaimFlowV2Props } from './ClaimFlowV2'
+
+// ClaimFlowV2 reads via react-query — each render gets a fresh client so query
+// caches don't leak across tests.
+function renderClaim(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children)
+  return render(ui, { wrapper })
+}
 
 // Per-test read implementations, driven by the connected address.
 let claimedFor: (addr: string) => Promise<boolean>
@@ -65,7 +76,7 @@ describe('ClaimFlowV2 account switch', () => {
     allocationFor = (addr) =>
       addr === ADDR_A ? Promise.resolve([0n, 0n]) : new Promise<[bigint, bigint]>(() => {})
 
-    const { rerender } = render(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
+    const { rerender } = renderClaim(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
     // A resolves to claimed → done screen.
     expect(await screen.findByText('ARM claimed.')).toBeTruthy()
 
@@ -86,7 +97,7 @@ describe('ClaimFlowV2 delegate field', () => {
     claimedFor = () => Promise.resolve(false)
     allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n])
 
-    render(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
+    renderClaim(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
 
     const input = (await screen.findByDisplayValue(ADDR_A)) as HTMLInputElement
 
@@ -101,7 +112,7 @@ describe('ClaimFlowV2 wallet rejection', () => {
     allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
     claimImpl = () => Promise.reject({ code: 'ACTION_REJECTED' })
 
-    render(<ClaimFlowV2 {...baseProps} signer={{} as never} walletAddress={ADDR_A} />)
+    renderClaim(<ClaimFlowV2 {...baseProps} signer={{} as never} walletAddress={ADDR_A} />)
 
     // Submit from the review step.
     const claimBtn = await screen.findByRole('button', { name: 'Claim ARM' })
@@ -112,5 +123,40 @@ describe('ClaimFlowV2 wallet rejection', () => {
     expect(await screen.findByDisplayValue(ADDR_A)).toBeTruthy()
     expect(screen.queryByText('Transaction reverted')).toBeNull()
     expect(screen.queryByText(/Cancelled in wallet/)).toBeNull()
+  })
+})
+
+describe('ClaimFlowV2 read semantics', () => {
+  it('shows a retry (not a false 0 ARM) when the allocation read fails', async () => {
+    claimedFor = () => Promise.resolve(false)
+    allocationFor = () => Promise.reject(new Error('rpc down'))
+
+    renderClaim(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText("Couldn't load your allocation")).toBeTruthy()
+  })
+
+  it('tolerates a failed claimed read (allocation still drives the review step)', async () => {
+    claimedFor = () => Promise.reject(new Error('rpc'))
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n])
+
+    renderClaim(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
+
+    // Allocation succeeded → review step (delegate input); the claimed failure
+    // is non-fatal and must not surface the allocation-error screen.
+    expect(await screen.findByDisplayValue(ADDR_A)).toBeTruthy()
+    expect(screen.queryByText("Couldn't load your allocation")).toBeNull()
+  })
+
+  it('skips computeAllocation when the sale is cancelled (phase 2)', async () => {
+    const alloc = vi.fn(() => Promise.resolve([0n, 0n] as [bigint, bigint]))
+    allocationFor = alloc
+    claimedFor = () => Promise.resolve(false)
+
+    renderClaim(<ClaimFlowV2 {...baseProps} phase={2} walletAddress={ADDR_A} />)
+
+    // Phase 2 → refund mode; with no committed USDC, the nothing-to-claim screen.
+    expect(await screen.findByText('No refund to claim.')).toBeTruthy()
+    expect(alloc).not.toHaveBeenCalled()
   })
 })

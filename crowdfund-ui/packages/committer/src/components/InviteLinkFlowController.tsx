@@ -4,8 +4,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { JsonRpcProvider, Contract, type TransactionResponse } from 'ethers'
-import { useAccount, useChainId, useWalletClient } from 'wagmi'
-import { useConnectModal, useChainModal } from '@rainbow-me/rainbowkit'
 import {
   ParticipateFlowInviteSlots,
   Step1Connect,
@@ -38,13 +36,13 @@ import {
 // another consumer needs them.
 import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
-import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { getHubRpcUrls, getHubChainId, getHubNetworkLabel, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
+import { useWallet } from '@/hooks/useWallet'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
 import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
@@ -81,22 +79,16 @@ function armToNumber(amount: bigint): number {
 
 export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControllerProps) {
   const navigate = useNavigate()
-  const { address: rawAddress } = useAccount()
-  const activeChainId = useChainId()
-  const { data: walletClient } = useWalletClient()
-  const { openConnectModal } = useConnectModal()
-  const { openChainModal } = useChainModal()
-
-  // Chain-aware: a wallet on the wrong chain is NOT "connected" for flow
-  // purposes — otherwise we'd advance to commit and build a signer against the
-  // wrong network. The wallet step renders a switch-network prompt instead.
-  const isConnected = Boolean(rawAddress)
-  const wrongChain = isConnected && activeChainId !== getHubChainId()
-  const walletConnected = isConnected && !wrongChain
-  const signer = useMemo(() => {
-    if (!walletClient || wrongChain) return null
-    try { return walletClientToSigner(walletClient) } catch { return null }
-  }, [walletClient, wrongChain])
+  // Wallet state via the shared hook (connection, signer, wrong-network
+  // detection, and one-click chain switch). A wallet on the wrong chain is NOT
+  // "connected" for flow purposes — otherwise we'd advance to commit and build
+  // a signer against the wrong network. The wallet step renders a
+  // switch-network prompt instead.
+  const wallet = useWallet()
+  const { signer } = wallet
+  const walletConnected = wallet.connected
+  const wrongChain = wallet.isWrongNetwork
+  const lowerAddress = wallet.address
 
   const [deployment, setDeployment] = useState<CrowdfundDeployment | null>(null)
   const [deployError, setDeployError] = useState<string | null>(null)
@@ -108,7 +100,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // would freeze at first-load values and miss any USDC activity that happens
   // on other tabs or after we just consumed the previous allowance.
   const allowanceState = useAllowance(
-    rawAddress ? rawAddress.toLowerCase() : null,
+    lowerAddress,
     deployment?.contracts.usdc ?? null,
     deployment?.contracts.crowdfund ?? null,
     deployment?.contracts.armToken ?? null,
@@ -136,7 +128,6 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     indexerBaseUrl: getIndexerUrl(),
   })
   const { nodes } = useGraphState()
-  const lowerAddress = rawAddress ? rawAddress.toLowerCase() : null
   const eligibility = useEligibility(lowerAddress, nodes)
   const localBlockTimestamp = useMemo(() => Math.floor(Date.now() / 1000), [events])
   const inviteLinks = useInviteLinks(
@@ -429,14 +420,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             <Step1SwitchNetwork
               showSteps
               networkLabel={getHubNetworkLabel()}
-              onSwitch={() => openChainModal?.()}
+              onSwitch={() => wallet.switchNetwork()}
             />
           )
         }
         return (
           <Step1Connect
             showSteps
-            onConnect={() => openConnectModal?.()}
+            onConnect={() => wallet.connect()}
           />
         )
 

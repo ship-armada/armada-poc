@@ -31,6 +31,7 @@ import {
   type HopVariant,
 } from '@armada/crowdfund-shared'
 import { getHubNetworkLabel } from '@/config/network'
+import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import type { HopPosition } from '@/hooks/useEligibility'
 
@@ -348,14 +349,14 @@ export function ParticipateFlowV2({
   // each non-zero hop gets its own commit. Ordered SEED → HOP-1 → HOP-2 to match
   // Step3Review. The pipeline store runs them sequentially and stops at any
   // failing row.
-  const buildSteps = (): TxStep[] => {
+  const buildSteps = (activeSigner: Signer): TxStep[] => {
     const totalBig = totalNewAmountUsdc
     const steps: TxStep[] = []
     if (needsApproval(totalBig)) {
       steps.push({
         label: `Approve ${formatUsdc(totalBig)} USDC`,
         send: () =>
-          new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, signer!).approve(crowdfundAddress!, totalBig),
+          new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, activeSigner).approve(crowdfundAddress!, totalBig),
         // Re-read allowance so the next attempt's skip-approval decision is real.
         after: refreshAllowance,
       })
@@ -369,7 +370,7 @@ export function ParticipateFlowV2({
           ? `Commit ${HOP_LABELS[p.hop]} (${formatUsdc(amountBig)})`
           : 'Commit participation',
         send: () =>
-          new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, signer!).commit(p.hop, amountBig),
+          new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, activeSigner).commit(p.hop, amountBig),
         onReceipt: (logs) => onReceiptLogs?.(logs),
       })
     }
@@ -378,17 +379,30 @@ export function ParticipateFlowV2({
 
   // Start (or retry) the pipeline. A defensive guard surfaces an actionable
   // error row instead of dropping into Step4's neutral state with nothing sent.
-  const startPipeline = () => {
-    if (!signer || !crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
+  const startPipeline = async () => {
+    if (!crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
       setAttemptError('Wallet not ready — reconnect and retry.')
       return
+    }
+    // Prefer the hook-derived signer; when it's missing, resolve one
+    // imperatively from the connector. useWalletClient's cached query can stay
+    // undefined for an entire session after a fresh connect (wagmi #2784 /
+    // #3825) even though the connector is fine — ask it directly at click time.
+    let activeSigner: Signer | null = signer
+    if (!activeSigner) {
+      try {
+        activeSigner = await resolveSigner()
+      } catch (err) {
+        setAttemptError(describeSignerError(err))
+        return
+      }
     }
     setAttemptError(null)
     if (phase === 'error') {
       pipeline.retry()
       return
     }
-    pipeline.run(buildSteps(), {
+    pipeline.run(buildSteps(activeSigner), {
       // Refresh balance + allowance so the navbar badge and any subsequent open
       // see the post-commit numbers and don't skip approval on stale allowance.
       onSuccess: () => {
@@ -542,7 +556,7 @@ export function ParticipateFlowV2({
         <Step3Review
           onNext={() => {
             setStep('approve')
-            startPipeline()
+            void startPipeline()
           }}
           onBack={() => setStep('commit')}
           disabled={submitting}
@@ -557,7 +571,7 @@ export function ParticipateFlowV2({
       <Step3Review
         onNext={() => {
           setStep('approve')
-          startPipeline()
+          void startPipeline()
         }}
         onBack={() => setStep('commit')}
         disabled={submitting}
@@ -588,7 +602,7 @@ export function ParticipateFlowV2({
         }}
         onRetry={() => {
           // Resume from the failed row (a succeeded approve isn't repeated).
-          startPipeline()
+          void startPipeline()
         }}
       />
     )

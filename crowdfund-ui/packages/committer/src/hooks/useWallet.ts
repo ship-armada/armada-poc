@@ -53,6 +53,13 @@ export function useWallet(): UseWalletResult {
     query: { enabled: isConnected && !isWrongNetwork },
   })
 
+  // TODO: invite-link signing (useInviteLinks.createLink/revokeLink) and direct
+  // invites (useInviteSlots.onInviteOnchain) still consume this hook-derived
+  // signer, which can be unavailable after a fresh connect (wagmi #2784/#3825).
+  // The commit/claim pipelines fall back to lib/resolveSigner at click time;
+  // migrate those invite paths the same way if the fresh-connect repro shows up
+  // there too.
+  //
   // The signer reflects wallet *connection*, not chain correctness — those are
   // separate concerns. Gating it on `isWrongNetwork` would make signer-using
   // actions (on-chain invites, invite-link signing) silently no-op on a chain

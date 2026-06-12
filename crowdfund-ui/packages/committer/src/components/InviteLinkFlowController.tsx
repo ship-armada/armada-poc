@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { JsonRpcProvider, Contract } from 'ethers'
+import { JsonRpcProvider, Contract, type Signer } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
   Step1Connect,
@@ -39,6 +39,7 @@ import { getHubRpcUrls, getHubChainId, getHubNetworkLabel, getIndexerUrl, getMax
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
+import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { useWallet } from '@/hooks/useWallet'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
@@ -324,14 +325,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // Build the approve(amount)? + commitWithInvite tx list. The store runs them
   // sequentially and stops at any failing row. Mirrors ParticipateFlowV2 but
   // with the inviter signature args on the commit call.
-  const buildSteps = (): TxStep[] => {
+  const buildSteps = (activeSigner: Signer): TxStep[] => {
     const amountBig = numberToUsdc(amount)
     const steps: TxStep[] = []
     if (amountBig > allowance) {
       steps.push({
         label: `Approve ${formatUsdc(amountBig)} USDC`,
         send: () =>
-          new Contract(deployment!.contracts.usdc, ERC20_ABI_FRAGMENTS, signer!).approve(
+          new Contract(deployment!.contracts.usdc, ERC20_ABI_FRAGMENTS, activeSigner).approve(
             deployment!.contracts.crowdfund,
             amountBig,
           ),
@@ -342,7 +343,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     steps.push({
       label: `Join & commit ${formatUsdc(amountBig)} at ${hopLabel(targetHop)}`,
       send: () =>
-        new Contract(deployment!.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, signer!).commitWithInvite(
+        new Contract(deployment!.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, activeSigner).commitWithInvite(
           inviteData.inviter,
           inviteData.fromHop,
           inviteData.nonce,
@@ -361,9 +362,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
 
   // Start (or retry) the pipeline. A defensive guard surfaces an actionable
   // error row instead of dropping into Step4's neutral state with nothing sent.
-  const startPipeline = () => {
-    // Distinguish the three blockers so the error is actionable (and tells us
-    // which one actually fired) rather than a lumped "wallet not ready".
+  const startPipeline = async () => {
+    // Distinguish the blockers so the error is actionable (and tells us which
+    // one actually fired) rather than a lumped "wallet not ready".
     if (amount <= 0) {
       setAttemptError('Enter an amount to commit.')
       return
@@ -372,16 +373,26 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       setAttemptError('Still loading the crowdfund — try again in a moment.')
       return
     }
-    if (!signer) {
-      setAttemptError('Wallet not ready — reconnect and retry.')
-      return
+    // Prefer the hook-derived signer; when it's missing, resolve one
+    // imperatively from the connector. useWalletClient's cached query can stay
+    // undefined for an entire session after a fresh connect (wagmi #2784 /
+    // #3825), which left this button dead with "wallet not ready" — the
+    // connector itself is fine, so ask it directly at click time.
+    let activeSigner: Signer | null = signer
+    if (!activeSigner) {
+      try {
+        activeSigner = await resolveSigner()
+      } catch (err) {
+        setAttemptError(describeSignerError(err))
+        return
+      }
     }
     setAttemptError(null)
     if (phase === 'error') {
       pipeline.retry()
       return
     }
-    pipeline.run(buildSteps())
+    pipeline.run(buildSteps(activeSigner))
   }
 
   // ── Step renderers ─────────────────────────────────────────────────────
@@ -497,7 +508,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             onBack={() => transitionTo('commit')}
             onNext={() => {
               transitionTo('approve')
-              startPipeline()
+              void startPipeline()
             }}
           />
         )
@@ -525,7 +536,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
               transitionTo('review')
             }}
             onRetry={() => {
-              startPipeline()
+              void startPipeline()
             }}
           />
         )

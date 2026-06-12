@@ -18,6 +18,7 @@ import {
 import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
+import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { getExplorerUrl } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
@@ -176,10 +177,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const runClaim = async () => {
     if (runningRef.current) return
     const opLabel = mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
-    if (!signer || !crowdfundAddress) {
+    if (!crowdfundAddress) {
       // Surface an error row instead of bailing into Step4's neutral state.
       setTxs([
-        { label: opLabel, status: 'error', errorMessage: 'Wallet not ready — reconnect and retry.' },
+        { label: opLabel, status: 'error', errorMessage: 'Still loading the crowdfund — try again in a moment.' },
       ])
       return
     }
@@ -201,10 +202,26 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     setSubmitting(true)
     setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Confirm in your wallet…' }])
 
+    // Prefer the hook-derived signer; when it's missing, resolve one
+    // imperatively from the connector. useWalletClient's cached query can stay
+    // undefined for an entire session after a fresh connect (wagmi #2784 /
+    // #3825) even though the connector is fine — ask it directly at click time.
+    let activeSigner: Signer | null = signer
+    if (!activeSigner) {
+      try {
+        activeSigner = await resolveSigner()
+      } catch (err) {
+        setTxs([{ label: opLabel, status: 'error', errorMessage: describeSignerError(err) }])
+        runningRef.current = false
+        setSubmitting(false)
+        return
+      }
+    }
+
     const explorerUrl = getExplorerUrl()
     const result = await sendAndWaitTx(
       () => {
-        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, activeSigner)
         return mode === 'arm' ? crowdfund.claim(delegateChecksum!) : crowdfund.claimRefund()
       },
       (hash) =>

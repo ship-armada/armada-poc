@@ -125,6 +125,16 @@ export function ParticipateFlowV2({
   // Synchronous re-entrancy guard — blocks a double-click from running the
   // pipeline twice (state updates are async and wouldn't guard in time).
   const runningRef = useRef(false)
+  // Cancellation for the in-flight pipeline. Set on unmount (modal close,
+  // keyed remount on account switch). Checked before every `send()` so an
+  // orphaned pipeline can't pop a wallet prompt with no UI behind it. An
+  // already-issued `tx.wait` is allowed to finish.
+  const cancelledRef = useRef(false)
+  useEffect(() => () => { cancelledRef.current = true }, [])
+  // Latest connected address, read by the pipeline to bail if it changes
+  // mid-run (defense in depth alongside the keyed remount).
+  const walletAddressRef = useRef(walletAddress)
+  useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
@@ -241,6 +251,9 @@ export function ParticipateFlowV2({
     }
     runningRef.current = true
     setSubmitting(true)
+    // Snapshot the address the pipeline runs for — compared before each send so
+    // an account switch mid-run can't sign with the old signer.
+    const startAddress = walletAddress
     // Reset the in-flight guard on every exit so Retry can re-run.
     const finish = () => {
       runningRef.current = false
@@ -289,6 +302,9 @@ export function ParticipateFlowV2({
       send: () => Promise<TransactionResponse>,
       onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
     ): Promise<boolean> => {
+      // Bail before issuing a new wallet prompt if the pipeline was cancelled
+      // (unmount) or the connected address changed mid-run.
+      if (cancelledRef.current || walletAddressRef.current !== startAddress) return false
       setRowStatus(index, { label, status: 'loading' })
       let txHash: string | undefined
       try {

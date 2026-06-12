@@ -80,6 +80,13 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // Once the user edits the delegate input, stop auto-filling it from the
   // wallet address — otherwise clearing the field instantly refills it.
   const hasUserEditedDelegate = useRef(false)
+  // Cancellation for the in-flight claim tx — set on unmount (navigating away
+  // from the claim page) so an orphaned run can't pop a wallet prompt. An
+  // already-issued `tx.wait` is allowed to settle.
+  const cancelledRef = useRef(false)
+  useEffect(() => () => { cancelledRef.current = true }, [])
+  const walletAddressRef = useRef(walletAddress)
+  useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
   // True when the allocation read fails — so we show a retry, not a false "0 ARM".
   const [readError, setReadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -197,12 +204,18 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     runningRef.current = true
     setSubmitting(true)
     setTxs([{ label: opLabel, status: 'loading' }])
+    // Snapshot the address this claim runs for — checked before the send so an
+    // account switch (or unmount) can't sign with the old signer.
+    const startAddress = walletAddress
 
     const setRowStatus = (patch: Partial<Step4Transaction>) =>
       setTxs((prev) => (prev ? [{ ...prev[0], ...patch }] : prev))
 
     let txHash: string | undefined
     try {
+      // Bail before prompting if the run was cancelled (unmount) or the
+      // connected account changed.
+      if (cancelledRef.current || walletAddressRef.current !== startAddress) return
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
       const tx: TransactionResponse =
         mode === 'arm' ? await crowdfund.claim(delegateChecksum) : await crowdfund.claimRefund()

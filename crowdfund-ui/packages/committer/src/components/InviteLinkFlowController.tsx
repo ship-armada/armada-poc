@@ -158,6 +158,15 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   const [submitting, setSubmitting] = useState(false)
   // Synchronous re-entrancy guard — blocks a double-click re-running the pipeline.
   const runningRef = useRef(false)
+  // Cancellation for the in-flight pipeline. Set on unmount so an orphaned
+  // pipeline (the /invite page navigated away) can't pop a wallet prompt for a
+  // later tx. An already-issued `tx.wait` is allowed to finish.
+  const cancelledRef = useRef(false)
+  useEffect(() => () => { cancelledRef.current = true }, [])
+  // Latest connected address — this flow is not keyed by address, so the
+  // pipeline compares against it to bail if the user switches accounts mid-run.
+  const walletAddressRef = useRef(lowerAddress)
+  useEffect(() => { walletAddressRef.current = lowerAddress }, [lowerAddress])
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const targetHop = inviteData.fromHop + 1
@@ -280,6 +289,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     }
     runningRef.current = true
     setSubmitting(true)
+    // Snapshot the address the pipeline runs for — compared before each send so
+    // an account switch mid-run can't sign with the old signer.
+    const startAddress = lowerAddress
     // Reset the in-flight guard on every exit so Retry can re-run.
     const finish = () => {
       runningRef.current = false
@@ -313,6 +325,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       send: () => Promise<TransactionResponse>,
       onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
     ): Promise<boolean> => {
+      // Bail before issuing a new wallet prompt if the pipeline was cancelled
+      // (unmount) or the connected address changed mid-run.
+      if (cancelledRef.current || walletAddressRef.current !== startAddress) return false
       setRowStatus(index, { label, status: 'loading' })
       let txHash: string | undefined
       try {

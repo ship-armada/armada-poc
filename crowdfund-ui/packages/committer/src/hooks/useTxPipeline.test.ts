@@ -7,6 +7,7 @@ import {
   runTxPipeline,
   setPipelineAttached,
   abortPipelinesForOtherAddress,
+  retryTxPipeline,
   clearAllPipelines,
   getPipelineState,
   type TxStep,
@@ -141,5 +142,27 @@ describe('tx pipeline store', () => {
 
     await waitFor(() => getPipelineState(store, A).phase === 'aborted')
     expect(b.send).not.toHaveBeenCalled()
+  })
+
+  it('retry resumes from the failed row and keeps earlier successes', async () => {
+    let commitAttempts = 0
+    const a = makeStep('approve', () => Promise.resolve({ status: 1, logs: [] }))
+    // commit1 reverts the first time, succeeds on retry.
+    const b = makeStep('commit1', () => {
+      commitAttempts += 1
+      return Promise.resolve({ status: commitAttempts === 1 ? 0 : 1, logs: [] })
+    })
+
+    runTxPipeline(store, { address: A, steps: [a.step, b.step] })
+    await waitFor(() => getPipelineState(store, A).phase === 'error')
+    expect(getPipelineState(store, A).rows[1].status).toBe('error')
+
+    retryTxPipeline(store, A)
+    await waitFor(() => getPipelineState(store, A).phase === 'success')
+
+    // approve sent once (not re-sent), commit retried.
+    expect(a.send).toHaveBeenCalledOnce()
+    expect(b.send).toHaveBeenCalledTimes(2)
+    expect(getPipelineState(store, A).rows.map((r) => r.status)).toEqual(['done', 'done'])
   })
 })

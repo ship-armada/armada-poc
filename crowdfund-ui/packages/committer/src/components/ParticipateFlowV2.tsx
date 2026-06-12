@@ -1,10 +1,10 @@
 // ABOUTME: v2 Participate flow page-level controller — wires the designer's Step1–Step5 screens to the committer's eligibility/balance/tx hooks.
 // ABOUTME: Multi-hop aware — per-hop amount entry, single approve(total) + one commit(hop, amount) per non-zero hop. Real approve + commit transactions through the controlled Step4Approve.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useDisconnect } from 'wagmi'
-import { Contract, type Signer, type TransactionResponse } from 'ethers'
+import { Contract, type Signer } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
   Step1Connect,
@@ -28,9 +28,8 @@ import {
   type UserHopPosition,
   type HopStatsData,
 } from '@armada/crowdfund-shared'
-import { mapRevertToMessage } from '@/lib/revertMessages'
-import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { getHubNetworkLabel } from '@/config/network'
+import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import type { HopPosition } from '@/hooks/useEligibility'
 
 type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation' | 'invites'
@@ -118,33 +117,38 @@ export function ParticipateFlowV2({
   onRunningChange,
   eventsLoading,
 }: ParticipateFlowV2Props) {
-  const [step, setStep] = useState<FlowStep>('wallet')
+  // The approve+commit pipeline lives in an address-keyed store so it survives a
+  // modal close (re-attaching on reopen), pauses (rather than prompting) while
+  // detached, and can't run twice for one address.
+  const pipeline = useTxPipeline(walletAddress)
+  const phase = pipeline.state.phase
+  const submitting = phase === 'running' || phase === 'paused'
+  // Re-attach: reopening while a pipeline is live lands directly on the tx surface.
+  const [step, setStep] = useState<FlowStep>(
+    phase === 'success' ? 'confirmation' : submitting ? 'approve' : 'wallet',
+  )
   const [amounts, setAmounts] = useState<AmountsByHop>(EMPTY_AMOUNTS)
-  const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  // Synchronous re-entrancy guard — blocks a double-click from running the
-  // pipeline twice (state updates are async and wouldn't guard in time).
-  const runningRef = useRef(false)
-  // Cancellation for the in-flight pipeline. Set on unmount (modal close,
-  // keyed remount on account switch). Checked before every `send()` so an
-  // orphaned pipeline can't pop a wallet prompt with no UI behind it. An
-  // already-issued `tx.wait` is allowed to finish.
-  const cancelledRef = useRef(false)
-  useEffect(() => () => { cancelledRef.current = true }, [])
-  // Latest connected address, read by the pipeline to bail if it changes
-  // mid-run (defense in depth alongside the keyed remount).
-  const walletAddressRef = useRef(walletAddress)
-  useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
+  // Defensive guard error when the user confirms with no signer/amount — shown
+  // as a Step4 error row without involving the pipeline store.
+  const [attemptError, setAttemptError] = useState<string | null>(null)
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
   // Surface in-flight status so the modal can confirm before closing. The
-  // cleanup resets the parent's flag on unmount — closing the modal mid-run
-  // would otherwise leave it stuck `true` until the next mount.
+  // cleanup resets the parent's flag on unmount — the pipeline keeps running in
+  // the store, and reopening the modal re-derives the flag from its phase.
   useEffect(() => {
     onRunningChange?.(submitting)
     return () => onRunningChange?.(false)
   }, [submitting, onRunningChange])
+
+  // Advance to confirmation once the pipeline completes — works even if it
+  // finished while the modal was closed (re-attach reads `success`).
+  useEffect(() => {
+    if (phase !== 'success' || step !== 'approve') return
+    const t = setTimeout(() => setStep('confirmation'), 600)
+    return () => clearTimeout(t)
+  }, [phase, step])
 
   // Eligible positions, filtered to renderable hops and ordered ascending.
   // Drives the per-hop entry rows in Step2 and the per-hop summary in Step3.
@@ -234,143 +238,58 @@ export function ParticipateFlowV2({
     saleSize,
   ])
 
-  // Run the real approve + N×commit pipeline. The approve covers the sum of
-  // all per-hop amounts so the user signs one allowance bump even on a
-  // multi-hop commit. Each non-zero hop gets its own commit tx; failures
-  // stop the pipeline at the failing row.
-  const runPipeline = async () => {
-    if (runningRef.current) return
-    if (!signer || !crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
-      // Don't bail silently into Step4's neutral state — surface an actionable
-      // error row so the user reconnects rather than waiting on nothing.
-      setTxs([
-        {
-          label: 'Commit participation',
-          status: 'error',
-          errorMessage: 'Wallet not ready — reconnect and retry.',
-        },
-      ])
-      return
-    }
-    runningRef.current = true
-    setSubmitting(true)
-    // Snapshot the address the pipeline runs for — compared before each send so
-    // an account switch mid-run can't sign with the old signer.
-    const startAddress = walletAddress
-    // Reset the in-flight guard on every exit so Retry can re-run.
-    const finish = () => {
-      runningRef.current = false
-      setSubmitting(false)
-    }
+  // Build the approve(total) + N×commit(hop, amount) tx list. The approve covers
+  // the sum so the user signs one allowance bump even on a multi-hop commit;
+  // each non-zero hop gets its own commit. Ordered SEED → HOP-1 → HOP-2 to match
+  // Step3Review. The pipeline store runs them sequentially and stops at any
+  // failing row.
+  const buildSteps = (): TxStep[] => {
     const totalBig = totalNewAmountUsdc
-    const approveLabel = `Approve ${formatUsdc(totalBig)} USDC`
-    const skipApproval = !needsApproval(totalBig)
-
-    // One commit row per non-zero hop, ordered ascending so the user reads
-    // SEED → HOP-1 → HOP-2 top-down (matches Step3Review's order).
-    const commits = renderablePositions
-      .filter((p) => (amounts[p.hop] ?? 0) > 0)
-      .map((p) => ({
-        hop: p.hop,
-        amountBig: numberToUsdc(amounts[p.hop]),
-        label: isMulti
-          ? `Commit ${HOP_LABELS[p.hop]} (${formatUsdc(numberToUsdc(amounts[p.hop]))})`
-          : 'Commit participation',
-      }))
-
-    const initial: Step4Transaction[] = [
-      ...(skipApproval ? [] : [{ label: approveLabel, status: 'loading' as const }]),
-      ...commits.map((c, i) => ({
-        label: c.label,
-        status: (skipApproval && i === 0 ? 'loading' : 'pending') as Step4Transaction['status'],
-      })),
-    ]
-    setTxs(initial)
-
-    const setRowStatus = (
-      index: number,
-      patch: Partial<Step4Transaction>,
-    ) => {
-      setTxs((prev) => {
-        if (!prev) return prev
-        const next = prev.slice()
-        next[index] = { ...next[index], ...patch }
-        return next
+    const steps: TxStep[] = []
+    if (needsApproval(totalBig)) {
+      steps.push({
+        label: `Approve ${formatUsdc(totalBig)} USDC`,
+        send: () =>
+          new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, signer!).approve(crowdfundAddress!, totalBig),
+        // Re-read allowance so the next attempt's skip-approval decision is real.
+        after: refreshAllowance,
       })
     }
-
-    const sendAndWait = async (
-      index: number,
-      label: string,
-      send: () => Promise<TransactionResponse>,
-      onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
-    ): Promise<boolean> => {
-      // Bail before issuing a new wallet prompt if the pipeline was cancelled
-      // (unmount) or the connected address changed mid-run.
-      if (cancelledRef.current || walletAddressRef.current !== startAddress) return false
-      setRowStatus(index, { label, status: 'loading' })
-      let txHash: string | undefined
-      try {
-        const tx = await send()
-        txHash = tx.hash
-        const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
-        if (!receipt || receipt.status === 0) {
-          setRowStatus(index, { status: 'error', errorMessage: 'Transaction reverted' })
-          return false
-        }
-        setRowStatus(index, { status: 'done' })
-        onSuccess?.(receipt.logs as unknown as readonly ReceiptLogLike[])
-        return true
-      } catch (err) {
-        if (isTxTimeoutError(err)) {
-          // The tx may still confirm — surface it as pending, never as success,
-          // and never auto-resubmit.
-          setRowStatus(index, {
-            status: 'error',
-            errorMessage: TX_PENDING_MESSAGE,
-            errorDetails: txHash ? `Transaction hash: ${txHash}` : undefined,
-          })
-          return false
-        }
-        setRowStatus(index, {
-          status: 'error',
-          errorMessage: mapRevertToMessage(err),
-          errorDetails: err instanceof Error ? err.message : String(err),
-        })
-        return false
-      }
+    for (const p of renderablePositions) {
+      const amount = amounts[p.hop] ?? 0
+      if (amount <= 0) continue
+      const amountBig = numberToUsdc(amount)
+      steps.push({
+        label: isMulti
+          ? `Commit ${HOP_LABELS[p.hop]} (${formatUsdc(amountBig)})`
+          : 'Commit participation',
+        send: () =>
+          new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, signer!).commit(p.hop, amountBig),
+        onReceipt: (logs) => onReceiptLogs?.(logs),
+      })
     }
+    return steps
+  }
 
-    let pipelineIndex = 0
-    if (!skipApproval) {
-      const usdc = new Contract(usdcAddress, ERC20_ABI_FRAGMENTS, signer)
-      const ok = await sendAndWait(pipelineIndex, approveLabel, () =>
-        usdc.approve(crowdfundAddress, totalBig),
-      )
-      if (!ok) { finish(); return }
-      await refreshAllowance()
-      pipelineIndex += 1
+  // Start (or retry) the pipeline. A defensive guard surfaces an actionable
+  // error row instead of dropping into Step4's neutral state with nothing sent.
+  const startPipeline = () => {
+    if (!signer || !crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
+      setAttemptError('Wallet not ready — reconnect and retry.')
+      return
     }
-
-    const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
-    for (const commit of commits) {
-      const ok = await sendAndWait(
-        pipelineIndex,
-        commit.label,
-        () => crowdfund.commit(commit.hop, commit.amountBig),
-        (logs) => onReceiptLogs?.(logs),
-      )
-      if (!ok) { finish(); return }
-      pipelineIndex += 1
+    setAttemptError(null)
+    if (phase === 'error') {
+      pipeline.retry()
+      return
     }
-
-    // Refresh balance + allowance so the navbar wallet badge and any
-    // subsequent modal open with the post-commit numbers and don't try to
-    // skip approval based on the now-consumed allowance.
-    await refreshAllowance()
-
-    finish()
-    setTimeout(() => setStep('confirmation'), 600)
+    pipeline.run(buildSteps(), {
+      // Refresh balance + allowance so the navbar badge and any subsequent open
+      // see the post-commit numbers and don't skip approval on stale allowance.
+      onSuccess: () => {
+        void refreshAllowance()
+      },
+    })
   }
 
   // ── Step renderers ───────────────────────────────────────────────
@@ -500,9 +419,8 @@ export function ParticipateFlowV2({
       return (
         <Step3Review
           onNext={() => {
-            setTxs(null)
             setStep('approve')
-            void runPipeline()
+            startPipeline()
           }}
           onBack={() => setStep('commit')}
           disabled={submitting}
@@ -516,9 +434,8 @@ export function ParticipateFlowV2({
     return (
       <Step3Review
         onNext={() => {
-          setTxs(null)
           setStep('approve')
-          void runPipeline()
+          startPipeline()
         }}
         onBack={() => setStep('commit')}
         disabled={submitting}
@@ -530,21 +447,26 @@ export function ParticipateFlowV2({
   }
 
   if (step === 'approve') {
+    // Guard error (no signer/amount) renders as a standalone error row; otherwise
+    // the rows come live from the pipeline store.
+    const rows: Step4Transaction[] = attemptError
+      ? [{ label: 'Commit participation', status: 'error', errorMessage: attemptError }]
+      : pipeline.state.rows
     return (
       <Step4Approve
         amount={totalNewAmountUsd}
-        txs={txs ?? undefined}
+        txs={rows.length ? rows : undefined}
         onDone={() => setStep('confirmation')}
         onBack={() => {
-          // Return to review with entered amounts preserved (amounts state is untouched).
-          setTxs(null)
+          // Return to review with entered amounts preserved (amounts state is
+          // untouched). Reset the pipeline so a fresh confirm starts clean.
+          pipeline.reset()
+          setAttemptError(null)
           setStep('review')
         }}
         onRetry={() => {
-          // Re-run the pipeline; runPipeline re-reads allowance so a succeeded
-          // approve isn't repeated.
-          setTxs(null)
-          void runPipeline()
+          // Resume from the failed row (a succeeded approve isn't repeated).
+          startPipeline()
         }}
       />
     )

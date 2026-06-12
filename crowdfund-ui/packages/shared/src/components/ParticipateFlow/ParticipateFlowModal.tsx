@@ -8,7 +8,8 @@ import styles from './ParticipateFlowModal.module.css'
 
 const EXIT_MS = 280
 
-const CLOSE_CONFIRM_MESSAGE = 'Transaction in progress — close anyway?'
+const CLOSE_CONFIRM_MESSAGE =
+  'A transaction is still running. It will continue, and you can reopen Participate to finish the remaining steps. Close?'
 
 export interface ParticipateFlowModalProps {
   open: boolean

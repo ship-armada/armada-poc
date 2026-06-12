@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { JsonRpcProvider, Contract, type TransactionResponse } from 'ethers'
+import { JsonRpcProvider, Contract } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
   Step1Connect,
@@ -13,7 +13,6 @@ import {
   Step4Approve,
   Step5Confirmation,
   INVITE_LINK_STEPS,
-  type ReceiptLogLike,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
@@ -36,14 +35,13 @@ import {
 // another consumer needs them.
 import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
-import { mapRevertToMessage } from '@/lib/revertMessages'
-import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { getHubRpcUrls, getHubChainId, getHubNetworkLabel, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { useWallet } from '@/hooks/useWallet'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
+import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
 import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
@@ -149,25 +147,23 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     ingestReceiptLogs,
   )
 
+  // The approve+commitWithInvite pipeline lives in the address-keyed store so it
+  // survives navigation and can't run twice for one address.
+  const pipeline = useTxPipeline(lowerAddress)
+  const phase = pipeline.state.phase
+  const submitting = phase === 'running' || phase === 'paused'
+
   // Step machine + transition state (mirrors the designer's
-  // ParticipateFlowInviteLink — fading wraps each step swap).
-  const [step, setStep] = useState<FlowStep>(walletConnected ? 'commit' : 'wallet')
+  // ParticipateFlowInviteLink — fading wraps each step swap). Re-attach: a live
+  // pipeline lands directly on the tx surface.
+  const [step, setStep] = useState<FlowStep>(
+    phase === 'success' ? 'confirmation' : submitting ? 'approve' : walletConnected ? 'commit' : 'wallet',
+  )
   const [renderStep, setRenderStep] = useState<FlowStep>(step)
   const [fading, setFading] = useState(false)
   const [amount, setAmount] = useState(0)
-  const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  // Synchronous re-entrancy guard — blocks a double-click re-running the pipeline.
-  const runningRef = useRef(false)
-  // Cancellation for the in-flight pipeline. Set on unmount so an orphaned
-  // pipeline (the /invite page navigated away) can't pop a wallet prompt for a
-  // later tx. An already-issued `tx.wait` is allowed to finish.
-  const cancelledRef = useRef(false)
-  useEffect(() => () => { cancelledRef.current = true }, [])
-  // Latest connected address — this flow is not keyed by address, so the
-  // pipeline compares against it to bail if the user switches accounts mid-run.
-  const walletAddressRef = useRef(lowerAddress)
-  useEffect(() => { walletAddressRef.current = lowerAddress }, [lowerAddress])
+  // Defensive guard error when the user confirms with no signer/deployment/amount.
+  const [attemptError, setAttemptError] = useState<string | null>(null)
   // Warn before a refresh/tab-close drops the user while a commit is broadcasting.
   useBeforeUnloadGuard(submitting)
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -272,140 +268,65 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
 
   useEffect(() => () => clearTransitionTimer(), [])
 
-  // Tx pipeline — runs `approve` (if needed) then `commitWithInvite`. Updates
-  // `txs` so Step4Approve renders the controlled animation while the wallet
-  // confirms each transaction. Mirrors the Path 2 pipeline in
-  // ParticipateFlowV2 but with the inviter signature args on the commit call.
-  const runPipeline = async () => {
-    if (runningRef.current) return
-    if (!signer || !deployment || amount <= 0) {
-      // Surface an actionable error row rather than dropping into Step4's
-      // neutral state with no transaction sent.
-      setTxs([
-        {
-          label: 'Join & commit',
-          status: 'error',
-          errorMessage: 'Wallet not ready — reconnect and retry.',
-        },
-      ])
-      return
-    }
-    runningRef.current = true
-    setSubmitting(true)
-    // Snapshot the address the pipeline runs for — compared before each send so
-    // an account switch mid-run can't sign with the old signer.
-    const startAddress = lowerAddress
-    // Reset the in-flight guard on every exit so Retry can re-run.
-    const finish = () => {
-      runningRef.current = false
-      setSubmitting(false)
-    }
+  // Advance to confirmation once the pipeline completes — works even if it
+  // finished after the user navigated away and back (re-attach reads `success`).
+  useEffect(() => {
+    if (phase !== 'success' || step !== 'approve') return
+    const t = setTimeout(() => transitionTo('confirmation'), 600)
+    return () => clearTimeout(t)
+  }, [phase, step, transitionTo])
+
+  // Build the approve(amount)? + commitWithInvite tx list. The store runs them
+  // sequentially and stops at any failing row. Mirrors ParticipateFlowV2 but
+  // with the inviter signature args on the commit call.
+  const buildSteps = (): TxStep[] => {
     const amountBig = numberToUsdc(amount)
-    const approveLabel = `Approve ${formatUsdc(amountBig)} USDC`
-    const commitLabel = `Join & commit ${formatUsdc(amountBig)} at ${hopLabel(targetHop)}`
-
-    const skipApproval = amountBig <= allowance
-    const initial: Step4Transaction[] = skipApproval
-      ? [{ label: commitLabel, status: 'loading' }]
-      : [
-          { label: approveLabel, status: 'loading' },
-          { label: commitLabel, status: 'pending' },
-        ]
-    setTxs(initial)
-
-    const setRowStatus = (index: number, patch: Partial<Step4Transaction>) => {
-      setTxs((prev) => {
-        if (!prev) return prev
-        const next = prev.slice()
-        next[index] = { ...next[index], ...patch }
-        return next
+    const steps: TxStep[] = []
+    if (amountBig > allowance) {
+      steps.push({
+        label: `Approve ${formatUsdc(amountBig)} USDC`,
+        send: () =>
+          new Contract(deployment!.contracts.usdc, ERC20_ABI_FRAGMENTS, signer!).approve(
+            deployment!.contracts.crowdfund,
+            amountBig,
+          ),
+        // Re-read allowance so a retry's skip-approval decision sees the real value.
+        after: allowanceState.refresh,
       })
     }
-
-    const sendAndWait = async (
-      index: number,
-      label: string,
-      send: () => Promise<TransactionResponse>,
-      onSuccess?: (logs: readonly ReceiptLogLike[]) => void,
-    ): Promise<boolean> => {
-      // Bail before issuing a new wallet prompt if the pipeline was cancelled
-      // (unmount) or the connected address changed mid-run.
-      if (cancelledRef.current || walletAddressRef.current !== startAddress) return false
-      setRowStatus(index, { label, status: 'loading' })
-      let txHash: string | undefined
-      try {
-        const tx = await send()
-        txHash = tx.hash
-        const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
-        if (!receipt || receipt.status === 0) {
-          setRowStatus(index, { status: 'error', errorMessage: 'Transaction reverted' })
-          return false
-        }
-        setRowStatus(index, { status: 'done' })
-        // ethers v6 receipt.logs is structurally compatible with
-        // `ReceiptLogLike`; the `index` vs `logIndex` field name differs.
-        onSuccess?.(receipt.logs as unknown as readonly ReceiptLogLike[])
-        return true
-      } catch (err) {
-        if (isTxTimeoutError(err)) {
-          setRowStatus(index, {
-            status: 'error',
-            errorMessage: TX_PENDING_MESSAGE,
-            errorDetails: txHash ? `Transaction hash: ${txHash}` : undefined,
-          })
-          return false
-        }
-        setRowStatus(index, {
-          status: 'error',
-          errorMessage: mapRevertToMessage(err),
-          errorDetails: err instanceof Error ? err.message : String(err),
-        })
-        return false
-      }
-    }
-
-    let cursor = 0
-    if (!skipApproval) {
-      const ok = await sendAndWait(cursor, approveLabel, async () => {
-        const usdc = new Contract(deployment.contracts.usdc, ERC20_ABI_FRAGMENTS, signer)
-        return usdc.approve(deployment.contracts.crowdfund, amountBig)
-      })
-      if (!ok) { finish(); return }
-      // Re-read from chain so the next step's `skipApproval` decision (and
-      // any subsequent attempt) sees the real allowance, not an optimistic guess.
-      await allowanceState.refresh()
-      cursor += 1
-    }
-
-    const commitOk = await sendAndWait(
-      cursor,
-      commitLabel,
-      async () => {
-        const crowdfund = new Contract(deployment.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, signer)
-        return crowdfund.commitWithInvite(
+    steps.push({
+      label: `Join & commit ${formatUsdc(amountBig)} at ${hopLabel(targetHop)}`,
+      send: () =>
+        new Contract(deployment!.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, signer!).commitWithInvite(
           inviteData.inviter,
           inviteData.fromHop,
           inviteData.nonce,
           inviteData.deadline,
           inviteData.signature,
           amountBig,
-        )
-      },
-      // Fast-path the Invited + Committed events into the graph so the user
-      // has a recognized hop position the moment we hit Step5 — without this,
-      // `useEligibility` doesn't see the position until the next event poll
-      // and the post-commit invite-slots step wouldn't have a config.
-      (logs) => ingestReceiptLogs(logs),
-    )
-    if (!commitOk) { finish(); return }
+        ),
+      // Fast-path the Invited + Committed events into the graph so the user has a
+      // recognized hop position the moment we hit Step5.
+      onReceipt: (logs) => ingestReceiptLogs(logs),
+      // Refresh balance + allowance after the commit consumes the spend cap.
+      after: allowanceState.refresh,
+    })
+    return steps
+  }
 
-    // Refresh balance + allowance after the commit consumes the spend cap so
-    // the navbar wallet badge and any subsequent action see the post-tx state
-    // immediately, not on the next poll tick.
-    await allowanceState.refresh()
-
-    finish()
-    setTimeout(() => transitionTo('confirmation'), 600)
+  // Start (or retry) the pipeline. A defensive guard surfaces an actionable
+  // error row instead of dropping into Step4's neutral state with nothing sent.
+  const startPipeline = () => {
+    if (!signer || !deployment || amount <= 0) {
+      setAttemptError('Wallet not ready — reconnect and retry.')
+      return
+    }
+    setAttemptError(null)
+    if (phase === 'error') {
+      pipeline.retry()
+      return
+    }
+    pipeline.run(buildSteps())
   }
 
   // ── Step renderers ─────────────────────────────────────────────────────
@@ -488,34 +409,40 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             disabled={submitting}
             onBack={() => transitionTo('commit')}
             onNext={() => {
-              setTxs(null)
               transitionTo('approve')
-              void runPipeline()
+              startPipeline()
             }}
           />
         )
       }
 
-      case 'approve':
+      case 'approve': {
+        // Guard error renders as a standalone row; otherwise rows come live from
+        // the pipeline store.
+        const rows: Step4Transaction[] = attemptError
+          ? [{ label: 'Join & commit', status: 'error', errorMessage: attemptError }]
+          : pipeline.state.rows
         return (
           <Step4Approve
             steps={MODAL_STEPS}
             stepIndex={4}
             amount={amount}
-            txs={txs ?? undefined}
+            txs={rows.length ? rows : undefined}
             onDone={() => transitionTo('confirmation')}
             onBack={() => {
               // Back to review preserves the entered amount; also the only escape
-              // on the /invite page (no close button).
-              setTxs(null)
+              // on the /invite page (no close button). Reset so a fresh confirm
+              // starts clean.
+              pipeline.reset()
+              setAttemptError(null)
               transitionTo('review')
             }}
             onRetry={() => {
-              setTxs(null)
-              void runPipeline()
+              startPipeline()
             }}
           />
         )
+      }
 
       case 'confirmation': {
         const estimatedArm = Math.round(estimateArmForAmount(amount))

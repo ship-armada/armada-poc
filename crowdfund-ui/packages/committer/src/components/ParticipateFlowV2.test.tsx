@@ -4,7 +4,9 @@
 
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { getDefaultStore } from 'jotai'
 import { ParticipateFlowV2, type ParticipateFlowV2Props } from './ParticipateFlowV2'
+import { clearAllPipelines, pipelinesAtom } from '@/hooks/useTxPipeline'
 import type { HopPosition } from '@/hooks/useEligibility'
 
 // The wallet step renders RainbowKit's ConnectButton.Custom — stub the wallet
@@ -92,11 +94,15 @@ function makeProps(): ParticipateFlowV2Props {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The pipeline store is module-global — clear engine records and the atom so
+  // a pipeline from a prior test doesn't bleed into the next render.
+  clearAllPipelines()
+  getDefaultStore().set(pipelinesAtom, {})
 })
 
-describe('ParticipateFlowV2 pipeline cancellation', () => {
-  it('does not send the commit tx after the flow unmounts mid-pipeline', async () => {
-    // approve's receipt is deferred so we can unmount while it is "in flight".
+describe('ParticipateFlowV2 pipeline detach/resume', () => {
+  it('pauses (no commit prompt) when the flow detaches mid-pipeline, and resumes on remount', async () => {
+    // approve's receipt is deferred so we can detach while it is "in flight".
     let resolveApproveWait: ((r: unknown) => void) | undefined
     const approveTx = {
       hash: '0xapprove',
@@ -110,6 +116,7 @@ describe('ParticipateFlowV2 pipeline cancellation', () => {
       Promise.resolve({ hash: '0xcommit', wait: () => Promise.resolve({ status: 1, logs: [] }) })
 
     const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
+    const firstRefresh = refreshAllowance
 
     // Wallet → commit auto-advance; enter an amount and go to review.
     const input = (await screen.findByRole('textbox')) as HTMLInputElement
@@ -119,22 +126,25 @@ describe('ParticipateFlowV2 pipeline cancellation', () => {
     // Review → start the pipeline (approve, then commit).
     fireEvent.click(screen.getByRole('button', { name: 'Approve and commit' }))
 
-    // Let the approve send fire and park on its receipt wait.
     await act(async () => {})
     expect(approveSpy).toHaveBeenCalledTimes(1)
     expect(commitSpy).not.toHaveBeenCalled()
 
-    // Orphan the pipeline (e.g. modal close / account switch unmounts the flow),
-    // then let approve's receipt resolve.
+    // Detach the flow (modal closed) while approve's receipt is pending, then
+    // let it resolve. The engine must pause before the commit send — no wallet
+    // prompt with no UI behind it.
     unmount()
     await act(async () => {
       resolveApproveWait?.({ status: 1, logs: [] })
     })
-
-    // The approve completed (refreshAllowance ran), but the cancelled pipeline
-    // must never prompt for the commit tx.
-    expect(refreshAllowance).toHaveBeenCalled()
+    expect(firstRefresh).toHaveBeenCalled() // approve's `after` ran
     expect(commitSpy).not.toHaveBeenCalled()
+
+    // Reopen the flow (remount, same address) → re-attach resumes the pipeline,
+    // which now prompts for the commit it had parked on.
+    render(<ParticipateFlowV2 {...makeProps()} />)
+    await act(async () => {})
+    expect(commitSpy).toHaveBeenCalledTimes(1)
   })
 
   it('clears the parent running flag when unmounted mid-pipeline', async () => {

@@ -188,6 +188,26 @@ export function abortPipelinesForOtherAddress(store: Store, liveAddress: string 
   }
 }
 
+/**
+ * Re-attempt a pipeline that stopped on an error, resuming from the failed row
+ * (earlier successes are kept — no re-sends). No-op unless the pipeline is in
+ * the `error` phase.
+ */
+export function retryTxPipeline(store: Store, address: string): void {
+  const rec = records.get(address)
+  if (!rec || rec.running) return
+  if (readState(store, address).phase !== 'error') return
+  rec.aborted = false
+  rec.attached = true
+  setRow(store, address, rec.cursor, {
+    status: 'loading',
+    errorMessage: undefined,
+    errorDetails: undefined,
+  })
+  setPhase(store, address, 'running')
+  void drive(store, address)
+}
+
 /** Clear a single address's pipeline back to idle (e.g. after the user dismisses it). */
 export function resetTxPipeline(store: Store, address: string): void {
   records.delete(address)
@@ -212,6 +232,7 @@ export function getPipelineState(store: Store, address: string | null): Pipeline
 export interface UseTxPipelineResult {
   state: PipelineState
   run: (steps: TxStep[], opts?: { onSuccess?: () => void | Promise<void> }) => void
+  retry: () => void
   reset: () => void
 }
 
@@ -239,9 +260,13 @@ export function useTxPipeline(address: string | null): UseTxPipelineResult {
     [store, address],
   )
 
+  const retry = useCallback(() => {
+    if (address) retryTxPipeline(store, address)
+  }, [store, address])
+
   const reset = useCallback(() => {
     if (address) resetTxPipeline(store, address)
   }, [store, address])
 
-  return { state, run, reset }
+  return { state, run, retry, reset }
 }

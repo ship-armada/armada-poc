@@ -2,6 +2,7 @@
 // ABOUTME: Renders three header-nav pages: Network, Participate, and My Position.
 
 import { useState, useEffect, useMemo } from 'react'
+import { useStore } from 'jotai'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
@@ -41,6 +42,7 @@ import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
+import { abortPipelinesForOtherAddress } from '@/hooks/useTxPipeline'
 import { PageNav, type Page } from '@/appNav'
 
 /**
@@ -379,6 +381,15 @@ export function App() {
 
   // Wallet
   const wallet = useWallet()
+
+  // Abort any pipeline left running/paused for a different account when the
+  // wallet switches — its in-flight tx still settles, but no stale-signer send
+  // fires. (A modal close is a detach/pause, handled by the flow; this is the
+  // hard account-change abort.)
+  const jotaiStore = useStore()
+  useEffect(() => {
+    abortPipelinesForOtherAddress(jotaiStore, wallet.address)
+  }, [jotaiStore, wallet.address])
 
   // Wallet-specific hooks
   const eligibility = useEligibility(wallet.address, nodes)

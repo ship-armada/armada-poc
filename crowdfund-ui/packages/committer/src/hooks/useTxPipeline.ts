@@ -257,6 +257,43 @@ export function retryTxPipeline(store: Store, address: string): void {
   void drive(store, address)
 }
 
+/**
+ * Apply a background watcher's resolution of a tx (identified by hash) to the
+ * pipeline row it belongs to. Used by the post-timeout watcher: a row left in
+ * the "still pending" error state flips to done (or reverted) once the tx lands.
+ * On confirmation, if every row is now done the pipeline completes (`success`).
+ */
+export function applyWatchedTxResult(
+  store: Store,
+  txHash: string,
+  outcome: 'confirmed' | 'reverted',
+): void {
+  const all = store.get(pipelinesAtom)
+  for (const address of Object.keys(all)) {
+    const idx = all[address].rows.findIndex((r) => r.hash === txHash)
+    if (idx === -1) continue
+    if (outcome === 'confirmed') {
+      setRow(store, address, idx, {
+        status: 'done',
+        phaseLabel: undefined,
+        errorMessage: undefined,
+        errorDetails: undefined,
+      })
+      if (readState(store, address).rows.every((r) => r.status === 'done')) {
+        setPhase(store, address, 'success')
+      }
+    } else {
+      setRow(store, address, idx, {
+        status: 'error',
+        phaseLabel: undefined,
+        errorMessage: 'Transaction reverted',
+      })
+      setPhase(store, address, 'error')
+    }
+    return
+  }
+}
+
 /** Clear a single address's pipeline back to idle (e.g. after the user dismisses it). */
 export function resetTxPipeline(store: Store, address: string): void {
   records.delete(address)

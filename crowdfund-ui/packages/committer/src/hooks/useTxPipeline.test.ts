@@ -9,6 +9,7 @@ import {
   setPipelineAttached,
   abortPipelinesForOtherAddress,
   retryTxPipeline,
+  applyWatchedTxResult,
   clearAllPipelines,
   getPipelineState,
   type TxStep,
@@ -189,6 +190,32 @@ describe('tx pipeline store', () => {
     waitGate.resolve({ status: 1, logs: [] })
     await waitFor(() => getPipelineState(store, A).phase === 'success')
     expect(getPipelineState(store, A).rows[0].phaseLabel).toBeUndefined()
+  })
+
+  it('flips a timed-out row to done (and completes) when the watcher confirms it', async () => {
+    // send broadcasts (hash known), but the receipt wait times out.
+    const a = makeStep('commit', () => Promise.reject({ code: 'TIMEOUT' }))
+    runTxPipeline(store, { address: A, steps: [a.step] })
+
+    await waitFor(() => getPipelineState(store, A).phase === 'error')
+    const row = getPipelineState(store, A).rows[0]
+    expect(row.status).toBe('error') // "still pending" surfaces as an error row
+    expect(row.hash).toBe('0xcommit')
+
+    // The background watcher later sees the tx confirm.
+    applyWatchedTxResult(store, '0xcommit', 'confirmed')
+    expect(getPipelineState(store, A).rows[0].status).toBe('done')
+    expect(getPipelineState(store, A).phase).toBe('success')
+  })
+
+  it('flips a timed-out row to a revert when the watcher sees it fail', async () => {
+    const a = makeStep('commit', () => Promise.reject({ code: 'TIMEOUT' }))
+    runTxPipeline(store, { address: A, steps: [a.step] })
+    await waitFor(() => getPipelineState(store, A).phase === 'error')
+
+    applyWatchedTxResult(store, '0xcommit', 'reverted')
+    expect(getPipelineState(store, A).rows[0].status).toBe('error')
+    expect(getPipelineState(store, A).rows[0].errorMessage).toBe('Transaction reverted')
   })
 
   it('retry resumes from the failed row and keeps earlier successes', async () => {

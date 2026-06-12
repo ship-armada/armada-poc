@@ -19,13 +19,14 @@ const RESCAN_MS = 4000
  * Resume-watch persisted pending txs for `chainId` via the fallback `provider`
  * (not the wallet transport). Re-scans periodically so txs persisted mid-session
  * (e.g. a `tx.wait` timeout) are picked up too. On resolution a tx is dropped
- * from storage and `onResolved` fires (refresh balances/allowance). Returns the
- * watched list (pending + this session's resolved) for the pending-tx chip.
+ * from storage and `onResolved(txHash, status)` fires (refresh balances and
+ * flip the matching pipeline row). Returns the watched list (pending + this
+ * session's resolved) for the pending-tx chip.
  */
 export function usePendingTxWatcher(
   provider: JsonRpcProvider | null,
   chainId: number,
-  onResolved?: () => void,
+  onResolved?: (txHash: string, status: WatchedTxStatus) => void,
 ): WatchedTx[] {
   const [watched, setWatched] = useState<WatchedTx[]>([])
   // Hashes already being awaited, so a re-scan doesn't double-watch.
@@ -65,7 +66,7 @@ export function usePendingTxWatcher(
               prev.map((w) => (w.txHash === t.txHash ? { ...w, status } : w)),
             )
             removePendingTx(t.txHash)
-            onResolvedRef.current?.()
+            onResolvedRef.current?.(t.txHash, status)
           })
           .catch(() => {
             // Transient RPC failure — drop the watch guard so a later scan retries.

@@ -1,7 +1,7 @@
 // ABOUTME: Root component for the crowdfund committer app.
 // ABOUTME: Renders three header-nav pages: Network, Participate, and My Position.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useStore, useAtomValue } from 'jotai'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
@@ -44,7 +44,7 @@ import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
-import { abortPipelinesForOtherAddress, pipelinesAtom } from '@/hooks/useTxPipeline'
+import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
 import { usePendingTxWatcher } from '@/hooks/usePendingTxWatcher'
 import { PageNav, type Page } from '@/appNav'
 
@@ -399,10 +399,20 @@ export function App() {
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider, pollInterval)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp, events)
 
-  // Resume-watch any tx that was broadcast but not yet confirmed when the page
-  // last unloaded (persisted in sessionStorage), via the fallback provider. On
-  // confirmation, refresh balances/allowance.
-  const watchedTxs = usePendingTxWatcher(provider, getHubChainId(), allowance.refresh)
+  // Resume-watch any tx that was broadcast but not yet confirmed — survivors of
+  // a reload (persisted in sessionStorage) and txs whose `tx.wait` timed out
+  // mid-session — via the fallback provider. On resolution, refresh balances and
+  // flip the matching pipeline row to done/reverted (post-timeout watcher).
+  const onWatchedTxResolved = useCallback(
+    (txHash: string, status: 'pending' | 'confirmed' | 'failed') => {
+      void allowance.refresh()
+      if (status !== 'pending') {
+        applyWatchedTxResult(jotaiStore, txHash, status === 'confirmed' ? 'confirmed' : 'reverted')
+      }
+    },
+    [allowance, jotaiStore],
+  )
+  const watchedTxs = usePendingTxWatcher(provider, getHubChainId(), onWatchedTxResolved)
   const pipelines = useAtomValue(pipelinesAtom)
   // A single header chip: prefer an unresolved watched tx; otherwise nudge to
   // reopen Participate if a pipeline is still live (running/paused) off-screen.

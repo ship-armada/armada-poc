@@ -3,6 +3,8 @@
 
 import { cn } from '@armada/crowdfund-shared'
 import { NavBar, type NavBarItem } from '@armada/ui'
+import { DiscordIcon, XIcon } from '@/components/SocialIcons'
+import { DISCORD_URL, X_URL } from '@/config/socials'
 
 export type ActionTab = 'commit' | 'invite'
 export type Page = 'network' | 'participate' | 'claim' | 'my-position'
@@ -55,7 +57,32 @@ export function PageNav({
         onClick: () => onChange(id),
       }
     })
-    return <NavBar items={items} />
+    return (
+      <div className="flex items-center gap-4">
+        <NavBar items={items} />
+        {/* Socials, to the right of the Crowdfund nav. */}
+        <div className="flex items-center gap-3">
+          <a
+            href={DISCORD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Armada on Discord"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <DiscordIcon className="size-[18px]" />
+          </a>
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Armada on X"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <XIcon className="size-[18px]" />
+          </a>
+        </div>
+      </div>
+    )
   }
 
   return (

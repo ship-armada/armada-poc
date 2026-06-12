@@ -19,8 +19,7 @@ describe('InviteLandingPage footer', () => {
     expect(screen.getByRole('button', { name: 'Crowdfund' })).toBeTruthy()
 
     const discord = screen.getByRole('link', { name: 'Armada on Discord' })
-    // Placeholder until the real Armada Discord invite link exists.
-    expect(discord).toHaveAttribute('href', 'https://discord.gg')
+    expect(discord).toHaveAttribute('href', 'https://discord.gg/QcpeNenwhj')
     expect(discord).toHaveAttribute('target', '_blank')
 
     const x = screen.getByRole('link', { name: 'Armada on X' })

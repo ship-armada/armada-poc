@@ -13,6 +13,7 @@ import { wagmiConfig } from '@/config/wagmi'
 import { getMockSizeFromUrl } from '@/appNav'
 import { initSentry, SentryErrorBoundary, isSentryEnabled } from '@/lib/sentry'
 import { validateEnv } from '@/config/validateEnv'
+import { DISCORD_URL } from '@/config/socials'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
 
@@ -24,9 +25,6 @@ const InviteLandingPage = lazy(() =>
   import('@/components/InviteLandingPage').then((m) => ({ default: m.InviteLandingPage })),
 )
 const MockCommitterApp = lazy(() => import('@/MockCommitterApp'))
-
-// TODO: replace with the real Armada Discord invite link once it exists.
-const DISCORD_URL = 'https://discord.gg'
 
 // Crash-help footer for the Sentry error fallbacks: a copyable event reference
 // (only when Sentry actually captured + sent the event, so the user can quote

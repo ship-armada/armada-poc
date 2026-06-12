@@ -43,6 +43,7 @@ import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { useWallet } from '@/hooks/useWallet'
+import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
 import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
@@ -167,6 +168,8 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // pipeline compares against it to bail if the user switches accounts mid-run.
   const walletAddressRef = useRef(lowerAddress)
   useEffect(() => { walletAddressRef.current = lowerAddress }, [lowerAddress])
+  // Warn before a refresh/tab-close drops the user while a commit is broadcasting.
+  useBeforeUnloadGuard(submitting)
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const targetHop = inviteData.fromHop + 1

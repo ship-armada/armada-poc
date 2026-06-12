@@ -18,6 +18,7 @@ import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
+import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import styles from './ClaimFlowV2.module.css'
 
 type ClaimMode = 'arm' | 'refund'
@@ -87,6 +88,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   useEffect(() => () => { cancelledRef.current = true }, [])
   const walletAddressRef = useRef(walletAddress)
   useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
+  // Warn before a refresh/tab-close drops the user while a claim is broadcasting.
+  useBeforeUnloadGuard(submitting)
   // True when the allocation read fails — so we show a retry, not a false "0 ARM".
   const [readError, setReadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)

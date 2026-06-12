@@ -40,6 +40,7 @@ import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
+import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { PageNav, type Page } from '@/appNav'
 
 /**
@@ -270,6 +271,8 @@ export function App() {
   const [participateOpen, setParticipateOpen] = useState(false)
   // True while the participate pipeline is in flight — gates modal close confirm.
   const [participateRunning, setParticipateRunning] = useState(false)
+  // Warn before a refresh/tab-close drops the user while a commit is broadcasting.
+  useBeforeUnloadGuard(participateRunning)
 
   const pollInterval = getPollIntervalMs()
   const indexerUrl = getIndexerUrl()

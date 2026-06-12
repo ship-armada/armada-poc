@@ -48,6 +48,13 @@ export { estimateAllocation, estimateUserArmAllocation } from './lib/allocation.
 export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
 
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
+export {
+  aggregate3,
+  getMulticall3Contract,
+  MULTICALL3_ADDRESS,
+  type AggregateCall,
+  type AggregateResult,
+} from './lib/multicall3.js'
 
 export { fetchIndexedEventsSnapshot, fetchIndexerHealth, reviveIndexedEvent } from './lib/indexer.js'
 export type {

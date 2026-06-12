@@ -143,6 +143,7 @@ export function HeroParticipantsPanel({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search participant address…"
                 inputMode="search"
+                autoComplete="off"
                 aria-label="Search participant address"
                 tabIndex={showList ? 0 : -1}
               />

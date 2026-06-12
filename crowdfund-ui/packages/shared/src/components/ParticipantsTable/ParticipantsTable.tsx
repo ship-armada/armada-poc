@@ -216,6 +216,7 @@ export function ParticipantsTable({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search address…"
               inputMode="search"
+              autoComplete="off"
               aria-label="Search participants"
             />
           </div>

@@ -284,6 +284,7 @@ function SingleHopVariant({
                 id="commit-amount"
                 type="text"
                 inputMode="decimal"
+                autoComplete="off"
                 value={amountInput}
                 onChange={(e) => handleInput(e.target.value)}
                 className={styles.amountInput}
@@ -573,6 +574,7 @@ function MultiHopVariant({
                   id={inputId}
                   type="text"
                   inputMode="decimal"
+                  autoComplete="off"
                   value={value}
                   placeholder="0"
                   onChange={handleInputChange(row.hop, row)}

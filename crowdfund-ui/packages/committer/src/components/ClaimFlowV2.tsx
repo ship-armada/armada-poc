@@ -470,6 +470,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
               <label className={styles.delegateLabel}>Delegate address</label>
               <input
                 type="text"
+                autoComplete="off"
                 value={delegate}
                 onChange={(e) => {
                   hasUserEditedDelegate.current = true

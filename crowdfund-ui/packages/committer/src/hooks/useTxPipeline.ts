@@ -7,7 +7,7 @@ import type { TransactionResponse } from 'ethers'
 import type { ReceiptLogLike, Step4Transaction } from '@armada/crowdfund-shared'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
-import { getHubChainId } from '@/config/network'
+import { getHubChainId, getExplorerUrl } from '@/config/network'
 
 /** One transaction in a pipeline: a labelled wallet send plus optional follow-ups. */
 export interface TxStep {
@@ -21,10 +21,18 @@ export interface TxStep {
 }
 
 /**
- * idle → running ⇄ paused → success | error | aborted.
- * `paused` = detached mid-run (resumable); `aborted` = account switched (terminal).
+ * idle → running ⇄ paused → success | error | aborted | rejected.
+ * `paused` = detached mid-run (resumable); `aborted` = account switched (terminal);
+ * `rejected` = user declined in the wallet (quiet — the flow returns to review).
  */
-export type PipelinePhase = 'idle' | 'running' | 'paused' | 'success' | 'error' | 'aborted'
+export type PipelinePhase =
+  | 'idle'
+  | 'running'
+  | 'paused'
+  | 'success'
+  | 'error'
+  | 'aborted'
+  | 'rejected'
 
 export interface PipelineState {
   rows: Step4Transaction[]
@@ -97,11 +105,23 @@ async function drive(store: Store, address: string): Promise<void> {
       }
       const i = rec.cursor
       const step = rec.steps[i]
-      setRow(store, address, i, { label: step.label, status: 'loading' })
+      // Phase 1: waiting for the wallet to confirm (no hash yet).
+      setRow(store, address, i, {
+        label: step.label,
+        status: 'loading',
+        phaseLabel: 'Confirm in your wallet…',
+        errorMessage: undefined,
+        errorDetails: undefined,
+      })
       setPhase(store, address, 'running')
 
       const result = await sendAndWaitTx(step.send, (hash) => {
-        // Persist on broadcast so a reload can resume-watch this tx.
+        // Phase 2: broadcast — show the explorer link and persist for resume-watch.
+        setRow(store, address, i, {
+          phaseLabel: 'Submitting…',
+          hash,
+          explorerUrl: getExplorerUrl(),
+        })
         savePendingTx({
           chainId: getHubChainId(),
           address,
@@ -116,17 +136,30 @@ async function drive(store: Store, address: string): Promise<void> {
         removePendingTx(result.hash)
       }
       if (result.outcome === 'success') {
-        setRow(store, address, i, { status: 'done' })
+        setRow(store, address, i, { status: 'done', phaseLabel: undefined })
         step.onReceipt?.(result.logs ?? [])
         if (step.after) await step.after()
         rec.cursor = i + 1
         continue
       }
 
-      // reverted / timeout / rejected / error — stop at this row. (3.3 refines
-      // the rejection and timeout handling.)
+      if (result.outcome === 'rejected') {
+        // The user intentionally declined — don't render a red error. Revert the
+        // row to pending and let the flow return to review (quiet rejection).
+        setRow(store, address, i, {
+          status: 'pending',
+          phaseLabel: undefined,
+          hash: undefined,
+          explorerUrl: undefined,
+        })
+        setPhase(store, address, 'rejected')
+        return
+      }
+
+      // reverted / timeout / error — stop at this row with an error.
       setRow(store, address, i, {
         status: 'error',
+        phaseLabel: undefined,
         errorMessage: result.errorMessage,
         errorDetails: result.errorDetails,
       })

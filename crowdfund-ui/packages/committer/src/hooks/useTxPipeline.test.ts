@@ -160,6 +160,37 @@ describe('tx pipeline store', () => {
     expect(loadPendingTxs()).toEqual([])
   })
 
+  it('handles a wallet rejection quietly: rejected phase, no error row', async () => {
+    const send = vi.fn().mockRejectedValue({ code: 'ACTION_REJECTED' })
+    runTxPipeline(store, { address: A, steps: [{ label: 'approve', send }] })
+
+    await waitFor(() => getPipelineState(store, A).phase === 'rejected')
+    // Row reverts to pending — not a red 'error'.
+    expect(getPipelineState(store, A).rows[0].status).toBe('pending')
+  })
+
+  it('sets two-phase labels: confirm-in-wallet → submitting (with explorer hash)', async () => {
+    const sendGate = deferred<void>()
+    const waitGate = deferred<unknown>()
+    const step = {
+      label: 'approve',
+      send: () => sendGate.promise.then(() => ({ hash: '0xapprove', wait: () => waitGate.promise })),
+    } as unknown as TxStep
+    runTxPipeline(store, { address: A, steps: [step] })
+
+    // Before the wallet returns a hash: "Confirm in your wallet…".
+    await waitFor(() => getPipelineState(store, A).rows[0]?.phaseLabel === 'Confirm in your wallet…')
+    sendGate.resolve()
+
+    // Once broadcast: "Submitting…" + the tx hash for the explorer link.
+    await waitFor(() => getPipelineState(store, A).rows[0]?.phaseLabel === 'Submitting…')
+    expect(getPipelineState(store, A).rows[0].hash).toBe('0xapprove')
+
+    waitGate.resolve({ status: 1, logs: [] })
+    await waitFor(() => getPipelineState(store, A).phase === 'success')
+    expect(getPipelineState(store, A).rows[0].phaseLabel).toBeUndefined()
+  })
+
   it('retry resumes from the failed row and keeps earlier successes', async () => {
     let commitAttempts = 0
     const a = makeStep('approve', () => Promise.resolve({ status: 1, logs: [] }))

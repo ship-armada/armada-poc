@@ -2,7 +2,7 @@
 // ABOUTME: Provisional design: no designer mockup exists yet for Claim, so this composes Steps/Button/Tag with v1 ClaimTab behavior. Revisit when the designer ships claim screens.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Contract, type Signer, type TransactionResponse, type JsonRpcProvider } from 'ethers'
+import { Contract, type Signer, type JsonRpcProvider } from 'ethers'
 import {
   Step4Approve,
   type ReceiptLogLike,
@@ -16,8 +16,8 @@ import {
 } from '@armada/crowdfund-shared'
 import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
-import { mapRevertToMessage } from '@/lib/revertMessages'
-import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
+import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
+import { getExplorerUrl } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import styles from './ClaimFlowV2.module.css'
 
@@ -182,9 +182,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     [mode, totalCommitted, refundAmount],
   )
 
-  // Submit the claim/refund transaction. Updates `txs` so Step4Approve renders
-  // controlled status. Mirrors the v1 ClaimTab pipeline but simplified (single
-  // op, no toasts at this layer — toasts can be re-added in 3.3.x).
+  // Submit the claim/refund transaction through the shared single-step engine,
+  // so it inherits the two-phase labels, explorer link, and quiet-rejection
+  // handling. Updates `txs` so Step4Approve renders controlled status.
   const runClaim = async () => {
     if (runningRef.current) return
     const opLabel = mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
@@ -204,57 +204,54 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       ])
       return
     }
+    // Bail before prompting if the run was cancelled (unmount) or the connected
+    // account changed.
+    const startAddress = walletAddress
+    if (cancelledRef.current || walletAddressRef.current !== startAddress) return
+
     runningRef.current = true
     setSubmitting(true)
-    setTxs([{ label: opLabel, status: 'loading' }])
-    // Snapshot the address this claim runs for — checked before the send so an
-    // account switch (or unmount) can't sign with the old signer.
-    const startAddress = walletAddress
+    setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Confirm in your wallet…' }])
 
-    const setRowStatus = (patch: Partial<Step4Transaction>) =>
-      setTxs((prev) => (prev ? [{ ...prev[0], ...patch }] : prev))
+    const explorerUrl = getExplorerUrl()
+    const result = await sendAndWaitTx(
+      () => {
+        const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
+        return mode === 'arm' ? crowdfund.claim(delegateChecksum!) : crowdfund.claimRefund()
+      },
+      (hash) =>
+        setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }]),
+    )
+    runningRef.current = false
+    setSubmitting(false)
 
-    let txHash: string | undefined
-    try {
-      // Bail before prompting if the run was cancelled (unmount) or the
-      // connected account changed.
-      if (cancelledRef.current || walletAddressRef.current !== startAddress) return
-      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
-      const tx: TransactionResponse =
-        mode === 'arm' ? await crowdfund.claim(delegateChecksum) : await crowdfund.claimRefund()
-      txHash = tx.hash
-      const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
-      if (!receipt || receipt.status === 0) {
-        setRowStatus({ status: 'error', errorMessage: 'Transaction reverted' })
-        return
-      }
-      setRowStatus({ status: 'done' })
+    if (result.outcome === 'success') {
+      setTxs([{ label: opLabel, status: 'done', hash: result.hash, explorerUrl }])
       setHasClaimed(true)
-      // Fast-path the Allocated / RefundClaimed receipt log into the event
-      // store and refresh balances — same shape as the commit flow's fix.
-      // ethers v6 receipt.logs are structurally compatible with ReceiptLogLike
-      // (just the `index` vs `logIndex` field differs); cast through unknown.
-      onReceiptLogs?.(receipt.logs as unknown as readonly ReceiptLogLike[])
+      // Fast-path the Allocated / RefundClaimed receipt log into the event store
+      // and refresh balances.
+      onReceiptLogs?.(result.logs ?? [])
       void refreshAllowance?.()
       setTimeout(() => setStep('done'), 600)
-    } catch (err) {
-      if (isTxTimeoutError(err)) {
-        setRowStatus({
-          status: 'error',
-          errorMessage: TX_PENDING_MESSAGE,
-          errorDetails: txHash ? `Transaction hash: ${txHash}` : undefined,
-        })
-        return
-      }
-      setRowStatus({
-        status: 'error',
-        errorMessage: mapRevertToMessage(err),
-        errorDetails: err instanceof Error ? err.message : String(err),
-      })
-    } finally {
-      runningRef.current = false
-      setSubmitting(false)
+      return
     }
+    if (result.outcome === 'rejected') {
+      // Quiet — the user declined; return to review without a red error row.
+      setTxs(null)
+      setStep('review')
+      return
+    }
+    // reverted / timeout / error
+    setTxs([
+      {
+        label: opLabel,
+        status: 'error',
+        errorMessage: result.errorMessage,
+        errorDetails: result.errorDetails,
+        hash: result.hash,
+        explorerUrl,
+      },
+    ])
   }
 
   // ── Gate states ─────────────────────────────────────────────────

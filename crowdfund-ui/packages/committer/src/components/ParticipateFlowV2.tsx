@@ -150,6 +150,14 @@ export function ParticipateFlowV2({
     return () => clearTimeout(t)
   }, [phase, step])
 
+  // A wallet rejection returns the flow to review (quiet — no red error row).
+  useEffect(() => {
+    if (phase !== 'rejected') return
+    setStep('review')
+    pipeline.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
   // Eligible positions, filtered to renderable hops and ordered ascending.
   // Drives the per-hop entry rows in Step2 and the per-hop summary in Step3.
   const renderablePositions = useMemo(() => {

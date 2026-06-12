@@ -10,6 +10,7 @@ import { ClaimFlowV2, type ClaimFlowV2Props } from './ClaimFlowV2'
 // Per-test read implementations, driven by the connected address.
 let claimedFor: (addr: string) => Promise<boolean>
 let allocationFor: (addr: string) => Promise<[bigint, bigint]>
+let claimImpl: () => Promise<unknown>
 
 vi.mock('ethers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ethers')>()
@@ -19,6 +20,8 @@ vi.mock('ethers', async (importOriginal) => {
       return {
         claimed: (addr: string) => claimedFor(addr),
         computeAllocation: (addr: string) => allocationFor(addr),
+        claim: () => claimImpl(),
+        claimRefund: () => claimImpl(),
       }
     }),
   }
@@ -49,6 +52,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   claimedFor = () => Promise.resolve(false)
   allocationFor = () => Promise.resolve([0n, 0n])
+  claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => Promise.resolve({ status: 1, logs: [] }) })
 })
 
 describe('ClaimFlowV2 account switch', () => {
@@ -89,5 +93,24 @@ describe('ClaimFlowV2 delegate field', () => {
     // User clears the field — it must not snap back to the wallet address.
     fireEvent.change(input, { target: { value: '' } })
     expect(input.value).toBe('')
+  })
+})
+
+describe('ClaimFlowV2 wallet rejection', () => {
+  it('returns to the review step (no error row) when the user declines in the wallet', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    claimImpl = () => Promise.reject({ code: 'ACTION_REJECTED' })
+
+    render(<ClaimFlowV2 {...baseProps} signer={{} as never} walletAddress={ADDR_A} />)
+
+    // Submit from the review step.
+    const claimBtn = await screen.findByRole('button', { name: 'Claim ARM' })
+    fireEvent.click(claimBtn)
+
+    // Rejection routes back to review: the delegate input reappears and no
+    // red error message is shown.
+    expect(await screen.findByDisplayValue(ADDR_A)).toBeTruthy()
+    expect(screen.queryByText('Transaction reverted')).toBeNull()
+    expect(screen.queryByText(/Cancelled in wallet/)).toBeNull()
   })
 })

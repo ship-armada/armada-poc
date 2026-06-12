@@ -276,6 +276,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     return () => clearTimeout(t)
   }, [phase, step, transitionTo])
 
+  // A wallet rejection returns the flow to review (quiet — no red error row).
+  useEffect(() => {
+    if (phase !== 'rejected') return
+    transitionTo('review')
+    pipeline.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, transitionTo])
+
   // Build the approve(amount)? + commitWithInvite tx list. The store runs them
   // sequentially and stops at any failing row. Mirrors ParticipateFlowV2 but
   // with the inviter signature args on the commit call.

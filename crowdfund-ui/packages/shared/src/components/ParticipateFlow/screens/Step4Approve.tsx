@@ -19,6 +19,14 @@ export interface Transaction {
    *  `errorMessage`, a "Show details" toggle appears under the summary that
    *  reveals this in a scrollable mono block. */
   errorDetails?: string
+  /** Secondary phase text shown while a row is loading (e.g. "Confirm in your
+   *  wallet…", "Submitting…"). */
+  phaseLabel?: string
+  /** Tx hash once broadcast. Rendered as a short explorer link when
+   *  `explorerUrl` is set, otherwise as plain text. */
+  hash?: string
+  /** Block-explorer base URL; omitted on local (no explorer ⇒ plain hash). */
+  explorerUrl?: string
 }
 
 export interface Step4ApproveProps extends ParticipateStepBarProps {
@@ -173,6 +181,24 @@ export default function Step4Approve({
                   </span>
                 </div>
               </div>
+              {((tx.status === 'loading' && tx.phaseLabel) || tx.hash) && (
+                <div className={styles.txMeta}>
+                  {tx.status === 'loading' && tx.phaseLabel && <span>{tx.phaseLabel}</span>}
+                  {tx.hash &&
+                    (tx.explorerUrl ? (
+                      <a
+                        className={styles.txLink}
+                        href={`${tx.explorerUrl}/tx/${tx.hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {`${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}`}
+                      </a>
+                    ) : (
+                      <span>{`${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}`}</span>
+                    ))}
+                </div>
+              )}
               {tx.status === 'error' && tx.errorMessage && (() => {
                 const hasDetails = !!tx.errorDetails && tx.errorDetails !== tx.errorMessage
                 const expanded = !!expandedDetails[i]

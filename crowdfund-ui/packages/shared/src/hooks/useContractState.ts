@@ -3,9 +3,10 @@
 
 import { useMemo } from 'react'
 import { Contract } from 'ethers'
-import type { JsonRpcProvider } from 'ethers'
+import type { JsonRpcProvider, Result } from 'ethers'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CROWDFUND_ABI_FRAGMENTS } from '../lib/constants.js'
+import { aggregate3, getMulticall3Contract, type AggregateCall } from '../lib/multicall3.js'
 import type { HopStatsData } from '../components/StatsBar.js'
 
 export interface ContractState {
@@ -57,64 +58,70 @@ async function fetchContractState(
   contract: Contract,
   prev: ContractSnapshot,
 ): Promise<ContractSnapshot> {
-  // allSettled (not Promise.all) so one flaky read doesn't void the whole tick:
-  // each field carries forward its previous value when its read fails. If EVERY
-  // read fails (RPC down), we still throw so the error surfaces.
-  const settled = await Promise.allSettled([
-    contract.phase() as Promise<bigint>,
-    contract.armLoaded() as Promise<boolean>,
-    contract.totalCommitted() as Promise<bigint>,
-    contract.getEstimatedCappedDemand() as Promise<[bigint, bigint[]]>,
-    contract.saleSize() as Promise<bigint>,
-    contract.windowStart() as Promise<bigint>,
-    contract.windowEnd() as Promise<bigint>,
-    contract.launchTeamInviteEnd() as Promise<bigint>,
-    contract.finalizedAt() as Promise<bigint>,
-    contract.claimDeadline() as Promise<bigint>,
-    contract.refundMode() as Promise<boolean>,
-    contract.getParticipantCount() as Promise<bigint>,
-    contract.getHopStats(0) as Promise<[bigint, bigint, bigint, bigint]>,
-    contract.getHopStats(1) as Promise<[bigint, bigint, bigint, bigint]>,
-    contract.getHopStats(2) as Promise<[bigint, bigint, bigint, bigint]>,
-    provider.getBlock('latest'),
-  ])
+  // One Multicall3 `aggregate3` (allowFailure: true) replaces 16 separate
+  // eth_calls. The block timestamp is folded in via Multicall3's
+  // `getCurrentBlockTimestamp()` for a consistent same-block snapshot. Each
+  // sub-call carries forward its previous value when it fails; if EVERY sub-call
+  // fails (RPC/contract down) we throw so the error surfaces — mirroring the
+  // prior `Promise.allSettled` contract.
+  const mc = getMulticall3Contract(provider)
+  const calls: AggregateCall[] = [
+    { contract, functionName: 'phase' },
+    { contract, functionName: 'armLoaded' },
+    { contract, functionName: 'totalCommitted' },
+    { contract, functionName: 'getEstimatedCappedDemand' },
+    { contract, functionName: 'saleSize' },
+    { contract, functionName: 'windowStart' },
+    { contract, functionName: 'windowEnd' },
+    { contract, functionName: 'launchTeamInviteEnd' },
+    { contract, functionName: 'finalizedAt' },
+    { contract, functionName: 'claimDeadline' },
+    { contract, functionName: 'refundMode' },
+    { contract, functionName: 'getParticipantCount' },
+    { contract, functionName: 'getHopStats', args: [0] },
+    { contract, functionName: 'getHopStats', args: [1] },
+    { contract, functionName: 'getHopStats', args: [2] },
+    { contract: mc, functionName: 'getCurrentBlockTimestamp' },
+  ]
 
-  if (settled.every((s) => s.status === 'rejected')) {
-    throw (settled[0] as PromiseRejectedResult).reason
+  const results = await aggregate3(provider, calls)
+  if (results.every((r) => !r.success)) {
+    throw new Error('All contract reads failed')
   }
 
-  const ok = <T,>(i: number): T | undefined =>
-    settled[i].status === 'fulfilled'
-      ? (settled[i] as PromiseFulfilledResult<T>).value
-      : undefined
+  // Single-return reads decode to a one-element tuple; multi-return reads keep
+  // the whole Result for positional access.
+  const single = <T,>(i: number): T | undefined =>
+    results[i].success ? (results[i].result![0] as T) : undefined
+  const tuple = (i: number): Result | undefined => (results[i].success ? results[i].result : undefined)
 
-  const phase = ok<bigint>(0)
-  const armLoaded = ok<boolean>(1)
-  const totalCommitted = ok<bigint>(2)
-  const estimatedCapped = ok<[bigint, bigint[]]>(3)
-  const saleSize = ok<bigint>(4)
-  const windowStart = ok<bigint>(5)
-  const windowEnd = ok<bigint>(6)
-  const launchTeamInviteEnd = ok<bigint>(7)
-  const finalizedAt = ok<bigint>(8)
-  const claimDeadline = ok<bigint>(9)
-  const refundMode = ok<boolean>(10)
-  const participantCount = ok<bigint>(11)
-  const hopStats0 = ok<[bigint, bigint, bigint, bigint]>(12)
-  const hopStats1 = ok<[bigint, bigint, bigint, bigint]>(13)
-  const hopStats2 = ok<[bigint, bigint, bigint, bigint]>(14)
-  const block = ok<Awaited<ReturnType<JsonRpcProvider['getBlock']>>>(15)
+  const phase = single<bigint>(0)
+  const armLoaded = single<boolean>(1)
+  const totalCommitted = single<bigint>(2)
+  const estimatedCapped = tuple(3)
+  const saleSize = single<bigint>(4)
+  const windowStart = single<bigint>(5)
+  const windowEnd = single<bigint>(6)
+  const launchTeamInviteEnd = single<bigint>(7)
+  const finalizedAt = single<bigint>(8)
+  const claimDeadline = single<bigint>(9)
+  const refundMode = single<boolean>(10)
+  const participantCount = single<bigint>(11)
+  const hopStats0 = tuple(12)
+  const hopStats1 = tuple(13)
+  const hopStats2 = tuple(14)
+  const blockTimestamp = single<bigint>(15)
 
-  const perHopCapped = estimatedCapped?.[1]
+  const perHopCapped = estimatedCapped?.[1] as bigint[] | undefined
   const parseHopStats = (
-    raw: [bigint, bigint, bigint, bigint] | undefined,
+    raw: Result | undefined,
     hop: number,
     prevHop: HopStatsData,
   ): HopStatsData =>
     raw
       ? {
-          totalCommitted: raw[0],
-          cappedCommitted: perHopCapped?.[hop] ?? raw[1],
+          totalCommitted: raw[0] as bigint,
+          cappedCommitted: perHopCapped?.[hop] ?? (raw[1] as bigint),
           uniqueCommitters: Number(raw[2]),
           whitelistCount: Number(raw[3]),
         }
@@ -124,7 +131,7 @@ async function fetchContractState(
     phase: phase !== undefined ? Number(phase) : prev.phase,
     armLoaded: armLoaded ?? prev.armLoaded,
     totalCommitted: totalCommitted ?? prev.totalCommitted,
-    cappedDemand: estimatedCapped ? estimatedCapped[0] : prev.cappedDemand,
+    cappedDemand: estimatedCapped ? (estimatedCapped[0] as bigint) : prev.cappedDemand,
     saleSize: saleSize ?? prev.saleSize,
     windowStart: windowStart !== undefined ? Number(windowStart) : prev.windowStart,
     windowEnd: windowEnd !== undefined ? Number(windowEnd) : prev.windowEnd,
@@ -133,7 +140,7 @@ async function fetchContractState(
     finalizedAt: finalizedAt !== undefined ? Number(finalizedAt) : prev.finalizedAt,
     claimDeadline: claimDeadline !== undefined ? Number(claimDeadline) : prev.claimDeadline,
     refundMode: refundMode ?? prev.refundMode,
-    blockTimestamp: block?.timestamp ?? prev.blockTimestamp,
+    blockTimestamp: blockTimestamp !== undefined ? Number(blockTimestamp) : prev.blockTimestamp,
     hopStats: [
       parseHopStats(hopStats0, 0, prev.hopStats[0]),
       parseHopStats(hopStats1, 1, prev.hopStats[1]),

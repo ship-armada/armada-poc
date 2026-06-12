@@ -5,7 +5,7 @@ import { useCallback, useMemo } from 'react'
 import { Contract } from 'ethers'
 import type { JsonRpcProvider } from 'ethers'
 import { useQuery } from '@tanstack/react-query'
-import { ERC20_ABI_FRAGMENTS } from '@armada/crowdfund-shared'
+import { ERC20_ABI_FRAGMENTS, aggregate3, type AggregateCall } from '@armada/crowdfund-shared'
 
 export interface UseAllowanceResult {
   allowance: bigint
@@ -45,19 +45,28 @@ export function useAllowance(
   const query = useQuery({
     queryKey: ['usdcAllowance', address, usdcAddress, crowdfundAddress, armTokenAddress],
     queryFn: async (): Promise<AllowanceSnapshot> => {
+      // Batch the USDC allowance + balance (+ optional ARM balance) into one
+      // Multicall3 eth_call instead of 2–3 separate reads per tick.
       const usdc = new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, provider!)
-      const readAllowance = usdc.allowance(address, crowdfundAddress) as Promise<bigint>
-      const readBalance = usdc.balanceOf(address) as Promise<bigint>
-      const readArm = armTokenAddress
-        ? (new Contract(armTokenAddress, ERC20_ABI_FRAGMENTS, provider!).balanceOf(address) as Promise<bigint>)
-        : Promise.resolve(0n)
+      const calls: AggregateCall[] = [
+        { contract: usdc, functionName: 'allowance', args: [address, crowdfundAddress] },
+        { contract: usdc, functionName: 'balanceOf', args: [address] },
+      ]
+      const arm = armTokenAddress ? new Contract(armTokenAddress, ERC20_ABI_FRAGMENTS, provider!) : null
+      if (arm) calls.push({ contract: arm, functionName: 'balanceOf', args: [address] })
 
-      const [allowance, balance, armBalance] = await Promise.all([
-        readAllowance,
-        readBalance,
-        readArm,
-      ])
-      return { allowance, balance, armBalance }
+      const results = await aggregate3(provider!, calls)
+      // The allowance + balance are load-bearing (they gate approval/limits) — a
+      // failed read must error the tick rather than silently read as zero. The
+      // ARM balance is display-only, so a failure there carries to zero.
+      if (!results[0].success || !results[1].success) {
+        throw new Error('Allowance/balance read failed')
+      }
+      return {
+        allowance: results[0].result![0] as bigint,
+        balance: results[1].result![0] as bigint,
+        armBalance: arm && results[2]?.success ? (results[2].result![0] as bigint) : 0n,
+      }
     },
     enabled,
     staleTime: 0,

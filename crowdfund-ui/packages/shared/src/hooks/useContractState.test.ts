@@ -1,76 +1,63 @@
-// ABOUTME: Tests for the useContractState hook that polls aggregate contract state.
-// ABOUTME: Verifies initial state, successful fetch, error handling, and polling lifecycle.
+// ABOUTME: Tests for the useContractState hook that polls aggregate contract state via Multicall3.
+// ABOUTME: Verifies initial state, successful fetch, per-call carry-forward, all-fail error, and seedCount derivation.
 
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useContractState } from './useContractState.js'
+import { aggregate3, type AggregateResult } from '../lib/multicall3.js'
 import type { JsonRpcProvider } from 'ethers'
 
-// Mock ethers Contract to avoid real RPC calls
-const mockContract = {
-  phase: vi.fn().mockResolvedValue(0n),
-  armLoaded: vi.fn().mockResolvedValue(false),
-  totalCommitted: vi.fn().mockResolvedValue(0n),
-  getEstimatedCappedDemand: vi.fn().mockResolvedValue([0n, [0n, 0n, 0n]]),
-  saleSize: vi.fn().mockResolvedValue(1_200_000n * 10n ** 6n),
-  windowStart: vi.fn().mockResolvedValue(0n),
-  windowEnd: vi.fn().mockResolvedValue(0n),
-  launchTeamInviteEnd: vi.fn().mockResolvedValue(0n),
-  finalizedAt: vi.fn().mockResolvedValue(0n),
-  claimDeadline: vi.fn().mockResolvedValue(0n),
-  refundMode: vi.fn().mockResolvedValue(false),
-  getParticipantCount: vi.fn().mockResolvedValue(0n),
-  getHopStats: vi.fn().mockResolvedValue([0n, 0n, 0n, 0n]),
-}
-
-vi.mock('ethers', async () => {
-  const actual = await vi.importActual('ethers')
-  return {
-    ...actual,
-    Contract: class MockContract {
-      constructor() {
-        return mockContract
-      }
-    },
-  }
+// The hook batches every read into one aggregate3 call — mock it directly so the
+// test drives per-call results without touching ethers/RPC.
+vi.mock('../lib/multicall3.js', async (orig) => {
+  const actual = await orig<typeof import('../lib/multicall3.js')>()
+  return { ...actual, aggregate3: vi.fn() }
 })
 
-const mockProvider = {
-  getBlock: vi.fn().mockResolvedValue({ timestamp: 1700000000 }),
-} as unknown as JsonRpcProvider
+const ok = (result: unknown[]): AggregateResult => ({ success: true, result: result as never })
+const fail = (): AggregateResult => ({ success: false, result: undefined })
+
+// Results in the hook's call order (15 contract reads + getCurrentBlockTimestamp).
+function defaultResults(): AggregateResult[] {
+  return [
+    ok([0n]), // phase
+    ok([false]), // armLoaded
+    ok([0n]), // totalCommitted
+    ok([0n, [0n, 0n, 0n]]), // getEstimatedCappedDemand
+    ok([1_200_000n * 10n ** 6n]), // saleSize
+    ok([0n]), // windowStart
+    ok([0n]), // windowEnd
+    ok([0n]), // launchTeamInviteEnd
+    ok([0n]), // finalizedAt
+    ok([0n]), // claimDeadline
+    ok([false]), // refundMode
+    ok([0n]), // getParticipantCount
+    ok([0n, 0n, 0n, 0n]), // getHopStats(0)
+    ok([0n, 0n, 0n, 0n]), // getHopStats(1)
+    ok([0n, 0n, 0n, 0n]), // getHopStats(2)
+    ok([1_700_000_000n]), // getCurrentBlockTimestamp
+  ]
+}
+
+const mockProvider = {} as unknown as JsonRpcProvider
+const mockAggregate3 = vi.mocked(aggregate3)
 
 function makeWrapper() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client }, children)
 }
 
-describe('useContractState', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-    // Reset all mocks to their default implementations
-    mockContract.phase.mockReset().mockResolvedValue(0n)
-    mockContract.armLoaded.mockReset().mockResolvedValue(false)
-    mockContract.totalCommitted.mockReset().mockResolvedValue(0n)
-    mockContract.getEstimatedCappedDemand.mockReset().mockResolvedValue([0n, [0n, 0n, 0n]])
-    mockContract.saleSize.mockReset().mockResolvedValue(1_200_000n * 10n ** 6n)
-    mockContract.windowStart.mockReset().mockResolvedValue(0n)
-    mockContract.windowEnd.mockReset().mockResolvedValue(0n)
-    mockContract.launchTeamInviteEnd.mockReset().mockResolvedValue(0n)
-    mockContract.finalizedAt.mockReset().mockResolvedValue(0n)
-    mockContract.claimDeadline.mockReset().mockResolvedValue(0n)
-    mockContract.refundMode.mockReset().mockResolvedValue(false)
-    mockContract.getParticipantCount.mockReset().mockResolvedValue(0n)
-    mockContract.getHopStats.mockReset().mockResolvedValue([0n, 0n, 0n, 0n])
-    ;(mockProvider as any).getBlock.mockReset().mockResolvedValue({ timestamp: 1700000000 })
-  })
+beforeEach(() => {
+  mockAggregate3.mockReset()
+  mockAggregate3.mockResolvedValue(defaultResults())
+})
 
+describe('useContractState', () => {
   it('returns initial loading state with null provider', () => {
     const { result } = renderHook(() => useContractState(null, null, 5000), {
       wrapper: makeWrapper(),
@@ -83,51 +70,42 @@ describe('useContractState', () => {
   })
 
   it('fetches contract state and transitions from loading', async () => {
-    mockContract.phase.mockResolvedValue(0n)
-    mockContract.armLoaded.mockResolvedValue(true)
-    mockContract.totalCommitted.mockResolvedValue(500_000n * 10n ** 6n)
-    mockContract.getEstimatedCappedDemand.mockResolvedValue([450_000n * 10n ** 6n, [280_000n * 10n ** 6n, 140_000n * 10n ** 6n, 30_000n * 10n ** 6n]])
-    mockContract.getHopStats.mockImplementation((hop: number) => {
-      if (hop === 0) return Promise.resolve([300_000n * 10n ** 6n, 280_000n * 10n ** 6n, 100n, 42n])
-      if (hop === 1) return Promise.resolve([150_000n * 10n ** 6n, 140_000n * 10n ** 6n, 80n, 200n])
-      return Promise.resolve([50_000n * 10n ** 6n, 30_000n * 10n ** 6n, 30n, 500n])
-    })
-    mockContract.getParticipantCount.mockResolvedValue(210n)
+    const r = defaultResults()
+    r[1] = ok([true]) // armLoaded
+    r[2] = ok([500_000n * 10n ** 6n]) // totalCommitted
+    r[3] = ok([450_000n * 10n ** 6n, [280_000n * 10n ** 6n, 140_000n * 10n ** 6n, 30_000n * 10n ** 6n]])
+    r[11] = ok([210n]) // participantCount
+    r[12] = ok([300_000n * 10n ** 6n, 280_000n * 10n ** 6n, 100n, 42n]) // hop0
+    mockAggregate3.mockResolvedValue(r)
 
-    const { result } = renderHook(
-      () => useContractState(mockProvider, '0xcontract', 60000),
-      { wrapper: makeWrapper() },
-    )
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
+    const { result } = renderHook(() => useContractState(mockProvider, '0x1111111111111111111111111111111111111111', 60000), {
+      wrapper: makeWrapper(),
     })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.phase).toBe(0)
     expect(result.current.armLoaded).toBe(true)
     expect(result.current.totalCommitted).toBe(500_000n * 10n ** 6n)
     expect(result.current.cappedDemand).toBe(450_000n * 10n ** 6n)
     expect(result.current.participantCount).toBe(210)
-    // Seed count = hop-0 whitelistCount (4th element of getHopStats(0))
+    // Seed count = hop-0 whitelistCount (4th element of getHopStats(0)).
     expect(result.current.seedCount).toBe(42)
-    expect(result.current.blockTimestamp).toBe(1700000000)
+    expect(result.current.blockTimestamp).toBe(1_700_000_000)
   })
 
   it('carries a single failed read forward without erroring the whole tick', async () => {
-    // Only `phase` fails; every other read succeeds → no error, phase carries
-    // forward (stays at the initial 0), and the rest populate normally.
-    mockContract.phase.mockRejectedValue(new Error('RPC connection failed'))
-    mockContract.armLoaded.mockResolvedValue(true)
-    mockContract.getParticipantCount.mockResolvedValue(7n)
+    const r = defaultResults()
+    r[0] = fail() // phase read failed
+    r[1] = ok([true]) // armLoaded fresh
+    r[11] = ok([7n]) // participantCount fresh
+    mockAggregate3.mockResolvedValue(r)
 
-    const { result } = renderHook(
-      () => useContractState(mockProvider, '0xcontract', 60000),
-      { wrapper: makeWrapper() },
-    )
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
+    const { result } = renderHook(() => useContractState(mockProvider, '0x1111111111111111111111111111111111111111', 60000), {
+      wrapper: makeWrapper(),
     })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.error).toBeNull()
     expect(result.current.phase).toBe(0) // carried forward
@@ -135,49 +113,37 @@ describe('useContractState', () => {
     expect(result.current.participantCount).toBe(7) // fresh
   })
 
-  it('surfaces an error only when every read fails', async () => {
-    const reject = () => Promise.reject(new Error('RPC connection failed'))
-    mockContract.phase.mockImplementation(reject)
-    mockContract.armLoaded.mockImplementation(reject)
-    mockContract.totalCommitted.mockImplementation(reject)
-    mockContract.getEstimatedCappedDemand.mockImplementation(reject)
-    mockContract.saleSize.mockImplementation(reject)
-    mockContract.windowStart.mockImplementation(reject)
-    mockContract.windowEnd.mockImplementation(reject)
-    mockContract.launchTeamInviteEnd.mockImplementation(reject)
-    mockContract.finalizedAt.mockImplementation(reject)
-    mockContract.claimDeadline.mockImplementation(reject)
-    mockContract.refundMode.mockImplementation(reject)
-    mockContract.getParticipantCount.mockImplementation(reject)
-    mockContract.getHopStats.mockImplementation(reject)
-    ;(mockProvider as any).getBlock.mockImplementation(reject)
+  it('surfaces an error when the read burst fails entirely', async () => {
+    mockAggregate3.mockRejectedValue(new Error('RPC connection failed'))
 
-    const { result } = renderHook(
-      () => useContractState(mockProvider, '0xcontract', 60000),
-      { wrapper: makeWrapper() },
-    )
-
-    await waitFor(() => {
-      expect(result.current.error).toBe('RPC connection failed')
+    const { result } = renderHook(() => useContractState(mockProvider, '0x1111111111111111111111111111111111111111', 60000), {
+      wrapper: makeWrapper(),
     })
+
+    await waitFor(() => expect(result.current.error).toBe('RPC connection failed'))
     expect(result.current.loading).toBe(false)
   })
 
+  it('throws (surfaces error) when every sub-call fails', async () => {
+    mockAggregate3.mockResolvedValue(defaultResults().map(() => fail()))
+
+    const { result } = renderHook(() => useContractState(mockProvider, '0x1111111111111111111111111111111111111111', 60000), {
+      wrapper: makeWrapper(),
+    })
+
+    await waitFor(() => expect(result.current.error).toBe('All contract reads failed'))
+  })
+
   it('derives seedCount from hop-0 whitelistCount', async () => {
-    mockContract.getHopStats.mockImplementation((hop: number) => {
-      if (hop === 0) return Promise.resolve([0n, 0n, 0n, 137n])
-      return Promise.resolve([0n, 0n, 0n, 0n])
+    const r = defaultResults()
+    r[12] = ok([0n, 0n, 0n, 137n]) // hop0 whitelistCount
+    mockAggregate3.mockResolvedValue(r)
+
+    const { result } = renderHook(() => useContractState(mockProvider, '0x1111111111111111111111111111111111111111', 60000), {
+      wrapper: makeWrapper(),
     })
 
-    const { result } = renderHook(
-      () => useContractState(mockProvider, '0xcontract', 60000),
-      { wrapper: makeWrapper() },
-    )
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
-
+    await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.seedCount).toBe(137)
   })
 })

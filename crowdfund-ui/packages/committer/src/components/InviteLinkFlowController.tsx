@@ -154,6 +154,19 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   const pipeline = useTxPipeline(lowerAddress)
   const phase = pipeline.state.phase
   const submitting = phase === 'running' || phase === 'paused'
+  // Latest phase + a stable reset handle, read by the close-cleanup below so a
+  // finished pipeline clears instead of re-attaching to a stale confirmation.
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  const resetPipeline = pipeline.reset
+  useEffect(() => {
+    return () => {
+      if (phaseRef.current !== 'running' && phaseRef.current !== 'paused') {
+        resetPipeline()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Step machine + transition state (mirrors the designer's
   // ParticipateFlowInviteLink — fading wraps each step swap). Re-attach: a live

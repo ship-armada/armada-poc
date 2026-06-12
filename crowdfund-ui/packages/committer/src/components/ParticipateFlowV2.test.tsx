@@ -6,7 +6,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
 import { ParticipateFlowV2, type ParticipateFlowV2Props } from './ParticipateFlowV2'
-import { clearAllPipelines, pipelinesAtom } from '@/hooks/useTxPipeline'
+import { clearAllPipelines, pipelinesAtom, getPipelineState } from '@/hooks/useTxPipeline'
 import type { HopPosition } from '@/hooks/useEligibility'
 
 // The wallet step renders RainbowKit's ConnectButton.Custom — stub the wallet
@@ -236,5 +236,23 @@ describe('ParticipateFlowV2 splash card', () => {
     // Straight to the commit input — no splash.
     expect(await screen.findByRole('textbox')).toBeTruthy()
     expect(screen.queryByText(/invited to join the fleet/i)).toBeNull()
+  })
+})
+
+describe('ParticipateFlowV2 finished-pipeline cleanup', () => {
+  it('clears a finished pipeline on close so reopening does not re-attach to the stale confirmation', () => {
+    const store = getDefaultStore()
+    // Prior commit left the address-keyed pipeline in a terminal "success" state.
+    store.set(pipelinesAtom, {
+      [ADDR]: { rows: [{ label: 'Commit participation', status: 'done' }], phase: 'success' },
+    })
+
+    const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
+    // Re-attaches to the confirmation screen on open.
+    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+
+    // Closing clears the finished pipeline → a reopen starts fresh (can commit more).
+    unmount()
+    expect(getPipelineState(store, ADDR).phase).toBe('idle')
   })
 })

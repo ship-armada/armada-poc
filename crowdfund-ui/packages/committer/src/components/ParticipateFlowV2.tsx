@@ -128,6 +128,10 @@ export function ParticipateFlowV2({
   const pipeline = useTxPipeline(walletAddress)
   const phase = pipeline.state.phase
   const submitting = phase === 'running' || phase === 'paused'
+  // Latest phase + a stable reset handle, read by the close-cleanup below.
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  const resetPipeline = pipeline.reset
   // Re-attach: reopening while a pipeline is live lands directly on the tx surface.
   const [step, setStep] = useState<FlowStep>(
     phase === 'success' ? 'confirmation' : submitting ? 'approve' : 'wallet',
@@ -162,6 +166,19 @@ export function ParticipateFlowV2({
     pipeline.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
+
+  // On close, clear a finished/errored pipeline so reopening starts a fresh
+  // commit instead of re-attaching to the now-stale confirmation screen. A
+  // running/paused pipeline is left intact so it survives the close and
+  // re-attaches on reopen.
+  useEffect(() => {
+    return () => {
+      if (phaseRef.current !== 'running' && phaseRef.current !== 'paused') {
+        resetPipeline()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Eligible positions, filtered to renderable hops and ordered ascending.
   // Drives the per-hop entry rows in Step2 and the per-hop summary in Step3.

@@ -2,7 +2,7 @@
 // ABOUTME: Renders three header-nav pages: Network, Participate, and My Position.
 
 import { useState, useEffect, useMemo } from 'react'
-import { useStore } from 'jotai'
+import { useStore, useAtomValue } from 'jotai'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
@@ -25,6 +25,8 @@ import {
   CrowdfundExperience,
   toDashboardParticipantsFromGraph,
   ParticipateFlowModal,
+  LastTxChip,
+  type LastTx,
   type UserAllocation,
   type UserHopPosition,
   type CrowdfundExperienceLiveData,
@@ -42,7 +44,8 @@ import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
-import { abortPipelinesForOtherAddress } from '@/hooks/useTxPipeline'
+import { abortPipelinesForOtherAddress, pipelinesAtom } from '@/hooks/useTxPipeline'
+import { usePendingTxWatcher } from '@/hooks/usePendingTxWatcher'
 import { PageNav, type Page } from '@/appNav'
 
 /**
@@ -396,6 +399,32 @@ export function App() {
   const allowance = useAllowance(wallet.address, usdcAddress, crowdfundAddress, armTokenAddress, provider, pollInterval)
   const inviteLinks = useInviteLinks(wallet.address, wallet.signer, crowdfundAddress, contractState.blockTimestamp, events)
 
+  // Resume-watch any tx that was broadcast but not yet confirmed when the page
+  // last unloaded (persisted in sessionStorage), via the fallback provider. On
+  // confirmation, refresh balances/allowance.
+  const watchedTxs = usePendingTxWatcher(provider, getHubChainId(), allowance.refresh)
+  const pipelines = useAtomValue(pipelinesAtom)
+  // A single header chip: prefer an unresolved watched tx; otherwise nudge to
+  // reopen Participate if a pipeline is still live (running/paused) off-screen.
+  const lastTxChip = useMemo<LastTx | null>(() => {
+    const explorerUrl = getExplorerUrl()
+    const pending = watchedTxs.find((t) => t.status === 'pending')
+    if (pending) {
+      return { status: 'submitted', label: pending.label, hash: pending.txHash, explorerUrl, timestamp: 0 }
+    }
+    const pipe = wallet.address ? pipelines[wallet.address] : undefined
+    if (pipe && (pipe.phase === 'running' || pipe.phase === 'paused')) {
+      return {
+        status: 'submitted',
+        label: 'Transaction in progress — reopen Participate to continue',
+        hash: null,
+        explorerUrl,
+        timestamp: 0,
+      }
+    }
+    return null
+  }, [watchedTxs, pipelines, wallet.address])
+
   // Per-hop invite-slot sections derived from real eligibility + invite-link
   // state. Multi-hop wallets get a section per eligible hop; single-hop
   // wallets get one. Same adapter feeds both the inline (CrowdfundExperience
@@ -677,6 +706,7 @@ export function App() {
           onClick={() => setPage('claim')}
         />
       )}
+      <LastTxChip override={lastTxChip} />
       <HeaderWalletButton usdcBalance={allowance.balance} />
       {!claimReady && windowOpen && (
         <ArmadaButton

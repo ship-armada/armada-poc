@@ -6,6 +6,8 @@ import { atom, useAtomValue, useStore } from 'jotai'
 import type { TransactionResponse } from 'ethers'
 import type { ReceiptLogLike, Step4Transaction } from '@armada/crowdfund-shared'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
+import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
+import { getHubChainId } from '@/config/network'
 
 /** One transaction in a pipeline: a labelled wallet send plus optional follow-ups. */
 export interface TxStep {
@@ -98,7 +100,21 @@ async function drive(store: Store, address: string): Promise<void> {
       setRow(store, address, i, { label: step.label, status: 'loading' })
       setPhase(store, address, 'running')
 
-      const result = await sendAndWaitTx(step.send)
+      const result = await sendAndWaitTx(step.send, (hash) => {
+        // Persist on broadcast so a reload can resume-watch this tx.
+        savePendingTx({
+          chainId: getHubChainId(),
+          address,
+          txHash: hash,
+          label: step.label,
+          sentAt: Date.now(),
+        })
+      })
+      // A resolved tx no longer needs watching; a timed-out one may still
+      // confirm, so it stays persisted for the post-timeout watcher (3.4).
+      if (result.hash && result.outcome !== 'timeout') {
+        removePendingTx(result.hash)
+      }
       if (result.outcome === 'success') {
         setRow(store, address, i, { status: 'done' })
         step.onReceipt?.(result.logs ?? [])

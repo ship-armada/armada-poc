@@ -3,6 +3,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createStore } from 'jotai'
+import { loadPendingTxs, clearPendingTxs } from '@/lib/pendingTx'
 import {
   runTxPipeline,
   setPipelineAttached,
@@ -53,6 +54,7 @@ let store: ReturnType<typeof createStore>
 beforeEach(() => {
   store = createStore()
   clearAllPipelines()
+  clearPendingTxs()
 })
 
 describe('tx pipeline store', () => {
@@ -142,6 +144,20 @@ describe('tx pipeline store', () => {
 
     await waitFor(() => getPipelineState(store, A).phase === 'aborted')
     expect(b.send).not.toHaveBeenCalled()
+  })
+
+  it('persists a broadcast tx and clears it once confirmed', async () => {
+    const d = deferred<unknown>()
+    const a = makeStep('approve', () => d.promise)
+    runTxPipeline(store, { address: A, steps: [a.step] })
+
+    // Once broadcast (hash known), the tx is persisted for reload resume-watch.
+    await waitFor(() => loadPendingTxs().some((t) => t.txHash === '0xapprove'))
+
+    d.resolve({ status: 1, logs: [] })
+    await waitFor(() => getPipelineState(store, A).phase === 'success')
+    // Confirmed → no longer pending.
+    expect(loadPendingTxs()).toEqual([])
   })
 
   it('retry resumes from the failed row and keeps earlier successes', async () => {

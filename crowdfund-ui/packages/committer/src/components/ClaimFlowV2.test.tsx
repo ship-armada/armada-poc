@@ -2,7 +2,7 @@
 // ABOUTME: Mocks the ethers Contract reads so claimed/allocation can be driven per address.
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { JsonRpcProvider } from 'ethers'
 import { ClaimFlowV2, type ClaimFlowV2Props } from './ClaimFlowV2'
@@ -72,5 +72,22 @@ describe('ClaimFlowV2 account switch', () => {
     // B's session while B's reads are outstanding.
     expect(await screen.findByText('Loading allocation…')).toBeTruthy()
     expect(screen.queryByText('ARM claimed.')).toBeNull()
+  })
+})
+
+describe('ClaimFlowV2 delegate field', () => {
+  it('stays empty after the user clears it (no auto-refill once edited)', async () => {
+    // A non-zero ARM allocation, not yet claimed → the review step with the
+    // delegate input renders, pre-filled with the connected wallet address.
+    claimedFor = () => Promise.resolve(false)
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n])
+
+    render(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
+
+    const input = (await screen.findByDisplayValue(ADDR_A)) as HTMLInputElement
+
+    // User clears the field — it must not snap back to the wallet address.
+    fireEvent.change(input, { target: { value: '' } })
+    expect(input.value).toBe('')
   })
 })

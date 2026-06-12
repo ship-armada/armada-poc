@@ -77,6 +77,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const runningRef = useRef(false)
+  // Once the user edits the delegate input, stop auto-filling it from the
+  // wallet address — otherwise clearing the field instantly refills it.
+  const hasUserEditedDelegate = useRef(false)
   // True when the allocation read fails — so we show a retry, not a false "0 ARM".
   const [readError, setReadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -91,6 +94,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
   // Default delegate to the connected wallet address when it becomes available.
   useEffect(() => {
+    if (hasUserEditedDelegate.current) return
     if (walletAddress && (delegate === '' || delegate === '0x')) {
       setDelegate(walletAddress)
     }
@@ -474,7 +478,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
               <input
                 type="text"
                 value={delegate}
-                onChange={(e) => setDelegate(e.target.value.trim())}
+                onChange={(e) => {
+                  hasUserEditedDelegate.current = true
+                  setDelegate(e.target.value.trim())
+                }}
                 placeholder="0x…"
                 className={styles.delegateInput}
               />

@@ -362,7 +362,17 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // Start (or retry) the pipeline. A defensive guard surfaces an actionable
   // error row instead of dropping into Step4's neutral state with nothing sent.
   const startPipeline = () => {
-    if (!signer || !deployment || amount <= 0) {
+    // Distinguish the three blockers so the error is actionable (and tells us
+    // which one actually fired) rather than a lumped "wallet not ready".
+    if (amount <= 0) {
+      setAttemptError('Enter an amount to commit.')
+      return
+    }
+    if (!deployment) {
+      setAttemptError('Still loading the crowdfund — try again in a moment.')
+      return
+    }
+    if (!signer) {
       setAttemptError('Wallet not ready — reconnect and retry.')
       return
     }

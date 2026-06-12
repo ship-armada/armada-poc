@@ -23,7 +23,6 @@ export interface UseWalletResult {
 
 export function useWallet(): UseWalletResult {
   const { address: rawAddress, isConnected, isConnecting, chainId: accountChainId } = useAccount()
-  const { data: walletClient } = useWalletClient()
   const { openConnectModal } = useConnectModal()
   const { openChainModal } = useChainModal()
   const { disconnect: wagmiDisconnect } = useDisconnect()
@@ -36,6 +35,23 @@ export function useWallet(): UseWalletResult {
   // a mid-session switch to the wrong network would never be detected.
   const isWrongNetwork =
     isConnected && accountChainId !== undefined && accountChainId !== expectedChainId
+
+  // The wallet-client query must not fetch while the wallet sits on an
+  // unconfigured chain. wagmi's useWalletClient always requests the CONFIG's
+  // chain id, and getConnectorClient throws ConnectorChainMismatchError when
+  // the wallet's live chain differs; the errored query has staleTime: Infinity
+  // and is only invalidated on address change, so it never recovers for the
+  // session. That bites the fresh-connect path with newer MetaMask (per-site
+  // network permissions connect on mainnet, then a second prompt switches to
+  // the hub chain): the first fetch poisons the query before the switch lands,
+  // and the signer stays null until a page refresh. Gating `enabled` on the
+  // account's chain means the first fetch happens only once it can succeed —
+  // the chain switch itself flips the gate and triggers it. A disabled query
+  // keeps previously-fetched data, so a wallet that wanders off-chain
+  // mid-session retains its signer (see the signer comment below).
+  const { data: walletClient } = useWalletClient({
+    query: { enabled: isConnected && !isWrongNetwork },
+  })
 
   // The signer reflects wallet *connection*, not chain correctness — those are
   // separate concerns. Gating it on `isWrongNetwork` would make signer-using

@@ -15,7 +15,7 @@ const mockUseChainModal = vi.fn()
 vi.mock('wagmi', () => ({
   useAccount: () => mockUseAccount(),
   useChainId: () => mockUseChainId(),
-  useWalletClient: () => mockUseWalletClient(),
+  useWalletClient: (params?: unknown) => mockUseWalletClient(params),
   useDisconnect: () => mockUseDisconnect(),
   useSwitchChain: () => mockUseSwitchChain(),
 }))
@@ -105,6 +105,68 @@ describe('useWallet', () => {
     // available so on-chain actions fail loudly (or prompt a switch) rather than
     // silently no-op'ing. Chain correctness is conveyed via isWrongNetwork.
     expect(result.current.signer).not.toBeNull()
+  })
+
+  // The wallet-client query must never fetch while the wallet sits on an
+  // unconfigured chain: wagmi's useWalletClient requests the CONFIG's chain id,
+  // and getConnectorClient throws ConnectorChainMismatchError when the wallet's
+  // live chain differs. With staleTime: Infinity and invalidation only on
+  // address change, that error state is permanent for the session — the
+  // "signer null after fresh connect on mainnet → switch to hub chain" bug.
+  // Gating `enabled` on the account chain means the first fetch happens only
+  // once it can succeed, and the chain switch itself triggers it.
+  describe('wallet-client query gating', () => {
+    const queryEnabled = (): boolean | undefined =>
+      (mockUseWalletClient.mock.lastCall?.[0] as { query?: { enabled?: boolean } } | undefined)
+        ?.query?.enabled
+
+    it('disables the query while disconnected', () => {
+      renderHook(() => useWallet())
+      expect(queryEnabled()).toBe(false)
+    })
+
+    it('disables the query while the wallet is on the wrong network', () => {
+      mockUseAccount.mockReturnValue({
+        address: '0xAbCdEf0000000000000000000000000000000001',
+        isConnected: true,
+        isConnecting: false,
+        chainId: WRONG_CHAIN_ID,
+      })
+      renderHook(() => useWallet())
+      expect(queryEnabled()).toBe(false)
+    })
+
+    it('enables the query once connected on the hub chain', () => {
+      mockUseAccount.mockReturnValue({
+        address: '0xAbCdEf0000000000000000000000000000000001',
+        isConnected: true,
+        isConnecting: false,
+        chainId: HUB_CHAIN_ID,
+      })
+      renderHook(() => useWallet())
+      expect(queryEnabled()).toBe(true)
+    })
+
+    it('enables the query when the wallet lands on the hub chain after connecting elsewhere', () => {
+      // Fresh-connect repro: MetaMask connects on mainnet, then a second prompt
+      // switches to the hub chain. The query must flip disabled → enabled.
+      mockUseAccount.mockReturnValue({
+        address: '0xAbCdEf0000000000000000000000000000000001',
+        isConnected: true,
+        isConnecting: false,
+        chainId: WRONG_CHAIN_ID,
+      })
+      const { rerender } = renderHook(() => useWallet())
+      expect(queryEnabled()).toBe(false)
+      mockUseAccount.mockReturnValue({
+        address: '0xAbCdEf0000000000000000000000000000000001',
+        isConnected: true,
+        isConnecting: false,
+        chainId: HUB_CHAIN_ID,
+      })
+      rerender()
+      expect(queryEnabled()).toBe(true)
+    })
   })
 
   it('switchNetwork opens the RainbowKit chain modal', () => {

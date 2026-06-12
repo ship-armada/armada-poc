@@ -60,9 +60,11 @@ const position: HopPosition = {
 }
 
 let refreshAllowance: ReturnType<typeof vi.fn>
+let onRunningChange: ReturnType<typeof vi.fn>
 
 function makeProps(): ParticipateFlowV2Props {
   refreshAllowance = vi.fn().mockResolvedValue(undefined)
+  onRunningChange = vi.fn()
   return {
     walletConnected: true,
     walletAddress: ADDR,
@@ -84,7 +86,7 @@ function makeProps(): ParticipateFlowV2Props {
     onGoToMyPosition: vi.fn(),
     onGoToNetwork: vi.fn(),
     onReceiptLogs: vi.fn(),
-    onRunningChange: vi.fn(),
+    onRunningChange: onRunningChange as unknown as (running: boolean) => void,
   }
 }
 
@@ -133,5 +135,29 @@ describe('ParticipateFlowV2 pipeline cancellation', () => {
     // must never prompt for the commit tx.
     expect(refreshAllowance).toHaveBeenCalled()
     expect(commitSpy).not.toHaveBeenCalled()
+  })
+
+  it('clears the parent running flag when unmounted mid-pipeline', async () => {
+    // Park the pipeline on the approve receipt so `submitting` stays true.
+    approveImpl = () =>
+      Promise.resolve({ hash: '0xapprove', wait: () => new Promise(() => {}) })
+    commitImpl = () =>
+      Promise.resolve({ hash: '0xcommit', wait: () => Promise.resolve({ status: 1, logs: [] }) })
+
+    const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '100' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and commit' }))
+    await act(async () => {})
+
+    // The pipeline is in flight — the parent was told it is running.
+    expect(onRunningChange).toHaveBeenCalledWith(true)
+
+    // Closing the modal unmounts the flow; the parent's flag must reset so a
+    // reopen doesn't think a pipeline is still running.
+    unmount()
+    expect(onRunningChange).toHaveBeenLastCalledWith(false)
   })
 })

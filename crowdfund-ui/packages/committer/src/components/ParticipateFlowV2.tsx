@@ -138,9 +138,12 @@ export function ParticipateFlowV2({
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
-  // Surface in-flight status so the modal can confirm before closing.
+  // Surface in-flight status so the modal can confirm before closing. The
+  // cleanup resets the parent's flag on unmount — closing the modal mid-run
+  // would otherwise leave it stuck `true` until the next mount.
   useEffect(() => {
     onRunningChange?.(submitting)
+    return () => onRunningChange?.(false)
   }, [submitting, onRunningChange])
 
   // Eligible positions, filtered to renderable hops and ordered ascending.

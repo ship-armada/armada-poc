@@ -462,6 +462,12 @@ export function App() {
     contractState.blockTimestamp >= contractState.windowStart &&
     contractState.blockTimestamp <= contractState.windowEnd
 
+  // Whole days left in the commit window — shown on the participate splash card.
+  const daysLeft =
+    contractState.windowEnd > 0 && contractState.blockTimestamp > 0
+      ? Math.max(0, Math.ceil((contractState.windowEnd - contractState.blockTimestamp) / 86_400))
+      : undefined
+
   // Connected user's projected ARM allocation, used by StatsBar's
   // "Your Allocation" card. Undefined when the user has no positions —
   // the card falls back to a "Connect wallet" placeholder.
@@ -766,6 +772,7 @@ export function App() {
           key={wallet.address ?? 'disconnected'}
           onRunningChange={setParticipateRunning}
           eventsLoading={eventsLoading}
+          daysLeft={daysLeft}
           walletConnected={wallet.connected}
           walletAddress={wallet.address}
           signer={wallet.signer}

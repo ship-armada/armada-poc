@@ -118,7 +118,8 @@ describe('ParticipateFlowV2 pipeline detach/resume', () => {
     const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
     const firstRefresh = refreshAllowance
 
-    // Wallet → commit auto-advance; enter an amount and go to review.
+    // First-timer: wallet → splash. Join past it, then enter an amount.
+    fireEvent.click(await screen.findByRole('button', { name: 'Join now' }))
     const input = (await screen.findByRole('textbox')) as HTMLInputElement
     fireEvent.change(input, { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
@@ -156,6 +157,8 @@ describe('ParticipateFlowV2 pipeline detach/resume', () => {
 
     const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
 
+    // First-timer: wallet → splash. Join past it, then enter an amount.
+    fireEvent.click(await screen.findByRole('button', { name: 'Join now' }))
     const input = (await screen.findByRole('textbox')) as HTMLInputElement
     fireEvent.change(input, { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
@@ -201,5 +204,37 @@ describe('ParticipateFlowV2 fully-committed shortcut', () => {
     expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
     // No amount input — we skipped the commit/input step entirely.
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+})
+
+describe('ParticipateFlowV2 splash card', () => {
+  it('shows the join-the-fleet splash to a first-timer, then advances to commit on Join', async () => {
+    render(<ParticipateFlowV2 {...makeProps()} />)
+
+    // Splash first — no amount input yet.
+    expect(await screen.findByText(/invited to join the fleet/i)).toBeTruthy()
+    expect(screen.queryByRole('textbox')).toBeNull()
+
+    // Join → commit input appears.
+    fireEvent.click(screen.getByRole('button', { name: 'Join now' }))
+    expect(await screen.findByRole('textbox')).toBeTruthy()
+  })
+
+  it('skips the splash for a returning participant (goes straight to commit)', async () => {
+    const returningPosition: HopPosition = {
+      hop: 0,
+      invitesReceived: 1,
+      committed: 100n * USDC_UNIT,
+      effectiveCap: 4000n * USDC_UNIT,
+      remaining: 3900n * USDC_UNIT,
+      invitesUsed: 0,
+      invitesAvailable: 0,
+      invitedBy: [],
+    }
+    render(<ParticipateFlowV2 {...makeProps()} positions={[returningPosition]} />)
+
+    // Straight to the commit input — no splash.
+    expect(await screen.findByRole('textbox')).toBeTruthy()
+    expect(screen.queryByText(/invited to join the fleet/i)).toBeNull()
   })
 })

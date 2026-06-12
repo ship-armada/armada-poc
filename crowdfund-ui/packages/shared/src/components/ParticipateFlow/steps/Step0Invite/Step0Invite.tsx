@@ -1,10 +1,12 @@
 // ABOUTME: Invite landing card — full-bleed fleet video + hop pill + Join CTA. Supports `default` (modal) and `landing` (full-page invite) variants.
-// ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/steps/Step0Invite/Step0Invite.tsx); fleet asset path (`/fleet.mp4`) still resolves to the consuming app's public folder.
+// ABOUTME: Ported from the armada-crowdfund mockup; fleet assets are ESM-imported so they bundle with crowdfund-shared (no public-folder dependency in the consuming app).
 
 import { useState } from 'react'
 import HopPill, { type HopVariant } from '../../../HopPill/HopPill'
 import hopPillStyles from '../../../HopPill/HopPill.module.css'
 import JoinButton from '../../../JoinButton/JoinButton'
+import fleetMp4 from '../../../../assets/fleet.mp4'
+import fleetPng from '../../../../assets/fleet.png'
 import styles from './Step0Invite.module.css'
 
 export interface Step0InviteProps {
@@ -43,8 +45,8 @@ export default function Step0Invite({
     >
       <video
         className={styles.media}
-        src="/fleet.mp4"
-        poster="/fleet.png"
+        src={fleetMp4}
+        poster={fleetPng}
         autoPlay
         loop
         muted

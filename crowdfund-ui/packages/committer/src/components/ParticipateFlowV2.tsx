@@ -7,6 +7,7 @@ import { useDisconnect } from 'wagmi'
 import { Contract, type Signer } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
+  Step0Invite,
   Step1Connect,
   Step1SwitchNetwork,
   Step1WalletNotWhitelisted,
@@ -27,12 +28,13 @@ import {
   estimateUserArmAllocation,
   type UserHopPosition,
   type HopStatsData,
+  type HopVariant,
 } from '@armada/crowdfund-shared'
 import { getHubNetworkLabel } from '@/config/network'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import type { HopPosition } from '@/hooks/useEligibility'
 
-type FlowStep = 'wallet' | 'commit' | 'review' | 'approve' | 'confirmation' | 'invites'
+type FlowStep = 'wallet' | 'splash' | 'commit' | 'review' | 'approve' | 'confirmation' | 'invites'
 
 export interface ParticipateFlowV2Props {
   walletConnected: boolean
@@ -67,6 +69,8 @@ export interface ParticipateFlowV2Props {
   /** True while contract events are still hydrating. Avoids flashing the
    *  "not whitelisted" screen at an eligible user before their positions load. */
   eventsLoading?: boolean
+  /** Days remaining in the commit window — shown on the first-time splash card. */
+  daysLeft?: number
 }
 
 // Convert a bigint USDC amount (6 decimals) into a plain number for the
@@ -116,6 +120,7 @@ export function ParticipateFlowV2({
   onReceiptLogs,
   onRunningChange,
   eventsLoading,
+  daysLeft,
 }: ParticipateFlowV2Props) {
   // The approve+commit pipeline lives in an address-keyed store so it survives a
   // modal close (re-attaching on reopen), pauses (rather than prompting) while
@@ -229,12 +234,30 @@ export function ParticipateFlowV2({
     [renderablePositions, baselineCommittedByHopUsdc],
   )
 
-  // Auto-advance past the wallet step when the user lands here with a wallet
-  // already connected. When they disconnect, fall back.
+  // First-time participants see the "join the fleet" splash card before the
+  // commit input; returning/additional committers skip straight to commit.
+  const showSplash = !isAdditionalCommit
+  const splashHopVariant: HopVariant = isMulti
+    ? 'multi-hop'
+    : primaryPosition
+      ? (['seed', 'hop-1', 'hop-2'] as const)[primaryPosition.hop]
+      : 'hop-1'
+
+  // Auto-advance once the wallet connects: first-timers to the splash, everyone
+  // else to commit. Disconnecting falls back to the wallet step. If a returning
+  // participant briefly landed on the splash before their positions hydrated,
+  // bump them onward.
   useEffect(() => {
-    if (walletConnected && step === 'wallet') setStep('commit')
-    if (!walletConnected && step !== 'wallet') setStep('wallet')
-  }, [walletConnected, step])
+    if (!walletConnected) {
+      if (step !== 'wallet') setStep('wallet')
+      return
+    }
+    if (step === 'wallet') {
+      setStep(showSplash ? 'splash' : 'commit')
+    } else if (step === 'splash' && !showSplash) {
+      setStep('commit')
+    }
+  }, [walletConnected, step, showSplash])
 
   // Pro-rata estimate of ARM allocation at the proposed commit amounts.
   // Aggregates across all hops via the shared `estimateUserArmAllocation`
@@ -412,6 +435,17 @@ export function ParticipateFlowV2({
     )
   }
 
+  if (step === 'splash') {
+    return (
+      <Step0Invite
+        hopVariant={splashHopVariant}
+        daysLeft={daysLeft}
+        hideConnectEyebrow
+        onJoin={() => setStep('commit')}
+      />
+    )
+  }
+
   if (step === 'commit') {
     if (!windowOpen) {
       return (
@@ -448,7 +482,7 @@ export function ParticipateFlowV2({
             setAmounts({ 0: next[0] ?? 0, 1: next[1] ?? 0, 2: next[2] ?? 0 })
             setStep('review')
           }}
-          onBack={onGoToNetwork}
+          onBack={() => (showSplash ? setStep('splash') : onGoToNetwork())}
         />
       )
     }
@@ -466,7 +500,7 @@ export function ParticipateFlowV2({
           })
           setStep('review')
         }}
-        onBack={onGoToNetwork}
+        onBack={() => (showSplash ? setStep('splash') : onGoToNetwork())}
         maxAmount={effectiveCapUsd}
         availableBalance={availableBalance}
         maxArm={effectiveCapUsd}

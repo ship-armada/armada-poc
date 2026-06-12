@@ -47,7 +47,17 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--primitives-spacing-4);
   padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+}
+
+/* Left column: label + secondary line(s). Grouping them lets the status icon
+ * (the row's other child) center vertically against the full content rather
+ * than just the label. */
+.txMain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .divider {
@@ -63,15 +73,13 @@
   color: var(--semantic-color-text-primary);
 }
 
-/* Secondary line under a tx row: phase text ("Submitting…") and/or explorer link.
- * Pulled up out of the row's bottom padding so it reads as one line below the
- * label, and inset (`spacing-5`) to align with the tx label's left edge. */
+/* Secondary line under the tx label (inside `.txMain`): phase text ("Submitting…")
+ * and/or explorer link. One line below the label; inherits the row's left inset. */
 .txMeta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: calc(var(--primitives-spacing-4) * -1 + 4px);
-  padding: 0 var(--primitives-spacing-5) var(--primitives-spacing-4);
+  margin-top: 4px;
   font-family: var(--primitives-fontFamily-ui);
   font-size: 12px;
   color: var(--semantic-color-text-muted, var(--semantic-color-text-primary));
@@ -138,12 +146,10 @@
   color: var(--semantic-color-surface-bg);
 }
 
-/* Wrapper around the error message + optional details toggle. Mirrors
- * `.txRow`'s horizontal padding so the error copy aligns with the tx label
- * above it (left-edge alignment) and with the bottom of the card; without
- * this the error text would butt up against the txCard border. */
+/* Error message + optional details toggle (inside `.txMain`). One line under
+ * the label, same as `.txMeta`; inherits the row's left inset. */
 .errorBlock {
-  padding: 0 var(--primitives-spacing-5) var(--primitives-spacing-4);
+  margin-top: 4px;
 }
 
 /* Error message body — wraps long unbroken strings (long tx hashes, JSON dumps)
@@ -153,7 +159,6 @@
   font-family: var(--primitives-fontFamily-ui);
   font-size: 12px;
   line-height: 1.4;
-  padding-top: 4px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

@@ -146,7 +146,53 @@ export default function Step4Approve({
             <div key={i} role="listitem">
               {i > 0 && <div className={styles.divider} aria-hidden="true" />}
               <div className={styles.txRow}>
-                <span className={styles.txLabel}>{tx.label}</span>
+                <div className={styles.txMain}>
+                  <span className={styles.txLabel}>{tx.label}</span>
+                  {((tx.status === 'loading' && tx.phaseLabel) || tx.hash) && (
+                    <div className={styles.txMeta}>
+                      {tx.status === 'loading' && tx.phaseLabel && <span>{tx.phaseLabel}</span>}
+                      {tx.hash &&
+                        (tx.explorerUrl ? (
+                          <a
+                            className={styles.txLink}
+                            href={`${tx.explorerUrl}/tx/${tx.hash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {`${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}`}
+                          </a>
+                        ) : (
+                          <span>{`${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}`}</span>
+                        ))}
+                    </div>
+                  )}
+                  {tx.status === 'error' && tx.errorMessage && (() => {
+                    const hasDetails = !!tx.errorDetails && tx.errorDetails !== tx.errorMessage
+                    const expanded = !!expandedDetails[i]
+                    return (
+                      <div className={styles.errorBlock}>
+                        <div className={styles.errorMessage}>{tx.errorMessage}</div>
+                        {hasDetails && (
+                          <>
+                            <button
+                              type="button"
+                              className={styles.errorDetailsToggle}
+                              aria-expanded={expanded}
+                              onClick={() =>
+                                setExpandedDetails((prev) => ({ ...prev, [i]: !prev[i] }))
+                              }
+                            >
+                              {expanded ? 'Hide details' : 'Show details'}
+                            </button>
+                            {expanded && (
+                              <pre className={styles.errorDetails}>{tx.errorDetails}</pre>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </div>
                 <div
                   className={styles.txStatus}
                   aria-label={STATUS_LABEL[tx.status]}
@@ -181,50 +227,6 @@ export default function Step4Approve({
                   </span>
                 </div>
               </div>
-              {((tx.status === 'loading' && tx.phaseLabel) || tx.hash) && (
-                <div className={styles.txMeta}>
-                  {tx.status === 'loading' && tx.phaseLabel && <span>{tx.phaseLabel}</span>}
-                  {tx.hash &&
-                    (tx.explorerUrl ? (
-                      <a
-                        className={styles.txLink}
-                        href={`${tx.explorerUrl}/tx/${tx.hash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {`${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}`}
-                      </a>
-                    ) : (
-                      <span>{`${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}`}</span>
-                    ))}
-                </div>
-              )}
-              {tx.status === 'error' && tx.errorMessage && (() => {
-                const hasDetails = !!tx.errorDetails && tx.errorDetails !== tx.errorMessage
-                const expanded = !!expandedDetails[i]
-                return (
-                  <div className={styles.errorBlock}>
-                    <div className={styles.errorMessage}>{tx.errorMessage}</div>
-                    {hasDetails && (
-                      <>
-                        <button
-                          type="button"
-                          className={styles.errorDetailsToggle}
-                          aria-expanded={expanded}
-                          onClick={() =>
-                            setExpandedDetails((prev) => ({ ...prev, [i]: !prev[i] }))
-                          }
-                        >
-                          {expanded ? 'Hide details' : 'Show details'}
-                        </button>
-                        {expanded && (
-                          <pre className={styles.errorDetails}>{tx.errorDetails}</pre>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )
-              })()}
             </div>
           ))}
         </div>

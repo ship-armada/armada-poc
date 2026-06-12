@@ -171,3 +171,30 @@ describe('ParticipateFlowV2 pipeline detach/resume', () => {
     expect(onRunningChange).toHaveBeenLastCalledWith(false)
   })
 })
+
+describe('ParticipateFlowV2 baseline capture', () => {
+  it('captures committed baselines after events hydrate, not frozen at mount', async () => {
+    // Open the flow while events are still hydrating (no positions yet).
+    const { rerender } = render(
+      <ParticipateFlowV2 {...makeProps()} eventsLoading positions={[]} />,
+    )
+    expect(screen.getByText('Checking eligibility…')).toBeTruthy()
+
+    // Events hydrate with a fully-committed position. If the baseline froze at
+    // mount (committed = 0), Step2 would show the input; with a correct capture
+    // it reflects the hydrated committed amount → "fully committed".
+    const fullPosition: HopPosition = {
+      hop: 0,
+      invitesReceived: 1,
+      committed: 4000n * USDC_UNIT,
+      effectiveCap: 4000n * USDC_UNIT,
+      remaining: 0n,
+      invitesUsed: 0,
+      invitesAvailable: 0,
+      invitedBy: [],
+    }
+    rerender(<ParticipateFlowV2 {...makeProps()} eventsLoading={false} positions={[fullPosition]} />)
+
+    expect(await screen.findByText(/fully committed/i)).toBeTruthy()
+  })
+})

@@ -1,7 +1,7 @@
 // ABOUTME: v2 Participate flow page-level controller — wires the designer's Step1–Step5 screens to the committer's eligibility/balance/tx hooks.
 // ABOUTME: Multi-hop aware — per-hop amount entry, single approve(total) + one commit(hop, amount) per non-zero hop. Real approve + commit transactions through the controlled Step4Approve.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useDisconnect } from 'wagmi'
 import { Contract, type Signer } from 'ethers'
@@ -182,30 +182,37 @@ export function ParticipateFlowV2({
     [totalNewAmountUsd],
   )
 
-  // Snapshot of committed USDC at the moment the user entered the flow.
-  // Captured per-hop and rolled up so Step5 can decide first-time-commit vs
-  // additional-commit copy without flickering when chain events refresh
-  // mid-flow.
-  const initialCommittedByHop = useMemo<AmountsByHop>(() => {
-    const out: AmountsByHop = { 0: 0, 1: 0, 2: 0 }
-    for (const p of renderablePositions) out[p.hop] = usdcToNumber(p.committed)
-    return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const initialCommittedTotal = useMemo(
-    () => Object.values(initialCommittedByHop).reduce((s, v) => s + v, 0),
-    [initialCommittedByHop],
-  )
-  const baselineCommittedByHopUsdc = useMemo<Record<0 | 1 | 2, bigint>>(() => {
-    const out: Record<0 | 1 | 2, bigint> = { 0: 0n, 1: 0n, 2: 0n }
-    for (const p of renderablePositions) out[p.hop] = p.committed
-    return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const baselineCappedDemand = useMemo(() => {
-    return cappedDemand
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Snapshot of committed USDC + capped demand at the moment the user entered
+  // the flow with events loaded. Captured once — on the first render where
+  // `eventsLoading` is false — into a ref, so it stays stable for the rest of
+  // the flow (Step5's first-time-vs-additional copy, Step2's remaining cap) and
+  // is immune to the post-confirmation `ingestReceiptLogs` bump. Opening the
+  // modal mid-hydration no longer freezes the baselines at zero.
+  const baselinesRef = useRef<{
+    initialCommittedByHop: AmountsByHop
+    baselineCommittedByHopUsdc: Record<0 | 1 | 2, bigint>
+    baselineCappedDemand: bigint
+  } | null>(null)
+  if (baselinesRef.current === null && !eventsLoading) {
+    const committedByHop: AmountsByHop = { 0: 0, 1: 0, 2: 0 }
+    const committedByHopUsdc: Record<0 | 1 | 2, bigint> = { 0: 0n, 1: 0n, 2: 0n }
+    for (const p of renderablePositions) {
+      committedByHop[p.hop] = usdcToNumber(p.committed)
+      committedByHopUsdc[p.hop] = p.committed
+    }
+    baselinesRef.current = {
+      initialCommittedByHop: committedByHop,
+      baselineCommittedByHopUsdc: committedByHopUsdc,
+      baselineCappedDemand: cappedDemand,
+    }
+  }
+  const { initialCommittedByHop, baselineCommittedByHopUsdc, baselineCappedDemand } =
+    baselinesRef.current ?? {
+      initialCommittedByHop: EMPTY_AMOUNTS,
+      baselineCommittedByHopUsdc: { 0: 0n, 1: 0n, 2: 0n } as Record<0 | 1 | 2, bigint>,
+      baselineCappedDemand: cappedDemand,
+    }
+  const initialCommittedTotal = Object.values(initialCommittedByHop).reduce((s, v) => s + v, 0)
   const isAdditionalCommit = initialCommittedTotal > 0
 
   // Auto-advance past the wallet step when the user lands here with a wallet

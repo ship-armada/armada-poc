@@ -175,7 +175,10 @@ export function useContractState(
     enabled: !!provider && !!contract,
     refetchInterval: pollIntervalMs,
     refetchIntervalInBackground: false,
-    staleTime: 0,
+    // Treat data as fresh for ~half a poll interval so a tab refocus doesn't
+    // fire a redundant read burst right after a scheduled poll, while still
+    // refetching on focus when the data is genuinely stale.
+    staleTime: Math.floor(pollIntervalMs / 2),
     gcTime: 10 * 60 * 1000,
     retry: false,
   })

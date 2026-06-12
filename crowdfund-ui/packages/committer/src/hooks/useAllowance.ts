@@ -69,7 +69,9 @@ export function useAllowance(
       }
     },
     enabled,
-    staleTime: 0,
+    // Fresh for ~half a poll interval so a tab refocus doesn't re-burst right
+    // after a scheduled poll (no polling ⇒ always refetch on focus).
+    staleTime: typeof pollIntervalMs === 'number' ? Math.floor(pollIntervalMs / 2) : 0,
     gcTime: 5 * 60 * 1000,
     retry: false,
     refetchInterval: pollIntervalMs ?? false,

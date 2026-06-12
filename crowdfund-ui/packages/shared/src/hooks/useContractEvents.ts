@@ -258,7 +258,9 @@ export function useContractEvents(config: UseContractEventsConfig): UseContractE
     enabled: !!provider && !!contractAddress,
     refetchInterval: pollIntervalMs,
     refetchIntervalInBackground: false,
-    staleTime: 0,
+    // Fresh for ~half a poll interval so a tab refocus doesn't re-fetch the log
+    // range right after a scheduled poll.
+    staleTime: Math.floor(pollIntervalMs / 2),
     gcTime: 30 * 60 * 1000,
     retry: false,
   })

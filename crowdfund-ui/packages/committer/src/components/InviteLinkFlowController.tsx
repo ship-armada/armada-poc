@@ -189,6 +189,10 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   const existingInvitesReceived = targetPosition?.invitesReceived ?? 0
   const existingCommittedUsdc = targetPosition?.committed ?? 0n
   const effectiveCapUsdc = effectiveInviteCapUsdc(existingInvitesReceived, hopCap)
+  // Already at the (post-redemption) cap with no room left to commit. Skip the
+  // input step and land on the confirmation screen with "fully committed" copy,
+  // matching the participate modal, instead of a dead-end input message.
+  const isFullyCommitted = existingCommittedUsdc > 0n && existingCommittedUsdc >= effectiveCapUsdc
 
   // Pro-rata ARM for a given new USD commit at the target hop — same math as
   // ParticipateFlowV2's Step3, so all /invite screens show one consistent number.
@@ -213,6 +217,24 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     },
     [targetHop, existingCommittedUsdc, effectiveCapUsdc, contractState.hopStats, contractState.cappedDemand, contractState.saleSize],
   )
+
+  // ARM reserved for the redeemer's existing committed position (no new commit)
+  // — shown on the "already fully committed" confirmation, where
+  // `estimateArmForAmount(0)` is 0 (no new amount).
+  const committedArmEstimate = useMemo(() => {
+    if (existingCommittedUsdc <= 0n) return 0
+    const projected: UserHopPosition[] = [
+      { hop: targetHop, committed: existingCommittedUsdc, effectiveCap: effectiveCapUsdc },
+    ]
+    return armToNumber(
+      estimateUserArmAllocation(
+        projected,
+        contractState.hopStats,
+        contractState.cappedDemand,
+        contractState.saleSize,
+      ),
+    )
+  }, [targetHop, existingCommittedUsdc, effectiveCapUsdc, contractState.hopStats, contractState.cappedDemand, contractState.saleSize])
 
   // Load deployment + JSON-RPC provider for balance/allowance + tx submission.
   // The failure is surfaced (deployError) with a Retry rather than swallowed —
@@ -339,6 +361,33 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
 
   // ── Step renderers ─────────────────────────────────────────────────────
 
+  // The confirmation screen, shared by the normal post-commit path and the
+  // "already fully committed" shortcut. `maxedOut` swaps in the no-new-commit
+  // copy and shows the ARM reserved for the existing position.
+  const renderConfirmation = (maxedOut: boolean) => (
+    <Step5Confirmation
+      steps={MODAL_STEPS}
+      stepIndex={4}
+      stepsStatus="confirmed"
+      amount={maxedOut ? 0 : amount}
+      estimatedArm={maxedOut ? committedArmEstimate : Math.round(estimateArmForAmount(amount))}
+      totalCommittedUsdc={maxedOut ? usdcToNumber(existingCommittedUsdc) : undefined}
+      maxedOut={maxedOut}
+      showViewPositionButton
+      onViewPosition={() => navigate('/?view=myposition')}
+      onInvite={() => {
+        // Match ParticipateFlowV2: stay in the flow's slot, swap to the
+        // invite-slots step. Falls back to navigating to MyPosition only if
+        // `useInviteSlots` couldn't derive a live config.
+        if (!inviteSlots.empty) {
+          transitionTo('invites')
+        } else {
+          navigate('/?view=myposition')
+        }
+      }}
+    />
+  )
+
   const renderCurrentStep = () => {
     if (deployError) {
       return (
@@ -379,6 +428,11 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         )
 
       case 'commit': {
+        // No room left to commit — skip straight to the confirmation screen
+        // (stepper, What's next, Invite) instead of a dead-end input message.
+        if (isFullyCommitted) {
+          return renderConfirmation(true)
+        }
         // Cap scales with invitesReceived (stacked re-invites are part of the
         // launch motion), so use the effective cap, not the 1× HOP_CONFIGS cap.
         const maxAmount = usdcToNumber(effectiveCapUsdc)
@@ -452,32 +506,8 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         )
       }
 
-      case 'confirmation': {
-        const estimatedArm = Math.round(estimateArmForAmount(amount))
-        return (
-          <Step5Confirmation
-            steps={MODAL_STEPS}
-            stepIndex={4}
-            stepsStatus="confirmed"
-            amount={amount}
-            estimatedArm={estimatedArm}
-            showViewPositionButton
-            onViewPosition={() => navigate('/?view=myposition')}
-            onInvite={() => {
-              // Match ParticipateFlowV2: stay in the flow's slot, swap to the
-              // invite-slots step. Falls back to navigating to MyPosition only
-              // if `useInviteSlots` couldn't derive a live config (e.g. graph
-              // state hasn't caught up yet — shouldn't happen since we
-              // ingested the commit-with-invite receipt above).
-              if (!inviteSlots.empty) {
-                transitionTo('invites')
-              } else {
-                navigate('/?view=myposition')
-              }
-            }}
-          />
-        )
-      }
+      case 'confirmation':
+        return renderConfirmation(false)
 
       case 'invites':
         return (

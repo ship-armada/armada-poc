@@ -172,17 +172,19 @@ describe('ParticipateFlowV2 pipeline detach/resume', () => {
   })
 })
 
-describe('ParticipateFlowV2 baseline capture', () => {
-  it('captures committed baselines after events hydrate, not frozen at mount', async () => {
+describe('ParticipateFlowV2 fully-committed shortcut', () => {
+  it('skips a fully-committed participant straight to the confirmation screen (after events hydrate)', async () => {
     // Open the flow while events are still hydrating (no positions yet).
     const { rerender } = render(
       <ParticipateFlowV2 {...makeProps()} eventsLoading positions={[]} />,
     )
     expect(screen.getByText('Checking eligibility…')).toBeTruthy()
 
-    // Events hydrate with a fully-committed position. If the baseline froze at
-    // mount (committed = 0), Step2 would show the input; with a correct capture
-    // it reflects the hydrated committed amount → "fully committed".
+    // Events hydrate with a position already at its cap. The committed baseline
+    // must be captured here (not frozen at the mount-time zero), so the flow
+    // recognizes "fully committed" and lands on the confirmation screen — maxed
+    // copy, stepper at Confirmation, Invite option — instead of a dead-end
+    // "fully committed" message on the input step.
     const fullPosition: HopPosition = {
       hop: 0,
       invitesReceived: 1,
@@ -195,6 +197,9 @@ describe('ParticipateFlowV2 baseline capture', () => {
     }
     rerender(<ParticipateFlowV2 {...makeProps()} eventsLoading={false} positions={[fullPosition]} />)
 
-    expect(await screen.findByText(/fully committed/i)).toBeTruthy()
+    expect(await screen.findByText("You're fully committed.")).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+    // No amount input — we skipped the commit/input step entirely.
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 })

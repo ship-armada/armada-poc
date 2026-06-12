@@ -215,6 +215,20 @@ export function ParticipateFlowV2({
   const initialCommittedTotal = Object.values(initialCommittedByHop).reduce((s, v) => s + v, 0)
   const isAdditionalCommit = initialCommittedTotal > 0
 
+  // Was the participant already at their cap on every eligible hop when they
+  // entered? Then there's nothing left to commit — we skip the input step and
+  // land them on the confirmation screen with "already fully committed" copy.
+  const isFullyCommitted = useMemo(
+    () =>
+      renderablePositions.length > 0 &&
+      renderablePositions.every(
+        (p) =>
+          baselineCommittedByHopUsdc[p.hop] > 0n &&
+          baselineCommittedByHopUsdc[p.hop] >= p.effectiveCap,
+      ),
+    [renderablePositions, baselineCommittedByHopUsdc],
+  )
+
   // Auto-advance past the wallet step when the user lands here with a wallet
   // already connected. When they disconnect, fall back.
   useEffect(() => {
@@ -252,6 +266,42 @@ export function ParticipateFlowV2({
     baselineCommittedByHopUsdc,
     saleSize,
   ])
+
+  // ARM reserved for the participant's existing committed position (no new
+  // commit). Shown on the "already fully committed" confirmation, where the
+  // pro-rata `estimatedArm` above is 0 (no new amount entered).
+  const committedArmEstimate = useMemo(() => {
+    if (renderablePositions.length === 0) return 0
+    const positions: UserHopPosition[] = renderablePositions.map((p) => ({
+      hop: p.hop,
+      committed: baselineCommittedByHopUsdc[p.hop],
+      effectiveCap: p.effectiveCap,
+    }))
+    return armToNumber(
+      estimateUserArmAllocation(positions, hopStats, baselineCappedDemand, saleSize),
+    )
+  }, [renderablePositions, baselineCommittedByHopUsdc, hopStats, baselineCappedDemand, saleSize])
+
+  // The confirmation screen, shared by the normal post-commit path and the
+  // "already fully committed" shortcut. `maxedOut` swaps in the no-new-commit
+  // copy and shows the ARM reserved for the existing position.
+  const renderConfirmation = () => (
+    <Step5Confirmation
+      onViewPosition={onGoToMyPosition}
+      onInvite={() => {
+        if (inviteSlotSections && inviteSlotSections.length > 0) {
+          setStep('invites')
+        } else {
+          onGoToMyPosition()
+        }
+      }}
+      amount={totalNewAmountUsd}
+      estimatedArm={isFullyCommitted ? committedArmEstimate : estimatedArm}
+      isAdditionalCommit={isAdditionalCommit}
+      totalCommittedUsdc={initialCommittedTotal + totalNewAmountUsd}
+      maxedOut={isFullyCommitted}
+    />
+  )
 
   // Build the approve(total) + N×commit(hop, amount) tx list. The approve covers
   // the sum so the user signs one allowance bump even on a multi-hop commit;
@@ -372,6 +422,12 @@ export function ParticipateFlowV2({
           </div>
         </div>
       )
+    }
+    // Already at the cap on every eligible hop — nothing to enter. Skip straight
+    // to the confirmation screen so the stepper, "What's next", and Invite
+    // options render (instead of a dead-end "fully committed" message).
+    if (isFullyCommitted) {
+      return renderConfirmation()
     }
     if (isMulti) {
       // Multi-hop: stacked per-hop input rows. Single-hop falls through to
@@ -501,21 +557,5 @@ export function ParticipateFlowV2({
   }
 
   // step === 'confirmation'
-  const totalCommittedUsdc = initialCommittedTotal + totalNewAmountUsd
-  return (
-    <Step5Confirmation
-      onViewPosition={onGoToMyPosition}
-      onInvite={() => {
-        if (inviteSlotSections && inviteSlotSections.length > 0) {
-          setStep('invites')
-        } else {
-          onGoToMyPosition()
-        }
-      }}
-      amount={totalNewAmountUsd}
-      estimatedArm={estimatedArm}
-      isAdditionalCommit={isAdditionalCommit}
-      totalCommittedUsdc={totalCommittedUsdc}
-    />
-  )
+  return renderConfirmation()
 }

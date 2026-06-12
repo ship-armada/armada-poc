@@ -16,6 +16,9 @@ interface Step5ConfirmationProps extends ParticipateStepBarProps {
   /** User committed more USDC in a follow-up visit (not first participation). */
   isAdditionalCommit?: boolean
   totalCommittedUsdc?: number
+  /** User was already at their maximum on entry — they didn't commit anything
+   *  this visit. Swaps in "already fully committed" copy (no amount added). */
+  maxedOut?: boolean
 }
 
 const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
@@ -37,6 +40,7 @@ export default function Step5Confirmation({
   estimatedArm = 1000,
   isAdditionalCommit = false,
   totalCommittedUsdc,
+  maxedOut = false,
   steps = DEFAULT_STEPS,
   stepIndex = 4,
   stepsStatus = 'confirmed',
@@ -45,10 +49,20 @@ export default function Step5Confirmation({
   const totalCommitted = totalCommittedUsdc ?? estimatedArm
   const formattedTotal = formatUsd(totalCommitted)
   const shouldShowViewPosition =
-    Boolean(onViewPosition) && (showViewPositionButton || isAdditionalCommit)
+    Boolean(onViewPosition) && (showViewPositionButton || isAdditionalCommit || maxedOut)
 
-  const headline = isAdditionalCommit ? 'Commitment updated.' : "You're in."
-  const subline = isAdditionalCommit ? (
+  const headline = maxedOut
+    ? "You're fully committed."
+    : isAdditionalCommit
+      ? 'Commitment updated.'
+      : "You're in."
+  const subline = maxedOut ? (
+    <>
+      You've committed the maximum — {formattedTotal} USDC.
+      <br />
+      Up to {estimatedArm.toLocaleString()} ARM reserved for you.
+    </>
+  ) : isAdditionalCommit ? (
     <>
       {formattedAmount} added to your position.
       <br />
@@ -75,9 +89,11 @@ export default function Step5Confirmation({
         <div className={styles.nextCard}>
           <span className={styles.nextEyebrow}>WHAT HAPPENS NEXT</span>
           <p className={styles.nextText}>
-            {isAdditionalCommit
-              ? 'Your updated allocation will be recalculated when the window closes. You can claim your tokens then.'
-              : 'The commitment window stays open until it closes. Then your ARM allocation is calculated and you can claim your tokens.'}
+            {maxedOut
+              ? 'Your ARM allocation is finalized when the commitment window closes. You can claim your tokens then.'
+              : isAdditionalCommit
+                ? 'Your updated allocation will be recalculated when the window closes. You can claim your tokens then.'
+                : 'The commitment window stays open until it closes. Then your ARM allocation is calculated and you can claim your tokens.'}
           </p>
         </div>
       </div>

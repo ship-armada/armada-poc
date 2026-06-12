@@ -801,6 +801,9 @@ export function App() {
           <div key="page-claim" className="animate-page-enter">
             <ErrorBoundary>
               <ClaimFlowV2
+                // Remount on account switch so one account's claim state
+                // (hasClaimed, allocation) can't show under another.
+                key={wallet.address ?? 'disconnected'}
                 walletConnected={wallet.connected}
                 walletAddress={wallet.address}
                 signer={wallet.signer}

@@ -112,6 +112,12 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     }
     let cancelled = false
     setReadError(false)
+    // Reset to loading on every (re)run so a prior account's resolved state
+    // (hasClaimed / allocation) can't leak into the screen while the new
+    // prerequisites' reads are still in flight. The App-level address key
+    // remounts this component on account switch; this guards the same-mount
+    // refetch paths (reloadKey retry, phase/provider changes).
+    setLoading(true)
     const fetchAllocation = async () => {
       const contract = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, provider)
 

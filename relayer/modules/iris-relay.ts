@@ -437,6 +437,33 @@ function parseMessageFields(messageHex: string): {
   return { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller };
 }
 
+/**
+ * Map `items` through async `fn` with at most `limit` in flight at once, preserving input order in
+ * the result. Used to fan out the per-message Iris attestation checks (network reads) without
+ * issuing an unbounded burst. `fn` must not throw (the Iris checker returns null on error).
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]!, i);
+    }
+  }
+  const n = Math.min(Math.max(1, limit), items.length || 1);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return results;
+}
+
+/** Bounded concurrency for the per-tick Iris attestation checks. */
+const IRIS_CHECK_CONCURRENCY = 8;
+
 function elapsed(since: number): string {
   const seconds = Math.floor((Date.now() - since) / 1000);
   if (seconds < 60) return `${seconds}s`;
@@ -1142,6 +1169,10 @@ export class IrisRelayModule {
     // the end rather than per-message — keeps disk write count linear in chains, not messages.
     const dirtyChains = new Set<ChainState>();
 
+    // ---- Phase 1: filter (serial — handles expiry, which mutates state) ----
+    // Collect the messages that actually need an Iris check this tick. Skips: already-broadcast
+    // (processInflightRelays owns them), expired (dead-lettered here), and backoff-windowed.
+    const toCheck: Array<{ hash: string; msg: PendingMessage; sourceState: ChainState | undefined }> = [];
     for (const [hash, msg] of entries) {
       const sourceState = this.getChainByDomain(msg.sourceDomain);
 
@@ -1179,17 +1210,28 @@ export class IrisRelayModule {
         continue;
       }
 
-      // Check Iris. Pass the locally-observed message bytes so the client can pick the right entry
-      // if Iris returns multiple, and a per-request timeout from the source chain's scanner config.
+      toCheck.push({ hash, msg, sourceState });
+    }
+
+    // ---- Phase 2: Iris attestation checks (parallel, bounded) ----
+    // These are read-only network round-trips; fanning them out means one slow Iris response no
+    // longer serially stalls every later message this tick. Submissions stay serial in Phase 3.
+    const checkResults = await mapWithConcurrency(toCheck, IRIS_CHECK_CONCURRENCY, ({ msg, sourceState }) => {
       msg.pollAttempts++;
       const irisTimeoutMs =
         sourceState?.config.scanner.rpcTimeoutMs ?? DEFAULT_IRIS_FETCH_TIMEOUT_MS;
-      const result = await this.irisClient.checkAttestation(
+      return this.irisClient.checkAttestation(
         msg.sourceDomain,
         msg.sourceTxHash,
         msg.messageBytes,
         irisTimeoutMs,
       );
+    });
+
+    // ---- Phase 3: handle results + submit (serial — mutates pending/processed + nonce stream) ----
+    for (let i = 0; i < toCheck.length; i++) {
+      const { hash, msg, sourceState } = toCheck[i]!;
+      const result = checkResults[i]!;
 
       if (!result) {
         // Not indexed yet or error — log periodically
@@ -1304,7 +1346,9 @@ export class IrisRelayModule {
       ),
     );
 
-    let mutated = false;
+    // Collect source chains whose state changed this tick, so each is persisted exactly once at the
+    // end (instead of the old inline success-persist PLUS a re-persist of every in-flight chain).
+    const dirtyChains = new Set<ChainState>();
     for (let i = 0; i < inflight.length; i++) {
       const { hash, msg } = inflight[i]!;
       const result = receipts[i]!;
@@ -1369,7 +1413,8 @@ export class IrisRelayModule {
           this.nonceCoordinator.reset(state.config.chainId);
           this.mempoolStuckWarned.delete(stuckTxHash);
           await this.scheduleResubmit(msg, state.config.name);
-          mutated = true;
+          const dropSrc = this.getChainByDomain(msg.sourceDomain);
+          if (dropSrc) dirtyChains.add(dropSrc);
         }
         continue;
       }
@@ -1383,13 +1428,7 @@ export class IrisRelayModule {
         console.log(
           `[iris-relay] ${state.config.name}: confirmed ${msg.submittedTxHash!.slice(0, 18)}... in block ${receipt.blockNumber} (${msg.retryAttempts} retries, ${Math.round((now - (msg.submittedAt ?? now)) / 1000)}s submit→confirm)`,
         );
-        // Persist BOTH chains: the source chain (for processedMessages add + pending delete)
-        // AND the destination chain (no state mutation but conceptually relevant). We only
-        // mark the source dirty here; the destination's pending state for this message
-        // already ran through the source's persistChain since pendingMessages is keyed by
-        // dedupKey globally.
-        if (sourceState) await this.persistChain(sourceState);
-        mutated = true;
+        if (sourceState) dirtyChains.add(sourceState);
       } else {
         // Reverted on chain — re-submit through the retry/backoff path. The nonce was consumed
         // by the reverted tx (it mined), so we do NOT reset the coordinator — the next submit
@@ -1399,21 +1438,16 @@ export class IrisRelayModule {
         );
         this.mempoolStuckWarned.delete(msg.submittedTxHash!);
         await this.scheduleResubmit(msg, state.config.name);
-        mutated = true;
+        const revertSrc = this.getChainByDomain(msg.sourceDomain);
+        if (revertSrc) dirtyChains.add(revertSrc);
       }
     }
 
-    // Persist any source chain whose state changed (stuck/revert clears submittedTxHash, success
-    // already persisted inline above to minimise the crash-recovery window).
-    if (mutated) {
-      const dirtySourceChains = new Set<ChainState>();
-      for (const { msg } of inflight) {
-        const sourceState = this.getChainByDomain(msg.sourceDomain);
-        if (sourceState) dirtySourceChains.add(sourceState);
-      }
-      for (const dirtyState of dirtySourceChains) {
-        await this.persistChain(dirtyState);
-      }
+    // One disk write per changed source chain — bounded by chain count, not message count. (Some
+    // give-up paths persist inline via deadLetter; a redundant write here is harmless and the
+    // JsonStateStore serialises per key.)
+    for (const dirtyState of dirtyChains) {
+      await this.persistChain(dirtyState);
     }
   }
 

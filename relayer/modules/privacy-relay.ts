@@ -17,6 +17,7 @@
 import { RelayError } from "../types";
 import type { RelayRequest, TransactionStatus } from "../types";
 import type { WalletManager } from "./wallet-manager";
+import { WalletLockedError } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
 import type { VerifierContext } from "./broadcaster-fee-verifier";
 import { verifyBroadcasterFee } from "./broadcaster-fee-verifier";
@@ -276,6 +277,16 @@ export class PrivacyRelay {
       this.counters.inc(`submitSuccess.${selectorName}`);
       return { txHash: result.txHash };
     } catch (e: any) {
+      // Lost the per-chain lock race to a concurrent submit on this chain. This is a transient
+      // "try again shortly" condition, not a real submission failure — surface it as RELAYER_BUSY
+      // (503) so the client retries, instead of SUBMISSION_FAILED (502).
+      if (e instanceof WalletLockedError) {
+        this.counters.inc(`submitFail.${selectorName}.RELAYER_BUSY`);
+        throw new RelayError(
+          "RELAYER_BUSY",
+          `Relayer wallet on chain ${chainId} is busy processing another transaction. Please retry shortly.`,
+        );
+      }
       const code = e.message?.includes("Duplicate") ? "DUPLICATE_TX" : "SUBMISSION_FAILED";
       this.counters.inc(`submitFail.${selectorName}.${code}`);
       if (code === "DUPLICATE_TX") {

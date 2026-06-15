@@ -32,6 +32,18 @@ interface SubmitResult {
   txHash: string;
 }
 
+/**
+ * Thrown when a submit loses the per-chain lock race (another tx is mid-broadcast on this chain).
+ * A typed error lets PrivacyRelay map it to RELAYER_BUSY/503 instead of misreporting it as a
+ * generic SUBMISSION_FAILED/502 — string-matching the message would be brittle.
+ */
+export class WalletLockedError extends Error {
+  constructor(public readonly chainId: number) {
+    super(`Wallet is locked on chain ${chainId} — another transaction is in progress`);
+    this.name = "WalletLockedError";
+  }
+}
+
 interface ChainState {
   provider: ethers.JsonRpcProvider;
   wallet: ethers.Wallet;
@@ -166,9 +178,7 @@ export class WalletManager {
     }
 
     if (state.locked) {
-      throw new Error(
-        `Wallet is locked on chain ${chainId} — another transaction is in progress`,
-      );
+      throw new WalletLockedError(chainId);
     }
 
     // Check dedup cache (chain-scoped — see note on `txCache`).

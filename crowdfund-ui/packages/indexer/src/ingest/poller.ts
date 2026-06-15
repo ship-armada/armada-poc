@@ -247,9 +247,21 @@ export class CrowdfundIndexerPoller {
     const interval = this.options.snapshotPublishIntervalMs ?? this.options.pollIntervalMs
     if (this.lastPublishedAt > 0 && now - this.lastPublishedAt < interval) return
 
-    await this.options.publishSnapshot()
-    this.lastPublishedAt = now
-    this.logger.info('Crowdfund indexer poll published snapshot')
+    // A publish/reconcile failure must not fail the ingest cycle — ingestion already
+    // succeeded by this point. Record it as lastError and retry next cycle (we leave
+    // lastPublishedAt unchanged so the interval gate does not defer the retry).
+    try {
+      await this.options.publishSnapshot()
+      this.lastPublishedAt = now
+      this.logger.info('Crowdfund indexer poll published snapshot')
+    } catch (err) {
+      const message = getErrorMessage(err)
+      this.logger.warn(`Crowdfund indexer poll snapshot publish failed: ${message}`)
+      await this.options.store.update((data) => ({
+        ...data,
+        lastError: message,
+      }))
+    }
   }
 
   private schedule(delayMs: number): void {

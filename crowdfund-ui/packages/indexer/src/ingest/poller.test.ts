@@ -215,6 +215,48 @@ describe('CrowdfundIndexerPoller', () => {
     expect(seeded?.status).toBe('failed')
   })
 
+  it('keeps the poll cycle completed when snapshot publishing fails', async () => {
+    const store = await makeStore()
+    const provider: RangeLogProvider = {
+      getBlockNumber: async () => 102,
+      getLogs: async ({ fromBlock }) => [makeLog(fromBlock)],
+    }
+    const warnings: string[] = []
+    const logger = {
+      info: () => {},
+      warn: (message: string) => warnings.push(message),
+      error: () => {},
+    }
+
+    const poller = new CrowdfundIndexerPoller({
+      ...config,
+      store,
+      provider,
+      auditProvider: provider,
+      auditProviderName: 'audit',
+      maxBlockRange: 5,
+      rpcTimeoutMs: 50,
+      rpcMaxRetries: 0,
+      retryBaseDelayMs: 1,
+      pollIntervalMs: 1000,
+      errorBackoffMs: 1000,
+      publishOnPoll: true,
+      publishSnapshot: async () => {
+        throw new Error('Refusing to publish failed reconciliation: hop0.totalCommitted mismatch')
+      },
+      logger,
+    })
+
+    const result = await poller.runOnce()
+    const data = await store.read()
+
+    // Backfill succeeded, so the cycle is completed even though publishing threw.
+    expect(result.status).toBe('completed')
+    expect(data.cursor.verifiedCursor).toBeGreaterThanOrEqual(100)
+    expect(warnings.some((w) => w.includes('publish'))).toBe(true)
+    expect(data.lastError).toContain('Refusing to publish')
+  })
+
   it('does not run overlapping poll cycles', async () => {
     const store = await makeStore()
     const controls: { releaseBlockNumber?: () => void } = {}

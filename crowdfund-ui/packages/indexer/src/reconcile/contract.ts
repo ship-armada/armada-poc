@@ -19,10 +19,17 @@ export interface EstimatedCappedDemandRead {
   perHopCapped: readonly bigint[]
 }
 
+// ethers v6 accepts a trailing overrides object on read calls; `blockTag` pins the
+// read to a historical block so reconciliation compares the graph and the chain at the
+// SAME height (the snapshot's verifiedCursor), not at `latest`.
+export interface CrowdfundReadOverrides {
+  blockTag?: number
+}
+
 export interface CrowdfundReadable {
-  getParticipantCount(): Promise<bigint | number>
-  getHopStats(hop: number): Promise<HopStatsRead | readonly [bigint, bigint, bigint, bigint]>
-  getEstimatedCappedDemand(): Promise<EstimatedCappedDemandRead | readonly [bigint, readonly bigint[]]>
+  getParticipantCount(overrides?: CrowdfundReadOverrides): Promise<bigint | number>
+  getHopStats(hop: number, overrides?: CrowdfundReadOverrides): Promise<HopStatsRead | readonly [bigint, bigint, bigint, bigint]>
+  getEstimatedCappedDemand(overrides?: CrowdfundReadOverrides): Promise<EstimatedCappedDemandRead | readonly [bigint, readonly bigint[]]>
 }
 
 export interface ReconcileSnapshotInput {
@@ -97,15 +104,55 @@ function addMismatch(mismatches: string[], label: string, expected: bigint | num
   }
 }
 
+// Non-archive nodes prune historical state, so a blockTag read at an old block can fail
+// with a "missing trie node"/"state not available" error. That is not a reconciliation
+// failure — it means we cannot check at this height, so we degrade to `pending` (the
+// same status used when no audit RPC is configured) rather than blocking publishing.
+function isHistoricalStateUnavailable(err: unknown): boolean {
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return (
+    message.includes('missing trie node') ||
+    message.includes('historical state') ||
+    message.includes('state is not available') ||
+    message.includes('state not available') ||
+    message.includes('missing state') ||
+    message.includes('header not found')
+  )
+}
+
 export async function reconcileSnapshot(input: ReconcileSnapshotInput): Promise<ReconciliationResult> {
   const stats = deriveGraphAggregateStats(input.graph)
-  const [participantCount, estimated, hop0, hop1, hop2] = await Promise.all([
-    input.contract.getParticipantCount(),
-    input.contract.getEstimatedCappedDemand(),
-    input.contract.getHopStats(0),
-    input.contract.getHopStats(1),
-    input.contract.getHopStats(2),
-  ])
+  // Pin all reads to the snapshot's verified block so the chain side and the
+  // event-derived side are compared at the same height.
+  const overrides: CrowdfundReadOverrides = { blockTag: input.checkedBlock }
+  let participantCount: bigint | number
+  let estimated: EstimatedCappedDemandRead | readonly [bigint, readonly bigint[]]
+  let hop0: HopStatsRead | readonly [bigint, bigint, bigint, bigint]
+  let hop1: HopStatsRead | readonly [bigint, bigint, bigint, bigint]
+  let hop2: HopStatsRead | readonly [bigint, bigint, bigint, bigint]
+  try {
+    [participantCount, estimated, hop0, hop1, hop2] = await Promise.all([
+      input.contract.getParticipantCount(overrides),
+      input.contract.getEstimatedCappedDemand(overrides),
+      input.contract.getHopStats(0, overrides),
+      input.contract.getHopStats(1, overrides),
+      input.contract.getHopStats(2, overrides),
+    ])
+  } catch (err) {
+    if (isHistoricalStateUnavailable(err)) {
+      const reason = err instanceof Error ? err.message : String(err)
+      return {
+        status: 'pending',
+        checkedBlock: input.checkedBlock,
+        provider: input.providerName,
+        checkedAt: new Date().toISOString(),
+        mismatches: [
+          `Reconciliation skipped: historical state at block ${input.checkedBlock} unavailable from ${input.providerName} (non-archive node): ${reason}`,
+        ],
+      }
+    }
+    throw err
+  }
 
   const parsedEstimated = parseEstimated(estimated)
   const hopStats = [parseHopStats(hop0), parseHopStats(hop1), parseHopStats(hop2)] as const

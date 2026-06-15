@@ -69,6 +69,66 @@ describe('contract reconciliation', () => {
     expect(result.mismatches).toEqual([])
   })
 
+  it('pins every contract read to the checked block', async () => {
+    const graph = buildGraph([
+      makeEvent('SeedAdded', { seed: participant }, 100),
+      makeEvent('Committed', { participant, hop: 0, amount: 1_000_000n }, 101),
+    ])
+    const seenBlockTags: Array<number | undefined> = []
+    const contract: CrowdfundReadable = {
+      getParticipantCount: async (overrides) => {
+        seenBlockTags.push(overrides?.blockTag)
+        return 1n
+      },
+      getEstimatedCappedDemand: async (overrides) => {
+        seenBlockTags.push(overrides?.blockTag)
+        return [1_000_000n, [1_000_000n, 0n, 0n]]
+      },
+      getHopStats: async (hop, overrides) => {
+        seenBlockTags.push(overrides?.blockTag)
+        return hop === 0 ? [1_000_000n, 1_000_000n, 1n, 1n] : [0n, 0n, 0n, 0n]
+      },
+    }
+
+    const result = await reconcileSnapshot({ graph, contract, checkedBlock: 110, providerName: 'primary' })
+
+    expect(result.status).toBe('passed')
+    expect(seenBlockTags).toHaveLength(5)
+    expect(seenBlockTags.every((tag) => tag === 110)).toBe(true)
+  })
+
+  it('returns pending (not failed) when historical state is unavailable', async () => {
+    const graph = buildGraph([makeEvent('SeedAdded', { seed: participant }, 100)])
+    const contract: CrowdfundReadable = {
+      getParticipantCount: async () => {
+        throw new Error('missing trie node 0xabc (path ) state 0xdef is not available')
+      },
+      getEstimatedCappedDemand: async () => [0n, [0n, 0n, 0n]],
+      getHopStats: async () => [0n, 0n, 0n, 0n],
+    }
+
+    const result = await reconcileSnapshot({ graph, contract, checkedBlock: 110, providerName: 'primary' })
+
+    expect(result.status).toBe('pending')
+    expect(result.checkedBlock).toBe(110)
+    expect(result.mismatches.join(' ')).toContain('historical state')
+  })
+
+  it('rethrows non-state read errors', async () => {
+    const graph = buildGraph([makeEvent('SeedAdded', { seed: participant }, 100)])
+    const contract: CrowdfundReadable = {
+      getParticipantCount: async () => {
+        throw new Error('connection refused')
+      },
+      getEstimatedCappedDemand: async () => [0n, [0n, 0n, 0n]],
+      getHopStats: async () => [0n, 0n, 0n, 0n],
+    }
+
+    await expect(
+      reconcileSnapshot({ graph, contract, checkedBlock: 110, providerName: 'primary' }),
+    ).rejects.toThrow('connection refused')
+  })
+
   it('fails when contract reads disagree with event-derived aggregates', async () => {
     const graph = buildGraph([
       makeEvent('SeedAdded', { seed: participant }, 100),

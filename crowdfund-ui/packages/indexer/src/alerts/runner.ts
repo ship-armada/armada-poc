@@ -21,6 +21,8 @@ export interface RunAlertsOnceInput {
   /** Used to read finalizedAt and treasury USDC balance. Optional — null when offline. */
   chainState: ChainStateReader | null
   notifier: Notifier
+  /** Wall-clock staleness budget (ms) for health classification; defaults to 5 minutes. */
+  staleAfterMs?: number
   /** Test seam — defaults to `() => Math.floor(Date.now() / 1000)`. */
   nowSeconds?: () => number
 }
@@ -45,6 +47,7 @@ export async function runAlertsOnce(input: RunAlertsOnceInput): Promise<Evaluato
     lastError: data.lastError,
     latestSnapshotHash: data.latestSnapshotHash,
     latestStaticSnapshotUrl: data.latestStaticSnapshotUrl,
+    staleAfterMs: input.staleAfterMs,
   })
 
   let finalizedAt: number | null = null

@@ -82,7 +82,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCliArgs {
   }
 }
 
-export function getStatusHealth(data: IndexerStoreData): IndexerHealth {
+export function getStatusHealth(data: IndexerStoreData, staleAfterMs?: number): IndexerHealth {
   return buildHealth({
     cursor: data.cursor,
     gapRanges: getRepairRanges(data.ranges),
@@ -92,6 +92,7 @@ export function getStatusHealth(data: IndexerStoreData): IndexerHealth {
     lastError: data.lastError,
     latestSnapshotHash: data.latestSnapshotHash,
     latestStaticSnapshotUrl: data.latestStaticSnapshotUrl,
+    staleAfterMs,
   })
 }
 
@@ -99,8 +100,8 @@ export function formatRange(range: BlockRange): string {
   return `${range.fromBlock}-${range.toBlock}`
 }
 
-export function formatStatus(data: IndexerStoreData): string {
-  const health = getStatusHealth(data)
+export function formatStatus(data: IndexerStoreData, staleAfterMs?: number): string {
+  const health = getStatusHealth(data, staleAfterMs)
   const gaps = health.gapRanges.length > 0
     ? health.gapRanges.map(formatRange).join(', ')
     : 'none'
@@ -122,9 +123,9 @@ export function formatStatus(data: IndexerStoreData): string {
 // Handles the read-only `status` command. RPC-backed commands (verify/repair/backfill,
 // rebuild-snapshot, publish-snapshot) are dispatched in cli/index.ts before reaching here,
 // so this function intentionally accepts only `status`.
-export function runReadOnlyCommand(args: ParsedCliArgs, data: IndexerStoreData): CliCommandResult {
+export function runReadOnlyCommand(args: ParsedCliArgs, data: IndexerStoreData, staleAfterMs?: number): CliCommandResult {
   if (args.command !== 'status') {
     throw new Error(`runReadOnlyCommand received non-status command: ${args.command}`)
   }
-  return { exitCode: 0, output: formatStatus(data) }
+  return { exitCode: 0, output: formatStatus(data, staleAfterMs) }
 }

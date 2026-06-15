@@ -23,6 +23,7 @@ export interface CreateIndexerApiOptions {
   chainId: number
   contractAddress: string
   repairMaxAttempts: number
+  staleAfterMs?: number
 }
 
 function readNumberEnv(name: string, fallback: number): number {
@@ -62,7 +63,7 @@ function getInitialCursor(): CursorState {
   }
 }
 
-function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number) {
+function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number, staleAfterMs?: number) {
   return buildHealth({
     cursor: data.cursor,
     gapRanges: getRepairRanges(data.ranges),
@@ -73,6 +74,7 @@ function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number)
     lastError: data.lastError,
     latestSnapshotHash: data.latestSnapshotHash,
     latestStaticSnapshotUrl: data.latestStaticSnapshotUrl,
+    staleAfterMs,
   })
 }
 
@@ -145,7 +147,7 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
   app.get('/health', async (_req, res, next) => {
     try {
       const data = await options.store.read()
-      res.json(buildHealthFromStore(data, options.repairMaxAttempts))
+      res.json(buildHealthFromStore(data, options.repairMaxAttempts, options.staleAfterMs))
     } catch (err) {
       next(err)
     }
@@ -211,11 +213,12 @@ async function main(): Promise<void> {
   const repairMaxAttempts = readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6)
   const repairBackoffBaseMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_BASE_MS', 30_000)
   const repairBackoffMaxMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_MAX_MS', 1_800_000)
+  const staleAfterMs = readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000)
   const store = createIndexerStore({
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
-  const app = createIndexerApi({ store, chainId, contractAddress, repairMaxAttempts })
+  const app = createIndexerApi({ store, chainId, contractAddress, repairMaxAttempts, staleAfterMs })
   app.listen(port, () => {
     process.stdout.write(`Crowdfund indexer API listening on ${port}\n`)
   })

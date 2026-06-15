@@ -246,6 +246,7 @@ async function main(): Promise<void> {
       stateStore: createFileAlertStateStore(stateFile),
       params,
       repairMaxAttempts: readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6),
+      staleAfterMs: readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000),
       chainState,
       notifier: createDiscordNotifierFromEnv(),
     })
@@ -258,7 +259,7 @@ async function main(): Promise<void> {
     return
   }
 
-  const result = runReadOnlyCommand(args, data)
+  const result = runReadOnlyCommand(args, data, readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000))
   process.stdout.write(`${result.output}\n`)
   process.exitCode = result.exitCode
 }

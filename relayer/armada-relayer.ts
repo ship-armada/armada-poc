@@ -307,6 +307,18 @@ async function main() {
     }
     cctpRelayModule = cctpRelay;
   }
+
+  // A partial init (some chains failed) is a warning above and the relay runs on the chains that
+  // did come up. But ZERO chains means the CCTP relay is completely dead — the process would run
+  // looking partly alive (HTTP up) while silently relaying nothing. Treat that as fatal so
+  // monitoring (systemd/k8s) restarts it rather than masking the outage.
+  if (cctpRelayModule.chainCount === 0) {
+    console.error(
+      "[armada] FATAL: no CCTP chains initialized — the relay would run delivering nothing. " +
+        "Check RPC connectivity and deployment files. Exiting.",
+    );
+    process.exit(1);
+  }
   console.log();
 
   // Initialize HTTP API — constructed AFTER cctpRelayModule so the /health closure can bind to

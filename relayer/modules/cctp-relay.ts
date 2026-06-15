@@ -98,6 +98,13 @@ interface RetryEntry {
 /** Max retry attempts before giving up */
 const MAX_RETRIES = 5;
 
+/**
+ * Timeout (ms) for the inline `tx.wait()` confirmation. Deliberately longer than the per-call RPC
+ * timeout — tx.wait legitimately blocks for a block time — but bounded so a chain that stops mining
+ * mid-wait can't hang the relay loop forever. On local Anvil mining is instant so this never fires.
+ */
+const RELAY_CONFIRM_TIMEOUT_MS = 60_000;
+
 /** Base delay for exponential backoff (2 seconds) */
 const RETRY_BASE_DELAY_MS = 2000;
 
@@ -709,11 +716,15 @@ export class CCTPRelayModule {
             console.log(
               `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
             );
-            return hookRouter.relayWithHook(
-              encodedMessage,
-              "0x", // Empty attestation — mock skips verification
-              { nonce: txNonce }
-            ) as Promise<ethers.ContractTransactionResponse>;
+            return withTimeout(
+              hookRouter.relayWithHook(
+                encodedMessage,
+                "0x", // Empty attestation — mock skips verification
+                { nonce: txNonce }
+              ) as Promise<ethers.ContractTransactionResponse>,
+              destState.config.scanner.rpcTimeoutMs,
+              `relayWithHook ${destState.config.name}`,
+            );
           }
           const messageTransmitter = new ethers.Contract(
             destState.messageTransmitter,
@@ -723,16 +734,24 @@ export class CCTPRelayModule {
           console.log(
             `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
           );
-          return messageTransmitter.receiveMessage(
-            encodedMessage,
-            "0x", // Empty attestation — mock skips verification
-            { nonce: txNonce }
-          ) as Promise<ethers.ContractTransactionResponse>;
+          return withTimeout(
+            messageTransmitter.receiveMessage(
+              encodedMessage,
+              "0x", // Empty attestation — mock skips verification
+              { nonce: txNonce }
+            ) as Promise<ethers.ContractTransactionResponse>,
+            destState.config.scanner.rpcTimeoutMs,
+            `receiveMessage ${destState.config.name}`,
+          );
         }
       );
 
       console.log(`  Tx hash: ${tx.hash}`);
-      const receipt = await tx.wait();
+      const receipt = await withTimeout(
+        tx.wait(),
+        RELAY_CONFIRM_TIMEOUT_MS,
+        `tx.wait ${destState.config.name} ${tx.hash.slice(0, 12)}`,
+      );
       console.log(`  Confirmed in block ${receipt?.blockNumber}`);
 
       sourceState.processedMessages.add(messageKey);
@@ -870,26 +889,38 @@ export class CCTPRelayModule {
               HOOK_ROUTER_ABI,
               destState.wallet
             );
-            return hookRouter.relayWithHook(
-              encodedMessage,
-              "0x",
-              { nonce: txNonce }
-            ) as Promise<ethers.ContractTransactionResponse>;
+            return withTimeout(
+              hookRouter.relayWithHook(
+                encodedMessage,
+                "0x",
+                { nonce: txNonce }
+              ) as Promise<ethers.ContractTransactionResponse>,
+              destState.config.scanner.rpcTimeoutMs,
+              `relayWithHook ${destState.config.name}`,
+            );
           }
           const messageTransmitter = new ethers.Contract(
             destState.messageTransmitter,
             MESSAGE_TRANSMITTER_ABI,
             destState.wallet
           );
-          return messageTransmitter.receiveMessage(
-            encodedMessage,
-            "0x",
-            { nonce: txNonce }
-          ) as Promise<ethers.ContractTransactionResponse>;
+          return withTimeout(
+            messageTransmitter.receiveMessage(
+              encodedMessage,
+              "0x",
+              { nonce: txNonce }
+            ) as Promise<ethers.ContractTransactionResponse>,
+            destState.config.scanner.rpcTimeoutMs,
+            `receiveMessage ${destState.config.name}`,
+          );
         }
       );
 
-      const receipt = await tx.wait();
+      const receipt = await withTimeout(
+        tx.wait(),
+        RELAY_CONFIRM_TIMEOUT_MS,
+        `tx.wait ${destState.config.name} ${tx.hash.slice(0, 12)}`,
+      );
       console.log(
         `[cctp-relay] Retry successful for ${messageKey} in block ${receipt?.blockNumber}`
       );
@@ -955,6 +986,8 @@ export class CCTPRelayModule {
         fromBlock,
         toBlock,
         maxRange: maxLogRange,
+        // Bound each getLogs call so a wedged RPC can't pin the poll loop (or stop()).
+        perCallTimeoutMs: rpcTimeoutMs,
         filter: {
           address: state.messageTransmitter,
           topics: [eventTopic],

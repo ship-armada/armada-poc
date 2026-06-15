@@ -10,6 +10,7 @@
  */
 
 import type { ethers } from "ethers";
+import { withTimeout } from "./rpc-utils";
 
 /**
  * Per-chunk progress signal. Fired after each successful chunk so callers can persist the
@@ -41,6 +42,14 @@ export interface ChunkedLogsOptions {
    * trail or equal ingested logs."
    */
   onChunk?: (info: ChunkProgress<ethers.Log>) => Promise<void> | void;
+  /**
+   * Optional per-`getLogs`-call timeout (ms). When set, each chunk's getLogs is raced against this
+   * budget so one wedged RPC socket can't pin the poll loop (and the module's stop()). On timeout
+   * the call throws, halting the scan with the cursor at the last completed chunk — same recovery
+   * as any other getLogs error. Relayer-only addition (the long-running scanner needs it); the
+   * frontend twin leaves it unset.
+   */
+  perCallTimeoutMs?: number;
 }
 
 /**
@@ -74,11 +83,14 @@ export async function getLogsChunked(
     const windowEnd = cursor + opts.maxRange - 1;
     const chunkTo = windowEnd > opts.toBlock ? opts.toBlock : windowEnd;
 
-    const logs = await provider.getLogs({
+    const getLogsCall = provider.getLogs({
       ...opts.filter,
       fromBlock: cursor,
       toBlock: chunkTo,
     });
+    const logs = opts.perCallTimeoutMs
+      ? await withTimeout(getLogsCall, opts.perCallTimeoutMs, `getLogs ${cursor}-${chunkTo}`)
+      : await getLogsCall;
 
     out.push(...logs);
     // Awaited so the caller's ingest + persist completes BEFORE we move on to the next chunk.

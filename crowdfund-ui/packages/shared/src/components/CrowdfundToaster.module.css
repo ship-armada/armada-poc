@@ -44,16 +44,19 @@
   outline-offset: 2px !important;
 }
 
-/* Per-variant border tints — overlay the status color on the default border
- * at ~40% so the toast reads as themed without overwhelming the card surface. */
+/* Success and error — the high-signal variants the app fires most — take the
+ * full status color on the border so they read clearly as confirmation /
+ * failure rather than a subtle tint. */
 .success {
-  border-color: color-mix(in srgb, var(--semantic-color-status-success) 40%, var(--semantic-color-border-default)) !important;
+  border-color: var(--semantic-color-status-success) !important;
 }
 
 .error {
-  border-color: color-mix(in srgb, var(--semantic-color-status-error) 40%, var(--semantic-color-border-default)) !important;
+  border-color: var(--semantic-color-status-error) !important;
 }
 
+/* The remaining variants keep a softer ~40% tint over the default border so
+ * they read as themed without overwhelming the card surface. */
 .warning {
   border-color: color-mix(in srgb, var(--semantic-color-status-warning) 40%, var(--semantic-color-border-default)) !important;
 }
@@ -62,6 +65,25 @@
   border-color: color-mix(in srgb, var(--semantic-color-status-info) 40%, var(--semantic-color-border-default)) !important;
 }
 
+/* Loading (tx pending/submitted) — full brand lavender so the in-progress
+ * toast ties to the app's primary color while a transaction is in flight. */
 .loading {
-  border-color: color-mix(in srgb, var(--semantic-color-status-info) 40%, var(--semantic-color-border-default)) !important;
+  border-color: var(--semantic-color-brand-lavender) !important;
+}
+
+/* Match each variant's icon to its border color. Sonner paints the success /
+ * error icons as SVGs with `fill: currentColor`, so setting `color` recolors
+ * them; the loading spinner is built from `.sonner-loading-bar` divs, recolored
+ * via `background`. `:global(...)` opts the spinner class out of CSS-module
+ * hashing since it's sonner's own global class, not one of ours. */
+.success [data-icon] svg {
+  color: var(--semantic-color-status-success) !important;
+}
+
+.error [data-icon] svg {
+  color: var(--semantic-color-status-error) !important;
+}
+
+.loading :global(.sonner-loading-bar) {
+  background: var(--semantic-color-brand-lavender) !important;
 }

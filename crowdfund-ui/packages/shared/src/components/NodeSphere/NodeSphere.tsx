@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import armadaSymbolUrl from '../../assets/armada-symbol.svg'
-import fleetPng from '../../assets/fleet.png'
+import splashImg from '../../assets/splash.jpg'
 import { GRAPH_HOP_NODE_COLORS } from '../../lib/graphHopColors.js'
 
 type NodeKind = 'Hop 0' | 'Hop 1' | 'Hop 2' | 'Multi-hop' | 'Your wallet'
@@ -1290,7 +1290,6 @@ export function NodeSphere({
   // WebGL unavailable / context lost — render a static background in place of
   // the interactive graph. The graph is decorative, so the surrounding commit /
   // claim / invite flows keep working.
-  // TODO: swap fleetPng for a purpose-built static graph backdrop.
   if (webglFailed) {
     return (
       <div
@@ -1299,12 +1298,38 @@ export function NodeSphere({
           position: 'absolute',
           inset: 0,
           zIndex: 0,
-          backgroundImage: `url(${fleetPng})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
+          overflow: 'hidden',
         }}
-      />
+      >
+        {/* Image layer — desaturated, darkened, and blurred so it reads as
+            ambient backdrop rather than a competing photo. Oversized (inset
+            negative) so the blur's soft edge stays outside the visible frame;
+            blurring an inset:0 layer would otherwise bleed the page background
+            in at the seams. */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: '-24px',
+            backgroundImage: `url(${splashImg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            filter: 'blur(6px) saturate(0.5) brightness(0.38)',
+          }}
+        />
+        {/* Vignette/wash tied to the theme surface so the splash fades into the
+            page background at the edges and the foreground UI stays legible. */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'radial-gradient(ellipse at center,' +
+              ' color-mix(in srgb, var(--semantic-color-surface-default) 42%, transparent),' +
+              ' color-mix(in srgb, var(--semantic-color-surface-default) 86%, transparent))',
+          }}
+        />
+      </div>
     )
   }
 

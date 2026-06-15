@@ -6,6 +6,15 @@ import { render } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { NodeSphere } from './NodeSphere'
 
+/** True when any element in the tree carries a `background-image: url(...)`.
+ *  Structure-robust so the fallback's layered markup can change without
+ *  breaking the assertion. */
+function hasBackgroundImage(container: HTMLElement): boolean {
+  return Array.from(container.querySelectorAll<HTMLElement>('*')).some((el) =>
+    el.style.backgroundImage.includes('url('),
+  )
+}
+
 describe('NodeSphere WebGL fallback', () => {
   it('renders a static background (not a thrown error) when WebGL is unavailable', () => {
     // Force `getContext` to return null (cleanly, without jsdom's "Not
@@ -26,11 +35,9 @@ describe('NodeSphere WebGL fallback', () => {
     errorSpy.mockRestore()
     getContextSpy.mockRestore()
 
-    // Fallback is a div with a background-image; the live graph would instead
+    // Fallback renders a background-image layer; the live graph would instead
     // mount a host div with an appended <canvas>.
-    const fallback = container.firstChild as HTMLElement
-    expect(fallback).not.toBeNull()
-    expect(fallback.style.backgroundImage).toContain('url(')
+    expect(hasBackgroundImage(container)).toBe(true)
     expect(container.querySelector('canvas')).toBeNull()
   })
 
@@ -43,8 +50,7 @@ describe('NodeSphere WebGL fallback', () => {
       // The override seeds the fallback state, so the effect short-circuits
       // before constructing a WebGLRenderer — getContext is never called.
       expect(getContextSpy).not.toHaveBeenCalled()
-      const fallback = container.firstChild as HTMLElement
-      expect(fallback.style.backgroundImage).toContain('url(')
+      expect(hasBackgroundImage(container)).toBe(true)
     } finally {
       getContextSpy.mockRestore()
       window.history.replaceState({}, '', originalUrl)

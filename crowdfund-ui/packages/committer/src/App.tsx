@@ -874,7 +874,7 @@ export function App() {
           mobileMenu={mobileMenu}
           bare
         >
-          <ObserveView />
+          <ObserveView state={contractState} />
         </AppShell>
         {participateModal}
       </>

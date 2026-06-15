@@ -1,7 +1,8 @@
 // ABOUTME: Spike scaffold for the committer "Observe" page — cards + tables, no 3D node graph.
 // ABOUTME: Placeholder layout (one full-width card, then a two-column row) over the no-WebGL splash as the page background.
 
-import { SplashBackdrop } from '@armada/crowdfund-shared'
+import { SplashBackdrop, type ContractState } from '@armada/crowdfund-shared'
+import { ObserveStatusCard } from '@/components/ObserveStatusCard'
 
 /** Placeholder card — translucent surface over the splash so the backdrop reads
  *  through. Swap for real StatsBar / TableView content once the layout lands. */
@@ -35,7 +36,7 @@ function PlaceholderCard({ label, minHeight = 200 }: { label: string; minHeight?
  * in a two-column row (stacked on mobile). No CrowdfundExperience / NodeSphere,
  * so the 3D graph never mounts on this view.
  */
-export function ObserveView() {
+export function ObserveView({ state }: { state: ContractState }) {
   return (
     <div className="relative min-h-screen w-full">
       {/* Fixed full-bleed splash background — behind the content; the floating
@@ -46,9 +47,10 @@ export function ObserveView() {
 
       {/* Content — pt-24 clears the floating header. */}
       <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-16 pt-24">
-        <PlaceholderCard label="Top card" minHeight={180} />
+        <ObserveStatusCard state={state} />
         {/* Two-up on md+ (≥768px); collapses to a single column on smaller
-            viewports so the cards don't get cramped. */}
+            viewports so the cards don't get cramped. Placeholder — real content
+            planned. */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <PlaceholderCard label="Card A" minHeight={240} />
           <PlaceholderCard label="Card B" minHeight={240} />

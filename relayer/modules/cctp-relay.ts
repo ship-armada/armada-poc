@@ -68,6 +68,9 @@ interface ChainState {
   messageTransmitter: string;
   tokenMessenger: string;
   hookRouter: string | null;
+  /** Cached contract instances (built once at init) so the hot relay path doesn't reconstruct them. */
+  messageTransmitterContract: ethers.Contract;
+  hookRouterContract: ethers.Contract | null;
   domain: number;
   /**
    * Highest block fully scanned (inclusive). Loaded from disk on cold start; advanced via the
@@ -152,6 +155,10 @@ interface PrivacyPoolDeployment {
 const MESSAGE_SENT_ABI = [
   "event MessageSent(bytes message)",
 ];
+
+/** Hoisted once — Interface construction parses ABI fragments; avoid doing it per log / per tick. */
+const MESSAGE_SENT_IFACE = new ethers.Interface(MESSAGE_SENT_ABI);
+const MESSAGE_SENT_TOPIC = MESSAGE_SENT_IFACE.getEvent("MessageSent")!.topicHash;
 
 const MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes calldata message, bytes calldata attestation) external returns (bool)",
@@ -276,8 +283,7 @@ function deserializeMessageEvent(persisted: PersistedMessageEvent): MessageEvent
 
 function parseMessageEvent(log: ethers.Log): MessageEvent | null {
   try {
-    const iface = new ethers.Interface(MESSAGE_SENT_ABI);
-    const parsed = iface.parseLog({
+    const parsed = MESSAGE_SENT_IFACE.parseLog({
       topics: log.topics as string[],
       data: log.data,
     });
@@ -589,6 +595,10 @@ export class CCTPRelayModule {
         messageTransmitter,
         tokenMessenger,
         hookRouter,
+        messageTransmitterContract: new ethers.Contract(messageTransmitter, MESSAGE_TRANSMITTER_ABI, wallet),
+        hookRouterContract: hookRouter
+          ? new ethers.Contract(hookRouter, HOOK_ROUTER_ABI, wallet)
+          : null,
         domain,
         lastProcessedBlock,
         processedMessages: new Set(),
@@ -730,18 +740,14 @@ export class CCTPRelayModule {
         destState.provider,
         destState.wallet.address,
         (txNonce) => {
-          // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
-          if (destState.hookRouter) {
-            const hookRouter = new ethers.Contract(
-              destState.hookRouter,
-              HOOK_ROUTER_ABI,
-              destState.wallet
-            );
+          // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch.
+          // Contracts are built once at init and cached on ChainState.
+          if (destState.hookRouterContract) {
             console.log(
               `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
             );
             return withTimeout(
-              hookRouter.relayWithHook(
+              destState.hookRouterContract.relayWithHook(
                 encodedMessage,
                 "0x", // Empty attestation — mock skips verification
                 { nonce: txNonce }
@@ -750,16 +756,11 @@ export class CCTPRelayModule {
               `relayWithHook ${destState.config.name}`,
             );
           }
-          const messageTransmitter = new ethers.Contract(
-            destState.messageTransmitter,
-            MESSAGE_TRANSMITTER_ABI,
-            destState.wallet
-          );
           console.log(
             `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
           );
           return withTimeout(
-            messageTransmitter.receiveMessage(
+            destState.messageTransmitterContract.receiveMessage(
               encodedMessage,
               "0x", // Empty attestation — mock skips verification
               { nonce: txNonce }
@@ -906,15 +907,10 @@ export class CCTPRelayModule {
         destState.provider,
         destState.wallet.address,
         (txNonce) => {
-          // Use hookRouter.relayWithHook() if available
-          if (destState.hookRouter) {
-            const hookRouter = new ethers.Contract(
-              destState.hookRouter,
-              HOOK_ROUTER_ABI,
-              destState.wallet
-            );
+          // Use the cached hookRouter contract if available.
+          if (destState.hookRouterContract) {
             return withTimeout(
-              hookRouter.relayWithHook(
+              destState.hookRouterContract.relayWithHook(
                 encodedMessage,
                 "0x",
                 { nonce: txNonce }
@@ -923,13 +919,8 @@ export class CCTPRelayModule {
               `relayWithHook ${destState.config.name}`,
             );
           }
-          const messageTransmitter = new ethers.Contract(
-            destState.messageTransmitter,
-            MESSAGE_TRANSMITTER_ABI,
-            destState.wallet
-          );
           return withTimeout(
-            messageTransmitter.receiveMessage(
+            destState.messageTransmitterContract.receiveMessage(
               encodedMessage,
               "0x",
               { nonce: txNonce }
@@ -999,13 +990,6 @@ export class CCTPRelayModule {
       const fromBlock = state.lastProcessedBlock + 1;
       const toBlock = effectiveHead;
 
-      const iface = new ethers.Interface(MESSAGE_SENT_ABI);
-      const eventTopic = iface.getEvent("MessageSent")?.topicHash;
-      if (!eventTopic) {
-        console.error("[cctp-relay] Failed to get MessageSent event topic");
-        return;
-      }
-
       await getLogsChunked(state.provider, {
         fromBlock,
         toBlock,
@@ -1014,7 +998,7 @@ export class CCTPRelayModule {
         perCallTimeoutMs: rpcTimeoutMs,
         filter: {
           address: state.messageTransmitter,
-          topics: [eventTopic],
+          topics: [MESSAGE_SENT_TOPIC], // hoisted to module scope
         },
         // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor is
         // always ≤ what's been processed. NOTE: relayMessage swallows relay failures (returns

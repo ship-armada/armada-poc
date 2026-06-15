@@ -164,6 +164,10 @@ const REAL_MESSAGE_SENT_ABI = [
   "event MessageSent(bytes message)",
 ];
 
+/** Hoisted once — building an Interface parses ABI fragments; doing it per chunk/per log is waste. */
+const REAL_MESSAGE_SENT_IFACE = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
+const REAL_MESSAGE_SENT_TOPIC = REAL_MESSAGE_SENT_IFACE.getEvent("MessageSent")!.topicHash;
+
 const REAL_MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes calldata message, bytes calldata attestation) external returns (bool)",
   "function localDomain() view returns (uint32)",
@@ -981,18 +985,14 @@ export class IrisRelayModule {
       const fromBlock = state.lastProcessedBlock + 1;
       const toBlock = effectiveHead;
 
-      // Real CCTP emits: event MessageSent(bytes message)
-      const iface = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
-      const eventTopic = iface.getEvent("MessageSent")?.topicHash;
-      if (!eventTopic) return;
-
+      // Real CCTP emits: event MessageSent(bytes message). Interface + topic hoisted to module scope.
       await getLogsChunked(state.provider, {
         fromBlock,
         toBlock,
         maxRange: maxLogRange,
         filter: {
           address: state.messageTransmitter,
-          topics: [eventTopic],
+          topics: [REAL_MESSAGE_SENT_TOPIC],
         },
         // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor
         // is always ≤ what's been enqueued. A crash between chunks loses zero un-ingested
@@ -1046,8 +1046,7 @@ export class IrisRelayModule {
    * persist→cursor ordering so the on-disk cursor never leads un-persisted pending state.
    */
   private enqueueMessage(log: ethers.Log, sourceState: ChainState): boolean {
-    const iface = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
-    const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data });
+    const parsed = REAL_MESSAGE_SENT_IFACE.parseLog({ topics: log.topics as string[], data: log.data });
     if (!parsed) {
       // Topic matched MessageSent but the ABI decoder couldn't parse the payload — almost
       // certainly an ABI mismatch (event signature drift on chain, or non-CCTP contract reusing

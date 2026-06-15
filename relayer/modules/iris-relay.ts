@@ -38,6 +38,7 @@ import {
   type DeadLetterRecord,
   type DeadLetterReason,
 } from "../lib/dead-letter-store";
+import type { Counters } from "./counters";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live. Module-relative so the relayer is location-independent. */
@@ -207,6 +208,91 @@ const MSG_BODY_OFFSET = 148;
 const BURN_MSG_MINT_RECIPIENT_OFFSET = 36;
 const MINT_RECIPIENT_ABSOLUTE_OFFSET = MSG_BODY_OFFSET + BURN_MSG_MINT_RECIPIENT_OFFSET;
 const MINT_RECIPIENT_LENGTH = 32;
+
+/**
+ * BurnMessageV2 body minimum length (bytes), no hookData:
+ *   version(4) + burnToken(32) + mintRecipient(32) + amount(32) + messageSender(32)
+ *   + maxFee(32) + feeExecuted(32) + expirationBlock(32) = 228.
+ * Matches `contracts/cctp/ICCTPV2.sol` BurnMessageV2 layout.
+ */
+const BURN_MSG_MIN_BODY_BYTES = 228;
+/** Minimum full MessageV2 length to contain a complete BurnMessageV2: 148 envelope + 228 body. */
+const MIN_BURN_MESSAGE_BYTES = MSG_BODY_OFFSET + BURN_MSG_MIN_BODY_BYTES;
+/** BurnMessageV2.version constant (ICCTPV2.sol `BURN_MESSAGE_VERSION`). A genuine burn body carries 1. */
+const BURN_MESSAGE_VERSION = 1;
+/** bytes32(0) — a legitimate destinationCaller value (Armada burn paths let the user choose it). */
+const ZERO_CALLER = "0x" + "0".repeat(64);
+
+/**
+ * Fail-CLOSED decision on whether a scanned CCTP message is one we should relay. Pure + exported
+ * for unit testing.
+ *
+ * The destination MessageTransmitter is shared (anyone can emit MessageSent on it via the
+ * permissionless `sendMessage`), and the relayer pays gas to deliver whatever it relays — so a
+ * crafted short/foreign message that slips through is an unmetered gas-drain on the relayer. We
+ * therefore relay ONLY messages we can positively identify as a genuine BurnMessageV2 addressed to
+ * one of our pool contracts:
+ *   1. length ≥ MIN_BURN_MESSAGE_BYTES (else it can't be a BurnMessageV2 — reject, don't fail open)
+ *   2. body version == BURN_MESSAGE_VERSION
+ *   3. mintRecipient ∈ knownRecipients (MANDATORY — empty set or unknown recipient ⇒ reject)
+ *   4. destinationCaller is either zero (allowed — user's choice) OR equals our hookRouter
+ *
+ * `destinationCaller == 0` is explicitly accepted: Armada's burn paths
+ * (`TransactModule.atomicCrossChainUnshield`, `PrivacyPoolClient.crossChainShield`) pass a
+ * user-supplied destinationCaller that may legitimately be zero. The mintRecipient allowlist is the
+ * real authentication, which is why it cannot fail open.
+ */
+export function classifyMessageForRelay(
+  messageHex: string,
+  knownRecipients: ReadonlySet<string>,
+  hookRouter: string | null,
+): { relay: true; mintRecipient: string } | { relay: false; reason: string } {
+  const hex = messageHex.startsWith("0x") ? messageHex.slice(2) : messageHex;
+  const byteLen = Math.floor(hex.length / 2);
+
+  if (byteLen < MIN_BURN_MESSAGE_BYTES) {
+    return {
+      relay: false,
+      reason: `not a BurnMessageV2 — ${byteLen}B < ${MIN_BURN_MESSAGE_BYTES}B minimum`,
+    };
+  }
+  const bodyVersion = parseInt(hex.slice(MSG_BODY_OFFSET * 2, (MSG_BODY_OFFSET + 4) * 2), 16);
+  if (bodyVersion !== BURN_MESSAGE_VERSION) {
+    return {
+      relay: false,
+      reason: `body version ${bodyVersion} != BurnMessageV2 v${BURN_MESSAGE_VERSION}`,
+    };
+  }
+  const mintRecipient =
+    "0x" +
+    hex
+      .slice(MINT_RECIPIENT_ABSOLUTE_OFFSET * 2, (MINT_RECIPIENT_ABSOLUTE_OFFSET + MINT_RECIPIENT_LENGTH) * 2)
+      .toLowerCase();
+  if (knownRecipients.size === 0) {
+    return {
+      relay: false,
+      reason: `no known recipients configured for destination — refusing to relay (check deployment file)`,
+    };
+  }
+  if (!knownRecipients.has(mintRecipient)) {
+    return { relay: false, reason: `mintRecipient ${mintRecipient} not in knownRecipients` };
+  }
+  const destinationCaller =
+    "0x" +
+    hex
+      .slice(MSG_DEST_CALLER_OFFSET * 2, (MSG_DEST_CALLER_OFFSET + MSG_DEST_CALLER_LENGTH) * 2)
+      .toLowerCase();
+  if (destinationCaller !== ZERO_CALLER && hookRouter) {
+    const ourHookRouterBytes32 = ethers.zeroPadValue(hookRouter, 32).toLowerCase();
+    if (destinationCaller !== ourHookRouterBytes32) {
+      return {
+        relay: false,
+        reason: `destinationCaller ${destinationCaller.slice(0, 20)}... is set but != our hookRouter`,
+      };
+    }
+  }
+  return { relay: true, mintRecipient };
+}
 
 /**
  * Max time to keep polling for an attestation before giving up (ms). Default 60 min, configurable
@@ -401,8 +487,10 @@ export class IrisRelayModule {
    * nonce views from colliding (one path replacing another's tx in the mempool).
    */
   private nonceCoordinator: NonceCoordinator;
+  /** Shared /health counters. Used here to make fail-closed message-filter rejections visible. */
+  private counters: Counters;
 
-  constructor(nonceCoordinator: NonceCoordinator) {
+  constructor(nonceCoordinator: NonceCoordinator, counters: Counters) {
     const { iris } = armadaRelayerSettings;
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.irisClient = new IrisClient(iris.apiUrl);
@@ -410,6 +498,7 @@ export class IrisRelayModule {
     this.pendingStateStore = new PendingStateStore(RELAYER_STATE_DIR);
     this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
+    this.counters = counters;
   }
 
   async initialize(): Promise<boolean> {
@@ -867,7 +956,7 @@ export class IrisRelayModule {
       return false;
     }
 
-    const { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller } = parseMessageFields(messageBytes);
+    const { sourceDomain, destinationDomain, nonce } = parseMessageFields(messageBytes);
 
     const destState = this.getChainByDomain(destinationDomain);
     if (!destState) {
@@ -875,30 +964,26 @@ export class IrisRelayModule {
       return false;
     }
 
-    // Filter: only relay messages where BurnMessageV2.mintRecipient matches our contracts.
-    // On real CCTP V2, the MessageV2.recipient is always the dest TokenMessenger (shared),
-    // so we check mintRecipient (the actual contract that receives minted tokens).
-    if (destState.knownRecipients.size > 0 && mintRecipient && !destState.knownRecipients.has(mintRecipient)) {
-      // Not our message — someone else's CCTP transfer on the shared MessageTransmitter. Log
-      // it so a misconfigured knownRecipients set (stale deployment file, address typo) doesn't
-      // present as "the relayer silently dropped my message." Includes both the rejected
-      // mintRecipient and the expected set so operators can diff them.
+    // Fail-CLOSED filter: relay ONLY messages we can positively identify as a genuine
+    // BurnMessageV2 addressed to one of our pool contracts. A crafted short/foreign message that
+    // slipped through would make the relayer pay destination gas to deliver someone else's (or an
+    // attacker's) message — an unmetered drain on a shared, permissionless MessageTransmitter.
+    const classification = classifyMessageForRelay(
+      messageBytes,
+      destState.knownRecipients,
+      destState.hookRouter,
+    );
+    if (!classification.relay) {
+      // Count so a probe / deployment-drift is visible on /health, not just in logs.
+      this.counters.inc("messageFilterReject");
       console.log(
-        `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — mintRecipient ${mintRecipient} not in ${destState.config.name}'s knownRecipients ` +
-          `[${Array.from(destState.knownRecipients).join(", ")}]. Either a foreign CCTP transfer on the shared MessageTransmitter OR a deployment-address drift.`,
+        `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — ${classification.reason}. ` +
+          `Either a foreign/crafted CCTP message on the shared MessageTransmitter OR a deployment-address drift ` +
+          `(known recipients on ${destState.config.name}: [${Array.from(destState.knownRecipients).join(", ")}]).`,
       );
       return false;
     }
-
-    // Filter: if destinationCaller is set and doesn't match our hookRouter, skip
-    const zeroCaller = "0x" + "0".repeat(64);
-    if (destinationCaller !== zeroCaller && destState.hookRouter) {
-      const ourHookRouterBytes32 = ethers.zeroPadValue(destState.hookRouter, 32).toLowerCase();
-      if (destinationCaller !== ourHookRouterBytes32) {
-        console.log(`  [iris-relay] Message destinationCaller ${destinationCaller.slice(0, 20)}... doesn't match our HookRouter, skipping`);
-        return false;
-      }
-    }
+    const mintRecipient = classification.mintRecipient;
 
     const pending: PendingMessage = {
       messageBytes,

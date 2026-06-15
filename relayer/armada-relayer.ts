@@ -285,7 +285,7 @@ async function main() {
 
   if (armadaRelayerSettings.cctpReal) {
     console.log("[armada] Initializing REAL CCTP relay (Iris attestation)...");
-    const irisRelay = new IrisRelayModule(nonceCoordinator);
+    const irisRelay = new IrisRelayModule(nonceCoordinator, counters);
     const initialized = await irisRelay.initialize();
     if (!initialized) {
       console.warn("[armada] Some chains failed to initialize for Iris relay.");

@@ -290,13 +290,19 @@ export class HttpApi {
   }
 
   /**
-   * Stop the HTTP server
+   * Stop the HTTP server, awaiting until it has actually closed. Idle keep-alive connections are
+   * terminated first so close() doesn't block on them — previously stop() was fire-and-forget, so
+   * `shutdown()` could call process.exit before the listener released its port.
    */
-  stop(): void {
-    if (this.server) {
-      this.server.close();
-      this.server = null;
-      console.log("[http-api] Server stopped");
-    }
+  async stop(): Promise<void> {
+    const server = this.server;
+    if (!server) return;
+    this.server = null;
+    // Node 18.2+: drop idle keep-alive sockets so close() resolves promptly.
+    server.closeIdleConnections?.();
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+    console.log("[http-api] Server stopped");
   }
 }

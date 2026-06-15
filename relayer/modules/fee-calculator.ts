@@ -123,7 +123,18 @@ export class FeeCalculator {
    */
   private async calculateFeeForGas(gasEstimate: bigint): Promise<bigint> {
     const feeData = await this.provider.getFeeData();
-    const gasPrice = feeData.gasPrice || 1_000_000_000n; // Default 1 gwei
+    // Some EIP-1559-only RPCs return a null `gasPrice` (they only populate maxFeePerGas /
+    // maxPriorityFeePerGas). Fall back to maxFeePerGas before the 1-gwei floor so we don't silently
+    // under-quote on those chains; warn loudly if BOTH are missing (the 1-gwei default would
+    // materially under-price a real chain).
+    let gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
+    if (gasPrice === null) {
+      console.warn(
+        `[fee-calculator chain=${this.chainId}] getFeeData() returned neither gasPrice nor maxFeePerGas — ` +
+          `falling back to 1 gwei. Quotes on this chain may be under-priced; investigate the RPC.`,
+      );
+      gasPrice = 1_000_000_000n;
+    }
 
     // Gas cost in wei
     const gasCostWei = gasEstimate * gasPrice;

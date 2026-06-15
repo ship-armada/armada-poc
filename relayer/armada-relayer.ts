@@ -385,7 +385,7 @@ async function main() {
       console.error("[armada] Error during CCTP relay shutdown:", err);
     }
     try {
-      httpApi.stop();
+      await httpApi.stop();
     } catch (err) {
       console.error("[armada] Error during HTTP API shutdown:", err);
     }

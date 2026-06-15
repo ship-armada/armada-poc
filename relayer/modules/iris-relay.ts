@@ -705,8 +705,16 @@ export class IrisRelayModule {
               `\n[iris-relay] ${config.name}: Found ${logs.length} message(s) in blocks ${chunkFrom}-${toBlockInclusive}`,
             );
           }
+          let enqueuedAny = false;
           for (const log of logs) {
-            this.enqueueMessage(log, state);
+            if (this.enqueueMessage(log, state)) enqueuedAny = true;
+          }
+          // ORDER MATTERS: persist any newly-enqueued pending entries to disk BEFORE advancing
+          // the cursor. The invariant is "pending-state durable ⇒ cursor durable", never the
+          // reverse — a crash with the cursor ahead of un-persisted pending state would orphan
+          // those messages (restart skips their blocks, scanner never re-discovers them).
+          if (enqueuedAny) {
+            await this.persistChain(state);
           }
           state.lastProcessedBlock = toBlockInclusive;
           await this.cursorStore.write(config.name, {
@@ -733,8 +741,13 @@ export class IrisRelayModule {
 
   /**
    * Parse a MessageSent event and add it to the pending queue.
+   *
+   * Returns `true` when a NEW pending entry was added (so the caller knows it must persist the
+   * source chain before advancing the cursor), `false` for every skip/filter/dedup path.
+   * Crucially, this method no longer persists on its own — the caller (`onChunk`) owns the
+   * persist→cursor ordering so the on-disk cursor never leads un-persisted pending state.
    */
-  private enqueueMessage(log: ethers.Log, sourceState: ChainState): void {
+  private enqueueMessage(log: ethers.Log, sourceState: ChainState): boolean {
     const iface = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
     const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data });
     if (!parsed) {
@@ -745,7 +758,7 @@ export class IrisRelayModule {
       console.warn(
         `[iris-relay] ${sourceState.config.name}: MessageSent ABI parse failed for tx ${log.transactionHash} log index ${log.index}. Skipping.`,
       );
-      return;
+      return false;
     }
 
     const messageBytes: string = parsed.args[0];
@@ -766,7 +779,7 @@ export class IrisRelayModule {
       console.log(
         `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — already in processedMessages (previously delivered).`,
       );
-      return;
+      return false;
     }
     // Already queued in this process — re-discovery of an in-flight message (also non-steady
     // state). Same diagnostic value as the processed-set check.
@@ -774,7 +787,7 @@ export class IrisRelayModule {
       console.log(
         `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — already in pendingMessages (in-flight).`,
       );
-      return;
+      return false;
     }
 
     const { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller } = parseMessageFields(messageBytes);
@@ -782,7 +795,7 @@ export class IrisRelayModule {
     const destState = this.getChainByDomain(destinationDomain);
     if (!destState) {
       console.log(`  [iris-relay] Unknown destination domain ${destinationDomain}, skipping`);
-      return;
+      return false;
     }
 
     // Filter: only relay messages where BurnMessageV2.mintRecipient matches our contracts.
@@ -797,7 +810,7 @@ export class IrisRelayModule {
         `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — mintRecipient ${mintRecipient} not in ${destState.config.name}'s knownRecipients ` +
           `[${Array.from(destState.knownRecipients).join(", ")}]. Either a foreign CCTP transfer on the shared MessageTransmitter OR a deployment-address drift.`,
       );
-      return;
+      return false;
     }
 
     // Filter: if destinationCaller is set and doesn't match our hookRouter, skip
@@ -806,7 +819,7 @@ export class IrisRelayModule {
       const ourHookRouterBytes32 = ethers.zeroPadValue(destState.hookRouter, 32).toLowerCase();
       if (destinationCaller !== ourHookRouterBytes32) {
         console.log(`  [iris-relay] Message destinationCaller ${destinationCaller.slice(0, 20)}... doesn't match our HookRouter, skipping`);
-        return;
+        return false;
       }
     }
 
@@ -827,10 +840,10 @@ export class IrisRelayModule {
     };
 
     this.pendingMessages.set(dedupKey, pending);
-    // Persist immediately so a crash between enqueue and the first Iris poll doesn't lose
-    // this entry — the cursor has already advanced past sourceBlock, so without persistence
-    // the scanner wouldn't re-discover it.
-    void this.persistChain(sourceState);
+    // NOTE: the persist happens in `onChunk` (awaited, BEFORE the cursor write) — not here. That
+    // ordering is the crash-safety contract: a durable cursor must never lead un-persisted pending
+    // entries, or a crash would orphan this message (the cursor skips its block on restart and the
+    // scanner never re-discovers it).
 
     const irisUrl = this.irisClient.getUrl(sourceDomain, log.transactionHash);
 
@@ -845,6 +858,7 @@ export class IrisRelayModule {
     console.log(`  Msg length:  ${(messageBytes.length - 2) / 2} bytes`);
     console.log(`  Iris URL:    ${irisUrl}`);
     console.log(`  Queued for attestation polling (non-blocking)`);
+    return true;
   }
 
   // ========== Attestation Polling & Relay ==========

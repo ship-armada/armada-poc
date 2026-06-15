@@ -27,6 +27,11 @@ import {
   type PersistedRetryEntry,
   type PersistedMessageEvent,
 } from "../lib/retry-queue-store";
+import {
+  DeadLetterStore,
+  type DeadLetterRecord,
+  type DeadLetterReason,
+} from "../lib/dead-letter-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live — shared with iris-relay. Module-relative. */
@@ -297,6 +302,9 @@ export class CCTPRelayModule {
    * source-chain burn is stranded forever.
    */
   private retryQueueStore: RetryQueueStore;
+  private deadLetterStore: DeadLetterStore;
+  /** Per-source-chain dead-letter records (keyed by chain name), in memory for synchronous health. */
+  private deadLetters: Map<string, DeadLetterRecord[]> = new Map();
   /**
    * Process-wide nonce authority, shared with the privacy relay's WalletManager. Even in mock
    * mode the relayer submits both CCTP receives and (potentially) privacy-relay txs from the same
@@ -317,6 +325,7 @@ export class CCTPRelayModule {
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
     this.retryQueueStore = new RetryQueueStore(RELAYER_STATE_DIR);
+    this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
   }
 
   /**
@@ -372,8 +381,68 @@ export class CCTPRelayModule {
     // Restore any retry-queue entries persisted before a previous shutdown/crash. Done AFTER the
     // chains map is populated so each entry's source chain can be re-resolved by domain.
     await this.loadRetryQueue();
+    // Restore dead-letter records so getHealth reports an accurate count across restarts.
+    await this.loadDeadLetters();
 
     return allInitialized;
+  }
+
+  /** Rehydrate per-chain dead-letter records from disk. Best-effort — a read error starts empty. */
+  private async loadDeadLetters(): Promise<void> {
+    let total = 0;
+    for (const state of this.chains.values()) {
+      try {
+        const data = await this.deadLetterStore.read(state.config.name);
+        if (data && data.records.length > 0) {
+          this.deadLetters.set(state.config.name, data.records);
+          total += data.records.length;
+        }
+      } catch (err: any) {
+        console.error(
+          `[cctp-relay] ${state.config.name}: failed to read dead-letter records (${err.message}). Starting empty for this chain.`,
+        );
+      }
+    }
+    if (total > 0) {
+      console.warn(
+        `[cctp-relay] Restored ${total} dead-letter record(s) — these messages were never relayed (see relayer/state/deadletter-*.json).`,
+      );
+    }
+  }
+
+  /**
+   * Permanently give up on a message: record it durably and mark it processed so a rescan won't
+   * re-relay it. `messageKey` is the `${sourceDomain}-${nonce}` id used in processedMessages.
+   */
+  private async deadLetter(
+    event: MessageEvent,
+    sourceState: ChainState,
+    reason: DeadLetterReason,
+  ): Promise<void> {
+    const messageKey = `${event.sourceDomain}-${event.nonce}`;
+    const record: DeadLetterRecord = {
+      id: messageKey,
+      sourceTxHash: event.txHash,
+      rawMessage: event.rawMessage,
+      reason,
+      sourceDomain: event.sourceDomain,
+      destinationDomain: event.destinationDomain,
+      at: Date.now(),
+    };
+    const list = this.deadLetters.get(sourceState.config.name) ?? [];
+    list.push(record);
+    this.deadLetters.set(sourceState.config.name, list);
+    sourceState.processedMessages.add(messageKey);
+    console.error(
+      `[cctp-relay] DEAD-LETTER (${reason}): ${messageKey} (source tx ${event.txHash}). Recorded for manual relay.`,
+    );
+    try {
+      await this.deadLetterStore.write(sourceState.config.name, list);
+    } catch (err: any) {
+      console.error(
+        `[cctp-relay] ${sourceState.config.name}: failed to persist dead-letter record (${err.message}).`,
+      );
+    }
   }
 
   /**
@@ -606,7 +675,11 @@ export class CCTPRelayModule {
         console.log(
           `  [cctp-relay] SKIPPING: maxFee ${burnFee.maxFee} < minFee ${minFee} — insufficient fee`
         );
-        sourceState.processedMessages.add(messageKey);
+        // Dead-letter rather than silently marking processed: the burn is final, so a message we
+        // refuse to relay for fee reasons leaves the user's USDC stranded and needs visibility +
+        // a durable record for manual relay or a fee-policy change. deadLetter also marks it
+        // processed so the scanner won't re-attempt it.
+        await this.deadLetter(event, sourceState, "fee-too-low");
         return false;
       }
       console.log(`  Fee check passed: maxFee ${burnFee.maxFee} >= minFee ${minFee}`);
@@ -701,6 +774,9 @@ export class CCTPRelayModule {
         `[cctp-relay] Max retries (${MAX_RETRIES}) reached for message ` +
           `${event.sourceDomain}-${event.nonce}. Giving up.`
       );
+      // Record durably instead of dropping into a log line — the burn is final, so this message's
+      // USDC is stranded until manually relayed.
+      await this.deadLetter(event, sourceState, "retries-exhausted");
       return;
     }
 
@@ -1065,6 +1141,7 @@ export class CCTPRelayModule {
         lastScanAt: state.lastScanAt,
         lastError: state.lastError,
         pendingCount: pendingBySource.get(state.domain) ?? 0,
+        deadLetterCount: this.deadLetters.get(state.config.name)?.length ?? 0,
       });
     }
 

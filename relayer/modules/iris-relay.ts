@@ -33,6 +33,11 @@ import { PendingStateStore, type PersistedPendingMessage } from "../lib/pending-
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
 import { NonceCoordinator } from "../lib/nonce-coordinator";
+import {
+  DeadLetterStore,
+  type DeadLetterRecord,
+  type DeadLetterReason,
+} from "../lib/dead-letter-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live. Module-relative so the relayer is location-independent. */
@@ -384,6 +389,12 @@ export class IrisRelayModule {
   private mempoolStuckWarned: Set<string> = new Set();
   private cursorStore: CursorStore;
   private pendingStateStore: PendingStateStore;
+  private deadLetterStore: DeadLetterStore;
+  /**
+   * Per-source-chain dead-letter records (keyed by chain name), held in memory so getHealth can
+   * report counts synchronously; the full list is also persisted on every append.
+   */
+  private deadLetters: Map<string, DeadLetterRecord[]> = new Map();
   /**
    * Process-wide nonce authority, shared with the privacy relay's WalletManager. All three submit
    * paths sign from the same EOA on the same chains, so a single coordinator is what keeps their
@@ -397,6 +408,7 @@ export class IrisRelayModule {
     this.irisClient = new IrisClient(iris.apiUrl);
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.pendingStateStore = new PendingStateStore(RELAYER_STATE_DIR);
+    this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
   }
 
@@ -429,7 +441,72 @@ export class IrisRelayModule {
     console.log(
       `[iris-relay] Initialized ${this.chains.size}/${allChains.length} chains`
     );
+
+    // Restore any persisted dead-letter records so getHealth reports an accurate count across
+    // restarts (a non-zero count is an operator's signal that USDC may be stranded).
+    await this.loadDeadLetters();
+
     return allInitialized;
+  }
+
+  /** Rehydrate per-chain dead-letter records from disk. Best-effort — a read error starts empty. */
+  private async loadDeadLetters(): Promise<void> {
+    let total = 0;
+    for (const state of this.chains.values()) {
+      try {
+        const data = await this.deadLetterStore.read(state.config.name);
+        if (data && data.records.length > 0) {
+          this.deadLetters.set(state.config.name, data.records);
+          total += data.records.length;
+        }
+      } catch (err: any) {
+        console.error(
+          `[iris-relay] ${state.config.name}: failed to read dead-letter records (${err.message}). Starting empty for this chain.`,
+        );
+      }
+    }
+    if (total > 0) {
+      console.warn(
+        `[iris-relay] Restored ${total} dead-letter record(s) across all chains — these messages were never delivered and may need manual relay (see relayer/state/deadletter-*.json).`,
+      );
+    }
+  }
+
+  /**
+   * Permanently give up on a message: record it durably (so it's not just a log line), add its
+   * dedupKey to processedMessages so a cursor rewind / re-discovery won't re-relay it, and persist
+   * both the dead-letter log and the chain's pending/processed state. Awaited by callers.
+   */
+  private async deadLetter(
+    sourceState: ChainState,
+    msg: PendingMessage,
+    reason: DeadLetterReason,
+  ): Promise<void> {
+    const record: DeadLetterRecord = {
+      id: msg.dedupKey,
+      sourceTxHash: msg.sourceTxHash,
+      rawMessage: msg.messageBytes,
+      reason,
+      sourceDomain: msg.sourceDomain,
+      destinationDomain: msg.destinationDomain,
+      at: Date.now(),
+    };
+    const list = this.deadLetters.get(sourceState.config.name) ?? [];
+    list.push(record);
+    this.deadLetters.set(sourceState.config.name, list);
+    // Mark processed so a re-discovery (cursor rewind, restart) doesn't re-enqueue + re-burn gas.
+    sourceState.processedMessages.add(msg.dedupKey);
+    console.error(
+      `[iris-relay] DEAD-LETTER (${reason}): ${msg.dedupKey} (source tx ${msg.sourceTxHash}). Recorded to relayer/state/deadletter-${sourceState.config.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}.json for manual relay.`,
+    );
+    try {
+      await this.deadLetterStore.write(sourceState.config.name, list);
+    } catch (err: any) {
+      console.error(
+        `[iris-relay] ${sourceState.config.name}: failed to persist dead-letter record (${err.message}).`,
+      );
+    }
+    await this.persistChain(sourceState);
   }
 
   private async initChain(chainConfig: ChainConfig): Promise<ChainState | null> {
@@ -878,7 +955,16 @@ export class IrisRelayModule {
     for (const [hash, msg] of entries) {
       const sourceState = this.getChainByDomain(msg.sourceDomain);
 
-      // Check if expired
+      // Skip if this message has already been broadcast and is waiting for receipt confirmation —
+      // that's processInflightRelays's domain (including stuck/dropped handling), not ours. The
+      // state-machine marker is `submittedTxHash`. CHECKED BEFORE expiry: a message broadcast near
+      // the age limit must NOT be expired out from under its in-flight receipt poll, or we'd lose
+      // track of a tx that is likely about to confirm.
+      if (msg.submittedTxHash) {
+        continue;
+      }
+
+      // Check if expired — only messages STILL AWAITING ATTESTATION (no submittedTxHash) reach here.
       const age = Date.now() - msg.detectedAt;
       if (age > MAX_ATTESTATION_AGE_MS) {
         // Loud expiry log — distinct from steady-state console.log so operators monitoring for
@@ -891,14 +977,8 @@ export class IrisRelayModule {
         console.error(`  Iris URL:  ${this.irisClient.getUrl(msg.sourceDomain, msg.sourceTxHash)}`);
         console.error(`  Manual recovery: fetch attestation from Iris + call hookRouter.relayWithHook on destination chain.`);
         this.pendingMessages.delete(hash);
-        if (sourceState) dirtyChains.add(sourceState);
-        continue;
-      }
-
-      // Skip if this message has already been broadcast and is waiting for receipt
-      // confirmation — that's processInflightRelays's domain, not ours. The state-machine
-      // marker is `submittedTxHash`.
-      if (msg.submittedTxHash) {
+        // Record durably (deadLetter persists the chain + adds to processedMessages itself).
+        if (sourceState) await this.deadLetter(sourceState, msg, "expired");
         continue;
       }
 
@@ -1088,7 +1168,7 @@ export class IrisRelayModule {
           // The dropped tx never consumed its nonce — re-seed so the resubmit fills the gap.
           this.nonceCoordinator.reset(state.config.chainId);
           this.mempoolStuckWarned.delete(stuckTxHash);
-          this.scheduleResubmit(msg, state.config.name);
+          await this.scheduleResubmit(msg, state.config.name);
           mutated = true;
         }
         continue;
@@ -1118,7 +1198,7 @@ export class IrisRelayModule {
           `[iris-relay] REVERTED on chain: ${msg.submittedTxHash!.slice(0, 18)}... (tx mined but receipt.status=0). Will re-submit through retry/backoff.`,
         );
         this.mempoolStuckWarned.delete(msg.submittedTxHash!);
-        this.scheduleResubmit(msg, state.config.name);
+        await this.scheduleResubmit(msg, state.config.name);
         mutated = true;
       }
     }
@@ -1145,7 +1225,7 @@ export class IrisRelayModule {
    *
    * Shared between revert + stuck-tx paths since both want the same outcome.
    */
-  private scheduleResubmit(msg: PendingMessage, chainLabel: string): void {
+  private async scheduleResubmit(msg: PendingMessage, chainLabel: string): Promise<void> {
     msg.submittedTxHash = undefined;
     msg.submittedAt = undefined;
     msg.retryAttempts++;
@@ -1154,6 +1234,9 @@ export class IrisRelayModule {
         `[iris-relay] ${chainLabel}: GAVE UP on ${msg.dedupKey} (hash ${msg.messageHash.slice(0, 18)}...) after ${msg.retryAttempts} attempts. Source Tx: ${msg.sourceTxHash}. Manual recovery may be required.`,
       );
       this.pendingMessages.delete(msg.dedupKey);
+      // Record durably so the give-up is more than a log line (and won't be re-relayed on rescan).
+      const sourceState = this.getChainByDomain(msg.sourceDomain);
+      if (sourceState) await this.deadLetter(sourceState, msg, "retries-exhausted");
     } else {
       const backoffMs = RELAY_RETRY_BASE_DELAY_MS * Math.pow(2, msg.retryAttempts - 1);
       msg.nextRetryAt = Date.now() + backoffMs;
@@ -1434,6 +1517,7 @@ export class IrisRelayModule {
         lastScanAt: state.lastScanAt,
         lastError: state.lastError,
         pendingCount: pendingBySource.get(state.domain) ?? 0,
+        deadLetterCount: this.deadLetters.get(state.config.name)?.length ?? 0,
       });
     }
 

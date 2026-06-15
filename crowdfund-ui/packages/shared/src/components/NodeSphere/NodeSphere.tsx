@@ -51,6 +51,14 @@ const COLORS: Record<NodeKind, number> = GRAPH_HOP_NODE_COLORS
 const isArmadaSentinel = (s: string | null | undefined): boolean =>
   !!s && s.toLowerCase() === 'armada'
 
+/** QA override: `?nowebgl` (or `?webgl=off`) forces the static fallback so the
+ *  no-WebGL path can be previewed without disabling WebGL in the browser. */
+function isWebglForcedOff(): boolean {
+  if (typeof window === 'undefined') return false
+  const params = new URLSearchParams(window.location.search)
+  return params.has('nowebgl') || params.get('webgl') === 'off'
+}
+
 function mulberry32(seed: number) {
   return () => {
     let t = (seed += 0x6d2b79f5)
@@ -287,8 +295,9 @@ export function NodeSphere({
   const [hover, setHover] = useState<HoverState | null>(null)
   const [selectedTip, setSelectedTip] = useState<HoverState | null>(null)
   // True when WebGL is unavailable at init, or the context is lost at runtime —
-  // the component renders a static background instead of the 3D graph.
-  const [webglFailed, setWebglFailed] = useState(false)
+  // the component renders a static background instead of the 3D graph. Seeded
+  // from the `?nowebgl` QA override so the fallback can be previewed on demand.
+  const [webglFailed, setWebglFailed] = useState(isWebglForcedOff)
   const hoverActiveRef = useRef(false)
   const isDraggingRef = useRef(false)
   const highlightRef = useRef<string | undefined>(highlightAddress)

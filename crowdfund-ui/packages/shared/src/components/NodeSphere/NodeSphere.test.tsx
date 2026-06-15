@@ -33,4 +33,21 @@ describe('NodeSphere WebGL fallback', () => {
     expect(fallback.style.backgroundImage).toContain('url(')
     expect(container.querySelector('canvas')).toBeNull()
   })
+
+  it('honors the ?nowebgl override and never attempts WebGL', () => {
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.replaceState({}, '', '/?nowebgl')
+    const getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+    try {
+      const { container } = render(<NodeSphere />)
+      // The override seeds the fallback state, so the effect short-circuits
+      // before constructing a WebGLRenderer — getContext is never called.
+      expect(getContextSpy).not.toHaveBeenCalled()
+      const fallback = container.firstChild as HTMLElement
+      expect(fallback.style.backgroundImage).toContain('url(')
+    } finally {
+      getContextSpy.mockRestore()
+      window.history.replaceState({}, '', originalUrl)
+    }
+  })
 })

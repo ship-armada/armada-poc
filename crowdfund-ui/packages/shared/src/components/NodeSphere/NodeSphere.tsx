@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import armadaSymbolUrl from '../../assets/armada-symbol.svg'
+import fleetPng from '../../assets/fleet.png'
 import { GRAPH_HOP_NODE_COLORS } from '../../lib/graphHopColors.js'
 
 type NodeKind = 'Hop 0' | 'Hop 1' | 'Hop 2' | 'Multi-hop' | 'Your wallet'
@@ -285,6 +286,9 @@ export function NodeSphere({
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
   const [selectedTip, setSelectedTip] = useState<HoverState | null>(null)
+  // True when WebGL is unavailable at init, or the context is lost at runtime —
+  // the component renders a static background instead of the 3D graph.
+  const [webglFailed, setWebglFailed] = useState(false)
   const hoverActiveRef = useRef(false)
   const isDraggingRef = useRef(false)
   const highlightRef = useRef<string | undefined>(highlightAddress)
@@ -370,7 +374,19 @@ export function NodeSphere({
     const Z_DEFAULT = Z_MIN
     camera.position.z = Z_DEFAULT
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+    } catch {
+      // WebGL unavailable — disabled for fingerprinting resistance (Tor/Brave/
+      // Firefox), a blocklisted GPU/driver, a headless/in-app webview, or memory
+      // pressure. The graph is decorative, so fall back to a static background
+      // instead of throwing: an unguarded throw here bubbles to the root error
+      // boundary and crashes the whole app (including the commit/claim flows,
+      // which don't need 3D).
+      setWebglFailed(true)
+      return
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.setClearColor(0x000000, 0)
     renderer.domElement.style.position = 'absolute'
@@ -1207,6 +1223,17 @@ export function NodeSphere({
       raf = window.requestAnimationFrame(animate)
     }
 
+    // Runtime GPU/context loss (common on low-memory mobile when the tab is
+    // backgrounded, or a GPU-process crash). Prevent the default — which makes
+    // the loss permanent — stop the render loop, and swap to the static fallback
+    // rather than leaving a frozen/blank canvas.
+    const onContextLost = (e: Event) => {
+      e.preventDefault()
+      window.cancelAnimationFrame(raf)
+      setWebglFailed(true)
+    }
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost)
+
     resize()
     window.addEventListener('resize', resize)
     // Tie events to renderer canvas so the sphere stays centered regardless of layout.
@@ -1226,6 +1253,7 @@ export function NodeSphere({
       renderer.domElement.removeEventListener('pointercancel', onPointerUp)
       renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
       renderer.domElement.removeEventListener('wheel', onWheel)
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
       window.cancelAnimationFrame(raf)
 
       root.clear()
@@ -1249,6 +1277,27 @@ export function NodeSphere({
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement)
     }
   }, [instanceId, pinnedNodesKey, seed])
+
+  // WebGL unavailable / context lost — render a static background in place of
+  // the interactive graph. The graph is decorative, so the surrounding commit /
+  // claim / invite flows keep working.
+  // TODO: swap fleetPng for a purpose-built static graph backdrop.
+  if (webglFailed) {
+    return (
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          backgroundImage: `url(${fleetPng})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+    )
+  }
 
   return (
     <div

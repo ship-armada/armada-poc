@@ -208,7 +208,8 @@ describe('ruleA6 — duplicate same-hop slots', () => {
     }
     const graph: CrowdfundGraph = { ...emptyGraph(), nodes }
     const out = ruleA6(makeContext({ snapshot: { ...makeContext().snapshot, graph } as never }))
-    expect(out[0]).toMatchObject({ id: 'A6', severity: 'P2' })
+    // 3/10 = 30% → bucketed to the 30% band (not the raw percent).
+    expect(out[0]).toMatchObject({ id: 'A6', severity: 'P2', dedupeKey: 'A6:30' })
   })
   it('does not fire below threshold', () => {
     const nodes = new Map<string, GraphNode>()

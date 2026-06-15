@@ -205,10 +205,13 @@ export const ruleA6: AlertRule = (ctx) => {
   const duplicates = duplicateSlotNodeCount(ctx.snapshot.graph)
   const ratio = duplicates / occupied
   if (ratio < ctx.thresholds.duplicateSlotFraction) return []
+  // Bucket the ratio into 10-point bands so a fluctuating ratio fires once per band
+  // rather than once per whole-percent (which produced up to ~100 distinct alerts).
+  const bucket = Math.floor((ratio * 100) / 10) * 10
   return [{
     id: 'A6',
     severity: 'P2',
-    dedupeKey: `A6:${Math.round(ratio * 100)}`,
+    dedupeKey: `A6:${bucket}`,
     title: `Duplicate same-hop slot ratio ${(ratio * 100).toFixed(1)}%`,
     body: `${duplicates}/${occupied} hop-1+hop-2 nodes have multiple slots. Intentional under the design; this is an awareness alert (see MONITORING.md §9.1).`,
     runbook: 'OPERATIONS.md §4/§5 monitoring; no automatic intervention',
@@ -351,6 +354,12 @@ export const ruleA12: AlertRule = (ctx) => {
 // participantNodes.length (NOT × NUM_HOPS as the spec text claims — see contract
 // line 511). Treasury balance increase must equal netProceeds within that
 // buffer; anything more is a real mismatch.
+//
+// LIMITATION: ctx.treasuryUsdcBalance is the treasury's CURRENT balance, not its balance
+// at the finalization block. A pre-existing balance, or any treasury inflow/outflow after
+// finalization, will skew the comparison and can produce a false positive. Properly fixing
+// this needs a balance-at-finalization-block read; until then the alert body tells the
+// responder to verify against the finalization-block balance before escalating.
 export const ruleA13: AlertRule = (ctx) => {
   const f = findLatestEvent(ctx.snapshot.events, 'Finalized')
   if (!f) return []
@@ -367,7 +376,7 @@ export const ruleA13: AlertRule = (ctx) => {
     severity: 'P0',
     dedupeKey: 'A13',
     title: 'Treasury proceeds mismatch',
-    body: `Treasury USDC balance=${ctx.treasuryUsdcBalance.toString()} vs Finalized.netProceeds=${netProceeds.toString()}; diff=${diff.toString()} exceeds rounding buffer ${participantNodes.toString()}.`,
+    body: `Treasury USDC balance=${ctx.treasuryUsdcBalance.toString()} vs Finalized.netProceeds=${netProceeds.toString()}; diff=${diff.toString()} exceeds rounding buffer ${participantNodes.toString()}. NOTE: this compares the treasury's CURRENT balance, not its balance at the finalization block — a pre-existing balance or later treasury movement can cause a false positive. Verify against the finalization-block balance before escalating.`,
     runbook: 'OPERATIONS.md §8 proceeds verification',
     context: {
       treasuryUsdcBalance: ctx.treasuryUsdcBalance.toString(),

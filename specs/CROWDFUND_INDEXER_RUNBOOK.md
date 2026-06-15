@@ -120,7 +120,7 @@ Cursor and range variables:
 | Variable | Default | Behavior |
 |----------|---------|----------|
 | `CROWDFUND_CONFIRMATION_DEPTH` | `12` | Blocks behind chain head required before data is verified. Lower only for dev. |
-| `CROWDFUND_OVERLAP_WINDOW` | `100` | Stored cursor setting reserved for overlap/rescan policy. |
+| `CROWDFUND_OVERLAP_WINDOW` | `100` | Stored cursor setting reserved for a future overlap/rescan policy. **Not yet consumed by any code path** — it does not currently provide reorg protection beyond `CROWDFUND_CONFIRMATION_DEPTH`. Tracked for implementation-or-removal (see GitHub issues). |
 | `CROWDFUND_MAX_BLOCK_RANGE` | `500` | Maximum inclusive block range per `eth_getLogs` chunk. |
 
 API and polling variables:
@@ -141,6 +141,7 @@ API and polling variables:
 | `CROWDFUND_REPAIR_MAX_ATTEMPTS` | `6` | Total attempts (initial + auto-repair retries) before a range is exhausted and surfaced in `gapsRequiringIntervention`. Set to `0` to disable auto-reconcile entirely. |
 | `CROWDFUND_REPAIR_BACKOFF_BASE_MS` | `30000` | Base delay for exponential backoff between auto-repair attempts. The Nth attempt waits `base * 2^(attempts-1)`, capped by `BACKOFF_MAX_MS`. |
 | `CROWDFUND_REPAIR_BACKOFF_MAX_MS` | `1800000` | Cap on the backoff delay between auto-repair attempts (default 30 minutes). |
+| `CROWDFUND_STALE_AFTER_MS` | `300000` | Wall-clock budget after which a frozen indexer is reported `stale` (or `unhealthy` if an error is pending) even when there are no gaps and block-lag reads 0. Detects a dead/stuck RPC where cursors stop advancing. Default 5 minutes. |
 
 Snapshot publication variables:
 
@@ -222,6 +223,13 @@ export CROWDFUND_INDEXER_STORE_PATH=data/crowdfund-indexer/store.json
 
 Do not use the JSON file store for production campaigns.
 
+**Single-writer only.** The JSON file store has no cross-process lock. Its writes are
+read-modify-write, so running a mutating CLI command (`verify`, `repair`, `backfill`)
+while the API's polling worker is active will race — the last writer wins and updates are
+lost. Stop the polling worker before running mutating CLI commands against the file store,
+or use the Postgres backend (which serializes writes via an advisory lock). Read-only
+commands (`status`) are always safe.
+
 ---
 
 ## Static Snapshot Publishing
@@ -285,6 +293,17 @@ Expected healthy fields:
 - `hasGaps: false`
 - `lagBlocks` near `0`
 - `verifiedCursor` close to `confirmedHead`
+
+### Health status semantics
+
+`status` is derived in this order:
+
+- `unhealthy` — one or more gaps have exhausted auto-repair (`gapsRequiringIntervention` non-empty); or a gap exists alongside a current `lastError`; or nothing has ever verified while an error is pending.
+- `degraded` — gaps exist but auto-repair is still retrying them.
+- `stale` — verification has not advanced within `CROWDFUND_STALE_AFTER_MS` (wall-clock), **or** block-lag exceeds the SLA threshold. The wall-clock check catches a dead/stuck RPC where the cursors freeze and `lagBlocks` would otherwise read `0`. If an error is pending during that window, status escalates to `unhealthy`.
+- `healthy` — none of the above.
+
+Two alerts watch the indexer itself (see `MONITORING.md` §8 addendum): **AH1** pages when `status` is `stale` (P2) or `unhealthy` (P1); **AH2** pages when `gapsRequiringIntervention` is non-empty (P1). While the indexer is `stale`/`unhealthy`, the time-based crowdfund alerts (A2/A8/A9a/A9b) are suppressed to avoid false pages off a lagging snapshot.
 
 ---
 

@@ -105,6 +105,13 @@ const MAX_RETRIES = 5;
  */
 const RELAY_CONFIRM_TIMEOUT_MS = 60_000;
 
+/**
+ * Cap on the in-memory processed-message set per chain. It's not persisted (the cursor prevents
+ * re-scan within a process lifetime), but an unbounded Set would still leak on a long-running
+ * deployment. Far above any realistic POC/testnet volume; the oldest entries are evicted first.
+ */
+const PROCESSED_SET_CAP = 50_000;
+
 /** Base delay for exponential backoff (2 seconds) */
 const RETRY_BASE_DELAY_MS = 2000;
 
@@ -439,7 +446,7 @@ export class CCTPRelayModule {
     const list = this.deadLetters.get(sourceState.config.name) ?? [];
     list.push(record);
     this.deadLetters.set(sourceState.config.name, list);
-    sourceState.processedMessages.add(messageKey);
+    this.markProcessed(sourceState, messageKey);
     console.error(
       `[cctp-relay] DEAD-LETTER (${reason}): ${messageKey} (source tx ${event.txHash}). Recorded for manual relay.`,
     );
@@ -449,6 +456,23 @@ export class CCTPRelayModule {
       console.error(
         `[cctp-relay] ${sourceState.config.name}: failed to persist dead-letter record (${err.message}).`,
       );
+    }
+  }
+
+  /**
+   * Mark a message processed (dedup), evicting the oldest entries when the per-chain set exceeds
+   * PROCESSED_SET_CAP. Safe to evict: the scan cursor has advanced past these messages, so they
+   * can't be re-scanned within this process lifetime.
+   */
+  private markProcessed(state: ChainState, key: string): void {
+    state.processedMessages.add(key);
+    if (state.processedMessages.size > PROCESSED_SET_CAP) {
+      const overflow = state.processedMessages.size - PROCESSED_SET_CAP;
+      let i = 0;
+      for (const k of state.processedMessages) {
+        state.processedMessages.delete(k); // Set iterates in insertion order → oldest first
+        if (++i >= overflow) break;
+      }
     }
   }
 
@@ -754,7 +778,7 @@ export class CCTPRelayModule {
       );
       console.log(`  Confirmed in block ${receipt?.blockNumber}`);
 
-      sourceState.processedMessages.add(messageKey);
+      this.markProcessed(sourceState, messageKey);
 
       console.log(`  Relay successful`);
       return true;
@@ -764,7 +788,7 @@ export class CCTPRelayModule {
         e.message?.includes("Message already processed")
       ) {
         console.log(`  Already processed on-chain, marking as done`);
-        sourceState.processedMessages.add(messageKey);
+        this.markProcessed(sourceState, messageKey);
         return false;
       }
       if (e.message?.includes("nonce") || e.message?.includes("NONCE")) {
@@ -925,7 +949,7 @@ export class CCTPRelayModule {
         `[cctp-relay] Retry successful for ${messageKey} in block ${receipt?.blockNumber}`
       );
 
-      sourceState.processedMessages.add(messageKey);
+      this.markProcessed(sourceState, messageKey);
       return true;
     } catch (e: any) {
       if (
@@ -933,7 +957,7 @@ export class CCTPRelayModule {
         e.message?.includes("Message already processed")
       ) {
         console.log(`  [cctp-relay] ${messageKey} already processed on-chain`);
-        sourceState.processedMessages.add(messageKey);
+        this.markProcessed(sourceState, messageKey);
         return true; // Considered success
       }
       if (e.message?.includes("nonce") || e.message?.includes("NONCE")) {

@@ -133,7 +133,9 @@ interface ChainState {
    * on the destination). Restart-safe via PendingStateStore — survives so we don't burn gas
    * re-relaying messages already delivered before the restart.
    */
-  processedMessages: Set<string>;
+  /** Delivered/abandoned dedupKeys → unix-ms when marked processed. Map (not Set) so aged-out
+   *  entries can be pruned, bounding growth. */
+  processedMessages: Map<string, number>;
   /**
    * Last scan error for this chain, or null when the most recent tick succeeded. Surfaces in
    * future health endpoint + immediately makes "scanner stuck" visible to operators. Replaces
@@ -680,7 +682,7 @@ export class IrisRelayModule {
     list.push(record);
     this.deadLetters.set(sourceState.config.name, list);
     // Mark processed so a re-discovery (cursor rewind, restart) doesn't re-enqueue + re-burn gas.
-    sourceState.processedMessages.add(msg.dedupKey);
+    sourceState.processedMessages.set(msg.dedupKey, Date.now());
     console.error(
       `[iris-relay] DEAD-LETTER (${reason}): ${msg.dedupKey} (source tx ${msg.sourceTxHash}). Recorded to relayer/state/deadletter-${sourceState.config.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}.json for manual relay.`,
     );
@@ -743,7 +745,7 @@ export class IrisRelayModule {
       // re-discovered by the scanner (works because cursor is persisted), but messages already
       // successfully relayed before restart would be re-relayed and burn gas on the contract's
       // "already processed" check.
-      const processedMessages = new Set<string>();
+      const processedMessages = new Map<string, number>();
       try {
         const persisted = await this.pendingStateStore.read(chainConfig.name);
         if (persisted) {
@@ -755,8 +757,8 @@ export class IrisRelayModule {
             this.pendingMessages.set(p.dedupKey, p);
             restored++;
           }
-          for (const hash of persisted.processed) {
-            processedMessages.add(hash);
+          for (const entry of persisted.processed) {
+            processedMessages.set(entry.key, entry.at);
           }
           if (restored > 0 || persisted.processed.length > 0) {
             console.log(
@@ -876,6 +878,13 @@ export class IrisRelayModule {
         if (msg.sourceDomain === state.domain) {
           pendingForChain.push(msg);
         }
+      }
+      // Prune processed entries older than any message could still be re-discovered. The scanner's
+      // cursor advances past delivered messages, and a message can't outlive ~MAX_ATTESTATION_AGE_MS
+      // anyway; 2× that is a safe floor below which an entry can never be needed for dedup again.
+      const pruneBefore = Date.now() - MAX_ATTESTATION_AGE_MS * 2;
+      for (const [key, at] of state.processedMessages) {
+        if (at < pruneBefore) state.processedMessages.delete(key);
       }
       await this.pendingStateStore.write(
         state.config.name,
@@ -1217,7 +1226,7 @@ export class IrisRelayModule {
       } else if (outcome === "already-processed") {
         // The destination contract reports we (or someone) already delivered this. Treat as
         // success — mark processed and remove from pending. Common after a crash mid-submit.
-        if (sourceState) sourceState.processedMessages.add(hash);
+        if (sourceState) sourceState.processedMessages.set(hash, Date.now());
         this.pendingMessages.delete(hash);
         if (sourceState) dirtyChains.add(sourceState);
       } else {
@@ -1369,7 +1378,7 @@ export class IrisRelayModule {
         // Success — mark processed and remove from pending.
         this.mempoolStuckWarned.delete(msg.submittedTxHash!);
         const sourceState = this.getChainByDomain(msg.sourceDomain);
-        if (sourceState) sourceState.processedMessages.add(hash);
+        if (sourceState) sourceState.processedMessages.set(hash, Date.now());
         this.pendingMessages.delete(hash);
         console.log(
           `[iris-relay] ${state.config.name}: confirmed ${msg.submittedTxHash!.slice(0, 18)}... in block ${receipt.blockNumber} (${msg.retryAttempts} retries, ${Math.round((now - (msg.submittedAt ?? now)) / 1000)}s submit→confirm)`,

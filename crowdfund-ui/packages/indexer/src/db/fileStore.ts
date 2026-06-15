@@ -159,4 +159,8 @@ export class FileIndexerStore implements IndexerStore {
   async patchMeta(patch: IndexerMetaPatch): Promise<void> {
     await this.update((data) => applyMetaPatch(data, patch))
   }
+
+  async close(): Promise<void> {
+    // No persistent backend handle to release.
+  }
 }

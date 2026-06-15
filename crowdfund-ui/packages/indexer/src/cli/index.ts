@@ -5,12 +5,15 @@ import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
 import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
+import type { IndexerStore } from '../db/store.js'
+import type { IngestRangeRecord } from '../types.js'
 import { parseCliArgs, runReadOnlyCommand } from './commands.js'
+import type { ParsedCliArgs } from './commands.js'
 import { createRpcChainStateReader } from '../alerts/chainState.js'
 import { createFileAlertStateStore } from '../alerts/state.js'
 import { createDiscordNotifierFromEnv, runAlertsOnce } from '../alerts/runner.js'
 import type { CrowdfundParams } from '../alerts/types.js'
-import { backfillVerifiedRanges } from '../ingest/backfill.js'
+import { backfillVerifiedRanges, planBackfillRanges } from '../ingest/backfill.js'
 import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
@@ -33,6 +36,15 @@ async function main(): Promise<void> {
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
+  try {
+    await runCommand(args, store)
+  } finally {
+    // Release the Postgres pool (no-op for the file store) so the CLI exits promptly.
+    await store.close()
+  }
+}
+
+async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<void> {
   // Operator commands only need cursor/range/metadata state; the snapshot commands add
   // raw logs on demand below.
   const data = await store.readMeta()
@@ -41,6 +53,11 @@ async function main(): Promise<void> {
     const provider = createJsonRpcRangeProvider(readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL'))
     const auditRpcUrl = process.env.CROWDFUND_AUDIT_RPC_URL
     const auditProvider = auditRpcUrl ? createJsonRpcRangeProvider(auditRpcUrl) : undefined
+    if (!auditRpcUrl) {
+      process.stderr.write(
+        'Warning: CROWDFUND_AUDIT_RPC_URL is unset — ranges are verified against the same provider twice (no independent audit).\n',
+      )
+    }
     const config = {
       chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
       contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
@@ -96,24 +113,31 @@ async function main(): Promise<void> {
       return
     }
 
-    const range = { fromBlock, toBlock }
-    const records = args.command === 'verify'
-      ? [await verifyRange({
+    // Chunk an explicit span so a large --from/--to range does not hit a single oversized
+    // getLogs call (which providers reject). One chunk reproduces the previous behavior.
+    const chunks = planBackfillRanges({ fromBlock, toBlock, maxBlockRange: readNumberEnv('CROWDFUND_MAX_BLOCK_RANGE', 500) })
+    const records: IngestRangeRecord[] = []
+    if (args.command === 'verify') {
+      for (const chunk of chunks) {
+        records.push(await verifyRange({
           ...config,
           store,
           provider,
           auditProvider,
           auditProviderName: auditProvider ? 'audit' : undefined,
-          range,
-        })]
-      : await repairRanges({
-          ...config,
-          store,
-          provider,
-          auditProvider,
-          auditProviderName: auditProvider ? 'audit' : undefined,
-          ranges: [range],
-        })
+          range: chunk,
+        }))
+      }
+    } else {
+      records.push(...await repairRanges({
+        ...config,
+        store,
+        provider,
+        auditProvider,
+        auditProviderName: auditProvider ? 'audit' : undefined,
+        ranges: chunks,
+      }))
+    }
 
     process.stdout.write(
       records.map((record) => `${record.status}: ${record.fromBlock}-${record.toBlock} (${record.logCount} logs)`).join('\n') + '\n',

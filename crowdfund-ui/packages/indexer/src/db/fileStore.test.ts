@@ -92,6 +92,11 @@ describe('FileIndexerStore', () => {
     ])
   })
 
+  it('close resolves without error (no backend handle to release)', async () => {
+    const store = await makeStore()
+    await expect(store.close()).resolves.toBeUndefined()
+  })
+
   it('readMeta returns store metadata without raw logs', async () => {
     const store = await makeStore()
     await store.upsertRawLogs([{

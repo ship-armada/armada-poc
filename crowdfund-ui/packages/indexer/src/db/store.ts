@@ -35,6 +35,10 @@ export interface IndexerStore {
   appendRawLogs(logs: readonly IndexedRawLog[]): Promise<void>
   patchRange(record: IngestRangeRecord): Promise<void>
   patchMeta(patch: IndexerMetaPatch): Promise<void>
+
+  // Releases any backend resources (e.g. the Postgres pool) so a one-shot process can
+  // exit promptly. No-op for the file store.
+  close(): Promise<void>
 }
 
 // Applies a metadata patch to an in-memory store snapshot (used by the file store and as

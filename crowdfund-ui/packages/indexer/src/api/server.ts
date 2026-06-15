@@ -195,13 +195,26 @@ async function main(): Promise<void> {
     repairMaxAttempts: config.repairMaxAttempts,
     staleAfterMs: config.staleAfterMs,
   })
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     process.stdout.write(`Crowdfund indexer API listening on ${config.port}\n`)
   })
+
+  // Release the store backend (e.g. Postgres pool) on shutdown signals.
+  const shutdown = () => {
+    server.close()
+    void store.close().finally(() => process.exit(0))
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 
   if (config.pollOnStart || config.backfillOnStart) {
     if (!config.primaryRpcUrl) throw new Error('Missing required environment variable: CROWDFUND_PRIMARY_RPC_URL')
     const primaryRpcUrl = config.primaryRpcUrl
+    if (!config.auditRpcUrl) {
+      process.stderr.write(
+        'Warning: CROWDFUND_AUDIT_RPC_URL is unset — ranges are verified against the same provider twice (no independent audit).\n',
+      )
+    }
     const poller = new CrowdfundIndexerPoller({
       chainId: config.chainId,
       contractAddress: config.contractAddress,

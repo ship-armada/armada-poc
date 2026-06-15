@@ -4,7 +4,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Interface } from 'ethers'
 import { createIndexerApi } from './server.js'
 import { FileIndexerStore } from '../db/fileStore.js'
@@ -59,6 +59,43 @@ afterEach(async () => {
 })
 
 describe('indexer API', () => {
+  it('returns a generic 500 that does not leak the raw error (and its RPC key)', async () => {
+    const leakyUrl = 'https://eth-sepolia.g.alchemy.com/v2/abc123SECRETkey'
+    const failingStore = {
+      read: async () => {
+        throw new Error(`could not detect network (req to ${leakyUrl} failed)`)
+      },
+    } as unknown as FileIndexerStore
+    const app = createIndexerApi({
+      store: failingStore,
+      chainId: 11155111,
+      contractAddress,
+      repairMaxAttempts: 6,
+    })
+    const stderrLines: string[] = []
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stderrLines.push(String(chunk))
+      return true
+    })
+    const server = app.listen(0)
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('missing test server address')
+      const res = await fetch(`http://127.0.0.1:${address.port}/health`)
+      const body = await res.json() as { error: string }
+      expect(res.status).toBe(500)
+      expect(body.error).toBe('internal indexer error')
+      expect(JSON.stringify(body)).not.toContain('abc123SECRETkey')
+      // The server-side log is written but sanitized — host kept, key stripped.
+      const logged = stderrLines.join('')
+      expect(logged).not.toContain('abc123SECRETkey')
+      expect(logged).toContain('https://eth-sepolia.g.alchemy.com/[redacted]')
+    } finally {
+      stderrSpy.mockRestore()
+      server.close()
+    }
+  })
+
   it('serves health and snapshot data', async () => {
     const app = createIndexerApi({
       store: await makeStore(),

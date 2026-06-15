@@ -11,6 +11,7 @@ import { CrowdfundIndexerPoller } from '../ingest/poller.js'
 import { getRepairRanges } from '../ingest/ranges.js'
 import { getExhaustedRepairRanges } from '../ingest/reconcile.js'
 import { createJsonRpcRangeProvider } from '../ingest/rpc.js'
+import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot } from '../snapshots/build.js'
 import { toJsonValue } from '../snapshots/json.js'
@@ -189,8 +190,11 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
   })
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    // Never echo the raw error to the client — it can carry RPC keys or DB credentials.
+    // Log the sanitized real message server-side; return a fixed message to the caller.
     const message = err instanceof Error ? err.message : 'Unknown indexer API error'
-    res.status(500).json({ error: message })
+    process.stderr.write(`Crowdfund indexer API error: ${sanitizeErrorMessage(message)}\n`)
+    res.status(500).json({ error: 'internal indexer error' })
   })
 
   return app

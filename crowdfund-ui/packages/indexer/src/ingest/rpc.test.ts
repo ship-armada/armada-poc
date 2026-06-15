@@ -156,6 +156,23 @@ describe('RPC range pipeline', () => {
     expect(data.lastError).toBe('RPC timeout')
   })
 
+  it('sanitizes RPC keys out of the persisted lastError', async () => {
+    const store = await makeStore()
+    const leakyUrl = 'https://eth-sepolia.g.alchemy.com/v2/abc123SECRETkey'
+
+    const record = await stageRange({
+      ...config,
+      store,
+      provider: makeFailingProvider(`could not detect network (req to ${leakyUrl} failed)`),
+      range: { fromBlock: 120, toBlock: 129 },
+    })
+
+    const data = await store.read()
+    expect(record.status).toBe('failed')
+    expect(data.lastError).not.toContain('abc123SECRETkey')
+    expect(data.lastError).toContain('https://eth-sepolia.g.alchemy.com/[redacted]')
+  })
+
   it('rejects malformed log responses instead of treating them as empty data', async () => {
     const store = await makeStore()
 

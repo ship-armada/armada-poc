@@ -10,6 +10,7 @@ import { createFileAlertStateStore } from '../alerts/state.js'
 import { createDiscordNotifierFromEnv, runAlertsOnce } from '../alerts/runner.js'
 import type { CrowdfundParams } from '../alerts/types.js'
 import { backfillVerifiedRanges } from '../ingest/backfill.js'
+import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot } from '../snapshots/build.js'
@@ -180,7 +181,7 @@ async function main(): Promise<void> {
         latestSnapshotHash: snapshot.metadata.snapshotHash,
         lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
         lastError: snapshot.metadata.reconciliation.status === 'failed'
-          ? snapshot.metadata.reconciliation.mismatches.join('; ')
+          ? sanitizeErrorMessage(snapshot.metadata.reconciliation.mismatches.join('; '))
           : current.lastError,
       }))
       process.stdout.write(`rebuilt snapshot ${snapshot.metadata.snapshotHash} at block ${snapshot.metadata.verifiedBlock}\n`)

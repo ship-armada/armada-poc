@@ -4,6 +4,7 @@
 import type { IndexerStore } from '../db/store.js'
 import { backfillVerifiedRanges } from './backfill.js'
 import type { BackfillResult } from './backfill.js'
+import { sanitizeErrorMessage } from './errors.js'
 import { autoReconcileGaps } from './reconcile.js'
 import type { AutoReconcileOptions, AutoReconcileResult } from './reconcile.js'
 import type { RangeLogProvider, RangePipelineConfig } from './rpc.js'
@@ -126,7 +127,7 @@ async function withRetries<T>(
   }
 
   const kind = classifyRpcError(lastError)
-  throw new Error(`${kind}: ${getErrorMessage(lastError)}`)
+  throw new Error(`${kind}: ${sanitizeErrorMessage(getErrorMessage(lastError))}`)
 }
 
 export function createResilientRangeProvider(
@@ -227,7 +228,7 @@ export class CrowdfundIndexerPoller {
       await this.maybePublish(result)
       return { status: 'completed', backfill: result, reconcile }
     } catch (err) {
-      const message = getErrorMessage(err)
+      const message = sanitizeErrorMessage(getErrorMessage(err))
       await this.options.store.update((data) => ({
         ...data,
         lastError: message,
@@ -255,7 +256,7 @@ export class CrowdfundIndexerPoller {
       this.lastPublishedAt = now
       this.logger.info('Crowdfund indexer poll published snapshot')
     } catch (err) {
-      const message = getErrorMessage(err)
+      const message = sanitizeErrorMessage(getErrorMessage(err))
       this.logger.warn(`Crowdfund indexer poll snapshot publish failed: ${message}`)
       await this.options.store.update((data) => ({
         ...data,

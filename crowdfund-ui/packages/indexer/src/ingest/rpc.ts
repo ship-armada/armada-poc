@@ -3,6 +3,7 @@
 
 import { JsonRpcProvider } from 'ethers'
 import type { IndexerStore } from '../db/store.js'
+import { sanitizeErrorMessage } from './errors.js'
 import { createRangeDigest, getContiguousVerifiedCursor } from './ranges.js'
 import type { BlockRange, IndexedRawLog, IndexerStoreData, IngestRangeRecord } from '../types.js'
 
@@ -174,7 +175,7 @@ export async function stageRange(input: StageRangeInput): Promise<IngestRangeRec
     }))
     return record
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown range staging error'
+    const message = sanitizeErrorMessage(err instanceof Error ? err.message : 'Unknown range staging error')
     const current = await input.store.read()
     const attempts = getExistingAttempts(current, input.range) + 1
     const record: IngestRangeRecord = {
@@ -232,7 +233,7 @@ export async function verifyRange(input: VerifyRangeInput): Promise<IngestRangeR
     }
     return record
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown range verification error'
+    const message = sanitizeErrorMessage(err instanceof Error ? err.message : 'Unknown range verification error')
     const record: IngestRangeRecord = {
       ...staged,
       status: 'failed',

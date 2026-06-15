@@ -4,8 +4,9 @@
  * chunk of replay, not the whole window. Per-RPC-call range caps (Alchemy free 10 blocks,
  * Infura 10k, drpc varies) are handled separately by `rpc-bisecting.ts` which intercepts
  * eth_getLogs and recursively halves on the relevant error patterns.
- * ABOUTME: Adapted from apps/armada-interface/src/lib/events/getLogsChunked.ts — kept in
- * lockstep with the frontend version. Update both files in the same PR or extract to a shared
+ * ABOUTME: Adapted from apps/armada-interface/src/lib/events/getLogsChunked.ts — the chunking +
+ * `collect` behaviour are kept in lockstep; `perCallTimeoutMs` is relayer-only (the frontend uses
+ * an AbortSignal for the same purpose). Update both files in the same PR or extract to a shared
  * package per Plan §19 when a third consumer appears.
  */
 
@@ -50,6 +51,12 @@ export interface ChunkedLogsOptions {
    * frontend twin leaves it unset.
    */
   perCallTimeoutMs?: number;
+  /**
+   * Accumulate every chunk's logs into the returned array. Default true for backward-compat.
+   * Callers that ingest exclusively via `onChunk` (both relay scanners) pass `false` so a large
+   * backfill doesn't hold a second copy of every log in memory for the scan's duration.
+   */
+  collect?: boolean;
 }
 
 /**
@@ -75,6 +82,7 @@ export async function getLogsChunked(
   }
   if (opts.fromBlock > opts.toBlock) return [];
 
+  const collect = opts.collect ?? true;
   const out: ethers.Log[] = [];
   let cursor = opts.fromBlock;
 
@@ -92,7 +100,7 @@ export async function getLogsChunked(
       ? await withTimeout(getLogsCall, opts.perCallTimeoutMs, `getLogs ${cursor}-${chunkTo}`)
       : await getLogsCall;
 
-    out.push(...logs);
+    if (collect) out.push(...logs);
     // Awaited so the caller's ingest + persist completes BEFORE we move on to the next chunk.
     // This is the contract that makes per-chunk progress crash-safe: the cursor is never
     // advanced past logs the caller hasn't accepted responsibility for.

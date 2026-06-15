@@ -990,6 +990,8 @@ export class IrisRelayModule {
         fromBlock,
         toBlock,
         maxRange: maxLogRange,
+        // We ingest via onChunk and discard the return — don't double-buffer the logs.
+        collect: false,
         filter: {
           address: state.messageTransmitter,
           topics: [REAL_MESSAGE_SENT_TOPIC],

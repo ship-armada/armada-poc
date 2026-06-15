@@ -996,6 +996,8 @@ export class CCTPRelayModule {
         maxRange: maxLogRange,
         // Bound each getLogs call so a wedged RPC can't pin the poll loop (or stop()).
         perCallTimeoutMs: rpcTimeoutMs,
+        // We ingest via onChunk and discard the return — don't double-buffer the logs.
+        collect: false,
         filter: {
           address: state.messageTransmitter,
           topics: [MESSAGE_SENT_TOPIC], // hoisted to module scope

@@ -25,6 +25,11 @@ export interface ChunkedLogsOptions<TQuery extends Record<string, unknown>> {
    * block scanned so far — callers can persist this between ticks so a resume doesn't re-scan.
    */
   onChunk?: (info: { fromBlock: bigint; toBlockInclusive: bigint; logsInChunk: number }) => void
+  /**
+   * Accumulate every chunk's logs into the returned array. Default true. Callers that consume only
+   * via `onChunk` pass false to avoid holding a second copy of every log for the scan's duration.
+   */
+  collect?: boolean
 }
 
 /**
@@ -45,6 +50,7 @@ export async function getLogsChunked<TLog, TQuery extends Record<string, unknown
 
   if (opts.fromBlock > toBlock) return []
 
+  const collect = opts.collect ?? true
   const out: TLog[] = []
   const stride = BigInt(opts.maxRange)
   let cursor = opts.fromBlock
@@ -61,7 +67,7 @@ export async function getLogsChunked<TLog, TQuery extends Record<string, unknown
       fromBlock: cursor,
       toBlock: chunkTo,
     })
-    out.push(...logs)
+    if (collect) out.push(...logs)
     opts.onChunk?.({ fromBlock: cursor, toBlockInclusive: chunkTo, logsInChunk: logs.length })
     cursor = chunkTo + 1n
   }

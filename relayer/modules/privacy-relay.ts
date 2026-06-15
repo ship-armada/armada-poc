@@ -186,8 +186,12 @@ export class PrivacyRelay {
       );
     }
 
-    // 3. Validate fee cache ID against THIS chain's schedule
-    if (!feeCalculator.validateFeesCacheId(feesCacheId)) {
+    // 3. Resolve the EXACT schedule this quote's cacheId was issued from (current, or the one-deep
+    // previous if still within the variance buffer). We verify the paid fee against THIS schedule's
+    // prices below — never a freshly-regenerated one — so honest proofs built against a quote that
+    // expired mid-flight aren't spuriously rejected by an upward gas-price re-quote.
+    const quotedSchedule = feeCalculator.getScheduleByCacheId(feesCacheId);
+    if (!quotedSchedule) {
       throw new RelayError(
         "FEE_EXPIRED",
         `Fee quote has expired or is invalid for chain ${chainId}. Please re-fetch fees.`,
@@ -216,8 +220,7 @@ export class PrivacyRelay {
     //    - Proof-bearing selectors: fee is encrypted inside a SNARK commitment ciphertext;
     //      verifier decrypts under the relayer's viewing key. Hub-only today — Phase A doesn't
     //      run any non-hub proof-bearing flow.
-    const fees = await feeCalculator.getCurrentFees();
-    const advertisedFee = advertisedFeeForSelector(selector, fees.fees);
+    const advertisedFee = advertisedFeeForSelector(selector, quotedSchedule.fees);
     try {
       if (GASLESS_SELECTORS.has(selector)) {
         verifyGaslessFee(

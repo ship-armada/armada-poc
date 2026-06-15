@@ -13,9 +13,9 @@ import { backfillVerifiedRanges } from '../ingest/backfill.js'
 import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
-import { buildSnapshot } from '../snapshots/build.js'
+import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
-import type { CursorState, ReconciliationResult } from '../types.js'
+import type { CursorState } from '../types.js'
 
 function readNumberEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -159,22 +159,24 @@ async function main(): Promise<void> {
   if (args.command === 'rebuild-snapshot' || args.command === 'publish-snapshot') {
     const chainId = readNumberEnv('CROWDFUND_CHAIN_ID', 11155111)
     const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
-    let reconciliation: ReconciliationResult | undefined
 
-    const pendingSnapshot = buildSnapshot({ data, chainId, contractAddress })
+    let snapshot = buildSnapshot({ data, chainId, contractAddress })
     const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
     if (rpcUrl) {
       const provider = new JsonRpcProvider(rpcUrl)
-      const contract = createReadableCrowdfundContract(provider, contractAddress)
-      reconciliation = await reconcileSnapshot({
-        graph: pendingSnapshot.graph,
-        contract,
-        checkedBlock: data.cursor.verifiedCursor,
-        providerName: 'primary',
-      })
+      try {
+        const contract = createReadableCrowdfundContract(provider, contractAddress)
+        const reconciliation = await reconcileSnapshot({
+          graph: snapshot.graph,
+          contract,
+          checkedBlock: data.cursor.verifiedCursor,
+          providerName: 'primary',
+        })
+        snapshot = withReconciliation(snapshot, reconciliation)
+      } finally {
+        provider.destroy()
+      }
     }
-
-    const snapshot = buildSnapshot({ data, chainId, contractAddress, reconciliation })
     if (args.command === 'rebuild-snapshot') {
       await store.update((current) => ({
         ...current,
@@ -241,15 +243,20 @@ async function main(): Promise<void> {
       : null
     const stateFile = process.env.CROWDFUND_ALERT_STATE_FILE
       ?? join(process.cwd(), 'data/crowdfund-indexer/alerts.json')
-    const result = await runAlertsOnce({
-      store,
-      stateStore: createFileAlertStateStore(stateFile),
-      params,
-      repairMaxAttempts: readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6),
-      staleAfterMs: readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000),
-      chainState,
-      notifier: createDiscordNotifierFromEnv(),
-    })
+    let result
+    try {
+      result = await runAlertsOnce({
+        store,
+        stateStore: createFileAlertStateStore(stateFile),
+        params,
+        repairMaxAttempts: readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6),
+        staleAfterMs: readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000),
+        chainState,
+        notifier: createDiscordNotifierFromEnv(),
+      })
+    } finally {
+      chainState?.close?.()
+    }
     process.stdout.write(
       `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}; failed ${result.failed.length}\n`,
     )

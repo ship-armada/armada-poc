@@ -13,10 +13,10 @@ import { getExhaustedRepairRanges } from '../ingest/reconcile.js'
 import { createJsonRpcRangeProvider } from '../ingest/rpc.js'
 import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
-import { buildSnapshot } from '../snapshots/build.js'
+import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { toJsonValue } from '../snapshots/json.js'
 import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
-import type { CursorState, IndexerStoreData, ReconciliationResult } from '../types.js'
+import type { CursorState, IndexerStoreData } from '../types.js'
 
 export interface CreateIndexerApiOptions {
   store: IndexerStore
@@ -91,21 +91,24 @@ async function publishCurrentSnapshot(
   primaryRpcUrl: string | null,
 ): Promise<void> {
   const data = await store.read()
-  let reconciliation: ReconciliationResult | undefined
-  const pendingSnapshot = buildSnapshot({ data, chainId, contractAddress })
+  let snapshot = buildSnapshot({ data, chainId, contractAddress })
 
   if (primaryRpcUrl) {
     const provider = new JsonRpcProvider(primaryRpcUrl)
-    const contract = createReadableCrowdfundContract(provider, contractAddress)
-    reconciliation = await reconcileSnapshot({
-      graph: pendingSnapshot.graph,
-      contract,
-      checkedBlock: data.cursor.verifiedCursor,
-      providerName: 'primary',
-    })
+    try {
+      const contract = createReadableCrowdfundContract(provider, contractAddress)
+      const reconciliation = await reconcileSnapshot({
+        graph: snapshot.graph,
+        contract,
+        checkedBlock: data.cursor.verifiedCursor,
+        providerName: 'primary',
+      })
+      snapshot = withReconciliation(snapshot, reconciliation)
+    } finally {
+      provider.destroy()
+    }
   }
 
-  const snapshot = buildSnapshot({ data, chainId, contractAddress, reconciliation })
   if (snapshot.metadata.reconciliation.status === 'failed') {
     throw new Error(`Refusing to publish failed reconciliation: ${snapshot.metadata.reconciliation.mismatches.join('; ')}`)
   }

@@ -213,7 +213,10 @@ export async function verifyRange(input: VerifyRangeInput): Promise<IngestRangeR
     const record: IngestRangeRecord = {
       ...staged,
       status,
-      provider: status === 'verified' ? auditProviderName : `${staged.provider}/${auditProviderName}`,
+      // Record both who staged the data and who audited it (e.g. "primary/audit"), so a
+      // verified record does not lose its staging provider. Single-provider self-audit
+      // reads as "primary/primary", which usefully signals no independent verification.
+      provider: `${staged.provider}/${auditProviderName}`,
       verifiedAt: status === 'verified' ? timestamp : null,
       lastError: status === 'verified' ? null : `Digest mismatch: staged ${staged.digest}, audit ${auditDigest}`,
     }

@@ -118,6 +118,7 @@ describe('RPC range pipeline', () => {
 
     const data = await store.read()
     expect(record.status).toBe('verified')
+    expect(record.provider).toBe('primary/audit')
     expect(data.cursor.verifiedCursor).toBe(109)
     expect(data.lastVerifiedAt).not.toBeNull()
   })

@@ -59,6 +59,55 @@ function isWebglForcedOff(): boolean {
   return params.has('nowebgl') || params.get('webgl') === 'off'
 }
 
+/** Subdued static backdrop: a blurred + darkened splash image under a theme-tied
+ *  radial wash. `washCenter`/`washEdge` are the surface-tint percentages at the
+ *  center and edge of the vignette; `brightness`/`saturate` mute the image. The
+ *  behind-graph case runs heavier/darker than the no-WebGL fallback so it stays
+ *  well behind the nodes. */
+function SplashBackdrop({
+  washCenter = 42,
+  washEdge = 86,
+  brightness = 0.38,
+  saturate = 0.5,
+}: {
+  washCenter?: number
+  washEdge?: number
+  brightness?: number
+  saturate?: number
+}) {
+  return (
+    <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden' }}>
+      {/* Image layer — desaturated, darkened, and blurred so it reads as ambient
+          backdrop rather than a competing photo. Oversized (inset negative) so
+          the blur's soft edge stays outside the visible frame; blurring an
+          inset:0 layer would otherwise bleed the page background in at the seams. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: '-24px',
+          backgroundImage: `url(${splashImg})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          filter: `blur(6px) saturate(${saturate}) brightness(${brightness})`,
+        }}
+      />
+      {/* Vignette/wash tied to the theme surface so the splash fades into the
+          page background at the edges and the foreground UI stays legible. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background:
+            'radial-gradient(ellipse at center,' +
+            ` color-mix(in srgb, var(--semantic-color-surface-default) ${washCenter}%, transparent),` +
+            ` color-mix(in srgb, var(--semantic-color-surface-default) ${washEdge}%, transparent))`,
+        }}
+      />
+    </div>
+  )
+}
+
 function mulberry32(seed: number) {
   return () => {
     let t = (seed += 0x6d2b79f5)
@@ -1291,46 +1340,7 @@ export function NodeSphere({
   // the interactive graph. The graph is decorative, so the surrounding commit /
   // claim / invite flows keep working.
   if (webglFailed) {
-    return (
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          inset: 0,
-          zIndex: 0,
-          overflow: 'hidden',
-        }}
-      >
-        {/* Image layer — desaturated, darkened, and blurred so it reads as
-            ambient backdrop rather than a competing photo. Oversized (inset
-            negative) so the blur's soft edge stays outside the visible frame;
-            blurring an inset:0 layer would otherwise bleed the page background
-            in at the seams. */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: '-24px',
-            backgroundImage: `url(${splashImg})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            filter: 'blur(6px) saturate(0.5) brightness(0.38)',
-          }}
-        />
-        {/* Vignette/wash tied to the theme surface so the splash fades into the
-            page background at the edges and the foreground UI stays legible. */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background:
-              'radial-gradient(ellipse at center,' +
-              ' color-mix(in srgb, var(--semantic-color-surface-default) 42%, transparent),' +
-              ' color-mix(in srgb, var(--semantic-color-surface-default) 86%, transparent))',
-          }}
-        />
-      </div>
-    )
+    return <SplashBackdrop />
   }
 
   return (
@@ -1342,6 +1352,10 @@ export function NodeSphere({
         zIndex: 0,
       }}
     >
+      {/* Static splash behind the transparent WebGL canvas (appended after this
+          React child) so the nodes composite over it. Heavier wash + darker than
+          the no-WebGL fallback so it stays subdued behind the graph. */}
+      <SplashBackdrop washCenter={66} washEdge={96} brightness={0.24} saturate={0.42} />
       {/* Hover tooltip — follows the cursor over selectable nodes. Mirrors
           the selected-tip's "Your wallet" eyebrow + truncated-address
           rendering so live 40-hex addresses don't overflow the 272px box. */}

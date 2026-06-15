@@ -72,25 +72,24 @@ export function planBackfillRanges(input: PlanBackfillRangesInput): BlockRange[]
 }
 
 export async function backfillVerifiedRanges(input: BackfillInput): Promise<BackfillResult> {
-  const data = await input.store.read()
+  const meta = await input.store.readMeta()
   const chainHead = await input.provider.getBlockNumber()
-  const confirmedHead = Math.max(0, chainHead - data.cursor.confirmationDepth)
+  const confirmedHead = Math.max(0, chainHead - meta.cursor.confirmationDepth)
   const toBlock = input.toBlock === undefined ? confirmedHead : Math.min(input.toBlock, confirmedHead)
-  const fromBlock = data.cursor.verifiedCursor + 1
+  const fromBlock = meta.cursor.verifiedCursor + 1
   const ranges = planBackfillRanges({
     fromBlock,
     toBlock,
     maxBlockRange: input.maxBlockRange,
   })
 
-  await input.store.update((current) => ({
-    ...current,
+  await input.store.patchMeta({
     cursor: {
-      ...current.cursor,
+      ...meta.cursor,
       chainHead,
       confirmedHead,
     },
-  }))
+  })
 
   const records: IngestRangeRecord[] = []
   let stoppedEarly = false
@@ -99,7 +98,7 @@ export async function backfillVerifiedRanges(input: BackfillInput): Promise<Back
     // Because the verified cursor never skips a gap, a deferred chunk also stops every
     // later chunk this cycle — they cannot be promoted past it anyway.
     if (input.retryPolicy) {
-      const existing = data.ranges.find(
+      const existing = meta.ranges.find(
         (record) => record.fromBlock === range.fromBlock && record.toBlock === range.toBlock,
       )
       if (isDeferredByPolicy(existing, input.retryPolicy)) {

@@ -105,8 +105,8 @@ export async function autoReconcileGaps(input: AutoReconcileInput): Promise<Auto
   }
 
   const now = (input.now ?? (() => new Date()))()
-  const data = await input.store.read()
-  const { eligible, deferred, exhausted } = classifyRepairableRanges(data.ranges, input.options, now)
+  const meta = await input.store.readMeta()
+  const { eligible, deferred, exhausted } = classifyRepairableRanges(meta.ranges, input.options, now)
 
   const attempted: IngestRangeRecord[] = []
   for (const candidate of eligible) {
@@ -127,7 +127,7 @@ export async function autoReconcileGaps(input: AutoReconcileInput): Promise<Auto
     // written record back from the store so that `attempts` reflects the increment
     // applied during this cycle.
     if (result.status !== 'verified') {
-      const after = await input.store.read()
+      const after = await input.store.readMeta()
       const written = after.ranges.find(
         (record) => record.fromBlock === range.fromBlock && record.toBlock === range.toBlock,
       )
@@ -136,16 +136,15 @@ export async function autoReconcileGaps(input: AutoReconcileInput): Promise<Auto
           ...written,
           nextRetryAt: computeNextRetryAt(written.attempts, input.options, (input.now ?? (() => new Date()))()),
         }
-        await input.store.upsertRange(scheduled)
+        await input.store.patchRange(scheduled)
       }
     }
   }
 
   if (attempted.length > 0) {
-    await input.store.update((current) => ({
-      ...current,
+    await input.store.patchMeta({
       lastReconciledAt: (input.now ?? (() => new Date()))().toISOString(),
-    }))
+    })
   }
 
   return {

@@ -28,25 +28,26 @@ export interface RunAlertsOnceInput {
 }
 
 export async function runAlertsOnce(input: RunAlertsOnceInput): Promise<EvaluatorResult> {
-  const data = await input.store.read()
+  const meta = await input.store.readMeta()
+  const rawLogs = await input.store.readLogs(meta.cursor.verifiedCursor)
   const now = input.nowSeconds ? input.nowSeconds() : Math.floor(Date.now() / 1000)
 
   const snapshot = buildSnapshot({
-    data,
+    data: { ...meta, rawLogs },
     chainId: input.params.chainId,
     contractAddress: input.params.contractAddress,
   })
 
   const health = buildHealth({
-    cursor: data.cursor,
-    gapRanges: getRepairRanges(data.ranges),
-    gapsRequiringIntervention: getExhaustedRepairRanges(data.ranges, input.repairMaxAttempts),
-    lastIngestedAt: data.lastIngestedAt,
-    lastVerifiedAt: data.lastVerifiedAt,
-    lastReconciledAt: data.lastReconciledAt,
-    lastError: data.lastError,
-    latestSnapshotHash: data.latestSnapshotHash,
-    latestStaticSnapshotUrl: data.latestStaticSnapshotUrl,
+    cursor: meta.cursor,
+    gapRanges: getRepairRanges(meta.ranges),
+    gapsRequiringIntervention: getExhaustedRepairRanges(meta.ranges, input.repairMaxAttempts),
+    lastIngestedAt: meta.lastIngestedAt,
+    lastVerifiedAt: meta.lastVerifiedAt,
+    lastReconciledAt: meta.lastReconciledAt,
+    lastError: meta.lastError,
+    latestSnapshotHash: meta.latestSnapshotHash,
+    latestStaticSnapshotUrl: meta.latestStaticSnapshotUrl,
     staleAfterMs: input.staleAfterMs,
   })
 

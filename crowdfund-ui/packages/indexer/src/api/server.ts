@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
 import { buildHealth } from './health.js'
 import { createIndexerStore } from '../db/createStore.js'
-import type { IndexerStore } from '../db/store.js'
+import type { IndexerMeta, IndexerStore } from '../db/store.js'
 import { CrowdfundIndexerPoller } from '../ingest/poller.js'
 import { getRepairRanges } from '../ingest/ranges.js'
 import { getExhaustedRepairRanges } from '../ingest/reconcile.js'
@@ -63,7 +63,7 @@ function getInitialCursor(): CursorState {
   }
 }
 
-function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number, staleAfterMs?: number) {
+function buildHealthFromStore(data: IndexerMeta, repairMaxAttempts: number, staleAfterMs?: number) {
   return buildHealth({
     cursor: data.cursor,
     gapRanges: getRepairRanges(data.ranges),
@@ -90,7 +90,8 @@ async function publishCurrentSnapshot(
   contractAddress: string,
   primaryRpcUrl: string | null,
 ): Promise<void> {
-  const data = await store.read()
+  const meta = await store.readMeta()
+  const data: IndexerStoreData = { ...meta, rawLogs: await store.readLogs(meta.cursor.verifiedCursor) }
   let snapshot = buildSnapshot({ data, chainId, contractAddress })
 
   if (primaryRpcUrl) {
@@ -129,17 +130,26 @@ async function publishCurrentSnapshot(
         process.env.CROWDFUND_SNAPSHOT_DIR ?? join(process.cwd(), 'data/crowdfund-indexer/snapshots'),
       )
 
-  await store.update((current) => ({
-    ...current,
+  await store.patchMeta({
     latestSnapshotHash: snapshot.metadata.snapshotHash,
     latestStaticSnapshotUrl: result.latestUrl ?? result.latestPath,
-    lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
+    ...(snapshot.metadata.reconciliation.checkedAt
+      ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
+      : {}),
     lastError: null,
-  }))
+  })
 }
 
 export function createIndexerApi(options: CreateIndexerApiOptions) {
   const app = express()
+
+  // Compose just the data buildSnapshot needs: metadata + the verified-and-below logs.
+  // Avoids reading the entire raw-log table on every /snapshot and /events request.
+  async function readSnapshotData(): Promise<IndexerStoreData> {
+    const meta = await options.store.readMeta()
+    const rawLogs = await options.store.readLogs(meta.cursor.verifiedCursor)
+    return { ...meta, rawLogs }
+  }
 
   app.use((_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -149,8 +159,8 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
   app.get('/health', async (_req, res, next) => {
     try {
-      const data = await options.store.read()
-      res.json(buildHealthFromStore(data, options.repairMaxAttempts, options.staleAfterMs))
+      const meta = await options.store.readMeta()
+      res.json(buildHealthFromStore(meta, options.repairMaxAttempts, options.staleAfterMs))
     } catch (err) {
       next(err)
     }
@@ -158,9 +168,8 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
   app.get('/snapshot', async (_req, res, next) => {
     try {
-      const data = await options.store.read()
       const snapshot = buildSnapshot({
-        data,
+        data: await readSnapshotData(),
         chainId: options.chainId,
         contractAddress: options.contractAddress,
       })
@@ -174,9 +183,8 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
     try {
       const afterBlock = readOptionalNumber(req.query.afterBlock)
       const afterLogIndex = readOptionalNumber(req.query.afterLogIndex) ?? -1
-      const data = await options.store.read()
       const snapshot = buildSnapshot({
-        data,
+        data: await readSnapshotData(),
         chainId: options.chainId,
         contractAddress: options.contractAddress,
       })

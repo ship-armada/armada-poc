@@ -70,7 +70,9 @@ async function main(): Promise<void> {
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
-  const data = await store.read()
+  // Operator commands only need cursor/range/metadata state; the snapshot commands add
+  // raw logs on demand below.
+  const data = await store.readMeta()
 
   if (args.command === 'verify' || args.command === 'repair' || args.command === 'backfill') {
     const provider = createJsonRpcRangeProvider(readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL'))
@@ -160,7 +162,8 @@ async function main(): Promise<void> {
     const chainId = readNumberEnv('CROWDFUND_CHAIN_ID', 11155111)
     const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
 
-    let snapshot = buildSnapshot({ data, chainId, contractAddress })
+    const snapshotData = { ...data, rawLogs: await store.readLogs(data.cursor.verifiedCursor) }
+    let snapshot = buildSnapshot({ data: snapshotData, chainId, contractAddress })
     const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
     if (rpcUrl) {
       const provider = new JsonRpcProvider(rpcUrl)
@@ -178,14 +181,15 @@ async function main(): Promise<void> {
       }
     }
     if (args.command === 'rebuild-snapshot') {
-      await store.update((current) => ({
-        ...current,
+      await store.patchMeta({
         latestSnapshotHash: snapshot.metadata.snapshotHash,
-        lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
-        lastError: snapshot.metadata.reconciliation.status === 'failed'
-          ? sanitizeErrorMessage(snapshot.metadata.reconciliation.mismatches.join('; '))
-          : current.lastError,
-      }))
+        ...(snapshot.metadata.reconciliation.checkedAt
+          ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
+          : {}),
+        ...(snapshot.metadata.reconciliation.status === 'failed'
+          ? { lastError: sanitizeErrorMessage(snapshot.metadata.reconciliation.mismatches.join('; ')) }
+          : {}),
+      })
       process.stdout.write(`rebuilt snapshot ${snapshot.metadata.snapshotHash} at block ${snapshot.metadata.verifiedBlock}\n`)
       return
     }
@@ -211,13 +215,14 @@ async function main(): Promise<void> {
           snapshot,
           process.env.CROWDFUND_SNAPSHOT_DIR ?? join(process.cwd(), 'data/crowdfund-indexer/snapshots'),
         )
-    await store.update((current) => ({
-      ...current,
+    await store.patchMeta({
       latestSnapshotHash: snapshot.metadata.snapshotHash,
       latestStaticSnapshotUrl: result.latestUrl ?? result.latestPath,
-      lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
+      ...(snapshot.metadata.reconciliation.checkedAt
+        ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
+        : {}),
       lastError: null,
-    }))
+    })
     process.stdout.write(`published ${result.snapshotFileName}\nlatest ${result.latestUrl ?? result.latestPath}\n`)
     return
   }

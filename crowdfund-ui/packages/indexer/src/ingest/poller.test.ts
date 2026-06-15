@@ -282,9 +282,11 @@ describe('CrowdfundIndexerPoller', () => {
     })
 
     const first = poller.runOnce()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    // Wait until the first cycle is actually blocked inside getBlockNumber before
+    // starting the second, so the overlap check is deterministic regardless of how many
+    // async hops precede the blocking call.
+    while (!controls.releaseBlockNumber) await new Promise((resolve) => setTimeout(resolve, 1))
     const second = await poller.runOnce()
-    if (!controls.releaseBlockNumber) throw new Error('provider did not start')
     controls.releaseBlockNumber()
     const firstResult = await first
 

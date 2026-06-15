@@ -3,7 +3,8 @@
 
 import { buildHealth } from '../api/health.js'
 import { getRepairRanges } from '../ingest/ranges.js'
-import type { BlockRange, IndexerHealth, IndexerStoreData } from '../types.js'
+import type { IndexerMeta } from '../db/store.js'
+import type { BlockRange, IndexerHealth } from '../types.js'
 
 export type CliCommand =
   | 'status'
@@ -82,7 +83,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCliArgs {
   }
 }
 
-export function getStatusHealth(data: IndexerStoreData, staleAfterMs?: number): IndexerHealth {
+export function getStatusHealth(data: IndexerMeta, staleAfterMs?: number): IndexerHealth {
   return buildHealth({
     cursor: data.cursor,
     gapRanges: getRepairRanges(data.ranges),
@@ -100,7 +101,7 @@ export function formatRange(range: BlockRange): string {
   return `${range.fromBlock}-${range.toBlock}`
 }
 
-export function formatStatus(data: IndexerStoreData, staleAfterMs?: number): string {
+export function formatStatus(data: IndexerMeta, staleAfterMs?: number): string {
   const health = getStatusHealth(data, staleAfterMs)
   const gaps = health.gapRanges.length > 0
     ? health.gapRanges.map(formatRange).join(', ')
@@ -123,7 +124,7 @@ export function formatStatus(data: IndexerStoreData, staleAfterMs?: number): str
 // Handles the read-only `status` command. RPC-backed commands (verify/repair/backfill,
 // rebuild-snapshot, publish-snapshot) are dispatched in cli/index.ts before reaching here,
 // so this function intentionally accepts only `status`.
-export function runReadOnlyCommand(args: ParsedCliArgs, data: IndexerStoreData, staleAfterMs?: number): CliCommandResult {
+export function runReadOnlyCommand(args: ParsedCliArgs, data: IndexerMeta, staleAfterMs?: number): CliCommandResult {
   if (args.command !== 'status') {
     throw new Error(`runReadOnlyCommand received non-status command: ${args.command}`)
   }

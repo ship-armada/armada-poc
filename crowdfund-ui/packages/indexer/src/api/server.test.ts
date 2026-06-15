@@ -62,7 +62,7 @@ describe('indexer API', () => {
   it('returns a generic 500 that does not leak the raw error (and its RPC key)', async () => {
     const leakyUrl = 'https://eth-sepolia.g.alchemy.com/v2/abc123SECRETkey'
     const failingStore = {
-      read: async () => {
+      readMeta: async () => {
         throw new Error(`could not detect network (req to ${leakyUrl} failed)`)
       },
     } as unknown as FileIndexerStore

@@ -46,6 +46,8 @@ export function createDiscordNotifier(config: DiscordWebhookConfig): Notifier {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formatPayload(event, mention)),
+        // Bound the request so one hung webhook cannot stall the whole evaluation tick.
+        signal: AbortSignal.timeout(10_000),
       })
       if (!res.ok) {
         const text = await res.text().catch(() => '')

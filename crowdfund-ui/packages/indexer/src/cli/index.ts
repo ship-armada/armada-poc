@@ -251,11 +251,16 @@ async function main(): Promise<void> {
       notifier: createDiscordNotifierFromEnv(),
     })
     process.stdout.write(
-      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}\n`,
+      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}; failed ${result.failed.length}\n`,
     )
     for (const e of result.delivered) {
       process.stdout.write(`  [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)
     }
+    for (const e of result.failed) {
+      process.stderr.write(`  FAILED [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)
+    }
+    // Non-zero exit so a scheduler surfaces delivery failures (and retries next tick).
+    if (result.failed.length > 0) process.exitCode = 1
     return
   }
 

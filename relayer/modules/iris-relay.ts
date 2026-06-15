@@ -193,6 +193,13 @@ const MSG_NONCE_OFFSET = 12;
 const MSG_NONCE_LENGTH = 32; // bytes32 in real CCTP V2 (NOT 8-byte uint64)
 const MSG_DEST_CALLER_OFFSET = 108;
 const MSG_DEST_CALLER_LENGTH = 32;
+/** finalityThresholdExecuted — 4 bytes Iris fills in on the corrected message (volatile field). */
+const MSG_FINALITY_EXECUTED_OFFSET = 144;
+const MSG_FINALITY_EXECUTED_LENGTH = 4;
+/** Minimum plausible attestation length (bytes): one 65-byte ECDSA signature. */
+const MIN_ATTESTATION_BYTES = 65;
+/** Default timeout (ms) for an Iris HTTP request when the source chain config is unavailable. */
+const DEFAULT_IRIS_FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * BurnMessageV2 mintRecipient offset within the full MessageV2.
@@ -292,6 +299,55 @@ export function classifyMessageForRelay(
     }
   }
   return { relay: true, mintRecipient };
+}
+
+/**
+ * Is `s` a 0x-prefixed hex string of at least `minBytes` bytes? Used to validate the Iris API's
+ * `attestation` / `message` fields before we sign+broadcast them. Pure + exported for tests.
+ */
+export function isPlausibleHexBytes(s: unknown, minBytes: number): boolean {
+  if (typeof s !== "string" || !s.startsWith("0x")) return false;
+  const body = s.slice(2);
+  if (body.length % 2 !== 0) return false;
+  if (!/^[0-9a-fA-F]*$/.test(body)) return false;
+  return body.length / 2 >= minBytes;
+}
+
+/** Zero a byte range in a (no-0x) hex string. */
+function zeroHexRange(hex: string, startByte: number, lenBytes: number): string {
+  return (
+    hex.slice(0, startByte * 2) +
+    "0".repeat(lenBytes * 2) +
+    hex.slice((startByte + lenBytes) * 2)
+  );
+}
+
+/**
+ * Do two MessageV2 byte strings match on every field EXCEPT the ones Iris legitimately fills in
+ * (the nonce slot — zero in the source event, real value from Iris — and finalityThresholdExecuted)?
+ * Pure + exported for tests.
+ *
+ * Used to (a) select the right entry when Iris returns multiple messages for one source tx and
+ * (b) guard, before broadcasting, that the bytes Iris handed us are the same message we observed
+ * emitted on the source chain — so a compromised/buggy Iris response can't make us sign arbitrary
+ * bytes (the destination MessageTransmitter would reject a mismatched attestation, but we'd still
+ * pay gas for the revert).
+ */
+export function irisMessageMatches(localHex: string, irisHex: string): boolean {
+  const a = (localHex.startsWith("0x") ? localHex.slice(2) : localHex).toLowerCase();
+  const b = (irisHex.startsWith("0x") ? irisHex.slice(2) : irisHex).toLowerCase();
+  if (a.length !== b.length) return false;
+  const na = zeroHexRange(
+    zeroHexRange(a, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
+    MSG_FINALITY_EXECUTED_OFFSET,
+    MSG_FINALITY_EXECUTED_LENGTH,
+  );
+  const nb = zeroHexRange(
+    zeroHexRange(b, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
+    MSG_FINALITY_EXECUTED_OFFSET,
+    MSG_FINALITY_EXECUTED_LENGTH,
+  );
+  return na === nb;
 }
 
 /**
@@ -402,12 +458,18 @@ class IrisClient {
    */
   async checkAttestation(
     sourceDomain: number,
-    sourceTxHash: string
+    sourceTxHash: string,
+    expectedMessageHex: string,
+    timeoutMs: number,
   ): Promise<{ attestation: string; message: string; status: string } | null> {
     const url = `${this.baseUrl}/v2/messages/${sourceDomain}?transactionHash=${sourceTxHash}`;
 
+    // Bound the fetch with an AbortController — a hung Iris connection would otherwise stall the
+    // (sequential) pending-message loop for this whole tick.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
 
       if (response.status === 404) {
         return null; // Not yet indexed
@@ -424,8 +486,39 @@ class IrisClient {
         return null;
       }
 
-      const msg = data.messages[0];
+      // Select the entry that corresponds to OUR message. A single source tx can in principle emit
+      // more than one MessageSent; unconditionally taking messages[0] would deliver the wrong one.
+      // Fall back to [0] only when there's exactly one entry.
+      let msg: IrisMessageResponse["messages"][number] | undefined;
+      if (data.messages.length === 1) {
+        msg = data.messages[0];
+      } else {
+        msg = data.messages.find(
+          (m) => typeof m.message === "string" && irisMessageMatches(expectedMessageHex, m.message),
+        );
+        if (!msg) {
+          console.warn(
+            `    [iris] ${data.messages.length} messages for tx ${sourceTxHash}, none match the locally-observed bytes — skipping this tick.`,
+          );
+          return null;
+        }
+      }
+
       if (msg.status === "complete" && msg.attestation) {
+        // Validate the fields we're about to sign+broadcast are well-formed hex of plausible size.
+        // A malformed-but-truthy attestation/message would otherwise be forwarded blind.
+        if (!isPlausibleHexBytes(msg.attestation, MIN_ATTESTATION_BYTES)) {
+          console.warn(
+            `    [iris] attestation for tx ${sourceTxHash} is not plausible hex (>=${MIN_ATTESTATION_BYTES}B) — skipping.`,
+          );
+          return null;
+        }
+        if (!isPlausibleHexBytes(msg.message, MIN_BURN_MESSAGE_BYTES)) {
+          console.warn(
+            `    [iris] message for tx ${sourceTxHash} is not plausible hex (>=${MIN_BURN_MESSAGE_BYTES}B) — skipping.`,
+          );
+          return null;
+        }
         return {
           attestation: msg.attestation,
           message: msg.message,
@@ -436,8 +529,11 @@ class IrisClient {
       // Return status for logging (pending, pending_confirmations)
       return { attestation: "", message: "", status: msg.status };
     } catch (e: any) {
-      console.warn(`    [iris] Poll error: ${e.message}`);
+      const reason = e?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : e?.message ?? e;
+      console.warn(`    [iris] Poll error: ${reason}`);
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -1074,11 +1170,16 @@ export class IrisRelayModule {
         continue;
       }
 
-      // Check Iris
+      // Check Iris. Pass the locally-observed message bytes so the client can pick the right entry
+      // if Iris returns multiple, and a per-request timeout from the source chain's scanner config.
       msg.pollAttempts++;
+      const irisTimeoutMs =
+        sourceState?.config.scanner.rpcTimeoutMs ?? DEFAULT_IRIS_FETCH_TIMEOUT_MS;
       const result = await this.irisClient.checkAttestation(
         msg.sourceDomain,
-        msg.sourceTxHash
+        msg.sourceTxHash,
+        msg.messageBytes,
+        irisTimeoutMs,
       );
 
       if (!result) {
@@ -1370,8 +1471,23 @@ export class IrisRelayModule {
     }
 
     try {
-      // Prefer the message from Iris (may include finalityThresholdExecuted filled in)
-      const msgToRelay = irisMessage || msg.messageBytes;
+      // Prefer the message from Iris (may include finalityThresholdExecuted filled in), BUT only
+      // after confirming it matches the bytes we observed emitted on the source chain (modulo the
+      // nonce / finalityThresholdExecuted slots Iris legitimately fills). A compromised or buggy
+      // Iris response otherwise has us signing+broadcasting bytes we never validated — the dest
+      // MessageTransmitter would reject a truly-mismatched attestation, but we'd still pay gas.
+      let msgToRelay = msg.messageBytes;
+      if (irisMessage) {
+        if (irisMessageMatches(msg.messageBytes, irisMessage)) {
+          msgToRelay = irisMessage;
+        } else {
+          console.error(
+            `  [iris-relay] Iris message for ${msg.dedupKey} does NOT match locally-observed bytes ` +
+              `(differs outside the nonce/finality slots). Refusing to broadcast — treating as failed.`,
+          );
+          return "failed";
+        }
+      }
 
       console.log(`  Source Tx: ${msg.sourceTxHash}`);
 

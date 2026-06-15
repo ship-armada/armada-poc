@@ -15,6 +15,7 @@
 
 import { ethers } from "ethers";
 import { accounts, allChains } from "../config";
+import { NonceCoordinator } from "../lib/nonce-coordinator";
 
 // ============ Types ============
 
@@ -45,7 +46,15 @@ export class WalletManager {
   /** Dedup cache TTL in ms (10 minutes) */
   private readonly DEDUP_TTL_MS = 10 * 60 * 1000;
 
-  constructor() {
+  /**
+   * Process-wide nonce authority. Shared with the CCTP relay modules because they submit from the
+   * SAME EOA on the SAME chains — without one authority the two paths read the nonce independently
+   * and one path's tx silently replaces the other's in the mempool.
+   */
+  private nonceCoordinator: NonceCoordinator;
+
+  constructor(nonceCoordinator: NonceCoordinator) {
+    this.nonceCoordinator = nonceCoordinator;
     for (const chain of allChains) {
       const provider = new ethers.JsonRpcProvider(chain.rpc);
       const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
@@ -164,16 +173,9 @@ export class WalletManager {
     state.locked = true;
 
     try {
-      // Always fetch fresh nonce from chain. WalletManager shares the deployer account with
-      // the CCTP relay paths (cctp-relay / iris-relay), which may have submitted txs on the
-      // SAME chain (e.g. receiveMessage for cross-chain deposits) that consumed nonces.
-      // Caching would cause "nonce already used" when the privacy relay then submits.
-      const nonce = await state.provider.getTransactionCount(
-        state.wallet.address,
-        "pending",
-      );
-
-      // Estimate gas if not provided
+      // Estimate gas if not provided. Done OUTSIDE the nonce-coordinator critical section — gas
+      // estimation needs no nonce, so holding the per-chain nonce mutex across it would serialise
+      // estimation between the privacy relay and the CCTP relay for no benefit.
       let estimatedGas = gasLimit;
       if (!estimatedGas) {
         try {
@@ -189,18 +191,30 @@ export class WalletManager {
         }
       }
 
-      console.log(
-        `[wallet-manager] Submitting tx (chain=${chainId}, nonce=${nonce}, gas=${estimatedGas})`,
-      );
       console.log(`  To: ${to}`);
       console.log(`  Data: ${data.slice(0, 10)}... (${(data.length - 2) / 2} bytes)`);
 
-      const tx = await state.wallet.sendTransaction({
-        to,
-        data,
-        nonce,
-        gasLimit: estimatedGas,
-      });
+      // Allocate the nonce + broadcast through the shared coordinator. It seeds from
+      // `getTransactionCount('pending')` once and tracks locally thereafter, serialising the
+      // allocate→broadcast window against the CCTP relay paths that share this EOA. The previous
+      // fetch-fresh-every-time approach was both the source of the Sepolia load-balancer drift and
+      // unable to see nonces the CCTP relay had already reserved this tick.
+      const tx = await this.nonceCoordinator.withNonce(
+        chainId,
+        state.provider,
+        state.wallet.address,
+        (nonce) => {
+          console.log(
+            `[wallet-manager] Submitting tx (chain=${chainId}, nonce=${nonce}, gas=${estimatedGas})`,
+          );
+          return state.wallet.sendTransaction({
+            to,
+            data,
+            nonce,
+            gasLimit: estimatedGas,
+          });
+        },
+      );
 
       console.log(`[wallet-manager] Tx submitted (chain=${chainId}): ${tx.hash}`);
 
@@ -241,11 +255,14 @@ export class WalletManager {
       if (
         e.message?.includes("nonce") ||
         e.message?.includes("NONCE") ||
-        e.code === "NONCE_EXPIRED"
+        e.code === "NONCE_EXPIRED" ||
+        e.code === "REPLACEMENT_UNDERPRICED"
       ) {
         console.warn(
-          `[wallet-manager] Nonce error on chain ${chainId} (another process may have used the account)`,
+          `[wallet-manager] Nonce error on chain ${chainId} (another process may have used the account) — resetting coordinator`,
         );
+        // Drop the coordinator's cached counter so the next submit re-seeds from the provider.
+        this.nonceCoordinator.reset(chainId);
       }
       throw e;
     } finally {

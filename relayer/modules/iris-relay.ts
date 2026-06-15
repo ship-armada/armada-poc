@@ -32,6 +32,7 @@ import { getLogsChunked } from "../lib/get-logs-chunked";
 import { PendingStateStore, type PersistedPendingMessage } from "../lib/pending-state-store";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
+import { NonceCoordinator } from "../lib/nonce-coordinator";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live. Module-relative so the relayer is location-independent. */
@@ -141,15 +142,6 @@ interface ChainState {
    * `chainHead - lastProcessedBlock` is the cursor lag operators care about. 0 = never scanned.
    */
   lastChainHead: number;
-  /**
-   * Locally-tracked pending nonce for transactions THIS relayer sends to this chain. Refreshed
-   * from `eth_getTransactionCount(addr, 'pending')` on first use or after a nonce error. Without
-   * this, the production CCTP relay is vulnerable to the Sepolia load-balancer nonce drift that
-   * project memory documents: a fresh request lands on a backend that hasn't seen the prior
-   * submit's nonce yet, ethers picks a stale "pending" → "nonce too low" rejection. The
-   * mock cctp-relay has done this for a while; production iris-relay was the gap.
-   */
-  pendingNonce: number | null;
 }
 
 // ============ Constants ============
@@ -385,13 +377,20 @@ export class IrisRelayModule {
   private pendingMessages: Map<string, PendingMessage> = new Map();
   private cursorStore: CursorStore;
   private pendingStateStore: PendingStateStore;
+  /**
+   * Process-wide nonce authority, shared with the privacy relay's WalletManager. All three submit
+   * paths sign from the same EOA on the same chains, so a single coordinator is what keeps their
+   * nonce views from colliding (one path replacing another's tx in the mempool).
+   */
+  private nonceCoordinator: NonceCoordinator;
 
-  constructor() {
+  constructor(nonceCoordinator: NonceCoordinator) {
     const { iris } = armadaRelayerSettings;
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.irisClient = new IrisClient(iris.apiUrl);
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.pendingStateStore = new PendingStateStore(RELAYER_STATE_DIR);
+    this.nonceCoordinator = nonceCoordinator;
   }
 
   async initialize(): Promise<boolean> {
@@ -515,7 +514,6 @@ export class IrisRelayModule {
         lastError: null,
         lastScanAt: 0,
         lastChainHead: 0,
-        pendingNonce: null,
       };
     } catch (e: any) {
       console.error(`    Connection error: ${e.message}`);
@@ -1051,8 +1049,8 @@ export class IrisRelayModule {
         mutated = true;
       } else {
         // Reverted on chain — re-submit through the retry/backoff path. The nonce was consumed
-        // by the reverted tx, so we don't reset destState.pendingNonce — the next submit gets
-        // the next nonce.
+        // by the reverted tx (it mined), so we do NOT reset the coordinator — the next submit
+        // correctly gets the following nonce.
         console.error(
           `[iris-relay] REVERTED on chain: ${msg.submittedTxHash!.slice(0, 18)}... (tx mined but receipt.status=0). Will re-submit through retry/backoff.`,
         );
@@ -1078,8 +1076,8 @@ export class IrisRelayModule {
   /**
    * Move a message from "awaiting confirmation" back into "needs submit" — clears
    * submittedTxHash + submittedAt, bumps retryAttempts + schedules backoff. The next
-   * processPendingMessages tick will re-submit with a fresh nonce (since destState.pendingNonce
-   * already advanced past the failed/stuck tx's nonce).
+   * processPendingMessages tick re-submits via the nonce coordinator, which hands out the next
+   * unconsumed nonce for the destination chain.
    *
    * Shared between revert + stuck-tx paths since both want the same outcome.
    */
@@ -1140,48 +1138,43 @@ export class IrisRelayModule {
 
       console.log(`  Source Tx: ${msg.sourceTxHash}`);
 
-      // Initialise / refresh explicit nonce tracking for this destination chain. The provider's
-      // `getTransactionCount('pending')` is the source of truth on first use; we then bump
-      // locally to avoid round-tripping for every relay. Resets to null on nonce errors so the
-      // catch block below can recover.
-      if (destState.pendingNonce === null) {
-        destState.pendingNonce = await destState.provider.getTransactionCount(
-          destState.wallet.address,
-          "pending",
-        );
-        console.log(
-          `  Initialized tx nonce for ${destState.config.name}: ${destState.pendingNonce}`,
-        );
-      }
-      const txNonce = destState.pendingNonce;
-
-      // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
-      let tx: ethers.ContractTransactionResponse;
-      if (destState.hookRouter) {
-        const hookRouter = new ethers.Contract(
-          destState.hookRouter,
-          HOOK_ROUTER_ABI,
-          destState.wallet
-        );
-        console.log(
-          `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`,
-        );
-        tx = await hookRouter.relayWithHook(msgToRelay, attestation, { nonce: txNonce });
-      } else {
-        const messageTransmitter = new ethers.Contract(
-          destState.messageTransmitter,
-          REAL_MESSAGE_TRANSMITTER_ABI,
-          destState.wallet
-        );
-        console.log(
-          `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`,
-        );
-        tx = await messageTransmitter.receiveMessage(msgToRelay, attestation, { nonce: txNonce });
-      }
-
-      // Bump the nonce now — broadcast happened, the chain's mempool has reserved this nonce.
-      // Even if the message later reverts on receipt, the nonce is consumed.
-      destState.pendingNonce = txNonce + 1;
+      // Allocate the nonce + broadcast through the shared coordinator (keyed by chainId, the
+      // actual nonce stream). It seeds from `getTransactionCount('pending')` on first use and
+      // serialises against the privacy relay, which signs from this same EOA. The coordinator
+      // advances the counter only when the broadcast resolves — a throw leaves the nonce for the
+      // next caller to reuse.
+      const tx = await this.nonceCoordinator.withNonce(
+        destState.config.chainId,
+        destState.provider,
+        destState.wallet.address,
+        (txNonce) => {
+          // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
+          if (destState.hookRouter) {
+            const hookRouter = new ethers.Contract(
+              destState.hookRouter,
+              HOOK_ROUTER_ABI,
+              destState.wallet
+            );
+            console.log(
+              `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`,
+            );
+            return hookRouter.relayWithHook(msgToRelay, attestation, {
+              nonce: txNonce,
+            }) as Promise<ethers.ContractTransactionResponse>;
+          }
+          const messageTransmitter = new ethers.Contract(
+            destState.messageTransmitter,
+            REAL_MESSAGE_TRANSMITTER_ABI,
+            destState.wallet
+          );
+          console.log(
+            `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`,
+          );
+          return messageTransmitter.receiveMessage(msgToRelay, attestation, {
+            nonce: txNonce,
+          }) as Promise<ethers.ContractTransactionResponse>;
+        },
+      );
 
       // Mutate the message so the caller can persist + transition to "awaiting receipt" state.
       msg.submittedTxHash = tx.hash;
@@ -1198,7 +1191,7 @@ export class IrisRelayModule {
         return "already-processed";
       }
       // Nonce-class errors (Sepolia load-balancer drift, replacement underpriced, etc.) — reset
-      // the local cache so the next attempt re-reads from the provider. Don't surface as a
+      // the coordinator's cache so the next attempt re-reads from the provider. Don't surface as a
       // hard failure since the underlying state may already be correct on chain.
       if (
         e.message?.includes("nonce") ||
@@ -1207,7 +1200,7 @@ export class IrisRelayModule {
         e.code === "REPLACEMENT_UNDERPRICED"
       ) {
         console.log(`  Nonce error detected, refreshing on next attempt`);
-        destState.pendingNonce = null;
+        this.nonceCoordinator.reset(destState.config.chainId);
       }
       console.error(`  [iris-relay] Submit failed: ${e.message || e}`);
       return "failed";

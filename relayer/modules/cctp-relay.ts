@@ -21,6 +21,7 @@ import { CursorStore } from "../lib/cursor-store";
 import { getLogsChunked } from "../lib/get-logs-chunked";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
+import { NonceCoordinator } from "../lib/nonce-coordinator";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live — shared with iris-relay. Module-relative. */
@@ -64,7 +65,6 @@ interface ChainState {
    */
   lastProcessedBlock: number;
   processedMessages: Set<string>; // "sourceDomain-nonce" format
-  pendingNonce: number | null;
   /** Last scan error, or null when most recent tick succeeded. Replaces the silent catch. */
   lastError: { message: string; at: number } | null;
   /** Unix ms of the last successful scan tick. Used by the /health endpoint. */
@@ -251,17 +251,25 @@ export class CCTPRelayModule {
   private retryQueue: RetryEntry[] = [];
   private getMinFee: (() => Promise<bigint>) | null;
   private cursorStore: CursorStore;
+  /**
+   * Process-wide nonce authority, shared with the privacy relay's WalletManager. Even in mock
+   * mode the relayer submits both CCTP receives and (potentially) privacy-relay txs from the same
+   * EOA on the hub chain, so one coordinator keeps their nonce streams from colliding.
+   */
+  private nonceCoordinator: NonceCoordinator;
 
   /**
+   * @param nonceCoordinator Shared per-chain nonce authority (see field doc).
    * @param getMinFee Optional async function that returns the minimum acceptable
    *   maxFee (in USDC raw units) for cross-chain shield relay. If provided,
    *   messages with insufficient maxFee will be skipped. If null, all messages
    *   are relayed (backward-compatible behavior).
    */
-  constructor(getMinFee?: () => Promise<bigint>) {
+  constructor(nonceCoordinator: NonceCoordinator, getMinFee?: () => Promise<bigint>) {
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.getMinFee = getMinFee || null;
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
+    this.nonceCoordinator = nonceCoordinator;
   }
 
   /**
@@ -373,7 +381,6 @@ export class CCTPRelayModule {
         domain,
         lastProcessedBlock,
         processedMessages: new Set(),
-        pendingNonce: null,
         lastError: null,
         lastScanAt: 0,
         lastChainHead: 0,
@@ -495,58 +502,50 @@ export class CCTPRelayModule {
     }
 
     try {
-      const messageTransmitter = new ethers.Contract(
-        destState.messageTransmitter,
-        MESSAGE_TRANSMITTER_ABI,
-        destState.wallet
-      );
-
-      // Get or initialize nonce for destination chain
-      if (destState.pendingNonce === null) {
-        destState.pendingNonce = await destState.provider.getTransactionCount(
-          destState.wallet.address,
-          "pending"
-        );
-        console.log(
-          `  Initialized tx nonce for ${destState.config.name}: ${destState.pendingNonce}`
-        );
-      }
-
-      const txNonce = destState.pendingNonce;
-
       const encodedMessage = event.rawMessage;
       console.log(
         `\n  Encoded MessageV2 length: ${(encodedMessage.length - 2) / 2} bytes`
       );
 
-      // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
-      let tx: ethers.ContractTransactionResponse;
-      if (destState.hookRouter) {
-        const hookRouter = new ethers.Contract(
-          destState.hookRouter,
-          HOOK_ROUTER_ABI,
-          destState.wallet
-        );
-        console.log(
-          `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
-        );
-        tx = await hookRouter.relayWithHook(
-          encodedMessage,
-          "0x", // Empty attestation — mock skips verification
-          { nonce: txNonce }
-        );
-      } else {
-        console.log(
-          `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
-        );
-        tx = await messageTransmitter.receiveMessage(
-          encodedMessage,
-          "0x", // Empty attestation — mock skips verification
-          { nonce: txNonce }
-        );
-      }
-
-      destState.pendingNonce = txNonce + 1;
+      // Allocate the nonce + broadcast through the shared coordinator (keyed by chainId). Only the
+      // broadcast runs inside the critical section; tx.wait() happens after so the per-chain nonce
+      // mutex isn't held across the full confirmation latency.
+      const tx = await this.nonceCoordinator.withNonce(
+        destState.config.chainId,
+        destState.provider,
+        destState.wallet.address,
+        (txNonce) => {
+          // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
+          if (destState.hookRouter) {
+            const hookRouter = new ethers.Contract(
+              destState.hookRouter,
+              HOOK_ROUTER_ABI,
+              destState.wallet
+            );
+            console.log(
+              `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
+            );
+            return hookRouter.relayWithHook(
+              encodedMessage,
+              "0x", // Empty attestation — mock skips verification
+              { nonce: txNonce }
+            ) as Promise<ethers.ContractTransactionResponse>;
+          }
+          const messageTransmitter = new ethers.Contract(
+            destState.messageTransmitter,
+            MESSAGE_TRANSMITTER_ABI,
+            destState.wallet
+          );
+          console.log(
+            `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
+          );
+          return messageTransmitter.receiveMessage(
+            encodedMessage,
+            "0x", // Empty attestation — mock skips verification
+            { nonce: txNonce }
+          ) as Promise<ethers.ContractTransactionResponse>;
+        }
+      );
 
       console.log(`  Tx hash: ${tx.hash}`);
       const receipt = await tx.wait();
@@ -567,7 +566,7 @@ export class CCTPRelayModule {
       }
       if (e.message?.includes("nonce") || e.message?.includes("NONCE")) {
         console.log(`  Nonce error detected, will refresh on next attempt`);
-        destState.pendingNonce = null;
+        this.nonceCoordinator.reset(destState.config.chainId);
       }
       console.error(`  [cctp-relay] Relay failed: ${e.message || e}`);
 
@@ -662,43 +661,40 @@ export class CCTPRelayModule {
     }
 
     try {
-      if (destState.pendingNonce === null) {
-        destState.pendingNonce = await destState.provider.getTransactionCount(
-          destState.wallet.address,
-          "pending"
-        );
-      }
-
-      const txNonce = destState.pendingNonce;
       const encodedMessage = event.rawMessage;
 
-      // Use hookRouter.relayWithHook() if available
-      let tx: ethers.ContractTransactionResponse;
-      if (destState.hookRouter) {
-        const hookRouter = new ethers.Contract(
-          destState.hookRouter,
-          HOOK_ROUTER_ABI,
-          destState.wallet
-        );
-        tx = await hookRouter.relayWithHook(
-          encodedMessage,
-          "0x",
-          { nonce: txNonce }
-        );
-      } else {
-        const messageTransmitter = new ethers.Contract(
-          destState.messageTransmitter,
-          MESSAGE_TRANSMITTER_ABI,
-          destState.wallet
-        );
-        tx = await messageTransmitter.receiveMessage(
-          encodedMessage,
-          "0x",
-          { nonce: txNonce }
-        );
-      }
-
-      destState.pendingNonce = txNonce + 1;
+      // Same coordinator-mediated broadcast as relayMessage — only the broadcast is inside the
+      // per-chain critical section; tx.wait() runs after.
+      const tx = await this.nonceCoordinator.withNonce(
+        destState.config.chainId,
+        destState.provider,
+        destState.wallet.address,
+        (txNonce) => {
+          // Use hookRouter.relayWithHook() if available
+          if (destState.hookRouter) {
+            const hookRouter = new ethers.Contract(
+              destState.hookRouter,
+              HOOK_ROUTER_ABI,
+              destState.wallet
+            );
+            return hookRouter.relayWithHook(
+              encodedMessage,
+              "0x",
+              { nonce: txNonce }
+            ) as Promise<ethers.ContractTransactionResponse>;
+          }
+          const messageTransmitter = new ethers.Contract(
+            destState.messageTransmitter,
+            MESSAGE_TRANSMITTER_ABI,
+            destState.wallet
+          );
+          return messageTransmitter.receiveMessage(
+            encodedMessage,
+            "0x",
+            { nonce: txNonce }
+          ) as Promise<ethers.ContractTransactionResponse>;
+        }
+      );
 
       const receipt = await tx.wait();
       console.log(
@@ -717,7 +713,7 @@ export class CCTPRelayModule {
         return true; // Considered success
       }
       if (e.message?.includes("nonce") || e.message?.includes("NONCE")) {
-        destState.pendingNonce = null;
+        this.nonceCoordinator.reset(destState.config.chainId);
       }
       console.error(`  [cctp-relay] Retry failed for ${messageKey}: ${e.message || e}`);
       return false;

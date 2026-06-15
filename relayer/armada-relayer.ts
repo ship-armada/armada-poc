@@ -28,6 +28,7 @@ import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
 import { getNetworkConfig } from "../config/networks";
 import { installBisectingGetLogs } from "./lib/rpc-bisecting";
+import { NonceCoordinator } from "./lib/nonce-coordinator";
 
 // Install the eth_getLogs bisecting patch at module load — before ANY JsonRpcProvider is
 // constructed (the patch is at the prototype level so this is technically order-independent,
@@ -180,9 +181,17 @@ async function main() {
   );
   console.log();
 
+  // One nonce authority for the whole process. The privacy relay (WalletManager) and the CCTP
+  // relay (iris/cctp module) both submit from the SAME EOA on the SAME chains; sharing this
+  // coordinator is what stops their nonce streams from colliding and silently replacing each
+  // other's transactions in the mempool. Keyed by chainId — assumes one EOA per chain, which
+  // holds today (all paths use the deployer/relayer key) and after the optional RELAYER_PRIVATE_KEY
+  // split (still one key for every path).
+  const nonceCoordinator = new NonceCoordinator();
+
   // Initialize wallet manager — multi-chain (one provider + same EOA across all chains)
   console.log("[armada] Initializing wallet manager...");
-  const walletManager = new WalletManager();
+  const walletManager = new WalletManager(nonceCoordinator);
   await walletManager.initialize();
   console.log();
 
@@ -273,7 +282,7 @@ async function main() {
 
   if (armadaRelayerSettings.cctpReal) {
     console.log("[armada] Initializing REAL CCTP relay (Iris attestation)...");
-    const irisRelay = new IrisRelayModule();
+    const irisRelay = new IrisRelayModule(nonceCoordinator);
     const initialized = await irisRelay.initialize();
     if (!initialized) {
       console.warn("[armada] Some chains failed to initialize for Iris relay.");
@@ -281,7 +290,7 @@ async function main() {
     cctpRelayModule = irisRelay;
   } else {
     console.log("[armada] Initializing MOCK CCTP relay module...");
-    const cctpRelay = new CCTPRelayModule(async () => {
+    const cctpRelay = new CCTPRelayModule(nonceCoordinator, async () => {
       // CCTP mock relay reads from the hub schedule today — keeps existing behaviour.
       const hubCalc = feeCalculators.get(hubChain.chainId)!;
       const fees = await hubCalc.getCurrentFees();

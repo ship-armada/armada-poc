@@ -47,7 +47,9 @@ export function ObserveView() {
       {/* Content — pt-24 clears the floating header. */}
       <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-16 pt-24">
         <PlaceholderCard label="Top card" minHeight={180} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Two-up on md+ (≥768px); collapses to a single column on smaller
+            viewports so the cards don't get cramped. */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <PlaceholderCard label="Card A" minHeight={240} />
           <PlaceholderCard label="Card B" minHeight={240} />
         </div>

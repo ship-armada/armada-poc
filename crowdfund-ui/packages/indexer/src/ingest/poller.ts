@@ -222,6 +222,11 @@ export class CrowdfundIndexerPoller {
         auditProvider: resilientAuditProvider,
         auditProviderName: this.options.auditProviderName,
         maxBlockRange: this.options.maxBlockRange,
+        // Defer chunks that auto-reconcile is already backing off on, so a stuck range
+        // is not re-verified every poll cycle (and `attempts` is not double-incremented).
+        retryPolicy: this.options.reconcileOptions && this.options.reconcileOptions.maxAttempts > 0
+          ? { maxAttempts: this.options.reconcileOptions.maxAttempts }
+          : undefined,
       })
 
       this.logger.info(`Crowdfund indexer poll checked ${result.ranges.length} chunks; stoppedEarly=${result.stoppedEarly ? 'yes' : 'no'}`)

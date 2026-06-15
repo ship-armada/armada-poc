@@ -12,6 +12,17 @@ export interface PlanBackfillRangesInput {
   maxBlockRange: number
 }
 
+// When set, backfill skips a chunk whose existing record is failed/suspicious and is
+// still within its repair backoff window or has exhausted its attempt limit. This keeps
+// the poll loop from re-verifying a stuck range every cycle (which both ignored the
+// backoff and double-incremented `attempts` alongside auto-reconcile). The operator CLI
+// passes no policy, so `repair`/`backfill` remain an explicit immediate retry.
+export interface BackfillRetryPolicy {
+  maxAttempts: number
+  // Injectable clock for deterministic tests.
+  now?: () => Date
+}
+
 export interface BackfillInput extends RangePipelineConfig {
   store: IndexerStore
   provider: RangeLogProvider
@@ -20,6 +31,7 @@ export interface BackfillInput extends RangePipelineConfig {
   maxBlockRange: number
   toBlock?: number
   stopOnUnverified?: boolean
+  retryPolicy?: BackfillRetryPolicy
 }
 
 export interface BackfillResult {
@@ -27,6 +39,22 @@ export interface BackfillResult {
   toBlock: number
   ranges: readonly IngestRangeRecord[]
   stoppedEarly: boolean
+}
+
+// True when an existing record for this range should NOT be re-verified yet under the
+// given policy: it is failed/suspicious and either still inside its backoff window or
+// already at the attempt limit. Ranges with no prior record (or non-failed records) are
+// never deferred.
+function isDeferredByPolicy(
+  record: IngestRangeRecord | undefined,
+  policy: BackfillRetryPolicy,
+): boolean {
+  if (!record) return false
+  if (record.status !== 'failed' && record.status !== 'suspicious') return false
+  if (policy.maxAttempts > 0 && record.attempts >= policy.maxAttempts) return true
+  if (record.nextRetryAt === null) return false
+  const now = (policy.now ?? (() => new Date()))()
+  return new Date(record.nextRetryAt).getTime() > now.getTime()
 }
 
 export function planBackfillRanges(input: PlanBackfillRangesInput): BlockRange[] {
@@ -67,6 +95,18 @@ export async function backfillVerifiedRanges(input: BackfillInput): Promise<Back
   const records: IngestRangeRecord[] = []
   let stoppedEarly = false
   for (const range of ranges) {
+    // Respect the repair backoff/attempt limit before re-verifying a known-bad chunk.
+    // Because the verified cursor never skips a gap, a deferred chunk also stops every
+    // later chunk this cycle — they cannot be promoted past it anyway.
+    if (input.retryPolicy) {
+      const existing = data.ranges.find(
+        (record) => record.fromBlock === range.fromBlock && record.toBlock === range.toBlock,
+      )
+      if (isDeferredByPolicy(existing, input.retryPolicy)) {
+        stoppedEarly = true
+        break
+      }
+    }
     const record = await verifyRange({ ...input, range })
     records.push(record)
     if ((input.stopOnUnverified ?? true) && record.status !== 'verified') {

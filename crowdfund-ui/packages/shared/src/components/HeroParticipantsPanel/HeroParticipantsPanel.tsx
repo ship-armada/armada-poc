@@ -63,6 +63,9 @@ export interface HeroParticipantsPanelProps {
   layoutExpanded?: boolean
   /** Fires when the empty-state "Participate" CTA is clicked. */
   onParticipate?: () => void
+  /** When provided, renders a "Details" text button beside the Show/Hide toggle
+   *  — used by the committer to open the Observe (cards + tables) view. */
+  onDetails?: () => void
 }
 
 export function HeroParticipantsPanel({
@@ -76,6 +79,7 @@ export function HeroParticipantsPanel({
   onShowListChange,
   layoutExpanded: layoutExpandedProp,
   onParticipate,
+  onDetails,
 }: HeroParticipantsPanelProps) {
   const [uncontrolledShowList, setUncontrolledShowList] = useState(false)
   const showList = controlledShowList ?? uncontrolledShowList
@@ -223,6 +227,12 @@ export function HeroParticipantsPanel({
         >
           {showList ? 'Hide participants' : 'Show participants'}
         </button>
+
+        {onDetails && (
+          <button type="button" className={styles.detailsBtn} onClick={onDetails}>
+            Details
+          </button>
+        )}
       </div>
     </section>
   )

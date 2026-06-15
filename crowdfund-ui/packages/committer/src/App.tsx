@@ -44,6 +44,7 @@ import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
+import { ObserveView } from '@/components/ObserveView'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
@@ -234,10 +235,12 @@ function deriveLifecycleStage(
   return 'commit-invite'
 }
 
-/** Map the `?view=` query param to a page. Drives deep links like the
- *  post-invite "View your position" button (`/?view=myposition`). */
-function pageFromViewParam(): Page | null {
+/** Resolve the initial page from the URL. A dedicated path (`/observe`) wins,
+ *  then the `?view=` query param — which drives deep links like the post-invite
+ *  "View your position" button (`/?view=myposition`). */
+function pageFromUrl(): Page | null {
   if (typeof window === 'undefined') return null
+  if (window.location.pathname === '/observe') return 'observe'
   switch (new URLSearchParams(window.location.search).get('view')) {
     case 'myposition':
       return 'my-position'
@@ -245,6 +248,8 @@ function pageFromViewParam(): Page | null {
       return 'claim'
     case 'network':
       return 'network'
+    case 'observe':
+      return 'observe'
     default:
       return null
   }
@@ -257,12 +262,13 @@ export function App() {
   const [deployError, setDeployError] = useState<string | null>(null)
   const [provider, setProvider] = useState<JsonRpcProvider | null>(null)
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const [page, setPage] = useState<Page>(() => pageFromViewParam() ?? 'network')
-  // Keep `page` in sync with back/forward navigation that changes `?view=`.
+  const [page, setPage] = useState<Page>(() => pageFromUrl() ?? 'network')
+  // Keep `page` in sync with back/forward navigation that changes the path or
+  // `?view=`.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     const onPopState = () => {
-      const next = pageFromViewParam()
+      const next = pageFromUrl()
       if (next) setPage(next)
     }
     window.addEventListener('popstate', onPopState)
@@ -649,7 +655,9 @@ export function App() {
   // the deployment before rendering.
   const isHeroPage = page === 'network' || page === 'my-position'
 
-  if ((!deployment || contractState.loading) && !isHeroPage) {
+  // Observe is a placeholder spike (no live data yet), so it renders without
+  // waiting on the deployment / contract-state load gate below.
+  if ((!deployment || contractState.loading) && !isHeroPage && page !== 'observe') {
     const backfillPct =
       backfill && backfill.toBlock > backfill.fromBlock
         ? Math.min(
@@ -836,6 +844,7 @@ export function App() {
             connectedAddress={wallet.address ?? undefined}
             onConnectWallet={openConnectModal}
             onParticipate={openParticipate}
+            onDetails={() => setPage('observe')}
             // Hide the Participate CTA (and the My Position invite card) once
             // the sale's outcome is fixed — finalized, cancelled by the
             // security council, or window-closed-pending-finalize all collapse
@@ -846,6 +855,26 @@ export function App() {
             participationEnabled={windowOpen && contractState.phase !== 2}
             etherscanBaseUrl={getExplorerUrl()}
           />
+        </AppShell>
+        {participateModal}
+      </>
+    )
+  }
+
+  // Observe (spike) — cards + tables, no CrowdfundExperience/NodeSphere. Bare
+  // full-bleed shell so ObserveView can paint its own splash page background.
+  if (page === 'observe') {
+    return (
+      <>
+        <AppShell
+          appName="Committer"
+          network={getNetworkMode()}
+          headerNav={headerNav}
+          headerRight={headerRightChrome}
+          mobileMenu={mobileMenu}
+          bare
+        >
+          <ObserveView />
         </AppShell>
         {participateModal}
       </>

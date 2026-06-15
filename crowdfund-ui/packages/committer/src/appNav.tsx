@@ -7,7 +7,7 @@ import { DiscordIcon, XIcon } from '@/components/SocialIcons'
 import { DISCORD_URL, X_URL } from '@/config/socials'
 
 export type ActionTab = 'commit' | 'invite'
-export type Page = 'network' | 'participate' | 'claim' | 'my-position'
+export type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'observe'
 
 const PROJECT_URL = 'https://armada.wtf'
 

@@ -137,6 +137,10 @@ if (!envCheck.ok) {
                       ) : (
                         <Routes>
                           <Route path="/" element={<App />} />
+                          {/* `/observe` renders the same App; it resolves to the
+                              Observe page via the pathname (App also accepts
+                              `/?view=observe`). */}
+                          <Route path="/observe" element={<App />} />
                           <Route
                             path="/invite"
                             element={

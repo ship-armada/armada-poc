@@ -159,6 +159,9 @@ export type { GraphHopNodeKind } from './lib/graphHopColors.js'
 export { AppShell } from './components/AppShell.js'
 export type { AppShellProps, AppShellNetwork } from './components/AppShell.js'
 
+export { SplashBackdrop } from './components/SplashBackdrop.js'
+export type { SplashBackdropProps } from './components/SplashBackdrop.js'
+
 export { AppHeader } from './components/AppHeader.js'
 export type { AppHeaderProps, AppHeaderNetwork } from './components/AppHeader.js'
 

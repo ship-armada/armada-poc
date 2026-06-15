@@ -304,6 +304,9 @@ export interface CrowdfundExperienceProps {
    * omitted, the empty state renders text-only guidance.
    */
   onParticipate?: () => void
+  /** Forwarded to `HeroParticipantsPanel` — renders a "Details" button beside
+   *  the Show/Hide toggle (the committer wires it to open the Observe view). */
+  onDetails?: () => void
   /**
    * When `false`, hides every surface whose underlying contract call requires
    * an open commit window: the Crowdfund hero's `<Participate>` card,
@@ -366,6 +369,7 @@ export function CrowdfundExperience({
   connectedAddress,
   onConnectWallet,
   onParticipate,
+  onDetails,
   participationEnabled = true,
   etherscanBaseUrl,
 }: CrowdfundExperienceProps) {
@@ -846,6 +850,7 @@ export function CrowdfundExperience({
                       if (!open) setSelectedAddress(undefined)
                     }}
                     onParticipate={onParticipate}
+                    onDetails={onDetails}
                   />
                 </div>
               </>

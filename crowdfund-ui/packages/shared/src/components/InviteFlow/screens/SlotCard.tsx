@@ -3,6 +3,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ZeroAddress } from 'ethers'
 import styles from './SlotCard.module.css'
 import { Button } from '@armada/ui'
 import { Tag } from '@armada/ui'
@@ -170,9 +171,10 @@ export default function SlotCard({
           if (val !== addressInputRef.current) return
           if ('address' in result) {
             const checksummed = tryGetChecksumAddress(result.address)
-            // Resolver returned something that isn't a valid address — treat
+            // Resolver returned something that isn't a valid address, or the
+            // zero address (the contract requires a non-zero invitee) — treat
             // as not-found rather than feeding garbage into the contract.
-            if (!checksummed) {
+            if (!checksummed || checksummed === ZeroAddress) {
               setEnsState('error')
               return
             }
@@ -198,11 +200,13 @@ export default function SlotCard({
       }
     } else {
       // Direct 0x… entry — validate checksum (catches EIP-55 typos), keep the
-      // canonical casing for the contract call.
+      // canonical casing for the contract call. Reject the zero address.
       const checksummed = tryGetChecksumAddress(val)
-      if (checksummed) {
+      if (checksummed && checksummed !== ZeroAddress) {
         setEnsState('resolved')
         setResolvedAddress(checksummed)
+      } else if (checksummed === ZeroAddress) {
+        setEnsState('error')
       } else {
         setEnsState('idle')
       }
@@ -220,7 +224,7 @@ export default function SlotCard({
     // raw 0x… and we somehow got here without it being populated, normalize
     // the typed value the same way as a defense-in-depth backstop.
     const address = resolvedAddress || tryGetChecksumAddress(addressInput)
-    if (!address) return
+    if (!address || address === ZeroAddress) return
     await onInviteOnchain(
       slot.id,
       address,
@@ -483,7 +487,11 @@ export default function SlotCard({
               )}
           </div>
           {ensState === 'error' && (
-            <span className={styles.errorMsg}>ENS name not found</span>
+            <span className={styles.errorMsg}>
+              {tryGetChecksumAddress(addressInput) === ZeroAddress
+                ? 'Can’t invite the zero address.'
+                : 'ENS name not found'}
+            </span>
           )}
           <p className={styles.hint}>
             This sends an onchain transaction. The invitee can then visit{' '}

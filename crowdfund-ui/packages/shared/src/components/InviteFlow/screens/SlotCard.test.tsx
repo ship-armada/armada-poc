@@ -37,3 +37,19 @@ describe('SlotCard wrong-network state', () => {
     expect(screen.queryByRole('button', { name: 'Switch network' })).toBeNull()
   })
 })
+
+describe('SlotCard zero-address rejection', () => {
+  it('rejects the zero address with an error and disables Send invite', async () => {
+    render(<SlotCard slot={emptySlot} {...baseHandlers} isWrongNetwork={false} />)
+
+    // Open the on-chain invite panel and type the zero address.
+    fireEvent.click(screen.getByRole('button', { name: 'Invite onchain' }))
+    const input = screen.getByLabelText('Wallet address or ENS name')
+    fireEvent.change(input, { target: { value: '0x' + '0'.repeat(40) } })
+
+    expect(await screen.findByText(/zero address/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Send invite' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
+})

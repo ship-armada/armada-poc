@@ -66,6 +66,19 @@ describe('buildSnapshot', () => {
     expect(snapshot.metadata.snapshotHash).toMatch(/^0x[0-9a-f]{64}$/)
   })
 
+  it('excludes logs from a different chain or contract', () => {
+    const good = makeLog('SeedAdded', [participant], 100)
+    const foreignContract = { ...makeLog('SeedAdded', [participant], 101), contractAddress: '0x' + 'ab'.repeat(20) }
+    const foreignChain = { ...makeLog('Committed', [participant, 0, 5_000_000n], 102), chainId: 1 }
+    const snapshot = buildSnapshot({
+      data: makeStoreData([good, foreignContract, foreignChain]),
+      chainId: 11155111,
+      contractAddress,
+    })
+    expect(snapshot.events).toHaveLength(1)
+    expect(snapshot.events[0].type).toBe('SeedAdded')
+  })
+
   it('produces a stable hash across wall-clock changes (content address)', () => {
     const data = makeStoreData([
       makeLog('SeedAdded', [participant], 100),

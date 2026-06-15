@@ -24,9 +24,18 @@ export interface BuildSnapshotInput {
   verifiedBlockHash?: string
 }
 
-function getVerifiedLogs(data: IndexerStoreData): IndexedRawLog[] {
+// Only logs matching this chain AND contract (and within the verified cursor) feed the
+// snapshot. Filtering on chain/contract prevents stale events from a previous deployment
+// — if the store ever holds logs for another address/chain — from silently merging into a
+// snapshot whose metadata claims the current address.
+function getVerifiedLogs(data: IndexerStoreData, chainId: number, contractAddress: string): IndexedRawLog[] {
+  const wantAddress = contractAddress.toLowerCase()
   return data.rawLogs
-    .filter((log) => log.blockNumber <= data.cursor.verifiedCursor)
+    .filter((log) =>
+      log.blockNumber <= data.cursor.verifiedCursor &&
+      log.chainId === chainId &&
+      log.contractAddress.toLowerCase() === wantAddress,
+    )
     .sort((a, b) => {
       if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber
       if (a.logIndex !== b.logIndex) return a.logIndex - b.logIndex
@@ -76,7 +85,7 @@ function pendingReconciliation(): ReconciliationResult {
 }
 
 export function buildSnapshot(input: BuildSnapshotInput): CrowdfundSnapshot {
-  const logs = getVerifiedLogs(input.data)
+  const logs = getVerifiedLogs(input.data, input.chainId, input.contractAddress)
   const events = parseCrowdfundEvents(logs.map((log) => ({
     blockNumber: log.blockNumber,
     transactionHash: log.transactionHash,

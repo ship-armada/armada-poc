@@ -14,6 +14,8 @@ import type { RelayRequest, RelayerHealth } from "../types";
 import type { PrivacyRelay } from "./privacy-relay";
 import type { FeeCalculator } from "./fee-calculator";
 import type { Counters } from "./counters";
+import { armadaRelayerSettings } from "../config";
+import { RateLimiter, clientKey, type RateLimitedRequest } from "../lib/rate-limiter";
 
 // ============ HTTP API ============
 
@@ -29,6 +31,9 @@ export class HttpApi {
   private getHealth: () => RelayerHealth;
   private counters: Counters;
   private server: ReturnType<express.Application["listen"]> | null = null;
+  /** Per-IP token buckets — stricter on the expensive write path than on reads. */
+  private relayLimiter: RateLimiter;
+  private getLimiter: RateLimiter;
 
   constructor(
     port: number,
@@ -45,18 +50,43 @@ export class HttpApi {
     this.getHealth = getHealth;
     this.counters = counters;
 
+    const { relayPerMin, getPerMin } = armadaRelayerSettings.rateLimit;
+    // capacity = one minute's budget (burst), refilling at that budget / 60 per second.
+    this.relayLimiter = new RateLimiter({ capacity: relayPerMin, refillPerSec: relayPerMin / 60 });
+    this.getLimiter = new RateLimiter({ capacity: getPerMin, refillPerSec: getPerMin / 60 });
+
     this.app = express();
     this.app.use(cors());
-    this.app.use(express.json());
+    // Explicit body limit (NOT the silent 100kb default) — see armadaRelayerSettings.maxRequestBodyBytes.
+    this.app.use(express.json({ limit: armadaRelayerSettings.maxRequestBodyBytes }));
 
     this.setupRoutes();
+  }
+
+  /**
+   * Route-level guard: consume a token for the caller's key and 429 when exhausted. Counted on
+   * /health so operators can see throttling. `trustProxy` (RELAYER_TRUST_PROXY) decides whether
+   * X-Forwarded-For is honoured.
+   */
+  private rateLimitGuard(
+    limiter: RateLimiter,
+  ): (req: express.Request, res: express.Response, next: express.NextFunction) => void {
+    return (req, res, next) => {
+      const key = clientKey(req as unknown as RateLimitedRequest, armadaRelayerSettings.rateLimit.trustProxy);
+      if (limiter.allow(key)) {
+        next();
+        return;
+      }
+      this.counters.inc("rateLimited");
+      res.status(429).json({ error: "Too many requests — slow down.", code: "RATE_LIMITED" });
+    };
   }
 
   private setupRoutes(): void {
     // GET /fees[?chainId=N] — Current fee schedule for the chain. Phase B2 made fees per-chain;
     // omitting the query param falls back to the hub so existing Phase A frontend callers (the
     // ones that pre-date the per-chain API) keep working without change.
-    this.app.get("/fees", async (req, res) => {
+    this.app.get("/fees", this.rateLimitGuard(this.getLimiter), async (req, res) => {
       try {
         const raw = req.query.chainId;
         let chainId = this.defaultChainId;
@@ -85,7 +115,7 @@ export class HttpApi {
     });
 
     // POST /relay — Submit a shielded transaction
-    this.app.post("/relay", async (req, res) => {
+    this.app.post("/relay", this.rateLimitGuard(this.relayLimiter), async (req, res) => {
       try {
         const { chainId, to, data, feesCacheId } = req.body as RelayRequest;
 
@@ -131,9 +161,11 @@ export class HttpApi {
     // GET /status/:txHash[?chainId=N] — Check transaction status. `chainId` is optional;
     // when omitted the relay fans out across every configured chain in parallel and returns
     // the first found receipt. Existing Phase A callers (pollRelayStatusOnce) don't pass it.
-    this.app.get("/status/:txHash", async (req, res) => {
+    this.app.get("/status/:txHash", this.rateLimitGuard(this.getLimiter), async (req, res) => {
       try {
-        const { txHash } = req.params;
+        // Single-value path param. The multi-handler overload widens req.params to allow arrays;
+        // this route always binds one txHash, so narrow it explicitly.
+        const { txHash } = req.params as { txHash: string };
 
         if (!txHash || !txHash.startsWith("0x") || txHash.length !== 66) {
           res.status(400).json({ error: "Invalid transaction hash" });
@@ -229,6 +261,8 @@ export class HttpApi {
         return 409; // Conflict
       case "RELAYER_BUSY":
         return 503; // Service Unavailable
+      case "RATE_LIMITED":
+        return 429; // Too Many Requests
       case "GAS_ESTIMATION_FAILED":
         return 422; // Unprocessable Entity
       case "SUBMISSION_FAILED":

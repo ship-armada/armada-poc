@@ -250,7 +250,43 @@ export const armadaRelayerSettings = {
    * relayer state (only the engine's leveldown sees derived keys).
    */
   railgunWalletMnemonic: process.env.RELAYER_RAILGUN_MNEMONIC ?? "",
+  /**
+   * HTTP request hardening for the public, unauthenticated API. Per-IP token-bucket rate limits
+   * (requests/minute) bound the cost-amplification of anonymous /relay (SNARK decrypt + estimateGas)
+   * and /status fan-out; the body limit caps JSON payload size deliberately rather than relying on
+   * Express's silent 100kb default. All env-overridable.
+   */
+  rateLimit: {
+    relayPerMin: envInt("RELAYER_RATE_LIMIT_RELAY_PER_MIN", 10),
+    getPerMin: envInt("RELAYER_RATE_LIMIT_GET_PER_MIN", 60),
+    /** Honour X-Forwarded-For (first hop) when behind a known reverse proxy. Default OFF — trusting
+     *  it blindly lets any client spoof its rate-limit key. */
+    trustProxy: envBool("RELAYER_TRUST_PROXY", false),
+  },
+  /**
+   * Max JSON request body in bytes. A multi-commitment `transact()` proof, hex-encoded inside JSON,
+   * can run to tens of KB; 256KB is a generous-but-bounded ceiling. Override via RELAYER_MAX_BODY_BYTES.
+   */
+  maxRequestBodyBytes: envInt("RELAYER_MAX_BODY_BYTES", 256 * 1024),
 };
+
+/** Parse a non-negative integer env var, falling back to `fallback` when unset/empty. */
+function envInt(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Invalid env var ${key}=${raw} — expected a non-negative number`);
+  }
+  return parsed;
+}
+
+/** Parse a boolean env var ("1"/"true"/"yes" → true). Falls back when unset/empty. */
+function envBool(key: string, fallback: boolean): boolean {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
 
 // Legacy config export for backward compatibility
 export const config = {

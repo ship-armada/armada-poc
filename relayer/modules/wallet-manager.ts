@@ -262,6 +262,11 @@ export class WalletManager {
           }
           if (receipt.status === 0) {
             console.error(`[wallet-manager] Tx reverted (chain=${chainId}): ${tx.hash}`);
+            // Surface on /health — a climbing revert count is the visible signal of the
+            // estimateGas-passes-then-front-run griefing race (a user spends the nullifier before
+            // our relay lands, so our tx reverts and we eat the gas). Can't prevent the race here,
+            // but it must not be invisible.
+            this.counters.inc(`revertedTx.${chainId}`);
             return;
           }
           console.log(

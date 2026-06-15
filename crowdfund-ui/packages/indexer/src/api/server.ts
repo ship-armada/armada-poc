@@ -5,6 +5,7 @@ import express from 'express'
 import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
 import { buildHealth } from './health.js'
+import { getInitialCursor, loadIndexerConfig, readBooleanEnv, readRequiredEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
 import type { IndexerMeta, IndexerStore } from '../db/store.js'
 import { CrowdfundIndexerPoller } from '../ingest/poller.js'
@@ -16,7 +17,7 @@ import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile
 import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { toJsonValue } from '../snapshots/json.js'
 import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
-import type { CursorState, IndexerStoreData } from '../types.js'
+import type { IndexerStoreData } from '../types.js'
 
 export interface CreateIndexerApiOptions {
   store: IndexerStore
@@ -24,43 +25,6 @@ export interface CreateIndexerApiOptions {
   contractAddress: string
   repairMaxAttempts: number
   staleAfterMs?: number
-}
-
-function readNumberEnv(name: string, fallback: number): number {
-  const raw = process.env[name]
-  if (!raw) return fallback
-  const parsed = Number(raw)
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new Error(`Invalid numeric environment variable: ${name}`)
-  }
-  return parsed
-}
-
-function readRequiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`Missing required environment variable: ${name}`)
-  return value
-}
-
-function readBooleanEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name]
-  if (!value) return fallback
-  if (value === 'true') return true
-  if (value === 'false') return false
-  throw new Error(`Invalid boolean environment variable: ${name}`)
-}
-
-function getInitialCursor(): CursorState {
-  const deployBlock = readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0)
-  return {
-    deployBlock,
-    confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
-    overlapWindow: readNumberEnv('CROWDFUND_OVERLAP_WINDOW', 100),
-    chainHead: deployBlock,
-    confirmedHead: deployBlock,
-    ingestedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-    verifiedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-  }
 }
 
 function buildHealthFromStore(data: IndexerMeta, repairMaxAttempts: number, staleAfterMs?: number) {
@@ -219,53 +183,49 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 }
 
 async function main(): Promise<void> {
-  const chainId = readNumberEnv('CROWDFUND_CHAIN_ID', 11155111)
-  const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
-  const port = readNumberEnv('CROWDFUND_INDEXER_PORT', 3002)
-  const maxBlockRange = readNumberEnv('CROWDFUND_MAX_BLOCK_RANGE', 500)
-  const pollOnStart = readBooleanEnv('CROWDFUND_POLL_ON_START', false)
-  const backfillOnStart = readBooleanEnv('CROWDFUND_BACKFILL_ON_START', false)
-  const publishOnPoll = readBooleanEnv('CROWDFUND_PUBLISH_ON_POLL', false)
-  const repairMaxAttempts = readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6)
-  const repairBackoffBaseMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_BASE_MS', 30_000)
-  const repairBackoffMaxMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_MAX_MS', 1_800_000)
-  const staleAfterMs = readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000)
+  const config = loadIndexerConfig()
   const store = createIndexerStore({
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
-  const app = createIndexerApi({ store, chainId, contractAddress, repairMaxAttempts, staleAfterMs })
-  app.listen(port, () => {
-    process.stdout.write(`Crowdfund indexer API listening on ${port}\n`)
+  const app = createIndexerApi({
+    store,
+    chainId: config.chainId,
+    contractAddress: config.contractAddress,
+    repairMaxAttempts: config.repairMaxAttempts,
+    staleAfterMs: config.staleAfterMs,
+  })
+  app.listen(config.port, () => {
+    process.stdout.write(`Crowdfund indexer API listening on ${config.port}\n`)
   })
 
-  if (pollOnStart || backfillOnStart) {
-    const primaryRpcUrl = readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL')
-    const auditRpcUrl = process.env.CROWDFUND_AUDIT_RPC_URL
+  if (config.pollOnStart || config.backfillOnStart) {
+    if (!config.primaryRpcUrl) throw new Error('Missing required environment variable: CROWDFUND_PRIMARY_RPC_URL')
+    const primaryRpcUrl = config.primaryRpcUrl
     const poller = new CrowdfundIndexerPoller({
-      chainId,
-      contractAddress,
+      chainId: config.chainId,
+      contractAddress: config.contractAddress,
       providerName: 'primary',
       store,
       provider: createJsonRpcRangeProvider(primaryRpcUrl),
-      auditProvider: auditRpcUrl ? createJsonRpcRangeProvider(auditRpcUrl) : undefined,
-      auditProviderName: auditRpcUrl ? 'audit' : undefined,
-      maxBlockRange,
-      pollIntervalMs: readNumberEnv('CROWDFUND_POLL_INTERVAL_MS', 15_000),
-      errorBackoffMs: readNumberEnv('CROWDFUND_POLL_ERROR_BACKOFF_MS', 60_000),
-      rpcTimeoutMs: readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000),
-      rpcMaxRetries: readNumberEnv('CROWDFUND_RPC_MAX_RETRIES', 3),
-      retryBaseDelayMs: readNumberEnv('CROWDFUND_RPC_RETRY_BASE_DELAY_MS', 1_000),
-      retryJitterMs: readNumberEnv('CROWDFUND_RPC_RETRY_JITTER_MS', 250),
+      auditProvider: config.auditRpcUrl ? createJsonRpcRangeProvider(config.auditRpcUrl) : undefined,
+      auditProviderName: config.auditRpcUrl ? 'audit' : undefined,
+      maxBlockRange: config.maxBlockRange,
+      pollIntervalMs: config.pollIntervalMs,
+      errorBackoffMs: config.errorBackoffMs,
+      rpcTimeoutMs: config.rpcTimeoutMs,
+      rpcMaxRetries: config.rpcMaxRetries,
+      retryBaseDelayMs: config.retryBaseDelayMs,
+      retryJitterMs: config.retryJitterMs,
       reconcileOptions: {
-        maxAttempts: repairMaxAttempts,
-        backoffBaseMs: repairBackoffBaseMs,
-        backoffMaxMs: repairBackoffMaxMs,
+        maxAttempts: config.repairMaxAttempts,
+        backoffBaseMs: config.repairBackoffBaseMs,
+        backoffMaxMs: config.repairBackoffMaxMs,
       },
-      publishOnPoll,
-      snapshotPublishIntervalMs: readNumberEnv('CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS', 60_000),
-      publishSnapshot: publishOnPoll
-        ? () => publishCurrentSnapshot(store, chainId, contractAddress, primaryRpcUrl)
+      publishOnPoll: config.publishOnPoll,
+      snapshotPublishIntervalMs: config.snapshotPublishIntervalMs,
+      publishSnapshot: config.publishOnPoll
+        ? () => publishCurrentSnapshot(store, config.chainId, config.contractAddress, primaryRpcUrl)
         : undefined,
       logger: {
         info: (message) => process.stdout.write(`${message}\n`),
@@ -273,7 +233,7 @@ async function main(): Promise<void> {
         error: (message) => process.stderr.write(`${message}\n`),
       },
     })
-    if (pollOnStart) {
+    if (config.pollOnStart) {
       poller.start()
       process.stdout.write('Crowdfund indexer polling worker started\n')
     } else {

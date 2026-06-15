@@ -3,6 +3,7 @@
 
 import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
+import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
 import { parseCliArgs, runReadOnlyCommand } from './commands.js'
 import { createRpcChainStateReader } from '../alerts/chainState.js'
@@ -15,44 +16,6 @@ import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
-import type { CursorState } from '../types.js'
-
-function readNumberEnv(name: string, fallback: number): number {
-  const raw = process.env[name]
-  if (!raw) return fallback
-  const parsed = Number(raw)
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new Error(`Invalid numeric environment variable: ${name}`)
-  }
-  return parsed
-}
-
-function getInitialCursor(): CursorState {
-  const deployBlock = readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0)
-  return {
-    deployBlock,
-    confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
-    overlapWindow: readNumberEnv('CROWDFUND_OVERLAP_WINDOW', 100),
-    chainHead: deployBlock,
-    confirmedHead: deployBlock,
-    ingestedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-    verifiedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-  }
-}
-
-function readRequiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`Missing required environment variable: ${name}`)
-  return value
-}
-
-function readBooleanEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name]
-  if (!value) return fallback
-  if (value === 'true') return true
-  if (value === 'false') return false
-  throw new Error(`Invalid boolean environment variable: ${name}`)
-}
 
 async function resolveToBlock(
   toBlock: number | 'latest' | null,

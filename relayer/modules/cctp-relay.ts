@@ -22,6 +22,11 @@ import { getLogsChunked } from "../lib/get-logs-chunked";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
 import { NonceCoordinator } from "../lib/nonce-coordinator";
+import {
+  RetryQueueStore,
+  type PersistedRetryEntry,
+  type PersistedMessageEvent,
+} from "../lib/retry-queue-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live — shared with iris-relay. Module-relative. */
@@ -216,6 +221,40 @@ function parseBurnMessageFee(messageBody: string): { amount: bigint; maxFee: big
   return { amount, maxFee };
 }
 
+/** Serialise an in-memory MessageEvent for persistence (bigint nonce → decimal string). */
+function serializeMessageEvent(event: MessageEvent): PersistedMessageEvent {
+  return {
+    nonce: event.nonce.toString(),
+    sourceDomain: event.sourceDomain,
+    destinationDomain: event.destinationDomain,
+    sender: event.sender,
+    recipient: event.recipient,
+    destinationCaller: event.destinationCaller,
+    minFinalityThreshold: event.minFinalityThreshold,
+    messageBody: event.messageBody,
+    rawMessage: event.rawMessage,
+    txHash: event.txHash,
+    blockNumber: event.blockNumber,
+  };
+}
+
+/** Inverse of serializeMessageEvent — rebuild the in-memory event (string nonce → bigint). */
+function deserializeMessageEvent(persisted: PersistedMessageEvent): MessageEvent {
+  return {
+    nonce: BigInt(persisted.nonce),
+    sourceDomain: persisted.sourceDomain,
+    destinationDomain: persisted.destinationDomain,
+    sender: persisted.sender,
+    recipient: persisted.recipient,
+    destinationCaller: persisted.destinationCaller,
+    minFinalityThreshold: persisted.minFinalityThreshold,
+    messageBody: persisted.messageBody,
+    rawMessage: persisted.rawMessage,
+    txHash: persisted.txHash,
+    blockNumber: persisted.blockNumber,
+  };
+}
+
 function parseMessageEvent(log: ethers.Log): MessageEvent | null {
   try {
     const iface = new ethers.Interface(MESSAGE_SENT_ABI);
@@ -252,6 +291,13 @@ export class CCTPRelayModule {
   private getMinFee: (() => Promise<bigint>) | null;
   private cursorStore: CursorStore;
   /**
+   * Durable backing for `retryQueue`. Without it, a restart while a failed message is queued for
+   * retry loses the entry — and because the scan cursor has already advanced past the message
+   * (relayMessage swallows failures and returns false), the scanner never re-discovers it, so the
+   * source-chain burn is stranded forever.
+   */
+  private retryQueueStore: RetryQueueStore;
+  /**
    * Process-wide nonce authority, shared with the privacy relay's WalletManager. Even in mock
    * mode the relayer submits both CCTP receives and (potentially) privacy-relay txs from the same
    * EOA on the hub chain, so one coordinator keeps their nonce streams from colliding.
@@ -270,6 +316,7 @@ export class CCTPRelayModule {
     this.getMinFee = getMinFee || null;
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
+    this.retryQueueStore = new RetryQueueStore(RELAYER_STATE_DIR);
   }
 
   /**
@@ -321,7 +368,71 @@ export class CCTPRelayModule {
     console.log(
       `[cctp-relay] Initialized ${this.chains.size}/${allChains.length} chains`
     );
+
+    // Restore any retry-queue entries persisted before a previous shutdown/crash. Done AFTER the
+    // chains map is populated so each entry's source chain can be re-resolved by domain.
+    await this.loadRetryQueue();
+
     return allInitialized;
+  }
+
+  /**
+   * Rehydrate `retryQueue` from disk. Each persisted entry's `sourceState` is re-resolved by
+   * domain (runtime objects aren't serialised). Entries whose source chain is no longer configured
+   * are dropped with a warning rather than silently retained against a missing chain.
+   */
+  private async loadRetryQueue(): Promise<void> {
+    let data;
+    try {
+      data = await this.retryQueueStore.read();
+    } catch (err: any) {
+      console.error(
+        `[cctp-relay] Failed to read persisted retry queue (${err.message}). Starting with an empty queue; check relayer/state/cctp-retry-queue.json.`,
+      );
+      return;
+    }
+    if (!data || data.entries.length === 0) return;
+
+    let restored = 0;
+    let dropped = 0;
+    for (const persisted of data.entries) {
+      const sourceState = this.getChainByDomain(persisted.event.sourceDomain);
+      if (!sourceState) {
+        console.warn(
+          `[cctp-relay] Dropping persisted retry entry for source domain ${persisted.event.sourceDomain} (tx ${persisted.event.txHash}) — chain not configured.`,
+        );
+        dropped++;
+        continue;
+      }
+      this.retryQueue.push({
+        event: deserializeMessageEvent(persisted.event),
+        sourceState,
+        attempts: persisted.attempts,
+        nextRetryAt: persisted.nextRetryAt,
+      });
+      restored++;
+    }
+    console.log(
+      `[cctp-relay] Restored ${restored} retry-queue entr${restored === 1 ? "y" : "ies"} from disk${dropped > 0 ? ` (dropped ${dropped} for unconfigured chains)` : ""}.`,
+    );
+    // Re-persist so the file reflects the post-load state (drops removed).
+    if (dropped > 0) await this.persistRetryQueue();
+  }
+
+  /** Snapshot the current retry queue to disk. Awaited by callers after every queue mutation. */
+  private async persistRetryQueue(): Promise<void> {
+    try {
+      const entries: PersistedRetryEntry[] = this.retryQueue.map((r) => ({
+        event: serializeMessageEvent(r.event),
+        attempts: r.attempts,
+        nextRetryAt: r.nextRetryAt,
+      }));
+      await this.retryQueueStore.write(entries);
+    } catch (err: any) {
+      console.error(
+        `[cctp-relay] Failed to persist retry queue (${err.message}). In-memory queue is correct; next mutation will retry the write.`,
+      );
+    }
   }
 
   /**
@@ -570,20 +681,21 @@ export class CCTPRelayModule {
       }
       console.error(`  [cctp-relay] Relay failed: ${e.message || e}`);
 
-      // Add to retry queue if not already being retried
-      this.enqueueRetry(event, sourceState, 0);
+      // Add to retry queue if not already being retried (persisted so a restart resumes it).
+      await this.enqueueRetry(event, sourceState, 0);
       return false;
     }
   }
 
   /**
-   * Add a failed message to the retry queue with exponential backoff
+   * Add a failed message to the retry queue with exponential backoff. Persists the queue on every
+   * enqueue so a restart doesn't strand the message (its scan cursor has already advanced past it).
    */
-  private enqueueRetry(
+  private async enqueueRetry(
     event: MessageEvent,
     sourceState: ChainState,
     currentAttempts: number
-  ): void {
+  ): Promise<void> {
     if (currentAttempts >= MAX_RETRIES) {
       console.error(
         `[cctp-relay] Max retries (${MAX_RETRIES}) reached for message ` +
@@ -614,6 +726,7 @@ export class CCTPRelayModule {
       attempts: nextAttempt,
       nextRetryAt: Date.now() + delay,
     });
+    await this.persistRetryQueue();
   }
 
   /**
@@ -622,6 +735,7 @@ export class CCTPRelayModule {
   private async processRetryQueue(): Promise<void> {
     const now = Date.now();
     const ready = this.retryQueue.filter((r) => r.nextRetryAt <= now);
+    if (ready.length === 0) return;
 
     for (const entry of ready) {
       const messageKey = `${entry.event.sourceDomain}-${entry.event.nonce}`;
@@ -642,10 +756,13 @@ export class CCTPRelayModule {
 
       const success = await this.relayMessageRetry(entry);
       if (!success && entry.attempts < MAX_RETRIES) {
-        // Re-queue with incremented attempt count
-        this.enqueueRetry(entry.event, entry.sourceState, entry.attempts);
+        // Re-queue with incremented attempt count (persists internally).
+        await this.enqueueRetry(entry.event, entry.sourceState, entry.attempts);
       }
     }
+    // Persist the net queue state: entries removed above on success / give-up aren't re-added by
+    // enqueueRetry, so without this their removal wouldn't be durable until the next enqueue.
+    await this.persistRetryQueue();
   }
 
   /**
@@ -766,10 +883,12 @@ export class CCTPRelayModule {
           address: state.messageTransmitter,
           topics: [eventTopic],
         },
-        // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor
-        // is always ≤ what's been processed. relayMessage is async and we await it inside the
-        // chunk so a relay failure on chunk N stops the scan there with the cursor pointing at
-        // chunk N-1's end — next tick re-attempts chunk N from the start.
+        // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor is
+        // always ≤ what's been processed. NOTE: relayMessage swallows relay failures (returns
+        // false) and enqueues them on the DURABLE retry queue rather than throwing — so the cursor
+        // DOES advance past a failed message, and recovery is owned by the persisted retry queue
+        // (rehydrated on the next boot), not by re-scanning. A thrown error here (e.g. the cursor
+        // write or a parse fault) still halts the scan with the cursor at chunk N-1's end.
         onChunk: async ({ fromBlock: chunkFrom, toBlockInclusive, logs }) => {
           if (logs.length > 0) {
             console.log(

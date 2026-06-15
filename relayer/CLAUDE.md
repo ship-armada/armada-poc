@@ -17,6 +17,25 @@ The Armada relayer is a Node.js service (Express v5, ethers v6) that submits shi
 - `cctp-relay.ts` — Local/mock CCTP relay: polls chains for pending burn events and calls `CCTPHookRouter.relayWithHook()`.
 - `iris-relay.ts` — Production CCTP relay using Circle's Iris attestation service (Sepolia/mainnet).
 
+### Libraries (`lib/`)
+
+- `nonce-coordinator.ts` — Process-wide per-chain nonce authority shared by the privacy relay and the CCTP relay (both sign from one EOA; without it their nonce streams collide and replace each other's txs).
+- `json-state-store.ts` — Atomic, schema-versioned, per-key JSON persistence with per-key write serialisation. Backs the cursor / pending / retry-queue / dead-letter stores.
+- `cursor-store.ts`, `pending-state-store.ts`, `retry-queue-store.ts`, `dead-letter-store.ts` — Typed stores over `json-state-store` (see `state/README.md` for the on-disk files).
+- `rate-limiter.ts` — In-process per-IP token bucket + `clientKey` helper for the HTTP API.
+- `rpc-utils.ts` (`withTimeout`), `get-logs-chunked.ts`, `rpc-bisecting.ts`, `health-classifier.ts` — RPC/scan/health helpers.
+
+## Environment variables
+
+Beyond the network/CCTP config in `config/*.env`, the relayer reads:
+
+- `RELAYER_PRIVATE_KEY` — dedicated hot-wallet key (see "Relayer key" below). Falls back to the deployer key.
+- `RELAYER_RATE_LIMIT_RELAY_PER_MIN` (default 10), `RELAYER_RATE_LIMIT_GET_PER_MIN` (default 60) — per-IP HTTP rate limits.
+- `RELAYER_TRUST_PROXY` (default off) — honour `X-Forwarded-For` for the rate-limit key (only behind a known reverse proxy).
+- `RELAYER_MAX_BODY_BYTES` (default 256KB) — JSON request body limit.
+- `RELAYER_RAILGUN_MNEMONIC` (required) / `BROADCASTER_RAILGUN_ADDRESS` — relayer `0zk` wallet for broadcaster-fee verification.
+- Per-chain scanner knobs (`RELAYER_<KNOB>_<CHAIN>`) and Iris/CCTP timing — see `config.ts`.
+
 ## CCTP Modes
 
 Controlled by `CCTP_MODE` env var:

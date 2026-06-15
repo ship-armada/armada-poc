@@ -1,7 +1,37 @@
-# `relayer/state/` — per-chain scan cursors
+# `relayer/state/` — relayer persistent state
 
 This directory holds the relayer's persistent state for the CCTP scan loop. The directory itself
-is committed (so a fresh clone has the README) but the cursor files inside are gitignored.
+is committed (so a fresh clone has the README) but the state files inside are gitignored.
+
+All state files use the same atomic tmpfile + rename write primitive (`lib/json-state-store.ts`)
+with per-key write serialisation and schema-versioned payloads, so a `kill -9` mid-write never
+leaves a torn file. Files:
+
+| File | Written by | Purpose |
+|------|-----------|---------|
+| `cursor-<chain>.json` | `lib/cursor-store.ts` | Per-chain scan cursor (highest block ingested). |
+| `pending-<chain>.json` | `lib/pending-state-store.ts` | iris relay's in-flight messages + delivered-dedup records. |
+| `cctp-retry-queue.json` | `lib/retry-queue-store.ts` | mock CCTP relay's failed-message retry queue. |
+| `deadletter-<chain>.json` | `lib/dead-letter-store.ts` | Messages permanently given up on (surfaced as `/health` `deadLetterCount`). |
+| `railgun-db/` | Railgun engine | The relayer's `0zk` wallet LevelDB (broadcaster-fee viewing key). |
+
+Deleting any file is operator-actionable recovery: the relayer re-bootstraps that piece of state
+(the scanner re-discovers messages from chain via the cursor). The exceptions worth understanding
+are below.
+
+## Pending / retry / dead-letter files
+
+- **`pending-<chain>.json`** — survives a restart so an in-flight message awaiting Iris attestation
+  isn't forgotten, and a delivered message isn't re-relayed (it's in the processed-dedup set, which
+  is pruned by age). Schema v3 (`{ key, at }` processed records; v1/v2 auto-migrate forward).
+- **`cctp-retry-queue.json`** — a failed mock-relay message that's queued for retry. WITHOUT this,
+  a restart while a relay is queued would strand the message (its scan cursor already advanced past
+  it). Single global file; the bigint nonce is serialised as a decimal string.
+- **`deadletter-<chain>.json`** — a non-empty file means USDC may be stranded (retries exhausted /
+  attestation expired / fee too low) and needs manual relay. Each record keeps the raw message
+  bytes so an operator can relay it by hand. `/health` reports the per-chain count.
+
+## Cursor files
 
 ## Cursor files
 

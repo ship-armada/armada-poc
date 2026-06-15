@@ -1128,7 +1128,12 @@ export class IrisRelayModule {
             `[iris-relay] GAVE UP on submitRelay for ${hash.slice(0, 18)}... after ${msg.retryAttempts} attempts. Source Tx: ${msg.sourceTxHash}. Manual recovery may be required.`,
           );
           this.pendingMessages.delete(hash);
-          if (sourceState) dirtyChains.add(sourceState);
+          // Record durably (same as the scheduleResubmit give-up path) — a permanently-failing
+          // attested message means USDC may be stranded; deadLetter persists + marks processed.
+          if (sourceState) {
+            await this.deadLetter(sourceState, msg, "retries-exhausted");
+            dirtyChains.add(sourceState);
+          }
         } else {
           // Exponential backoff: 2s, 4s, 8s, 16s, 32s for attempts 1-5.
           const backoffMs = RELAY_RETRY_BASE_DELAY_MS * Math.pow(2, msg.retryAttempts - 1);

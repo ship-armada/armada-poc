@@ -37,14 +37,6 @@ import type { ChainHealth, RelayerHealth } from "../types";
 /** Where per-chain cursor files live — shared with iris-relay. Module-relative. */
 const RELAYER_STATE_DIR = path.join(__dirname, "..", "state");
 
-// ============ Constants ============
-
-/** MessageV2 version number */
-const MESSAGE_VERSION = 1;
-
-/** Finality threshold for standard finality */
-const FINALITY_STANDARD = 2000;
-
 // ============ Types ============
 
 interface MessageEvent {
@@ -169,20 +161,6 @@ const MESSAGE_TRANSMITTER_ABI = [
 const HOOK_ROUTER_ABI = [
   "function relayWithHook(bytes calldata message, bytes calldata attestation) external returns (bool)",
 ];
-
-// ============ Domain Mapping ============
-
-const CHAIN_TO_DOMAIN: Record<number, number> = {
-  31337: 100, // Hub
-  31338: 101, // Client A
-  31339: 102, // Client B
-};
-
-const DOMAIN_TO_CHAIN: Record<number, number> = {
-  100: 31337,
-  101: 31338,
-  102: 31339,
-};
 
 // ============ Helpers ============
 
@@ -354,30 +332,17 @@ export class CCTPRelayModule {
   async initialize(): Promise<boolean> {
     console.log("[cctp-relay] Initializing CCTP relay module...");
 
-    const deploymentFiles: Record<number, string> = {
-      31337: "hub-v3.json",
-      31338: "client-v3.json",
-      31339: "clientB-v3.json",
-    };
-
-    /** Privacy pool deployment files — used to load hookRouter address */
-    const privacyPoolFiles: Record<number, string> = {
-      31337: "privacy-pool-hub.json",
-      31338: "privacy-pool-client.json",
-      31339: "privacy-pool-clientB.json",
-    };
-
     let allInitialized = true;
 
     for (const chainConfig of allChains) {
-      const deploymentFile = deploymentFiles[chainConfig.chainId];
-      if (!deploymentFile) {
-        console.log(`  [cctp-relay] No deployment mapping for chain ${chainConfig.chainId}`);
-        continue;
-      }
-
-      const ppFile = privacyPoolFiles[chainConfig.chainId];
-      const state = await this.initChain(chainConfig, deploymentFile, ppFile);
+      // Deployment file names + CCTP domain come from config.ts (the single source of truth),
+      // not a hardcoded Anvil-chain-id map — so this works on any configured network, not just
+      // local 31337-31339.
+      const state = await this.initChain(
+        chainConfig,
+        chainConfig.deploymentFile,
+        chainConfig.privacyPoolDeploymentFile,
+      );
       if (state) {
         this.chains.set(state.domain, state);
         console.log(
@@ -583,7 +548,7 @@ export class CCTPRelayModule {
         ),
       );
 
-      const domain = CHAIN_TO_DOMAIN[chainConfig.chainId] || deployment.domain;
+      const domain = chainConfig.cctpDomain ?? deployment.domain;
 
       // Load persisted cursor or bootstrap from lookback — same logic as iris-relay.
       const lastProcessedBlock = await this.resolveBootCursor(chainConfig, currentBlock);

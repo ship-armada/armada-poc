@@ -54,10 +54,12 @@ export function InviteLandingPage() {
   const [joined, setJoined] = useState(false)
   const [preCheckError, setPreCheckError] = useState<PreCheckError | null>(null)
   const [preCheckLoading, setPreCheckLoading] = useState(true)
-  // Crowdfund `windowEnd` (epoch seconds) populated by the pre-check effect
-  // below — drives the live "X DAYS LEFT" label on the landing card so it
-  // reflects on-chain truth instead of a placeholder.
+  // Crowdfund `windowEnd` and the chain block timestamp at pre-check time (both
+  // epoch seconds), populated by the pre-check effect below. Together they drive
+  // the "TIME LEFT" label on the landing card from the same chain clock the main
+  // crowdfund page uses — not the browser's local clock — so the two agree.
   const [windowEndSec, setWindowEndSec] = useState<number | null>(null)
+  const [blockTimestampSec, setBlockTimestampSec] = useState<number | null>(null)
 
   const inviteData = useMemo<InviteLinkData | null>(
     () => decodeInviteUrl(searchParams),
@@ -69,22 +71,22 @@ export function InviteLandingPage() {
     [inviteData],
   )
 
-  const daysLeft = useMemo(() => {
+  const secondsLeft = useMemo(() => {
     // 1) Explicit `?days=N` URL override always wins (used for screenshots /
-    //    showcase). 2) Live on-chain `windowEnd` once the pre-check resolved.
-    // 3) Fall back to a small constant while loading so the card doesn't
-    //    flash "—" or render half-blank on first paint.
+    //    showcase) — N whole days expressed in seconds. 2) Live on-chain
+    //    `windowEnd` minus the chain block timestamp once the pre-check resolved
+    //    (same clock as the main crowdfund page). 3) Fall back to a small
+    //    constant while loading so the card doesn't render half-blank on first
+    //    paint. Step0Invite floors/ceils nothing — the shared formatTimeLeft
+    //    helper handles the day-vs-hour formatting uniformly.
     const raw = searchParams.get('days')
     const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
-    if (Number.isFinite(parsed) && parsed > 0) return parsed
-    if (windowEndSec !== null) {
-      const nowSec = Math.floor(Date.now() / 1000)
-      const remainingSec = windowEndSec - nowSec
-      if (remainingSec <= 0) return 0
-      return Math.max(1, Math.ceil(remainingSec / 86400))
+    if (Number.isFinite(parsed) && parsed > 0) return parsed * 86400
+    if (windowEndSec !== null && blockTimestampSec !== null) {
+      return Math.max(0, windowEndSec - blockTimestampSec)
     }
-    return DEFAULT_DAYS_LEFT
-  }, [searchParams, windowEndSec])
+    return DEFAULT_DAYS_LEFT * 86400
+  }, [searchParams, windowEndSec, blockTimestampSec])
 
   // Pre-redemption nonce + slot + deadline validation. Mirrors the legacy
   // InviteLinkRedemption useEffect — surfaces the same four failure modes so
@@ -113,6 +115,9 @@ export function InviteLandingPage() {
         const windowEnd = (await contract.windowEnd()) as bigint
         if (!cancelled) setWindowEndSec(Number(windowEnd))
         const block = await provider.getBlock('latest')
+        // Stash the chain block time so the days-left label is anchored on the
+        // same clock as the main crowdfund page (not the browser's local clock).
+        if (!cancelled && block) setBlockTimestampSec(Number(block.timestamp))
 
         const nonceUsed = (await contract.usedNonces(
           inviteData.inviter,
@@ -308,7 +313,7 @@ export function InviteLandingPage() {
           <Step0Invite
             variant="landing"
             hopVariant={hopVariant}
-            daysLeft={daysLeft}
+            secondsLeft={secondsLeft}
             onJoin={() => setJoined(true)}
           />
         )}

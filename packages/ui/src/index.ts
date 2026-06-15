@@ -31,7 +31,7 @@ export { Steps } from './components/Steps'
 export type { StepsProps } from './components/Steps'
 
 export { Tooltip } from './components/Tooltip'
-export type { TooltipProps, TooltipSimpleProps, TooltipRichProps } from './components/Tooltip'
+export type { TooltipProps, TooltipSimpleProps, TooltipRichProps, TooltipPlacement } from './components/Tooltip'
 
 export { WalletItem } from './components/WalletItem'
 export type { WalletItemProps } from './components/WalletItem'

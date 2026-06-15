@@ -20,6 +20,8 @@ export {
   formatArm,
   truncateAddress,
   formatCountdown,
+  formatTimeLeft,
+  formatTimeLeftDetail,
   hopLabel,
   phaseName,
   phaseColor,

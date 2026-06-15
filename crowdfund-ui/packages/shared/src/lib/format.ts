@@ -93,6 +93,58 @@ export function formatCountdown(seconds: number): string {
   return `${minutes}m`
 }
 
+/**
+ * Crowdfund "time left" countdown shared by the stats banner, the hero progress
+ * tag, and the invite splash so they always agree. Shows whole days until under
+ * one day remains, then drops to hours + minutes. Floors throughout so the value
+ * only ever ticks down. Returns '' at or past the deadline — callers supply their
+ * own terminal wording (StatsBar → "Closed", the splash → "ENDS TODAY").
+ *
+ *   2 * 86400 + 16 * 3600  → "2 days"
+ *   1 * 86400              → "1 day"
+ *   13 * 3600 + 24 * 60    → "13h 24m"
+ *   9 * 60                 → "9m"
+ *   0                      → ""
+ */
+export function formatTimeLeft(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  const days = Math.floor(seconds / 86400)
+  if (days >= 1) return `${days} ${days === 1 ? 'day' : 'days'}`
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours >= 1) return `${hours}h ${minutes}m`
+  // Never show "0m left" while time genuinely remains — round the final
+  // sub-minute sliver up to one minute.
+  return `${Math.max(1, minutes)}m`
+}
+
+/** "May 28, 2:42 PM" (local) from a unix timestamp (seconds) — no year, so the
+ *  tooltip stays on one line. Returns '' at or before 0. Internal helper for
+ *  {@link formatTimeLeftDetail}. */
+function formatEndDateTime(unixSeconds: number): string {
+  if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) return ''
+  return new Date(unixSeconds * 1000).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/**
+ * Hover-tooltip detail for a crowdfund countdown: the local end timestamp, e.g.
+ * "Ends Jun 14, 2:42 PM" (no year, fits on one line). Shared by the stats banner
+ * and the hero progress tag so both tooltips read identically. `seconds` is the
+ * remaining duration — used only to suppress the tooltip once the deadline has
+ * passed; `windowEndUnix` is the absolute deadline (unix seconds). Returns '' at
+ * or past the deadline, or when the deadline is unknown.
+ */
+export function formatTimeLeftDetail(seconds: number, windowEndUnix: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  const end = formatEndDateTime(windowEndUnix)
+  return end ? `Ends ${end}` : ''
+}
+
 /** Get human-readable phase name */
 export function phaseName(phase: number): string {
   switch (phase) {

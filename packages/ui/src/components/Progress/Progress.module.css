@@ -39,6 +39,10 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Sit above `.progressSection` (both are `.card > *` at z-index 1, so the
+   * later-in-DOM progress section would otherwise paint over this row's
+   * downward-opening countdown tooltip and bleed through it). */
+  z-index: 2;
 }
 
 .title {

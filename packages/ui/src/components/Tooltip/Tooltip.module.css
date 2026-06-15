@@ -23,6 +23,14 @@
   white-space: normal;
 }
 
+/* Opens below the trigger instead of above — for triggers near a clipping
+ * ancestor's top edge (e.g. the countdown tag inside the overflow-hidden
+ * Progress card). Overrides the base `bottom` anchor. */
+.below {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
 /* ── Centered variant ── */
 .centered {
   width: 200px;

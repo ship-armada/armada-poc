@@ -4,9 +4,15 @@
 import { useState, useRef, useId } from 'react'
 import styles from './Tooltip.module.css'
 
+/** Which side of the trigger the popover opens toward. Defaults to 'top'
+ *  (the mockup's only behavior); 'bottom' opens downward, for triggers near a
+ *  clipping ancestor's top edge (e.g. a tag inside an `overflow: hidden` card). */
+export type TooltipPlacement = 'top' | 'bottom'
+
 export interface TooltipSimpleProps {
   variant: 'centered'
   content: string
+  placement?: TooltipPlacement
   children: React.ReactNode
 }
 
@@ -15,6 +21,7 @@ export interface TooltipRichProps {
   title: string
   description?: string
   bullets?: string[]
+  placement?: TooltipPlacement
   children: React.ReactNode
 }
 
@@ -55,7 +62,10 @@ export default function Tooltip(props: TooltipProps) {
           className={[
             styles.tooltip,
             props.variant === 'centered' ? styles.centered : styles.rich,
-          ].join(' ')}
+            props.placement === 'bottom' && styles.below,
+          ]
+            .filter(Boolean)
+            .join(' ')}
           role="tooltip"
         >
           {props.variant === 'centered' && (

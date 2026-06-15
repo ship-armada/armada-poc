@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BarTrackTicks } from '../BarTrackTicks'
 import { Tag, type TagDot } from '../Tag'
+import { Tooltip } from '../Tooltip'
 import styles from './Progress.module.css'
 
 export interface ProgressProps {
@@ -15,6 +16,10 @@ export interface ProgressProps {
   /** Countdown tag text (e.g. "3 DAYS LEFT"). Pass `null` to suppress the tag —
    *  e.g. when the sale window has closed and a countdown is misleading. */
   daysLeft?: string | null
+  /** Optional exact-time detail (e.g. "2d 14h 22m left · ends Jun 14, 2026,
+   *  2:42 PM") shown in a hover tooltip on the countdown tag. When omitted the
+   *  tag renders bare, exactly as in the designer's mockup. */
+  daysLeftTooltip?: string
   participants?: string
   className?: string
   animateOnMount?: boolean
@@ -48,6 +53,7 @@ export function Progress({
   minRaiseAmount = 1200000,
   maxAmount = 1800000,
   daysLeft = '3 DAYS LEFT',
+  daysLeftTooltip,
   participants = '85 PARTICIPANTS',
   className,
   animateOnMount = true,
@@ -106,7 +112,14 @@ export function Progress({
           <p className={styles.title}>{title}</p>
           <div className={styles.tags}>
             <Tag label={status} dot={statusDot} />
-            {daysLeft != null && <Tag label={daysLeft} />}
+            {daysLeft != null &&
+              (daysLeftTooltip ? (
+                <Tooltip variant="centered" content={daysLeftTooltip} placement="bottom">
+                  <Tag label={daysLeft} />
+                </Tooltip>
+              ) : (
+                <Tag label={daysLeft} />
+              ))}
             <Tag label={participants} />
           </div>
         </div>

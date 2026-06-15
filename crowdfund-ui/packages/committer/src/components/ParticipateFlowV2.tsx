@@ -71,8 +71,8 @@ export interface ParticipateFlowV2Props {
   /** True while contract events are still hydrating. Avoids flashing the
    *  "not whitelisted" screen at an eligible user before their positions load. */
   eventsLoading?: boolean
-  /** Days remaining in the commit window — shown on the first-time splash card. */
-  daysLeft?: number
+  /** Seconds remaining in the commit window — shown on the first-time splash card. */
+  secondsLeft?: number
 }
 
 // Convert a bigint USDC amount (6 decimals) into a plain number for the
@@ -122,7 +122,7 @@ export function ParticipateFlowV2({
   onReceiptLogs,
   onRunningChange,
   eventsLoading,
-  daysLeft,
+  secondsLeft,
 }: ParticipateFlowV2Props) {
   // The approve+commit pipeline lives in an address-keyed store so it survives a
   // modal close (re-attaching on reopen), pauses (rather than prompting) while
@@ -456,7 +456,7 @@ export function ParticipateFlowV2({
     return (
       <Step0Invite
         hopVariant={splashHopVariant}
-        daysLeft={daysLeft}
+        secondsLeft={secondsLeft}
         hideConnectEyebrow
         onJoin={() => setStep('commit')}
       />

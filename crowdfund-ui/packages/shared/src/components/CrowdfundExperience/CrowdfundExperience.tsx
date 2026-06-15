@@ -116,6 +116,10 @@ export type CrowdfundExperienceLiveData =
        *  Progress primitive hides it rather than rendering a stale countdown.
        *  Omit entirely to fall back to the primitive's mockup default. */
       daysLeftLabel?: string | null
+      /** Exact-time detail for the Progress countdown tag's hover tooltip
+       *  (e.g. "2d 14h 22m left · ends Jun 14, 2026, 2:42 PM"). Omit for no
+       *  tooltip. */
+      daysLeftTooltip?: string
       /** Lifecycle status pill label (e.g. 'ACTIVE', 'CLOSED', 'FINALIZED').
        *  Omit to fall back to the primitive's 'ACTIVE' default. */
       saleStatusLabel?: string
@@ -816,6 +820,9 @@ export function CrowdfundExperience({
                   maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
                   {...(liveReady?.daysLeftLabel !== undefined
                     ? { daysLeft: liveReady.daysLeftLabel }
+                    : {})}
+                  {...(liveReady?.daysLeftTooltip
+                    ? { daysLeftTooltip: liveReady.daysLeftTooltip }
                     : {})}
                   {...(liveReady?.saleStatusLabel
                     ? { status: liveReady.saleStatusLabel }

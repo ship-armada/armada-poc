@@ -5,13 +5,17 @@ import { useState } from 'react'
 import HopPill, { type HopVariant } from '../../../HopPill/HopPill'
 import hopPillStyles from '../../../HopPill/HopPill.module.css'
 import JoinButton from '../../../JoinButton/JoinButton'
+import { formatTimeLeft } from '../../../../lib/format.js'
 import fleetMp4 from '../../../../assets/fleet.mp4'
 import fleetPng from '../../../../assets/fleet.png'
 import styles from './Step0Invite.module.css'
 
 export interface Step0InviteProps {
   hopVariant?: HopVariant
-  daysLeft?: number
+  /** Seconds remaining in the commit window. Rendered via the shared
+   *  {@link formatTimeLeft} helper so the splash agrees with the stats banner
+   *  and progress tag: whole days until under one day, then hours/minutes. */
+  secondsLeft?: number
   onJoin: () => void
   /** Path 2/3 modal: wallet already connected — hide pre-connect eyebrow. */
   hideConnectEyebrow?: boolean
@@ -22,7 +26,7 @@ export interface Step0InviteProps {
 
 export default function Step0Invite({
   hopVariant = 'hop-1',
-  daysLeft = 3,
+  secondsLeft = 3 * 86400,
   onJoin,
   hideConnectEyebrow = false,
   variant = 'default',
@@ -30,6 +34,11 @@ export default function Step0Invite({
 }: Step0InviteProps) {
   const [joinExpanded, setJoinExpanded] = useState(false)
   const isLanding = variant === 'landing'
+
+  // Uppercase to match the designer's tag styling; "ENDS TODAY" once the
+  // window has closed (formatTimeLeft returns '' at <= 0).
+  const timeLeftLabel =
+    secondsLeft <= 0 ? 'ENDS TODAY' : `${formatTimeLeft(secondsLeft).toUpperCase()} LEFT`
 
   return (
     <div
@@ -57,9 +66,7 @@ export default function Step0Invite({
       <div className={[styles.content, isLanding && styles.contentLanding].filter(Boolean).join(' ')}>
         <div className={styles.meta}>
           <span className={styles.metaLabel}>ARMADA CROWDFUND</span>
-          <span className={styles.metaLabel}>
-            {daysLeft <= 0 ? 'ENDS TODAY' : `${daysLeft} ${daysLeft === 1 ? 'DAY' : 'DAYS'} LEFT`}
-          </span>
+          <span className={styles.metaLabel}>{timeLeftLabel}</span>
         </div>
         <div className={styles.bottom}>
           <div className={styles.copy}>

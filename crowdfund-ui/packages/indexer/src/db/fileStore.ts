@@ -4,7 +4,8 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { getLogIdentity } from '../ingest/ranges.js'
-import type { IndexerStore } from './store.js'
+import { applyMetaPatch } from './store.js'
+import type { IndexerMeta, IndexerMetaPatch, IndexerStore } from './store.js'
 import type { CursorState, IndexedRawLog, IndexerStoreData, IngestRangeRecord } from '../types.js'
 
 export interface FileStoreOptions {
@@ -131,5 +132,31 @@ export class FileIndexerStore implements IndexerStore {
         rawLogs: sortLogs([...records.values()]),
       }
     })
+  }
+
+  // The file store has no incremental backend, so the narrow operations are implemented
+  // on top of read()/write(). They exist so call sites can use one storage-agnostic API
+  // that becomes genuinely incremental on the Postgres backend.
+
+  async readMeta(): Promise<IndexerMeta> {
+    const { rawLogs: _rawLogs, ...meta } = await this.read()
+    return meta
+  }
+
+  async readLogs(upToBlock?: number): Promise<readonly IndexedRawLog[]> {
+    const { rawLogs } = await this.read()
+    return upToBlock === undefined ? rawLogs : rawLogs.filter((log) => log.blockNumber <= upToBlock)
+  }
+
+  async appendRawLogs(logs: readonly IndexedRawLog[]): Promise<void> {
+    await this.upsertRawLogs(logs)
+  }
+
+  async patchRange(record: IngestRangeRecord): Promise<void> {
+    await this.upsertRange(record)
+  }
+
+  async patchMeta(patch: IndexerMetaPatch): Promise<void> {
+    await this.update((data) => applyMetaPatch(data, patch))
   }
 }

@@ -96,6 +96,47 @@ describe('indexer API', () => {
     }
   })
 
+  it('caches the built snapshot until verified state changes', async () => {
+    let readLogsCalls = 0
+    let lastVerifiedAt: string | null = '2026-06-15T00:00:00.000Z'
+    const fakeStore = {
+      readMeta: async () => ({
+        cursor,
+        ranges: [],
+        lastIngestedAt: null,
+        lastVerifiedAt,
+        lastReconciledAt: null,
+        lastError: null,
+        latestSnapshotHash: null,
+        latestStaticSnapshotUrl: null,
+      }),
+      readLogs: async () => {
+        readLogsCalls += 1
+        return []
+      },
+    } as unknown as FileIndexerStore
+
+    const app = createIndexerApi({ store: fakeStore, chainId: 11155111, contractAddress, repairMaxAttempts: 6 })
+    const server = app.listen(0)
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('missing test server address')
+      const baseUrl = `http://127.0.0.1:${address.port}`
+
+      await fetch(`${baseUrl}/snapshot`).then((res) => res.json())
+      await fetch(`${baseUrl}/events`).then((res) => res.json())
+      // Second request served from cache — no second rebuild.
+      expect(readLogsCalls).toBe(1)
+
+      // Verified state changes → cache key changes → rebuild.
+      lastVerifiedAt = '2026-06-15T01:00:00.000Z'
+      await fetch(`${baseUrl}/snapshot`).then((res) => res.json())
+      expect(readLogsCalls).toBe(2)
+    } finally {
+      server.close()
+    }
+  })
+
   it('serves health and snapshot data', async () => {
     const app = createIndexerApi({
       store: await makeStore(),

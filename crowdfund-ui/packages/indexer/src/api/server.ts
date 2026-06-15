@@ -143,12 +143,26 @@ async function publishCurrentSnapshot(
 export function createIndexerApi(options: CreateIndexerApiOptions) {
   const app = express()
 
-  // Compose just the data buildSnapshot needs: metadata + the verified-and-below logs.
-  // Avoids reading the entire raw-log table on every /snapshot and /events request.
-  async function readSnapshotData(): Promise<IndexerStoreData> {
+  // Per-process snapshot cache keyed on the verified state. Building a snapshot parses
+  // every verified log and rebuilds the graph; without this, every /snapshot and /events
+  // request repeats that work. The key changes iff verified data changed (verifiedCursor
+  // advances and lastVerifiedAt updates together on each successful verification), so no
+  // TTL is needed. NOTE: this is not a request-rate limiter — front the service with a
+  // reverse proxy for that (tracked separately).
+  let snapshotCache: { key: string; snapshot: ReturnType<typeof buildSnapshot> } | null = null
+
+  async function getSnapshot(): Promise<ReturnType<typeof buildSnapshot>> {
     const meta = await options.store.readMeta()
+    const key = `${meta.cursor.verifiedCursor}:${meta.lastVerifiedAt ?? ''}`
+    if (snapshotCache && snapshotCache.key === key) return snapshotCache.snapshot
     const rawLogs = await options.store.readLogs(meta.cursor.verifiedCursor)
-    return { ...meta, rawLogs }
+    const snapshot = buildSnapshot({
+      data: { ...meta, rawLogs },
+      chainId: options.chainId,
+      contractAddress: options.contractAddress,
+    })
+    snapshotCache = { key, snapshot }
+    return snapshot
   }
 
   app.use((_req, res, next) => {
@@ -168,12 +182,7 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
   app.get('/snapshot', async (_req, res, next) => {
     try {
-      const snapshot = buildSnapshot({
-        data: await readSnapshotData(),
-        chainId: options.chainId,
-        contractAddress: options.contractAddress,
-      })
-      res.json(toJsonValue(snapshot))
+      res.json(toJsonValue(await getSnapshot()))
     } catch (err) {
       next(err)
     }
@@ -183,11 +192,7 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
     try {
       const afterBlock = readOptionalNumber(req.query.afterBlock)
       const afterLogIndex = readOptionalNumber(req.query.afterLogIndex) ?? -1
-      const snapshot = buildSnapshot({
-        data: await readSnapshotData(),
-        chainId: options.chainId,
-        contractAddress: options.contractAddress,
-      })
+      const snapshot = await getSnapshot()
       const events = snapshot.events.filter((event) => {
         if (afterBlock === null) return true
         if (event.blockNumber > afterBlock) return true

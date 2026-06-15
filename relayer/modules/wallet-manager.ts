@@ -16,6 +16,15 @@
 import { ethers } from "ethers";
 import { accounts, allChains } from "../config";
 import { NonceCoordinator } from "../lib/nonce-coordinator";
+import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
+import type { Counters } from "./counters";
+
+/**
+ * How long to wait on a broadcast tx's receipt in the background before declaring it stuck. On
+ * Anvil txs mine instantly so this never fires; on a real chain a tx with no receipt after this
+ * budget is wedged (dropped or underpriced) and needs operator attention.
+ */
+const BACKGROUND_RECEIPT_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ============ Types ============
 
@@ -53,8 +62,12 @@ export class WalletManager {
    */
   private nonceCoordinator: NonceCoordinator;
 
-  constructor(nonceCoordinator: NonceCoordinator) {
+  /** In-process counters surfaced on /health. Used here to record stuck broadcasts. */
+  private counters: Counters;
+
+  constructor(nonceCoordinator: NonceCoordinator, counters: Counters) {
     this.nonceCoordinator = nonceCoordinator;
+    this.counters = counters;
     for (const chain of allChains) {
       const provider = new ethers.JsonRpcProvider(chain.rpc);
       const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
@@ -199,11 +212,13 @@ export class WalletManager {
       // allocate→broadcast window against the CCTP relay paths that share this EOA. The previous
       // fetch-fresh-every-time approach was both the source of the Sepolia load-balancer drift and
       // unable to see nonces the CCTP relay had already reserved this tick.
+      let submittedNonce: number | undefined;
       const tx = await this.nonceCoordinator.withNonce(
         chainId,
         state.provider,
         state.wallet.address,
         (nonce) => {
+          submittedNonce = nonce;
           console.log(
             `[wallet-manager] Submitting tx (chain=${chainId}, nonce=${nonce}, gas=${estimatedGas})`,
           );
@@ -229,8 +244,17 @@ export class WalletManager {
       // handler used to keep the HTTP connection open for the full block time, which intermediary
       // proxies (Cloudflare etc.) often cut at 60-100s — surfacing in the browser as a "Failed to
       // fetch" / no-CORS error even though the broadcast itself succeeded.
-      void tx
-        .wait()
+      //
+      // The wait is bounded: a privacy-relay tx that never confirms (dropped/underpriced) would
+      // otherwise leave a promise pending forever with zero operator signal, while later txs queue
+      // behind its nonce. On timeout we surface it loudly and count it.
+      // TODO(relayer-hardening 1.4): automatic same-nonce fee-bump replacement for stuck
+      // privacy-relay txs is intentionally out of scope here — operator action for now.
+      void withTimeout(
+        tx.wait(),
+        BACKGROUND_RECEIPT_TIMEOUT_MS,
+        `tx.wait chain=${chainId} ${tx.hash.slice(0, 12)}`,
+      )
         .then((receipt) => {
           if (!receipt) {
             console.warn(`[wallet-manager] Tx ${tx.hash} confirmed without receipt`);
@@ -245,6 +269,16 @@ export class WalletManager {
           );
         })
         .catch((err) => {
+          if (err instanceof RpcTimeoutError) {
+            console.error(
+              `[wallet-manager] STUCK TX (chain=${chainId}, nonce=${submittedNonce}): ${tx.hash} ` +
+                `has no receipt after ${Math.round(BACKGROUND_RECEIPT_TIMEOUT_MS / 60000)}min. ` +
+                `Likely dropped or underpriced — a same-nonce fee-bump replacement (operator action) ` +
+                `is required; later txs on this chain will queue behind its nonce until resolved.`,
+            );
+            this.counters.inc(`stuckTx.${chainId}`);
+            return;
+          }
           console.warn(
             `[wallet-manager] Background receipt tracking failed for ${tx.hash}: ${err?.message ?? err}`,
           );

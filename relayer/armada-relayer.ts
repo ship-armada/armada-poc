@@ -189,9 +189,13 @@ async function main() {
   // split (still one key for every path).
   const nonceCoordinator = new NonceCoordinator();
 
+  // In-process counters surfaced on /health. Created here (ahead of WalletManager) because the
+  // wallet manager records stuck-broadcast events into it.
+  const counters = new Counters();
+
   // Initialize wallet manager — multi-chain (one provider + same EOA across all chains)
   console.log("[armada] Initializing wallet manager...");
-  const walletManager = new WalletManager(nonceCoordinator);
+  const walletManager = new WalletManager(nonceCoordinator, counters);
   await walletManager.initialize();
   console.log();
 
@@ -256,7 +260,6 @@ async function main() {
   // Initialize privacy relay. Multi-chain — receives requests from any configured chain,
   // dispatches via the right provider, fee-verifies via the right path.
   console.log("[armada] Initializing privacy relay...");
-  const counters = new Counters();
   const privacyRelay = new PrivacyRelay(
     walletManager,
     feeCalculators,

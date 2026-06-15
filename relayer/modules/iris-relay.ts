@@ -375,6 +375,13 @@ export class IrisRelayModule {
    * pair in `enqueueMessage` cannot be torn by another writer. No lock is required.
    */
   private pendingMessages: Map<string, PendingMessage> = new Map();
+  /**
+   * Destination tx hashes we've already logged as "stuck in mempool" (likely underpriced), so the
+   * per-tick poll doesn't re-log the same incident every cycle. Ephemeral — not persisted; a
+   * restart re-logs once, which is fine. Entries are removed when the message leaves the in-flight
+   * state (mined / reverted / dropped-and-resubmitted).
+   */
+  private mempoolStuckWarned: Set<string> = new Set();
   private cursorStore: CursorStore;
   private pendingStateStore: PendingStateStore;
   /**
@@ -1023,9 +1030,50 @@ export class IrisRelayModule {
         // Still pending. Check stuck threshold.
         const sinceSubmit = now - (msg.submittedAt ?? now);
         if (sinceSubmit > STUCK_TX_THRESHOLD_MS) {
+          // Distinguish the two stuck causes — they need OPPOSITE handling:
+          //   - dropped from the mempool: the nonce was never consumed, so we reset the
+          //     coordinator (re-seed from getTransactionCount('pending') returns the dropped
+          //     nonce) and re-submit, FILLING the gap. This is the H2 fix.
+          //   - still in the mempool (underpriced): re-submitting at a fresh nonce would gap
+          //     behind this tx and never mine; the only real recovery is a same-nonce fee-bump
+          //     replacement, which is out of scope here. Resetting would be useless (the pending
+          //     count still includes this tx). So we leave it in flight and surface it loudly.
+          const stuckTxHash = msg.submittedTxHash!;
+          let stillInMempool = false;
+          try {
+            const txn = await withTimeout(
+              state.provider.getTransaction(stuckTxHash),
+              rpcTimeoutMs,
+              `getTransaction ${state.config.name} ${stuckTxHash.slice(0, 12)}`,
+            );
+            // Present in the node but not yet mined → still queued in the mempool.
+            stillInMempool = txn !== null && txn.blockNumber === null;
+          } catch (e: any) {
+            // Lookup failed — treat as unknown and fall through to the dropped/reset path, which
+            // is safe: re-seeding from 'pending' yields the correct next nonce in either case once
+            // the node is reachable again.
+            console.warn(
+              `  [iris-relay] ${state.config.name}: getTransaction ${stuckTxHash.slice(0, 18)}... failed (${e?.message ?? e}); assuming dropped.`,
+            );
+          }
+
+          if (stillInMempool) {
+            // Log once per incident to avoid per-tick spam; no state mutation — keep polling.
+            if (!this.mempoolStuckWarned.has(stuckTxHash)) {
+              this.mempoolStuckWarned.add(stuckTxHash);
+              console.error(
+                `[iris-relay] STUCK TX (in mempool, likely underpriced): ${stuckTxHash.slice(0, 18)}... no receipt after ${Math.round(sinceSubmit / 1000)}s. A same-nonce fee-bump replacement is required (operator action) — NOT auto-resubmitting to avoid a nonce gap.`,
+              );
+            }
+            continue;
+          }
+
           console.error(
-            `[iris-relay] STUCK TX: ${msg.submittedTxHash!.slice(0, 18)}... has no receipt after ${Math.round(sinceSubmit / 1000)}s (>${Math.round(STUCK_TX_THRESHOLD_MS / 1000)}s threshold). Re-submitting with fresh nonce on next cycle.`,
+            `[iris-relay] STUCK TX (dropped from mempool): ${stuckTxHash.slice(0, 18)}... no receipt after ${Math.round(sinceSubmit / 1000)}s (>${Math.round(STUCK_TX_THRESHOLD_MS / 1000)}s threshold). Resetting nonce coordinator + re-submitting on next cycle.`,
           );
+          // The dropped tx never consumed its nonce — re-seed so the resubmit fills the gap.
+          this.nonceCoordinator.reset(state.config.chainId);
+          this.mempoolStuckWarned.delete(stuckTxHash);
           this.scheduleResubmit(msg, state.config.name);
           mutated = true;
         }
@@ -1034,6 +1082,7 @@ export class IrisRelayModule {
 
       if (receipt.status === 1) {
         // Success — mark processed and remove from pending.
+        this.mempoolStuckWarned.delete(msg.submittedTxHash!);
         const sourceState = this.getChainByDomain(msg.sourceDomain);
         if (sourceState) sourceState.processedMessages.add(hash);
         this.pendingMessages.delete(hash);
@@ -1054,6 +1103,7 @@ export class IrisRelayModule {
         console.error(
           `[iris-relay] REVERTED on chain: ${msg.submittedTxHash!.slice(0, 18)}... (tx mined but receipt.status=0). Will re-submit through retry/backoff.`,
         );
+        this.mempoolStuckWarned.delete(msg.submittedTxHash!);
         this.scheduleResubmit(msg, state.config.name);
         mutated = true;
       }

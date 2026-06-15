@@ -137,6 +137,45 @@ function createMultiHopRingTexture() {
   return texture
 }
 
+function createWalletRingTexture() {
+  // Soft lavender ring in the brand-lavender accent (#c491e5 — the same hue the
+  // participant list uses for the "you" row) — drawn as a billboard halo so the
+  // connected wallet's own node reads as "you" from any camera angle. Same
+  // technique as createMultiHopRingTexture, recolored; the animate loop breathes
+  // its opacity for a gentle glow-pulse.
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const texture = new THREE.CanvasTexture(canvas)
+  if (!ctx) return texture
+
+  const cx = size / 2
+  const cy = size / 2
+  // Outer halo: wider, softer.
+  ctx.save()
+  ctx.globalAlpha = 0.55
+  ctx.shadowColor = 'rgba(196,145,229,0.95)'
+  ctx.shadowBlur = 18
+  ctx.strokeStyle = 'rgba(196,145,229,0.95)'
+  ctx.lineWidth = 5
+  ctx.beginPath()
+  ctx.arc(cx, cy, 42, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
+
+  // Inner crisp ring for definition — a lighter lavender tint.
+  ctx.strokeStyle = 'rgba(224,200,244,0.95)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(cx, cy, 42, 0, Math.PI * 2)
+  ctx.stroke()
+
+  texture.needsUpdate = true
+  return texture
+}
+
 function createCenterNodeTexture() {
   const size = 256
   const canvas = document.createElement('canvas')
@@ -536,6 +575,43 @@ export function NodeSphere({
     const walletIdx = walletAddress
       ? (indexByAddress.get(walletAddress) ?? null)
       : null
+
+    // Persistent "you are here" marker on the connected wallet's node: the node
+    // keeps its hop color (so hop identity is preserved) and is wrapped in a
+    // lavender halo that breathes in the animate loop so the user can find their
+    // own node at a glance. Only applied when the wallet is an actual
+    // participant (walletIdx != null — no synthetic node; see the resolution
+    // note above).
+    let walletRingTexture: THREE.CanvasTexture | null = null
+    let walletRingMaterial: THREE.SpriteMaterial | null = null
+    if (walletIdx != null) {
+      const walletMesh = nodeMeshes[walletIdx]
+
+      // The yellow treatment replaces any multi-hop halo on this node rather
+      // than stacking outside it — remove the green ring (sprite + material) if
+      // present so only the "you" halo remains.
+      const existingHalo = haloMaterials[walletIdx]
+      if (existingHalo) {
+        const greenRing = walletMesh.children.find(
+          (c): c is THREE.Sprite => (c as THREE.Sprite).material === existingHalo,
+        )
+        if (greenRing) walletMesh.remove(greenRing)
+        existingHalo.dispose()
+        haloMaterials[walletIdx] = null
+      }
+
+      walletRingTexture = createWalletRingTexture()
+      walletRingMaterial = new THREE.SpriteMaterial({
+        map: walletRingTexture,
+        transparent: true,
+        depthWrite: false,
+      })
+      const walletRing = new THREE.Sprite(walletRingMaterial)
+      // Same footprint as the multi-hop halo it replaces.
+      const walletRingScale = NODE_RADIUS * 5.2
+      walletRing.scale.set(walletRingScale, walletRingScale, 1)
+      walletMesh.add(walletRing)
+    }
 
     // Center node (Armada symbol inside frosted circle) as a true 3D sprite.
     const { texture: centerBgTexture } = createCenterNodeTexture()
@@ -961,6 +1037,7 @@ export function NodeSphere({
     }
 
     const animate = () => {
+      const now = performance.now()
       const selectedAddr = highlightRef.current
       updateEdgeHighlight(selectedAddr ?? null)
 
@@ -1004,6 +1081,7 @@ export function NodeSphere({
       // a real graph node post-Phase 4b.3, so its ancestors + descendants
       // via `parentOf` / `childrenOf` carry the invite-tree semantics that
       // an earlier synthetic Euclidean-nearest workaround used to fake.
+      let walletNodeDimmed = false
       for (let i = 0; i < nodeMeshes.length; i += 1) {
         const m = nodeMeshes[i]
         const isHovered = hovered === m
@@ -1016,6 +1094,7 @@ export function NodeSphere({
           (activeFilter === 'Multi-hop' ? !meta.multiHop : meta.kind !== activeFilter)
         const isOutsideLineage = !!currentLineage && !currentLineage.has(meta.address)
         const isDimmed = isFilteredOut || (isOutsideLineage && !isSelected)
+        if (walletIdx != null && i === walletIdx) walletNodeDimmed = isDimmed
         const target = Math.max(isHovered ? 1.35 : 1, isSelected ? 1.55 : 1)
         const s = m.scale.x + (target - m.scale.x) * 0.15
         m.scale.setScalar(s)
@@ -1030,6 +1109,20 @@ export function NodeSphere({
           const haloTarget = isSelected ? 1 : isDimmed ? 0.08 : 1
           haloMat.opacity = haloMat.opacity + (haloTarget - haloMat.opacity) * 0.12
         }
+      }
+
+      // Breathing glow on the wallet "you" halo — the lavender ring pulses on the
+      // CSS glow-pulse cadence (~3.5s) so the marker reads clearly rather than
+      // sitting static; the node itself keeps its standard hop-color opacity.
+      // Always on (independent of selection) so the user can always find their
+      // node; eased into a low range when the node is dimmed so the halo fades
+      // back with its node instead of floating brightly over a ghost.
+      if (walletRingMaterial) {
+        const breathe = 0.5 + 0.5 * Math.sin(now * ((Math.PI * 2) / 3500))
+        const ringLo = walletNodeDimmed ? 0.06 : 0.55
+        const ringHi = walletNodeDimmed ? 0.2 : 0.95
+        const ringTarget = ringLo + (ringHi - ringLo) * breathe
+        walletRingMaterial.opacity += (ringTarget - walletRingMaterial.opacity) * 0.2
       }
 
       // Center focused node by rotating the focus group; lerp camera Z toward
@@ -1149,6 +1242,8 @@ export function NodeSphere({
         if (mat) mat.dispose()
       }
       multiHopRingTexture.dispose()
+      if (walletRingMaterial) walletRingMaterial.dispose()
+      if (walletRingTexture) walletRingTexture.dispose()
 
       renderer.dispose()
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement)

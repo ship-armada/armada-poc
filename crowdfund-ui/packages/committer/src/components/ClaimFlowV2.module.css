@@ -233,6 +233,14 @@
   border-color: var(--semantic-color-border-focus);
 }
 
+.delegateInputError {
+  border-color: var(--semantic-color-status-error);
+}
+
+.delegateInputResolved {
+  border-color: var(--semantic-color-status-success);
+}
+
 .delegateError {
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   color: var(--semantic-color-status-error);
@@ -241,6 +249,17 @@
 .delegateHelp {
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   color: var(--semantic-color-text-muted);
+}
+
+/* "Resolves to 0x1234…abcd" line shown when an ENS name resolves. */
+.delegateResolved {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.delegateResolved code {
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-mono, ui-monospace, monospace);
 }
 
 /* ── Footer button row (Cancel / Claim, or Back / View position). ── */

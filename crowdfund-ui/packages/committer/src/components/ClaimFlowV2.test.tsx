@@ -2,7 +2,7 @@
 // ABOUTME: Mocks the ethers Contract reads so claimed/allocation can be driven per address.
 // @vitest-environment jsdom
 
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createElement, type ReactElement, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -22,6 +22,8 @@ function renderClaim(ui: ReactElement) {
 let claimedFor: (addr: string) => Promise<boolean>
 let allocationFor: (addr: string) => Promise<[bigint, bigint]>
 let claimImpl: () => Promise<unknown>
+// Captures the delegate argument passed to the on-chain `claim(delegate)` call.
+let lastClaimDelegate: string | undefined
 
 vi.mock('ethers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ethers')>()
@@ -31,7 +33,10 @@ vi.mock('ethers', async (importOriginal) => {
       return {
         claimed: (addr: string) => claimedFor(addr),
         computeAllocation: (addr: string) => allocationFor(addr),
-        claim: () => claimImpl(),
+        claim: (delegate: string) => {
+          lastClaimDelegate = delegate
+          return claimImpl()
+        },
         claimRefund: () => claimImpl(),
       }
     }),
@@ -64,6 +69,7 @@ beforeEach(() => {
   claimedFor = () => Promise.resolve(false)
   allocationFor = () => Promise.resolve([0n, 0n])
   claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => Promise.resolve({ status: 1, logs: [] }) })
+  lastClaimDelegate = undefined
 })
 
 describe('ClaimFlowV2 account switch', () => {
@@ -104,6 +110,63 @@ describe('ClaimFlowV2 delegate field', () => {
     // User clears the field — it must not snap back to the wallet address.
     fireEvent.change(input, { target: { value: '' } })
     expect(input.value).toBe('')
+  })
+
+  it('rejects the zero address with a specific error and blocks the claim', async () => {
+    claimedFor = () => Promise.resolve(false)
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+
+    renderClaim(<ClaimFlowV2 {...baseProps} signer={{} as never} walletAddress={ADDR_A} />)
+
+    const input = (await screen.findByDisplayValue(ADDR_A)) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '0x' + '0'.repeat(40) } })
+
+    expect(await screen.findByText(/zero address/)).toBeTruthy()
+    expect(screen.getByText('Claim ARM').closest('button')!.disabled).toBe(true)
+  })
+})
+
+describe('ClaimFlowV2 delegate ENS resolution', () => {
+  // Vitalik's address — valid EIP-55 checksum, used as the resolver's answer.
+  const VITALIK = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+
+  it('resolves an ENS name and submits the resolved address as the delegate', async () => {
+    claimedFor = () => Promise.resolve(false)
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    const resolveName = vi.fn(async (name: string) => (name === 'vitalik.eth' ? VITALIK : null))
+    const provider = { resolveName } as unknown as JsonRpcProvider
+
+    renderClaim(
+      <ClaimFlowV2 {...baseProps} signer={{} as never} provider={provider} walletAddress={ADDR_A} />,
+    )
+
+    const input = (await screen.findByDisplayValue(ADDR_A)) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'vitalik.eth' } })
+
+    // The name resolves, the resolved address surfaces, and the claim submits
+    // the checksummed resolved address — not the raw ENS string.
+    expect(await screen.findByText(/Resolves to/)).toBeTruthy()
+    expect(resolveName).toHaveBeenCalledWith('vitalik.eth')
+
+    fireEvent.click(screen.getByText('Claim ARM').closest('button')!)
+    await waitFor(() => expect(lastClaimDelegate).toBe(VITALIK))
+  })
+
+  it('shows an error and blocks the claim for an unresolvable ENS name', async () => {
+    claimedFor = () => Promise.resolve(false)
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n])
+    const provider = { resolveName: vi.fn(async () => null) } as unknown as JsonRpcProvider
+
+    renderClaim(
+      <ClaimFlowV2 {...baseProps} signer={{} as never} provider={provider} walletAddress={ADDR_A} />,
+    )
+
+    const input = (await screen.findByDisplayValue(ADDR_A)) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'nope.eth' } })
+
+    expect(await screen.findByText(/resolve that ENS name/)).toBeTruthy()
+    expect(screen.getByText('Claim ARM').closest('button')!.disabled).toBe(true)
+    expect(lastClaimDelegate).toBeUndefined()
   })
 })
 

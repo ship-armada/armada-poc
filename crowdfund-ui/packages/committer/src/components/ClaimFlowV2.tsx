@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Contract, type Signer, type JsonRpcProvider } from 'ethers'
+import { Contract, ZeroAddress, type Signer, type JsonRpcProvider } from 'ethers'
 import {
   Step4Approve,
   type ReceiptLogLike,
@@ -14,6 +14,10 @@ import {
   formatUsdc,
   formatCountdown,
   tryGetChecksumAddress,
+  sanitizeAddressInput,
+  isValidEnsName,
+  truncateAddress,
+  ADDRESS_INPUT_MAX_LENGTH,
 } from '@armada/crowdfund-shared'
 import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
@@ -26,6 +30,14 @@ import styles from './ClaimFlowV2.module.css'
 
 type ClaimMode = 'arm' | 'refund'
 type FlowStep = 'review' | 'submit' | 'done'
+type DelegateEnsState = 'idle' | 'resolving' | 'resolved' | 'error'
+
+/** Loose ENS prefilter — drives the "should we kick off resolution?" branch.
+ *  Strict charset validation lives in `isValidEnsName`; this looser check still
+ *  treats partial typing like "alice.et" as not-yet-ENS. Mirrors SlotCard. */
+function isEnsCandidate(val: string): boolean {
+  return val.endsWith('.eth') && val.length > 4
+}
 
 export interface ClaimFlowV2Props {
   walletConnected: boolean
@@ -81,7 +93,22 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     refreshAllowance,
   } = props
 
+  // Delegate input may be a raw 0x… address or an ENS name. `delegate` holds the
+  // raw text; `resolvedDelegate` holds the checksummed address actually sent to
+  // the contract (from ENS resolution or direct 0x); `delegateEns` tracks the
+  // resolution state. Self-delegate is the default — prefill from the connected
+  // (checksummed) wallet address.
   const [delegate, setDelegate] = useState<string>(walletAddress ?? '')
+  const [resolvedDelegate, setResolvedDelegate] = useState<string>(() =>
+    walletAddress ? (tryGetChecksumAddress(walletAddress) ?? '') : '',
+  )
+  const [delegateEns, setDelegateEns] = useState<DelegateEnsState>(() =>
+    walletAddress && tryGetChecksumAddress(walletAddress) ? 'resolved' : 'idle',
+  )
+  // Mirror of `delegate` so an in-flight ENS lookup can drop a stale result if
+  // the user kept typing while it was resolving.
+  const delegateRef = useRef(delegate)
+  delegateRef.current = delegate
   // Set locally the instant a claim confirms, so the done screen shows without
   // waiting for the `claimed` read to refetch.
   const [justClaimed, setJustClaimed] = useState(false)
@@ -108,13 +135,71 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // This mirrors v1 ClaimTab's mode derivation.
   const mode: ClaimMode = phase === 2 || refundMode ? 'refund' : 'arm'
 
-  // Default delegate to the connected wallet address when it becomes available.
+  // Default delegate to the connected wallet address when it becomes available
+  // (self-delegate), unless the user has already edited the field.
   useEffect(() => {
     if (hasUserEditedDelegate.current) return
-    if (walletAddress && (delegate === '' || delegate === '0x')) {
+    if (walletAddress && delegate === '') {
+      // Display the raw address; resolve to the checksummed form internally.
+      const checksummed = tryGetChecksumAddress(walletAddress)
       setDelegate(walletAddress)
+      setResolvedDelegate(checksummed ?? '')
+      setDelegateEns(checksummed ? 'resolved' : 'idle')
     }
   }, [walletAddress, delegate])
+
+  // Delegate input handler — mirrors SlotCard's onchain-invite address field:
+  // an ENS-looking value is resolved via the hub provider; a raw 0x… value is
+  // checksum-validated. Either way `resolvedDelegate` ends up holding the
+  // canonical checksummed address (or '' when unresolved).
+  const handleDelegateChange = async (raw: string) => {
+    hasUserEditedDelegate.current = true
+    const val = sanitizeAddressInput(raw)
+    setDelegate(val)
+    setResolvedDelegate('')
+
+    if (val.length === 0) {
+      setDelegateEns('idle')
+      return
+    }
+
+    if (isEnsCandidate(val)) {
+      // Strict charset gate before burning an RPC round-trip.
+      if (!isValidEnsName(val) || !provider) {
+        setDelegateEns('error')
+        return
+      }
+      setDelegateEns('resolving')
+      try {
+        const resolved = await provider.resolveName(val)
+        if (val !== delegateRef.current) return // user kept typing — drop stale
+        const checksummed = resolved ? tryGetChecksumAddress(resolved) : null
+        // Reject the zero address — the contract requires a non-zero delegate.
+        if (!checksummed || checksummed === ZeroAddress) {
+          setDelegateEns('error')
+          return
+        }
+        setResolvedDelegate(checksummed)
+        setDelegateEns('resolved')
+      } catch {
+        if (val !== delegateRef.current) return
+        setDelegateEns('error')
+      }
+      return
+    }
+
+    // Direct 0x… entry — validate the EIP-55 checksum, keep canonical casing.
+    const checksummed = tryGetChecksumAddress(val)
+    if (checksummed && checksummed !== ZeroAddress) {
+      setResolvedDelegate(checksummed)
+      setDelegateEns('resolved')
+    } else if (checksummed === ZeroAddress) {
+      // Valid format but the zero address — rejected with a specific message.
+      setDelegateEns('error')
+    } else {
+      setDelegateEns('idle')
+    }
+  }
 
   // Load allocation + claimed state via react-query, keyed by account/contract/
   // phase. The two reads run in parallel via `allSettled` so a revert on one
@@ -184,10 +269,11 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       ])
       return
     }
-    // Checksum the delegate (ethers EIP-55) and submit the canonical form. A
-    // mixed-case address with a bad checksum is rejected rather than delegated wrong.
-    const delegateChecksum = tryGetChecksumAddress(delegate)
-    if (mode === 'arm' && !delegateChecksum) {
+    // Submit the canonical checksummed delegate — `resolvedDelegate` is set by
+    // handleDelegateChange (from ENS resolution or a direct 0x… entry). Fall
+    // back to checksumming the raw input as a defense-in-depth backstop.
+    const delegateAddress = resolvedDelegate || tryGetChecksumAddress(delegate)
+    if (mode === 'arm' && (!delegateAddress || delegateAddress === ZeroAddress)) {
       setTxs([
         { label: opLabel, status: 'error', errorMessage: 'Enter a valid delegate address.' },
       ])
@@ -222,7 +308,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const result = await sendAndWaitTx(
       () => {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, activeSigner)
-        return mode === 'arm' ? crowdfund.claim(delegateChecksum!) : crowdfund.claimRefund()
+        return mode === 'arm' ? crowdfund.claim(delegateAddress!) : crowdfund.claimRefund()
       },
       (hash) =>
         setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }]),
@@ -440,7 +526,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // ── Active flow ─────────────────────────────────────────────────
 
   if (step === 'review') {
-    const delegateValid = tryGetChecksumAddress(delegate) !== null
+    const delegateValid = delegateEns === 'resolved' && resolvedDelegate !== ''
     const armHasRefund = mode === 'arm' && refundAmount > 0n
     return (
       <FlowShell stepsLabels={stepsLabels} currentStep={currentStepIndex}>
@@ -517,20 +603,42 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
               <input
                 type="text"
                 autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                maxLength={ADDRESS_INPUT_MAX_LENGTH}
                 value={delegate}
-                onChange={(e) => {
-                  hasUserEditedDelegate.current = true
-                  setDelegate(e.target.value.trim())
-                }}
-                placeholder="0x…"
-                className={styles.delegateInput}
+                onChange={(e) => void handleDelegateChange(e.target.value)}
+                placeholder="0x… or name.eth"
+                className={[
+                  styles.delegateInput,
+                  delegateEns === 'error' ? styles.delegateInputError : '',
+                  delegateEns === 'resolved' ? styles.delegateInputResolved : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
               />
-              {!delegateValid && delegate.length > 0 && (
+              {delegateEns === 'resolving' && (
+                <p className={styles.delegateHelp}>Resolving ENS…</p>
+              )}
+              {delegateEns === 'resolved' && resolvedDelegate && isValidEnsName(delegate) && (
+                <p className={styles.delegateResolved}>
+                  Resolves to <code>{truncateAddress(resolvedDelegate)}</code>
+                </p>
+              )}
+              {delegateEns === 'error' && (
+                <p className={styles.delegateError}>
+                  {tryGetChecksumAddress(delegate) === ZeroAddress
+                    ? 'The delegate can’t be the zero address.'
+                    : 'Couldn’t resolve that ENS name.'}
+                </p>
+              )}
+              {delegateEns === 'idle' && delegate.startsWith('0x') && (
                 <p className={styles.delegateError}>Not a valid 0x address.</p>
               )}
               <p className={styles.delegateHelp}>
                 Your delegate votes on your behalf in governance. Use your own address to
-                self-delegate.
+                self-delegate. ENS names (name.eth) are supported.
               </p>
             </div>
           )}

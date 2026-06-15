@@ -10,11 +10,14 @@
  *   - Matches the existing CCTP relay (`cctp-relay.ts` / `iris-relay.ts`) which submits on
  *     every chain from the same key.
  *   - One key to fund, one balance to monitor.
- *   - Per-chain key splits are tracked as future hardening (relayer/CLAUDE.md).
+ *
+ * The key itself is `relayerPrivateKey` from config — a dedicated `RELAYER_PRIVATE_KEY` when set,
+ * otherwise the deployer key (with a boot warning on non-local). Per-chain key splits remain future
+ * hardening; see relayer/CLAUDE.md "Relayer key" notes.
  */
 
 import { ethers } from "ethers";
-import { accounts, allChains } from "../config";
+import { allChains, relayerPrivateKey } from "../config";
 import { NonceCoordinator } from "../lib/nonce-coordinator";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import type { Counters } from "./counters";
@@ -82,7 +85,7 @@ export class WalletManager {
     this.counters = counters;
     for (const chain of allChains) {
       const provider = new ethers.JsonRpcProvider(chain.rpc);
-      const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
+      const wallet = new ethers.Wallet(relayerPrivateKey, provider);
       this.chains.set(chain.chainId, { provider, wallet, locked: false });
     }
   }

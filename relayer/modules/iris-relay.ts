@@ -21,7 +21,7 @@
 import { ethers } from "ethers";
 import {
   allChains,
-  accounts,
+  relayerPrivateKey,
   armadaRelayerSettings,
   type ChainConfig,
 } from "../config";
@@ -755,7 +755,7 @@ export class IrisRelayModule {
       }
 
       const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
-      const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
+      const wallet = new ethers.Wallet(relayerPrivateKey, provider);
 
       // Verify connection up-front with the same timeout we'll use during polling.
       const currentBlock = Number(

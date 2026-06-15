@@ -203,6 +203,25 @@ export const relayerSettings = {
   pollIntervalMs: isLocal() ? 2000 : netConfig.iris.pollIntervalMs,
 };
 
+/**
+ * Private key the relayer's hot wallet signs with on EVERY chain and code path (privacy relay +
+ * CCTP relay). Prefer a DEDICATED `RELAYER_PRIVATE_KEY` so a relayer-host compromise doesn't also
+ * compromise the deployer/admin key. When unset, falls back to the deployer key (the long-standing
+ * behaviour) with a loud warning on non-local environments.
+ */
+export const relayerPrivateKey: string = (() => {
+  const dedicated = process.env.RELAYER_PRIVATE_KEY?.trim();
+  if (dedicated) return dedicated;
+  if (!isLocal()) {
+    console.warn(
+      "[config] WARNING: relayer is using the DEPLOYER key (RELAYER_PRIVATE_KEY unset). On a " +
+        "shared/VPS host this means a relayer compromise is also a protocol-admin compromise. Set " +
+        "RELAYER_PRIVATE_KEY to a dedicated, minimally-funded hot-wallet key.",
+    );
+  }
+  return accounts.deployer.privateKey;
+})();
+
 // CCTP finality mode from unified config
 function getCCTPFinalityMode(): "fast" | "standard" {
   return netConfig.cctpFinalityMode;

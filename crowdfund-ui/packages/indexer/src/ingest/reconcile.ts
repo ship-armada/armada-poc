@@ -1,6 +1,7 @@
 // ABOUTME: Auto-reconcile orchestration with bounded retry and exponential backoff.
 // ABOUTME: Lets the polling loop self-heal transient gaps while escalating persistent failures.
 
+import { findFirstGap } from './ranges.js'
 import { verifyRange } from './rpc.js'
 import type { IndexerStore } from '../db/store.js'
 import type { RangeLogProvider, RangePipelineConfig } from './rpc.js'
@@ -93,9 +94,15 @@ export function getExhaustedRepairRanges(
   maxAttempts: number,
 ): BlockRange[] {
   if (maxAttempts <= 0) return []
+  // Skip exhausted records that are actually covered by verified ranges (phantom gaps
+  // from a chunk-boundary change), so health does not demand operator action for them.
+  const verified = records
+    .filter((record) => record.status === 'verified')
+    .map((record) => ({ fromBlock: record.fromBlock, toBlock: record.toBlock }))
   return records
     .filter(isRepairCandidate)
     .filter((record) => record.attempts >= maxAttempts)
+    .filter((record) => findFirstGap(verified, record.fromBlock, record.toBlock) !== null)
     .map((record) => ({ fromBlock: record.fromBlock, toBlock: record.toBlock }))
 }
 

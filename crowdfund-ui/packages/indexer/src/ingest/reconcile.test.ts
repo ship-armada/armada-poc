@@ -168,6 +168,15 @@ describe('getExhaustedRepairRanges', () => {
     const ranges = [makeRange({ status: 'failed', attempts: 99 })]
     expect(getExhaustedRepairRanges(ranges, 0)).toEqual([])
   })
+
+  it('ignores an exhausted range fully covered by verified ranges', () => {
+    const ranges = [
+      makeRange({ fromBlock: 100, toBlock: 199, status: 'failed', attempts: 6 }),
+      makeRange({ fromBlock: 100, toBlock: 149, status: 'verified', attempts: 1 }),
+      makeRange({ fromBlock: 150, toBlock: 199, status: 'verified', attempts: 1 }),
+    ]
+    expect(getExhaustedRepairRanges(ranges, 3)).toEqual([])
+  })
 })
 
 describe('autoReconcileGaps', () => {

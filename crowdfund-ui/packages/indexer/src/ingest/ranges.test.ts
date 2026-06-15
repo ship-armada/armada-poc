@@ -105,4 +105,21 @@ describe('range ingestion helpers', () => {
       { fromBlock: 21, toBlock: 30 },
     ])
   })
+
+  it('ignores a failed range fully covered by verified ranges', () => {
+    const repairRanges = getRepairRanges([
+      makeRange({ fromBlock: 100, toBlock: 599, status: 'failed' }),
+      makeRange({ fromBlock: 100, toBlock: 349, status: 'verified' }),
+      makeRange({ fromBlock: 350, toBlock: 599, status: 'verified' }),
+    ])
+    expect(repairRanges).toEqual([])
+  })
+
+  it('still reports a failed range only partially covered by verified ranges', () => {
+    const repairRanges = getRepairRanges([
+      makeRange({ fromBlock: 100, toBlock: 599, status: 'failed' }),
+      makeRange({ fromBlock: 100, toBlock: 349, status: 'verified' }),
+    ])
+    expect(repairRanges).toEqual([{ fromBlock: 100, toBlock: 599 }])
+  })
 })

@@ -78,8 +78,15 @@ export function getContiguousVerifiedCursor(
 }
 
 export function getRepairRanges(records: readonly IngestRangeRecord[]): BlockRange[] {
+  // A failed/suspicious record whose span is fully covered by verified ranges is a
+  // phantom gap — its blocks were re-verified under different chunk boundaries (e.g.
+  // after CROWDFUND_MAX_BLOCK_RANGE changed). Drop it so it is not reported as a gap.
+  const verified = records
+    .filter((record) => record.status === 'verified')
+    .map((record) => ({ fromBlock: record.fromBlock, toBlock: record.toBlock }))
   return records
     .filter((record) => record.status === 'failed' || record.status === 'suspicious')
+    .filter((record) => findFirstGap(verified, record.fromBlock, record.toBlock) !== null)
     .map((record) => ({
       fromBlock: record.fromBlock,
       toBlock: record.toBlock,

@@ -382,15 +382,6 @@
   background: color-mix(in srgb, var(--semantic-color-surface-raised) 26%, transparent);
 }
 
-@media (max-width: 900px) {
-  .panel,
-  .expanded {
-    width: calc(100vw - (var(--primitives-spacing-6) * 2));
-    left: var(--primitives-spacing-6);
-  }
-
-}
-
 /* Mobile — stacked filters + searchable list below the graph (rendered by
  * HeroParticipantsMobileStack; the desktop panel above is hidden at ≤767px). */
 .mobileStack {

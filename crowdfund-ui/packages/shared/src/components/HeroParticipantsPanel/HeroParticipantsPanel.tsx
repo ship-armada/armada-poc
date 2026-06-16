@@ -36,7 +36,7 @@ const FILTERS: Array<{ id: HeroHopFilter; label: string }> = [
   { id: 'seed', label: 'Seed' },
   { id: 'hop1', label: 'Hop 1' },
   { id: 'hop2', label: 'Hop 2' },
-  { id: 'multi', label: 'Multi-hop' },
+  { id: 'multi', label: 'Multi' },
 ]
 
 function formatUsd(n: number) {
@@ -245,7 +245,7 @@ export function HeroParticipantsPanel({
           }}
           aria-expanded={showList}
         >
-          {showList ? 'Hide participants' : 'Show participants'}
+          {showList ? 'Hide address' : 'Show address'}
         </button>
 
         {onDetails && (

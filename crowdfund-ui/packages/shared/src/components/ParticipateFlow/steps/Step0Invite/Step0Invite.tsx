@@ -1,7 +1,7 @@
 // ABOUTME: Invite landing card — full-bleed fleet video + hop pill + Join CTA. Supports `default` (modal) and `landing` (full-page invite) variants.
 // ABOUTME: Ported from the armada-crowdfund mockup; fleet assets are ESM-imported so they bundle with crowdfund-shared (no public-folder dependency in the consuming app).
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import HopPill, { type HopVariant } from '../../../HopPill/HopPill'
 import hopPillStyles from '../../../HopPill/HopPill.module.css'
 import JoinButton from '../../../JoinButton/JoinButton'
@@ -9,6 +9,8 @@ import { formatTimeLeft } from '../../../../lib/format.js'
 import fleetMp4 from '../../../../assets/fleet.mp4'
 import fleetPng from '../../../../assets/fleet.png'
 import styles from './Step0Invite.module.css'
+
+const HOVER_EXPAND_QUERY = '(hover: hover) and (pointer: fine)'
 
 export interface Step0InviteProps {
   hopVariant?: HopVariant
@@ -33,7 +35,16 @@ export default function Step0Invite({
   className,
 }: Step0InviteProps) {
   const [joinExpanded, setJoinExpanded] = useState(false)
+  const [canHoverExpand, setCanHoverExpand] = useState(false)
   const isLanding = variant === 'landing'
+
+  useEffect(() => {
+    const media = window.matchMedia(HOVER_EXPAND_QUERY)
+    const sync = () => setCanHoverExpand(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
 
   // Uppercase to match the designer's tag styling; "ENDS TODAY" once the
   // window has closed (formatTimeLeft returns '' at <= 0).
@@ -42,6 +53,7 @@ export default function Step0Invite({
 
   return (
     <div
+      data-flow-shell
       className={[
         styles.card,
         isLanding && styles.cardLanding,
@@ -49,8 +61,12 @@ export default function Step0Invite({
       ]
         .filter(Boolean)
         .join(' ')}
-      onMouseEnter={() => setJoinExpanded(true)}
-      onMouseLeave={() => setJoinExpanded(false)}
+      onMouseEnter={() => {
+        if (canHoverExpand) setJoinExpanded(true)
+      }}
+      onMouseLeave={() => {
+        if (canHoverExpand) setJoinExpanded(false)
+      }}
     >
       <video
         className={styles.media}

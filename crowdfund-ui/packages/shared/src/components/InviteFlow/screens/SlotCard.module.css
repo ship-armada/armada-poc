@@ -328,3 +328,66 @@
 .revokeCancelBtn {
   width: 100%;
 }
+
+@media (max-width: 767px) {
+  .availableLabel {
+    display: none;
+  }
+
+  /* Link-active: badge + full-width single-line URL, actions on row below */
+  .row:has(.linkRow) {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: var(--primitives-spacing-4);
+    row-gap: var(--primitives-spacing-3);
+    align-items: start;
+  }
+
+  .row:has(.linkRow) .right,
+  .row:has(.linkRow) .linkRow {
+    display: contents;
+  }
+
+  .row:has(.linkRow) .badge {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .row:has(.linkRow) .linkStack {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .row:has(.linkRow) .linkText {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .row:has(.linkRow) .linkButtons {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-content: flex-end;
+    gap: var(--primitives-spacing-5);
+  }
+
+  .revokePopover {
+    transform: none;
+    animation: revokePopoverInMobile 160ms ease;
+  }
+}
+
+@keyframes revokePopoverInMobile {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -66,7 +66,7 @@ export default function Step3Review({
   const formattedTotal = formatUsd(totalAmount)
 
   return (
-    <div className={[styles.shell, isMulti && styles.shellMultiHop].filter(Boolean).join(' ')}>
+    <div data-flow-shell className={[styles.shell, isMulti && styles.shellMultiHop].filter(Boolean).join(' ')}>
       <Steps steps={[...steps]} currentStep={stepIndex} />
 
       <div className={styles.content}>

@@ -313,6 +313,21 @@
   flex: 1;
 }
 
+/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .buttonRow {
+    flex-direction: column-reverse;
+    margin-top: 0;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}
+
 /* Visually hidden — accessible but not visible */
 .visuallyHidden {
   position: absolute;

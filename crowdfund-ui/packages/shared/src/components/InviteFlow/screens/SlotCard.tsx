@@ -13,6 +13,7 @@ import {
   sanitizeAddressInput,
   tryGetChecksumAddress,
 } from '../../../lib/addressInput'
+import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../../lib/viewportBreakpoints'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -80,11 +81,6 @@ function formatExpiry(date: Date): string {
   if (diffDays <= 0) return 'Expired'
   if (diffDays === 1) return 'Expires tomorrow'
   return `Expires in ${diffDays} days`
-}
-
-function truncateLink(link: string): string {
-  if (link.length <= 28) return link
-  return link.slice(0, 14) + '…' + link.slice(-8)
 }
 
 export function truncateAddress(addr: string): string {
@@ -244,7 +240,25 @@ export default function SlotCard({
     const rect = anchor.getBoundingClientRect()
     const popover = revokePopoverRef.current
     const popoverHeight = popover?.offsetHeight ?? 120
+    const popoverWidth = popover?.offsetWidth ?? 220
     const gap = 6
+    const viewportMargin = 20
+    const isMobile = window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches
+
+    if (isMobile) {
+      let left = rect.right - popoverWidth
+      left = Math.max(
+        viewportMargin,
+        Math.min(left, window.innerWidth - popoverWidth - viewportMargin),
+      )
+      let top = rect.top - gap - popoverHeight
+      if (top < viewportMargin) {
+        top = rect.bottom + gap
+      }
+      setRevokePopoverPos({ top, left })
+      return
+    }
+
     const top = rect.top - gap - popoverHeight
     setRevokePopoverPos({ top, left: rect.right })
   }
@@ -353,7 +367,7 @@ export default function SlotCard({
           {slot.status === 'link-active' && slot.link && (
             <div className={styles.linkRow}>
               <div className={styles.linkStack}>
-                <span className={styles.linkText}>{truncateLink(slot.link)}</span>
+                <span className={styles.linkText}>{slot.link}</span>
                 <div className={styles.linkMeta}>
                   <span className={styles.pendingLabel}>Pending</span>
                   {slot.expiresAt && (
@@ -383,10 +397,6 @@ export default function SlotCard({
                     if (revokeConfirmOpen) {
                       setRevokeConfirmOpen(false)
                       return
-                    }
-                    const rect = revokeBtnRef.current?.getBoundingClientRect()
-                    if (rect) {
-                      setRevokePopoverPos({ top: rect.top - 6, left: rect.right })
                     }
                     setRevokeConfirmOpen(true)
                   }}

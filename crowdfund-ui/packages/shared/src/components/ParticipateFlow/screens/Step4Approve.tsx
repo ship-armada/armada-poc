@@ -115,7 +115,7 @@ export default function Step4Approve({
   const hasError = txs.some((t) => t.status === 'error')
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-flow-shell>
       <Steps steps={[...steps]} currentStep={stepIndex} />
 
       <div className={styles.content}>

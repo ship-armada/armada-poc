@@ -26,7 +26,7 @@ export default function Step1WalletNotWhitelisted({
   const displayAddress = truncateWalletAddress(address)
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-flow-shell>
       <div className={styles.content}>
         <ExclamationCircleIcon className={styles.icon} aria-hidden />
         <h2 className={styles.title}>Address not whitelisted</h2>

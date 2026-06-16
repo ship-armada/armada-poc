@@ -32,6 +32,17 @@ Spike branch: `spike/committer-mobile-design-sync` (off `iskay/crowdfund-committ
 ## Phase 1 checklist — DONE
 - [x] Re-ported designer's `ArmadaLogo` (`variant: 'full' | 'mark'`, `markTone: 'brand' | 'white'`, `ArmadaMark` subcomponent, namespaced `armada-lg*` gradient IDs) into `packages/ui/src/components/ArmadaLogo/ArmadaLogo.tsx`. Body byte-identical to designer (only deviations: ABOUTME header + our pre-existing `= {}` default param). All 7 call sites use the default `full` variant → backward-compatible. Typechecks clean (`@armada/ui`, committer).
 - **Phase 2 — Shared domain components.** Re-apply mobile changes onto our (diverged) copies: `HeroParticipantsPanel` + new `HeroParticipantsMobileStack`, `SlotCard`, `MyPosition/InvitesCard`, `Step0Invite` hover-gate, `Participate.tsx` poster fix, `Step2Commit` `allocationSection`; add `data-flow-shell` to step wrappers. Merge, don't copy.
+
+## Phase 2a checklist — DONE (self-contained items)
+- [x] `data-flow-shell` attribute on step wrappers: Step1Wallet, Step1WalletNotWhitelisted, Step2Commit (both shells — main + our `fullyCommitted` early-return), Step3Review, Step4Approve, Step5Confirmation — activates the inert `mobile-layout.css` from Phase 0.
+- [x] `Step0Invite` — hover-gate (`(hover:hover) and (pointer:fine)` via `matchMedia`, so touch devices don't expand the Join CTA on tap), `data-flow-shell`, fluid card (width 100%/max-width 480/box-sizing), meta+footer `min-width:0`, mobile `@media` (card auto-height).
+- [x] `Step2Commit` — mobile `@media` `.buttonRow` stacking (column-reverse, full-width). **Deferred:** the `.allocationSection` regroup + `titleBlock` gap-bump are built around the designer's `ArmAllocationBlock` component; our copy uses an inline `.allocationBlock` + extra validation messages, so applying them = a JSX rewrite (not done unasked). Desktop cosmetics only.
+- [x] `Participate.tsx` — our copy already converged on the designer's poster intent (always-rendered `imageSrc` base layer + `poster={imageSrc}`); kept our deliberate `preload="none"` lazy-load state machine (reverting to designer's `preload="metadata"` would regress it); added decorative `<img>` `aria-hidden` to match.
+- [x] `SlotCard` — full invite link (removed `truncateLink`), mobile revoke-popover positioning (clamps within viewport, flips below anchor if no room above), removed dead pre-position logic, mobile `@media` (link-active grid reflow, popover slide-in keyframe).
+
+## Phase 2b — DEFERRED into Phase 3 / focused follow-up
+- [ ] `HeroParticipantsPanel`: extract `HopFilterBar` helper + add `HeroParticipantsMobileStack`. **Folded into Phase 3** — the mobile stack is dead code until `CrowdfundExperience` mounts it (matchMedia + CSS `order`), and our panel diverged to show **ENS** names where the designer's stack shows raw `p.address`; port it ENS-reconciled and wired together.
+- [ ] MyPosition invites-on-mobile (designer's `InvitesCard` `hero` variant: always-expanded, non-collapsible, transparent chrome). Our tree has no `InvitesCard` — adapt onto `MyPositionHero`'s invite section (`.inviteCard`/`.inviteHeader`/chevron).
 - **Phase 3 — CrowdfundExperience.** 3-way merge: `.graphHost` relocation, deferred `mountGraph`, mobile participants stack, zeroed transitions, CSS `order`. Hardest merge (we added `onDetails`).
 - **Phase 4 — Committer header + wiring.** Port the burger-menu experience into `AppHeader` (replacing the shadcn `Sheet`), wired to **RainbowKit** (not `@web3icons`); `layout="hero"`; modal corner-logo; `mobile-layout.css` import.
 

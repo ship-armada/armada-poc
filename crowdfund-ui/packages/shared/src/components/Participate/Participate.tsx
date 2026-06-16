@@ -106,6 +106,7 @@ export function Participate({
           src={hoverImageSrc && isHovered ? hoverImageSrc : imageSrc}
           alt=""
           className={styles.img}
+          aria-hidden
         />
       )}
 

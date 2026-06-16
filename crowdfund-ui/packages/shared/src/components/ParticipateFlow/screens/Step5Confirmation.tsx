@@ -77,7 +77,7 @@ export default function Step5Confirmation({
   )
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-flow-shell>
       <Steps steps={[...steps]} currentStep={stepIndex} status={stepsStatus} />
 
       <div className={styles.content}>

@@ -35,6 +35,7 @@ export default function Step1Wallet({
 
   return (
     <div
+      data-flow-shell
       className={[
         styles.shell,
         compact && styles.shellCompact,

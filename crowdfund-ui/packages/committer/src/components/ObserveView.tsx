@@ -31,6 +31,23 @@ export function ObserveView({
         <SplashBackdrop />
       </div>
 
+      {/* Header backdrop (Observe-only) — frosts content scrolling under the
+          floating, transparent AppHeader so it doesn't bleed through. Sits below
+          the header (z-40) and above the page content (z-10); masked to fade out
+          just below the header band so it's near-invisible when unscrolled. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 top-0 z-30"
+        style={{
+          height: '120px',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          background: 'color-mix(in srgb, var(--semantic-color-surface-default) 55%, transparent)',
+          maskImage: 'linear-gradient(to bottom, black 0%, black 70%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 70%, transparent 100%)',
+        }}
+      />
+
       {/* Content — pt-24 clears the floating header. */}
       <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-16 pt-24">
         <ObserveStatusCard state={state} />

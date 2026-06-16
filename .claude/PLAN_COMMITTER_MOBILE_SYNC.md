@@ -57,7 +57,7 @@ Spike branch: `spike/committer-mobile-design-sync` (off `iskay/crowdfund-committ
     5. **Skip** the `@armada/ui Header` `layout="hero"` + `HeaderMobileMenu` re-sync (showcase-only).
     6. **`armada-symbol-color.png` as an ESM asset import** in crowdfund-shared (like `fleet.png`).
   - **4a — `AppHeader` mobile burger menu. DONE.** New `CommitterMobileMenu.tsx`/`.module.css` (committer) — full-screen lavender→amber gradient panel ported from designer `HeaderMobileMenu`, wallet block wired to RainbowKit (`ConnectButton.Custom` + `@web3icons` provider icon + copy/disconnect), nav + Participate/Claim. `AppHeader` Sheet → full-screen + controlled + `showCloseButton={false}` + `mobileMenu` accepts `(close)=>node`; `AppShell` type widened; `fleetPng`/`fleetMp4` barrel-exported; `@web3icons/react` added to committer deps. Header desktop↔mobile switch realigned `sm`(640)→`md`(768) to match the hero's 767 reflow. Typecheck + 270/162 tests green.
-  - **4b — `ParticipateFlowModal` polish.** Corner logo (`armada-symbol-color.png`, 40px) + `@media(767)` reflow + close-icon 16→20px.
+  - **4b — `ParticipateFlowModal` polish. DONE.** `armada-symbol-color.png` (ESM asset in crowdfund-shared) as a 40px corner mark on mobile + `@media(767)` reflow (full-bleed panel, fixed top-right close) + close-icon 16→20px. The designer's base `.close` restyle (bordered pill → round-white) was judged a desktop oversight: desktop keeps our bordered pill; the round-white treatment is scoped to the mobile fixed-corner close only.
   - **Risks:** RainbowKit→`@web3icons` provider-name mapping; modal close-icon bump is desktop-affecting (accepted).
 
 ## Risks / decisions

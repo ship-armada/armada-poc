@@ -70,41 +70,9 @@ export function AppHeader({
         className,
       )}
     >
-      {/* Left: hamburger (mobile) + Armada wordmark + primary nav (desktop) */}
+      {/* Left: Armada wordmark + primary nav (desktop) */}
       <div className="flex shrink-0 items-center gap-6">
-        <div className="flex items-center gap-2.5">
-          {mobileMenu !== undefined && (
-            <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-              <SheetTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="md:hidden"
-                  aria-label="Open menu"
-                >
-                  <Bars3Icon className="size-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                showCloseButton={false}
-                className="inset-0 h-full w-full max-w-none gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-none"
-              >
-                {/* Radix Dialog requires a title + description for a11y; the menu
-                    renders its own visible chrome, so these stay sr-only. */}
-                <SheetTitle className="sr-only">{appName} menu</SheetTitle>
-                <SheetDescription className="sr-only">
-                  Navigation and wallet actions
-                </SheetDescription>
-                {typeof mobileMenu === 'function'
-                  ? mobileMenu(() => setMenuOpen(false))
-                  : mobileMenu}
-              </SheetContent>
-            </Sheet>
-          )}
-          <ArmadaLogo />
-        </div>
+        <ArmadaLogo />
 
         {/* Desktop nav — grouped with the logo on the left, per the designer's Hero header. */}
         {headerNav && (
@@ -114,11 +82,47 @@ export function AppHeader({
         )}
       </div>
 
-      {/* Right: status slot + network badge + app-specific actions (desktop only) */}
-      <div className="hidden shrink-0 items-center gap-3 md:flex">
-        {headerStatus && <div className="flex h-full items-center">{headerStatus}</div>}
-        <Tag label={network} />
-        {headerRight}
+      {/* Right: desktop chrome (≥md) + mobile burger (right corner, per the designer) */}
+      <div className="flex shrink-0 items-center gap-3">
+        <div className="hidden items-center gap-3 md:flex">
+          {headerStatus && <div className="flex h-full items-center">{headerStatus}</div>}
+          <Tag label={network} />
+          {headerRight}
+        </div>
+
+        {mobileMenu !== undefined && (
+          <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+            <SheetTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                // Round white-translucent burger, matching the designer's
+                // `.burgerBtn` and the menu/modal round controls. The className
+                // overrides the shadcn ghost/icon defaults via twMerge.
+                className="size-12 rounded-full bg-white/20 text-white hover:bg-white/30 md:hidden"
+                aria-label="Open menu"
+              >
+                <Bars3Icon className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              showCloseButton={false}
+              className="inset-0 h-full w-full max-w-none gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-none"
+            >
+              {/* Radix Dialog requires a title + description for a11y; the menu
+                  renders its own visible chrome, so these stay sr-only. */}
+              <SheetTitle className="sr-only">{appName} menu</SheetTitle>
+              <SheetDescription className="sr-only">
+                Navigation and wallet actions
+              </SheetDescription>
+              {typeof mobileMenu === 'function'
+                ? mobileMenu(() => setMenuOpen(false))
+                : mobileMenu}
+            </SheetContent>
+          </Sheet>
+        )}
       </div>
     </header>
   )

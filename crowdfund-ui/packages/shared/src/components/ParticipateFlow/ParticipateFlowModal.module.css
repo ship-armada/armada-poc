@@ -69,6 +69,10 @@
   outline-offset: 2px;
 }
 
+.mobileLogo {
+  display: none;
+}
+
 @keyframes modalBackdropIn {
   from {
     opacity: 0;
@@ -124,5 +128,61 @@
   }
   to {
     opacity: 0;
+  }
+}
+
+/* Mobile — full-bleed step, corner mark top-left + fixed close top-right.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .backdrop {
+    align-items: flex-start;
+    padding:
+      calc(var(--primitives-spacing-5) + 40px + var(--primitives-spacing-5))
+      var(--primitives-spacing-5)
+      var(--primitives-spacing-5);
+  }
+
+  .mobileLogo {
+    display: block;
+    position: fixed;
+    top: var(--primitives-spacing-5);
+    left: var(--primitives-spacing-5);
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    z-index: 201;
+    pointer-events: none;
+  }
+
+  /* Floating round control, paired with the corner mark top-left. The desktop
+   * close stays our bordered pill; this round-white treatment is mobile-only. */
+  .close {
+    position: fixed;
+    top: var(--primitives-spacing-5);
+    right: var(--primitives-spacing-5);
+    z-index: 201;
+    width: var(--primitives-spacing-12);
+    height: var(--primitives-spacing-12);
+    border: none;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--primitives-color-white-full) 20%, transparent);
+    color: var(--primitives-color-white-full);
+  }
+
+  .close:hover {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--primitives-color-white-full) 28%, transparent);
+  }
+
+  .panel {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .step {
+    min-width: 0;
   }
 }

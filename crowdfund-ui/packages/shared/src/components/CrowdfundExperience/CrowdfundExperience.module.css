@@ -190,8 +190,10 @@
     flex-direction: column;
     gap: var(--primitives-spacing-5);
     min-height: 0;
+    /* Clear the fixed AppHeader (top: spacing-6 inset + 56px tall) so the
+     * stacked content starts below it instead of under it. */
     padding:
-      var(--primitives-spacing-3)
+      calc(var(--primitives-spacing-6) + 56px + var(--primitives-spacing-3))
       var(--primitives-spacing-5)
       var(--primitives-spacing-6);
     box-sizing: border-box;

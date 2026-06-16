@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { XMarkIcon } from '@heroicons/react/24/outline'
+import armadaSymbol from '../../assets/armada-symbol-color.png'
 import styles from './ParticipateFlowModal.module.css'
 
 const EXIT_MS = 280
@@ -99,6 +100,14 @@ export function ParticipateFlowModal({
       className={[styles.backdrop, exiting && styles.backdropExit].join(' ')}
       role="presentation"
     >
+      <img
+        src={armadaSymbol}
+        alt=""
+        width={40}
+        height={40}
+        className={styles.mobileLogo}
+        aria-hidden
+      />
       <div
         className={[styles.panel, exiting && styles.panelExit].join(' ')}
         role="dialog"
@@ -112,7 +121,7 @@ export function ParticipateFlowModal({
           onClick={requestClose}
           aria-label="Close participate flow"
         >
-          <XMarkIcon width={16} height={16} aria-hidden />
+          <XMarkIcon width={20} height={20} aria-hidden />
         </button>
         <div className={[styles.step, exiting && styles.stepExit].join(' ')}>{children}</div>
       </div>

@@ -1,8 +1,10 @@
 // ABOUTME: Spike scaffold for the committer "Observe" page — cards + tables, no 3D node graph.
 // ABOUTME: Placeholder layout (one full-width card, then a two-column row) over the no-WebGL splash as the page background.
 
-import { SplashBackdrop, type ContractState } from '@armada/crowdfund-shared'
+import type { JsonRpcProvider } from 'ethers'
+import { SplashBackdrop, type ContractState, type CrowdfundEvent } from '@armada/crowdfund-shared'
 import { ObserveStatusCard } from '@/components/ObserveStatusCard'
+import { ObserveParticipantsTable } from '@/components/ObserveParticipantsTable'
 
 /** Placeholder card — translucent surface over the splash so the backdrop reads
  *  through. Swap for real StatsBar / TableView content once the layout lands. */
@@ -36,7 +38,15 @@ function PlaceholderCard({ label, minHeight = 200 }: { label: string; minHeight?
  * in a two-column row (stacked on mobile). No CrowdfundExperience / NodeSphere,
  * so the 3D graph never mounts on this view.
  */
-export function ObserveView({ state }: { state: ContractState }) {
+export function ObserveView({
+  state,
+  events,
+  provider,
+}: {
+  state: ContractState
+  events: CrowdfundEvent[]
+  provider: JsonRpcProvider | null
+}) {
   return (
     <div className="relative min-h-screen w-full">
       {/* Fixed full-bleed splash background — behind the content; the floating
@@ -48,13 +58,9 @@ export function ObserveView({ state }: { state: ContractState }) {
       {/* Content — pt-24 clears the floating header. */}
       <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-16 pt-24">
         <ObserveStatusCard state={state} />
-        {/* Two-up on md+ (≥768px); collapses to a single column on smaller
-            viewports so the cards don't get cramped. Placeholder — real content
-            planned. */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <PlaceholderCard label="Card A" minHeight={240} />
-          <PlaceholderCard label="Card B" minHeight={240} />
-        </div>
+        <ObserveParticipantsTable events={events} phase={state.phase} provider={provider} />
+        {/* Placeholder — real content planned. */}
+        <PlaceholderCard label="Card B" minHeight={240} />
       </div>
     </div>
   )

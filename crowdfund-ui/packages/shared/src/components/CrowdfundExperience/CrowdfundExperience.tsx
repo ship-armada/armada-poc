@@ -27,6 +27,7 @@ import {
 import { NodeSphere } from '../NodeSphere/NodeSphere'
 import { hopPillDotColor } from '../../lib/graphHopColors'
 import { CROWDFUND_CONSTANTS } from '../../lib/constants'
+import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints'
 import {
   generateCrowdfund,
   toDashboardParticipants,
@@ -334,6 +335,11 @@ const PANEL_EXIT_MS = 240
 const PANEL_GAP_MS = 90
 const PANEL_ENTER_MS = 240
 
+function isMobileLayout() {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches
+}
+
 type PanelPhase = 'idle' | 'exit' | 'enter'
 
 function layerClass(visible: boolean, motionReady: boolean, animate: boolean) {
@@ -400,7 +406,12 @@ export function CrowdfundExperience({
     readInitialView(controlledView ?? initialView),
   )
   const [panelPhase, setPanelPhase] = useState<PanelPhase>('idle')
-  const [motionReady, setMotionReady] = useState(false)
+  // Mobile skips the entrance animation entirely (motion-ready from the first
+  // paint); desktop flips it on after a RAF so the cards animate in.
+  const [motionReady, setMotionReady] = useState(() => isMobileLayout())
+  // Defer the WebGL NodeSphere mount on mobile (via requestIdleCallback) so it
+  // doesn't block first paint; desktop mounts it immediately.
+  const [mountGraph, setMountGraph] = useState(() => !isMobileLayout())
   const panelTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Live data takes precedence when supplied. `loading` mode renders a
@@ -547,8 +558,41 @@ export function CrowdfundExperience({
   const columnExpanded = participantsListOpen || holdColumnExpanded
 
   useEffect(() => {
+    if (isMobileLayout()) {
+      setMotionReady(true)
+      return
+    }
     const id = requestAnimationFrame(() => setMotionReady(true))
     return () => cancelAnimationFrame(id)
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileLayout()) {
+      setMountGraph(true)
+      return
+    }
+
+    let cancelled = false
+    const mount = () => {
+      if (!cancelled) setMountGraph(true)
+    }
+
+    let cleanup: () => void
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(mount, { timeout: 400 })
+      cleanup = () => {
+        cancelled = true
+        window.cancelIdleCallback(id)
+      }
+    } else {
+      const timer = window.setTimeout(mount, 32)
+      cleanup = () => {
+        cancelled = true
+        window.clearTimeout(timer)
+      }
+    }
+
+    return cleanup
   }, [])
 
   useEffect(() => {
@@ -577,6 +621,13 @@ export function CrowdfundExperience({
     setPanelPhase('exit')
     clearPanelTransition()
 
+    // Mobile stacks the panels vertically (no cross-fade), so collapse the
+    // transition timings to zero — the view swaps instantly.
+    const mobile = isMobileLayout()
+    const exitMs = mobile ? 0 : PANEL_EXIT_MS
+    const gapMs = mobile ? 0 : PANEL_GAP_MS
+    const enterMs = mobile ? 0 : PANEL_ENTER_MS
+
     panelTransitionTimer.current = setTimeout(() => {
       setView(next)
       syncUrl(next)
@@ -587,8 +638,8 @@ export function CrowdfundExperience({
       panelTransitionTimer.current = setTimeout(() => {
         setPanelPhase('idle')
         panelTransitionTimer.current = null
-      }, PANEL_ENTER_MS)
-    }, PANEL_EXIT_MS + PANEL_GAP_MS)
+      }, enterMs)
+    }, exitMs + gapMs)
   }
 
   // Controlled mode: when the consumer changes `view` from outside, drive the
@@ -752,6 +803,7 @@ export function CrowdfundExperience({
 
   return (
     <div className={[mpStyles.page, shellStyles.page].join(' ')}>
+      {mountGraph && (
       <NodeSphere
         highlightAddress={
           isGraphMyPosition ? selectedAddress ?? myPositionWalletAddress : selectedAddress
@@ -779,6 +831,7 @@ export function CrowdfundExperience({
         inviteGraph={isGraphMyPosition}
         etherscanBaseUrl={etherscanBaseUrl}
       />
+      )}
 
       {header === undefined ? (
         // Default header — used by the showcase / standalone mockup preview.

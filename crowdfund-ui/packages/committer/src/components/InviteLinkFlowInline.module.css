@@ -36,3 +36,17 @@
   max-height: 80vh;
   overflow-y: auto;
 }
+
+/* Mobile — the inline step fills the page width and sizes to content (the
+ * /invite page chrome scrolls). The post-commit invites variant inherits
+ * width:100% / min-height:0 here and keeps its own max-height + scroll above.
+ * Mirrors the mockup's ParticipateFlowInviteInline mobile rework. */
+@media (max-width: 767px) {
+  .slot,
+  .step,
+  .invitesWrap {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+}

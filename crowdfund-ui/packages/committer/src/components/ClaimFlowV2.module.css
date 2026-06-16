@@ -338,3 +338,17 @@
   justify-content: center;
   min-height: calc(100vh - 12rem);
 }
+
+/* Mobile (≤767px) — the 480px modal-style card fills the page width and sizes
+ * to content, matching the commit-flow step screens on small viewports. */
+@media (max-width: 767px) {
+  .flowShell {
+    padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  }
+
+  .cardShell {
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+  }
+}

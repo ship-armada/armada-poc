@@ -182,9 +182,10 @@ export type {
   ParticipantRow,
 } from './components/ParticipantsTable/index.js'
 
-export { HeroParticipantsPanel } from './components/HeroParticipantsPanel/index.js'
+export { HeroParticipantsPanel, HeroParticipantsMobileStack } from './components/HeroParticipantsPanel/index.js'
 export type {
   HeroParticipantsPanelProps,
+  HeroParticipantsMobileStackProps,
   HeroHopFilter,
   HeroParticipant,
 } from './components/HeroParticipantsPanel/index.js'

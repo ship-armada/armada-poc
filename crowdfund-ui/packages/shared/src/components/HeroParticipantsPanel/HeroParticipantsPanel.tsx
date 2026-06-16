@@ -51,6 +51,39 @@ function hopColor(p: HeroParticipant) {
   return heroListHopColor(p.hop)
 }
 
+/** Hop filter tab row — shared between the desktop controls row and the mobile
+ *  stack. `className` lets the mobile stack stretch it full-width. */
+function HopFilterBar({
+  filter,
+  onFilterChange,
+  className,
+}: {
+  filter: HeroHopFilter
+  onFilterChange: (filter: HeroHopFilter) => void
+  className?: string
+}) {
+  return (
+    <div
+      className={[styles.filters, className].filter(Boolean).join(' ')}
+      role="tablist"
+      aria-label="Hop filters"
+    >
+      {FILTERS.map((f) => (
+        <button
+          key={f.id}
+          type="button"
+          className={[styles.filterBtn, filter === f.id && styles.filterBtnActive].filter(Boolean).join(' ')}
+          onClick={() => onFilterChange(f.id)}
+          role="tab"
+          aria-selected={filter === f.id}
+        >
+          {f.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export interface HeroParticipantsPanelProps {
   participants: HeroParticipant[]
   selectedAddress?: string
@@ -202,20 +235,7 @@ export function HeroParticipantsPanel({
       </div>
 
       <div className={styles.controlsRow}>
-        <div className={styles.filters} role="tablist" aria-label="Hop filters">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              className={[styles.filterBtn, filter === f.id && styles.filterBtnActive].filter(Boolean).join(' ')}
-              onClick={() => setFilter(f.id)}
-              role="tab"
-              aria-selected={filter === f.id}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <HopFilterBar filter={filter} onFilterChange={setFilter} />
 
         <button
           type="button"
@@ -235,5 +255,121 @@ export function HeroParticipantsPanel({
         )}
       </div>
     </section>
+  )
+}
+
+export interface HeroParticipantsMobileStackProps {
+  participants: HeroParticipant[]
+  selectedAddress?: string
+  onSelectAddress?: (address: string | undefined) => void
+  filter?: HeroHopFilter
+  onFilterChange?: (filter: HeroHopFilter) => void
+}
+
+/** Mobile crowdfund — full-width filters + searchable participant list stacked
+ *  below the graph. Replaces the desktop `HeroParticipantsPanel` list/controls
+ *  on mobile (which the CrowdfundExperience hides at ≤767px). Renders ENS
+ *  `displayName` in place of the raw address, matching the desktop panel. */
+export function HeroParticipantsMobileStack({
+  participants,
+  selectedAddress,
+  onSelectAddress,
+  filter: controlledFilter,
+  onFilterChange,
+}: HeroParticipantsMobileStackProps) {
+  const [uncontrolledFilter, setUncontrolledFilter] = useState<HeroHopFilter>('all')
+  const [query, setQuery] = useState('')
+  const filter = controlledFilter ?? uncontrolledFilter
+
+  const setFilter = (next: HeroHopFilter) => {
+    if (controlledFilter == null) setUncontrolledFilter(next)
+    onFilterChange?.(next)
+  }
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return participants.filter((p) => {
+      const matchesQuery =
+        !q ||
+        p.address.toLowerCase().includes(q) ||
+        (p.displayName?.toLowerCase().includes(q) ?? false)
+      const matchesFilter =
+        filter === 'all' ||
+        (filter === 'seed' && p.hop === 'SEED') ||
+        (filter === 'hop1' && p.hop === 'HOP-1') ||
+        (filter === 'hop2' && p.hop === 'HOP-2') ||
+        (filter === 'multi' && !!p.multiHop)
+      return matchesQuery && matchesFilter
+    })
+  }, [participants, query, filter])
+
+  const isEmpty = participants.length === 0
+  const noResults = !isEmpty && rows.length === 0
+
+  return (
+    <div className={styles.mobileStack}>
+      <HopFilterBar
+        filter={filter}
+        onFilterChange={setFilter}
+        className={styles.filtersFullWidth}
+      />
+
+      <div className={styles.mobileListCard}>
+        <label className={styles.listSearch}>
+          <MagnifyingGlassIcon className={styles.listSearchIcon} width={14} height={14} aria-hidden />
+          <input
+            className={styles.listSearchInput}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search participant address…"
+            inputMode="search"
+            autoComplete="off"
+            aria-label="Search participant address"
+          />
+        </label>
+
+        <div className={styles.mobileListScroll}>
+          {isEmpty ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyTitle}>No participants yet</div>
+              <div className={styles.emptySub}>Be the first to participate.</div>
+            </div>
+          ) : noResults ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyTitle}>No matches</div>
+              <div className={styles.emptySub}>Try a different address or filter.</div>
+            </div>
+          ) : (
+            rows.map((p, idx) => {
+              const selected = p.address === selectedAddress
+              return (
+                <button
+                  key={p.address}
+                  type="button"
+                  className={[
+                    styles.row,
+                    styles.mobileRow,
+                    selected && styles.rowSelected,
+                    p.isSelf && styles.rowSelf,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => onSelectAddress?.(selected ? undefined : p.address)}
+                  aria-pressed={selected}
+                >
+                  <span className={styles.rank}>{idx + 1}</span>
+                  <span className={styles.addr}>{p.displayName ?? p.address}</span>
+                  <span className={styles.hop}>
+                    <span className={styles.dot} style={{ ['--dot' as string]: hopColor(p) }} aria-hidden />
+                    {p.hop}
+                  </span>
+                  <span className={styles.amount}>{formatUsd(p.amountUsd)}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

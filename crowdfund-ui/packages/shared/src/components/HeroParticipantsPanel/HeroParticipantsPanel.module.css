@@ -141,9 +141,14 @@
   background: var(--semantic-component-navitem-default-bg-hover);
   color: var(--semantic-component-navitem-default-text-hover);
 }
-.filterBtnActive {
+.filterBtnActive,
+.filterBtnActive:hover {
   background: var(--semantic-component-navitem-active-bg);
   color: var(--semantic-component-navitem-active-text);
+}
+
+.filtersFullWidth {
+  width: 100%;
 }
 
 .listShell {
@@ -384,5 +389,60 @@
     left: var(--primitives-spacing-6);
   }
 
+}
+
+/* Mobile — stacked filters + searchable list below the graph (rendered by
+ * HeroParticipantsMobileStack; the desktop panel above is hidden at ≤767px). */
+.mobileStack {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobileStack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--primitives-spacing-5);
+    width: 100%;
+  }
+
+  .filtersFullWidth {
+    display: flex;
+    align-items: stretch;
+  }
+
+  .filtersFullWidth .filterBtn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobileListCard {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: min(360px, 50vh);
+    overflow: hidden;
+    border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+    border: 1px solid var(--semantic-color-border-default);
+    background: var(--semantic-color-surface-default);
+    box-sizing: border-box;
+  }
+
+  .mobileListScroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobileRow {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(64px, auto) minmax(72px, auto);
+    gap: var(--primitives-spacing-3);
+    padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  }
 }
 

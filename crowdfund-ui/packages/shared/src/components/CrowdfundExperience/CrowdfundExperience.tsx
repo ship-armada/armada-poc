@@ -9,7 +9,7 @@ import { ensMapAtom } from '../../hooks/useENS'
 import { Header } from '@armada/ui'
 import { Progress } from '@armada/ui'
 import { Participate } from '../Participate/Participate'
-import { HeroParticipantsPanel, type HeroParticipant } from '../HeroParticipantsPanel'
+import { HeroParticipantsPanel, HeroParticipantsMobileStack, type HeroParticipant } from '../HeroParticipantsPanel'
 import { Tag } from '@armada/ui'
 import { Tooltip } from '@armada/ui'
 import SlotCard from '../InviteFlow/screens/SlotCard'
@@ -543,6 +543,7 @@ export function CrowdfundExperience({
   const invitesListId = useId()
 
   const participantsPanelRef = useRef<HTMLDivElement | null>(null)
+  const mobileParticipantsRef = useRef<HTMLDivElement | null>(null)
   const leftStackRef = useRef<HTMLDivElement | null>(null)
 
   const HERO_EXPAND_MS = 380
@@ -730,8 +731,10 @@ export function CrowdfundExperience({
     if (!isCrowdfund || !selectedAddress) return
 
     const onPointerDown = (e: PointerEvent) => {
-      const el = participantsPanelRef.current
-      if (el && el.contains(e.target as Node)) return
+      const desktop = participantsPanelRef.current
+      const mobile = mobileParticipantsRef.current
+      if (desktop?.contains(e.target as Node)) return
+      if (mobile?.contains(e.target as Node)) return
       setSelectedAddress(undefined)
     }
 
@@ -803,36 +806,6 @@ export function CrowdfundExperience({
 
   return (
     <div className={[mpStyles.page, shellStyles.page].join(' ')}>
-      {mountGraph && (
-      <NodeSphere
-        highlightAddress={
-          isGraphMyPosition ? selectedAddress ?? myPositionWalletAddress : selectedAddress
-        }
-        onSelectAddress={setSelectedAddress}
-        filterKind={
-          isGraphCrowdfund
-            ? filter === 'seed'
-              ? 'Hop 0'
-              : filter === 'hop1'
-                ? 'Hop 1'
-                : filter === 'hop2'
-                  ? 'Hop 2'
-                  : filter === 'multi'
-                    ? 'Multi-hop'
-                    : undefined
-            : undefined
-        }
-        interactionDisabled={isGraphCrowdfund && participantsListOpen}
-        scenarioParticipants={graphParticipants}
-        scenarioSeed={seedRef.current!}
-        pinnedNodes={crowdfundPinnedNodes}
-        walletAddress={myPositionWalletAddress}
-        lockOnWallet={isGraphMyPosition}
-        inviteGraph={isGraphMyPosition}
-        etherscanBaseUrl={etherscanBaseUrl}
-      />
-      )}
-
       {header === undefined ? (
         // Default header — used by the showcase / standalone mockup preview.
         // Consuming apps pass their own `header` slot (or `null`) to avoid
@@ -848,6 +821,58 @@ export function CrowdfundExperience({
       ) : (
         header
       )}
+
+      <div
+        className={[
+          shellStyles.experienceLayout,
+          isMyPosition && shellStyles.experienceLayoutMyPosition,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <div className={shellStyles.graphHost}>
+          {mountGraph && !(isMyPosition && isMobileLayout()) ? (
+            <NodeSphere
+              highlightAddress={
+                isGraphMyPosition ? selectedAddress ?? myPositionWalletAddress : selectedAddress
+              }
+              onSelectAddress={setSelectedAddress}
+              filterKind={
+                isGraphCrowdfund
+                  ? filter === 'seed'
+                    ? 'Hop 0'
+                    : filter === 'hop1'
+                      ? 'Hop 1'
+                      : filter === 'hop2'
+                        ? 'Hop 2'
+                        : filter === 'multi'
+                          ? 'Multi-hop'
+                          : undefined
+                  : undefined
+              }
+              interactionDisabled={isGraphCrowdfund && participantsListOpen}
+              scenarioParticipants={graphParticipants}
+              scenarioSeed={seedRef.current!}
+              pinnedNodes={crowdfundPinnedNodes}
+              walletAddress={myPositionWalletAddress}
+              lockOnWallet={isGraphMyPosition}
+              inviteGraph={isGraphMyPosition}
+              etherscanBaseUrl={etherscanBaseUrl}
+            />
+          ) : null}
+        </div>
+
+        {isCrowdfund && crowdfundPanelVisible ? (
+          <div ref={mobileParticipantsRef} className={shellStyles.mobileParticipantsStack}>
+            <HeroParticipantsMobileStack
+              participants={participants}
+              selectedAddress={selectedAddress}
+              onSelectAddress={setSelectedAddress}
+              filter={filter}
+              onFilterChange={setFilter}
+            />
+          </div>
+        ) : null}
 
       <div
         className={[
@@ -888,7 +913,10 @@ export function CrowdfundExperience({
                     ? { statusDot: liveReady.saleStatusDot }
                     : {})}
                 />
-                <div ref={participantsPanelRef} className={heroStyles.participantsWrap}>
+                <div
+                  ref={participantsPanelRef}
+                  className={[heroStyles.participantsWrap, shellStyles.hideOnMobileStack].join(' ')}
+                >
                   <HeroParticipantsPanel
                     participants={participants}
                     selectedAddress={selectedAddress}
@@ -1044,7 +1072,7 @@ export function CrowdfundExperience({
             aria-hidden={!crowdfundPanelVisible}
           >
             <Participate
-              className={[heroStyles.enter, heroStyles.enterParticipate].join(' ')}
+              className={[heroStyles.enter, heroStyles.enterParticipate, shellStyles.mobileParticipateCard].join(' ')}
               imageSrc={fleetPng}
               videoSrc={fleetMp4}
               onCtaClick={onParticipate}
@@ -1184,6 +1212,7 @@ export function CrowdfundExperience({
           })()}
         </div>
         )}
+      </div>
       </div>
     </div>
   )

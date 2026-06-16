@@ -82,29 +82,6 @@
   box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
 }
 
-/* "Details" text button — sits to the right of the Show/Hide toggle. Borderless
- * (text-only) so it reads as a secondary affordance next to the bordered toggle. */
-.detailsBtn {
-  flex-shrink: 0;
-  height: var(--semantic-component-navitem-height);
-  padding: 0 var(--primitives-spacing-3);
-  border: none;
-  border-radius: var(--semantic-component-navitem-radius);
-  background: transparent;
-  color: var(--semantic-color-text-secondary);
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-.detailsBtn:hover {
-  color: var(--semantic-color-text-primary);
-}
-.detailsBtn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
-}
 
 .filters {
   display: inline-flex;
@@ -380,6 +357,26 @@
   font-size: calc(var(--primitives-fontSize-sm) * 1px);
   color: var(--semantic-color-text-muted);
   background: color-mix(in srgb, var(--semantic-color-surface-raised) 26%, transparent);
+}
+
+/* ≤1440px — cap the controls row at 480px; the `flex: 1` toggle button shrinks
+ * to absorb it (the filter pills are fixed-width). Ported from the mockup. */
+@media (max-width: 1440px) {
+  .controlsRow {
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .filters {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .toggleBtn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 }
 
 /* Mobile — stacked filters + searchable list below the graph (rendered by

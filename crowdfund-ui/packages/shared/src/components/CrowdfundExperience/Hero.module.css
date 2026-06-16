@@ -65,7 +65,7 @@
   );
   position: absolute;
   left: var(--primitives-spacing-6);
-  bottom: calc(var(--primitives-spacing-6) + 10px); /* +10px compensates for ~10px layout offset our committer AppShell introduces vs the designer's standalone Hero render; remove if upstream offset is diagnosed and fixed */
+  bottom: var(--primitives-spacing-6); /* bottom gutter, matching the left/right page gutter */
   z-index: 10;
   width: 582px;
   max-width: calc(100vw - var(--primitives-spacing-6) * 2);
@@ -79,7 +79,7 @@
 .rightCorner {
   position: absolute;
   right: var(--primitives-spacing-6);
-  bottom: calc(var(--primitives-spacing-6) + 10px); /* +10px compensates for ~10px layout offset our committer AppShell introduces vs the designer's standalone Hero render; remove if upstream offset is diagnosed and fixed */
+  bottom: var(--primitives-spacing-6); /* bottom gutter, matching the left/right page gutter */
   z-index: 10;
 }
 
@@ -128,5 +128,14 @@
   flex: 1 1 0;
   min-height: 0;
   height: 100%;
+}
+
+/* Mobile — the left column is a full-width stacked panel, so the Progress-card
+ * stack fills it instead of holding the desktop 582px column width. */
+@media (max-width: 767px) {
+  .leftStack {
+    width: 100%;
+    max-height: none;
+  }
 }
 

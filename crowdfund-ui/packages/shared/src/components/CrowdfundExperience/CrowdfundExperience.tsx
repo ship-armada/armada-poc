@@ -895,24 +895,38 @@ export function CrowdfundExperience({
               <HeroLoadingSkeleton />
             ) : (
               <>
-                <Progress
-                  participants={`${dashRows.length} PARTICIPANTS`}
-                  committedAmount={committedAmount}
-                  minRaiseAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
-                  maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
-                  {...(liveReady?.daysLeftLabel !== undefined
-                    ? { daysLeft: liveReady.daysLeftLabel }
-                    : {})}
-                  {...(liveReady?.daysLeftTooltip
-                    ? { daysLeftTooltip: liveReady.daysLeftTooltip }
-                    : {})}
-                  {...(liveReady?.saleStatusLabel
-                    ? { status: liveReady.saleStatusLabel }
-                    : {})}
-                  {...(liveReady?.saleStatusDot
-                    ? { statusDot: liveReady.saleStatusDot }
-                    : {})}
-                />
+                <div className={shellStyles.progressWrap}>
+                  <Progress
+                    participants={`${dashRows.length} PARTICIPANTS`}
+                    committedAmount={committedAmount}
+                    minRaiseAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
+                    maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
+                    {...(liveReady?.daysLeftLabel !== undefined
+                      ? { daysLeft: liveReady.daysLeftLabel }
+                      : {})}
+                    {...(liveReady?.daysLeftTooltip
+                      ? { daysLeftTooltip: liveReady.daysLeftTooltip }
+                      : {})}
+                    {...(liveReady?.saleStatusLabel
+                      ? { status: liveReady.saleStatusLabel }
+                      : {})}
+                    {...(liveReady?.saleStatusDot
+                      ? { statusDot: liveReady.saleStatusDot }
+                      : {})}
+                  />
+                  {onDetails && (
+                    // Overlaid on the @armada/ui Progress card's top-right corner
+                    // (level with the card title) — we don't modify that primitive,
+                    // so the "Details" affordance is positioned over it from here.
+                    <button
+                      type="button"
+                      className={shellStyles.detailsBtn}
+                      onClick={onDetails}
+                    >
+                      Details
+                    </button>
+                  )}
+                </div>
                 <div
                   ref={participantsPanelRef}
                   className={[heroStyles.participantsWrap, shellStyles.hideOnMobileStack].join(' ')}
@@ -931,7 +945,6 @@ export function CrowdfundExperience({
                       if (!open) setSelectedAddress(undefined)
                     }}
                     onParticipate={onParticipate}
-                    onDetails={onDetails}
                   />
                 </div>
               </>

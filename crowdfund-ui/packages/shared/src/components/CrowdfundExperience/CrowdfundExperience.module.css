@@ -34,6 +34,58 @@
   display: none;
 }
 
+/* Wraps the @armada/ui Progress card so the "Details" affordance can be
+ * absolutely positioned over its top-right corner. Mirrors the card's own
+ * responsive width (582px, narrowing to 480px at ≤1440px) so the wrapper stays
+ * flush to the card — keeping `.detailsBtn` aligned to the card's right edge and
+ * the card the same width as the participants button row, which also narrows to
+ * 480px at ≤1440px. */
+.progressWrap {
+  position: relative;
+  width: 582px;
+  max-width: 100%;
+}
+
+@media (max-width: 1440px) {
+  .progressWrap {
+    width: 100%;
+    max-width: 480px;
+  }
+}
+
+/* "Details" affordance overlaid on the Progress card's top-right corner, level
+ * with the card title. Text-only (no border/background) so it reads as a quiet
+ * secondary action. */
+.detailsBtn {
+  position: absolute;
+  /* Nudge down so the Details text baseline sits on the card title's baseline
+   * (the title is 20px, this is 11px — the offset accounts for the ascent
+   * difference). */
+  top: calc(var(--semantic-spacing-card-padding) + 8px);
+  right: calc(var(--semantic-spacing-card-padding) + 8px);
+  z-index: 3;
+  padding: 0;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.detailsBtn:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.detailsBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+  border-radius: var(--semantic-component-navitem-radius);
+}
+
 .leftCorner,
 .rightCorner {
   pointer-events: none;
@@ -54,7 +106,7 @@
 .rightCorner {
   position: absolute;
   right: var(--primitives-spacing-6);
-  bottom: calc(var(--primitives-spacing-6) + 10px); /* +10px compensates for ~10px layout offset our committer AppShell introduces vs the designer's standalone Hero render; remove if upstream offset is diagnosed and fixed */
+  bottom: var(--primitives-spacing-6); /* bottom gutter, matching the left/right page gutter */
   z-index: 11;
   width: 480px;
   max-width: calc(100vw - var(--primitives-spacing-6) * 2);
@@ -204,6 +256,13 @@
    * card remains in the left column. */
   .hideOnMobileStack {
     display: none;
+  }
+
+  /* Summary (Progress) card stretches full-width on mobile — lifts the ≤1440px
+   * 480px cap so it matches the other full-width stacked panels. */
+  .progressWrap {
+    width: 100%;
+    max-width: none;
   }
 
   .mobileParticipateCard {

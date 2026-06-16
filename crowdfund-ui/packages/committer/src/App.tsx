@@ -874,7 +874,12 @@ export function App() {
           mobileMenu={mobileMenu}
           bare
         >
-          <ObserveView state={contractState} events={events} provider={provider} />
+          <ObserveView
+            state={contractState}
+            events={events}
+            eventsLoading={eventsLoading}
+            provider={provider}
+          />
         </AppShell>
         {participateModal}
       </>

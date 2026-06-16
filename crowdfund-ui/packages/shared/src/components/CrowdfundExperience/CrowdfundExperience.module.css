@@ -34,6 +34,13 @@
   display: none;
 }
 
+/* Mobile-only frosted band behind the floating header so content scrolling
+ * under the transparent header doesn't bleed through. Hidden on desktop;
+ * shown in the ≤767px block below. Mirrors the Observe page's header backdrop. */
+.mobileHeaderBackdrop {
+  display: none;
+}
+
 /* Wraps the @armada/ui Progress card so the "Details" affordance can be
  * absolutely positioned over its top-right corner. Mirrors the card's own
  * responsive width (582px, narrowing to 480px at ≤1440px) so the wrapper stays
@@ -183,6 +190,23 @@
     min-height: 100vh;
     overflow-x: hidden;
     overflow-y: auto;
+  }
+
+  /* Frosted band behind the floating header (below it at z-30, above content),
+   * masked to fade out below the header band so it's near-invisible unscrolled. */
+  .mobileHeaderBackdrop {
+    display: block;
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    height: 120px;
+    z-index: 30;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--semantic-color-surface-default) 70%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
   }
 
   .experienceLayout {

@@ -806,6 +806,7 @@ export function CrowdfundExperience({
 
   return (
     <div className={[mpStyles.page, shellStyles.page].join(' ')}>
+      <div className={shellStyles.mobileHeaderBackdrop} aria-hidden />
       {header === undefined ? (
         // Default header — used by the showcase / standalone mockup preview.
         // Consuming apps pass their own `header` slot (or `null`) to avoid

@@ -25,6 +25,14 @@
   max-width: 480px;
 }
 
+/* The flow card (first child) centers horizontally even when it's narrower
+ * than the stack — the stack's `align-items: stretch` otherwise left-packs a
+ * max-width-capped card (e.g. the 480px landing card when the stack goes
+ * full-width on tablet-width mobile). The footer keeps the stretch alignment. */
+.stack > :first-child {
+  align-self: center;
+}
+
 .footer {
   display: flex;
   flex-direction: column;

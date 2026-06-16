@@ -134,6 +134,11 @@
   .card {
     height: auto;
     min-height: min(500px, 70dvh);
+    /* Explicit fill column — the global `mobile-layout.css` [data-flow-shell]
+     * reflow forces `justify-content: flex-start` (it targets flex shells),
+     * which would otherwise left-pack this grid's auto column in the now
+     * full-width card, shifting the content off-center. */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .cardLanding {

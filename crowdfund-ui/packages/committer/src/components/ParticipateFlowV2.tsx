@@ -30,6 +30,7 @@ import {
   type HopStatsData,
   type HopVariant,
 } from '@armada/crowdfund-shared'
+import { FooterSocials } from '@/components/FooterSocials'
 import { getHubNetworkLabel } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
@@ -600,6 +601,7 @@ export function ParticipateFlowV2({
         <ParticipateFlowInviteSlots
           sections={inviteSlotSections}
           onDoItLater={onGoToMyPosition}
+          socials={<FooterSocials />}
         />
       )
     }

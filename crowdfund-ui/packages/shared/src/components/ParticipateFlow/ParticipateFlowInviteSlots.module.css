@@ -20,7 +20,9 @@
 
 .footer {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-4);
   width: 100%;
 }
 

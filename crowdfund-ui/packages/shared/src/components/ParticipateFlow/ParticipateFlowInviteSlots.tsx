@@ -1,6 +1,7 @@
 // ABOUTME: Modal-bound invite-slots step — renders one section per eligible hop, each with its own SlotCard list. Single-hop wallets see one un-headered section (designer-mockup behavior); multi-hop wallets see headered sections stacked vertically.
 // ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteSlots.tsx) and extended with the `sections` prop in place of the original flat slot/handlers props.
 
+import { type ReactNode } from 'react'
 import SlotCard from '../InviteFlow/screens/SlotCard'
 import { Button } from '@armada/ui'
 import type { CrowdfundInviteSlotSection } from '../CrowdfundExperience/CrowdfundExperience'
@@ -12,11 +13,14 @@ export interface ParticipateFlowInviteSlotsProps {
    *  handlers. Pass an empty array for the "no invite slots" empty state. */
   sections: ReadonlyArray<CrowdfundInviteSlotSection>
   onDoItLater?: () => void
+  /** Rendered beneath the "Return" button — e.g. social links. */
+  socials?: ReactNode
 }
 
 export function ParticipateFlowInviteSlots({
   sections,
   onDoItLater,
+  socials,
 }: ParticipateFlowInviteSlotsProps) {
   // The wallet has no slot capacity at any hop (e.g. hop-2 invitee who can't
   // re-invite). Render the centered empty message in the shell.
@@ -93,6 +97,7 @@ export function ParticipateFlowInviteSlots({
             showIcon={false}
             onClick={onDoItLater}
           />
+          {socials}
         </div>
       )}
     </div>

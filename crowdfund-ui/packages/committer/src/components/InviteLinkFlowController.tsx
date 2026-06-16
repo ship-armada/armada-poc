@@ -35,6 +35,7 @@ import {
 // another consumer needs them.
 import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
+import { FooterSocials } from '@/components/FooterSocials'
 import { getHubRpcUrls, getHubChainId, getHubNetworkLabel, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
@@ -543,6 +544,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
           <ParticipateFlowInviteSlots
             sections={inviteSlots.sections}
             onDoItLater={() => navigate('/?view=myposition')}
+            socials={<FooterSocials />}
           />
         )
 

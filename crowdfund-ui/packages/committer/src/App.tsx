@@ -12,13 +12,10 @@ import {
   useGraphState,
   useENS,
   AppShell,
-  Separator,
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
   CROWDFUND_CONSTANTS,
-  formatUsdc,
-  formatArm,
   formatTimeLeft,
   formatTimeLeftDetail,
   truncateAddress,
@@ -45,6 +42,7 @@ import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { ObserveView } from '@/components/ObserveView'
+import { CommitterMobileMenu } from '@/components/CommitterMobileMenu'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
@@ -753,24 +751,17 @@ export function App() {
     </div>
   )
 
-  const mobileMenu = (
-    <div className="flex flex-col gap-3">
-      <PageNav current={page} onChange={setPage} orientation="vertical" />
-      <Separator />
-      {wallet.connected ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Balance</span>
-          <span>{formatUsdc(allowance.balance)}</span>
-          {allowance.armBalance > 0n && (
-            <span className="text-muted-foreground">
-              {formatArm(allowance.armBalance)} ARM
-            </span>
-          )}
-          <Separator className="my-2" />
-        </div>
-      ) : null}
-      <HeaderWalletButton className="w-full justify-center" usdcBalance={allowance.balance} />
-    </div>
+  const mobileMenu = (close: () => void) => (
+    <CommitterMobileMenu
+      onClose={close}
+      current={page}
+      onNavigate={setPage}
+      onParticipate={openParticipate}
+      onClaim={() => setPage('claim')}
+      claimAvailable={claimReady}
+      participationEnabled={windowOpen}
+      usdcBalance={allowance.balance}
+    />
   )
 
   const headerNav = <PageNav current={page} onChange={setPage} />

@@ -1,0 +1,236 @@
+/* ABOUTME: CSS Module for CommitterMobileMenu — full-screen gradient mobile menu panel. */
+/* ABOUTME: Ported from the armada-crowdfund mockup's HeaderMobileMenu.module.css; panel fills the host Sheet. */
+
+.panel {
+  position: absolute;
+  inset: 0;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    180deg,
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-amber) 100%
+  );
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.topBar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5) 0;
+  box-sizing: border-box;
+}
+
+.logoMark {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  color: var(--primitives-color-white-full);
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-12);
+  height: var(--primitives-spacing-12);
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primitives-color-white-full) 20%, transparent);
+  color: var(--primitives-color-white-full);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid var(--primitives-color-white-full);
+  outline-offset: 2px;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding:
+    var(--primitives-spacing-4)
+    var(--primitives-spacing-5)
+    var(--primitives-spacing-8);
+  box-sizing: border-box;
+}
+
+.sectionSpacing {
+  margin-bottom: calc(
+    (var(--primitives-spacing-12) + var(--primitives-spacing-2) - 1px) / 2
+  );
+}
+
+.separator {
+  width: 100%;
+  height: 1px;
+  margin: 0 0 calc((var(--primitives-spacing-12) + var(--primitives-spacing-2) - 1px) / 2);
+  padding: 0;
+  border: none;
+  background: color-mix(in srgb, var(--primitives-color-white-full) 30%, transparent);
+  flex-shrink: 0;
+}
+
+.walletBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  text-align: center;
+}
+
+.walletBlockDisconnected {
+  align-items: stretch;
+}
+
+.walletBlockDisconnected .connectWalletBtn {
+  width: 100%;
+  background: var(--semantic-color-surface-bg);
+  color: var(--primitives-color-white-full);
+  border-color: transparent;
+}
+
+.walletBlockDisconnected .connectWalletBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--semantic-color-surface-bg) 88%, var(--primitives-color-white-full));
+  color: var(--primitives-color-white-full);
+}
+
+.walletBlockDisconnected .connectWalletBtn:active:not(:disabled) {
+  background: var(--semantic-color-surface-bg);
+  color: var(--primitives-color-white-full);
+}
+
+.walletIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-16);
+  height: var(--primitives-spacing-16);
+}
+
+.walletAddress {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  color: var(--primitives-color-white-full);
+  line-height: var(--primitives-lineHeight-snug);
+  font-variant-numeric: tabular-nums;
+}
+
+.walletBalance {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: color-mix(in srgb, var(--primitives-color-white-full) 80%, transparent);
+}
+
+.walletActions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-3);
+  margin-top: var(--primitives-spacing-2);
+}
+
+.roundActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-12);
+  height: var(--primitives-spacing-12);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primitives-color-white-full) 20%, transparent);
+  color: var(--primitives-color-white-full);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.roundActionBtn:hover {
+  background: color-mix(in srgb, var(--primitives-color-white-full) 28%, transparent);
+}
+
+.roundActionBtn:focus-visible {
+  outline: 2px solid var(--primitives-color-white-full);
+  outline-offset: 2px;
+}
+
+.roundActionBtnCopied {
+  background: color-mix(in srgb, var(--primitives-color-white-full) 32%, transparent);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-8);
+  width: 100%;
+  max-width: 300px;
+}
+
+.navItem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: var(--semantic-component-navitem-height);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--primitives-color-white-full);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: calc(var(--primitives-fontSize-xl) * 1.4px);
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.navItem:hover {
+  color: color-mix(in srgb, var(--primitives-color-white-full) 88%, transparent);
+}
+
+.navItemActive {
+  padding: 0 var(--primitives-spacing-6);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--primitives-color-white-full);
+  color: var(--semantic-color-surface-bg);
+}
+
+.navItemActive:hover {
+  color: var(--semantic-color-surface-bg);
+}
+
+.participateCard {
+  width: 100% !important;
+  max-width: none;
+  height: 240px !important;
+  flex-shrink: 0;
+}
+
+.claimBtn {
+  align-self: center;
+}

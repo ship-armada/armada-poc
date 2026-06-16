@@ -207,6 +207,11 @@ export type {
 export { Participate } from './components/Participate/index.js'
 export type { ParticipateProps } from './components/Participate/index.js'
 
+// Hero media assets — re-exported as URL strings so consuming apps can pass
+// them to <Participate imageSrc=… videoSrc=… /> (e.g. the committer mobile menu).
+export { default as fleetPng } from './assets/fleet.png'
+export { default as fleetMp4 } from './assets/fleet.mp4'
+
 export {
   MyPosition,
   MyPositionHero,

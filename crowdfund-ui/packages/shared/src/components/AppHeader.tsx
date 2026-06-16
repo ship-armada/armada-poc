@@ -1,16 +1,14 @@
-// ABOUTME: Shared app header — fixed 56px bar with ArmadaLogo, logo-adjacent nav, mobile sheet, and slotted chrome.
+// ABOUTME: Shared app header — fixed 56px bar with ArmadaLogo, logo-adjacent nav, full-screen mobile menu, and slotted chrome.
 // ABOUTME: Visual layout mirrors @armada/ui's Header at designer HEAD; preserves the slot props the committer/observer rely on for dynamic content.
 
-import { type ReactNode } from 'react'
-import { Menu } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Bars3Icon } from '@heroicons/react/24/outline'
 import { ArmadaLogo, Tag } from '@armada/ui'
 import { Button } from './ui/button.js'
-import { Separator } from './ui/separator.js'
 import {
   Sheet,
   SheetTrigger,
   SheetContent,
-  SheetHeader,
   SheetTitle,
   SheetDescription,
 } from './ui/sheet.js'
@@ -42,10 +40,11 @@ export interface AppHeaderProps {
    */
   headerRight?: ReactNode
   /**
-   * Mobile Sheet contents, rendered when the hamburger is tapped. Omit to
-   * suppress the hamburger trigger entirely.
+   * Mobile menu contents, rendered full-screen when the hamburger is tapped.
+   * May be a node, or a render function receiving a `close` callback so menu
+   * actions can dismiss the Sheet. Omit to suppress the hamburger entirely.
    */
-  mobileMenu?: ReactNode
+  mobileMenu?: ReactNode | ((close: () => void) => ReactNode)
   className?: string
 }
 
@@ -58,6 +57,7 @@ export function AppHeader({
   mobileMenu,
   className,
 }: AppHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <header
       className={cn(
@@ -74,31 +74,32 @@ export function AppHeader({
       <div className="flex shrink-0 items-center gap-6">
         <div className="flex items-center gap-2.5">
           {mobileMenu !== undefined && (
-            <Sheet>
+            <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
               <SheetTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="sm:hidden"
+                  className="md:hidden"
                   aria-label="Open menu"
                 >
-                  <Menu className="size-5" />
+                  <Bars3Icon className="size-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-80 sm:max-w-sm">
-                <SheetHeader>
-                  <SheetTitle>ARMADA</SheetTitle>
-                  <SheetDescription>{appName}</SheetDescription>
-                </SheetHeader>
-                <div className="flex flex-col gap-3 px-4 pb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">Network</span>
-                    <Tag label={network} />
-                  </div>
-                  <Separator />
-                  {mobileMenu}
-                </div>
+              <SheetContent
+                side="left"
+                showCloseButton={false}
+                className="inset-0 h-full w-full max-w-none gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-none"
+              >
+                {/* Radix Dialog requires a title + description for a11y; the menu
+                    renders its own visible chrome, so these stay sr-only. */}
+                <SheetTitle className="sr-only">{appName} menu</SheetTitle>
+                <SheetDescription className="sr-only">
+                  Navigation and wallet actions
+                </SheetDescription>
+                {typeof mobileMenu === 'function'
+                  ? mobileMenu(() => setMenuOpen(false))
+                  : mobileMenu}
               </SheetContent>
             </Sheet>
           )}
@@ -107,14 +108,14 @@ export function AppHeader({
 
         {/* Desktop nav — grouped with the logo on the left, per the designer's Hero header. */}
         {headerNav && (
-          <nav aria-label="Primary" className="hidden items-center sm:flex">
+          <nav aria-label="Primary" className="hidden items-center md:flex">
             {headerNav}
           </nav>
         )}
       </div>
 
       {/* Right: status slot + network badge + app-specific actions (desktop only) */}
-      <div className="hidden shrink-0 items-center gap-3 sm:flex">
+      <div className="hidden shrink-0 items-center gap-3 md:flex">
         {headerStatus && <div className="flex h-full items-center">{headerStatus}</div>}
         <Tag label={network} />
         {headerRight}

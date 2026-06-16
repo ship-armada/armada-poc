@@ -31,10 +31,11 @@ export interface AppShellProps {
    */
   headerRight?: ReactNode
   /**
-   * Mobile Sheet contents, rendered when the hamburger is tapped. Omit to
-   * suppress the hamburger trigger entirely.
+   * Mobile menu contents, rendered full-screen when the hamburger is tapped.
+   * May be a node, or a render function receiving a `close` callback so menu
+   * actions can dismiss the menu. Omit to suppress the hamburger entirely.
    */
-  mobileMenu?: ReactNode
+  mobileMenu?: ReactNode | ((close: () => void) => ReactNode)
   /** Override the default footer. Pass `null` to hide the footer altogether. */
   footer?: ReactNode
   /**

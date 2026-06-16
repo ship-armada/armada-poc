@@ -252,3 +252,46 @@
     padding-right: var(--primitives-spacing-2);
   }
 }
+
+/* Mobile (≤767px) — ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .card {
+    width: 100%;
+    max-width: none;
+    gap: var(--primitives-spacing-10);
+  }
+
+  .tags {
+    flex-wrap: wrap;
+    row-gap: var(--primitives-spacing-2);
+  }
+
+  .barWrapper {
+    overflow: visible;
+  }
+
+  .barLabels {
+    height: auto;
+    min-height: var(--primitives-spacing-8);
+    align-items: flex-end;
+  }
+
+  .labelLeft {
+    gap: var(--primitives-spacing-5);
+    align-items: flex-end;
+    padding-right: var(--primitives-spacing-3);
+  }
+
+  .stat {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--primitives-spacing-1);
+  }
+
+  .statKey {
+    font-size: calc(var(--primitives-fontSize-xs) * 1px);
+    font-weight: var(--primitives-fontWeight-medium);
+    letter-spacing: var(--primitives-letterSpacing-widest);
+    text-transform: uppercase;
+  }
+}

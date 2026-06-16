@@ -163,3 +163,23 @@
   line-height: 1.5;
   max-width: 36ch;
 }
+
+/* Mobile (≤767px) — top-aligned with header-clearing top padding. Ported from
+ * the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .page {
+    justify-content: flex-start;
+    padding:
+      calc(56px + var(--primitives-spacing-5))
+      var(--primitives-spacing-5)
+      var(--primitives-spacing-6);
+  }
+
+  .logo {
+    margin-bottom: var(--primitives-spacing-8);
+  }
+
+  .stack {
+    max-width: none;
+  }
+}

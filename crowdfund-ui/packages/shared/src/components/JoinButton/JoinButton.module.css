@@ -74,3 +74,33 @@
   padding: var(--primitives-spacing-5) var(--primitives-spacing-5) var(--primitives-spacing-5)
     var(--primitives-spacing-6);
 }
+
+/* Touch devices — collapse hover/expanded to icon-only so the button doesn't
+ * get stuck expanded. Ported from the armada-crowdfund mockup mobile rework. */
+@media (hover: none), (pointer: coarse) {
+  .button:hover,
+  .button.expanded {
+    width: 56px;
+    padding: 16px 20px;
+    gap: 0;
+  }
+
+  .button:hover .label,
+  .button.expanded .label {
+    opacity: 0;
+    width: 0;
+  }
+
+  .lg:hover,
+  .lg.expanded {
+    width: var(--primitives-spacing-16);
+    padding: var(--primitives-spacing-5);
+    gap: 0;
+  }
+
+  .lg:hover .label,
+  .lg.expanded .label {
+    opacity: 0;
+    width: 0;
+  }
+}

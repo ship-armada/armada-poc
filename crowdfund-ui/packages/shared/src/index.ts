@@ -34,6 +34,7 @@ export {
 } from './lib/amountInput.js'
 
 export {
+  MOBILE_LAYOUT_MAX_WIDTH_PX,
   LAPTOP_LAYOUT_MAX_WIDTH_PX,
   SHORT_VIEWPORT_MAX_HEIGHT_PX,
 } from './lib/viewportBreakpoints.js'

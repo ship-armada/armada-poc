@@ -248,6 +248,11 @@
   .layout {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(360px, 45vh) auto;
+    padding:
+      calc(56px + var(--primitives-spacing-5))
+      var(--primitives-spacing-5)
+      var(--primitives-spacing-6);
+    gap: var(--primitives-spacing-5);
   }
 
   .sphereFrame {
@@ -256,6 +261,7 @@
 
   .sidebarStack {
     height: auto;
+    gap: var(--primitives-spacing-5);
   }
 
   .inviteCard {

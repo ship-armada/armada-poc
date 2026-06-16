@@ -122,6 +122,17 @@
   border: 2px solid var(--semantic-color-border-default);
 }
 
+/* Mobile (≤767px) — ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .content {
+    gap: var(--primitives-spacing-6);
+  }
+
+  .footer {
+    margin-top: var(--primitives-spacing-2);
+  }
+}
+
 /* Done check */
 .check {
   width: 18px;

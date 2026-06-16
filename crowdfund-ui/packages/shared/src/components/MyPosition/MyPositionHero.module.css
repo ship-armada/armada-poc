@@ -10,6 +10,17 @@
   overflow: hidden;
 }
 
+/* Mobile (≤767px) — page scrolls instead of locking to viewport height.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .page {
+    height: auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+}
+
 .headerOverride {
   background: transparent !important;
   backdrop-filter: none !important;
@@ -375,5 +386,14 @@
 
   .rightCorner {
     width: min(480px, calc(40vw - var(--primitives-spacing-6)));
+  }
+}
+
+/* Mobile (≤767px) — position card goes fluid. Ported from the mockup. */
+@media (max-width: 767px) {
+  .positionCard {
+    width: 100%;
+    height: auto;
+    min-height: 0;
   }
 }

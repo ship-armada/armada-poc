@@ -24,7 +24,7 @@ import {
   formatArmAllocation,
   formatUsdcCommitted,
 } from '../MyPosition/myPositionDemo'
-import { NodeSphere } from '../NodeSphere/NodeSphere'
+import { NodeSphere, isWebglForcedOff } from '../NodeSphere/NodeSphere'
 import { hopPillDotColor } from '../../lib/graphHopColors'
 import { CROWDFUND_CONSTANTS } from '../../lib/constants'
 import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints'
@@ -412,6 +412,11 @@ export function CrowdfundExperience({
   // Defer the WebGL NodeSphere mount on mobile (via requestIdleCallback) so it
   // doesn't block first paint; desktop mounts it immediately.
   const [mountGraph, setMountGraph] = useState(() => !isMobileLayout())
+  // WebGL unavailable (forced off via `?nowebgl`, unsupported, or context lost).
+  // Seeded synchronously from the URL override so the graph card never flashes
+  // before being dropped on mobile; NodeSphere flips it via `onWebglUnavailable`
+  // for runtime failures.
+  const [graphUnavailable, setGraphUnavailable] = useState(isWebglForcedOff)
   const panelTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Live data takes precedence when supplied. `loading` mode renders a
@@ -831,9 +836,17 @@ export function CrowdfundExperience({
           .filter(Boolean)
           .join(' ')}
       >
-        <div className={shellStyles.graphHost}>
+        <div
+          className={[
+            shellStyles.graphHost,
+            graphUnavailable && shellStyles.graphHostHiddenMobile,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
           {mountGraph && !(isMyPosition && isMobileLayout()) ? (
             <NodeSphere
+              onWebglUnavailable={() => setGraphUnavailable(true)}
               highlightAddress={
                 isGraphMyPosition ? selectedAddress ?? myPositionWalletAddress : selectedAddress
               }

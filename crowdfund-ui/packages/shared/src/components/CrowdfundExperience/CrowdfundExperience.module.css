@@ -237,6 +237,13 @@
     z-index: 1;
   }
 
+  /* WebGL unavailable (`?nowebgl` / unsupported / context lost) — drop the graph
+   * card entirely on mobile rather than showing the static fallback splash.
+   * Desktop keeps the fallback (the graph host is the full-bleed background). */
+  .graphHostHiddenMobile {
+    display: none;
+  }
+
   .leftCorner {
     position: relative;
     order: 1;

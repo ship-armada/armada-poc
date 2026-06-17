@@ -53,7 +53,7 @@ const isArmadaSentinel = (s: string | null | undefined): boolean =>
 
 /** QA override: `?nowebgl` (or `?webgl=off`) forces the static fallback so the
  *  no-WebGL path can be previewed without disabling WebGL in the browser. */
-function isWebglForcedOff(): boolean {
+export function isWebglForcedOff(): boolean {
   if (typeof window === 'undefined') return false
   const params = new URLSearchParams(window.location.search)
   return params.has('nowebgl') || params.get('webgl') === 'off'
@@ -272,6 +272,13 @@ export interface NodeSphereProps {
    * for local mode where no explorer exists.
    */
   etherscanBaseUrl?: string
+  /**
+   * Fires when WebGL is unavailable — forced off via `?nowebgl`/`?webgl=off`,
+   * unsupported at init, or the context is lost at runtime. Lets the host hide
+   * the graph surface entirely instead of showing the static fallback (the
+   * crowdfund hero uses this to drop the graph card on mobile).
+   */
+  onWebglUnavailable?: () => void
 }
 
 export function NodeSphere({
@@ -290,6 +297,7 @@ export function NodeSphere({
   lockOnWallet = false,
   inviteGraph = false,
   etherscanBaseUrl,
+  onWebglUnavailable,
 }: NodeSphereProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
@@ -298,6 +306,14 @@ export function NodeSphere({
   // the component renders a static background instead of the 3D graph. Seeded
   // from the `?nowebgl` QA override so the fallback can be previewed on demand.
   const [webglFailed, setWebglFailed] = useState(isWebglForcedOff)
+
+  // Notify the host when WebGL is unavailable (forced off via `?nowebgl`,
+  // unsupported at init, or context lost) so it can hide the graph surface
+  // rather than render the static fallback.
+  useEffect(() => {
+    if (webglFailed) onWebglUnavailable?.()
+  }, [webglFailed, onWebglUnavailable])
+
   const hoverActiveRef = useRef(false)
   const isDraggingRef = useRef(false)
   const highlightRef = useRef<string | undefined>(highlightAddress)

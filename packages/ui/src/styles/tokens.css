@@ -255,7 +255,7 @@
   --semantic-component-tag-dot-lavender: var(--semantic-color-brand-lavender);
 }
 
-/* Light theme — values TBD; duplicated from dark so nothing breaks */
+/* Light theme — real values ported from the armada-crowdfund mockup (commit c9f5807). */
 [data-theme="light"] {
   /* Primitives */
   --primitives-color-purple-50: #f5eefb;
@@ -278,25 +278,25 @@
   --primitives-color-amber-700: #8f5e1c;
   --primitives-color-amber-800: #634213;
   --primitives-color-amber-900: #3d280b;
-  --primitives-color-neutral-0: #0e0d0f;
-  --primitives-color-neutral-50: #151416;
-  --primitives-color-neutral-100: #1d1c1f;
-  --primitives-color-neutral-200: #2a2830;
-  --primitives-color-neutral-300: #3d3a45;
-  --primitives-color-neutral-400: #5c5869;
-  --primitives-color-neutral-500: #7d7a8a;
-  --primitives-color-neutral-600: #9d9aaa;
-  --primitives-color-neutral-700: #c0bece;
-  --primitives-color-neutral-800: #e0deea;
-  --primitives-color-white-low: rgba(255,255,255,0.18);
-  --primitives-color-white-mid: rgba(255,255,255,0.45);
-  --primitives-color-white-high: rgba(255,255,255,0.87);
-  --primitives-color-white-70: rgba(255,255,255,0.7);
-  --primitives-color-white-full: #ffffff;
-  --primitives-color-status-success: #34d399;
-  --primitives-color-status-warning: #fbbf24;
-  --primitives-color-status-error: #f87171;
-  --primitives-color-status-info: #60a5fa;
+  --primitives-color-neutral-0: #f1eeee;
+  --primitives-color-neutral-50: #ffffff;
+  --primitives-color-neutral-100: #f7f5f5;
+  --primitives-color-neutral-200: #e8e3e3;
+  --primitives-color-neutral-300: #ccc1c1;
+  --primitives-color-neutral-400: #a99393;
+  --primitives-color-neutral-500: #8d7272;
+  --primitives-color-neutral-600: #6c5656;
+  --primitives-color-neutral-700: #4b3a3a;
+  --primitives-color-neutral-800: #2e2323;
+  --primitives-color-white-low: rgba(0,0,0,0.08);
+  --primitives-color-white-mid: rgba(0,0,0,0.45);
+  --primitives-color-white-high: rgba(0,0,0,0.78);
+  --primitives-color-white-70: rgba(0,0,0,0.70);
+  --primitives-color-white-full: #2e2323;
+  --primitives-color-status-success: #1aab74;
+  --primitives-color-status-warning: #b8860f;
+  --primitives-color-status-error: #dc2626;
+  --primitives-color-status-info: #2563eb;
   --primitives-fontSize-xs: 10;
   --primitives-fontSize-sm: 11;
   --primitives-fontSize-base: 13;
@@ -346,7 +346,6 @@
   --primitives-borderRadius-xl: 12;
   --primitives-borderRadius-full: 999;
   --primitives-borderWidth-default: 1;
-
   /* Semantic */
   --semantic-color-brand-deep: var(--primitives-color-purple-900);
   --semantic-color-brand-lavender: var(--primitives-color-purple-500);
@@ -356,20 +355,20 @@
   --semantic-color-surface-default: var(--primitives-color-neutral-50);
   --semantic-color-surface-raised: var(--primitives-color-neutral-100);
   --semantic-color-surface-hover: var(--primitives-color-neutral-100);
-  --semantic-color-border-default: rgba(255,255,255,0.07);
-  --semantic-color-border-lavender: rgba(196,145,229,0.14);
-  --semantic-color-border-amber: rgba(243,208,160,0.14);
-  --semantic-color-border-focus: var(--primitives-color-purple-500);
+  --semantic-color-border-default: rgba(46,35,35,0.10);
+  --semantic-color-border-lavender: rgba(107,63,160,0.18);
+  --semantic-color-border-amber: rgba(143,94,28,0.18);
+  --semantic-color-border-focus: var(--primitives-color-purple-700);
   --semantic-color-text-primary: var(--primitives-color-white-full);
   --semantic-color-text-secondary: var(--primitives-color-white-70);
   --semantic-color-text-muted: var(--primitives-color-white-mid);
   --semantic-color-text-dim: var(--primitives-color-white-low);
-  --semantic-color-text-lavender: var(--primitives-color-purple-500);
-  --semantic-color-text-amber: var(--primitives-color-amber-300);
-  --semantic-color-status-success: #34d399;
-  --semantic-color-status-warning: #fbbf24;
-  --semantic-color-status-error: #f87171;
-  --semantic-color-status-info: #60a5fa;
+  --semantic-color-text-lavender: var(--primitives-color-purple-700);
+  --semantic-color-text-amber: var(--primitives-color-amber-700);
+  --semantic-color-status-success: #1aab74;
+  --semantic-color-status-warning: #b8860f;
+  --semantic-color-status-error: #dc2626;
+  --semantic-color-status-info: #2563eb;
   --semantic-spacing-card-padding: var(--primitives-spacing-6);
   --semantic-spacing-section-gap: var(--primitives-spacing-10);
   --semantic-spacing-component-gap: var(--primitives-spacing-3);
@@ -383,7 +382,7 @@
   --semantic-component-button-primary-bg-hover: var(--primitives-color-purple-400);
   --semantic-component-button-primary-bg-active: var(--primitives-color-purple-600);
   --semantic-component-button-primary-bg-disabled: var(--primitives-color-neutral-100);
-  --semantic-component-button-primary-text: var(--primitives-color-neutral-0);
+  --semantic-component-button-primary-text: #291433;
   --semantic-component-button-primary-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-button-primary-border: rgba(0,0,0,0);
   --semantic-component-button-primary-sm-height: var(--primitives-spacing-8);
@@ -409,8 +408,8 @@
   --semantic-component-button-secondary-bg-active: var(--primitives-color-neutral-200);
   --semantic-component-button-secondary-text: var(--primitives-color-white-full);
   --semantic-component-button-secondary-text-disabled: var(--primitives-color-neutral-400);
-  --semantic-component-button-secondary-border: rgba(255,255,255,0.14);
-  --semantic-component-button-secondary-border-hover: rgba(255,255,255,0.28);
+  --semantic-component-button-secondary-border: rgba(46,35,35,0.14);
+  --semantic-component-button-secondary-border-hover: rgba(46,35,35,0.28);
   --semantic-component-button-secondary-sm-height: var(--primitives-spacing-8);
   --semantic-component-button-secondary-sm-padding-x: var(--primitives-spacing-4);
   --semantic-component-button-secondary-sm-padding-x-icon: 16px;
@@ -452,7 +451,7 @@
   --semantic-component-button-ghost-lg-font-size: 15px;
   --semantic-component-button-ghost-lg-icon-gap: 6px;
   --semantic-component-button-ghost-lg-radius: var(--primitives-borderRadius-full);
-  --semantic-component-button-gradient-text: var(--primitives-color-neutral-0);
+  --semantic-component-button-gradient-text: #291433;
   --semantic-component-button-gradient-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-button-gradient-default-from: var(--primitives-color-purple-300);
   --semantic-component-button-gradient-default-to: var(--primitives-color-amber-300);
@@ -465,7 +464,7 @@
   --semantic-component-navbar-padding-x: 0px;
   --semantic-component-navbar-gap: 4px;
   --semantic-component-navitem-default-bg: rgba(0,0,0,0);
-  --semantic-component-navitem-default-bg-hover: #211f24;
+  --semantic-component-navitem-default-bg-hover: #ebe5e5;
   --semantic-component-navitem-default-text: var(--primitives-color-white-mid);
   --semantic-component-navitem-default-text-hover: var(--primitives-color-white-full);
   --semantic-component-navitem-active-bg: rgba(196,145,229,0.2);
@@ -476,7 +475,7 @@
   --semantic-component-navitem-radius: 100px;
   --semantic-component-navitem-font-size: 12px;
   --semantic-component-tag-bg: #202022;
-  --semantic-component-tag-label: var(--primitives-color-white-full);
+  --semantic-component-tag-label: #ffffff;
   --semantic-component-tag-padding-x: 12px;
   --semantic-component-tag-padding-y: 4px;
   --semantic-component-tag-gap: 8px;

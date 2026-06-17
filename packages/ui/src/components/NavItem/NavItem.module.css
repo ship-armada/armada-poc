@@ -23,3 +23,19 @@
 .navItem:hover:not(.active) { background: var(--semantic-component-navitem-default-bg-hover); color: var(--semantic-component-navitem-default-text-hover); }
 .navItem:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
 .active { background: var(--semantic-component-navitem-active-bg); color: var(--semantic-component-navitem-active-text); }
+
+/* Light theme — muted default text, lavender active pill with dark text. The
+   mockup applied these to the base rule; we scope to light so dark stays
+   token-driven and byte-identical. */
+:global([data-theme='light']) .navItem {
+  color: var(--semantic-color-text-muted);
+}
+:global([data-theme='light']) .navItem:hover:not(.active) {
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+}
+:global([data-theme='light']) .active,
+:global([data-theme='light']) .active:hover {
+  background: var(--semantic-color-brand-lavender);
+  color: #291433;
+}

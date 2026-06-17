@@ -9,6 +9,18 @@
   gap: var(--primitives-spacing-2);
 }
 
+:global([data-theme='light']) .root .trigger {
+  background: var(--semantic-color-surface-bg);
+}
+
+:global([data-theme='light']) .root .trigger:hover:not(:disabled) {
+  background: var(--semantic-color-surface-hover);
+}
+
+:global([data-theme='light']) .root .trigger:active:not(:disabled) {
+  background: var(--semantic-color-surface-hover);
+}
+
 .triggerIcon {
   display: flex;
   align-items: center;

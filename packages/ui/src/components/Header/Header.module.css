@@ -56,3 +56,11 @@
   background: var(--semantic-component-navitem-active-bg) !important;
   color: var(--semantic-component-navitem-active-text) !important;
 }
+
+/* Light theme — lavender active pill with dark text. Scoped to light so dark
+   stays token-driven; the mockup applied this to the base rule. */
+:global([data-theme='light']) .myPositionActive,
+:global([data-theme='light']) .myPositionActive:hover:not(:disabled) {
+  background: var(--semantic-color-brand-lavender) !important;
+  color: #291433 !important;
+}

@@ -42,9 +42,10 @@
 
   /* Splash backdrop behind the node graph / Observe view: the dark hero photo
      reads as a murky smudge on a light surface, so hide just the photo layer and
-     keep a light-tuned wash — a faint brand-lavender glow fading into the page —
-     so the graph still sits on a touch of ambient depth rather than bare surface. */
+     keep a light-tuned wash — a faint brand-lavender vignette frame: clean page
+     in the center, a soft lavender tint fading in at the edges so the graph sits
+     in a subtle frame rather than on bare surface. */
   --splash-image-opacity: 0;
-  --splash-wash-center: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
-  --splash-wash-edge: transparent;
+  --splash-wash-center: transparent;
+  --splash-wash-edge: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
 }

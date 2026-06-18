@@ -34,11 +34,10 @@ export function SplashBackdrop({
         inset: 0,
         zIndex: 0,
         overflow: 'hidden',
-        // The splash is a dark hero photo tuned to recede into a dark page.
-        // Themes can suppress it via --splash-opacity (the committer's light
-        // theme sets 0, since a darkened photo reads as a murky smudge on a
-        // light surface). Defaults to 1 so dark — and observer/admin — are
-        // unchanged.
+        // Master opacity for the whole backdrop. Defaults to 1; a theme can set
+        // --splash-opacity to fade everything at once. (The committer's light
+        // theme keeps this at 1 and instead hides just the photo layer — see
+        // --splash-image-opacity below — so the light-tuned wash still shows.)
         opacity: 'var(--splash-opacity, 1)',
       }}
     >
@@ -55,18 +54,24 @@ export function SplashBackdrop({
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
           filter: `blur(6px) saturate(${saturate}) brightness(${brightness})`,
+          // The darkened photo only works on a dark page; a theme can hide just
+          // this layer (--splash-image-opacity: 0) while keeping the wash below.
+          opacity: 'var(--splash-image-opacity, 1)',
         }}
       />
       {/* Vignette/wash tied to the theme surface so the splash fades into the
-          page background at the edges and the foreground UI stays legible. */}
+          page background at the edges and the foreground UI stays legible. Each
+          stop falls back to the surface-tied default but can be overridden per
+          theme (--splash-wash-center / --splash-wash-edge) — the committer's
+          light theme swaps in a faint brand glow now that the photo is hidden. */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
           background:
             'radial-gradient(ellipse at center,' +
-            ` color-mix(in srgb, var(--semantic-color-surface-default) ${washCenter}%, transparent),` +
-            ` color-mix(in srgb, var(--semantic-color-surface-default) ${washEdge}%, transparent))`,
+            ` var(--splash-wash-center, color-mix(in srgb, var(--semantic-color-surface-default) ${washCenter}%, transparent)),` +
+            ` var(--splash-wash-edge, color-mix(in srgb, var(--semantic-color-surface-default) ${washEdge}%, transparent)))`,
         }}
       />
     </div>

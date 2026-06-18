@@ -40,8 +40,11 @@
   --border: var(--semantic-color-border-default);
   --input: rgba(46, 35, 35, 0.14);
 
-  /* Hide the subdued splash photo behind the node graph / Observe view: it is a
-     dark hero image that reads as a murky smudge on a light surface (and is not
-     in the design reference). The graph sits on the clean light page instead. */
-  --splash-opacity: 0;
+  /* Splash backdrop behind the node graph / Observe view: the dark hero photo
+     reads as a murky smudge on a light surface, so hide just the photo layer and
+     keep a light-tuned wash — a faint brand-lavender glow fading into the page —
+     so the graph still sits on a touch of ambient depth rather than bare surface. */
+  --splash-image-opacity: 0;
+  --splash-wash-center: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+  --splash-wash-edge: transparent;
 }

@@ -58,6 +58,17 @@
   animation: menuIn 160ms ease;
 }
 
+/* Light theme — the surface-bg-tied shadow inverts to a pale 40px halo on a
+   light page, and the transparent spacing-2 padding + item radius then read as a
+   second card framing the menu. Drop the padding so the card fills the menu,
+   match the card's radius so the shadow hugs it, and use a real soft drop
+   shadow. Dark is unaffected (the surface-bg shadow there is genuinely dark). */
+:global([data-theme='light']) .menu {
+  padding: 0;
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  box-shadow: 0 12px 32px rgba(46, 35, 35, 0.16);
+}
+
 @keyframes menuIn {
   from {
     opacity: 0;

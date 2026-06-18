@@ -12,6 +12,10 @@ export interface SplashBackdropProps {
   brightness?: number
   /** Image saturation multiplier (lower = greyer). */
   saturate?: number
+  /** Keep the photo visible even when a theme suppresses it via
+   *  --splash-image-opacity (e.g. light mode). Use where the image *is* the
+   *  content — the no-WebGL fallback — rather than ambient depth behind a graph. */
+  alwaysShowImage?: boolean
 }
 
 /** Subdued static backdrop: a blurred + darkened splash image under a theme-tied
@@ -25,6 +29,7 @@ export function SplashBackdrop({
   washEdge = 86,
   brightness = 0.38,
   saturate = 0.5,
+  alwaysShowImage = false,
 }: SplashBackdropProps) {
   return (
     <div
@@ -56,7 +61,9 @@ export function SplashBackdrop({
           filter: `blur(6px) saturate(${saturate}) brightness(${brightness})`,
           // The darkened photo only works on a dark page; a theme can hide just
           // this layer (--splash-image-opacity: 0) while keeping the wash below.
-          opacity: 'var(--splash-image-opacity, 1)',
+          // `alwaysShowImage` opts out of that suppression where the image is the
+          // content (the no-WebGL fallback), not ambient depth behind a graph.
+          opacity: alwaysShowImage ? 1 : 'var(--splash-image-opacity, 1)',
         }}
       />
       {/* Vignette/wash tied to the theme surface so the splash fades into the

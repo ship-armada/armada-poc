@@ -47,5 +47,5 @@
      in a subtle frame rather than on bare surface. */
   --splash-image-opacity: 0;
   --splash-wash-center: transparent;
-  --splash-wash-edge: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+  --splash-wash-edge: color-mix(in srgb, var(--semantic-color-brand-lavender) 7%, transparent);
 }

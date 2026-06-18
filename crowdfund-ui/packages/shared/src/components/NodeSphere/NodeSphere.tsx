@@ -1307,7 +1307,9 @@ export function NodeSphere({
   // the interactive graph. The graph is decorative, so the surrounding commit /
   // claim / invite flows keep working.
   if (webglFailed) {
-    return <SplashBackdrop />
+    // The image IS the fallback visual here, so keep it even in light mode
+    // (where it's otherwise suppressed behind the live graph).
+    return <SplashBackdrop alwaysShowImage />
   }
 
   return (

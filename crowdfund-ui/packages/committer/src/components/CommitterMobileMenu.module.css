@@ -54,6 +54,35 @@
   outline-offset: 2px;
 }
 
+/* Right-side cluster in the top bar: theme toggle + close. */
+.topBarActions {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.themeToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-12);
+  height: var(--primitives-spacing-12);
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primitives-color-white-full) 20%, transparent);
+  color: var(--primitives-color-white-full);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.themeToggleBtn:focus-visible {
+  outline: 2px solid var(--primitives-color-white-full);
+  outline-offset: 2px;
+}
+
 .scroll {
   flex: 1;
   min-height: 0;

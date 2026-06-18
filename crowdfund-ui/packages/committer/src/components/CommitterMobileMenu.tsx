@@ -1,18 +1,20 @@
 // ABOUTME: Committer full-screen mobile menu — gradient panel with RainbowKit wallet block, nav, and Participate/Claim.
 // ABOUTME: Mobile equivalent of the designer's HeaderMobileMenu, hosted inside AppHeader's full-screen Sheet.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ArrowRightOnRectangleIcon,
   CheckIcon,
   ClipboardDocumentIcon,
+  MoonIcon,
+  SunIcon,
   WalletIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { WalletMetamask, WalletPhantom, WalletWalletConnect } from '@web3icons/react'
 import { useAccount, useDisconnect } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { ArmadaLogo, Button as ArmadaButton } from '@armada/ui'
+import { ArmadaLogo, Button as ArmadaButton, getAppliedTheme, setTheme, type Theme } from '@armada/ui'
 import { Participate, fleetPng, fleetMp4 } from '@armada/crowdfund-shared'
 import type { Page } from '@/appNav'
 import styles from './CommitterMobileMenu.module.css'
@@ -20,6 +22,22 @@ import styles from './CommitterMobileMenu.module.css'
 const ACTION_ICON_PX = 20
 const WALLET_ICON_PX = 48
 const PROJECT_URL = 'https://armada.wtf'
+
+function subscribeToTheme(onStoreChange: () => void) {
+  const observer = new MutationObserver(onStoreChange)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
+  return () => observer.disconnect()
+}
+
+/** Current applied theme, reactive to <html data-theme> changes. */
+function useTheme() {
+  const theme = useSyncExternalStore(subscribeToTheme, getAppliedTheme, () => 'dark' as Theme)
+  const applyTheme = useCallback((next: Theme) => setTheme(next), [])
+  return [theme, applyTheme] as const
+}
 
 /** Map a wagmi connector id to the designer's `@web3icons` provider switch. */
 function detectWalletProvider(connectorId?: string): string | undefined {
@@ -77,6 +95,7 @@ export function CommitterMobileMenu({
   const { connector } = useAccount()
   const { disconnect } = useDisconnect()
   const [copied, setCopied] = useState(false)
+  const [theme, applyTheme] = useTheme()
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -97,9 +116,23 @@ export function CommitterMobileMenu({
     <div className={styles.panel}>
       <div className={styles.topBar}>
         <ArmadaLogo variant="mark" markTone="white" className={styles.logoMark} />
-        <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close menu">
-          <XMarkIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
-        </button>
+        <div className={styles.topBarActions}>
+          <button
+            type="button"
+            className={styles.themeToggleBtn}
+            onClick={() => applyTheme(theme === 'light' ? 'dark' : 'light')}
+            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {theme === 'light' ? (
+              <MoonIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
+            ) : (
+              <SunIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
+            )}
+          </button>
+          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close menu">
+            <XMarkIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
+          </button>
+        </div>
       </div>
 
       <div className={styles.scroll}>

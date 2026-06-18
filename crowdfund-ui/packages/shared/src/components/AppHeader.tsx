@@ -97,10 +97,13 @@ export function AppHeader({
                 type="button"
                 variant="ghost"
                 size="icon"
-                // Round white-translucent burger, matching the designer's
-                // `.burgerBtn` and the menu/modal round controls. The className
-                // overrides the shadcn ghost/icon defaults via twMerge.
-                className="size-12 rounded-full bg-white/20 text-white hover:bg-white/30 md:hidden"
+                // Round translucent burger, matching the designer's `.burgerBtn`
+                // and the menu/modal round controls. The className overrides the
+                // shadcn ghost/icon defaults via twMerge. Theme-aware: dark keeps
+                // the white-translucent treatment byte-identical; light flips to a
+                // dark-ink icon + dark-translucent fill so it stays visible on a
+                // light header (the `dark:` variant keys off data-theme).
+                className="size-12 rounded-full bg-black/10 text-foreground hover:bg-black/20 dark:bg-white/20 dark:text-white dark:hover:bg-white/30 md:hidden"
                 aria-label="Open menu"
               >
                 <Bars3Icon className="size-5" />

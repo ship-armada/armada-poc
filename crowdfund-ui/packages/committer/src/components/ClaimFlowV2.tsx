@@ -119,9 +119,16 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const hasUserEditedDelegate = useRef(false)
   // Cancellation for the in-flight claim tx — set on unmount (navigating away
   // from the claim page) so an orphaned run can't pop a wallet prompt. An
-  // already-issued `tx.wait` is allowed to settle.
+  // already-issued `tx.wait` is allowed to settle. The setup resets it to false
+  // on (re)mount so StrictMode's dev mount→cleanup→mount cycle doesn't leave it
+  // stuck `true` — which would silently short-circuit every `runClaim`.
   const cancelledRef = useRef(false)
-  useEffect(() => () => { cancelledRef.current = true }, [])
+  useEffect(() => {
+    cancelledRef.current = false
+    return () => {
+      cancelledRef.current = true
+    }
+  }, [])
   const walletAddressRef = useRef(walletAddress)
   useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
   // Warn before a refresh/tab-close drops the user while a claim is broadcasting.

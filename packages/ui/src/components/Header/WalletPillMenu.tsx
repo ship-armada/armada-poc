@@ -29,6 +29,11 @@ export interface WalletPillMenuProps {
   /** Optional wallet balance label (demo uses 0). */
   usdcBalance?: number
   onDisconnect?: () => void
+  /** Dropdown horizontal anchor. `center` (default) centers the menu under the
+   *  trigger — the mockup default. `right` anchors the menu's right edge to the
+   *  trigger and opens leftward, so it can't overflow the viewport when the pill
+   *  sits at a screen edge (e.g. a header right slot with no trailing CTA). */
+  align?: 'center' | 'right'
 }
 
 const PROVIDER_ICON_PX = 20
@@ -68,6 +73,7 @@ export function WalletPillMenu({
   walletProvider,
   usdcBalance = 0,
   onDisconnect,
+  align = 'center',
 }: WalletPillMenuProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -150,7 +156,11 @@ export function WalletPillMenu({
       </button>
 
       {open && (
-        <div id={menuId} className={styles.menu} role="menu">
+        <div
+          id={menuId}
+          className={[styles.menu, align === 'right' && styles.menuRight].filter(Boolean).join(' ')}
+          role="menu"
+        >
           <div className={styles.card} role="none">
             <div className={styles.cardIdentity}>
               <span className={styles.cardIcon}>

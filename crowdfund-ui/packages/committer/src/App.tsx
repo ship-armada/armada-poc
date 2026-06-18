@@ -157,6 +157,10 @@ function HeaderWalletButton({
             walletProvider={detectWalletProvider(connector?.id)}
             usdcBalance={balanceWhole}
             onDisconnect={() => disconnect()}
+            // Right-anchor the dropdown: the pill is the header's rightmost item
+            // once the Participate CTA is gone (claim period / window closed),
+            // so a centered menu would clip past the screen edge.
+            align="right"
           />
         )
       }}

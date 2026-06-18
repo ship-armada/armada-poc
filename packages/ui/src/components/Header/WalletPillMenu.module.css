@@ -69,6 +69,28 @@
   }
 }
 
+/* Right-anchored variant — menu's right edge sits at the trigger's right edge so
+   it opens leftward and never overflows the viewport at a screen-edge slot. The
+   centered entrance keyframe bakes in translateX(-50%), so use a plain
+   translateY entrance here. */
+.menuRight {
+  left: auto;
+  right: 0;
+  transform: none;
+  animation: menuInRight 160ms ease;
+}
+
+@keyframes menuInRight {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .card {
   background: var(--semantic-color-surface-default);
   border: 1px solid var(--semantic-component-button-secondary-border);

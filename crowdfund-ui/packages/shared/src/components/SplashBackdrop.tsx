@@ -67,9 +67,13 @@ export function SplashBackdrop({
             ` brightness(var(--splash-brightness, ${brightness}))`,
           // The darkened photo only works on a dark page; a theme can hide just
           // this layer (--splash-image-opacity: 0) while keeping the wash below.
-          // `alwaysShowImage` opts out of that suppression where the image is the
-          // content (the no-WebGL fallback), not ambient depth behind a graph.
-          opacity: alwaysShowImage ? 1 : 'var(--splash-image-opacity, 1)',
+          // `alwaysShowImage` opts out of that full suppression where the image is
+          // the content (the no-WebGL fallback) — but still honours its own
+          // --splash-image-shown-opacity so a theme can keep it faint rather than
+          // fully hidden (the committer's light theme fades it to a subtle wash).
+          opacity: alwaysShowImage
+            ? 'var(--splash-image-shown-opacity, 1)'
+            : 'var(--splash-image-opacity, 1)',
         }}
       />
       {/* Vignette/wash tied to the theme surface so the splash fades into the

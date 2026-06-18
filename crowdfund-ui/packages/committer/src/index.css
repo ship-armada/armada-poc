@@ -48,9 +48,10 @@
   --splash-image-opacity: 0;
   --splash-wash-center: transparent;
   --splash-wash-edge: color-mix(in srgb, var(--semantic-color-brand-lavender) 7%, transparent);
-  /* Light-tuned photo filter. Only the no-WebGL fallback shows its image in light
-     mode (alwaysShowImage); the dark-tuned brightness 0.38 reads as a heavy dark
-     block on a light page, so lift + lightly desaturate it into a soft light hero. */
+  /* Light-tuned no-WebGL fallback photo (the only instance shown in light). Fade
+     it to a faint wash via opacity, and lift + heavily desaturate what shows so
+     it reads as a pale, near-greyscale backdrop rather than a dark block. */
+  --splash-image-shown-opacity: 0.18;
   --splash-brightness: 1.4;
   --splash-saturate: 0.15;
 }

@@ -98,6 +98,7 @@ return (
         name={name}
         type="text"
         inputMode="decimal"
+        autoComplete="off"
         placeholder={placeholder}
         value={value}
         disabled={disabled}

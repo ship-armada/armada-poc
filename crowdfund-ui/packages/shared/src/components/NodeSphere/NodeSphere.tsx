@@ -1020,12 +1020,13 @@ export function NodeSphere({
           meta.kind !== 'Your wallet' &&
           (activeFilter === 'Multi-hop' ? !meta.multiHop : meta.kind !== activeFilter)
         const isOutsideLineage = !!currentLineage && !currentLineage.has(meta.address)
-        const isDimmed = isFilteredOut || (isOutsideLineage && !isSelected)
+        const lineageDimmed = isOutsideLineage && !isSelected
         const isWallet = walletIdx != null && i === walletIdx
 
         // The connected wallet's own node breathes on the ~3.5s glow cadence so
-        // the user can always find it, independent of hover/selection.
-        const walletPulse = isWallet
+        // the user can always find it — except while it's filtered out, where it
+        // sits static and dimmed like any other excluded node.
+        const walletPulse = isWallet && !isFilteredOut
           ? 1 + 0.14 * (0.5 + 0.5 * Math.sin(now * ((Math.PI * 2) / 3500)))
           : 1
         const target = Math.max(isHovered ? 1.35 : 1, isSelected ? 1.55 : 1, walletPulse)
@@ -1034,10 +1035,19 @@ export function NodeSphere({
 
         const mat = m.material as THREE.MeshBasicMaterial
         const base = meta.ghost ? 0.12 : 0.6
-        // Keep the wallet node bright regardless of lineage dimming so the "you"
-        // marker stays findable.
-        const targetOpacity =
-          isSelected || isWallet ? 1 : isDimmed ? (meta.ghost ? 0.06 : 0.08) : base
+        const dimOpacity = meta.ghost ? 0.06 : 0.08
+        // The hop filter dims every node, the wallet included. Lineage dimming
+        // (focusing another node) spares the wallet so the "you" marker stays
+        // findable.
+        const targetOpacity = isSelected
+          ? 1
+          : isFilteredOut
+            ? dimOpacity
+            : isWallet
+              ? 1
+              : lineageDimmed
+                ? dimOpacity
+                : base
         mat.opacity = mat.opacity + (targetOpacity - mat.opacity) * 0.12
       }
 

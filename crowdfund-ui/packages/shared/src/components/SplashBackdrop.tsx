@@ -58,7 +58,13 @@ export function SplashBackdrop({
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
-          filter: `blur(6px) saturate(${saturate}) brightness(${brightness})`,
+          // brightness/saturate fall back to the (dark-tuned) prop values but a
+          // theme can override them — the committer's light theme lifts the photo
+          // so the no-WebGL fallback reads as a light image rather than a dark one.
+          filter:
+            `blur(6px)` +
+            ` saturate(var(--splash-saturate, ${saturate}))` +
+            ` brightness(var(--splash-brightness, ${brightness}))`,
           // The darkened photo only works on a dark page; a theme can hide just
           // this layer (--splash-image-opacity: 0) while keeping the wash below.
           // `alwaysShowImage` opts out of that suppression where the image is the

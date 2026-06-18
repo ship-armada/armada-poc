@@ -48,4 +48,9 @@
   --splash-image-opacity: 0;
   --splash-wash-center: transparent;
   --splash-wash-edge: color-mix(in srgb, var(--semantic-color-brand-lavender) 7%, transparent);
+  /* Light-tuned photo filter. Only the no-WebGL fallback shows its image in light
+     mode (alwaysShowImage); the dark-tuned brightness 0.38 reads as a heavy dark
+     block on a light page, so lift + lightly desaturate it into a soft light hero. */
+  --splash-brightness: 1.15;
+  --splash-saturate: 0.65;
 }

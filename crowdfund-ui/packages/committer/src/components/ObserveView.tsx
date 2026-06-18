@@ -25,10 +25,11 @@ export function ObserveView({
 }) {
   return (
     <div className="relative min-h-screen w-full">
-      {/* Fixed full-bleed splash background — behind the content; the floating
-          header (higher z) still renders over it. */}
+      {/* Fixed full-bleed backdrop — behind the content; the floating header
+          (higher z) still renders over it. Vignette-only (no photo) in both
+          themes, matching the backdrop behind the live graph. */}
       <div className="fixed inset-0 z-0">
-        <SplashBackdrop />
+        <SplashBackdrop vignetteOnly />
       </div>
 
       {/* Header backdrop (Observe-only) — frosts content scrolling under the

@@ -23,6 +23,8 @@ import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
+import { isMobileBrowser } from '@/lib/isMobileBrowser'
+import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
 import { getExplorerUrl } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
@@ -315,6 +317,14 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const result = await sendAndWaitTx(
       () => {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, activeSigner)
+        // Mobile: submit via wagmi so MetaMask Mobile surfaces the request (the
+        // ethers signer transport doesn't trigger the WC redirect). Desktop keeps
+        // the ethers path unchanged.
+        if (isMobileBrowser()) {
+          return mode === 'arm'
+            ? submitTxViaWagmi(crowdfund, 'claim', [delegateAddress!])
+            : submitTxViaWagmi(crowdfund, 'claimRefund', [])
+        }
         return mode === 'arm' ? crowdfund.claim(delegateAddress!) : crowdfund.claimRefund()
       },
       (hash) =>

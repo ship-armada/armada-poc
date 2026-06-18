@@ -33,6 +33,8 @@ import {
 import { FooterSocials } from '@/components/FooterSocials'
 import { getHubNetworkLabel } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
+import { isMobileBrowser } from '@/lib/isMobileBrowser'
+import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
 import type { HopPosition } from '@/hooks/useEligibility'
@@ -342,8 +344,12 @@ export function ParticipateFlowV2({
     if (needsApproval(totalBig)) {
       steps.push({
         label: `Approve ${formatUsdc(totalBig)} USDC`,
-        send: () =>
-          new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, activeSigner).approve(crowdfundAddress!, totalBig),
+        send: () => {
+          const usdc = new Contract(usdcAddress!, ERC20_ABI_FRAGMENTS, activeSigner)
+          return isMobileBrowser()
+            ? submitTxViaWagmi(usdc, 'approve', [crowdfundAddress!, totalBig])
+            : usdc.approve(crowdfundAddress!, totalBig)
+        },
         // Re-read allowance so the next attempt's skip-approval decision is real.
         after: refreshAllowance,
       })
@@ -356,8 +362,12 @@ export function ParticipateFlowV2({
         label: isMulti
           ? `Commit ${HOP_LABELS[p.hop]} (${formatUsdc(amountBig)})`
           : 'Commit participation',
-        send: () =>
-          new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, activeSigner).commit(p.hop, amountBig),
+        send: () => {
+          const crowdfund = new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, activeSigner)
+          return isMobileBrowser()
+            ? submitTxViaWagmi(crowdfund, 'commit', [p.hop, amountBig])
+            : crowdfund.commit(p.hop, amountBig)
+        },
         onReceipt: (logs) => onReceiptLogs?.(logs),
       })
     }

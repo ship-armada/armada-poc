@@ -4,13 +4,7 @@
 import { useEffect, useState } from 'react'
 import { getConnectorClient } from 'wagmi/actions'
 import type { Connector } from 'wagmi'
-
-/** Heuristic mobile-browser check. Deliberately conservative — only true for
- *  actual mobile user agents so desktop never enters the reconciliation path. */
-export function isMobileBrowser(): boolean {
-  if (typeof navigator === 'undefined') return false
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-}
+import { isMobileBrowser } from '@/lib/isMobileBrowser'
 
 /**
  * Mobile-only chain reconciliation. On mobile, wagmi's `useAccount().chainId`

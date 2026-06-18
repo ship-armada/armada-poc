@@ -41,6 +41,8 @@ import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
+import { isMobileBrowser } from '@/lib/isMobileBrowser'
+import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
 import { useWallet } from '@/hooks/useWallet'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
@@ -325,26 +327,36 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     if (amountBig > allowance) {
       steps.push({
         label: `Approve ${formatUsdc(amountBig)} USDC`,
-        send: () =>
-          new Contract(deployment!.contracts.usdc, ERC20_ABI_FRAGMENTS, activeSigner).approve(
-            deployment!.contracts.crowdfund,
-            amountBig,
-          ),
+        send: () => {
+          const usdc = new Contract(deployment!.contracts.usdc, ERC20_ABI_FRAGMENTS, activeSigner)
+          return isMobileBrowser()
+            ? submitTxViaWagmi(usdc, 'approve', [deployment!.contracts.crowdfund, amountBig])
+            : usdc.approve(deployment!.contracts.crowdfund, amountBig)
+        },
         // Re-read allowance so a retry's skip-approval decision sees the real value.
         after: allowanceState.refresh,
       })
     }
     steps.push({
       label: `Join & commit ${formatUsdc(amountBig)} at ${hopLabel(targetHop)}`,
-      send: () =>
-        new Contract(deployment!.contracts.crowdfund, CROWDFUND_ABI_FRAGMENTS, activeSigner).commitWithInvite(
+      send: () => {
+        const crowdfund = new Contract(
+          deployment!.contracts.crowdfund,
+          CROWDFUND_ABI_FRAGMENTS,
+          activeSigner,
+        )
+        const commitArgs = [
           inviteData.inviter,
           inviteData.fromHop,
           inviteData.nonce,
           inviteData.deadline,
           inviteData.signature,
           amountBig,
-        ),
+        ] as const
+        return isMobileBrowser()
+          ? submitTxViaWagmi(crowdfund, 'commitWithInvite', commitArgs)
+          : crowdfund.commitWithInvite(...commitArgs)
+      },
       // Fast-path the Invited + Committed events into the graph so the user has a
       // recognized hop position the moment we hit Step5.
       onReceipt: (logs) => ingestReceiptLogs(logs),

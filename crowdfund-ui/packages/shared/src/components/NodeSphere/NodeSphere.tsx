@@ -377,6 +377,10 @@ export function NodeSphere({
 
     const nodeMeshes: THREE.Mesh[] = []
     const nodePositions: THREE.Vector3[] = []
+    // Base (non-wallet) colour per node, parallel to nodeMeshes, so the "you"
+    // yellow can be reverted to a node's hop/multi-hop colour when the connected
+    // wallet changes (account switch) without a full scene rebuild.
+    const baseColors: THREE.Color[] = []
     const indicesByKind = new Map<NodeKind, number[]>()
     const indexByAddress = new Map<string, number>()
 
@@ -445,6 +449,9 @@ export function NodeSphere({
       if (meta.multiHop && !meta.ghost) {
         mat.color = new THREE.Color(GRAPH_HOP_NODE_COLORS['Multi-hop'])
       }
+      // Snapshot the resolved base colour (hop / multi-hop / ghost) before any
+      // "you" yellow is applied, so syncWalletColor can revert it later.
+      baseColors.push(mat.color.clone())
 
       const idx = nodeMeshes.length - 1
       if (!meta.ghost) {
@@ -520,26 +527,36 @@ export function NodeSphere({
     // `walletIdx` stays null and the lock/focus/inviteGraph behaviors
     // gracefully no-op (see the `walletIdx != null` guards below).
     //
-    // TODO: scene rebuild is keyed on [instanceId, pinnedNodesKey, seed] —
-    // a `walletAddress` change without a `pinnedNodes` change would not
-    // refresh `walletIdx`. Acceptable today since wallet swaps either come
-    // with a pinned-data refresh or a remount; revisit if that changes.
-    const walletIdx = walletAddress
-      ? (indexByAddress.get(walletAddress) ?? null)
-      : null
+    // `walletIdx` is a `let`: the connected address can change (account switch)
+    // without a scene rebuild — which is keyed on [instanceId, pinnedNodesKey,
+    // seed] — so `syncWalletColor` (called on build and every animate frame)
+    // re-resolves it from `walletAddressRef` and recolours reactively.
+    let walletIdx: number | null = null
 
     // Persistent "you are here" marker on the connected wallet's node: colour it
-    // yellow (overriding its hop / multi-hop colour) so it stands out as "you".
-    // The animate loop breathes its scale and keeps it bright so the user can
-    // find their own node at a glance. Only applied when the wallet is an actual
-    // participant (walletIdx != null — no synthetic node; see the resolution
-    // note above).
-    if (walletIdx != null) {
-      const walletMesh = nodeMeshes[walletIdx]
-      ;(walletMesh.material as THREE.MeshBasicMaterial).color = new THREE.Color(
-        GRAPH_HOP_NODE_COLORS['Your wallet'],
-      )
+    // yellow (overriding its hop / multi-hop colour) so it stands out as "you";
+    // the animate loop breathes its scale and keeps it bright. When the wallet
+    // address changes, revert the previously-coloured node to its base colour
+    // and paint the new one — no rebuild needed. Only ever a real participant
+    // node (no synthetic placeholder; see the resolution note above).
+    const WALLET_COLOR = new THREE.Color(GRAPH_HOP_NODE_COLORS['Your wallet'])
+    let coloredWalletIdx: number | null = null
+    const syncWalletColor = () => {
+      const addr = walletAddressRef.current
+      const nextIdx = addr ? (indexByAddress.get(addr) ?? null) : null
+      if (nextIdx === coloredWalletIdx) return
+      if (coloredWalletIdx != null) {
+        ;(nodeMeshes[coloredWalletIdx].material as THREE.MeshBasicMaterial).color.copy(
+          baseColors[coloredWalletIdx],
+        )
+      }
+      if (nextIdx != null) {
+        ;(nodeMeshes[nextIdx].material as THREE.MeshBasicMaterial).color.copy(WALLET_COLOR)
+      }
+      coloredWalletIdx = nextIdx
+      walletIdx = nextIdx
     }
+    syncWalletColor()
 
     // Center node (Armada symbol inside frosted circle) as a true 3D sprite.
     const { texture: centerBgTexture } = createCenterNodeTexture()
@@ -966,6 +983,10 @@ export function NodeSphere({
 
     const animate = () => {
       const now = performance.now()
+      // Re-resolve the "you" node from the live wallet address so an account
+      // switch recolours without a rebuild (cheap: a Map lookup, recolours only
+      // on change).
+      syncWalletColor()
       const selectedAddr = highlightRef.current
       updateEdgeHighlight(selectedAddr ?? null)
 

@@ -1197,10 +1197,10 @@ export function NodeSphere({
         zIndex: 0,
       }}
     >
-      {/* Static splash behind the transparent WebGL canvas (appended after this
-          React child) so the nodes composite over it. Heavier wash + darker than
-          the no-WebGL fallback so it stays subdued behind the graph. */}
-      <SplashBackdrop washCenter={66} washEdge={96} brightness={0.24} saturate={0.42} />
+      {/* Backdrop behind the transparent WebGL canvas (appended after this React
+          child) so the nodes composite over it. The photo competes with the
+          nodes, so we show only a subtle vignette wash (no photo) in both themes. */}
+      <SplashBackdrop vignetteOnly />
       {/* Hover tooltip — follows the cursor over selectable nodes. Mirrors
           the selected-tip's "Your wallet" eyebrow + truncated-address
           rendering so live 40-hex addresses don't overflow the 272px box. */}

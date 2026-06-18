@@ -16,6 +16,11 @@ export interface SplashBackdropProps {
    *  --splash-image-opacity (e.g. light mode). Use where the image *is* the
    *  content — the no-WebGL fallback — rather than ambient depth behind a graph. */
   alwaysShowImage?: boolean
+  /** Hide the photo entirely and show only a subtle vignette wash (transparent
+   *  centre + faint brand-lavender edge) in every theme. Use behind the live
+   *  graph, where the photo competes with the nodes — mirrors the committer's
+   *  light-mode treatment so dark and light match there. */
+  vignetteOnly?: boolean
 }
 
 /** Subdued static backdrop: a blurred + darkened splash image under a theme-tied
@@ -30,7 +35,18 @@ export function SplashBackdrop({
   brightness = 0.38,
   saturate = 0.5,
   alwaysShowImage = false,
+  vignetteOnly = false,
 }: SplashBackdropProps) {
+  // vignetteOnly drops the photo and falls the wash back to a subtle vignette
+  // (transparent centre + faint brand-lavender edge) in every theme. The
+  // committer's light wash vars already resolve to this, so light is unchanged;
+  // dark now gets the same treatment instead of the surface-tied photo wash.
+  const washCenterStop = vignetteOnly
+    ? 'var(--splash-wash-center, transparent)'
+    : `var(--splash-wash-center, color-mix(in srgb, var(--semantic-color-surface-default) ${washCenter}%, transparent))`
+  const washEdgeStop = vignetteOnly
+    ? 'var(--splash-wash-edge, color-mix(in srgb, var(--semantic-color-brand-lavender) 7%, transparent))'
+    : `var(--splash-wash-edge, color-mix(in srgb, var(--semantic-color-surface-default) ${washEdge}%, transparent))`
   return (
     <div
       aria-hidden
@@ -49,7 +65,9 @@ export function SplashBackdrop({
       {/* Image layer — desaturated, darkened, and blurred so it reads as ambient
           backdrop rather than a competing photo. Oversized (inset negative) so
           the blur's soft edge stays outside the visible frame; blurring an
-          inset:0 layer would otherwise bleed the page background in at the seams. */}
+          inset:0 layer would otherwise bleed the page background in at the seams.
+          Skipped entirely under vignetteOnly (only the wash below renders). */}
+      {!vignetteOnly && (
       <div
         style={{
           position: 'absolute',
@@ -76,6 +94,7 @@ export function SplashBackdrop({
             : 'var(--splash-image-opacity, 1)',
         }}
       />
+      )}
       {/* Vignette/wash tied to the theme surface so the splash fades into the
           page background at the edges and the foreground UI stays legible. Each
           stop falls back to the surface-tied default but can be overridden per
@@ -85,10 +104,7 @@ export function SplashBackdrop({
         style={{
           position: 'absolute',
           inset: 0,
-          background:
-            'radial-gradient(ellipse at center,' +
-            ` var(--splash-wash-center, color-mix(in srgb, var(--semantic-color-surface-default) ${washCenter}%, transparent)),` +
-            ` var(--splash-wash-edge, color-mix(in srgb, var(--semantic-color-surface-default) ${washEdge}%, transparent)))`,
+          background: `radial-gradient(ellipse at center, ${washCenterStop}, ${washEdgeStop})`,
         }}
       />
     </div>

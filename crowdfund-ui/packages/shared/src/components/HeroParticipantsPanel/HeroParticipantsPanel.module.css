@@ -300,15 +300,16 @@
   background: color-mix(in srgb, var(--semantic-color-surface-raised) 34%, transparent);
 }
 
-/* The connected wallet's own row — persistently highlighted (lavender tint +
-   left accent) so the user can spot themselves in the list. */
+/* The connected wallet's own row — persistently highlighted (yellow tint + left
+   accent, matching the wallet's yellow node in the graph) so the user can spot
+   themselves in the list. */
 .rowSelf {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 10%, transparent);
-  box-shadow: inset 2px 0 0 var(--semantic-color-brand-lavender);
+  background: color-mix(in srgb, var(--accent-you) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-you);
 }
 
 .rowSelf:hover {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 24%, transparent);
+  background: color-mix(in srgb, var(--accent-you) 24%, transparent);
 }
 
 .rowSelected {

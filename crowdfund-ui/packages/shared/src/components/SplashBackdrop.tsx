@@ -27,7 +27,21 @@ export function SplashBackdrop({
   saturate = 0.5,
 }: SplashBackdropProps) {
   return (
-    <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden' }}>
+    <div
+      aria-hidden
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 0,
+        overflow: 'hidden',
+        // The splash is a dark hero photo tuned to recede into a dark page.
+        // Themes can suppress it via --splash-opacity (the committer's light
+        // theme sets 0, since a darkened photo reads as a murky smudge on a
+        // light surface). Defaults to 1 so dark — and observer/admin — are
+        // unchanged.
+        opacity: 'var(--splash-opacity, 1)',
+      }}
+    >
       {/* Image layer — desaturated, darkened, and blurred so it reads as ambient
           backdrop rather than a competing photo. Oversized (inset negative) so
           the blur's soft edge stays outside the visible frame; blurring an

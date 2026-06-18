@@ -39,4 +39,9 @@
   --muted-foreground: var(--semantic-color-text-secondary);
   --border: var(--semantic-color-border-default);
   --input: rgba(46, 35, 35, 0.14);
+
+  /* Hide the subdued splash photo behind the node graph / Observe view: it is a
+     dark hero image that reads as a murky smudge on a light surface (and is not
+     in the design reference). The graph sits on the clean light page instead. */
+  --splash-opacity: 0;
 }

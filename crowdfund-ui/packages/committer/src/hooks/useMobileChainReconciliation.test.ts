@@ -1,9 +1,19 @@
 // ABOUTME: Tests for useMobileChainReconciliation — desktop no-op invariant + mobile eth_chainId recovery.
-// ABOUTME: Drives navigator.userAgent + a fake connector provider to exercise both platforms deterministically.
+// ABOUTME: Drives navigator.userAgent + a mocked getConnectorClient to exercise both platforms deterministically.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import type { Connector } from 'wagmi'
+
+const mockGetConnectorClient = vi.fn()
+
+vi.mock('wagmi/actions', () => ({
+  getConnectorClient: (...args: unknown[]) => mockGetConnectorClient(...args),
+}))
+
+// The real config module executes RainbowKit's getDefaultConfig at load time.
+vi.mock('@/config/wagmi', () => ({ wagmiConfig: { __testConfig: true } }))
+
 import { useMobileChainReconciliation } from './useMobileChainReconciliation'
 
 const DESKTOP_UA =
@@ -12,22 +22,19 @@ const MOBILE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
 
 const originalUserAgent = navigator.userAgent
+const aConnector = {} as unknown as Connector
 
 function setUserAgent(ua: string) {
   Object.defineProperty(navigator, 'userAgent', { value: ua, configurable: true })
 }
 
-/** Fake wagmi connector whose provider answers eth_chainId with `chainHexRef.current`. */
-function makeConnector(chainHexRef: { current: string }) {
-  const provider = {
+/** Fake viem connector-client whose eth_chainId reads `chainHexRef.current`. */
+function clientReturning(chainHexRef: { current: string }) {
+  return {
     request: vi.fn(async ({ method }: { method: string }) =>
       method === 'eth_chainId' ? chainHexRef.current : null,
     ),
-    on: vi.fn(),
-    removeListener: vi.fn(),
   }
-  const connector = { getProvider: vi.fn(async () => provider) }
-  return { connector: connector as unknown as Connector, provider, getProvider: connector.getProvider }
 }
 
 beforeEach(() => {
@@ -39,33 +46,34 @@ afterEach(() => {
 })
 
 describe('useMobileChainReconciliation — desktop invariant', () => {
-  it('returns undefined and never touches the provider on desktop', async () => {
+  it('returns undefined and never reads a connector client on desktop', async () => {
     setUserAgent(DESKTOP_UA)
-    const { connector, getProvider } = makeConnector({ current: '0x1' })
-    const { result } = renderHook(() => useMobileChainReconciliation(connector))
-    // Let any (non-existent) async settle.
+    mockGetConnectorClient.mockResolvedValue(clientReturning({ current: '0x1' }))
+    const { result } = renderHook(() => useMobileChainReconciliation(aConnector))
     await act(async () => {
       await Promise.resolve()
     })
     expect(result.current).toBeUndefined()
-    expect(getProvider).not.toHaveBeenCalled()
+    expect(mockGetConnectorClient).not.toHaveBeenCalled()
   })
 })
 
 describe('useMobileChainReconciliation — mobile', () => {
-  it('reads eth_chainId from the connector provider and returns the parsed chain id', async () => {
+  it('reads eth_chainId via getConnectorClient and returns the parsed chain id', async () => {
     setUserAgent(MOBILE_UA)
-    const { connector, provider } = makeConnector({ current: '0xaa36a7' }) // sepolia 11155111
-    const { result } = renderHook(() => useMobileChainReconciliation(connector))
+    const client = clientReturning({ current: '0xaa36a7' }) // sepolia 11155111
+    mockGetConnectorClient.mockResolvedValue(client)
+    const { result } = renderHook(() => useMobileChainReconciliation(aConnector))
     await waitFor(() => expect(result.current).toBe(11155111))
-    expect(provider.request).toHaveBeenCalledWith({ method: 'eth_chainId' })
+    expect(mockGetConnectorClient).toHaveBeenCalled()
+    expect(client.request).toHaveBeenCalledWith({ method: 'eth_chainId' })
   })
 
   it('re-reads on focus so a stale chain recovers after a switch', async () => {
     setUserAgent(MOBILE_UA)
     const chainHex = { current: '0x1' } // start on the wrong chain
-    const { connector } = makeConnector(chainHex)
-    const { result } = renderHook(() => useMobileChainReconciliation(connector))
+    mockGetConnectorClient.mockResolvedValue(clientReturning(chainHex))
+    const { result } = renderHook(() => useMobileChainReconciliation(aConnector))
     await waitFor(() => expect(result.current).toBe(1))
 
     // Wallet switches; the missed chainChanged is recovered when the app regains focus.
@@ -76,29 +84,24 @@ describe('useMobileChainReconciliation — mobile', () => {
     await waitFor(() => expect(result.current).toBe(11155111))
   })
 
-  it('falls back to undefined (wagmi value) when the provider read rejects', async () => {
+  it('falls back to undefined (wagmi value) when the client read rejects', async () => {
     setUserAgent(MOBILE_UA)
-    const provider = {
-      request: vi.fn(async () => {
-        throw new Error('provider unavailable')
-      }),
-      on: vi.fn(),
-      removeListener: vi.fn(),
-    }
-    const connector = { getProvider: vi.fn(async () => provider) } as unknown as Connector
-    const { result } = renderHook(() => useMobileChainReconciliation(connector))
+    mockGetConnectorClient.mockRejectedValue(new Error('ConnectorNotConnectedError'))
+    const { result } = renderHook(() => useMobileChainReconciliation(aConnector))
     await act(async () => {
       await Promise.resolve()
     })
     expect(result.current).toBeUndefined()
   })
 
-  it('returns undefined when there is no connector', async () => {
+  it('returns undefined and does not read when there is no connector', async () => {
     setUserAgent(MOBILE_UA)
+    mockGetConnectorClient.mockResolvedValue(clientReturning({ current: '0x1' }))
     const { result } = renderHook(() => useMobileChainReconciliation(undefined))
     await act(async () => {
       await Promise.resolve()
     })
     expect(result.current).toBeUndefined()
+    expect(mockGetConnectorClient).not.toHaveBeenCalled()
   })
 })

@@ -1,15 +1,9 @@
-// ABOUTME: Mobile-only, read-only chain reconciliation — re-reads the live chain from
-// ABOUTME: the active connector's provider on app resume so a stale wagmi chainId recovers.
+// ABOUTME: Mobile-only, read-only chain reconciliation — re-reads the live chain via wagmi's
+// ABOUTME: getConnectorClient on app resume so a stale wagmi chainId recovers after a mobile switch.
 
 import { useEffect, useState } from 'react'
+import { getConnectorClient } from 'wagmi/actions'
 import type { Connector } from 'wagmi'
-
-/** Minimal EIP-1193 surface we use from the connector's provider. */
-type Eip1193Provider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
-  on?: (event: string, listener: (...args: unknown[]) => void) => void
-  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void
-}
 
 /** Heuristic mobile-browser check. Deliberately conservative — only true for
  *  actual mobile user agents so desktop never enters the reconciliation path. */
@@ -25,64 +19,57 @@ export function isMobileBrowser(): boolean {
  * redirected back before the update lands, so wagmi keeps reporting the old
  * chain and the UI sticks on "wrong network".
  *
- * This re-reads the live chain directly from the active connector's provider
- * (`eth_chainId` — a round-trip to the wallet, more authoritative than any
- * cached value) whenever the app regains focus / visibility, and on the
- * provider's own `chainChanged`. The caller layers the result over wagmi as
- * `observed ?? accountChainId`.
+ * Whenever the app regains focus / visibility, this re-reads the live chain via
+ * wagmi's `getConnectorClient` action and an `eth_chainId` request (a round-trip
+ * to the wallet, more authoritative than wagmi's cached value). We use the
+ * action — which resolves the connector from the wagmi config, the same path
+ * `resolveSigner` uses — rather than reaching into `useAccount().connector`,
+ * whose `getProvider` is not reliably a function across the RainbowKit/wagmi
+ * connector wrappers (it throws on mobile at load). The caller layers the result
+ * over wagmi as `observed ?? accountChainId`.
  *
  * Strictly read-only and strictly mobile-scoped: on desktop (and SSR) the effect
- * early-returns before touching the provider, registering listeners, or setting
- * state, and the hook returns `undefined` — so the caller's `observed ??
- * accountChainId` reduces to exactly `accountChainId` and desktop behavior is
- * byte-for-byte unchanged.
+ * early-returns before doing anything, registering listeners, or setting state,
+ * and the hook returns `undefined` — so the caller's `observed ?? accountChainId`
+ * reduces to exactly `accountChainId` and desktop behavior is byte-for-byte
+ * unchanged.
  */
 export function useMobileChainReconciliation(connector: Connector | undefined): number | undefined {
   const [observedChainId, setObservedChainId] = useState<number | undefined>(undefined)
 
   useEffect(() => {
-    // Desktop (and SSR) no-op: nothing below runs, so there are no provider
-    // calls, no event listeners, and no state changes — observedChainId stays
-    // undefined for the lifetime of the hook.
+    // Desktop (and SSR) no-op, plus a disconnected gate: nothing below runs, so
+    // there are no client reads, no listeners, and no state changes.
     if (!isMobileBrowser() || !connector) return
 
     let cancelled = false
-    let provider: Eip1193Provider | null = null
 
-    const readChain = async (p: Eip1193Provider) => {
+    const readChain = async () => {
       try {
-        const hex = (await p.request({ method: 'eth_chainId' })) as string
+        // Dynamic import: config/wagmi executes RainbowKit's getDefaultConfig at
+        // module load (already evaluated by the app), and deferring it keeps this
+        // module side-effect-free for the hook's unit tests.
+        const { wagmiConfig } = await import('@/config/wagmi')
+        const client = await getConnectorClient(wagmiConfig)
+        const hex = (await client.request({ method: 'eth_chainId' })) as string
         const id = Number.parseInt(hex, 16)
-        // Only override when the provider gives a usable answer; a failed or
-        // malformed read leaves the override untouched so we fall back to wagmi.
+        // Only override when the read gives a usable answer; a failed read (not
+        // connected, wallet on an unconfigured chain, transport error) leaves the
+        // override untouched so we fall back to wagmi's value.
         if (!cancelled && Number.isFinite(id)) setObservedChainId(id)
       } catch {
-        // Provider unavailable / read rejected — keep falling back to wagmi.
+        // Provider/client unavailable — keep falling back to wagmi.
       }
     }
 
-    const onResume = () => {
-      if (provider && document.visibilityState !== 'hidden') void readChain(provider)
-    }
-    const onChainChanged = () => {
-      if (provider) void readChain(provider)
-    }
-
-    void connector
-      .getProvider()
-      .then((p) => {
-        if (cancelled || !p) return
-        provider = p as Eip1193Provider
-        void readChain(provider) // reconcile immediately on (re)connect
-        provider.on?.('chainChanged', onChainChanged)
-      })
-      .catch(() => {
-        // No provider available — stay on wagmi's value.
-      })
+    void readChain() // reconcile immediately on (re)connect
 
     // Returning from the wallet app (the switch-network round-trip) fires focus /
     // visibilitychange — the moment a missed chainChanged would otherwise leave
     // us stale, so that's exactly when we re-read.
+    const onResume = () => {
+      if (document.visibilityState !== 'hidden') void readChain()
+    }
     window.addEventListener('focus', onResume)
     document.addEventListener('visibilitychange', onResume)
 
@@ -90,7 +77,6 @@ export function useMobileChainReconciliation(connector: Connector | undefined): 
       cancelled = true
       window.removeEventListener('focus', onResume)
       document.removeEventListener('visibilitychange', onResume)
-      provider?.removeListener?.('chainChanged', onChainChanged)
     }
   }, [connector])
 

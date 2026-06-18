@@ -1,7 +1,19 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Set data-theme before first paint to avoid a flash. Light mode is
+      // opt-in: default to dark and honor only an explicit saved light choice
+      // (we intentionally do not follow the OS prefers-color-scheme).
+      (function () {
+        var saved = null;
+        try {
+          saved = localStorage.getItem('armada-theme');
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark');
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

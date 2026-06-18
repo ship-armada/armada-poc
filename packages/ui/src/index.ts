@@ -35,3 +35,13 @@ export type { TooltipProps, TooltipSimpleProps, TooltipRichProps, TooltipPlaceme
 
 export { WalletItem } from './components/WalletItem'
 export type { WalletItemProps } from './components/WalletItem'
+
+export {
+  THEME_STORAGE_KEY,
+  isTheme,
+  getSavedTheme,
+  getSystemTheme,
+  getAppliedTheme,
+  setTheme,
+} from './utils/theme'
+export type { Theme } from './utils/theme'

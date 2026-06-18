@@ -12,6 +12,10 @@
   padding: var(--primitives-spacing-8);
   border-radius: 16px;
   overflow: hidden;
+  /* Fixed brand surface (image cover) — text stays white regardless of
+     data-theme. In dark these resolve to the existing token values (no-op). */
+  --semantic-color-text-primary: #ffffff;
+  --semantic-color-text-secondary: rgba(255, 255, 255, 0.7);
 }
 
 /* Whole card acts as the CTA — give a pointer cursor when a click handler

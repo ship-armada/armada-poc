@@ -98,6 +98,16 @@
   box-sizing: border-box;
 }
 
+/* Light theme — opaque-ish neutral fill instead of the translucent raised
+   surface, which reads as muddy on a light page. Scoped to light so dark keeps
+   the mockup's surface-raised tint. */
+:global([data-theme='light']) .toggleBtn {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+}
+:global([data-theme='light']) .filters {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+}
+
 .filterBtn {
   flex-shrink: 0;
   height: 100%;

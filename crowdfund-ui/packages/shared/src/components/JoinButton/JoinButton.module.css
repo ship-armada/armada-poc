@@ -23,6 +23,12 @@
   white-space: nowrap;
 }
 
+/* Light theme — dark label on the bright gradient. Scoped to light so dark
+   keeps surface-bg; the mockup applied this to the base rule. */
+:global([data-theme='light']) .button {
+  color: #291433;
+}
+
 .button:hover,
 .button.expanded {
   width: 135px;

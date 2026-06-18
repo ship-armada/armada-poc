@@ -165,13 +165,13 @@
     height: var(--primitives-spacing-12);
     border: none;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--primitives-color-white-full) 20%, transparent);
-    color: var(--primitives-color-white-full);
+    background: color-mix(in srgb, var(--semantic-color-text-primary) 20%, transparent);
+    color: var(--semantic-color-text-primary);
   }
 
   .close:hover {
     border-color: transparent;
-    background: color-mix(in srgb, var(--primitives-color-white-full) 28%, transparent);
+    background: color-mix(in srgb, var(--semantic-color-text-primary) 28%, transparent);
   }
 
   .panel {

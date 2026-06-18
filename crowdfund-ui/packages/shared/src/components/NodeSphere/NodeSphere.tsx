@@ -322,6 +322,9 @@ export function NodeSphere({
     const Z_MIN = 6
     const Z_MAX = 28
     const Z_DEFAULT = Z_MIN
+    // My Position pulls the camera back to this fixed level to frame the user's
+    // invite tree, rather than sitting at the main view's tight default zoom.
+    const Z_MYPOSITION = 13
     camera.position.z = Z_DEFAULT
 
     let renderer: THREE.WebGLRenderer
@@ -1057,8 +1060,16 @@ export function NodeSphere({
               from,
               desiredInFocusSpace,
             )
-            const zoomOutMax = isInviteFocusMode() ? INVITE_FOCUS_ZOOM_OUT_MAX : FOCUS_ZOOM_OUT_MAX
-            targetCameraZ = cameraZForNodeRadius(selectedMesh.position.length(), zoomOutMax)
+            const focusingWallet = walletIdx != null && selectedMesh === nodeMeshes[walletIdx]
+            if (isWalletLocked() && focusingWallet) {
+              // My Position centred on the wallet itself: pull the camera back to
+              // a fixed zoomed-out level. The wallet sits near the sphere centre,
+              // so the radius-based focus zoom would barely move.
+              targetCameraZ = Z_MYPOSITION
+            } else {
+              const zoomOutMax = isInviteFocusMode() ? INVITE_FOCUS_ZOOM_OUT_MAX : FOCUS_ZOOM_OUT_MAX
+              targetCameraZ = cameraZForNodeRadius(selectedMesh.position.length(), zoomOutMax)
+            }
           }
           lastCenteredAddress = selectedAddr
         }

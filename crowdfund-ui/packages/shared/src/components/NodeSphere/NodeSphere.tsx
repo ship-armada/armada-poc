@@ -324,7 +324,7 @@ export function NodeSphere({
     const Z_DEFAULT = Z_MIN
     // My Position pulls the camera back to this fixed level to frame the user's
     // invite tree, rather than sitting at the main view's tight default zoom.
-    const Z_MYPOSITION = 13
+    const Z_MYPOSITION = 11
     camera.position.z = Z_DEFAULT
 
     let renderer: THREE.WebGLRenderer

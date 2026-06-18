@@ -6,6 +6,7 @@ import { useAccount, useWalletClient, useDisconnect } from 'wagmi'
 import { useConnectModal, useChainModal } from '@rainbow-me/rainbowkit'
 import { walletClientToSigner } from '@/lib/wagmiAdapter'
 import { getHubChainId } from '@/config/network'
+import { useMobileChainReconciliation } from './useMobileChainReconciliation'
 import type { JsonRpcSigner } from 'ethers'
 
 export interface UseWalletResult {
@@ -22,19 +23,30 @@ export interface UseWalletResult {
 }
 
 export function useWallet(): UseWalletResult {
-  const { address: rawAddress, isConnected, isConnecting, chainId: accountChainId } = useAccount()
+  const { address: rawAddress, isConnected, isConnecting, chainId: accountChainId, connector } =
+    useAccount()
   const { openConnectModal } = useConnectModal()
   const { openChainModal } = useChainModal()
   const { disconnect: wagmiDisconnect } = useDisconnect()
+
+  // Mobile-only, read-only correction for a stale wagmi chainId after a mobile
+  // network switch (MetaMask Mobile can drop `chainChanged` — wagmi #4551/#4600,
+  // MM #6706 — leaving `useAccount().chainId` pointing at the old chain). On
+  // DESKTOP this is always `undefined`, so `effectiveChainId === accountChainId`
+  // and every derived value below is identical to the wagmi-only behavior.
+  const observedChainId = useMobileChainReconciliation(connector)
+  const effectiveChainId = observedChainId ?? accountChainId
 
   const expectedChainId = getHubChainId()
   // Detect the wrong network from `useAccount().chainId` (the per-connection
   // value, which tracks the wallet's actual chain) rather than `useChainId()`.
   // With a single-chain config, `useChainId()` always returns the configured
   // chain id and silently ignores a wallet switch to an unconfigured chain, so
-  // a mid-session switch to the wrong network would never be detected.
+  // a mid-session switch to the wrong network would never be detected. On mobile
+  // `effectiveChainId` substitutes the provider-observed chain when wagmi's value
+  // is stale; on desktop it is exactly `accountChainId`.
   const isWrongNetwork =
-    isConnected && accountChainId !== undefined && accountChainId !== expectedChainId
+    isConnected && effectiveChainId !== undefined && effectiveChainId !== expectedChainId
 
   // The wallet-client query must not fetch while the wallet sits on an
   // unconfigured chain. wagmi's useWalletClient always requests the CONFIG's
@@ -85,7 +97,7 @@ export function useWallet(): UseWalletResult {
   return {
     address: rawAddress ? rawAddress.toLowerCase() : null,
     signer,
-    chainId: accountChainId ?? null,
+    chainId: effectiveChainId ?? null,
     connected: isConnected && !isWrongNetwork,
     connecting: isConnecting,
     isWrongNetwork,

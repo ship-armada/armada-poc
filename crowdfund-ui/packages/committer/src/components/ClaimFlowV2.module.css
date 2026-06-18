@@ -274,6 +274,25 @@
   flex: 1;
 }
 
+/* Mobile (≤767px) — stack the action buttons full-width, primary on top, so two
+ * side-by-side buttons don't overflow the modal. Matches the commit flow's
+ * Step5Confirmation button row. */
+@media (max-width: 767px) {
+  .buttonRow {
+    flex-direction: column-reverse;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
 /* ── Done-screen hero block (mirrors Step5Confirmation `.heroBlock`). ── */
 .heroBlock {
   display: flex;

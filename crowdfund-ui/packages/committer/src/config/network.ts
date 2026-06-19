@@ -6,7 +6,12 @@ export type NetworkMode = 'local' | 'sepolia'
 export function getNetworkMode(): NetworkMode {
   const env = import.meta.env.VITE_NETWORK as string | undefined
   if (env === 'sepolia') return 'sepolia'
-  return 'local'
+  if (env === 'local') return 'local'
+  // No explicit network. A production bundle must never silently fall back to
+  // local (which points at localhost:8545) — default unset to sepolia in PROD.
+  // (Startup validateEnv() hard-fails such a build before render anyway.)
+  // Dev keeps the local default.
+  return import.meta.env.PROD ? 'sepolia' : 'local'
 }
 
 export function isLocalMode(): boolean {
@@ -35,12 +40,54 @@ export function getHubChainId(): number {
   return isLocalMode() ? 31337 : 11155111
 }
 
+/**
+ * Human-readable name of the deployment's chain, derived from the chain id so
+ * it stays correct across environments (testnet today, mainnet later) without
+ * hardcoding a network into UI copy.
+ */
+export function getHubNetworkLabel(): string {
+  switch (getHubChainId()) {
+    case 1:
+      return 'Ethereum'
+    case 11155111:
+      return 'Sepolia'
+    case 31337:
+      return 'the local network'
+    default:
+      return 'the correct network'
+  }
+}
+
+/**
+ * Returns the path (relative to the Vite serveDeployments middleware) of the
+ * crowdfund deployment manifest to load.
+ *
+ * Local mode → `crowdfund-hub.json` (written by `npm run setup`).
+ * Sepolia + `VITE_DEPLOYMENT_INSTANCE=<name>` → mirrored path under
+ *   `instances/<name>/sepolia/crowdfund.json`, populated by
+ *   `npm run fetch-deployment -- <name>` from the armada-deployments repo.
+ * Sepolia, no instance set → legacy `crowdfund-hub-sepolia.json` (whatever the
+ *   local `deployments/` folder currently holds — overwritten by `setup:sepolia`).
+ */
 export function getDeploymentFileName(): string {
-  return isLocalMode() ? 'crowdfund-hub.json' : 'crowdfund-hub-sepolia.json'
+  if (isLocalMode()) return 'crowdfund-hub.json'
+  const instance = (import.meta.env.VITE_DEPLOYMENT_INSTANCE as string | undefined)?.trim()
+  if (instance) return `instances/${instance}/sepolia/crowdfund.json`
+  return 'crowdfund-hub-sepolia.json'
 }
 
 export function getPollIntervalMs(): number {
   return isLocalMode() ? 5_000 : 15_000
+}
+
+/**
+ * Max blocks per eth_getLogs request. Local Anvil is tiny so 10 is plenty;
+ * Sepolia public RPCs (publicnode) handle far larger ranges, so use a wide
+ * range to keep cold-start backfills from taking thousands of requests.
+ * fetchLogs halves this on a range-too-large error, so an over-estimate is safe.
+ */
+export function getMaxBlockRange(): number {
+  return isLocalMode() ? 10 : 2_000
 }
 
 /** Block explorer base URL. Returns undefined for local mode (no explorer). */

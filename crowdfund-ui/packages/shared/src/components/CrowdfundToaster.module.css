@@ -1,0 +1,89 @@
+/* ABOUTME: CSS Module styling sonner toasts against @armada/ui design tokens. */
+/* ABOUTME: `!important` everywhere because sonner emits inline styles on every toast (specificity 1,0,0,0); the same way the previous Tailwind-flavor `!bg-card` etc. worked here. */
+
+.toast {
+  background: var(--semantic-color-surface-default) !important;
+  color: var(--semantic-color-text-primary) !important;
+  border: 1px solid var(--semantic-color-border-default) !important;
+  border-radius: calc(var(--primitives-borderRadius-lg) * 1px) !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+  font-size: calc(var(--primitives-fontSize-base) * 1px) !important;
+  box-shadow: 0 12px 28px -16px rgba(0, 0, 0, 0.55) !important;
+}
+
+.description {
+  color: var(--semantic-color-text-muted) !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+}
+
+.actionButton {
+  background: var(--semantic-color-text-lavender) !important;
+  color: var(--semantic-color-text-primary) !important;
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px) !important;
+  padding: 4px 10px !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px) !important;
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus) !important;
+  outline-offset: 2px !important;
+}
+
+.cancelButton {
+  background: var(--semantic-color-surface-hover) !important;
+  color: var(--semantic-color-text-muted) !important;
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px) !important;
+  padding: 4px 10px !important;
+  font-family: var(--primitives-fontFamily-ui) !important;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px) !important;
+}
+
+.cancelButton:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus) !important;
+  outline-offset: 2px !important;
+}
+
+/* Success and error — the high-signal variants the app fires most — take the
+ * full status color on the border so they read clearly as confirmation /
+ * failure rather than a subtle tint. */
+.success {
+  border-color: var(--semantic-color-status-success) !important;
+}
+
+.error {
+  border-color: var(--semantic-color-status-error) !important;
+}
+
+/* The remaining variants keep a softer ~40% tint over the default border so
+ * they read as themed without overwhelming the card surface. */
+.warning {
+  border-color: color-mix(in srgb, var(--semantic-color-status-warning) 40%, var(--semantic-color-border-default)) !important;
+}
+
+.info {
+  border-color: color-mix(in srgb, var(--semantic-color-status-info) 40%, var(--semantic-color-border-default)) !important;
+}
+
+/* Loading (tx pending/submitted) — full brand lavender so the in-progress
+ * toast ties to the app's primary color while a transaction is in flight. */
+.loading {
+  border-color: var(--semantic-color-brand-lavender) !important;
+}
+
+/* Match each variant's icon to its border color. Sonner paints the success /
+ * error icons as SVGs with `fill: currentColor`, so setting `color` recolors
+ * them; the loading spinner is built from `.sonner-loading-bar` divs, recolored
+ * via `background`. `:global(...)` opts the spinner class out of CSS-module
+ * hashing since it's sonner's own global class, not one of ours. */
+.success [data-icon] svg {
+  color: var(--semantic-color-status-success) !important;
+}
+
+.error [data-icon] svg {
+  color: var(--semantic-color-status-error) !important;
+}
+
+.loading :global(.sonner-loading-bar) {
+  background: var(--semantic-color-brand-lavender) !important;
+}

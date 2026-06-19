@@ -1,7 +1,8 @@
-// ABOUTME: Shared sonner Toaster mount with themed classNames + positioning.
-// ABOUTME: Used by observer + committer. Admin keeps its own bare mount (out of scope).
+// ABOUTME: Shared sonner Toaster mount themed against @armada/ui design tokens.
+// ABOUTME: Surfaces, text, borders, and status tints come from `--semantic-color-*` / `--primitives-*`, matching the designer's modal/header chrome.
 
 import { Toaster } from 'sonner'
+import styles from './CrowdfundToaster.module.css'
 
 export function CrowdfundToaster() {
   return (
@@ -11,18 +12,15 @@ export function CrowdfundToaster() {
       visibleToasts={5}
       toastOptions={{
         classNames: {
-          toast:
-            '!bg-card !text-card-foreground !border !border-border shadow-lg rounded-lg',
-          description: '!text-muted-foreground',
-          actionButton:
-            '!bg-primary !text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          cancelButton:
-            '!bg-muted !text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          success: '!border-success/40',
-          error: '!border-error/40',
-          warning: '!border-warning/40',
-          info: '!border-info/40',
-          loading: '!border-info/40',
+          toast: styles.toast,
+          description: styles.description,
+          actionButton: styles.actionButton,
+          cancelButton: styles.cancelButton,
+          success: styles.success,
+          error: styles.error,
+          warning: styles.warning,
+          info: styles.info,
+          loading: styles.loading,
         },
       }}
     />

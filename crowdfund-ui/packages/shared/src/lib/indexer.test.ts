@@ -21,6 +21,60 @@ describe('reviveIndexedEvent', () => {
     expect(event.args.amount).toBe(1_000_000n)
   })
 
+  it('revives an event type with no bigint args', () => {
+    const event = reviveIndexedEvent({
+      type: 'Cancelled',
+      blockNumber: 5,
+      transactionHash: '0xabc',
+      logIndex: 1,
+      args: {},
+    })
+    expect(event.type).toBe('Cancelled')
+  })
+
+  it('throws on an unknown event type', () => {
+    expect(() =>
+      reviveIndexedEvent({
+        type: 'NotARealEvent',
+        blockNumber: 1,
+        transactionHash: '0xabc',
+        logIndex: 0,
+        args: {},
+      }),
+    ).toThrow(/unknown type/)
+  })
+
+  it('throws when a required bigint field is missing', () => {
+    expect(() =>
+      reviveIndexedEvent({
+        type: 'Committed',
+        blockNumber: 1,
+        transactionHash: '0xabc',
+        logIndex: 0,
+        args: { participant: '0x1', hop: 0 }, // no amount
+      }),
+    ).toThrow(/amount/)
+  })
+
+  it('throws when a bigint field is not a numeric string', () => {
+    expect(() =>
+      reviveIndexedEvent({
+        type: 'Committed',
+        blockNumber: 1,
+        transactionHash: '0xabc',
+        logIndex: 0,
+        args: { participant: '0x1', hop: 0, amount: 'not-a-number' },
+      }),
+    ).toThrow(/amount/)
+  })
+
+  it('throws on a non-object / missing args', () => {
+    expect(() => reviveIndexedEvent(null)).toThrow(/Invalid indexed event/)
+    expect(() =>
+      reviveIndexedEvent({ type: 'Cancelled', blockNumber: 1, transactionHash: '0xabc', logIndex: 0 }),
+    ).toThrow(/args/)
+  })
+
   it('fetches indexer health status', async () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () => new Response(JSON.stringify({

@@ -1,0 +1,52 @@
+/* ABOUTME: Inline-presentation sizing for the Path 1 invite-link flow — slot + step keep the 480×500 footprint of Step0Invite while the user advances through the step machine. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteInline.module.css). */
+
+/* Fixed viewport matching Step 0 (480×500). Each step renders its own designed shell. */
+.slot {
+  width: 480px;
+  height: 500px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.step {
+  width: 480px;
+  height: 500px;
+}
+
+.invitesWrap {
+  width: 480px;
+  height: 500px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ── Post-commit "invites" step overrides ──
+ * The post-commit invite-slots screen renders `ParticipateFlowInviteSlots`,
+ * which is a shell + a Return-button footer. With many slots its combined
+ * height exceeds the 480×500 footprint inherited from Step0Invite, and the
+ * shell's bottom border + Return button get clipped by the `.slot` /
+ * `.step` overflow: hidden. These opt-in classes are applied by
+ * InviteLinkFlowController only when `renderStep === 'invites'` — every
+ * other step of the same controller keeps the original 480×500. */
+.slotInvites,
+.stepInvites {
+  height: auto;
+  min-height: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* Mobile — the inline step fills the page width and sizes to content (the
+ * /invite page chrome scrolls). The post-commit invites variant inherits
+ * width:100% / min-height:0 here and keeps its own max-height + scroll above.
+ * Mirrors the mockup's ParticipateFlowInviteInline mobile rework. */
+@media (max-width: 767px) {
+  .slot,
+  .step,
+  .invitesWrap {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+}

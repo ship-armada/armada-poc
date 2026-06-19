@@ -1,0 +1,109 @@
+/* ABOUTME: CSS Module for Step1Wallet — see Step1Wallet.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/* 
+  Figma specs: 480x500px, 40px padding all sides
+  gap 80px between Steps and content block (space-between)
+  Steps: 43px height
+  Content: title-block (56px) + wallet list (192px), gap 40px between them
+*/
+
+.shell {
+  width: 480px;
+  min-width: 480px;
+  height: 500px;
+  flex-shrink: 0;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-10);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.shellCompact {
+  height: auto;
+  min-height: 0;
+  padding: var(--primitives-spacing-8);
+  gap: var(--primitives-spacing-8);
+  justify-content: flex-start;
+}
+
+.shellExit {
+  animation: walletStepOut 220ms ease forwards;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-10);
+  justify-content: center;
+  flex: 1;
+  padding-top: var(--primitives-spacing-10);
+}
+
+.contentCompact {
+  flex: none;
+  padding-top: 0;
+  gap: var(--primitives-spacing-8);
+}
+
+@keyframes walletStepOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  align-items: center;
+  text-align: center;
+}
+
+/* Title: Geist Medium 20px — NOT Charis SIL */
+.title {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.subtitle {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.walletList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+/* WalletItem rows — background and border only */
+.walletList button {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-component-button-secondary-border);
+}
+
+.walletList button:hover:not(:disabled) {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-component-button-secondary-border-hover);
+}

@@ -7,11 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc -b --force --noEmit",
+    "clean": "rm -f tsconfig.tsbuildinfo tsconfig.app.tsbuildinfo tsconfig.node.tsbuildinfo",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@armada/crowdfund-shared": "*",
+    "@armada/ui": "*",
+    "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.4",
@@ -22,6 +26,7 @@
     "@rainbow-me/rainbowkit": "^2.2.10",
     "@sentry/react": "^8.55.0",
     "@tanstack/react-query": "^5.96.0",
+    "@web3icons/react": "^4.1.17",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "ethers": "^6.15.0",
@@ -40,6 +45,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@sentry/vite-plugin": "^5.3.0",
     "@tailwindcss/vite": "^4.1.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

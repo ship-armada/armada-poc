@@ -4,11 +4,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { Clock, DollarSign, UserCheck, Users } from 'lucide-react'
-import { formatArm, formatCountdown, formatUsdc } from '../lib/format.js'
+import { formatArm, formatTimeLeft, formatTimeLeftDetail, formatUsdc } from '../lib/format.js'
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from '../lib/constants.js'
 import { estimateAllocation } from '../lib/allocation.js'
 import { Skeleton } from './ui/skeleton.js'
 import { InfoTooltip } from './InfoTooltip.js'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip.js'
 
 const numberFade = {
   initial: { opacity: 0, y: -2 },
@@ -72,26 +73,50 @@ function formatEndDate(unixSeconds: number): string | null {
 }
 
 /** Phase-aware time card content. Shows live countdown in commit window;
- *  switches to terminal labels in finalized / cancelled states. */
+ *  switches to terminal labels in finalized / cancelled states. `exact` carries
+ *  the precise remaining + local end time for the hover tooltip (null when there
+ *  is no live countdown to annotate). */
 function timeRemainingDisplay(
   phase: number,
   armLoaded: boolean,
   windowEnd: number,
   localTime: number,
-): { primary: string; sub: string | null } {
-  if (phase === 2) return { primary: 'Cancelled', sub: 'Refunds available' }
-  if (phase === 1) return { primary: 'Sale closed', sub: 'Claim window open' }
-  if (!armLoaded) return { primary: 'Not yet open', sub: null }
-  if (windowEnd === 0) return { primary: '—', sub: null }
+): { primary: string; sub: string | null; exact: string | null } {
+  if (phase === 2) return { primary: 'Cancelled', sub: 'Refunds available', exact: null }
+  if (phase === 1) return { primary: 'Sale closed', sub: 'Claim window open', exact: null }
+  if (!armLoaded) return { primary: 'Not yet open', sub: null, exact: null }
+  if (windowEnd === 0) return { primary: '—', sub: null, exact: null }
   const remaining = Math.max(0, windowEnd - localTime)
   const endLabel = formatEndDate(windowEnd)
   if (remaining === 0) {
-    return { primary: 'Closed', sub: endLabel ? `ended ${endLabel}` : null }
+    return { primary: 'Closed', sub: endLabel ? `ended ${endLabel}` : null, exact: null }
   }
   return {
-    primary: formatCountdown(remaining),
+    primary: formatTimeLeft(remaining),
     sub: endLabel ? `ends ${endLabel}` : null,
+    exact: formatTimeLeftDetail(remaining, windowEnd) || null,
   }
+}
+
+/** Countdown value with an optional hover tooltip revealing the exact remaining
+ *  time and local end timestamp. Falls back to a plain span when there's no
+ *  exact detail (terminal states). */
+function TimeRemainingValue({ label, exact }: { label: string; exact: string | null }) {
+  if (!exact) return <span>{label}</span>
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label={`Exact time remaining: ${exact}`}
+          className="cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-4"
+        >
+          {label}
+        </TooltipTrigger>
+        <TooltipContent>{exact}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 }
 
 /** One stat card (icon + label + primary value + subline). */
@@ -399,9 +424,7 @@ export function StatsBar(props: StatsBarProps) {
           icon={<Clock className="size-5" />}
           iconStyle={cardIconStyle('--hop-2')}
           label="Time Remaining"
-          primary={
-            <span className="">{time.primary}</span>
-          }
+          primary={<TimeRemainingValue label={time.primary} exact={time.exact} />}
           sub={time.sub}
           primaryAnimateKey={time.primary}
         />

@@ -1,0 +1,200 @@
+/* ABOUTME: CSS Module for Step3Review — see Step3Review.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/*
+  Figma: 480x500px, 32px padding, space-between
+  Summary card: surface-raised bg, border-default, 20px padding, 8px radius
+  Warning block: amber border, 12px text, centered
+  Button row: Back (secondary) + Approve and commit (gradient), 48px, gap 12px
+*/
+
+.shell {
+  width: 480px;
+  height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+/* Multi-hop variant: per-hop summary rows push the card past the fixed
+ * 500px height when the user is eligible at 2-3 hops. Switch to auto-
+ * sized height with a 500px floor (so two-hop cards don't shrink below
+ * the designer's original size) and a viewport-relative ceiling so very
+ * short viewports still get a scrollable card. Single-hop reviews keep
+ * the unmodified 500px shell. */
+.shellMultiHop {
+  height: auto;
+  min-height: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  flex: 1;
+  padding-top: var(--primitives-spacing-8);
+}
+
+.title {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.4;
+  width: 100%;
+}
+
+/* ── Summary card ── */
+.summaryCard {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--primitives-spacing-3) 0;
+}
+
+.summaryRow:first-child {
+  padding-top: 0;
+}
+
+.summaryRow:last-child {
+  padding-bottom: 0;
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.summaryLabelGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+/* Colored hop dot for the multi-hop review row labels. Matches the dot in
+ * MyPosition meta chips / Step2Commit row headers. */
+.hopDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.summaryLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+.summaryValue {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.summaryValueAccent {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: help;
+  line-height: 0;
+}
+
+.infoTrigger:hover .infoIcon {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+/* ── Warning block ── */
+.warningBlock {
+  background: rgba(196, 145, 229, 0.15);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+}
+
+.warningText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Button row ── */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  /* Guaranteed gap above the row. In single-hop (fixed 500px shell) this
+   * shrinks the inner `space-between` gap by the same amount — no visible
+   * change. In multi-hop (auto-height shell) it adds real breathing room
+   * between the warning block and the buttons. */
+  margin-top: var(--primitives-spacing-6);
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
+/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .shell {
+    gap: var(--primitives-spacing-8);
+  }
+
+  .content {
+    padding-top: 0;
+  }
+
+  .buttonRow {
+    flex-direction: column-reverse;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}

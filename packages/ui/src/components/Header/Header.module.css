@@ -1,5 +1,5 @@
 /* ABOUTME: CSS Module for Header — fixed top bar with blurred backdrop and hide-on-scroll transform. */
-/* ABOUTME: Mixes --semantic-component-navbar-*, --semantic-component-button-*, and brand tokens. */
+/* ABOUTME: Ported byte-identical from the mockup; layout is a flex bar with logo+nav on the left and action buttons on the right. */
 
 .header {
   display: flex;
@@ -13,72 +13,54 @@
   right: 0;
   z-index: 100;
   border-bottom: none;
-  background: rgba(14,13,15,0.85);
+  background: rgba(14, 13, 15, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: transform 0.28s ease-in-out;
   will-change: transform;
-  /* Extra distance when header is offset from top (e.g. 24px gutter); set on inset variants */
   --header-concealed-extra: 0px;
 }
 
 .concealed {
-  /* Beat entrance animations on the same element (e.g. Hero). */
   transform: translateY(calc(-100% - var(--header-concealed-extra))) !important;
   pointer-events: none;
 }
-.logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.logoMark { width: 28px; height: 28px; }
-.logoText { font-family: "Geist", sans-serif; font-size: calc(var(--primitives-fontSize-base) * 1px); font-weight: 500; letter-spacing: 0.14em; color: var(--semantic-color-text-primary); }
-.nav { position: absolute; left: 50%; transform: translateX(-50%); }
-.actions { flex-shrink: 0; display: flex; align-items: center; gap: var(--primitives-spacing-3); }
 
-.walletBtn {
-  height: var(--semantic-component-navitem-height);
-  display: inline-flex;
+.left {
+  display: flex;
   align-items: center;
-  gap: var(--primitives-spacing-2);
-  padding: 0 var(--semantic-component-button-primary-md-padding-x);
-  padding-left: var(--primitives-spacing-2);
-  border-radius: var(--semantic-component-navitem-radius);
-  border: 1px solid transparent;
-  cursor: pointer;
-  color: var(--semantic-color-text-primary);
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: var(--semantic-component-navitem-font-size);
-  font-weight: var(--primitives-fontWeight-medium);
-  letter-spacing: 0.02em;
-  background:
-    linear-gradient(var(--semantic-component-navbar-bg), var(--semantic-component-navbar-bg)) padding-box,
-    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-lavender)) border-box;
-  transition: background 0.15s, transform 0.1s, color 0.15s;
+  gap: var(--primitives-spacing-6);
+  flex-shrink: 0;
+  min-width: 0;
 }
 
-.walletBtn:hover {
-  background:
-    linear-gradient(var(--semantic-component-navitem-default-bg-hover), var(--semantic-component-navitem-default-bg-hover)) padding-box,
-    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-lavender)) border-box;
+.logo {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
-.walletBtn:active {
-  transform: translateY(1px);
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
 }
 
-.walletBtn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+.myPositionActive {
+  background: var(--semantic-component-navitem-active-bg) !important;
+  color: var(--semantic-component-navitem-active-text) !important;
 }
 
-.walletIcon {
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.28), rgba(255,255,255,0) 55%),
-    color-mix(in srgb, var(--semantic-color-brand-lavender) 28%, transparent);
-  flex: 0 0 auto;
+.myPositionActive:hover:not(:disabled) {
+  background: var(--semantic-component-navitem-active-bg) !important;
+  color: var(--semantic-component-navitem-active-text) !important;
 }
 
-.walletText {
-  white-space: nowrap;
+/* Light theme — lavender active pill with dark text. Scoped to light so dark
+   stays token-driven; the mockup applied this to the base rule. */
+:global([data-theme='light']) .myPositionActive,
+:global([data-theme='light']) .myPositionActive:hover:not(:disabled) {
+  background: var(--semantic-color-brand-lavender) !important;
+  color: #291433 !important;
 }

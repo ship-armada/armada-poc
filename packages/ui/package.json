@@ -19,6 +19,8 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
+    "@heroicons/react": "^2.2.0",
+    "@web3icons/react": "^4.1.17",
     "react": "^19.0.0"
   },
   "devDependencies": {

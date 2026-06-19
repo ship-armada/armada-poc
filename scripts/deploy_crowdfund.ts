@@ -26,6 +26,7 @@ import {
   isLocal,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
+import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -66,6 +67,18 @@ async function main() {
   console.log(`Chain ID: ${chainId}`);
   console.log(`Environment: ${config.env}`);
   console.log("");
+
+  // Fresh Anvil has no Multicall3; the crowdfund UIs batch their contract reads
+  // through aggregate3 at the canonical address. Etch the runtime bytecode there
+  // (local only — Sepolia/mainnet already have it). Idempotent: skips if present.
+  if (isLocal()) {
+    const existing = await ethers.provider.getCode(MULTICALL3_ADDRESS);
+    if (existing === "0x") {
+      await ethers.provider.send("anvil_setCode", [MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE]);
+      console.log(`Etched Multicall3 at ${MULTICALL3_ADDRESS}`);
+      console.log("");
+    }
+  }
 
   // 1. Load governance deployment (required — provides shared ARM token + treasury)
   console.log("1. Loading governance deployment...");

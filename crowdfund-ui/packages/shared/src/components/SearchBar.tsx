@@ -70,6 +70,7 @@ export function SearchBar(props: SearchBarProps) {
       </svg>
       <input
         type="text"
+        autoComplete="off"
         value={localValue}
         onChange={handleChange}
         placeholder={placeholder}

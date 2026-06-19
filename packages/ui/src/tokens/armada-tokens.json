@@ -140,7 +140,7 @@
           "type": "color"
         },
         "mid": {
-          "value": "rgba(255,255,255,0.38)",
+          "value": "rgba(255,255,255,0.45)",
           "type": "color"
         },
         "high": {
@@ -432,6 +432,11 @@
         "raised": {
           "value": "{color.neutral.100}",
           "type": "color"
+        },
+        "hover": {
+          "value": "{color.neutral.100}",
+          "type": "color",
+          "description": "Surface color for interactive hover states"
         }
       },
       "border": {
@@ -745,6 +750,16 @@
       "badge": {
         "value": "{borderRadius.sm}",
         "type": "borderRadius"
+      },
+      "item": {
+        "value": "8",
+        "type": "borderRadius",
+        "description": "Interactive list rows and items"
+      },
+      "modal": {
+        "value": "20",
+        "type": "borderRadius",
+        "description": "Modal and overlay containers"
       }
     },
     "component": {

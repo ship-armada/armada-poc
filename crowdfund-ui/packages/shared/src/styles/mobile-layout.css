@@ -1,0 +1,18 @@
+/* ABOUTME: Global (non-module) mobile reflow — ≤767px. Forces every [data-flow-shell] wrapper to full-width, fluid-height, scrollable so participate/claim flow screens fit small viewports. */
+/* ABOUTME: Ported from the armada-crowdfund mockup (src/styles/mobile-layout.css). Imported once at the app CSS entry; inert until step wrappers carry the data-flow-shell attribute. */
+
+@media (max-width: 767px) {
+  [data-flow-shell] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0;
+    max-height: calc(100dvh - 56px - var(--primitives-spacing-5) * 3);
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start !important;
+    gap: var(--primitives-spacing-8);
+  }
+}

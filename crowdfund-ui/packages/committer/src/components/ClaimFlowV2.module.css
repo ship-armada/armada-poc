@@ -1,0 +1,371 @@
+/* ABOUTME: CSS Module for ClaimFlowV2 — mirrors the commit modal shell (Step3Review / Step5Confirmation) so the claim flow reads as the same aesthetic family. */
+/* ABOUTME: 480px lavender-bordered card centered on the page panel; surface-raised summary card with dividers between rows; lavender-tinted warning block; gradient lg buttons. */
+
+/* ── Gate-state shells (loading / not-open / nothing-to-claim) ──
+ * Same compact centered column as before — these short-circuit panels don't
+ * use the full review-modal chrome, just a small text block + CTA. */
+.gateShell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-3);
+  min-height: 60vh;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 0 var(--primitives-spacing-6);
+  text-align: center;
+  font-family: var(--primitives-fontFamily-ui);
+  color: var(--semantic-color-text-primary);
+}
+
+.gateTitle {
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.gateBody {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+}
+
+.gateBody .accent {
+  color: var(--semantic-color-text-primary);
+}
+
+.gateBodyFootnote {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+  margin-top: 12px;
+}
+
+.gateActions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ── Page-centering wrapper ──
+ * Same vertical-center math as the gate shell; the inner `.cardShell` is the
+ * 480px modal-style card centered inside it. */
+.flowShell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 12rem);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-6);
+  font-family: var(--primitives-fontFamily-ui);
+  color: var(--semantic-color-text-primary);
+}
+
+/* ── Card shell — 480px lavender-bordered modal card ──
+ * Mirrors Step3Review / Step5Confirmation `.shell`. `min-height` rather than
+ * a fixed height so the delegate-input row can grow without clipping. */
+.cardShell {
+  width: 480px;
+  min-height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.cardContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  flex: 1;
+  padding-top: var(--primitives-spacing-8);
+  /* Symmetric vertical breathing room — when the warning block (or delegate
+   * block in ARM mode) is the last child, this keeps it from sitting flush
+   * against the button row below. */
+  padding-bottom: var(--primitives-spacing-6);
+}
+
+.cardTitle {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.4;
+  width: 100%;
+}
+
+/* ── Summary card (one card, label/value rows separated by dividers) ──
+ * Identical token set to Step3Review.module.css `.summaryCard`. */
+.summaryCard {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--primitives-spacing-3) 0;
+}
+
+.summaryRow:first-child {
+  padding-top: 0;
+}
+
+.summaryRow:last-child {
+  padding-bottom: 0;
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.summaryLabelGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.summaryLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+.summaryValue {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.summaryValueAccent {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: help;
+  line-height: 0;
+}
+
+.infoTrigger:hover .infoIcon {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+/* ── Warning block (lavender-tinted) — same tokens as Step3Review. ── */
+.warningBlock {
+  background: rgba(196, 145, 229, 0.15);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+}
+
+.warningText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Delegate address input ──
+ * Sentence-case label + UI font input — sized to sit cleanly below the
+ * summary card. The block stacks rather than nesting into a summary row
+ * because the address input is too wide to render inline with the value. */
+.delegateBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+.delegateLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
+}
+
+.delegateInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px);
+  background: var(--semantic-color-surface-default);
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.delegateInput:focus {
+  border-color: var(--semantic-color-border-focus);
+}
+
+.delegateInputError {
+  border-color: var(--semantic-color-status-error);
+}
+
+.delegateInputResolved {
+  border-color: var(--semantic-color-status-success);
+}
+
+.delegateError {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+.delegateHelp {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+/* "Resolves to 0x1234…abcd" line shown when an ENS name resolves. */
+.delegateResolved {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.delegateResolved code {
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-mono, ui-monospace, monospace);
+}
+
+/* ── Footer button row (Cancel / Claim, or Back / View position). ── */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
+/* Mobile (≤767px) — stack the action buttons full-width, primary on top, so two
+ * side-by-side buttons don't overflow the modal. Matches the commit flow's
+ * Step5Confirmation button row. Declared after the base `.buttonRow > *` so its
+ * `flex: none` wins on mobile and the buttons keep their fixed height (their
+ * vertical "padding") instead of shrinking to share the column. */
+@media (max-width: 767px) {
+  .buttonRow {
+    flex-direction: column-reverse;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}
+
+/* ── Done-screen hero block (mirrors Step5Confirmation `.heroBlock`). ── */
+.heroBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  align-items: center;
+  text-align: center;
+}
+
+.headline {
+  font-family: var(--primitives-fontFamily-display);
+  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  line-height: var(--primitives-lineHeight-snug);
+}
+
+.subline {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ── "What happens next" card (mirrors Step5Confirmation `.nextCard`). ── */
+.nextCard {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.nextEyebrow {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.nextText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Submit-step wrapper — Step4Approve handles its own surface. ── */
+.submitShell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 12rem);
+}
+
+/* Mobile (≤767px) — the 480px modal-style card fills the page width and sizes
+ * to content, matching the commit-flow step screens on small viewports. */
+@media (max-width: 767px) {
+  .flowShell {
+    padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  }
+
+  .cardShell {
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+  }
+}

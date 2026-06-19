@@ -1,0 +1,188 @@
+/* ABOUTME: Styles for the Participate modal backdrop, panel, close button, and step crossfade. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowModal.module.css). */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--primitives-spacing-8);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--semantic-color-surface-bg) 72%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: modalBackdropIn 280ms ease;
+}
+
+.backdropExit {
+  animation: modalBackdropOut 280ms ease forwards;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 480px;
+  max-width: 100%;
+  gap: var(--primitives-spacing-5);
+  animation: modalPanelIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.panelExit {
+  animation: modalPanelOut 280ms ease forwards;
+}
+
+.step {
+  width: 100%;
+  animation: modalStepIn 320ms ease;
+}
+
+.stepExit {
+  animation: modalStepOut 240ms ease forwards;
+}
+
+.close {
+  flex-shrink: 0;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--semantic-component-button-secondary-border);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.close:hover {
+  border-color: var(--semantic-component-button-secondary-border-hover);
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 40%, transparent);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+.mobileLogo {
+  display: none;
+}
+
+@keyframes modalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalBackdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modalPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modalPanelOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes modalStepIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalStepOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Mobile — full-bleed step, corner mark top-left + fixed close top-right.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .backdrop {
+    align-items: flex-start;
+    padding:
+      calc(var(--primitives-spacing-5) + 40px + var(--primitives-spacing-5))
+      var(--primitives-spacing-5)
+      var(--primitives-spacing-5);
+  }
+
+  .mobileLogo {
+    display: block;
+    position: fixed;
+    top: var(--primitives-spacing-5);
+    left: var(--primitives-spacing-5);
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    z-index: 201;
+    pointer-events: none;
+  }
+
+  /* Floating round control, paired with the corner mark top-left. The desktop
+   * close stays our bordered pill; this round-white treatment is mobile-only. */
+  .close {
+    position: fixed;
+    top: var(--primitives-spacing-5);
+    right: var(--primitives-spacing-5);
+    z-index: 201;
+    width: var(--primitives-spacing-12);
+    height: var(--primitives-spacing-12);
+    border: none;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--semantic-color-text-primary) 20%, transparent);
+    color: var(--semantic-color-text-primary);
+  }
+
+  .close:hover {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--semantic-color-text-primary) 28%, transparent);
+  }
+
+  .panel {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .step {
+    min-width: 0;
+  }
+}

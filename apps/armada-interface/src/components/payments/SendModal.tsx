@@ -19,6 +19,7 @@ import { parseUsdcInput } from '@/lib/format'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress, validateShieldedAddressStrict } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
+import { canRetryTx } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
 import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
@@ -382,6 +383,11 @@ export function SendModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          primaryLabel={
+            errorAtStep === 'review' || (record != null && canRetryTx(record))
+              ? 'Try again'
+              : 'Start over'
+          }
           onRetry={
             errorAtStep === 'review'
               ? () => {
@@ -389,16 +395,25 @@ export function SendModal() {
                   setErrorAtStep(undefined)
                   setStep('review')
                 }
-              : () => {
-                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
-                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
-                  // the user on the error step with the honest error + explorer link, not flip to a
-                  // stuck spinner — that was the P0-4 no-op bug.
-                  setErrorAtStep(undefined)
-                  void activeTx?.retry()?.then((accepted) => {
-                    if (accepted) setStep('progress')
-                  })
-                }
+              : record != null && canRetryTx(record)
+                ? () => {
+                    // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                    // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                    // the user on the error step with the honest error + explorer link, not flip to a
+                    // stuck spinner — that was the P0-4 no-op bug.
+                    setErrorAtStep(undefined)
+                    void activeTx?.retry()?.then((accepted) => {
+                      if (accepted) setStep('progress')
+                    })
+                  }
+                : () => {
+                    // S-M3: build-proof / FEE_EXPIRED / DUPLICATE_TX failures aren't retryable in
+                    // place; return to the input step (form state preserved) so the user can start a
+                    // fresh transaction instead of clicking a dead "Try again".
+                    setSubmitError(null)
+                    setErrorAtStep(undefined)
+                    setStep('input')
+                  }
           }
         />
       )}

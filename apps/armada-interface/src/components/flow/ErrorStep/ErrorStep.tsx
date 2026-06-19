@@ -80,8 +80,14 @@ export interface ErrorStepProps {
    * chain the hash lives on.
    */
   explorerUrl?: string
-  /** Try Again handler. Omit to disable the button (failing stage is not in lifecycle.retryableStages). */
+  /** Primary action handler. Omit to disable the button. */
   onRetry?: () => void
+  /**
+   * Primary button label. Defaults to "Try again". Modals pass "Start over" when the failing stage
+   * isn't retryable in place (e.g. build-proof, FEE_EXPIRED) and the action returns to the form for
+   * a fresh transaction rather than re-running the dead stage. (S-M3)
+   */
+  primaryLabel?: string
   /** View Details handler — typically expands the TechnicalDetailsDisclosure inside the body. */
   onViewDetails?: () => void
 }
@@ -91,6 +97,7 @@ export function ErrorStep({
   message,
   explorerUrl,
   onRetry,
+  primaryLabel = 'Try again',
   onViewDetails,
 }: ErrorStepProps) {
   const copy = error ? COPY_BY_CODE[error.code] : undefined
@@ -119,7 +126,7 @@ export function ErrorStep({
       ) : null}
       <FlowFooter
         className={styles.footer}
-        primary={{ label: 'Try again', onClick: onRetry, disabled: !onRetry }}
+        primary={{ label: primaryLabel, onClick: onRetry, disabled: !onRetry }}
         secondary={
           onViewDetails ? { label: 'View details', onClick: onViewDetails } : undefined
         }

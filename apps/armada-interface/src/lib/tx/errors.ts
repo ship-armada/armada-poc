@@ -5,6 +5,57 @@ import { extractTxError } from './receipt'
 import { isUserRejection } from '../errors'
 import { mapRevertToMessage } from '../revert'
 import type { TxError } from './types'
+import type { RelayerErrorCode } from '@/config/relayer'
+
+/** Duck-typed `RelayerError` (lib/relayer.ts) — matched structurally to avoid importing the whole
+ *  HTTP client (and any cycle) into the tx-error path. */
+function asRelayerError(
+  err: unknown,
+): { code: RelayerErrorCode; message: string } | null {
+  const code = (err as { code?: unknown }).code
+  if (err instanceof Error && err.name === 'RelayerError' && typeof code === 'string') {
+    return { code: code as RelayerErrorCode, message: err.message }
+  }
+  return null
+}
+
+/**
+ * Map a relayer rejection to a typed TxError. The relayer carries a rich code set that the generic
+ * OTHER path would otherwise flatten to "Something went wrong" (S-H2):
+ *   - pre-broadcast refusals (gas estimation / invalid target/chain/data) → PRE_FLIGHT_REVERT
+ *     ("nothing was sent").
+ *   - fee-quote rejections → FEE_EXPIRED (retry is futile — S-H1 gates it off; start over).
+ *   - DUPLICATE_TX (409) → the tx WAS submitted; recover the hash + resume (T-M3) rather than fail.
+ *   - busy / submission hiccup → RPC_ERROR (transient, retry-appropriate).
+ */
+function classifyRelayerError(err: unknown): TxError | null {
+  const re = asRelayerError(err)
+  if (!re) return null
+  const message = mapRevertToMessage(re.message)
+  switch (re.code) {
+    case 'GAS_ESTIMATION_FAILED':
+    case 'INVALID_TARGET':
+    case 'INVALID_CHAIN':
+    case 'INVALID_DATA':
+      return { code: 'PRE_FLIGHT_REVERT', message }
+    case 'FEE_TOO_LOW':
+    case 'FEE_EXPIRED':
+    case 'FEE_INSUFFICIENT':
+      return {
+        code: 'FEE_EXPIRED',
+        message:
+          'Your fee quote expired before the relayer accepted the transaction. Start a new transaction to get a fresh quote.',
+      }
+    case 'DUPLICATE_TX':
+      return { code: 'DUPLICATE_TX', message: 'This transaction was already submitted to the relayer.' }
+    case 'RELAYER_BUSY':
+    case 'SUBMISSION_FAILED':
+      return { code: 'RPC_ERROR', message }
+    case 'UNKNOWN_ERROR':
+    default:
+      return { code: 'OTHER', message }
+  }
+}
 
 /**
  * Convert anything thrown inside a handler into a typed TxError suitable for `markFailed`.
@@ -30,6 +81,10 @@ export function classifyHandlerError(
     // Don't overwrite its txHash from the outer context.
     return branded
   }
+
+  // Relayer rejections carry a typed code — map it before the OTHER fallback flattens it (S-H2).
+  const relayer = classifyRelayerError(err)
+  if (relayer) return relayer
 
   if (isUserRejection(err)) {
     return { code: 'USER_REJECTED', message: 'You declined the action in your wallet.' }

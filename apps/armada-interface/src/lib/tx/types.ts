@@ -313,6 +313,13 @@ export type TxErrorCode =
   | 'RPC_ERROR'
   | 'USER_REJECTED'
   | 'INTERRUPTED'
+  // The relayer rejected the proof's baked-in fee quote (expired / too low / insufficient). The
+  // cacheId + fee are frozen into the proof, so retrying re-POSTs the same doomed quote — only a
+  // fresh transaction recovers. Retry is gated off for this code (S-H1).
+  | 'FEE_EXPIRED'
+  // The relayer already has this transaction (HTTP 409). It WAS submitted; recovery is to fetch
+  // the hash via /status and resume watching rather than surface a failure (S-H2 / T-M3).
+  | 'DUPLICATE_TX'
   | 'CANCELLED'
   | 'DISMISSED'
   | 'OTHER'

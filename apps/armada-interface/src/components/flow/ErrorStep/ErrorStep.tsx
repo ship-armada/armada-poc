@@ -42,6 +42,14 @@ const COPY_BY_CODE: Record<TxError['code'], { title: string; body?: string }> = 
     title: 'Transaction interrupted',
     body: 'This transaction was interrupted before it was sent — nothing left your wallet. Start a new transaction.',
   },
+  FEE_EXPIRED: {
+    title: 'Fee quote expired',
+    body: 'The quoted fee was no longer valid when the relayer received your transaction. Nothing was sent — start a new transaction to get a fresh quote.',
+  },
+  DUPLICATE_TX: {
+    title: 'Already submitted',
+    body: 'The relayer already has this transaction — it may still complete. Check the explorer to confirm.',
+  },
   CANCELLED: {
     title: 'Cancelled',
     body: 'No transaction was sent.',

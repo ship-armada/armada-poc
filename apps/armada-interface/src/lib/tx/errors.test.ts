@@ -80,3 +80,45 @@ describe('classifyHandlerError', () => {
     expect(result.txHash).toBe('0xabc')
   })
 })
+
+describe('classifyHandlerError — RelayerError branch (S-H2)', () => {
+  /** Duck-typed RelayerError matching lib/relayer's shape (name + code). */
+  function relayerError(code: string, message = 'relayer said no') {
+    return Object.assign(new Error(message), { name: 'RelayerError', code })
+  }
+
+  it('maps pre-broadcast refusals to PRE_FLIGHT_REVERT (nothing was sent)', () => {
+    // WHY (S-H2): GAS_ESTIMATION_FAILED / INVALID_* mean the relayer refused before submitting.
+    // Pre-flight semantics tell the user no gas was spent and nothing left their wallet.
+    for (const code of ['GAS_ESTIMATION_FAILED', 'INVALID_TARGET', 'INVALID_CHAIN', 'INVALID_DATA']) {
+      expect(classifyHandlerError(relayerError(code), 'fallback').code).toBe('PRE_FLIGHT_REVERT')
+    }
+  })
+
+  it('maps fee-quote rejections to FEE_EXPIRED with start-over copy', () => {
+    // WHY (S-H2/S-H1): the cacheId + fee are frozen into the proof, so a retry re-POSTs the same
+    // doomed quote. Distinct code lets S-H1 gate retry off and surface "start a new transaction".
+    for (const code of ['FEE_TOO_LOW', 'FEE_EXPIRED', 'FEE_INSUFFICIENT']) {
+      const r = classifyHandlerError(relayerError(code), 'fallback')
+      expect(r.code).toBe('FEE_EXPIRED')
+      expect(r.message).toMatch(/new transaction|fresh quote/i)
+    }
+  })
+
+  it('maps DUPLICATE_TX (409) to DUPLICATE_TX, not a generic failure', () => {
+    // WHY (S-H2): a 409 means the tx WAS submitted; surfacing it as an opaque failure is wrong.
+    expect(classifyHandlerError(relayerError('DUPLICATE_TX'), 'fallback').code).toBe('DUPLICATE_TX')
+  })
+
+  it('maps transient relayer states (busy / submission failed) to RPC_ERROR', () => {
+    // WHY (S-H2): RELAYER_BUSY / SUBMISSION_FAILED are transient and retry-appropriate.
+    expect(classifyHandlerError(relayerError('RELAYER_BUSY'), 'fallback').code).toBe('RPC_ERROR')
+    expect(classifyHandlerError(relayerError('SUBMISSION_FAILED'), 'fallback').code).toBe('RPC_ERROR')
+  })
+
+  it('falls through to OTHER for UNKNOWN_ERROR, preserving the message', () => {
+    const r = classifyHandlerError(relayerError('UNKNOWN_ERROR', 'weird relayer state'), 'fallback')
+    expect(r.code).toBe('OTHER')
+    expect(r.message).toBe('weird relayer state')
+  })
+})

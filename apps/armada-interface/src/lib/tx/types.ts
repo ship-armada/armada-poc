@@ -50,6 +50,20 @@ export function isTerminalState(state: TxExecutionState): boolean {
   return (TERMINAL_STATES as ReadonlyArray<string>).includes(state)
 }
 
+/**
+ * Sort key for history ordering (T-L3). Terminal records anchor at `createdAt` so a row whose
+ * `updatedAt` was bumped by a late history-recovery reconcile (a week-old tx re-confirmed from
+ * chain) doesn't leap above newer activity. In-flight records use `updatedAt` so they bubble as
+ * their stage advances. Consumers sort descending: `(a, b) => historySortTime(b) - historySortTime(a)`.
+ */
+export function historySortTime(record: {
+  executionState: TxExecutionState
+  createdAt: number
+  updatedAt: number
+}): number {
+  return isTerminalState(record.executionState) ? record.createdAt : record.updatedAt
+}
+
 /* Stage unions — every TxKind declares its own sequence. Adding a stage means
  * adding to the union AND to the lifecycle definition in `lifecycles.ts`. */
 

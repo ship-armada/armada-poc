@@ -247,14 +247,15 @@ describe('encrypted reads (loadAllTx)', () => {
     expect(records.map(r => r.id)).toEqual(['mine'])
   })
 
-  it('sorts records by updatedAt desc', async () => {
+  it('sorts terminal records by createdAt desc, ignoring a bumped updatedAt (T-L3)', async () => {
     unlock('rg-1')
-    // updatedAt is set from id.length * 1000 in our fixture, so longer ids → later.
-    await putTx(fixture('a', 'rg-1'))      // updatedAt 1000
-    await putTx(fixture('aa', 'rg-1'))     // updatedAt 2000
-    await putTx(fixture('aaaa', 'rg-1'))   // updatedAt 4000
+    // All terminal (fixture default = completed). createdAt drives order; an `updatedAt` bumped by
+    // a late history-recovery reconcile must NOT float an old row to the top.
+    await putTx({ ...fixture('old', 'rg-1'), createdAt: 1_000, updatedAt: 99_000 }) // reconciled late
+    await putTx({ ...fixture('mid', 'rg-1'), createdAt: 2_000, updatedAt: 2_000 })
+    await putTx({ ...fixture('new', 'rg-1'), createdAt: 3_000, updatedAt: 3_000 })
     const records = await loadAllTx('rg-1')
-    expect(records.map(r => r.id)).toEqual(['aaaa', 'aa', 'a'])
+    expect(records.map(r => r.id)).toEqual(['new', 'mid', 'old'])
   })
 })
 

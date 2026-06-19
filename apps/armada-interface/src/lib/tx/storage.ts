@@ -5,7 +5,7 @@ import { cacheAll, cacheDelete, cacheGet, cachePut } from '../cache'
 import { isEncryptedBlob, unwrap, wrap, type EncryptedBlob } from '../crypto/cache-cipher'
 import { getHistoryEncryptionKey, isUnlocked } from '../railgun/keyManager'
 import { trackError } from '../telemetry'
-import { isTerminalState } from './types'
+import { historySortTime, isTerminalState } from './types'
 import type { TxRecord } from './types'
 
 const STORE = 'txHistory' as const
@@ -146,5 +146,5 @@ export async function loadAllTx(walletId?: string): Promise<TxRecord[]> {
     if (r.walletContext.railgunWalletId !== walletId) continue
     records.push(r)
   }
-  return records.sort((a, b) => b.updatedAt - a.updatedAt)
+  return records.sort((a, b) => historySortTime(b) - historySortTime(a))
 }

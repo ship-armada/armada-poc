@@ -9,6 +9,7 @@ import { TxActions, TxLifecycleStepper, TxRow } from '@/components/tx'
 import { activeTxListAtom } from '@/state/tx'
 import { historyRecoveryAtom } from '@/state/history'
 import { preferencesAtom } from '@/state/preferences'
+import { historySortTime } from '@/lib/tx/types'
 import type { TxExecutionState, TxRecord } from '@/lib/tx/types'
 import styles from './History.module.css'
 
@@ -53,7 +54,7 @@ export function History() {
     return all
       .filter(r => matches(r, filter))
       .slice()
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .sort((a, b) => historySortTime(b) - historySortTime(a))
       .slice(0, MAX_ROWS)
   }, [all, filter])
 

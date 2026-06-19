@@ -8,6 +8,7 @@ import { Card, EmptyState, SectionHeader } from '@/components/ui'
 import { TxRow } from '@/components/tx'
 import { activeTxListAtom } from '@/state/tx'
 import { History } from 'lucide-react'
+import { historySortTime } from '@/lib/tx/types'
 import type { TxRecord, TxExecutionState } from '@/lib/tx/types'
 import styles from './RecentActivityCard.module.css'
 
@@ -31,7 +32,7 @@ export function RecentActivityCard({ onSelect }: RecentActivityCardProps) {
     return list
       .filter(t => TERMINAL_STATES.has(t.executionState))
       .slice()
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .sort((a, b) => historySortTime(b) - historySortTime(a))
       .slice(0, MAX_ROWS)
   }, [list])
 

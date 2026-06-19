@@ -1,7 +1,7 @@
 // ABOUTME: Reducer tests — patchArtifacts cursor pattern + typed-error mark transitions (markFailed string|TxError, markCancelled, markDismissed).
 
 import { describe, it, expect } from 'vitest'
-import { advance, markCancelled, markDismissed, markFailed, markRecoveredComplete, markWaiting, patchArtifacts } from './reducer'
+import { advance, markCancelled, markDismissed, markFailed, markRecoveredComplete, markWaiting, patchArtifacts, sourceHashProvesComplete } from './reducer'
 import { lifecycleFor } from './lifecycles'
 import type { TxRecord } from './types'
 
@@ -223,5 +223,22 @@ describe('markRecoveredComplete (P1-24)', () => {
     expect(upgraded.artifacts.error).toBeUndefined()
     expect(upgraded.artifacts.sourceTxHash).toBe('0xabc')
     expect(upgraded.updatedSeq).toBe(r.updatedSeq + 1)
+  })
+})
+
+describe('sourceHashProvesComplete (T-H1)', () => {
+  it('is true for same-chain kinds (the source tx IS the terminal event)', () => {
+    // WHY: history recovery may upgrade these from a sourceTxHash match — the hub tx landing
+    // proves the whole tx completed.
+    for (const kind of ['shield', 'unshield-local', 'transfer-shielded', 'yield-deposit', 'yield-withdraw'] as const) {
+      expect(sourceHashProvesComplete(kind)).toBe(true)
+    }
+  })
+
+  it('is false for cross-chain kinds (sourceTxHash is only the burn leg)', () => {
+    // WHY (T-H1): the matched hash is the burn; CCTP delivery on the destination chain is a
+    // separate leg. Recovery must NOT force-complete these or it paints a false "Funds delivered".
+    expect(sourceHashProvesComplete('shield-xchain')).toBe(false)
+    expect(sourceHashProvesComplete('unshield-xchain')).toBe(false)
   })
 })

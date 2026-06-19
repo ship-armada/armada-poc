@@ -161,6 +161,35 @@ function transferReceiveItem(
   }
 }
 
+function unshieldItem(
+  txid: string,
+  blockNumber: number,
+  amount: bigint,
+): TransactionHistoryItem {
+  return {
+    txidVersion: TXIDVersion.V2_PoseidonMerkle,
+    txid,
+    version: 0,
+    timestamp: blockNumber,
+    blockNumber,
+    receiveERC20Amounts: [],
+    transferERC20Amounts: [],
+    changeERC20Amounts: [],
+    unshieldERC20Amounts: [{
+      tokenAddress: '0xusdc',
+      amount,
+      recipientAddress: '0xrecipient',
+      memoText: null,
+      hasValidPOIForActiveLists: true,
+      balanceBucket: RailgunWalletBalanceBucket.Spendable,
+    }],
+    receiveNFTAmounts: [],
+    transferNFTAmounts: [],
+    unshieldNFTAmounts: [],
+    category: TransactionHistoryItemCategory.UnshieldERC20s,
+  }
+}
+
 function unlockedStore() {
   const store = createStore()
   store.set(shieldedWalletsAtom, {
@@ -327,6 +356,54 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     expect(upgraded.stage).toBe('hub-confirmed')
     expect(upgraded.artifacts.sourceTxHash).toBe(CONFIRMED_HASH)
     expect(upgraded.artifacts.error).toBeUndefined()
+  })
+
+  it('does NOT force-complete an in-flight cross-chain unshield from the hub-burn hash (T-H1)', async () => {
+    // WHY (T-H1): the hub BURN of an unshield-xchain appears in shielded history with the same
+    // txid as the record's sourceTxHash, but that proves only the burn leg — CCTP delivery on the
+    // destination chain hasn't happened (and may never). Force-completing here paints a false
+    // "Funds delivered" and upgrades a real POLL_TIMEOUT failure to permanent false success. The
+    // reconcile path must leave xchain records to the executor's delivery watcher.
+    const BURN_HASH = '0xburn' as `0x${string}`
+    const failedXchain: TxRecord<'unshield-xchain'> = {
+      id: '01J-xchain-failed',
+      kind: 'unshield-xchain',
+      executionState: 'failed',
+      stage: 'iris-attestation-pending',
+      stagesCompleted: ['build-proof', 'submit-relayer', 'hub-burn-confirmed'],
+      updatedSeq: 6,
+      createdAt: 1,
+      updatedAt: 1,
+      meta: {
+        amount: 1_000_000n,
+        feeCacheId: 'fc',
+        toChainId: 84532,
+        recipient: '0x0000000000000000000000000000000000000001',
+        broadcasterFeeAmount: 50_000n,
+        broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
+      },
+      artifacts: { sourceTxHash: BURN_HASH, error: { code: 'POLL_TIMEOUT', message: 'lost track' } },
+      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+    }
+    const store = unlockedStore()
+    store.set(txListAtom, [failedXchain])
+    // The hub burn surfaces as an unshield history item carrying the same txid → sourceTxHash 0xburn.
+    hoisted.scanWalletHistory.mockResolvedValue([unshieldItem('burn', 100_001, 1_000_000n)])
+
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+
+    // Wait for the scan to fully settle (status flips to idle when runScanAndPersist finishes).
+    await waitFor(() => expect(store.get(historyRecoveryAtom).state).toBe('idle'))
+
+    const rec = store.get(txListAtom).find(r => r.id === '01J-xchain-failed')
+    expect(rec?.executionState).toBe('failed') // stays failed — no false "Funds delivered"
+    expect(rec?.stage).toBe('iris-attestation-pending')
+    // No synth row inserted either (the matched-existing branch skips without upgrading).
+    expect(store.get(txListAtom).length).toBe(1)
   })
 
   it('subsequent scans resume from checkpoint+1, not the hub deploy block', async () => {

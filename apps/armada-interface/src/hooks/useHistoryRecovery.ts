@@ -224,8 +224,16 @@ export function useHistoryRecovery(): void {
           // Live lookup (not a kickoff snapshot) so the reconcile upgrade builds on the latest
           // updatedSeq and clears OCC. Lowercased on both sides so on-chain hex-case variance
           // can't bypass the match.
+          // Match on sourceTxHash OR destTxHash (T-H2): a completed cross-chain shield stores the
+          // hub MINT hash in destTxHash (sourceTxHash holds the client burn). The SDK surfaces the
+          // hub mint as a Shield history item; matching only sourceTxHash misses the authored
+          // record and synthesizes a second permanent "Deposit" row for the same funds.
           findExistingByHash: (hash) =>
-            store.get(txListAtom).find(r => r.artifacts.sourceTxHash?.toLowerCase() === hash),
+            store.get(txListAtom).find(
+              r =>
+                r.artifacts.sourceTxHash?.toLowerCase() === hash ||
+                (r.artifacts as { destTxHash?: string }).destTxHash?.toLowerCase() === hash,
+            ),
           upsert,
           setStatus,
         })

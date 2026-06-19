@@ -406,6 +406,48 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     expect(store.get(txListAtom).length).toBe(1)
   })
 
+  it('does not synthesize a duplicate Deposit row for a completed cross-chain shield (T-H2)', async () => {
+    // WHY (T-H2): a completed shield-xchain stores the hub MINT hash in destTxHash, while
+    // sourceTxHash holds the client burn. The SDK surfaces the hub mint as a Shield history item;
+    // matching only on sourceTxHash misses the authored record and synthesizes a second, permanent
+    // "Deposit" row for the same funds. findExistingByHash must also match destTxHash.
+    const completedShieldXchain: TxRecord<'shield-xchain'> = {
+      id: '01J-shieldx',
+      kind: 'shield-xchain',
+      executionState: 'completed',
+      stage: 'hub-mint-confirmed',
+      stagesCompleted: [
+        'build-proof', 'submit-relayer', 'client-burn-confirmed',
+        'iris-attestation-pending', 'iris-attestation-ready', 'hub-mint-pending', 'hub-mint-confirmed',
+      ],
+      updatedSeq: 9,
+      createdAt: 1,
+      updatedAt: 1,
+      meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 84532 },
+      artifacts: {
+        sourceTxHash: '0xclientburn' as `0x${string}`,
+        destTxHash: '0xhubmint' as `0x${string}`,
+      },
+      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 84532 },
+    }
+    const store = unlockedStore()
+    store.set(txListAtom, [completedShieldXchain])
+    // The hub mint surfaces as a Shield history item carrying the mint txid → sourceTxHash 0xhubmint.
+    hoisted.scanWalletHistory.mockResolvedValue([shieldItem('hubmint', 100_001, 1_000_000n)])
+
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+
+    await waitFor(() => expect(store.get(historyRecoveryAtom).state).toBe('idle'))
+
+    const list = store.get(txListAtom)
+    expect(list.length).toBe(1) // no duplicate synth Deposit row
+    expect(list[0]!.id).toBe('01J-shieldx')
+  })
+
   it('subsequent scans resume from checkpoint+1, not the hub deploy block', async () => {
     // WHY: this is the perf invariant. The whole point of the checkpoint is to avoid re-walking
     // hub history. A regression here turns a cheap incremental into a full-history rewalk on

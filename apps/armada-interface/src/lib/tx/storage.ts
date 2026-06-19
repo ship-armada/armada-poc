@@ -61,6 +61,12 @@ export async function putTxIfFresh(record: TxRecord): Promise<boolean> {
     throw new Error('tx.storage.putTxIfFresh: wallet locked — refusing to write tx record')
   }
   const key = getHistoryEncryptionKey()
+  // Encrypt up-front, BEFORE the async OCC read below. An account-switch / lock can zeroize the
+  // history key during that await (cancelAllRunning kicks this persist while unlocked, then
+  // lockWallet synchronously clears the key before the write runs); wrap() is synchronous, so
+  // precomputing the envelope here guarantees a terminal cancel/dismiss write survives the race
+  // instead of throwing at write time and silently losing the record (→ false INTERRUPTED). (W-5)
+  const envelope = wrap(record, key)
   try {
     const existingRaw = await cacheGet<unknown>(STORE, record.id)
     if (existingRaw !== undefined) {
@@ -93,7 +99,7 @@ export async function putTxIfFresh(record: TxRecord): Promise<boolean> {
       // decrypt under our key) or pre-Phase-7 plaintext. In either case the old value is
       // unreadable garbage to us and overwriting it is correct.
     }
-    await cachePut(STORE, record.id, wrapForStorage(record))
+    await cachePut(STORE, record.id, envelope)
     return true
   } catch (err) {
     trackError('tx.storage.putTxIfFresh', err, { scope: 'tx.storage', message: 'idb write failed' })

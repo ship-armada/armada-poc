@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { canRetryTx, cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
+import { __setIsLeaderForTests, canRetryTx, cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
 import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
@@ -417,5 +417,41 @@ describe('canRetryTx — fee-expired / duplicate are non-retryable (S-H1)', () =
 
   it('refuses retry for DUPLICATE_TX — the tx is already in flight (recover via /status, T-M3)', () => {
     expect(canRetryTx(failedAtSubmit({ code: 'DUPLICATE_TX', message: 'already submitted' }))).toBe(false)
+  })
+})
+
+describe('retryTx — follower-tab leader guard (T-H3)', () => {
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    store.set(tabVisibleAtom, false)
+    await cacheClear('txHistory')
+    clearKeyManager()
+    unlockForTest()
+  })
+
+  it('refuses retry on a follower tab and does NOT wedge the record in retrying', () => {
+    // WHY (T-H3): on a follower, executeTx is a no-op. If retryTx still marked the record
+    // `retrying`, it would sit non-terminal forever — counted by pendingTxsAtom, deferring
+    // auto-lock and holding keys in memory. The guard must refuse before markRetrying.
+    __setIsLeaderForTests(false)
+    try {
+      const store = getDefaultStore()
+      const failed = makeRecord({
+        id: 'ulid-follower-retry',
+        executionState: 'failed',
+        stage: 'submit-relayer', // retryable stage — so only the leader guard can refuse here
+        updatedSeq: 3,
+      })
+      store.set(upsertTxAtom, failed)
+
+      expect(retryTx(failed.id)).toBe(false)
+
+      const after = store.get(txListAtom).find(t => t.id === failed.id)
+      expect(after?.executionState).toBe('failed') // not 'retrying' — no wedge
+      expect(after?.updatedSeq).toBe(3) // untouched
+    } finally {
+      __setIsLeaderForTests(true) // restore for any subsequent state
+    }
   })
 })

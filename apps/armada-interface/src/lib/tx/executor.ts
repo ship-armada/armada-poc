@@ -60,6 +60,13 @@ export function getIsLeader(): boolean {
   return isLeader
 }
 
+/** Test-only: force the leader flag. Production leadership is owned by `startEngine` via
+ *  `navigator.locks`; jsdom has no locks API, so this lets tests exercise the follower-tab guards
+ *  (which a real second tab would hit) deterministically. */
+export function __setIsLeaderForTests(value: boolean): void {
+  isLeader = value
+}
+
 /**
  * Initialise the executor. Idempotent — repeated calls are no-ops.
  *
@@ -177,6 +184,17 @@ export function retryTx(id: string): boolean {
     trackError('tx.executor.retry', new Error('no record'), {
       scope: 'tx.executor',
       message: `retryTx called for unknown id ${id}`,
+    })
+    return false
+  }
+  if (!getIsLeader()) {
+    // Follower tab: executeTx is a no-op here, so marking the record `retrying` would wedge it in
+    // a non-terminal state forever — counted by pendingTxsAtom, which makes useAutoLock defer the
+    // security lock and keep keys in memory. Refuse before markRetrying. The UI also hides Retry
+    // on follower tabs (TxActions); this is the belt-and-suspenders guard. (T-H3)
+    trackError('tx.executor.retry', new Error('not leader'), {
+      scope: 'tx.executor',
+      message: `retry refused on follower tab for ${id}`,
     })
     return false
   }

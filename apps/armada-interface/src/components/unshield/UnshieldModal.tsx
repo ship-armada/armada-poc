@@ -16,6 +16,7 @@ import { formatUsdcPlain, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
+import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
   overlayIndicatorStep,
   overlayIndicatorStatus,
@@ -160,6 +161,13 @@ export function UnshieldModal() {
         throw new Error('Could not fetch a current fee quote — please try again.')
       }
       const feeCacheId = activeQuote.cacheId
+      // S-M5: re-validate amount + the FRESH relayer fee against the balance before proof gen. The
+      // relayer-mediated path draws the fee from the shielded balance (fee-on-top); wallet-override
+      // pays native gas separately, so no shielded fee applies there.
+      const freshFee = computedKind === 'unshield-local'
+        ? BigInt(activeQuote.fees.unshield)
+        : BigInt(activeQuote.fees.crossChainUnshield)
+      assertSpendableForFeeOnTop({ amount, fee: prefs.submitFromWallet ? 0n : freshFee, balance: max })
       if (computedKind === 'unshield-local') {
         // Defensive shape-check on the relayer-published broadcaster address before we bake it
         // into a 20–30s ZK proof. An empty / malformed value (relayer misconfigured, /fees

@@ -17,6 +17,7 @@ import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { sharesToUsdc } from '@/lib/yield'
+import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
   overlayIndicatorStep,
   overlayIndicatorStatus,
@@ -214,6 +215,15 @@ export function EarnModal() {
       const broadcasterFeeAmount = BigInt(activeQuote.fees.crossContract)
       const broadcasterRailgunAddress = activeQuote.broadcasterRailgunAddress
       if (tab === 'add') {
+        // S-M5: a deposit unshields amount + fee from the shielded balance (fee-on-top), so
+        // re-validate against the FRESH fee before proof gen. Wallet-override pays native gas
+        // separately, so no shielded fee applies there. (Withdraw takes its fee from the redeemed
+        // output, not the share balance — no fee-on-top check needed.)
+        assertSpendableForFeeOnTop({
+          amount,
+          fee: effectiveUseWalletOverride ? 0n : broadcasterFeeAmount,
+          balance: max,
+        })
         setSubmittedKind('yield-deposit')
         submittedId = await txDeposit.submit({
           amount,

@@ -20,6 +20,7 @@ import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib
 import { isShieldedAddress, validateShieldedAddressStrict } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { trackError } from '@/lib/telemetry'
+import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
   overlayIndicatorStep,
   overlayIndicatorStatus,
@@ -201,6 +202,15 @@ export function SendModal() {
         throw new Error('Could not fetch a current fee quote — please try again.')
       }
       const feeCacheId = activeQuote.cacheId
+      // S-M5: re-validate amount + the FRESH relayer fee against the balance before proof gen. All
+      // three kinds draw the fee from the shielded balance (fee-on-top) on the relayer path;
+      // wallet-override pays native gas separately, so no shielded fee applies there.
+      const freshFee = computedKind === 'transfer-shielded'
+        ? BigInt(activeQuote.fees.transfer)
+        : computedKind === 'unshield-local'
+          ? BigInt(activeQuote.fees.unshield)
+          : BigInt(activeQuote.fees.crossChainUnshield)
+      assertSpendableForFeeOnTop({ amount, fee: prefs.submitFromWallet ? 0n : freshFee, balance: max })
       if (computedKind === 'transfer-shielded') {
         // Strict-validate the user's typed 0zk recipient (bech32m checksum, not just shape) at the
         // funds-committing boundary — a transposed character would otherwise send a private

@@ -150,4 +150,26 @@ describe('<ShieldModal>', () => {
     })
     expect(store.get(txListAtom).length).toBe(1)
   })
+
+  it('progress is dismissible — closing backgrounds the tx without cancelling it (S-M2)', async () => {
+    const store = renderModal({ open: true, max: 10_000_000n })
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
+    })
+    await waitFor(() => expect(screen.getByText('Pending')).toBeInTheDocument())
+
+    // The Close affordance is present during progress now (was hidden pre-S-M2).
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    })
+
+    // Modal closed, but the record was NOT cancelled/dismissed — it keeps running in the
+    // background (and would surface in the dashboard InProgressCard).
+    expect(store.get(openModalAtom)).toBeNull()
+    const rec = store.get(txListAtom).find(t => t.kind === 'shield')
+    expect(rec).toBeDefined()
+    expect(['cancelled', 'dismissed']).not.toContain(rec!.executionState)
+  })
 })

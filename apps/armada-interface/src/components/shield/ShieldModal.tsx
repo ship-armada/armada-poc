@@ -326,7 +326,7 @@ export function ShieldModal() {
     <DepositOverlayShell
       open={isOpen}
       onClose={close}
-      dismissible={step !== 'progress'}
+      dismissible={true}
       flowLabel="Deposit"
       currentStep={indicatorStep}
       status={indicatorStatus}

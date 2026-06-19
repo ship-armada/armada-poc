@@ -301,7 +301,7 @@ export function SendModal() {
     <DepositOverlayShell
       open
       onClose={close}
-      dismissible={step !== 'progress'}
+      dismissible={true}
       flowLabel="Send"
       currentStep={overlayIndicatorStep(step)}
       status={overlayIndicatorStatus(step)}

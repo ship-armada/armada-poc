@@ -2,10 +2,13 @@
 // ABOUTME: Reads lifecycleFor(record.kind) + record.{stage,stagesCompleted,executionState} + record.artifacts to drive every row.
 
 import { CheckCircle2, Circle, Loader2, XCircle } from 'lucide-react'
+import { useAtomValue } from 'jotai'
 import { TxStatusChip } from './TxStatusChip'
 import { stageCopy } from './stageCopy'
 import { TechnicalDetailsDisclosure } from '../ui/TechnicalDetailsDisclosure'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
+import { stepperEta } from '@/lib/tx/eta'
+import { nowAtom } from '@/state/time'
 import { getChainById } from '@/config/network'
 import type { TxRecord, TxExecutionState } from '@/lib/tx/types'
 import styles from './TxLifecycleStepper.module.css'
@@ -47,15 +50,6 @@ function RowIcon({ kind }: { kind: RowKind }) {
   }
 }
 
-function formatDurationHint(ms: number): string {
-  const s = Math.round(ms / 1000)
-  if (s < 60) return `~${s} sec`
-  const m = Math.round(s / 60)
-  if (m < 60) return `~${m} min`
-  const h = Math.round(m / 60)
-  return `~${h} hr`
-}
-
 function explorerLinkFor(chainId: number, txHash: `0x${string}`): string | null {
   const chain = getChainById(chainId)
   return chain?.explorerUrl ? `${chain.explorerUrl}/tx/${txHash}` : null
@@ -68,12 +62,20 @@ export function TxLifecycleStepper({
 }: TxLifecycleStepperProps) {
   const lifecycle = lifecycleFor(record.kind)
   const cls = [styles.root, className].filter(Boolean).join(' ')
+  // T-L4: live elapsed timer + "taking longer than usual" past p90. `nowAtom` ticks every 60s
+  // (useNowTicker at App root), so the label refreshes while the stepper is mounted.
+  const now = useAtomValue(nowAtom)
+  const eta = stepperEta(record, lifecycle.estDuration, now)
 
   return (
     <div className={cls}>
       <header className={styles.header}>
         <TxStatusChip state={record.executionState} error={record.artifacts.error ?? null} />
-        <span className={styles.eta}>Usually takes {formatDurationHint(lifecycle.estDuration.p50)}</span>
+        {eta.label ? (
+          <span className={[styles.eta, eta.overdue ? styles.etaOverdue : ''].filter(Boolean).join(' ')}>
+            {eta.label}
+          </span>
+        ) : null}
       </header>
 
       <ol className={styles.stages}>

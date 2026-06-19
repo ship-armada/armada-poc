@@ -18,6 +18,12 @@
   color: var(--semantic-color-text-muted);
 }
 
+/* Overdue ETA ("taking longer than usual", T-L4) — promote from muted to primary so it reads as
+   a soft signal that the tx is slower than expected, without alarming error-red styling. */
+.etaOverdue {
+  color: var(--semantic-color-text-primary);
+}
+
 .stages {
   list-style: none;
   margin: 0;

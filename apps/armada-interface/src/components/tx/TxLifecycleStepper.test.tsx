@@ -103,8 +103,21 @@ describe('<TxLifecycleStepper>', () => {
     expect(screen.getByText('0xbbbb')).toBeInTheDocument() // messageHash
   })
 
-  it('shows usual-duration hint from the lifecycle', () => {
-    render(<TxLifecycleStepper record={shieldRecord()} />)
+  it('shows the usual-duration hint + elapsed while in flight and within p90 (T-L4)', () => {
+    // createdAt near "now" (nowAtom defaults to Date.now()) keeps elapsed under the kind's p90.
+    render(<TxLifecycleStepper record={shieldRecord({ createdAt: Date.now() })} />)
     expect(screen.getByText(/Usually takes/)).toBeInTheDocument()
+    expect(screen.getByText(/elapsed/)).toBeInTheDocument()
+  })
+
+  it('flips to "taking longer than usual" once elapsed passes p90 (T-L4)', () => {
+    // createdAt = 0 is decades before nowAtom → well past p90.
+    render(<TxLifecycleStepper record={shieldRecord({ createdAt: 0 })} />)
+    expect(screen.getByText(/Taking longer than usual/)).toBeInTheDocument()
+  })
+
+  it('shows no live ETA for a terminal record (T-L4)', () => {
+    render(<TxLifecycleStepper record={shieldRecord({ executionState: 'completed', stage: 'hub-confirmed', createdAt: 0 })} />)
+    expect(screen.queryByText(/Usually takes|Taking longer|elapsed/)).toBeNull()
   })
 })

@@ -164,7 +164,7 @@ export const unshieldXchainHandler: StageHandler<'unshield-xchain'> = {
       }
     } catch (err) {
       if (ctx.signal.aborted) return
-      const failed = markFailed(record, classifyHandlerError(err, 'Cross-chain withdraw failed.', record.artifacts.sourceTxHash))
+      const failed = markFailed(record, classifyHandlerError(err, 'Cross-chain withdraw failed.', record.artifacts.sourceTxHash, getNetworkConfig().hub.chainId))
       await ctx.upsert(failed)
     }
   },
@@ -292,12 +292,13 @@ async function runSubmitAndBurn(
         to: privacyPoolAddress as `0x${string}`,
         data: calldata!,
         value: 0n,
+        chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, userHash, ctx)
       if (broadcast.dismissed) return
       broadcastRecord = broadcast.record
     }
-    await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal })
+    await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal, chainId: hubChainId })
     await extractCctpRefAndAdvance({
       ctx,
       record: broadcastRecord,

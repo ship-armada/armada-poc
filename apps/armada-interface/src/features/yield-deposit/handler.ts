@@ -56,7 +56,7 @@ export const yieldDepositHandler: StageHandler<'yield-deposit'> = {
       // hub-confirmed is terminal.
     } catch (err) {
       if (ctx.signal.aborted) return
-      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Vault deposit failed.', record.artifacts.sourceTxHash)))
+      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Vault deposit failed.', record.artifacts.sourceTxHash, getNetworkConfig().hub.chainId)))
     }
   },
 }
@@ -149,12 +149,13 @@ async function runSubmitAndConfirm(
         to: yieldTx.to as `0x${string}`,
         data: yieldTx.data as `0x${string}`,
         value: BigInt(yieldTx.value),
+        chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, hash, ctx)
       if (broadcast.dismissed) return
       broadcastRecord = broadcast.record
     }
-    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    await waitForReceiptOrFail({ hash, signal: ctx.signal, chainId: hubChainId })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
     }

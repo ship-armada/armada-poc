@@ -122,3 +122,36 @@ describe('classifyHandlerError — RelayerError branch (S-H2)', () => {
     expect(r.message).toBe('weird relayer state')
   })
 })
+
+describe('classifyHandlerError — ChainMismatchError branch (W-4)', () => {
+  /** viem throws a `ChainMismatchError` when a wagmi action is given an explicit chainId that
+   *  doesn't match the wallet's current chain. We pin chainId on every submit-path call now
+   *  (W-3/W-4), so a mid-flow network switch surfaces this instead of silently following the
+   *  wrong chain — the classifier turns it into actionable "switch back" copy. */
+  function chainMismatch(message = 'The current chain of the wallet (id: 11155111) does not match the target chain for the transaction (id: 31337).') {
+    return Object.assign(new Error(message), { name: 'ChainMismatchError' })
+  }
+
+  it('maps a ChainMismatchError to RPC_ERROR (pre-broadcast, retry-safe after switching back)', () => {
+    expect(classifyHandlerError(chainMismatch(), 'fallback').code).toBe('RPC_ERROR')
+  })
+
+  it('names the target network in the copy when the target chainId is known', () => {
+    const r = classifyHandlerError(chainMismatch(), 'fallback', undefined, 31337)
+    expect(r.message).toMatch(/switch/i)
+    expect(r.message).toContain('Anvil Hub (local)') // getChainById(31337).name
+  })
+
+  it('falls back to generic switch-network copy when no target chainId is supplied', () => {
+    const r = classifyHandlerError(chainMismatch(), 'fallback')
+    expect(r.message).toMatch(/wrong network/i)
+    expect(r.message).toMatch(/switch/i)
+  })
+
+  it('recurses into .cause for a wrapped ChainMismatchError', () => {
+    const inner = chainMismatch()
+    const outer = new Error('write failed') as Error & { cause: unknown }
+    outer.cause = inner
+    expect(classifyHandlerError(outer, 'fallback', undefined, 31337).code).toBe('RPC_ERROR')
+  })
+})

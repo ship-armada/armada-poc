@@ -128,7 +128,7 @@ export const shieldXchainHandler: StageHandler<'shield-xchain'> = {
       }
     } catch (err) {
       if (ctx.signal.aborted) return
-      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Cross-chain deposit failed.', record.artifacts.sourceTxHash)))
+      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Cross-chain deposit failed.', record.artifacts.sourceTxHash, record.meta.fromChainId)))
     }
   },
 }

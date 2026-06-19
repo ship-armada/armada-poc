@@ -65,7 +65,7 @@ export const unshieldLocalHandler: StageHandler<'unshield-local'> = {
       // would silently drop the write anyway; explicit return is clearer + avoids a misleading
       // telemetry event).
       if (ctx.signal.aborted) return
-      const failed = markFailed(record, classifyHandlerError(err, 'Unshield failed.', record.artifacts.sourceTxHash))
+      const failed = markFailed(record, classifyHandlerError(err, 'Unshield failed.', record.artifacts.sourceTxHash, getNetworkConfig().hub.chainId))
       await ctx.upsert(failed)
     }
   },
@@ -171,12 +171,13 @@ async function runSubmitAndConfirm(
         to: tx.to,
         data: tx.data,
         value: tx.value,
+        chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, hash, ctx)
       if (broadcast.dismissed) return
       broadcastRecord = broadcast.record
     }
-    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    await waitForReceiptOrFail({ hash, signal: ctx.signal, chainId: hubChainId })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
     }

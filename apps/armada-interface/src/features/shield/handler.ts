@@ -120,7 +120,7 @@ export const shieldHandler: StageHandler<'shield'> = {
       // The throw bubbling up here is the cooperative response to the abort signal — no-op so we
       // don't clobber the cancelled/dismissed record with a failed one.
       if (ctx.signal.aborted) return
-      const failed = markFailed(record, classifyHandlerError(err, 'Shield failed.', record.artifacts.sourceTxHash))
+      const failed = markFailed(record, classifyHandlerError(err, 'Shield failed.', record.artifacts.sourceTxHash, record.meta.fromChainId))
       await ctx.upsert(failed)
     }
   },
@@ -286,6 +286,7 @@ async function runDirectSubmit(
       abi: erc20Abi,
       functionName: 'allowance',
       args: [owner, privacyPoolAddress as `0x${string}`],
+      chainId: record.meta.fromChainId,
     })
     if (ctx.signal.aborted) throw new Error('cancelled')
 
@@ -296,8 +297,9 @@ async function runDirectSubmit(
         abi: erc20Abi,
         functionName: 'approve',
         args: [privacyPoolAddress as `0x${string}`, maxUint256],
+        chainId: record.meta.fromChainId,
       })
-      await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal })
+      await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
       if (ctx.signal.aborted) throw new Error('cancelled')
     }
 
@@ -322,6 +324,7 @@ async function runDirectSubmit(
       abi: PRIVACY_POOL_SHIELD_ABI,
       functionName: 'shield',
       args: [[shieldRequestTuple], getIntegratorAddress()],
+      chainId: record.meta.fromChainId,
     })
     // Persist the source tx hash immediately so any subsequent failure (timeout, revert, cancel)
     // carries the hash for the explorer-link UX, and so the idempotency guard above sees it on
@@ -337,7 +340,7 @@ async function runDirectSubmit(
   //    onBalanceUpdate callback — but we also kick a refresh explicitly so the UI doesn't have
   //    to wait for the SDK's poll interval. Timeout-and-signal-aware so a wedged RPC doesn't
   //    pin this handler for the full 10-min lifecycle cap.
-  await waitForReceiptOrFail({ hash: shieldHash, signal: ctx.signal })
+  await waitForReceiptOrFail({ hash: shieldHash, signal: ctx.signal, chainId: record.meta.fromChainId })
 
   if (kmIsUnlocked()) {
     // Fire-and-forget — failures here are non-fatal (the periodic refresh would catch it).

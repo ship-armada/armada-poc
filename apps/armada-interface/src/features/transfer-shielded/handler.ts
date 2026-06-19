@@ -58,7 +58,7 @@ export const transferShieldedHandler: StageHandler<'transfer-shielded'> = {
       // hub-confirmed is terminal; defensive no-op for resume-on-load.
     } catch (err) {
       if (ctx.signal.aborted) return
-      const failed = markFailed(record, classifyHandlerError(err, 'Private send failed.', record.artifacts.sourceTxHash))
+      const failed = markFailed(record, classifyHandlerError(err, 'Private send failed.', record.artifacts.sourceTxHash, getNetworkConfig().hub.chainId))
       await ctx.upsert(failed)
     }
   },
@@ -150,12 +150,13 @@ async function runSubmitAndConfirm(
         to: tx.to,
         data: tx.data,
         value: tx.value,
+        chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, hash, ctx)
       if (broadcast.dismissed) return
       broadcastRecord = broadcast.record
     }
-    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    await waitForReceiptOrFail({ hash, signal: ctx.signal, chainId: hubChainId })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
     }

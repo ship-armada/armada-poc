@@ -123,6 +123,42 @@ describe('useUsdcBalances', () => {
     await waitFor(() => expect(store.get(usdcBalancesAtom)).toEqual({}))
   })
 
+  it('clears balances on account switch so account B never shows account A\'s USDC (W-2)', async () => {
+    // WHY (W-2): the atom was cleared only on disconnect, and placeholderData bridged A's balance
+    // into B's address-keyed query while it loaded — so right after an A→B switch the wallet pill
+    // and ShieldModal MAX showed (spendable!) account A's USDC. Switching must clear immediately.
+    const ADDR_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    mockUseWallet.mockReturnValue({ address: TEST_ADDR })
+    mockReadContract.mockResolvedValue(1_000_000n)
+
+    const store = createStore()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Provider store={store}>
+          <Harness />
+        </Provider>
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(store.get(usdcBalancesAtom)[31337]).toBe(1_000_000n))
+
+    // Switch to account B (same store, fresh QueryClient/mount); B's reads stay pending so any
+    // lingering or bridged A balance would still be visible in the atom.
+    mockUseWallet.mockReturnValue({ address: ADDR_B })
+    mockReadContract.mockImplementation(() => new Promise(() => {}))
+    const queryClientB = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClientB}>
+        <Provider store={store}>
+          <Harness />
+        </Provider>
+      </QueryClientProvider>,
+    )
+
+    // A's balance must be gone the moment we switch — not bridged into B's pending query.
+    await waitFor(() => expect(store.get(usdcBalancesAtom)).toEqual({}))
+  })
+
   it('retries a flaky deployments load so balances still populate (P2/WS3.4)', async () => {
     // Without retry, a single manifest-fetch hiccup leaves `pairs` empty (blank balances) until a
     // window refocus. The query's retry (1s backoff) self-heals it.

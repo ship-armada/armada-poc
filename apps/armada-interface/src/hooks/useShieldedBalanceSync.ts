@@ -42,10 +42,14 @@ export function useShieldedBalanceSync(): void {
 
   useEffect(() => {
     if (active?.status !== 'unlocked') {
-      // Lock / reset path — drop balance state so stale data doesn't linger past a session.
+      // Lock / reset / account-switch path — drop balance state so stale data doesn't linger past
+      // a session, AND reset the sync gate to idle. Without the sync reset, the NEXT wallet
+      // inherits this one's 'complete' status, so its dashboard renders ungated with a null
+      // balance and enabled spend buttons until its own first scan event fires. (W-1)
       latestWalletIdRef.current = null
       setShieldedUsdc(null)
       setYieldShares(null)
+      setSyncState({ status: 'idle', progress: 0 })
       return
     }
 

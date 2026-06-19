@@ -11,7 +11,7 @@ import { evmAddressAtom, activeRailgunWalletIdAtom, shieldedWalletsAtom } from '
 import { track, trackError } from '@/lib/telemetry'
 import { isUnlocked, getEvmAddress, getWalletId } from '@/lib/railgun/keyManager'
 import { lockWallet } from '@/lib/railgun/wallet'
-import { cancelAllRunning } from '@/lib/tx/executor'
+import { cancelAllRunning, clearResumed } from '@/lib/tx/executor'
 
 export interface UseWalletResult {
   address: string | null
@@ -87,6 +87,9 @@ export function useWallet(): UseWalletResult {
         // orphaned wallet prompts, and a gasless permit signed by the wrong signer. Must run while
         // still unlocked so each terminal record can be persisted (putTxIfFresh needs the key).
         cancelAllRunning('account-switch')
+        // Drop the resume guard for the wallet we're locking so switching BACK to it later in the
+        // same session re-attaches watchers (resumeForWallet is idempotent per session). (T-M1)
+        if (lockedWalletId) clearResumed(lockedWalletId)
 
         // The mismatch is the trigger. Lock first (zeroizes keyManager + unloads SDK wallet
         // best-effort). `lockWallet`'s `_id` parameter is API-consistency baggage; the

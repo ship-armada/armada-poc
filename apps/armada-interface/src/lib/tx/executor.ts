@@ -261,6 +261,17 @@ export function cancelAllRunning(reason: string): void {
   }
 }
 
+/**
+ * Drop this tab's resume guard for `walletId`. `resumeForWallet` is idempotent per (walletId,
+ * session) via `resumedWallets`; without clearing it on lock, a re-unlock in the SAME session
+ * (manual lock → unlock, or account-switch → switch back) would early-return and never re-attach
+ * watchers to already-broadcast txs — leaving them un-tracked until a full reload. Lock paths call
+ * this alongside `cancelAllRunning`. (T-M1)
+ */
+export function clearResumed(walletId: string): void {
+  resumedWallets.delete(walletId)
+}
+
 function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
   const controller = running.get(id)
   if (controller) {

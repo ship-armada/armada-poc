@@ -38,6 +38,7 @@ import {
   type BackupBlob,
 } from '@/lib/crypto/kdf'
 import { hexToBytesNoPrefix } from '@/lib/crypto/hex'
+import { cancelAllRunning, clearResumed } from '@/lib/tx/executor'
 import { track, trackError } from '@/lib/telemetry'
 
 /**
@@ -267,6 +268,14 @@ export function useShieldedWallet() {
       if (!existing) return prev
       return { ...prev, [activeId]: { ...existing, status: 'locked' } }
     })
+    // Abort in-flight txs BEFORE lockWallet zeroizes the keyManager — terminal cancel/dismiss
+    // persists need the historyEncryptionKey (W-5 makes the persist survive the zeroize race, but
+    // the cancel itself must still fire while unlocked). Without this, a manual lock mid-flight
+    // strands records: writes throw "wallet locked", atom + IDB diverge. (T-M1, mirrors the
+    // account-switch path in useWallet.) Then drop the resume guard so a re-unlock in the same
+    // session re-attaches watchers instead of being skipped by resumeForWallet's idempotency Set.
+    cancelAllRunning('manual-lock')
+    clearResumed(activeId)
     lockWallet(activeId).catch(err => {
       trackError('useShieldedWallet.lock', err, { scope: 'shielded.lock', message: 'lock failed' })
     })

@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { __setIsLeaderForTests, canRetryTx, cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
+import { __setIsLeaderForTests, canRetryTx, cancelAllRunning, cancelTx, clearResumed, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
 import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
@@ -325,6 +325,28 @@ describe('resumeForWallet (P0-2)', () => {
 
     const after = await loadAllTx(walletId)
     expect(after[0]!.executionState).toBe('expired')
+  })
+
+  it('clearResumed lifts the per-session idempotency guard so a re-unlock resumes again (T-M1)', async () => {
+    const walletId = 'rw-clear-resumed'
+    unlockForTest(walletId)
+    startEngine()
+
+    // First unlock: resume terminalizes the pre-broadcast record (INTERRUPTED).
+    await putTx(recordFor(walletId, { id: 'cr-1', executionState: 'active', stage: 'build-proof', updatedSeq: 1, artifacts: {} }))
+    await resumeForWallet(walletId)
+    expect((await loadAllTx(walletId)).find(r => r.id === 'cr-1')?.executionState).toBe('failed')
+
+    // A fresh non-terminal record + a second resume is SKIPPED by the idempotency Set — without
+    // clearing on lock, a re-unlock in the same session never re-attaches watchers (the T-M1 bug).
+    await putTx(recordFor(walletId, { id: 'cr-2', executionState: 'active', stage: 'build-proof', updatedSeq: 1, artifacts: {} }))
+    await resumeForWallet(walletId)
+    expect((await loadAllTx(walletId)).find(r => r.id === 'cr-2')?.executionState).toBe('active')
+
+    // After clearResumed (what lock now calls), the next resume processes cr-2.
+    clearResumed(walletId)
+    await resumeForWallet(walletId)
+    expect((await loadAllTx(walletId)).find(r => r.id === 'cr-2')?.executionState).toBe('failed')
   })
 
   it('is a no-op while locked (no key to decrypt records)', async () => {

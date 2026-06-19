@@ -33,6 +33,7 @@ import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reduc
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll } from '@/lib/tx/poller'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
@@ -338,6 +339,17 @@ async function runDirectSubmit(
       ethers.ZeroAddress as `0x${string}`, // integrator: no fee routing for direct user shields
     ],
   })
+
+  // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+  // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+  await simulateOrThrow({
+    to: privacyPoolClientAddress as `0x${string}`,
+    data: calldata,
+    value: 0n,
+    account: owner,
+    chainId: record.meta.fromChainId,
+  })
+  if (ctx.signal.aborted) throw new Error('cancelled')
 
   const hash = await sendTransaction(wagmiConfig, {
     to: privacyPoolClientAddress as `0x${string}`,

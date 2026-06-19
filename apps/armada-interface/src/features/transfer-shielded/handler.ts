@@ -7,6 +7,7 @@ import { getNetworkConfig } from '@/config/network'
 import { wagmiConfig } from '@/config/wagmi'
 import { ensureChain } from '@/lib/network-switch'
 import { waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
@@ -146,6 +147,19 @@ async function runSubmitAndConfirm(
       const tx = populated!
       await ensureChain(hubChainId)
       if (ctx.signal.aborted) throw new Error('cancelled')
+      // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+      // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+      const sender = record.walletContext.evmAddress
+      if (sender) {
+        await simulateOrThrow({
+          to: tx.to,
+          data: tx.data,
+          value: tx.value,
+          account: sender as `0x${string}`,
+          chainId: hubChainId,
+        })
+        if (ctx.signal.aborted) throw new Error('cancelled')
+      }
       hash = await sendTransaction(wagmiConfig, {
         to: tx.to,
         data: tx.data,

@@ -16,6 +16,10 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: waitForReceiptMock }
 })
 
+// S-M8: the override path pre-flight-simulates before the send. Mock to no-op; asserted below.
+const simulateMock = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/lib/tx/simulate', () => ({ simulateOrThrow: simulateMock }))
+
 vi.mock('@/lib/railgun/keyManager', () => ({
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',
@@ -60,6 +64,7 @@ describe('yieldDepositHandler wallet-override chain pinning (W-3/W-4)', () => {
   beforeEach(() => {
     sendTransactionMock.mockClear()
     waitForReceiptMock.mockClear()
+    simulateMock.mockClear()
   })
 
   it('pins the hub chainId on the send and the receipt wait', async () => {
@@ -72,6 +77,17 @@ describe('yieldDepositHandler wallet-override chain pinning (W-3/W-4)', () => {
     )
     expect(waitForReceiptMock).toHaveBeenCalledWith(
       expect.objectContaining({ chainId: 31337 }),
+    )
+  })
+
+  it('pre-flight-simulates the send (pinned) before broadcasting it (S-M8)', async () => {
+    const { ctx } = makeCtx()
+    await yieldDepositHandler.run(freshYieldDepositRecord(), ctx)
+    expect(simulateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ chainId: 31337, account: '0xabc', value: 0n }),
+    )
+    expect(simulateMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      sendTransactionMock.mock.invocationCallOrder[0]!,
     )
   })
 })

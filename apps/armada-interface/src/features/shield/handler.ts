@@ -6,8 +6,9 @@ import {
   writeContract,
 } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { erc20Abi, maxUint256 } from 'viem'
+import { encodeFunctionData, erc20Abi, maxUint256 } from 'viem'
 import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
 import { getIntegratorAddress } from '@/config/network'
@@ -319,6 +320,22 @@ async function runDirectSubmit(
         shieldKey: shieldRequest.shieldKey as `0x${string}`,
       },
     }
+    // S-M8: pre-flight simulate the shield call so an on-chain revert surfaces as a typed
+    // PRE_FLIGHT_REVERT ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback
+    // "gas limit too high". Encode the same calldata writeContract will send.
+    const shieldCalldata = encodeFunctionData({
+      abi: PRIVACY_POOL_SHIELD_ABI,
+      functionName: 'shield',
+      args: [[shieldRequestTuple], getIntegratorAddress()],
+    })
+    await simulateOrThrow({
+      to: privacyPoolAddress as `0x${string}`,
+      data: shieldCalldata,
+      value: 0n,
+      account: owner,
+      chainId: record.meta.fromChainId,
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
     shieldHash = await writeContract(wagmiConfig, {
       address: privacyPoolAddress as `0x${string}`,
       abi: PRIVACY_POOL_SHIELD_ABI,

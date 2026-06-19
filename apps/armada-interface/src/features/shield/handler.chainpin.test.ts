@@ -22,6 +22,11 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: waitForReceiptMock }
 })
 
+// S-M8: the fresh path pre-flight-simulates before the write. Mock it to a no-op (the real one
+// would call getPublicClient on the stub wagmiConfig); we assert it's called + pinned below.
+const simulateMock = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/lib/tx/simulate', () => ({ simulateOrThrow: simulateMock }))
+
 vi.mock('@/lib/railgun/keyManager', () => ({
   isUnlocked: () => false, // skip the post-confirm balance refresh
   getWalletId: () => 'rw-1',
@@ -56,11 +61,13 @@ function freshShieldRecord(): TxRecord<'shield'> {
     artifacts: {
       privacyPoolAddress: '0x1111111111111111111111111111111111111111',
       usdcAddress: '0x2222222222222222222222222222222222222222',
+      // Valid 32-byte hex — the S-M8 pre-flight encodes this calldata with real viem, which
+      // rejects short placeholders like '0x00'.
       shieldRequest: {
-        npk: '0x00',
+        npk: `0x${'00'.repeat(32)}`,
         value: '1000000',
-        encryptedBundle: ['0x00', '0x00', '0x00'],
-        shieldKey: '0x00',
+        encryptedBundle: [`0x${'00'.repeat(32)}`, `0x${'00'.repeat(32)}`, `0x${'00'.repeat(32)}`],
+        shieldKey: `0x${'00'.repeat(32)}`,
       },
     },
     walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
@@ -72,6 +79,7 @@ describe('shieldHandler direct submit chain pinning (W-3/W-4)', () => {
     wagmi.readContract.mockClear()
     wagmi.writeContract.mockClear()
     waitForReceiptMock.mockClear()
+    simulateMock.mockClear()
   })
 
   it('pins fromChainId on the allowance read, the shield write, and the receipt wait', async () => {
@@ -88,6 +96,18 @@ describe('shieldHandler direct submit chain pinning (W-3/W-4)', () => {
     )
     expect(waitForReceiptMock).toHaveBeenCalledWith(
       expect.objectContaining({ chainId: 31337 }),
+    )
+  })
+
+  it('pre-flight-simulates the shield call (pinned) before broadcasting it (S-M8)', async () => {
+    const { ctx } = makeCtx()
+    await shieldHandler.run(freshShieldRecord(), ctx)
+    expect(simulateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ chainId: 31337, account: '0xabc', value: 0n }),
+    )
+    // Simulate must run BEFORE the write — the whole point is to avoid prompting on a doomed tx.
+    expect(simulateMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      wagmi.writeContract.mock.invocationCallOrder[0]!,
     )
   })
 })

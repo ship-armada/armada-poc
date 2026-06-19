@@ -5,6 +5,7 @@ import { ethers } from 'ethers'
 import { encodeFunctionData, pad } from 'viem'
 import { getPublicClient, sendTransaction } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
@@ -288,6 +289,19 @@ async function runSubmitAndBurn(
     if (!userHash) {
       await ensureChain(hubChainId)
       if (ctx.signal.aborted) throw new Error('cancelled')
+      // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+      // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+      const sender = record.walletContext.evmAddress
+      if (sender) {
+        await simulateOrThrow({
+          to: privacyPoolAddress as `0x${string}`,
+          data: calldata!,
+          value: 0n,
+          account: sender as `0x${string}`,
+          chainId: hubChainId,
+        })
+        if (ctx.signal.aborted) throw new Error('cancelled')
+      }
       userHash = await sendTransaction(wagmiConfig, {
         to: privacyPoolAddress as `0x${string}`,
         data: calldata!,

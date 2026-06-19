@@ -52,6 +52,8 @@ npx vitest run --root apps/armada-interface
 
 | Commit | Finding | What |
 |---|---|---|
+| `62967ae` | **T-M1** | `useShieldedWallet.lock` now `cancelAllRunning('manual-lock')` + `clearResumed(activeId)` before `lockWallet`; new `clearResumed` export; account-switch path also clears the resume guard. |
+| `a4ab073` | **W-5** | `putTxIfFresh` encrypts the envelope up-front (before the OCC-read await) so a cancel-during-lock zeroize can't lose the terminal write (no false INTERRUPTED). |
 | `fdab594` | **W-3/W-4** | Pin `chainId` on every receipt wait + allowance read + approve/submit write across the 6 handlers (copied shield-xchain's pattern); classify viem `ChainMismatchError` → RPC_ERROR with "switch back to <network>" copy (`isChainMismatchError` + `classifyHandlerError` targetChainId param). |
 | `b9a74d8` | **W-2** | Clear public balances on every address change; drop cross-key placeholderData; tag query results with address + filter mirror to current address (no A→B leak). |
 | `3431fbb` | **W-1** | Reset `syncStateAtom` to idle in `useShieldedBalanceSync` lock/missing branch (next wallet re-gates). |
@@ -63,7 +65,7 @@ npx vitest run --root apps/armada-interface
 | `a967852` | **T-H1** | Don't force-complete xchain unshields from the burn hash; restrict `markRecoveredComplete` upgrade to same-chain kinds. |
 | `1663fc2` | — | Audit report committed. |
 
-**Wave 1 (all 5 HIGH) ✅ done. Wave 2: W-1, W-2, W-3, W-4 ✅ done. Remaining Wave 2: T-M1, W-5.**
+**Wave 1 (all 5 HIGH) ✅ done. Wave 2 (W-1, W-2, W-3, W-4, T-M1, W-5) ✅ ALL done. Next: Wave 3.**
 
 ---
 
@@ -73,17 +75,9 @@ npx vitest run --root apps/armada-interface
 
 **W-3 / W-4 — ✅ DONE (`fdab594`).** Pinned `chainId` on every receipt wait + allowance read + approve/submit write across the 6 handlers (copied shield-xchain's pattern); `ChainMismatchError` now classified to RPC_ERROR with named "switch back" copy. Tests in `src/features/*/handler.chainpin.test.ts` + `src/lib/tx/errors.test.ts`.
 
-**T-M1 — manual lock cancels in-flight + clears `resumedWallets`.**
-- Refs: `src/hooks/useShieldedWallet.ts` `lock` (~259-273); `executor.ts` `resumedWallets` set (~49-51, 287-291) + `cancelAllRunning`.
-- Bug: `lock` doesn't call `cancelAllRunning` (the account-switch path in `useWallet` does); in-flight writes then throw "wallet locked", atom/IDB diverge, and `resumedWallets` is never cleared so re-unlock in the same session skips resume.
-- Fix: call `cancelAllRunning('manual-lock')` in `lock` BEFORE `lockWallet` (must run while still unlocked — the terminal persist needs `historyEncryptionKey`), and clear the walletId from `resumedWallets` (add an exported `clearResumed(walletId)` in executor.ts). Mirror the ordering used by the account-switch path.
-- Test: lock with an in-flight record → record terminalizes (cancelled/dismissed) + `resumedWallets` no longer has the id.
+**T-M1 — ✅ DONE (`62967ae`).** `useShieldedWallet.lock` now `cancelAllRunning('manual-lock')` + `clearResumed(activeId)` before `lockWallet`; new `clearResumed` export in executor.ts; account-switch path in `useWallet` also clears the resume guard. Tests in `executor.test.ts`, `useShieldedWallet.test.tsx`, `useWallet.test.tsx`.
 
-**W-5 — capture history-key envelope before zeroize on account-switch lock.**
-- Refs: `useWallet.ts:89-99` (calls `cancelAllRunning` then `lockWallet`); `executor.ts:257` (cancel persists are fire-and-forget); `keyManager.ts:150-159` (`clear()` `fill(0)`s the shared key buffer synchronously).
-- Bug: `cancelAllRunning`'s persists are async/fire-and-forget; `lockWallet` then synchronously zeroizes the shared history-encryption key; the resumed IDB write finds a locked keyManager and throws → cancelled state never persists → record resurfaces as INTERRUPTED later.
-- Fix: either capture the wrapped envelope before the first await, or defer `lockWallet` behind `Promise.allSettled` of the cancel persists. Coordinate with T-M1 (both touch the lock ordering — consider doing T-M1 and W-5 together or back-to-back).
-- Gotcha: secret-hygiene — do not log key material; keep zeroization intact, just sequence it after the persist completes.
+**W-5 — ✅ DONE (`a4ab073`).** Solved at the storage layer instead of the lock layer: `putTxIfFresh` encrypts the envelope up-front (before the OCC-read await), so a cancel-during-lock zeroize can't make the terminal write throw at write time. Lock timing/zeroize ordering untouched (beforeunload's synchronous zeroize preserved). Test in `storage.test.ts`.
 
 ### Wave 3 (snappy UX)
 
@@ -145,8 +139,8 @@ Ran a search-before-assuming sweep of all remaining findings. Two scope-shrinker
 Everything else confirmed **still-present** (or **partly**, noted below). Current refs:
 - **W-3** ✅ DONE (`fdab594`): all 6 handlers now pin `chainId` on receipt waits (+ shield's allowance read).
 - **W-4** ✅ DONE (`fdab594`): writes/reads pinned; `isChainMismatchError` added to `src/lib/errors.ts`; `classifyHandlerError` maps it to RPC_ERROR with "switch back to <network>" copy.
-- **T-M1**: `useShieldedWallet.ts:259-273` `lock` doesn't `cancelAllRunning`; `executor.ts:51` `resumedWallets` deleted only on error path (`:328`), no `clearResumed` export.
-- **W-5**: `useWallet.ts:89-99` order; `executor.ts:286` `void putTxIfFresh` fire-and-forget; `keyManager.ts:150-159` `clear()` synchronous `fill(0)`.
+- **T-M1** ✅ DONE (`62967ae`): manual lock + account-switch now cancel in-flight and clear the resume guard.
+- **W-5** ✅ DONE (`a4ab073`): fixed at the storage layer (`putTxIfFresh` encrypts before the OCC-read await) rather than re-sequencing the lock.
 - **S-M2**: `dismissible={step !== 'progress'}` in ShieldModal:328, SendModal, UnshieldModal:228, EarnModal; `InProgressCard` commented out `Dashboard.tsx:35-50` (restoration notes inline).
 - **S-M4**: `WalletConfirmList.tsx` + `shieldWalletSteps.ts` built, zero handler consumers; `markWaiting` exists in `reducer.ts` but not called in submit-path handlers; `approveTxHash`/`approveSkipped` never written.
 - **S-M5** *(partly)*: ShieldModal:234-248 has the guard; Unshield/Send/Earn `handleSubmit` don't re-validate `amount + freshFee ≤ balance`; Continue not gated on `feeLoading`.

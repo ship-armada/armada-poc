@@ -81,14 +81,14 @@ npx vitest run --root apps/armada-interface
 
 ### Wave 3 (snappy UX)
 
-- **S-M2 + re-enable InProgressCard** — allow dismissing the progress step (close ≠ dismiss; keep the watcher alive — the module-scope executor already supports background tracking); re-enable `InProgressCard` in `src/pages/Dashboard.tsx` (it's commented out). All four modals currently set `dismissible={step !== 'progress'}`.
-- **S-M4 (wire WalletConfirmList)** — `markWaiting` before each wallet prompt; write `approveTxHash`/`approveSkipped` artifacts; wire `WalletConfirmList` + `shieldWalletSteps` (built, zero consumers). Covers T-L1/T-L2/S-M4. Two CLAUDE.md files document this behavior as if it exists — make it real.
-- **S-M3** — compute `canRetryTx(record)` in modals so the Retry button isn't enabled on `build-proof` (where `canRetryTx` rejects → silent no-op); offer "Start over" preserving form state.
-- **S-M5** — Send/Unshield/Earn re-validate `amount + freshFee ≤ balance` at submit (ShieldModal already does); gate Continue on a loaded quote (`feeLoading`).
-- **S-M8** — call the built-and-tested `simulateOrThrow` before each direct-path write (its `PRE_FLIGHT_REVERT` copy is already wired).
-- **S-L1** — decode custom-error selectors in revert handling (against pool/wrapper ABIs); currently only 8 string patterns.
-- **T-L3** — sort terminal rows by `createdAt` not `updatedAt` (recovery-reconciled old txs jump to top of Recent Activity).
-- **T-L4** — elapsed timer + "taking longer than usual" past `estDuration.p90` in the stepper (`nowAtom` + `estDuration.p90` already exist).
+- **T-L3 — ✅ DONE (`9bee75a`).** Shared `historySortTime` helper (terminal → `createdAt`, in-flight → `updatedAt`) used by RecentActivityCard / History / `loadAllTx`.
+- **S-M5 — ✅ DONE (`3151615`).** New `assertSpendableForFeeOnTop` helper; Send/Unshield/Earn re-validate `amount + freshFee ≤ balance` at submit. (Did NOT gate Continue on `feeLoading` — ShieldModal doesn't either, and the submit guard covers the failure; gating would diverge the modals.)
+- **S-M3 — ✅ DONE (`4eb1825`).** Modals compute `canRetryTx(record)`: retryable → "Try again"; not retryable (build-proof / FEE_EXPIRED / DUPLICATE_TX) → **"Start over"** returning to the **Input** step (form preserved). `ErrorStep` gained a `primaryLabel` prop.
+- **S-M8 — ✅ DONE (`aa67370`).** `simulateOrThrow` wired before each **main-action** user-wallet write across 7 handlers (skipped ERC20 approve per decision). Simulated against the pinned chainId + captured submitter.
+- **S-M2 + re-enable InProgressCard** — allow dismissing the progress step (close ≠ dismiss; keep the watcher alive — the module-scope executor already supports background tracking); re-enable `InProgressCard` in `src/pages/Dashboard.tsx` (it's commented out). All four modals currently set `dismissible={step !== 'progress'}`. **NEEDS DESIGN DECISION (close-vs-stop-tracking model).**
+- **S-M4 (wire WalletConfirmList)** — `markWaiting` before each wallet prompt; write `approveTxHash`/`approveSkipped` artifacts; wire `WalletConfirmList` + `shieldWalletSteps` (built, zero consumers). Covers T-L1/T-L2/S-M4. Two CLAUDE.md files document this behavior as if it exists — make it real. **NEEDS DESIGN DECISION.**
+- **S-L1 — BLOCKED on a decision.** The stated fix ("decode against pool/wrapper ABIs") assumes error ABIs that DON'T exist in the frontend (no `type:'error'` ABI entries, no `decodeErrorResult`). Needs: (A) curate an error-ABI list, (B) extract from artifacts, or (C) defer. revert.ts still only has 8 string patterns.
+- **T-L4** — elapsed timer + "taking longer than usual" past `estDuration.p90` in the stepper (`nowAtom` + `estDuration.p90` already exist). UX copy/threshold choice.
 
 ### Hidden-tab correctness (pulled into scope)
 
@@ -143,10 +143,11 @@ Everything else confirmed **still-present** (or **partly**, noted below). Curren
 - **W-5** ✅ DONE (`a4ab073`): fixed at the storage layer (`putTxIfFresh` encrypts before the OCC-read await) rather than re-sequencing the lock.
 - **S-M2**: `dismissible={step !== 'progress'}` in ShieldModal:328, SendModal, UnshieldModal:228, EarnModal; `InProgressCard` commented out `Dashboard.tsx:35-50` (restoration notes inline).
 - **S-M4**: `WalletConfirmList.tsx` + `shieldWalletSteps.ts` built, zero handler consumers; `markWaiting` exists in `reducer.ts` but not called in submit-path handlers; `approveTxHash`/`approveSkipped` never written.
-- **S-M5** *(partly)*: ShieldModal:234-248 has the guard; Unshield/Send/Earn `handleSubmit` don't re-validate `amount + freshFee ≤ balance`; Continue not gated on `feeLoading`.
-- **S-M8**: `simulate.ts` `simulateOrThrow` + `simulate.test.ts` complete, zero non-test callers.
-- **S-L1**: `revert.ts:5-28` `REVERT_MAP` = 8 regexes, no custom-error selector decoding.
-- **T-L3**: `updatedAt` sort in RecentActivityCard, `storage.ts`, `History.tsx`.
+- **S-M5** ✅ DONE (`3151615`) — see Wave 3.
+- **S-M8** ✅ DONE (`aa67370`) — see Wave 3.
+- **S-L1**: still 8 regexes — BLOCKED on the error-ABI decision (see Wave 3 entry).
+- **T-L3** ✅ DONE (`9bee75a`) — see Wave 3.
+- **S-M3** ✅ DONE (`4eb1825`) — see Wave 3.
 - **T-L4**: `TxLifecycleStepper.tsx:50-76` static `estDuration.p50` string; `nowAtom`/`p90` exist, unused.
 - **T-M5**: `poller.ts:73-87` elapsed check before `pollOnce`, no final check; no lifecycle-clock pause anywhere.
 - **S-M6**: `executor.ts:371-375` visibility gate parks `pending` with no pre-broadcast exemption; wall-clock keeps burning.

@@ -100,4 +100,12 @@ describe('CLI commands', () => {
       toBlock: 'latest',
     })
   })
+
+  it('parses evaluate-alerts (dispatched in cli/index.ts)', () => {
+    expect(parseCliArgs(['evaluate-alerts'])).toEqual({
+      command: 'evaluate-alerts',
+      fromBlock: null,
+      toBlock: null,
+    })
+  })
 })

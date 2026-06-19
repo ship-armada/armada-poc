@@ -155,6 +155,29 @@ Snapshot publication variables:
 | `CROWDFUND_SNAPSHOT_PUBLIC_BASE_URL` | unset | Public root URL used in health metadata for `latest.json`. Prefix is appended automatically. |
 | `CROWDFUND_SNAPSHOT_FORCE_PATH_STYLE` | `false` | Enables path-style S3 requests for compatible providers that need it. |
 
+Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONITORING.md)):
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `CROWDFUND_TREASURY_ADDRESS` | required | Treasury address — used to read USDC balance for A13 mismatch detection. |
+| `CROWDFUND_USDC_ADDRESS` | optional | USDC contract — required for A13 (treasury balance). Omit to skip A13. |
+| `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens. Drives A2/A8/A9. |
+| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Drives A3. |
+| `CROWDFUND_COMMITMENT_DEADLINE` | `0` | Unix seconds when the 3-week window closes (openTimestamp + 21 days). Drives A8/A9. |
+| `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |
+| `CROWDFUND_ALERT_WEBHOOK_P1` | unset | Discord webhook URL for P1 (same-day) alerts. |
+| `CROWDFUND_ALERT_WEBHOOK_P2` | unset | Discord webhook URL for P2 (attention) alerts. |
+| `CROWDFUND_ALERT_WEBHOOK_P3` | unset | Discord webhook URL for P3 (informational) alerts. |
+| `CROWDFUND_ALERT_MENTION_P0` | unset | Mention prepended to P0 messages (e.g. `<@&ROLE_ID>` to ping the on-call role). |
+| `CROWDFUND_ALERT_MENTION_P1` | unset | Mention prepended to P1 messages. |
+| `CROWDFUND_ALERT_MENTION_P2` | unset | Mention prepended to P2 messages. |
+| `CROWDFUND_ALERT_MENTION_P3` | unset | Mention prepended to P3 messages. |
+| `CROWDFUND_ALERT_STATE_FILE` | `data/crowdfund-indexer/alerts.json` | JSON file persisting already-delivered dedupe keys (so cron ticks don't re-fire). |
+| `CROWDFUND_ALERT_DUPLICATE_SLOT_FRACTION` | `0.10` | A6 — duplicate-slot watch threshold (fraction of occupied hop-1/2 nodes). MONITORING.md §13. |
+| `CROWDFUND_ALERT_FINALIZE_GRACE_SECONDS` | `7200` | A9a — grace window after `commitmentDeadline` before P1 escalates to P0. MONITORING.md §13. |
+| `CROWDFUND_ALERT_CLAIM_PARTICIPATION_FLOOR` | `0.50` | A18 — minimum fraction of claimers expected 14d after success finalization. |
+| `CROWDFUND_ALERT_REFUND_UNCLAIMED_THRESHOLD` | `0.10` | A19 — maximum fraction of refundable USDC left unclaimed 30d after refundMode. |
+
 Frontend variables:
 
 | Variable | Default | Behavior |
@@ -311,6 +334,66 @@ npm run crowdfund:indexer:cli -- publish-snapshot
 ```
 
 Publishing refuses failed contract-read reconciliation when `CROWDFUND_PRIMARY_RPC_URL` is configured.
+
+Evaluate alert rules (implements [`MONITORING.md`](MONITORING.md) §8 A1–A20) and dispatch any newly-fired alerts to Discord:
+
+```bash
+npm run crowdfund:indexer:cli -- evaluate-alerts
+```
+
+The command is a single pass — it reads the indexer store, optionally consults the chain for `finalizedAt` and treasury USDC balance, runs every rule, posts new alerts to the configured webhooks, persists which dedupe keys it has already delivered, and exits. Schedule it as a recurring job (cron, systemd timer, or external scheduler) at whatever cadence matches your runbook — once per minute is fine; the cost is dominated by RPC reads.
+
+Required env: `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_TREASURY_ADDRESS`, the three timestamp vars (`CROWDFUND_OPEN_TIMESTAMP`, `CROWDFUND_WEEK1_DEADLINE`, `CROWDFUND_COMMITMENT_DEADLINE`), and at least one webhook URL. Without `CROWDFUND_PRIMARY_RPC_URL` + `CROWDFUND_USDC_ADDRESS`, A13 (treasury proceeds mismatch) and the time-gated rules that need `finalizedAt` (A18/A19/A20) self-skip rather than producing false positives. Alerts whose severity has no configured webhook are logged to stderr and skipped.
+
+Example systemd timer (drop into `/etc/systemd/system/crowdfund-alerts.timer`):
+
+```ini
+[Unit]
+Description=Run crowdfund alert evaluator every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=crowdfund-alerts.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Pair with a one-shot service that runs `npm run crowdfund:indexer:cli -- evaluate-alerts` in the indexer working directory with the env vars above.
+
+To force a re-fire after operator intervention (e.g. you want a P0 to re-page after a Discord channel outage), remove the relevant `dedupeKey` entries from `data/crowdfund-indexer/alerts.json` or delete the file entirely.
+
+### Delivery cadence
+
+Each `evaluate-alerts` invocation is a single pass — it reads current indexer state, evaluates every rule, dispatches newly-fired alerts, and exits. **Worst-case alert latency is your cron interval.** Multiple alerts that become true between two ticks all deliver in the same tick, so you may see two or three messages arrive together; that's expected, not a bug.
+
+If you need tighter latency than one minute, drop the timer to 30s — the evaluator is cheap (single store read + a few RPC calls when `chainState` is configured). Sub-30s is overkill at this scale and risks Discord rate limits.
+
+### Where webhook URLs live
+
+Webhook URLs are bearer credentials — anyone holding the URL can post to that channel — so they are **never** committed to git. The canonical home for them depends on environment:
+
+| Environment | Location | Set by |
+|---|---|---|
+| **Local dev / testing** | `config/secrets.env` (gitignored; template at `config/secrets.env.template`) | Operator copies template, fills in values, `source`s the file before running the indexer or CLI. |
+| **Production VPS** | systemd `EnvironmentFile=` pointing at a root-owned file under `/etc/crowdfund-alerts/` (mode `0640`, group-readable by the alerts service user) | Deploy script writes the file from your secret manager during host provisioning. Never check the file into the repo. |
+| **Container / PaaS** | Platform secret manager (Render, Fly, Vercel, AWS Secrets Manager, GCP Secret Manager, …) injected at process start | Set via the platform's UI or `infra-as-code`; rotate via the same channel. |
+
+`sample.env.production` keeps placeholder values (`https://discord.com/api/webhooks/<id>/<token>`) so the full env-var inventory is visible without leaking credentials. `config/secrets.env.template` carries the same env-var names with empty values, ready for `cp config/secrets.env.template config/secrets.env` then editing in place.
+
+`.gitignore` already covers `config/secrets.env` — verify with `git check-ignore -v config/secrets.env` before pasting a real URL.
+
+### Rotating or changing the Discord channel
+
+The webhook URLs are env-var-driven (`CROWDFUND_ALERT_WEBHOOK_P0/P1/P2/P3`), so swapping channels is a config change, not a code redeploy:
+
+1. Create the new webhook in Discord (Server Settings → Integrations → Webhooks → New Webhook).
+2. Update the env var(s) in whichever store applies to your environment (see table above).
+3. Reload the cron unit (`systemctl daemon-reload && systemctl restart crowdfund-alerts.timer`, or equivalent on your platform).
+4. Optionally revoke the old webhook in Discord to prevent stale tokens from posting.
+
+You can route different severities to different channels — e.g. P0/P1 to a paged channel with an `@on-call` role mention (`CROWDFUND_ALERT_MENTION_P0=<@&ROLE_ID>`), P2/P3 to a silent log channel. Or point all four at one channel for simplicity.
 
 ---
 

@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
+import { canRetryTx, cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
 import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
@@ -390,5 +390,32 @@ describe('cancelAllRunning (P1-15)', () => {
   it('is a no-op when nothing is running', () => {
     // No executeTx calls → empty running set → no throw, no writes.
     expect(() => cancelAllRunning('account-switch')).not.toThrow()
+  })
+})
+
+describe('canRetryTx — fee-expired / duplicate are non-retryable (S-H1)', () => {
+  // A failed `submit-relayer` is normally retryable (the stage is in retryableStages).
+  function failedAtSubmit(error?: TxError): TxRecord {
+    return makeRecord({
+      executionState: 'failed',
+      stage: 'submit-relayer',
+      artifacts: error ? { error } : {},
+    })
+  }
+
+  it('allows retry for an ordinary failure at a retryable stage', () => {
+    // WHY: baseline — RPC_ERROR / OTHER at submit-relayer can legitimately re-send.
+    expect(canRetryTx(failedAtSubmit({ code: 'RPC_ERROR', message: 'relayer 502' }))).toBe(true)
+    expect(canRetryTx(failedAtSubmit())).toBe(true)
+  })
+
+  it('refuses retry for FEE_EXPIRED — re-POSTing the baked-in expired quote loops forever (S-H1)', () => {
+    // WHY (S-H1): the proof embeds the fee cacheId + amount; once the relayer rejects it as
+    // expired/insufficient, every retry re-fails identically. Only a fresh transaction recovers.
+    expect(canRetryTx(failedAtSubmit({ code: 'FEE_EXPIRED', message: 'quote expired' }))).toBe(false)
+  })
+
+  it('refuses retry for DUPLICATE_TX — the tx is already in flight (recover via /status, T-M3)', () => {
+    expect(canRetryTx(failedAtSubmit({ code: 'DUPLICATE_TX', message: 'already submitted' }))).toBe(false)
   })
 })

@@ -131,6 +131,11 @@ export function executeTx(id: string): void {
   void runHandlerChain(record, handler, controller)
 }
 
+/** Error codes whose retry is structurally futile — the proof froze a now-invalid fee quote, or
+ *  the tx is already in flight. The only recovery is a fresh transaction (or, for DUPLICATE_TX,
+ *  the /status hash-recovery in T-M3). (S-H1) */
+const NON_RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set(['FEE_EXPIRED', 'DUPLICATE_TX'])
+
 /**
  * Returns true if `record` is in a state we'd allow the user to retry from. Two conditions:
  *  1. The record is terminal but recoverable: `failed`, `expired`, or `cancelled`.
@@ -146,6 +151,13 @@ export function canRetryTx(record: TxRecord): boolean {
     || record.executionState === 'expired'
     || record.executionState === 'cancelled'
   if (!isRecoverable) return false
+  // Some failures can't be fixed by re-running the stage: the proof bakes in a fee quote (cacheId
+  // + broadcaster-fee amount) the relayer now rejects, so a retry re-POSTs the same doomed quote
+  // forever (FEE_EXPIRED); a 409 means the tx is already in flight (DUPLICATE_TX). Offering Retry
+  // here is a guaranteed-failure loop — the only recovery is a fresh transaction. (S-H1)
+  if (record.artifacts.error && NON_RETRYABLE_ERROR_CODES.has(record.artifacts.error.code)) {
+    return false
+  }
   const lifecycle = lifecycleFor(record.kind)
   return (lifecycle.retryableStages as ReadonlyArray<string>).includes(record.stage as string)
 }

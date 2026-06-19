@@ -40,7 +40,7 @@ npx vitest run --root apps/armada-interface
 - **InProgressCard:** YES — re-enable it (S-M2). It is deliberately commented out in `src/pages/Dashboard.tsx`.
 - **S-M4 WalletConfirmList:** WIRE it (don't delete). Write the approve artifacts; add `markWaiting` before wallet prompts.
 
-**Deferred — file a GitHub issue for each, don't implement** (label `claude-generated`, prepend the generated-by annotation line per repo CLAUDE.md):
+**Deferral candidates — DO NOT auto-file as issues.** At the **end of the session**, review each candidate WITH THE USER and decide per-item whether to defer (file a GitHub issue) or fix now. Only after that decision: for the deferred ones, `gh issue create` with label `claude-generated`, prepending the generated-by annotation line per repo CLAUDE.md. Do not implement these mid-session without that review.
 - **T-M2** (leader failover) and **T-M6** (BroadcastChannel cross-tab sync) — multi-tab-only; new subsystems; explicit v1 non-goals. T-H3 already removed their dangerous consequence.
 - **S-M7** (reorg confirmations) — mainnet-only.
 - **`/relay` idempotency key** (the relayer-side half of T-M3/S-M1) — needs relayer/VPS coordination.
@@ -52,6 +52,7 @@ npx vitest run --root apps/armada-interface
 
 | Commit | Finding | What |
 |---|---|---|
+| `fdab594` | **W-3/W-4** | Pin `chainId` on every receipt wait + allowance read + approve/submit write across the 6 handlers (copied shield-xchain's pattern); classify viem `ChainMismatchError` → RPC_ERROR with "switch back to <network>" copy (`isChainMismatchError` + `classifyHandlerError` targetChainId param). |
 | `b9a74d8` | **W-2** | Clear public balances on every address change; drop cross-key placeholderData; tag query results with address + filter mirror to current address (no A→B leak). |
 | `3431fbb` | **W-1** | Reset `syncStateAtom` to idle in `useShieldedBalanceSync` lock/missing branch (next wallet re-gates). |
 | `a55a60c` | — | Sentry DSN-unset test made env-independent (housekeeping). |
@@ -62,7 +63,7 @@ npx vitest run --root apps/armada-interface
 | `a967852` | **T-H1** | Don't force-complete xchain unshields from the burn hash; restrict `markRecoveredComplete` upgrade to same-chain kinds. |
 | `1663fc2` | — | Audit report committed. |
 
-**Wave 1 (all 5 HIGH) ✅ done. Wave 2: W-1, W-2 ✅ done.**
+**Wave 1 (all 5 HIGH) ✅ done. Wave 2: W-1, W-2, W-3, W-4 ✅ done. Remaining Wave 2: T-M1, W-5.**
 
 ---
 
@@ -70,12 +71,7 @@ npx vitest run --root apps/armada-interface
 
 ### Wave 2 (finish this first)
 
-**W-3 / W-4 — pin `chainId` on receipt waits + submit reads/writes.** *(biggest mechanical one — go carefully)*
-- Audit refs: `src/lib/tx/receipt.ts:17` (`waitForReceiptOrFail`), call sites in **shield / unshield / transfer-shielded / yield-deposit / yield-withdraw / unshield-xchain** handlers. `shield-xchain/handler.ts` already shows the CORRECT pinned pattern — copy it.
-- Bug: `waitForTransactionReceipt` / allowance reads / approve+shield writes without an explicit `chainId` follow the wallet's *current* chain; a mid-flow MetaMask network switch retargets them → false `POLL_TIMEOUT` for a tx that actually succeeded, or wrong-chain allowance reads → spurious max-approve.
-- Fix: thread `chainId` into every `waitForReceiptOrFail` call + submit-path read/write in the 6 handlers; map `ChainMismatchError` → "switch back to <network>" copy (see `src/lib/errors.ts`/`network-switch.ts` for the shared rejection-copy pattern).
-- Gotcha: there are 6 handler files — it is easy to pin one call site and miss another. Grep `waitForReceiptOrFail`, `readContract`, `writeContract`, `sendTransaction`, `waitForTransactionReceipt` across `src/features/*/handler.ts` and pin EACH. Diff against `shield-xchain/handler.ts` for the canonical shape.
-- Test: per handler, assert the receipt/read call is invoked with the expected `chainId`. The handler tests live in `src/features/*/*.test.ts` (idempotency tests already exist — extend them or add a chain-pin test).
+**W-3 / W-4 — ✅ DONE (`fdab594`).** Pinned `chainId` on every receipt wait + allowance read + approve/submit write across the 6 handlers (copied shield-xchain's pattern); `ChainMismatchError` now classified to RPC_ERROR with named "switch back" copy. Tests in `src/features/*/handler.chainpin.test.ts` + `src/lib/tx/errors.test.ts`.
 
 **T-M1 — manual lock cancels in-flight + clears `resumedWallets`.**
 - Refs: `src/hooks/useShieldedWallet.ts` `lock` (~259-273); `executor.ts` `resumedWallets` set (~49-51, 287-291) + `cancelAllRunning`.
@@ -133,4 +129,33 @@ The interface Netlify build OOMs because Sentry `hidden` source-map generation f
 ---
 
 ## When you finish a wave
-Run the full suite (`npx vitest run --root apps/armada-interface`), confirm only the known pre-existing `History.test.tsx` failure remains, then tell the user. Push only when asked. File the deferred-item issues (T-M2, T-M6, S-M7, /relay idempotency key, Iris-nonce) near the end.
+Run the full suite (`npx vitest run --root apps/armada-interface`), confirm only the known pre-existing `History.test.tsx` failure remains, then tell the user. Push only when asked.
+
+## End-of-session review (do this before wrapping up)
+Walk the **deferral candidates** above (T-M2, T-M6, S-M7, /relay idempotency key, Iris-nonce) WITH THE USER and decide per-item: defer (file a `claude-generated` GitHub issue) or fix now. Do not file issues unilaterally — the user wants to make each call at the end.
+
+---
+
+## Verification pass — 2026-06-19 (status of remaining work vs. current code)
+
+Ran a search-before-assuming sweep of all remaining findings. Two scope-shrinkers:
+- **W-8 — likely ALREADY DONE.** T-H3 (`74a3567`) added `MAX_LOCK_DEFERRALS = 5` + a 60s re-check timer in `useAutoLock.ts` (~40-127), which already matches the audit's stated Fix (60s recheck + hard ceiling). **Verify-only — probably no code.** Confirm before writing anything.
+- **S-M3 — mostly done.** `canRetryTx` IS wired in `TxActions.tsx` and modal retry is gated on executor acceptance (no silent no-op). Remaining gap is cosmetic: modals don't pre-compute `canRetryTx(record)` to visually disable the Retry button on `build-proof`. Scope is just the disabled-state + optional "Start over".
+
+Everything else confirmed **still-present** (or **partly**, noted below). Current refs:
+- **W-3** ✅ DONE (`fdab594`): all 6 handlers now pin `chainId` on receipt waits (+ shield's allowance read).
+- **W-4** ✅ DONE (`fdab594`): writes/reads pinned; `isChainMismatchError` added to `src/lib/errors.ts`; `classifyHandlerError` maps it to RPC_ERROR with "switch back to <network>" copy.
+- **T-M1**: `useShieldedWallet.ts:259-273` `lock` doesn't `cancelAllRunning`; `executor.ts:51` `resumedWallets` deleted only on error path (`:328`), no `clearResumed` export.
+- **W-5**: `useWallet.ts:89-99` order; `executor.ts:286` `void putTxIfFresh` fire-and-forget; `keyManager.ts:150-159` `clear()` synchronous `fill(0)`.
+- **S-M2**: `dismissible={step !== 'progress'}` in ShieldModal:328, SendModal, UnshieldModal:228, EarnModal; `InProgressCard` commented out `Dashboard.tsx:35-50` (restoration notes inline).
+- **S-M4**: `WalletConfirmList.tsx` + `shieldWalletSteps.ts` built, zero handler consumers; `markWaiting` exists in `reducer.ts` but not called in submit-path handlers; `approveTxHash`/`approveSkipped` never written.
+- **S-M5** *(partly)*: ShieldModal:234-248 has the guard; Unshield/Send/Earn `handleSubmit` don't re-validate `amount + freshFee ≤ balance`; Continue not gated on `feeLoading`.
+- **S-M8**: `simulate.ts` `simulateOrThrow` + `simulate.test.ts` complete, zero non-test callers.
+- **S-L1**: `revert.ts:5-28` `REVERT_MAP` = 8 regexes, no custom-error selector decoding.
+- **T-L3**: `updatedAt` sort in RecentActivityCard, `storage.ts`, `History.tsx`.
+- **T-L4**: `TxLifecycleStepper.tsx:50-76` static `estDuration.p50` string; `nowAtom`/`p90` exist, unused.
+- **T-M5**: `poller.ts:73-87` elapsed check before `pollOnce`, no final check; no lifecycle-clock pause anywhere.
+- **S-M6**: `executor.ts:371-375` visibility gate parks `pending` with no pre-broadcast exemption; wall-clock keeps burning.
+- **T-M7** *(quick part)*: `unshield-xchain/handler.ts:541-554` `matchPredicate` recipient-only (`body.includes(pad32(recipient))`); add amount(±maxFee)+source-domain.
+- **DUPLICATE_TX recovery**: `errors.ts:49-50` classifies the code (S-H2 done); no `/status` recovery. `pollStatus` helper exists at `relayer.ts:465-472`.
+- **S-L7**: shield re-entry guards on `sourceTxHash` only; no unresolved-record / same-amount guard between POLL_TIMEOUT and recovery upgrade.

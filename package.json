@@ -48,7 +48,7 @@
     "deploy:revenue-lock-cohort": "hardhat run scripts/deploy_revenue_lock_cohort.ts --network hub",
     "test": "hardhat test test/privacy_pool_integration.ts",
     "test:governance": "hardhat test test/governance_integration.ts test/governance_adversarial.ts test/governance_veto.ts",
-    "test:crowdfund": "hardhat test test/crowdfund_integration.ts test/crowdfund_adversarial.ts",
+    "test:crowdfund": "hardhat test test/crowdfund_integration.ts test/crowdfund_adversarial.ts test/crowdfund_multicall.ts",
     "test:all": "hardhat test",
     "test:mcp": "npx mocha --require ts-node/register mcp-server/test/unit.test.ts",
     "test:mcp:integration": "npx mocha --require ts-node/register mcp-server/test/integration.test.ts",

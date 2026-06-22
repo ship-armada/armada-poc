@@ -93,17 +93,18 @@ npx vitest run --root apps/armada-interface
 
 **Wave 3 COMPLETE.** Full suite: 1020 passed, 8 skipped, only the known pre-existing `History.test.tsx` ("filters in completed records") failure remains.
 
-### Hidden-tab correctness (pulled into scope)
+### Hidden-tab correctness (pulled into scope) — ✅ COMPLETE
 
-- **T-M5** — `poll()` (`src/lib/tx/poller.ts:73-74`) checks elapsed before `pollOnce`; do one final `pollOnce` before declaring `POLL_TIMEOUT`; pause/credit the lifecycle clock for hidden time.
-- **S-M6** — visibility gate (`executor.ts:340-345`) parks a freshly-confirmed relayer tx the instant the tab hides → can expire having done nothing. Exempt the first transition out of `pending` (or all pre-broadcast local work); stop the expiry clock while parked. Make consistent with mid-poll behavior (which proceeds while hidden).
-- **W-8** — hidden-tab auto-lock deferral re-arms the full 5-min grace instead of the documented 60s recheck; schedule the re-check on the 60s timer + hard ceiling (coordinate with the deferral cap already added in T-H3 / `useAutoLock.ts`).
+- **W-8 — ✅ DONE (`ba661cf`).** Hidden-tab deferral re-checks on a clean 60s timer (`hiddenLockCheck`) instead of re-arming the full 5-min grace; bounded by the T-H3 cap (~10min not ~30min).
+- **T-M5 — ✅ DONE (`2392f2c`).** `poll()` checks the budget AFTER each `pollOnce`, so a delivery that landed during a hidden-throttled interval gets a final check instead of a false `POLL_TIMEOUT`.
+- **S-M6 — ✅ DONE (`f4c4677`).** Visibility gate only engages once the tx has broadcast (has `sourceTxHash`); pre-broadcast work proceeds while hidden. retryTx tests now freeze via a parking handler.
+- **Clock-credit — ✅ DONE (`aa0e0d0`).** New `lib/tx/hiddenClock.ts` credits per-record tab-hidden time against the expiry check + `pollBudgetMs` (both xchain delivery polls now route through it). Untracked records credit 0 (graceful degrade). Fed by `useTabVisible`.
 
 ### Wave-5 pull-forwards
 
-- **T-M7 (quick part only)** — `unshield-xchain/handler.ts:466-477,541-554`: match burn **amount** (within maxFee tolerance) + **source domain**, not just `pad32(recipient)`, so an unrelated CCTP transfer to the same recipient can't false-complete with the wrong `destTxHash`. (Full Iris-nonce correlation is DEFERRED.)
-- **DUPLICATE_TX client recovery (T-M3/S-M1 client half)** — on a `DUPLICATE_TX` (409), query `/status` to recover the hash and resume polling instead of surfacing a failure. Builds directly on S-H2 (already done). (The `/relay` idempotency *key* is DEFERRED.)
-- **S-L7** — guard against a duplicate same-amount shield in the window between a POLL_TIMEOUT'd relayer tx and history-recovery's upgrade (unresolved-record guard).
+- **T-M7 (quick part) — ✅ DONE (`72eca15`).** `matchesXchainDelivery` (pure, in `scan.ts`) additionally requires the CCTP `sourceDomain` to be the hub's domain. Burn-amount-within-maxFee match stays DEFERRED to full Iris-nonce correlation (needs BurnMessage byte-offset parsing; wrong offset would break detection).
+- **DUPLICATE_TX client recovery — ✅ DONE (`7a12e64`).** The relayer reports the existing hash in the 409 message, so recovery is fully client-side (no relayer change needed — the handoff's "/status" assumption was moot). `extractDuplicateTxHash` + `handleRelaySubmitError` (used by all 7 relayer-submit handlers) recover the hash and resume polling. `/relay` idempotency *key* stays DEFERRED.
+- **S-L7 — NOT STARTED. Needs a UX decision** (see below).
 
 ---
 

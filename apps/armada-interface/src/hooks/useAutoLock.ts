@@ -107,18 +107,23 @@ export function useAutoLock() {
     // still hidden, lock — deferring just like the idle path when a tx is in flight, so we
     // don't yank the user out of mid-broadcast even when they've walked away.
     let hiddenTimer: ReturnType<typeof setTimeout> | null = null
+
+    // The grace (or a prior deferral) elapsed while still hidden. Lock unless a tx is in flight and
+    // we still have deferral budget — in which case re-check in 60s. W-8: the re-check is a clean
+    // 60s tick, NOT a fresh 5-min grace, so a wedged in-flight tx holds keys ~grace+5min, not ~30min.
+    function hiddenLockCheck() {
+      if (hasInflight() && deferrals < MAX_LOCK_DEFERRALS) {
+        deferrals += 1
+        hiddenTimer = setTimeout(hiddenLockCheck, 60_000)
+        return
+      }
+      lockRef.current()
+    }
+
     function onVisibilityChange() {
       if (document.visibilityState === 'hidden') {
         if (hiddenTimer) clearTimeout(hiddenTimer)
-        hiddenTimer = setTimeout(() => {
-          if (hasInflight() && deferrals < MAX_LOCK_DEFERRALS) {
-            // Same defer policy as the main fire() — re-check in a minute, up to the shared cap.
-            deferrals += 1
-            hiddenTimer = setTimeout(onVisibilityChange, 60_000)
-            return
-          }
-          lockRef.current()
-        }, HIDDEN_GRACE_MS)
+        hiddenTimer = setTimeout(hiddenLockCheck, HIDDEN_GRACE_MS)
       } else if (hiddenTimer) {
         clearTimeout(hiddenTimer)
         hiddenTimer = null

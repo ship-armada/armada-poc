@@ -25,7 +25,8 @@ import {
   generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
-import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
+import { cctpMaxFeeForKind, submitRelay } from '@/lib/relayer'
+import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
 import { ensureChain } from '@/lib/network-switch'
@@ -471,10 +472,9 @@ async function runGaslessSubmit(
       ctx.signal,
     )
   } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
-    }
-    throw err
+    // T-M3/S-M1: recover an already-broadcast hash from a DUPLICATE_TX so we resume polling
+    // instead of failing a tx the relayer already sent; non-recoverable errors rethrow.
+    submitResponse = handleRelaySubmitError(err, { id: record.id, kind: record.kind })
   }
 
   track('tx.relayer.submitted', { id: record.id, kind: record.kind })

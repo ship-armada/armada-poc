@@ -319,6 +319,19 @@ export class RelayerError extends Error {
   }
 }
 
+/**
+ * Pull the already-broadcast tx hash out of a DUPLICATE_TX rejection message (T-M3/S-M1). The
+ * relayer's dedup cache keys on our exact calldata and reports the prior hash in the message
+ * ("...already submitted as 0x<hash>"), so when a retry re-POSTs a tx the relayer already broadcast
+ * we can recover the hash and resume polling instead of failing. Returns null if no 32-byte hash is
+ * present (message format drift) — caller falls back to surfacing the failure.
+ */
+export function extractDuplicateTxHash(err: RelayerError): `0x${string}` | null {
+  if (err.code !== 'DUPLICATE_TX') return null
+  const match = err.message.match(/0x[0-9a-fA-F]{64}/)
+  return match ? (match[0] as `0x${string}`) : null
+}
+
 function statusToErrorCode(httpStatus: number): RelayerErrorCode {
   for (const [code, expected] of Object.entries(RELAYER_STATUS_CODES) as [RelayerErrorCode, number][]) {
     if (expected === httpStatus) return code

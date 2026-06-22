@@ -309,6 +309,7 @@ async function runDirectSubmit(
     abi: erc20Abi,
     functionName: 'allowance',
     args: [owner, privacyPoolClientAddress as `0x${string}`],
+    chainId: record.meta.fromChainId,
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
@@ -318,6 +319,7 @@ async function runDirectSubmit(
       abi: erc20Abi,
       functionName: 'approve',
       args: [privacyPoolClientAddress as `0x${string}`, maxUint256],
+      chainId: record.meta.fromChainId,
     })
     await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
   }

@@ -59,6 +59,23 @@
   color: var(--semantic-color-text-primary);
 }
 
+/* S-L7: non-blocking caution when an unresolved same-amount deposit may still be on-chain. */
+.caution {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-3);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.24);
+  color: var(--semantic-color-status-warning);
+}
+
+.cautionIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .footer {
   align-self: stretch;
   margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);

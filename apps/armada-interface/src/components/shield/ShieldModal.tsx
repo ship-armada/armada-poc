@@ -30,6 +30,8 @@ import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
+import { activeTxListAtom } from '@/state/tx'
+import { hasUnresolvedShield } from '@/lib/tx/duplicateGuard'
 
 type LocalStep = FlowStep
 type SubmittedKind = 'shield' | 'shield-xchain'
@@ -71,6 +73,12 @@ export function ShieldModal() {
   const balances = useBalances()
   const max = balances.unshielded[fromChainId] ?? 0n
   const { value: amount } = parseUsdcInput(amountStr)
+
+  // S-L7: warn (non-blocking) at review when an unresolved same-amount deposit may still be on
+  // chain — between a POLL_TIMEOUT'd shield and history recovery confirming it, re-depositing the
+  // same amount would deposit twice. Reads the active wallet's tx list (scoped, wallet-switch safe).
+  const recentTxs = useAtomValue(activeTxListAtom)
+  const duplicateWarning = amount > 0n && hasUnresolvedShield(recentTxs, amount)
 
   // Cached deployment manifests — used to discover the per-chain wrapper address. Loaded once
   // at startup via the standard React Query pattern; rarely changes at runtime.
@@ -366,6 +374,7 @@ export function ShieldModal() {
           fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
           isSubmitting={isSubmitting}
+          duplicateWarning={duplicateWarning}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
         />

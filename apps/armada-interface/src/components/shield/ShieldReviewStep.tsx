@@ -1,6 +1,7 @@
 // ABOUTME: Shield review step — read-only echo of the deposit summary with Confirm + Back CTAs.
 // ABOUTME: Renders the same big Charis-SIL numeral as the input step so the user sees their amount in the same visual context.
 
+import { AlertTriangle } from 'lucide-react'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { FeeSummary } from '@/components/ui'
 import { formatUsdcAmount } from '@/lib/format'
@@ -14,6 +15,8 @@ export interface ShieldReviewStepProps {
   netAmount: bigint
   /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
   isSubmitting?: boolean
+  /** S-L7: an unresolved same-amount deposit may still be on-chain — surface a non-blocking caution. */
+  duplicateWarning?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -24,6 +27,7 @@ export function ShieldReviewStep({
   fee,
   netAmount,
   isSubmitting,
+  duplicateWarning,
   onBack,
   onConfirm,
 }: ShieldReviewStepProps) {
@@ -42,6 +46,15 @@ export function ShieldReviewStep({
         </div>
       </dl>
       <FeeSummary fee={fee} netAmount={netAmount} netLabel="You'll deposit" />
+      {duplicateWarning ? (
+        <div className={styles.caution} role="alert">
+          <AlertTriangle size={16} className={styles.cautionIcon} aria-hidden="true" />
+          <span>
+            A deposit of this amount may still be processing on chain. Submitting again could deposit
+            twice — check Recent Activity first.
+          </span>
+        </div>
+      ) : null}
       <FlowFooter
         className={styles.footer}
         primary={{ label: 'Confirm deposit', onClick: onConfirm, disabled: isSubmitting }}

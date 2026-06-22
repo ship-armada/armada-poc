@@ -5,6 +5,7 @@ import { getDefaultStore } from 'jotai'
 import { track, trackError } from '../telemetry'
 import { lifecycleFor } from './lifecycles'
 import { markCancelled, markDismissed, markExpired, markFailed, markRetrying } from './reducer'
+import { beginHiddenCredit, endHiddenCredit, hiddenMsForRecord } from './hiddenClock'
 import { loadAllTx, putTxIfFresh } from './storage'
 import { isTerminalState } from './types'
 import type { StageFor, TxKind, TxRecord } from './types'
@@ -135,6 +136,9 @@ export function executeTx(id: string): void {
 
   const controller = new AbortController()
   running.set(id, controller)
+  // Start crediting tab-hidden time against this record's wall-clock budget (T-M5 / S-M6).
+  // Idempotent — a resume re-attach keeps the original baseline.
+  beginHiddenCredit(id, Date.now())
   void runHandlerChain(record, handler, controller)
 }
 
@@ -424,9 +428,11 @@ async function runHandlerChain(
       // poller completing, or executeTx being called again) will resume.
       if (current.executionState === 'waiting') break
 
-      // Hard-cap on total lifecycle duration.
+      // Hard-cap on total lifecycle duration — crediting back time the tab was hidden so a
+      // backgrounded tab doesn't expire a tx that merely waited while the user was away (T-M5/S-M6).
       const lifecycle = lifecycleFor(current.kind)
-      if (Date.now() - current.createdAt > lifecycle.maxDurationMs) {
+      const elapsed = Date.now() - current.createdAt - hiddenMsForRecord(current.id, Date.now())
+      if (elapsed > lifecycle.maxDurationMs) {
         const expired = markExpired(current)
         await ctx.upsert(expired as TxRecord<TxKind>)
         track('tx.expired', { id: current.id, kind: current.kind })
@@ -440,6 +446,11 @@ async function runHandlerChain(
     })
   } finally {
     running.delete(initial.id)
+    // Free the hidden-credit snapshot once the record is settled. If the chain merely paused at
+    // 'waiting' (to be re-dispatched by a poller/external trigger), keep the snapshot so the credit
+    // survives the re-attach.
+    const latest = store.get(txListAtom).find(t => t.id === initial.id)
+    if (!latest || isTerminalState(latest.executionState)) endHiddenCredit(initial.id)
   }
 }
 

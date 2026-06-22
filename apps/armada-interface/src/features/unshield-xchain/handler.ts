@@ -7,7 +7,6 @@ import { getPublicClient, sendTransaction } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
 import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
@@ -515,26 +514,11 @@ async function runWaitForDelivery(
     : 0n
   const maxLogRange = BigInt(getNetworkConfig().maxLogRange)
 
-  // Derive the inner polling timeout from the per-kind lifecycle cap, minus whatever time has
-  // already been spent on earlier stages. This keeps the inner poll honest about the global
-  // budget — previously a hardcoded 10min capped delivery polling well below the 60min xchain
-  // cap, so a slow Iris attestation timed us out even though the outer record had ~50 min left.
-  const lifecycle = lifecycleFor(record.kind)
-  const remainingBudgetMs = record.createdAt + lifecycle.maxDurationMs - Date.now()
-  // Floor at 10s so a record that's already past its cap fails fast rather than hanging on a
-  // single tick. Above 10s we trust the lifecycle's published budget. Emit telemetry when the
-  // clamp kicks in — sustained signal here means records are landing in polling with too little
-  // budget (typically a resume-after-crash close to maxDurationMs) and the lifecycle cap or
-  // resume policy may need adjustment.
-  const POLL_FLOOR_MS = 10_000
-  if (remainingBudgetMs < POLL_FLOOR_MS) {
-    track('tx.budget.tight', {
-      id: record.id,
-      kind: record.kind,
-      elapsedMs: Date.now() - record.createdAt,
-    })
-  }
-  const pollTimeoutMs = Math.max(POLL_FLOOR_MS, remainingBudgetMs)
+  // Derive the inner polling timeout from the per-kind lifecycle cap minus elapsed time, crediting
+  // back tab-hidden time (T-M5/S-M6) so a slow Iris attestation watched from a backgrounded tab
+  // isn't timed out with budget still on the clock. pollBudgetMs floors at 10s (so an over-budget
+  // record fails fast rather than hanging a tick) and emits tx.budget.tight when the floor engages.
+  const pollTimeoutMs = pollBudgetMs(record)
 
   const result = await poll<`0x${string}`>(
     async (signal) => {

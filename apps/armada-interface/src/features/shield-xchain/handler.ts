@@ -31,11 +31,10 @@ import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
-import { poll } from '@/lib/tx/poller'
+import { poll, pollBudgetMs } from '@/lib/tx/poller'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
 import { scanCctpDeliveryWindow } from '../unshield-xchain/scan'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -610,20 +609,11 @@ async function runWaitForDelivery(
     : 0n
   const maxLogRange = BigInt(getNetworkConfig().maxLogRange)
 
-  // Derive the inner poll timeout from the per-kind lifecycle cap, minus elapsed time. The
-  // hardcoded 10min that lived here previously ignored the outer 60min xchain budget — a slow
-  // Iris attestation would time us out with ~50 min still on the lifecycle clock.
-  const lifecycle = lifecycleFor(record.kind)
-  const remainingBudgetMs = record.createdAt + lifecycle.maxDurationMs - Date.now()
-  const POLL_FLOOR_MS = 10_000
-  if (remainingBudgetMs < POLL_FLOOR_MS) {
-    track('tx.budget.tight', {
-      id: record.id,
-      kind: record.kind,
-      elapsedMs: Date.now() - record.createdAt,
-    })
-  }
-  const pollTimeoutMs = Math.max(POLL_FLOOR_MS, remainingBudgetMs)
+  // Derive the inner poll timeout from the per-kind lifecycle cap minus elapsed time, crediting
+  // back tab-hidden time (T-M5/S-M6) so a slow Iris attestation watched from a backgrounded tab
+  // doesn't time out with budget still on the clock. pollBudgetMs floors at 10s + emits
+  // tx.budget.tight when the floor engages.
+  const pollTimeoutMs = pollBudgetMs(record)
 
   const result = await poll<`0x${string}`>(
     async (signal) => {

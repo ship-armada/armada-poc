@@ -15,6 +15,7 @@ vi.mock('./receipt', async (importActual) => {
 import { poll, pollBudgetMs, pollRelayStatusOnce } from './poller'
 import { asTxError } from './receipt'
 import { lifecycleFor } from './lifecycles'
+import { beginHiddenCredit, markHidden, markVisible, __resetHiddenClock } from './hiddenClock'
 import type { TxRecord } from './types'
 
 const fetchMock = vi.fn()
@@ -182,6 +183,18 @@ describe('pollBudgetMs (P1-25)', () => {
     expect(pollBudgetMs(shieldRecord(SHORT_CAP - 5_000))).toBe(10_000)
     // Already over the cap → still floored to 10s, never negative, never the 30-min default.
     expect(pollBudgetMs(shieldRecord(SHORT_CAP + 60_000))).toBe(10_000)
+  })
+
+  it('credits tab-hidden time back to the budget (T-M5/S-M6)', () => {
+    __resetHiddenClock()
+    const rec = shieldRecord(SHORT_CAP - 30_000) // ~30s left without any credit
+    const created = rec.createdAt
+    beginHiddenCredit(rec.id, created)
+    markHidden(created + 1_000)
+    markVisible(created + 1_000 + 120_000) // 2 min hidden during the record's life
+    // ~30s base + 2 min credit ≈ 2.5 min — far above both the floor and the un-credited remaining.
+    expect(pollBudgetMs(rec)).toBeGreaterThan(2 * 60_000)
+    __resetHiddenClock()
   })
 })
 

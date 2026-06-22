@@ -3,6 +3,7 @@
 
 import { pollStatus, RelayerError, type StatusResponse } from '../relayer'
 import { track, trackError } from '../telemetry'
+import { hiddenMsForRecord } from './hiddenClock'
 import { lifecycleFor } from './lifecycles'
 import { extractTxError, waitForReceiptOrFail } from './receipt'
 import type { TxRecord } from './types'
@@ -43,7 +44,11 @@ const POLL_BUDGET_FLOOR_MS = 10_000
  * entering polling with too little budget — usually a resume close to maxDurationMs). (P1-25)
  */
 export function pollBudgetMs(record: TxRecord): number {
-  const remaining = record.createdAt + lifecycleFor(record.kind).maxDurationMs - Date.now()
+  // Credit time the tab spent hidden during this record's life (T-M5/S-M6) so a backgrounded tab
+  // doesn't POLL_TIMEOUT a delivery that was simply waiting while hidden.
+  const now = Date.now()
+  const remaining =
+    record.createdAt + lifecycleFor(record.kind).maxDurationMs + hiddenMsForRecord(record.id, now) - now
   if (remaining < POLL_BUDGET_FLOOR_MS) {
     track('tx.budget.tight', { id: record.id, kind: record.kind, elapsedMs: Date.now() - record.createdAt })
   }

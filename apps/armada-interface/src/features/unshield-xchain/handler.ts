@@ -48,7 +48,7 @@ type EthersScanLog = {
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
-import { scanCctpDeliveryWindow } from './scan'
+import { scanCctpDeliveryWindow, matchesXchainDelivery } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import type { StageHandler } from '@/lib/tx/executor'
 import type { TxError, TxRecord } from '@/lib/tx/types'
@@ -499,6 +499,9 @@ async function runWaitForDelivery(
   }
   const destProvider = createProvider(destChain.rpcUrls)
   const destMessageReceivedTopic = messageReceivedTopic()
+  // T-M7: the burn for unshield-xchain happens on the hub, so a genuine delivery's CCTP
+  // sourceDomain is the hub's domain. Match on it to reject same-recipient transfers from elsewhere.
+  const hubDomain = getNetworkConfig().hub.domain
 
   // Park the record in 'waiting' so the stepper renders the "Waiting for cross-chain confirmation"
   // copy. The handler doesn't return here — poll() continues; the 'waiting' state is purely a
@@ -543,8 +546,10 @@ async function runWaitForDelivery(
               topics: Array.from(log.topics),
               data: log.data,
             })
-            const body = parsed?.args.messageBody as string | undefined
-            return typeof body === 'string' && body.toLowerCase().includes(uniqueMarker)
+            return matchesXchainDelivery(
+              { messageBody: parsed?.args.messageBody, sourceDomain: parsed?.args.sourceDomain },
+              { recipientMarker: uniqueMarker, sourceDomain: hubDomain },
+            )
           } catch {
             // Foreign log on the same address (different ABI / unindexed topic mismatch) — skip
             // rather than fail the whole tick. The scanner continues to the next log.

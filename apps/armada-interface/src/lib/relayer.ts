@@ -494,3 +494,66 @@ export async function pollStatus(txHash: string, signal?: AbortSignal): Promise<
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as StatusResponse
 }
+
+/**
+ * Cross-chain CCTP delivery status, keyed by the source message hash (T-M7 Option B). The relayer
+ * performs the destination mint in BOTH modes (mock `cctp-relay` + real `iris-relay`) and tracks
+ * Iris attestation, so it's the authoritative source for "did the mint land + what's the
+ * destTxHash" — more precise than content-sniffing destination logs.
+ *
+ *  - `delivered` carries the destination mint tx hash (+ optional amount/feeExecuted for the caller
+ *    to verify within maxFee tolerance).
+ *  - `pending` → keep waiting.
+ *  - `failed` → the mint reverted on the destination; the caller terminates the record.
+ *  - `unavailable` → the endpoint isn't deployed (404) OR the relayer is unreachable (5xx / network
+ *    / timeout). The caller MUST fall back to the on-chain destination scan — today's behaviour —
+ *    so this layers on without a hard relayer dependency. Abort propagates (rethrown).
+ */
+export type CctpDeliveryStatus =
+  | { kind: 'delivered'; destTxHash: `0x${string}`; amount?: string; feeExecuted?: string }
+  | { kind: 'pending' }
+  | { kind: 'failed'; error?: string }
+  | { kind: 'unavailable' }
+
+interface CctpStatusBody {
+  status?: 'pending' | 'delivered' | 'failed'
+  destTxHash?: string
+  amount?: string
+  feeExecuted?: string
+  error?: string
+}
+
+export async function fetchCctpDeliveryStatus(
+  messageHash: string,
+  signal?: AbortSignal,
+): Promise<CctpDeliveryStatus> {
+  let res: Response
+  try {
+    res = await fetchWithTimeout(
+      `${relayerEndpoint(RELAYER_ENDPOINTS.cctpStatus)}/${messageHash}`,
+      { method: 'GET', headers: { Accept: 'application/json' } },
+      signal,
+      10_000,
+    )
+  } catch (err) {
+    // Caller-aborted → propagate so cancel stays cancel. Anything else (network down, our timeout)
+    // → treat as unavailable so the caller falls back to the on-chain scan.
+    if (signal?.aborted) throw err
+    return { kind: 'unavailable' }
+  }
+  // 404 (endpoint not deployed yet) or any non-2xx (relayer degraded) → fall back to the scan.
+  if (!res.ok) return { kind: 'unavailable' }
+  let body: CctpStatusBody
+  try {
+    body = (await res.json()) as CctpStatusBody
+  } catch {
+    return { kind: 'unavailable' }
+  }
+  if (body.status === 'delivered' && typeof body.destTxHash === 'string') {
+    return { kind: 'delivered', destTxHash: body.destTxHash as `0x${string}`, amount: body.amount, feeExecuted: body.feeExecuted }
+  }
+  if (body.status === 'failed') return { kind: 'failed', error: body.error }
+  if (body.status === 'pending') return { kind: 'pending' }
+  // Malformed/unknown body → don't trust it; fall back to the scan.
+  return { kind: 'unavailable' }
+}

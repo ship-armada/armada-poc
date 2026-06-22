@@ -25,7 +25,7 @@ import {
   generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
-import { cctpMaxFeeForKind, submitRelay } from '@/lib/relayer'
+import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
@@ -619,6 +619,23 @@ async function runWaitForDelivery(
   const result = await poll<`0x${string}`>(
     async (signal) => {
       if (signal.aborted) return null
+      // T-M7 Option B primary: ask the relayer for authoritative CCTP delivery status (it performs
+      // the hub mint in both mock + real mode and tracks Iris). Falls through to the on-chain scan
+      // below when the endpoint is unavailable (not deployed / relayer down) — no hard dependency.
+      const messageHash = record.artifacts.messageHash
+      if (messageHash) {
+        const relayed = await fetchCctpDeliveryStatus(messageHash, signal)
+        if (relayed.kind === 'delivered') return relayed.destTxHash
+        if (relayed.kind === 'pending') return null
+        if (relayed.kind === 'failed') {
+          throw asTxError({
+            code: 'TX_REVERTED',
+            message: relayed.error ?? 'Cross-chain delivery failed on the hub chain.',
+            txHash: record.artifacts.sourceTxHash,
+          })
+        }
+        // relayed.kind === 'unavailable' → fall through to the on-chain scan.
+      }
       const outcome = await scanCctpDeliveryWindow<EthersScanLog>({
         getBlockNumber: async () => BigInt(await hubProvider.getBlockNumber()),
         // Filter on the MessageReceived topic only — V2 puts an Iris-assigned `eventNonce` in

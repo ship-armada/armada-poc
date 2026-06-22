@@ -28,7 +28,7 @@ import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,
 } from '@/lib/cctp'
-import { cctpMaxFeeForKind, submitRelay } from '@/lib/relayer'
+import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 
 // MessageReceived ABI — used by ethers.Interface.parseLog to decode `messageBody` from a raw log.
@@ -527,6 +527,24 @@ async function runWaitForDelivery(
   const result = await poll<`0x${string}`>(
     async (signal) => {
       if (signal.aborted) return null
+      // T-M7 Option B primary: ask the relayer for authoritative CCTP delivery status (it performs
+      // the destination mint in both mock + real mode and tracks Iris). Falls through to the
+      // on-chain scan below when the endpoint is unavailable (not deployed / relayer down), so this
+      // layers on without a hard dependency.
+      const messageHash = record.artifacts.messageHash
+      if (messageHash) {
+        const relayed = await fetchCctpDeliveryStatus(messageHash, signal)
+        if (relayed.kind === 'delivered') return relayed.destTxHash
+        if (relayed.kind === 'pending') return null
+        if (relayed.kind === 'failed') {
+          throw asTxError({
+            code: 'TX_REVERTED',
+            message: relayed.error ?? 'Cross-chain delivery failed on the destination chain.',
+            txHash: record.artifacts.sourceTxHash,
+          })
+        }
+        // relayed.kind === 'unavailable' → fall through to the on-chain scan.
+      }
       // Bounded per-tick scan — never queries more than maxLogRange blocks in a single getLogs
       // call. Across many ticks the cursor marches forward chunk-by-chunk; once caught up to head,
       // ticks short-circuit on `no-new-blocks` until the next block lands.

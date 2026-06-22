@@ -51,6 +51,13 @@ export interface RelayRequest {
   to: string;
   data: string;
   feesCacheId: string;
+  /**
+   * Client-generated idempotency key (the tx record's ulid) — stable across retries/resume of the
+   * same tx, unique per new tx. Optional for backward compatibility: when present the relayer
+   * dedups durably (restart-safe) and returns the already-broadcast hash on a repeat; when absent
+   * it falls back to the in-memory calldata dedup in wallet-manager.
+   */
+  idempotencyKey?: string;
 }
 
 export interface RelayResponse {

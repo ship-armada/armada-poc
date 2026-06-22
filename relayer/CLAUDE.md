@@ -14,6 +14,7 @@ The Armada relayer is a Node.js service (Express v5, ethers v6) that submits shi
 - `fee-calculator.ts` — Estimates gas costs and generates fee schedules. Quotes are cached with a 5-minute TTL.
 - `privacy-relay.ts` — Receives shielded transactions from users and pays gas on-chain.
 - `http-api.ts` — Express v5 server exposing `/relay` and `/fees` endpoints on port 3001.
+- `idempotency-store.ts` — Durable `/relay` idempotency: a client `idempotencyKey` (tx ulid) → broadcast txHash, so a re-POST (including after a restart) returns the same hash instead of double-broadcasting. Falls back to wallet-manager's in-memory calldata dedup when no key is sent.
 - `cctp-relay.ts` — Local/mock CCTP relay: polls chains for pending burn events and calls `CCTPHookRouter.relayWithHook()`.
 - `iris-relay.ts` — Production CCTP relay using Circle's Iris attestation service (Sepolia/mainnet).
 

@@ -14,8 +14,12 @@ import type { RelayRequest, RelayerHealth } from "../types";
 import type { PrivacyRelay } from "./privacy-relay";
 import type { FeeCalculator } from "./fee-calculator";
 import type { Counters } from "./counters";
+import type { IdempotencyStore } from "./idempotency-store";
 import { armadaRelayerSettings } from "../config";
 import { RateLimiter, clientKey, type RateLimitedRequest } from "../lib/rate-limiter";
+
+/** Max accepted idempotency-key length — a ulid is 26 chars; cap well above that, reject abuse. */
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 
 // ============ HTTP API ============
 
@@ -30,6 +34,7 @@ export class HttpApi {
   private defaultChainId: number;
   private getHealth: () => RelayerHealth;
   private counters: Counters;
+  private idempotencyStore: IdempotencyStore;
   private server: ReturnType<express.Application["listen"]> | null = null;
   /** Per-IP token buckets — stricter on the expensive write path than on reads. */
   private relayLimiter: RateLimiter;
@@ -42,6 +47,7 @@ export class HttpApi {
     defaultChainId: number,
     getHealth: () => RelayerHealth,
     counters: Counters,
+    idempotencyStore: IdempotencyStore,
   ) {
     this.port = port;
     this.privacyRelay = privacyRelay;
@@ -49,6 +55,7 @@ export class HttpApi {
     this.defaultChainId = defaultChainId;
     this.getHealth = getHealth;
     this.counters = counters;
+    this.idempotencyStore = idempotencyStore;
 
     const { relayPerMin, getPerMin } = armadaRelayerSettings.rateLimit;
     // capacity = one minute's budget (burst), refilling at that budget / 60 per second.
@@ -117,7 +124,7 @@ export class HttpApi {
     // POST /relay — Submit a shielded transaction
     this.app.post("/relay", this.rateLimitGuard(this.relayLimiter), async (req, res) => {
       try {
-        const { chainId, to, data, feesCacheId } = req.body as RelayRequest;
+        const { chainId, to, data, feesCacheId, idempotencyKey } = req.body as RelayRequest;
 
         // Basic request validation
         if (!chainId || !to || !data || !feesCacheId) {
@@ -126,11 +133,35 @@ export class HttpApi {
           });
           return;
         }
+        // idempotencyKey is optional, but if present must be a sane non-empty string.
+        if (idempotencyKey !== undefined) {
+          if (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+            res.status(400).json({ error: "Invalid idempotencyKey", code: "INVALID_DATA" });
+            return;
+          }
+        }
 
         console.log(
           `[http-api] Relay request: chain=${chainId} to=${to.slice(0, 10)}... ` +
-            `data=${data.slice(0, 10)}... feesCacheId=${feesCacheId}`
+            `data=${data.slice(0, 10)}... feesCacheId=${feesCacheId}` +
+            (idempotencyKey ? ` idem=${idempotencyKey}` : "")
         );
+
+        // Idempotent path: a repeat (or concurrent) POST with the same key returns the original
+        // broadcast's hash WITHOUT re-broadcasting — durable across restarts. Requests without a
+        // key fall through to the legacy submit (calldata dedup in wallet-manager still applies).
+        if (idempotencyKey) {
+          const outcome = await this.idempotencyStore.submitOnce(idempotencyKey, async () => {
+            const r = await this.privacyRelay.handleRelayRequest({ chainId, to, data, feesCacheId });
+            return { txHash: r.txHash, chainId };
+          });
+          if (outcome.replayed) {
+            this.counters.inc("idempotentReplay");
+            console.log(`[http-api] Idempotent replay for ${idempotencyKey} → ${outcome.txHash}`);
+          }
+          res.json({ txHash: outcome.txHash, status: outcome.status });
+          return;
+        }
 
         const result = await this.privacyRelay.handleRelayRequest({
           chainId,
@@ -184,6 +215,11 @@ export class HttpApi {
         }
 
         const status = await this.privacyRelay.getTransactionStatus(txHash, chainId);
+        // Backfill the idempotency record's terminal status (best-effort, non-blocking) so a late
+        // repeat POST with the same key returns confirmed/failed rather than a stale "pending".
+        if (status.status === "confirmed" || status.status === "failed") {
+          void this.idempotencyStore.updateStatusByTxHash(txHash, status.status);
+        }
         res.json(status);
       } catch (e: any) {
         console.error("[http-api] Status check error:", e);

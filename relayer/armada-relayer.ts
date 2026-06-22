@@ -23,6 +23,7 @@ import { PrivacyRelay } from "./modules/privacy-relay";
 import { RelayerRailgunWallet } from "./modules/railgun-wallet";
 import { HttpApi } from "./modules/http-api";
 import { Counters } from "./modules/counters";
+import { IdempotencyStore } from "./modules/idempotency-store";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
@@ -321,6 +322,13 @@ async function main() {
   }
   console.log();
 
+  // Durable /relay idempotency store — loaded from disk so a re-POST after a restart returns the
+  // already-broadcast hash instead of double-spending. Swept of expired entries on load.
+  console.log("[armada] Initializing idempotency store...");
+  const idempotencyStore = new IdempotencyStore();
+  await idempotencyStore.initialize();
+  console.log();
+
   // Initialize HTTP API — constructed AFTER cctpRelayModule so the /health closure can bind to
   // it directly. No lazy-getter indirection, no init-order race window.
   const httpApi = new HttpApi(
@@ -330,6 +338,7 @@ async function main() {
     hubChain.chainId,
     () => cctpRelayModule.getHealth(),
     counters,
+    idempotencyStore,
   );
 
   // Start HTTP server
@@ -350,9 +359,10 @@ async function main() {
   console.log(`  CCTP Relay:     Polling ${cctpRelayModule.chainCount} chain(s)`);
   console.log();
 
-  // Periodic dedup cache cleanup (every 5 minutes)
+  // Periodic cleanup (every 5 minutes): in-memory calldata dedup cache + durable idempotency TTL.
   const cleanupInterval = setInterval(() => {
     walletManager.cleanDedupCache();
+    void idempotencyStore.sweep();
   }, 5 * 60 * 1000);
 
   // Handle graceful shutdown. CRITICAL: await `cctpRelayModule.stop()` BEFORE process.exit so

@@ -13,6 +13,7 @@ leaves a torn file. Files:
 | `pending-<chain>.json` | `lib/pending-state-store.ts` | iris relay's in-flight messages + delivered-dedup records. |
 | `cctp-retry-queue.json` | `lib/retry-queue-store.ts` | mock CCTP relay's failed-message retry queue. |
 | `deadletter-<chain>.json` | `lib/dead-letter-store.ts` | Messages permanently given up on (surfaced as `/health` `deadLetterCount`). |
+| `idempotency-records.json` | `modules/idempotency-store.ts` | `/relay` idempotency-key → broadcast txHash, so a re-POST (even after restart) returns the same hash instead of double-broadcasting. |
 | `railgun-db/` | Railgun engine | The relayer's `0zk` wallet LevelDB (broadcaster-fee viewing key). |
 
 Deleting any file is operator-actionable recovery: the relayer re-bootstraps that piece of state
@@ -30,6 +31,11 @@ are below.
 - **`deadletter-<chain>.json`** — a non-empty file means USDC may be stranded (retries exhausted /
   attestation expired / fee too low) and needs manual relay. Each record keeps the raw message
   bytes so an operator can relay it by hand. `/health` reports the per-chain count.
+- **`idempotency-records.json`** — one record per `/relay` POST that carried an `idempotencyKey`
+  (the client tx ulid), mapping key → broadcast txHash. A repeat POST with the same key returns the
+  cached hash (HTTP 200) instead of re-broadcasting, even across a relayer restart. Entries evict
+  after 24h (well past the tx lifecycle). Deleting the file only loses cross-restart dedup for
+  in-flight txs; the in-memory calldata cache still guards same-process duplicates.
 
 ## Cursor files
 

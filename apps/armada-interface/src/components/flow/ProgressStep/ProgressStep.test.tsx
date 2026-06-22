@@ -34,8 +34,14 @@ describe('<ProgressStep>', () => {
   it('delegates to TxLifecycleStepper when record is present', () => {
     render(<ProgressStep record={sampleRecord} />)
     // TxLifecycleStepper renders one row per lifecycle stage; the first is "Preparing transaction"
-    // which is shield's build-proof copy. Status chip "Pending" should also be visible.
-    expect(screen.getByText('Pending')).toBeInTheDocument()
+    // which is shield's build-proof copy. (The WalletConfirmList — S-M4 — also renders status
+    // labels including "Pending", so we assert the unique stepper copy rather than "Pending".)
     expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
+    expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders the wallet-confirm checklist for shield kinds (S-M4)', () => {
+    render(<ProgressStep record={sampleRecord} />)
+    expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
   })
 })

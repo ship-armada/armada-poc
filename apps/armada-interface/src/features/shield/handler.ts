@@ -27,7 +27,7 @@ import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
 import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { ensureChain } from '@/lib/network-switch'
-import { advance, markFailed } from '@/lib/tx/reducer'
+import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -291,8 +291,14 @@ async function runDirectSubmit(
     })
     if (ctx.signal.aborted) throw new Error('cancelled')
 
+    // S-M4: thread a `working` record through the wallet prompts so the stepper shows "Confirm in
+    // your wallet" (markWaiting) while each MetaMask prompt is open, and so the approve leg is
+    // recorded in artifacts (approveTxHash / approveSkipped) for the WalletConfirmList checklist.
+    let working: TxRecord<'shield'> = record
     if (allowance < record.meta.amount) {
       // Approve max — same UX trade-off as the legacy app (one approval, all future shields free).
+      working = markWaiting(working)
+      await ctx.upsert(working)
       const approveHash = await writeContract(wagmiConfig, {
         address: usdcAddress as `0x${string}`,
         abi: erc20Abi,
@@ -302,6 +308,13 @@ async function runDirectSubmit(
       })
       await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
       if (ctx.signal.aborted) throw new Error('cancelled')
+      // Approve confirmed → back to active, record the leg.
+      working = advance(working, 'submit-relayer', { approveTxHash: approveHash })
+      await ctx.upsert(working)
+    } else {
+      // No approve prompt — record it as skipped so the wallet-step list omits the Approve row.
+      working = patchArtifacts(working, { approveSkipped: true })
+      await ctx.upsert(working)
     }
 
     // 2. Submit the shield tx. Compose the tuple from the stored artifacts.
@@ -336,6 +349,10 @@ async function runDirectSubmit(
       chainId: record.meta.fromChainId,
     })
     if (ctx.signal.aborted) throw new Error('cancelled')
+    // S-M4: "Confirm in your wallet" for the shield prompt (after simulate so a doomed tx fails
+    // without prompting). Flips back to active below once the prompt is confirmed.
+    working = markWaiting(working)
+    await ctx.upsert(working)
     shieldHash = await writeContract(wagmiConfig, {
       address: privacyPoolAddress as `0x${string}`,
       abi: PRIVACY_POOL_SHIELD_ABI,
@@ -345,12 +362,13 @@ async function runDirectSubmit(
     })
     // Persist the source tx hash immediately so any subsequent failure (timeout, revert, cancel)
     // carries the hash for the explorer-link UX, and so the idempotency guard above sees it on
-    // re-entry. We MUST thread the patched record forward to the final advance: `record` is now
-    // stale (updatedSeq lower than the atom/IDB), so an advance from `record` would produce an
-    // equal-seq write that OCC silently drops, leaving the executor stuck re-entering this stage.
-    const broadcast = await recordBroadcastHash(record, shieldHash, ctx)
+    // re-entry. recordBroadcastHash re-reads the latest record (fresh seq) — we thread `working`
+    // (whose upserts moved the seq forward) so the hash write isn't OCC-dropped.
+    const broadcast = await recordBroadcastHash(working, shieldHash, ctx)
     if (broadcast.dismissed) return
-    broadcastRecord = broadcast.record
+    // Prompt confirmed → active ("Submitting transaction") for the receipt wait below.
+    broadcastRecord = advance(broadcast.record, 'submit-relayer')
+    await ctx.upsert(broadcastRecord)
   }
 
   // 3. Wait for confirmation. The SDK's merkle scan will pick up the new commitment via the

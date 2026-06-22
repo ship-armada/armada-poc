@@ -313,7 +313,13 @@ async function runDirectSubmit(
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // S-M4: thread a `working` record through the wallet prompts so the stepper shows "Confirm in
+  // your wallet" (markWaiting) while each prompt is open, and record the approve leg in artifacts
+  // (approveTxHash / approveSkipped) for the WalletConfirmList checklist.
+  let working: TxRecord<'shield-xchain'> = record
   if (allowance < record.meta.amount) {
+    working = markWaiting(working)
+    await ctx.upsert(working)
     const approveHash = await writeContract(wagmiConfig, {
       address: clientUsdcAddress as `0x${string}`,
       abi: erc20Abi,
@@ -322,6 +328,12 @@ async function runDirectSubmit(
       chainId: record.meta.fromChainId,
     })
     await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    working = advance(working, 'submit-relayer', { approveTxHash: approveHash })
+    await ctx.upsert(working)
+  } else {
+    working = patchArtifacts(working, { approveSkipped: true })
+    await ctx.upsert(working)
   }
 
   const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
@@ -353,6 +365,12 @@ async function runDirectSubmit(
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // S-M4: "Confirm in your wallet" for the crossChainShield prompt (after simulate so a doomed tx
+  // fails without prompting). finalizeBurnAndAdvance advances to client-burn-confirmed (active)
+  // once the prompt is confirmed, restoring "Submitting" copy.
+  working = markWaiting(working)
+  await ctx.upsert(working)
+
   const hash = await sendTransaction(wagmiConfig, {
     to: privacyPoolClientAddress as `0x${string}`,
     data: calldata,
@@ -360,7 +378,7 @@ async function runDirectSubmit(
     chainId: record.meta.fromChainId,
   })
 
-  await finalizeBurnAndAdvance(record, ctx, hash)
+  await finalizeBurnAndAdvance(working, ctx, hash)
 }
 
 /**

@@ -405,6 +405,13 @@ export interface ArtifactsShield extends ArtifactsCommon {
   permitV?: number
   permitR?: `0x${string}`
   permitS?: `0x${string}`
+  /**
+   * Direct-path approve leg (S-M4). `approveTxHash` is set after the USDC `approve` confirms;
+   * `approveSkipped` is set when allowance already covered the amount (no approve prompt). Drives
+   * the WalletConfirmList checklist (`shieldWalletSteps`). Absent on the gasless path.
+   */
+  approveTxHash?: `0x${string}`
+  approveSkipped?: boolean
 }
 
 /**
@@ -450,6 +457,9 @@ export interface ArtifactsShieldXchain extends ArtifactsXchain {
   permitV?: number
   permitR?: `0x${string}`
   permitS?: `0x${string}`
+  /** Direct-path approve leg (S-M4) — see ArtifactsShield. Absent on the gasless path. */
+  approveTxHash?: `0x${string}`
+  approveSkipped?: boolean
 }
 
 export type ArtifactsFor<K extends TxKind> =

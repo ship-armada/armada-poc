@@ -348,6 +348,7 @@ async function runSubmitAndBurn(
           to: privacyPoolAddress,
           data: calldata!,
           feesCacheId: record.meta.feeCacheId,
+          idempotencyKey: record.id,
         },
         ctx.signal,
       )

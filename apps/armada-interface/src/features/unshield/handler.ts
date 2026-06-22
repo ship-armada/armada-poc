@@ -226,6 +226,7 @@ async function runSubmitAndConfirm(
           to: tx.to,
           data: tx.data,
           feesCacheId: record.meta.feeCacheId,
+          idempotencyKey: record.id,
         },
         ctx.signal,
       )

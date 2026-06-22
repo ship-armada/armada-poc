@@ -295,6 +295,17 @@ export interface RelayRequest {
   to: string
   data: string
   feesCacheId: string
+  /**
+   * Client-generated idempotency key (the tx record's ulid). Stable across retries / resume of the
+   * SAME tx and unique per new tx, so the relayer can deterministically recognise a re-POST and
+   * return the already-broadcast hash (200) instead of re-broadcasting or 409-ing (T-M3/S-M1).
+   *
+   * NOTE: requires the relayer-side change to honour it (persist key→txHash, return 200 on repeat);
+   * until that ships the relayer ignores this field and the client falls back to parsing the
+   * DUPLICATE_TX message (see `handleRelaySubmitError`). See the relayer implementation plan in
+   * `reports/relayer-idempotency-key-plan.md`.
+   */
+  idempotencyKey: string
 }
 
 export interface RelayResponse {

@@ -467,6 +467,7 @@ describe('submitRelay', () => {
     to: '0x1111111111111111111111111111111111111111',
     data: '0xabcdef',
     feesCacheId: 'fee-123-1',
+    idempotencyKey: '01J-tx-ulid',
   }
 
   it('POSTs the request as JSON to /relay and returns the parsed RelayResponse', async () => {
@@ -491,6 +492,9 @@ describe('submitRelay', () => {
     expect(url).toBe(relayerEndpoint(RELAYER_ENDPOINTS.relay))
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual(validRequest)
+    // The client-generated idempotency key must travel in the POST body so the relayer can dedup
+    // a re-POST and return the already-broadcast hash (T-M3/S-M1).
+    expect(JSON.parse(init.body as string).idempotencyKey).toBe('01J-tx-ulid')
     // Header object is unioned; spot-check Content-Type without depending on object shape.
     expect(JSON.stringify(init.headers)).toContain('application/json')
   })

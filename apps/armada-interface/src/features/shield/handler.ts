@@ -466,6 +466,7 @@ async function runGaslessSubmit(
           to: record.meta.wrapperAddress,
           data,
           feesCacheId: record.meta.feeCacheId,
+          idempotencyKey: record.id,
         },
         ctx.signal,
       )

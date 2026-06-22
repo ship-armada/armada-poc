@@ -192,15 +192,34 @@ describe('expiry guard (P0-5)', () => {
 })
 
 describe('retryTx (P0-4)', () => {
+  // A handler that parks until aborted — registered so that retryTx's fire-and-forget executeTx
+  // can't mutate the record out from under the synchronous assertions. (Pre-S-M6 this leaned on
+  // tabVisibleAtom=false freezing the chain, but S-M6 exempts pre-broadcast records from the gate,
+  // so we freeze via a no-op handler instead.)
+  const parkUntilAbort: StageHandler<'shield'> = {
+    kind: 'shield',
+    resumableFrom: ['submit-relayer'],
+    run: (_record, ctx) =>
+      new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) return resolve()
+        ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+      }),
+  }
+
   beforeEach(async () => {
     const store = getDefaultStore()
     store.set(txListAtom, [])
-    // Park the chain at the visibility gate so the (module-registered) handler doesn't run and
-    // mutate the record out from under the synchronous assertions below.
-    store.set(tabVisibleAtom, false)
+    store.set(tabVisibleAtom, true)
     await cacheClear('txHistory')
     clearKeyManager()
     unlockForTest()
+    startEngine()
+    registerHandler(parkUntilAbort)
+  })
+
+  afterEach(() => {
+    // Tear down any chain the retry dispatched so it can't leak into the next test.
+    cancelAllRunning('test-cleanup')
   })
 
   it('accepts a retry from a retryable failed stage and marks the record retrying', () => {
@@ -475,5 +494,66 @@ describe('retryTx — follower-tab leader guard (T-H3)', () => {
     } finally {
       __setIsLeaderForTests(true) // restore for any subsequent state
     }
+  })
+})
+
+describe('visibility gate — pre-broadcast exemption (S-M6)', () => {
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    store.set(tabVisibleAtom, false) // tab hidden
+    await cacheClear('txHistory')
+    clearKeyManager()
+    unlockForTest()
+    startEngine()
+    __setIsLeaderForTests(true)
+  })
+
+  afterEach(() => {
+    cancelAllRunning('test-cleanup')
+    getDefaultStore().set(tabVisibleAtom, true)
+  })
+
+  it('runs a pre-broadcast (no-hash) record while hidden instead of parking it', async () => {
+    const store = getDefaultStore()
+    const ran = { value: false }
+    registerHandler({
+      kind: 'shield',
+      resumableFrom: ['submit-relayer'],
+      run: async (record, ctx) => {
+        ran.value = true
+        await ctx.upsert(advance(record, 'hub-confirmed', { sourceTxHash: '0xnew' }))
+      },
+    })
+    const rec = makeRecord({
+      id: 'sm6-nohash', executionState: 'pending', stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'], updatedSeq: 1, artifacts: {},
+    })
+    store.set(upsertTxAtom, rec)
+    executeTx('sm6-nohash')
+    await new Promise(r => setTimeout(r, 20))
+    expect(ran.value).toBe(true)
+    expect(store.get(txListAtom).find(t => t.id === 'sm6-nohash')?.executionState).toBe('completed')
+  })
+
+  it('parks a broadcast (has-hash) record while hidden', async () => {
+    const store = getDefaultStore()
+    const ran = { value: false }
+    registerHandler({
+      kind: 'shield',
+      resumableFrom: ['submit-relayer'],
+      run: async (record, ctx) => {
+        ran.value = true
+        await ctx.upsert(advance(record, 'hub-confirmed'))
+      },
+    })
+    const rec = makeRecord({
+      id: 'sm6-hash', executionState: 'waiting', stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'], updatedSeq: 1, artifacts: { sourceTxHash: '0xfeed' },
+    })
+    store.set(upsertTxAtom, rec)
+    executeTx('sm6-hash')
+    await new Promise(r => setTimeout(r, 20))
+    expect(ran.value).toBe(false) // parked at the visibility gate, handler never ran
   })
 })

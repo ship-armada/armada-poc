@@ -380,7 +380,15 @@ async function runHandlerChain(
   try {
     while (!controller.signal.aborted) {
       // Pause when the tab is hidden — even on the leader. Polite to API quotas.
-      if (!store.get(tabVisibleAtom)) {
+      //
+      // S-M6: but only once the tx has BROADCAST (has a sourceTxHash). A freshly-confirmed
+      // pre-broadcast record (build-proof + submit) must not be parked here — relayer-mediated
+      // flows need no further interaction, so parking would let it sit idle while the wall-clock
+      // budget burns and ultimately expire having done nothing. Pre-broadcast local work (proof
+      // gen, the submit POST / prompt) proceeds while hidden; once on-chain, the remaining work is
+      // RPC/delivery polling, which the in-handler poller runs regardless of visibility anyway.
+      const hasBroadcast = Boolean((current.artifacts as { sourceTxHash?: `0x${string}` }).sourceTxHash)
+      if (hasBroadcast && !store.get(tabVisibleAtom)) {
         await waitForVisibility(controller.signal)
         if (controller.signal.aborted) break
       }

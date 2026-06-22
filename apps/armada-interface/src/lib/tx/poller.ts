@@ -71,8 +71,6 @@ export async function poll<T>(
   let errorStreak = 0
 
   while (!o.signal?.aborted) {
-    if (Date.now() - startedAt > o.timeoutMs) return { status: 'timeout' }
-
     let value: T | null = null
     try {
       value = await pollOnce(o.signal ?? new AbortController().signal)
@@ -85,6 +83,12 @@ export async function poll<T>(
     if (value !== null && value !== undefined) {
       return { status: 'done', value }
     }
+
+    // T-M5: check the budget AFTER a poll attempt, not before. The pre-poll check returned
+    // POLL_TIMEOUT without one last look — so a delivery that landed during the previous interval
+    // (common when hidden-tab timer throttling stretched it past the budget) surfaced as a false
+    // timeout. Polling first means the iteration where the clock runs out still gets a final check.
+    if (Date.now() - startedAt > o.timeoutMs) return { status: 'timeout' }
 
     const baseDelay = errorStreak > 0
       ? Math.min(o.intervalMs * 2 ** Math.min(errorStreak, 6), o.intervalMs * o.maxBackoffMultiplier)

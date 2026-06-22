@@ -12,7 +12,7 @@ vi.mock('./receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: receiptMock.waitForReceiptOrFail }
 })
 
-import { pollBudgetMs, pollRelayStatusOnce } from './poller'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from './poller'
 import { asTxError } from './receipt'
 import { lifecycleFor } from './lifecycles'
 import type { TxRecord } from './types'
@@ -182,5 +182,25 @@ describe('pollBudgetMs (P1-25)', () => {
     expect(pollBudgetMs(shieldRecord(SHORT_CAP - 5_000))).toBe(10_000)
     // Already over the cap → still floored to 10s, never negative, never the 30-min default.
     expect(pollBudgetMs(shieldRecord(SHORT_CAP + 60_000))).toBe(10_000)
+  })
+})
+
+describe('poll loop — final check before timeout (T-M5)', () => {
+  it('does one last pollOnce after the budget elapses so a just-landed result isn\'t a false timeout', async () => {
+    // The result lands on the 2nd tick, which happens AFTER timeoutMs has elapsed (the delay floor
+    // is 500ms; timeoutMs is 5ms). Old behaviour checked the clock before polling and returned
+    // `timeout` without the 2nd poll — a delivery that landed during the (throttled) interval was
+    // reported as POLL_TIMEOUT. The final-check fix catches it.
+    let calls = 0
+    const result = await poll<string>(
+      async () => {
+        calls += 1
+        return calls >= 2 ? 'landed' : null
+      },
+      { intervalMs: 20, jitter: 0, timeoutMs: 5 },
+    )
+    expect(result.status).toBe('done')
+    expect(result.value).toBe('landed')
+    expect(calls).toBe(2)
   })
 })

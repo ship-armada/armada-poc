@@ -32,7 +32,13 @@ export interface AddressSummary {
   hops: number[]
   totalCommitted: bigint
   perHop: Map<number, bigint>
+  /** Single inviter chosen for compact UI surfaces (table cells, hover chips).
+   *  Multi-hop wallets prefer a real (non-root) inviter — see `computeDisplayInviter`. */
   displayInviter: string
+  /** Every unique inviter across all of the address's hop entries, including the
+   *  `'armada'` root sentinel where applicable. Drives the NodeSphere edge set —
+   *  a multi-hop seed gets BOTH its Armada edge and its human-inviter edge. */
+  allInviters: string[]
   allocatedArm: bigint | null
   refundUsdc: bigint | null
   allocatedPerHop: Map<number, bigint>
@@ -165,12 +171,21 @@ function buildSummaries(nodes: Map<string, GraphNode>): Map<string, AddressSumma
       }
     }
 
+    // Collect every distinct inviter across the address's hop entries. A
+    // multi-hop seed (hop-0 + hop-1) will end up with both the root sentinel
+    // and the human inviter present so the NodeSphere can render both edges.
+    const inviterSet = new Set<string>()
+    for (const node of addrNodes) {
+      for (const inv of node.invitedBy) inviterSet.add(inv)
+    }
+
     summaries.set(address, {
       address,
       hops,
       totalCommitted,
       perHop,
       displayInviter: computeDisplayInviter(address, nodes, hops),
+      allInviters: [...inviterSet],
       allocatedArm: hasAllocation ? addrNodes.reduce((sum, n) => sum + (n.allocatedArm ?? 0n), 0n) : null,
       refundUsdc: null,
       allocatedPerHop,
@@ -311,18 +326,52 @@ function applySummaryEvents(
   }
 }
 
+/** Drop redundant `Invited` events that are emitted alongside a
+ *  `LaunchTeamInvited` event for the same on-chain action.
+ *
+ *  When the launch team calls `launchTeamInvite()`, the contract emits both:
+ *    - `LaunchTeamInvited(invitee, hop)`           — the canonical event
+ *    - `Invited(launchTeam, invitee, hop, 0)`      — leaked from internal _invite()
+ *
+ *  Without this dedup the graph would create a spurious node for the launch
+ *  team's wallet at `hop - 1` (from the `Invited` handler) and a second
+ *  inviter edge to the invitee — making the launch team show up as a
+ *  participant in the network view and the participants table, instead of
+ *  collapsing into the central Armada root. The pair always shares the same
+ *  transaction hash, invitee, and hop, so that triple is the dedup key. */
+function dropLaunchTeamInvitedShadows(events: CrowdfundEvent[]): CrowdfundEvent[] {
+  const launchTeamKeys = new Set<string>()
+  for (const e of events) {
+    if (e.type !== 'LaunchTeamInvited') continue
+    const invitee = String(e.args.invitee).toLowerCase()
+    const hop = Number(e.args.hop)
+    launchTeamKeys.add(`${e.transactionHash}:${invitee}:${hop}`)
+  }
+  if (launchTeamKeys.size === 0) return events
+  return events.filter((e) => {
+    if (e.type !== 'Invited') return true
+    const invitee = String(e.args.invitee).toLowerCase()
+    const hop = Number(e.args.hop)
+    return !launchTeamKeys.has(`${e.transactionHash}:${invitee}:${hop}`)
+  })
+}
+
 /** Build a complete graph from a sequence of events */
 export function buildGraph(events: CrowdfundEvent[]): CrowdfundGraph {
   const nodes = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
 
-  for (const event of events) {
+  const filteredEvents = dropLaunchTeamInvitedShadows(events)
+  for (const event of filteredEvents) {
     applyEvent(nodes, edges, event)
   }
 
   const summaries = buildSummaries(nodes)
-  applySummaryEvents(summaries, events)
+  applySummaryEvents(summaries, filteredEvents)
 
+  // Keep the unfiltered event list on the returned graph so consumers like the
+  // admin event log can still display the raw `Invited` shadow row — only the
+  // graph topology drops it.
   return { nodes, edges, summaries, events }
 }
 
@@ -338,14 +387,22 @@ export function mergeEvents(
   }
   const edges = [...graph.edges]
 
-  for (const event of newEvents) {
+  // Dedup against the combined history — handles the corner case where a
+  // `LaunchTeamInvited` and its paired `Invited` arrive in separate polls.
+  const allEvents = [...graph.events, ...newEvents]
+  const filteredAll = dropLaunchTeamInvitedShadows(allEvents)
+  const filteredAllKeys = new Set(
+    filteredAll.map((e) => `${e.transactionHash}:${e.logIndex}`),
+  )
+  const newEventsFiltered = newEvents.filter((e) =>
+    filteredAllKeys.has(`${e.transactionHash}:${e.logIndex}`),
+  )
+  for (const event of newEventsFiltered) {
     applyEvent(nodes, edges, event)
   }
 
-  const allEvents = [...graph.events, ...newEvents]
   const summaries = buildSummaries(nodes)
-  // Re-apply all summary events from the full event history
-  applySummaryEvents(summaries, allEvents)
+  applySummaryEvents(summaries, filteredAll)
 
   return { nodes, edges, summaries, events: allEvents }
 }

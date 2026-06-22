@@ -53,3 +53,21 @@ All three apps share the same visual theme — dark mode, oklch color tokens, Ge
 - Tailwind v4 via `@tailwindcss/vite` plugin
 - TypeScript strict mode
 - `npm install --legacy-peer-deps` is required (Railgun SDK peer dep conflicts in the root project)
+
+## Picking the right primitive across packages
+
+Several primitives have multiple sources in this workspace. Get the imports right or you'll get visual regressions or runtime ESM errors that TypeScript may not catch (especially under `tsc -b`'s incremental cache).
+
+| Symbol | Lives in | Use when | Do NOT confuse with |
+|---|---|---|---|
+| `Button` | `@armada/ui` | New v2 code — designer's pill button with `variant: 'primary' \| 'secondary' \| 'ghost' \| 'gradient'`, sizes, `icon: 'arrow-right' \| 'arrow-right-micro'`. | `Button` from `@armada/crowdfund-shared` (legacy shadcn-generated, different prop shape, used by v1 chrome like `AppHeader`'s mobile sheet). |
+| `Steps`, `Tooltip`, `WalletItem`, `Tag`, `NavBar`, `NavItem`, `Header`, `WalletButton`, `ArmadaLogo`, `BarTrackTicks`, `Progress` | `@armada/ui` | Always import directly from `@armada/ui` — crowdfund-shared does NOT re-export these. | n/a — runtime ESM error if pulled from `@armada/crowdfund-shared`. |
+| `JoinButton`, `HopPill`, `HopStatCard`, `ParticipantsTable`, `HeroParticipantsPanel`, `MyPosition*`, `SlotCard`, `InviteSlots`, `Step1Wallet`–`Step5Confirmation`, `Step0Invite`, `CrowdfundExperience`, `Participate`, `NodeSphere` | `@armada/crowdfund-shared` | These are crowdfund-domain components — they live in shared, not in `@armada/ui`. | Don't try to import from `@armada/ui`. |
+
+**Rule of thumb**: if it's a chrome / layout / form primitive that any Armada app might use, it's in `@armada/ui`. If it's crowdfund-specific (talks about hops, invites, allocations, the campaign), it's in `@armada/crowdfund-shared`.
+
+## Typechecking the committer / observer / admin
+
+Each app's `package.json` ships a `typecheck` script that runs `tsc -b --force --noEmit`. The `--force` flag is intentional: it bypasses the `.tsbuildinfo` incremental cache so cross-package import errors can't be hidden by a stale cache (e.g. a symbol that was renamed in `crowdfund-shared` after the consuming app's cache was last written). Run it before pushing.
+
+If you ever need to wipe build info manually, each app exposes `npm run clean --workspace=<app>` (deletes `*.tsbuildinfo` next to the package's `tsconfig`).

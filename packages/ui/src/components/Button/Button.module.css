@@ -1,11 +1,13 @@
 /* ABOUTME: CSS Module for the Button primitive — sizes, variants, focus, hover, and disabled states. */
-/* ABOUTME: Sources colors and sizing exclusively from --semantic-component-button-* tokens. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup; sources sizing from --semantic-component-button-* tokens. */
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--primitives-spacing-1);
+  padding-top: 0;
+  padding-bottom: 0;
   border: 1px solid transparent;
   border-radius: 999px;
   font-family: "Geist", sans-serif;
@@ -16,18 +18,42 @@
   transition: background 0.15s, opacity 0.15s, transform 0.1s;
   outline: none;
   text-decoration: none;
+  box-sizing: border-box;
 }
 .btn:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-/* Sizes */
-.sm { height: var(--semantic-component-button-primary-sm-height); padding: 0 var(--semantic-component-button-primary-sm-padding-x); font-size: var(--semantic-component-button-primary-sm-font-size); }
-.sm.icon { padding-right: var(--semantic-component-button-primary-sm-padding-x-icon); }
-.md { height: var(--semantic-component-button-primary-md-height); padding: 0 var(--semantic-component-button-primary-md-padding-x); font-size: var(--semantic-component-button-primary-md-font-size); }
-.md.icon { padding-right: var(--semantic-component-button-primary-md-padding-x-icon); }
-.lg { height: var(--semantic-component-button-primary-lg-height); padding: 0 var(--semantic-component-button-primary-lg-padding-x); font-size: var(--semantic-component-button-primary-lg-font-size); }
-.lg.icon { padding-right: var(--semantic-component-button-primary-lg-padding-x-icon); }
+/* Sizes — Figma: fixed height, asymmetric horizontal padding, 4px gap */
+.sm {
+  height: var(--semantic-component-button-primary-sm-height);
+  padding-left: var(--semantic-component-button-primary-sm-padding-x);
+  padding-right: var(--semantic-component-button-primary-sm-padding-x-icon);
+  font-size: var(--semantic-component-button-primary-sm-font-size);
+}
+.md {
+  height: var(--semantic-component-button-primary-md-height);
+  padding-left: var(--semantic-component-button-primary-md-padding-x);
+  padding-right: var(--semantic-component-button-primary-md-padding-x-icon);
+  font-size: var(--semantic-component-button-primary-md-font-size);
+}
+.lg {
+  height: var(--semantic-component-button-primary-lg-height);
+  padding-left: var(--semantic-component-button-primary-lg-padding-x);
+  padding-right: var(--semantic-component-button-primary-lg-padding-x-icon);
+  font-size: var(--semantic-component-button-primary-lg-font-size);
+}
+
+/* No icon: symmetric horizontal padding (use left value on both sides) */
+.noIcon.sm {
+  padding-right: var(--semantic-component-button-primary-sm-padding-x);
+}
+.noIcon.md {
+  padding-right: var(--semantic-component-button-primary-md-padding-x);
+}
+.noIcon.lg {
+  padding-right: var(--semantic-component-button-primary-lg-padding-x);
+}
 
 /* Primary */
 .primary { background: var(--semantic-component-button-primary-bg); color: var(--semantic-component-button-primary-text); }
@@ -41,10 +67,11 @@
 .secondary:active:not(:disabled) { background: var(--semantic-component-button-secondary-bg-active); }
 .secondary:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
 
-/* Ghost */
-.ghost { background: transparent; color: var(--semantic-component-button-ghost-text); }
-.ghost:hover:not(:disabled) { background: var(--semantic-component-button-ghost-bg-hover); color: var(--semantic-component-button-ghost-text-hover); }
+/* Ghost — text matches secondary (no border) */
+.ghost { background: transparent; color: var(--semantic-component-button-secondary-text); }
+.ghost:hover:not(:disabled) { background: var(--semantic-component-button-ghost-bg-hover); color: var(--semantic-component-button-secondary-text); }
 .ghost:active:not(:disabled) { background: var(--semantic-component-button-ghost-bg-active); }
+.ghost:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
 
 /* Gradient */
 .gradient { border: none; background: linear-gradient(to right, #F3D0A0 0%, #C491E5 100%); color: var(--semantic-component-button-gradient-text); }
@@ -52,6 +79,13 @@
 .gradient:active:not(:disabled) { background: linear-gradient(to right, #eab86a 0%, #b06fdf 100%); }
 
 /* Icon */
-.iconWrap { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 16px; height: 16px; }
-.sm .iconWrap { width: 14px; height: 14px; }
-.lg .iconWrap { width: 18px; height: 18px; }
+.iconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.iconSvg {
+  display: block;
+  color: currentColor;
+}

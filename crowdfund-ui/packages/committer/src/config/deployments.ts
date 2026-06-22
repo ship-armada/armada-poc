@@ -30,7 +30,10 @@ export async function loadDeployment(): Promise<CrowdfundDeployment> {
   if (cachedDeployment) return cachedDeployment
 
   const fileName = getDeploymentFileName()
-  const response = await fetch(`/api/deployments/${fileName}`)
+  // Abort a hung request so deployment load can't freeze the flow indefinitely.
+  const response = await fetch(`/api/deployments/${fileName}`, {
+    signal: AbortSignal.timeout(10_000),
+  })
 
   if (!response.ok) {
     throw new Error(

@@ -1,6 +1,25 @@
 // ABOUTME: EIP-712 invite link creation, encoding, and IndexedDB storage.
 // ABOUTME: Pure functions for invite link lifecycle — no React dependency.
 
+import { tryGetChecksumAddress } from '@armada/crowdfund-shared'
+import type { CrowdfundEvent } from '@armada/crowdfund-shared'
+
+/** Max hop index in the URL — matches `HOP_CONFIGS.length - 1`. Anything
+ * outside this band can't represent a real inviter so we reject pre-contract. */
+const MAX_HOP_INDEX = 2
+
+/** Standard EVM ECDSA signature: 65 bytes (r,s,v) → 130 hex chars + `0x`. */
+const SIGNATURE_HEX_LENGTH = 132
+
+/** Strict non-negative integer parse — rejects `"12abc"`, `""`, scientific
+ * notation, leading `+`, etc. that `parseInt` silently accepts. */
+function parseStrictNonNegativeInt(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null
+  const n = Number(raw)
+  if (!Number.isSafeInteger(n)) return null
+  return n
+}
+
 export interface InviteLinkData {
   inviter: string
   fromHop: number
@@ -40,25 +59,46 @@ export function encodeInviteUrl(data: InviteLinkData): string {
     deadline: String(data.deadline),
     sig: data.signature,
   })
-  return `/invite?${params.toString()}`
+  const path = `/invite?${params.toString()}`
+  // Emit an absolute URL so a pasted link resolves to the current deployment
+  // (e.g. https://fund.armada.blue/invite?…) instead of being interpreted
+  // as a relative path against whatever destination the user pastes into —
+  // most notably the browser address bar, which falls back to `file:///` for
+  // a bare leading-slash path.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`
+  }
+  return path
 }
 
 export function decodeInviteUrl(searchParams: URLSearchParams): InviteLinkData | null {
-  const inviter = searchParams.get('inviter')
+  const inviterRaw = searchParams.get('inviter')
   const fromHopStr = searchParams.get('fromHop')
   const nonceStr = searchParams.get('nonce')
   const deadlineStr = searchParams.get('deadline')
-  const signature = searchParams.get('sig')
+  const signatureRaw = searchParams.get('sig')
 
-  if (!inviter || !fromHopStr || !nonceStr || !deadlineStr || !signature) return null
+  if (!inviterRaw || !fromHopStr || !nonceStr || !deadlineStr || !signatureRaw) return null
 
-  const fromHop = parseInt(fromHopStr, 10)
-  const nonce = parseInt(nonceStr, 10)
-  const deadline = parseInt(deadlineStr, 10)
+  // Inviter must be a checksummable address. `tryGetChecksumAddress` covers
+  // format (0x + 40 hex) AND EIP-55 checksum so a typoed pasted link gets
+  // rejected here instead of as an opaque revert during the contract call.
+  const inviter = tryGetChecksumAddress(inviterRaw.trim())
+  if (!inviter) return null
 
-  if (isNaN(fromHop) || isNaN(nonce) || isNaN(deadline)) return null
-  if (!inviter.startsWith('0x') || inviter.length !== 42) return null
-  if (!signature.startsWith('0x')) return null
+  const fromHop = parseStrictNonNegativeInt(fromHopStr)
+  const nonce = parseStrictNonNegativeInt(nonceStr)
+  const deadline = parseStrictNonNegativeInt(deadlineStr)
+  if (fromHop === null || nonce === null || deadline === null) return null
+  if (fromHop > MAX_HOP_INDEX) return null
+
+  // Signature must be the canonical 65-byte ECDSA hex string. `recoverAddress`
+  // downstream would already reject malformed inputs, but rejecting at parse
+  // time means a hostile / malformed link doesn't show the user a half-broken
+  // landing page before failing.
+  const signature = signatureRaw.trim()
+  if (signature.length !== SIGNATURE_HEX_LENGTH) return null
+  if (!/^0x[a-fA-F0-9]+$/.test(signature)) return null
 
   return { inviter, fromHop, nonce, deadline, signature }
 }
@@ -85,9 +125,13 @@ function openDB(): Promise<IDBDatabase> {
 
 export async function storeInviteLink(link: StoredInviteLink): Promise<void> {
   const db = await openDB()
+  // Lowercase the inviter on write so the keyPath + `inviter` index always match
+  // the lowercased lookups in getStoredInviteLinks / updateInviteLinkStatus,
+  // even if a caller passes a checksummed address.
+  const normalized: StoredInviteLink = { ...link, inviter: link.inviter.toLowerCase() }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).put(link)
+    tx.objectStore(STORE_NAME).put(normalized)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
@@ -126,8 +170,62 @@ export async function updateInviteLinkStatus(
   })
 }
 
-export async function getNextNonce(inviter: string): Promise<number> {
+/**
+ * All invite nonces an inviter has consumed on-chain — both redeemed links /
+ * direct invites (`Invited`) and revocations (`InviteNonceRevoked`). Used to
+ * seed `getNextNonce` from chain truth so a fresh device or cleared storage
+ * doesn't re-sign an already-consumed nonce.
+ */
+export function inviterOnChainNonces(events: CrowdfundEvent[], inviter: string): number[] {
+  const lower = inviter.toLowerCase()
+  const out: number[] = []
+  for (const e of events) {
+    if (e.type === 'Invited' && String(e.args.inviter).toLowerCase() === lower) {
+      out.push(Number(e.args.nonce))
+    } else if (e.type === 'InviteNonceRevoked' && String(e.args.inviter).toLowerCase() === lower) {
+      out.push(Number(e.args.nonce))
+    }
+  }
+  return out
+}
+
+/** Block timestamp for signing, falling back to wall-clock when state hasn't
+ *  hydrated yet (blockTimestamp === 0) — never sign a 1970-relative deadline. */
+export function effectiveTimestamp(blockTimestamp: number): number {
+  return blockTimestamp > 0 ? blockTimestamp : Math.floor(Date.now() / 1000)
+}
+
+/**
+ * Recompute each stored link's status against chain truth:
+ *  - any link whose nonce was redeemed on-chain becomes `redeemed` (terminal —
+ *    never re-expired), unless it was explicitly revoked;
+ *  - only a still-`pending` link past its deadline becomes `expired`.
+ * Pure — the hook persists the newly-redeemed ones separately.
+ */
+export function classifyStoredLinks(
+  stored: StoredInviteLink[],
+  redeemedNonces: ReadonlySet<number>,
+  blockTimestamp: number,
+): StoredInviteLink[] {
+  return stored.map((link) => {
+    if (redeemedNonces.has(link.nonce) && link.status !== 'revoked') {
+      return { ...link, status: 'redeemed' as const }
+    }
+    if (link.status === 'pending' && link.deadline < blockTimestamp) {
+      return { ...link, status: 'expired' as const }
+    }
+    return link
+  })
+}
+
+/**
+ * Next invite nonce for an inviter: one past the max of the local IndexedDB
+ * history AND any nonces already consumed on-chain (passed in via
+ * `onChainNonces`). Starts at 1.
+ */
+export async function getNextNonce(inviter: string, onChainNonces: number[] = []): Promise<number> {
   const links = await getStoredInviteLinks(inviter)
-  if (links.length === 0) return 1
-  return Math.max(...links.map((l) => l.nonce)) + 1
+  const localMax = links.length > 0 ? Math.max(...links.map((l) => l.nonce)) : 0
+  const onChainMax = onChainNonces.length > 0 ? Math.max(...onChainNonces) : 0
+  return Math.max(localMax, onChainMax) + 1
 }

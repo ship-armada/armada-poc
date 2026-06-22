@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts/utils/Multicall.sol";
 import "./IArmadaCrowdfund.sol";
 
 /// @notice Minimal ArmadaToken interface for atomic delegation on claim.
@@ -21,7 +22,7 @@ interface IArmadaTokenCrowdfund {
 /// @notice Implements the full crowdfund lifecycle: seed management, invitation chains,
 ///         USDC commitment escrow, deterministic allocation with pro-rata scaling and rollover,
 ///         elastic expansion, and refund mechanism.
-contract ArmadaCrowdfund is ReentrancyGuard, EIP712 {
+contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     using SafeERC20 for IERC20;
 
     // ============ Constants ============

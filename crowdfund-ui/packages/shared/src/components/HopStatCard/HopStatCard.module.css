@@ -1,0 +1,77 @@
+/* ABOUTME: CSS Module for HopStatCard — card surface with thin gradient progress bar above tick grid. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.card {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--primitives-spacing-6);
+  border-radius: 16px;
+  border: none;
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+}
+
+.label {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-tag-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.amount {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: var(--primitives-lineHeight-none);
+  color: var(--semantic-color-text-primary);
+}
+
+/* Thinner than main Progress bar; fill stacks above tick grid */
+.barTrack {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: var(--primitives-spacing-1);
+  overflow: visible;
+}
+
+.fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  height: 100%;
+  border-radius: var(--primitives-borderRadius-full);
+  pointer-events: none;
+  transition: width 0.4s ease-out;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--primitives-spacing-4);
+}
+
+.footerLeft,
+.footerRight {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-tag-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.footerRight {
+  text-align: right;
+}

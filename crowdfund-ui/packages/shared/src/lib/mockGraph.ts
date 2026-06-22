@@ -79,6 +79,7 @@ export function generateMockGraph(
         totalCommitted: committed,
         perHop: new Map([[hop, committed]]),
         displayInviter: '',
+        allInviters: [],
         allocatedArm: null, refundUsdc: null,
         allocatedPerHop: new Map(),
         armClaimed: false, refundClaimed: false, delegate: null,

@@ -1,0 +1,230 @@
+/* ABOUTME: Styling for ObserveEventLog — frosted card + filter pills + scrollable event list, styled to match the other Observe cards. */
+/* ABOUTME: Uses @armada/ui semantic tokens; event-category colors map to the status palette + brand lavender. */
+
+/* ── Card chrome (Progress.module.css recipe) ── */
+.card {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--semantic-spacing-card-padding);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+}
+
+.title {
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.count {
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+/* ── Controls ── */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.filterLabel {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--primitives-spacing-1);
+  margin-top: calc(-1 * var(--primitives-spacing-1));
+}
+
+.pill {
+  padding: 2px var(--primitives-spacing-2);
+  border: none;
+  border-radius: 999px;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.pillOff {
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 40%, transparent);
+  color: var(--semantic-color-text-dim);
+}
+
+.search {
+  width: 100%;
+  height: var(--semantic-component-navitem-height);
+  padding: 0 var(--primitives-spacing-3);
+  border-radius: var(--semantic-component-navitem-radius);
+  border: 1px solid var(--semantic-color-border-default);
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 55%, transparent);
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-navitem-font-size);
+  box-sizing: border-box;
+}
+
+.search::placeholder {
+  color: var(--semantic-color-text-muted);
+}
+
+.search:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+}
+
+/* ── Event list (participants-list recipe) ── */
+.listShell {
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+  border-radius: 12px;
+  background: var(--primitives-color-neutral-50);
+  overflow: hidden;
+}
+
+.listScroll {
+  max-height: 380px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-5);
+  font-size: var(--semantic-component-tag-font-size);
+}
+
+.row + .row {
+  border-top: 1px solid var(--semantic-color-border-default);
+}
+
+.row:hover {
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 34%, transparent);
+}
+
+.badge {
+  flex-shrink: 0;
+  padding: 2px var(--primitives-spacing-2);
+  border-radius: 6px;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  white-space: nowrap;
+}
+
+.block {
+  flex-shrink: 0;
+  color: var(--semantic-color-text-dim);
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.data {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tx,
+.txPlain {
+  flex-shrink: 0;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--semantic-color-text-muted);
+  text-decoration: none;
+}
+
+.tx:hover {
+  color: var(--semantic-color-text-primary);
+  text-decoration: underline;
+}
+
+.empty {
+  padding: var(--primitives-spacing-6);
+  text-align: center;
+  color: var(--semantic-color-text-muted);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+}
+
+.loadMore {
+  width: 100%;
+  padding: var(--primitives-spacing-3);
+  border: none;
+  border-top: 1px solid var(--semantic-color-border-default);
+  background: transparent;
+  color: var(--semantic-color-text-muted);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.loadMore:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+/* ── Event-category colors (badges + active pills) ── */
+.catSuccess {
+  background: color-mix(in srgb, var(--semantic-color-status-success) 18%, transparent);
+  color: var(--semantic-color-status-success);
+}
+
+.catInfo {
+  background: color-mix(in srgb, var(--semantic-color-status-info) 18%, transparent);
+  color: var(--semantic-color-status-info);
+}
+
+.catLavender {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
+  color: var(--semantic-color-brand-lavender);
+}
+
+.catError {
+  background: color-mix(in srgb, var(--semantic-color-status-error) 18%, transparent);
+  color: var(--semantic-color-status-error);
+}
+
+.catWarning {
+  background: color-mix(in srgb, var(--semantic-color-status-warning) 18%, transparent);
+  color: var(--semantic-color-status-warning);
+}

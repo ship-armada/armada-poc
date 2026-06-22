@@ -1,0 +1,447 @@
+/* ABOUTME: CSS Module for HeroParticipantsPanel — see HeroParticipantsPanel.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/* Match Progress glass/backdrop feel */
+.panel {
+  width: 582px;
+  border-radius: 15px;
+  border: none;
+  background: transparent;
+  overflow: visible;
+  box-sizing: border-box;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  min-height: 0;
+}
+
+.panel.expanded {
+  gap: var(--hero-stack-gap, var(--primitives-spacing-5));
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.expanded {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.expanded .controlsRow {
+  flex-shrink: 0;
+}
+
+.controlsRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: 0;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+.toggleBtn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--semantic-component-navitem-height);
+  padding: 0 var(--primitives-spacing-4);
+  border-radius: var(--semantic-component-navitem-radius);
+  border: 1px solid var(--semantic-color-border-default);
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 55%, transparent);
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-navitem-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.toggleBtn:hover {
+  background: var(--semantic-component-navitem-default-bg-hover);
+  color: var(--semantic-component-navitem-default-text-hover);
+}
+.toggleBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+}
+
+
+.filters {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  height: var(--semantic-component-navitem-height);
+  padding: 0;
+  border-radius: var(--semantic-component-navitem-radius);
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 58%, transparent);
+  border: 1px solid var(--semantic-color-border-default);
+  flex: 0 0 auto;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Light theme — opaque-ish neutral fill instead of the translucent raised
+   surface, which reads as muddy on a light page. Scoped to light so dark keeps
+   the mockup's surface-raised tint. */
+:global([data-theme='light']) .toggleBtn {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+}
+:global([data-theme='light']) .filters {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+}
+
+.filterBtn {
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 var(--primitives-spacing-4);
+  border-radius: var(--semantic-component-navitem-radius);
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--semantic-component-navitem-default-text);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-navitem-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: 0.04em;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.filterBtn:hover {
+  background: var(--semantic-component-navitem-default-bg-hover);
+  color: var(--semantic-component-navitem-default-text-hover);
+}
+.filterBtnActive,
+.filterBtnActive:hover {
+  background: var(--semantic-component-navitem-active-bg);
+  color: var(--semantic-component-navitem-active-text);
+}
+
+.filtersFullWidth {
+  width: 100%;
+}
+
+.listShell {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 0;
+  overflow: hidden;
+  flex: 0 0 0;
+}
+
+.listShellClosed {
+  flex: 0 0 0;
+  pointer-events: none;
+}
+
+.listShellOpen {
+  flex: 1 1 0;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+.listBackdrop {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+  background: var(--primitives-color-neutral-50);
+}
+
+.listAnimOpen .listBackdrop {
+}
+
+.listAnimClosed .listBackdrop {
+}
+
+.listInner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.listInnerHidden {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 120ms;
+  transition-delay: 0ms;
+}
+
+.listInnerVisible {
+  opacity: 1;
+  transition-duration: 220ms;
+  transition-delay: 200ms;
+}
+
+.listSearch {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  border-bottom: 1px solid var(--semantic-color-border-default);
+  background: var(--semantic-color-surface-default);
+  box-sizing: border-box;
+}
+
+.listSearch:focus-within {
+  box-shadow: inset 0 -2px 0 0 var(--semantic-color-border-focus);
+}
+
+.listSearchIcon {
+  flex: 0 0 auto;
+  color: var(--semantic-color-text-secondary);
+}
+
+.listSearchInput {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+}
+
+.listSearchInput::placeholder {
+  color: var(--semantic-color-text-muted);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+}
+
+.listScroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1.4fr) minmax(72px, auto) minmax(88px, auto);
+  align-items: center;
+  gap: var(--primitives-spacing-5);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-6);
+  border: none;
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+  /* Off-screen rows in the expanded (scrolling) list skip layout/paint until
+     near the viewport. contain-intrinsic-size reserves height so the scrollbar
+     stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--semantic-color-border-default);
+}
+
+.empty {
+  padding: var(--primitives-spacing-7) var(--primitives-spacing-5);
+  padding-top: 40px;
+  color: var(--semantic-color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.emptyTitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.emptySub {
+  margin-top: var(--primitives-spacing-2);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.emptyCta {
+  margin-top: var(--primitives-spacing-5);
+}
+
+.row:hover {
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 34%, transparent);
+}
+
+/* The connected wallet's own row — persistently highlighted (yellow tint + left
+   accent, matching the wallet's yellow node in the graph) so the user can spot
+   themselves in the list. */
+.rowSelf {
+  background: color-mix(in srgb, var(--accent-you) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-you);
+}
+
+.rowSelf:hover {
+  background: color-mix(in srgb, var(--accent-you) 24%, transparent);
+}
+
+.rowSelected {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
+}
+
+.rank {
+  color: var(--semantic-color-text-dim);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+}
+
+.addr {
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--semantic-component-tag-font-size);
+  color: var(--semantic-color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  justify-content: flex-start;
+  justify-self: start;
+  color: var(--semantic-color-text-muted);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-tag-font-size);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  text-transform: uppercase;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dot);
+}
+
+.amount {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-tag-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.clipHint {
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  border-top: 1px solid var(--semantic-color-border-default);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 26%, transparent);
+}
+
+/* ≤1440px — cap the controls row at 480px; the `flex: 1` toggle button shrinks
+ * to absorb it (the filter pills are fixed-width). Ported from the mockup. */
+@media (max-width: 1440px) {
+  .controlsRow {
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .filters {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .toggleBtn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+/* Mobile — stacked filters + searchable list below the graph (rendered by
+ * HeroParticipantsMobileStack; the desktop panel above is hidden at ≤767px). */
+.mobileStack {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobileStack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--primitives-spacing-5);
+    width: 100%;
+  }
+
+  .filtersFullWidth {
+    display: flex;
+    align-items: stretch;
+  }
+
+  .filtersFullWidth .filterBtn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobileListCard {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: min(360px, 50vh);
+    overflow: hidden;
+    border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+    border: 1px solid var(--semantic-color-border-default);
+    background: var(--semantic-color-surface-default);
+    box-sizing: border-box;
+  }
+
+  .mobileListScroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobileRow {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(64px, auto) minmax(72px, auto);
+    gap: var(--primitives-spacing-3);
+    padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  }
+}
+

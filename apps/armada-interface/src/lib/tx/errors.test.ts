@@ -1,8 +1,14 @@
 // ABOUTME: Tests for classifyHandlerError — branded TxError pass-through, user-rejection detection, OTHER fallback with txHash forwarding.
 
 import { describe, it, expect } from 'vitest'
+import { encodeErrorResult } from 'viem'
 import { classifyHandlerError } from './errors'
 import { asTxError } from './receipt'
+
+const STD_ERR_ABI = [
+  { type: 'error', name: 'Error', inputs: [{ name: 'message', type: 'string' }] },
+  { type: 'error', name: 'Panic', inputs: [{ name: 'code', type: 'uint256' }] },
+] as const
 
 describe('classifyHandlerError', () => {
   it('passes a branded TxError through unchanged so categorisation isn\'t lost in the outer catch', () => {
@@ -47,6 +53,20 @@ describe('classifyHandlerError', () => {
     const result = classifyHandlerError(new Error('execution reverted: insufficient funds for gas'), 'fallback')
     expect(result.code).toBe('OTHER')
     expect(result.message).toBe('Insufficient funds for gas')
+  })
+
+  it('decodes a raw Panic(uint256) revert payload into a friendly reason (S-L1)', () => {
+    const err = new Error('execution reverted') as Error & { data?: string }
+    err.data = encodeErrorResult({ abi: STD_ERR_ABI, errorName: 'Panic', args: [0x11n] })
+    const result = classifyHandlerError(err, 'fallback')
+    expect(result.code).toBe('OTHER')
+    expect(result.message).toBe('Arithmetic overflow or underflow.')
+  })
+
+  it('decodes a raw Error(string) payload, then maps it through the known-pattern table (S-L1)', () => {
+    const err = new Error('execution reverted') as Error & { data?: string }
+    err.data = encodeErrorResult({ abi: STD_ERR_ABI, errorName: 'Error', args: ['insufficient allowance'] })
+    expect(classifyHandlerError(err, 'fallback').message).toBe('Token allowance is insufficient — approve first.')
   })
 
   it('truncates a multi-line viem dump at 200 chars so it does not reach ErrorStep verbatim (P2)', () => {

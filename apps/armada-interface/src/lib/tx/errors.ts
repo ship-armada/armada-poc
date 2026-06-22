@@ -2,6 +2,7 @@
 // ABOUTME: Handlers' outer try/catch funnels everything through `classifyHandlerError(err)` instead of `err.message` strings, so we never lose the distinction between "tx reverted" / "we lost track" / "user rejected" / "unexpected".
 
 import { extractTxError } from './receipt'
+import { decodeRevertData, extractRevertHex } from './revertSelectors'
 import { isUserRejection, isChainMismatchError } from '../errors'
 import { mapRevertToMessage } from '../revert'
 import { getChainById } from '@/config/network'
@@ -109,9 +110,17 @@ export function classifyHandlerError(
     return { code: 'USER_REJECTED', message: 'You declined the action in your wallet.' }
   }
 
-  // Run the raw message through mapRevertToMessage: it maps known revert/wallet patterns to short
-  // copy and truncates at 200 chars, so a multi-line viem dump (RPC payload, stack frames) doesn't
-  // reach ErrorStep verbatim. (P2 — wire the previously-dead mapRevertToMessage.)
-  const message = mapRevertToMessage(err instanceof Error ? err.message : fallbackMessage)
+  // S-L1: if the error carries a raw revert payload (0x<selector>…), decode the Solidity-standard
+  // Error(string) / Panic(uint256) before they reach ErrorStep as an opaque hex blob. A decoded
+  // reason still runs through mapRevertToMessage so known patterns ("insufficient balance") map to
+  // friendly copy; an unknown custom-error selector decodes to null and we fall back to the message.
+  const revertHex = extractRevertHex(err)
+  const decoded = revertHex ? decodeRevertData(revertHex) : null
+
+  // Run the raw (or decoded) message through mapRevertToMessage: it maps known revert/wallet
+  // patterns to short copy and truncates at 200 chars, so a multi-line viem dump (RPC payload,
+  // stack frames) doesn't reach ErrorStep verbatim. (P2 — wire the previously-dead mapRevertToMessage.)
+  const raw = decoded ?? (err instanceof Error ? err.message : fallbackMessage)
+  const message = mapRevertToMessage(raw)
   return sourceTxHash ? { code: 'OTHER', message, txHash: sourceTxHash } : { code: 'OTHER', message }
 }

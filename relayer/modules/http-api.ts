@@ -15,6 +15,7 @@ import type { PrivacyRelay } from "./privacy-relay";
 import type { FeeCalculator } from "./fee-calculator";
 import type { Counters } from "./counters";
 import type { IdempotencyStore } from "./idempotency-store";
+import type { CctpDeliveryStore } from "./cctp-delivery-store";
 import { armadaRelayerSettings } from "../config";
 import { RateLimiter, clientKey, type RateLimitedRequest } from "../lib/rate-limiter";
 
@@ -35,6 +36,7 @@ export class HttpApi {
   private getHealth: () => RelayerHealth;
   private counters: Counters;
   private idempotencyStore: IdempotencyStore;
+  private cctpDeliveryStore: CctpDeliveryStore;
   private server: ReturnType<express.Application["listen"]> | null = null;
   /** Per-IP token buckets — stricter on the expensive write path than on reads. */
   private relayLimiter: RateLimiter;
@@ -48,6 +50,7 @@ export class HttpApi {
     getHealth: () => RelayerHealth,
     counters: Counters,
     idempotencyStore: IdempotencyStore,
+    cctpDeliveryStore: CctpDeliveryStore,
   ) {
     this.port = port;
     this.privacyRelay = privacyRelay;
@@ -56,6 +59,7 @@ export class HttpApi {
     this.getHealth = getHealth;
     this.counters = counters;
     this.idempotencyStore = idempotencyStore;
+    this.cctpDeliveryStore = cctpDeliveryStore;
 
     const { relayPerMin, getPerMin } = armadaRelayerSettings.rateLimit;
     // capacity = one minute's budget (burst), refilling at that budget / 60 per second.
@@ -227,6 +231,37 @@ export class HttpApi {
       }
     });
 
+    // GET /cctp-status/:messageHash — Cross-chain delivery status for a CCTP message, keyed by the
+    // SOURCE messageHash (keccak256(messageBytes)). The relayer performs the destination mint in
+    // both modes and records the outcome here; the frontend polls this as the PRIMARY delivery
+    // signal and falls back to its on-chain destination scan on a 404 / non-2xx (so shipping the
+    // frontend first is safe — every poll just 404s until this route exists).
+    this.app.get("/cctp-status/:messageHash", this.rateLimitGuard(this.getLimiter), (req, res) => {
+      try {
+        const { messageHash } = req.params as { messageHash: string };
+        if (!messageHash || !messageHash.startsWith("0x") || messageHash.length !== 66) {
+          res.status(400).json({ error: "Invalid messageHash" });
+          return;
+        }
+        const record = this.cctpDeliveryStore.get(messageHash);
+        if (!record) {
+          // Unknown hash → 404 (NOT 500): the frontend treats this as "fall back to the scan."
+          res.status(404).json({ status: "unknown" });
+          return;
+        }
+        res.json({
+          status: record.status,
+          destTxHash: record.destTxHash,
+          amount: record.amount,
+          feeExecuted: record.feeExecuted,
+          error: record.error,
+        });
+      } catch (e: any) {
+        console.error("[http-api] cctp-status error:", e);
+        res.status(500).json({ error: "Failed to look up delivery status" });
+      }
+    });
+
     // GET / — Service banner. Intentionally distinct from /health; this is the cheap
     // "is the process alive" check, /health is the "is the scanner working" check.
     this.app.get("/", (_req, res) => {
@@ -237,6 +272,7 @@ export class HttpApi {
           "GET /fees",
           "POST /relay",
           "GET /status/:txHash",
+          "GET /cctp-status/:messageHash",
           "GET /health",
         ],
       });

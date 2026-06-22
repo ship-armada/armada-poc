@@ -14,6 +14,7 @@ leaves a torn file. Files:
 | `cctp-retry-queue.json` | `lib/retry-queue-store.ts` | mock CCTP relay's failed-message retry queue. |
 | `deadletter-<chain>.json` | `lib/dead-letter-store.ts` | Messages permanently given up on (surfaced as `/health` `deadLetterCount`). |
 | `idempotency-records.json` | `modules/idempotency-store.ts` | `/relay` idempotency-key → broadcast txHash, so a re-POST (even after restart) returns the same hash instead of double-broadcasting. |
+| `cctp-delivery-records.json` | `modules/cctp-delivery-store.ts` | Cross-chain delivery index (source `messageHash` → status/destTxHash), served by `GET /cctp-status/:messageHash`. |
 | `railgun-db/` | Railgun engine | The relayer's `0zk` wallet LevelDB (broadcaster-fee viewing key). |
 
 Deleting any file is operator-actionable recovery: the relayer re-bootstraps that piece of state
@@ -36,6 +37,12 @@ are below.
   cached hash (HTTP 200) instead of re-broadcasting, even across a relayer restart. Entries evict
   after 24h (well past the tx lifecycle). Deleting the file only loses cross-restart dedup for
   in-flight txs; the in-memory calldata cache still guards same-process duplicates.
+- **`cctp-delivery-records.json`** — cross-chain delivery status keyed by the source CCTP
+  `messageHash` (`pending` / `delivered` + destTxHash / `failed`). Written by whichever relay mode
+  is active (mock `cctp-relay` or real `iris-relay`) and served by `GET /cctp-status/:messageHash`,
+  which the frontend polls to confirm a cross-chain shield/unshield delivery. Deleting it only
+  forces the frontend back to its on-chain destination scan (its built-in fallback); entries evict
+  after ~90 min.
 
 ## Cursor files
 

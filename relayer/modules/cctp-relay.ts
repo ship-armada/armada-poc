@@ -32,6 +32,7 @@ import {
   type DeadLetterRecord,
   type DeadLetterReason,
 } from "../lib/dead-letter-store";
+import type { CctpDeliveryStore } from "./cctp-delivery-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live — shared with iris-relay. Module-relative. */
@@ -309,19 +310,27 @@ export class CCTPRelayModule {
    * EOA on the hub chain, so one coordinator keeps their nonce streams from colliding.
    */
   private nonceCoordinator: NonceCoordinator;
+  /** Cross-chain delivery index surfaced via /cctp-status. Best-effort writes (frontend has a scan fallback). */
+  private deliveryStore: CctpDeliveryStore;
 
   /**
    * @param nonceCoordinator Shared per-chain nonce authority (see field doc).
+   * @param deliveryStore Cross-chain delivery index written on relay success/failure.
    * @param getMinFee Optional async function that returns the minimum acceptable
    *   maxFee (in USDC raw units) for cross-chain shield relay. If provided,
    *   messages with insufficient maxFee will be skipped. If null, all messages
    *   are relayed (backward-compatible behavior).
    */
-  constructor(nonceCoordinator: NonceCoordinator, getMinFee?: () => Promise<bigint>) {
+  constructor(
+    nonceCoordinator: NonceCoordinator,
+    deliveryStore: CctpDeliveryStore,
+    getMinFee?: () => Promise<bigint>,
+  ) {
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.getMinFee = getMinFee || null;
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
+    this.deliveryStore = deliveryStore;
     this.retryQueueStore = new RetryQueueStore(RELAYER_STATE_DIR);
     this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
   }
@@ -418,6 +427,8 @@ export class CCTPRelayModule {
     list.push(record);
     this.deadLetters.set(sourceState.config.name, list);
     this.markProcessed(sourceState, messageKey);
+    // Surface the permanent failure on /cctp-status so the frontend stops waiting (fails the tx).
+    this.deliveryStore.markFailed(ethers.keccak256(event.rawMessage), `dead-letter: ${reason}`);
     console.error(
       `[cctp-relay] DEAD-LETTER (${reason}): ${messageKey} (source tx ${event.txHash}). Recorded for manual relay.`,
     );
@@ -691,6 +702,11 @@ export class CCTPRelayModule {
       console.log(`  Fee check passed: maxFee ${burnFee.maxFee} >= minFee ${minFee}`);
     }
 
+    // /cctp-status delivery index is keyed by the SOURCE messageHash (keccak256 of the MessageSent
+    // bytes) — the same value the frontend captures at burn time. Mark "in flight" before relaying.
+    const messageHash = ethers.keccak256(event.rawMessage);
+    this.deliveryStore.markPending(messageHash, { amount: burnFee?.amount.toString() });
+
     try {
       const encodedMessage = event.rawMessage;
       console.log(
@@ -745,6 +761,8 @@ export class CCTPRelayModule {
       console.log(`  Confirmed in block ${receipt?.blockNumber}`);
 
       this.markProcessed(sourceState, messageKey);
+      // Authoritative delivery signal for /cctp-status — the destination mint confirmed.
+      this.deliveryStore.markDelivered(messageHash, tx.hash, { amount: burnFee?.amount.toString() });
 
       console.log(`  Relay successful`);
       return true;
@@ -906,6 +924,7 @@ export class CCTPRelayModule {
       );
 
       this.markProcessed(sourceState, messageKey);
+      this.deliveryStore.markDelivered(ethers.keccak256(event.rawMessage), tx.hash);
       return true;
     } catch (e: any) {
       if (

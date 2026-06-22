@@ -24,6 +24,7 @@ import { RelayerRailgunWallet } from "./modules/railgun-wallet";
 import { HttpApi } from "./modules/http-api";
 import { Counters } from "./modules/counters";
 import { IdempotencyStore } from "./modules/idempotency-store";
+import { CctpDeliveryStore } from "./modules/cctp-delivery-store";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
@@ -275,6 +276,13 @@ async function main() {
     counters,
   );
 
+  // Durable cross-chain delivery index — written by whichever relay mode is active, read by the
+  // /cctp-status endpoint. Loaded from disk so delivery status survives a restart. Constructed
+  // BEFORE the relay-module selection so it can be injected into the active module.
+  console.log("[armada] Initializing CCTP delivery store...");
+  const cctpDeliveryStore = new CctpDeliveryStore();
+  await cctpDeliveryStore.initialize();
+
   // Initialize CCTP relay module — select based on CCTP mode. `getHealth` is the contract
   // surfaced to http-api for the /health endpoint; both iris and cctp modules implement it.
   let cctpRelayModule: {
@@ -286,7 +294,7 @@ async function main() {
 
   if (armadaRelayerSettings.cctpReal) {
     console.log("[armada] Initializing REAL CCTP relay (Iris attestation)...");
-    const irisRelay = new IrisRelayModule(nonceCoordinator, counters);
+    const irisRelay = new IrisRelayModule(nonceCoordinator, counters, cctpDeliveryStore);
     const initialized = await irisRelay.initialize();
     if (!initialized) {
       console.warn("[armada] Some chains failed to initialize for Iris relay.");
@@ -294,7 +302,7 @@ async function main() {
     cctpRelayModule = irisRelay;
   } else {
     console.log("[armada] Initializing MOCK CCTP relay module...");
-    const cctpRelay = new CCTPRelayModule(nonceCoordinator, async () => {
+    const cctpRelay = new CCTPRelayModule(nonceCoordinator, cctpDeliveryStore, async () => {
       // CCTP mock relay reads from the hub schedule today — keeps existing behaviour.
       const hubCalc = feeCalculators.get(hubChain.chainId)!;
       const fees = await hubCalc.getCurrentFees();
@@ -339,6 +347,7 @@ async function main() {
     () => cctpRelayModule.getHealth(),
     counters,
     idempotencyStore,
+    cctpDeliveryStore,
   );
 
   // Start HTTP server
@@ -359,10 +368,11 @@ async function main() {
   console.log(`  CCTP Relay:     Polling ${cctpRelayModule.chainCount} chain(s)`);
   console.log();
 
-  // Periodic cleanup (every 5 minutes): in-memory calldata dedup cache + durable idempotency TTL.
+  // Periodic cleanup (every 5 minutes): in-memory calldata dedup cache + durable store TTLs.
   const cleanupInterval = setInterval(() => {
     walletManager.cleanDedupCache();
     void idempotencyStore.sweep();
+    void cctpDeliveryStore.sweep();
   }, 5 * 60 * 1000);
 
   // Handle graceful shutdown. CRITICAL: await `cctpRelayModule.stop()` BEFORE process.exit so

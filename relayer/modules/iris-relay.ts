@@ -39,6 +39,7 @@ import {
   type DeadLetterReason,
 } from "../lib/dead-letter-store";
 import type { Counters } from "./counters";
+import type { CctpDeliveryStore } from "./cctp-delivery-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live. Module-relative so the relayer is location-independent. */
@@ -235,6 +236,22 @@ const MIN_BURN_MESSAGE_BYTES = MSG_BODY_OFFSET + BURN_MSG_MIN_BODY_BYTES;
 const BURN_MESSAGE_VERSION = 1;
 /** bytes32(0) — a legitimate destinationCaller value (Armada burn paths let the user choose it). */
 const ZERO_CALLER = "0x" + "0".repeat(64);
+
+/** BurnMessageV2.amount — body offset 68 (version 4 + burnToken 32 + mintRecipient 32) → abs 216. */
+const BURN_MSG_AMOUNT_ABSOLUTE_OFFSET = MSG_BODY_OFFSET + 68;
+const BURN_MSG_AMOUNT_LENGTH = 32;
+
+/**
+ * Parse the burn amount (raw USDC) from a full MessageV2 hex. Returns undefined when the message is
+ * too short to contain it. Offsets validated against `contracts/cctp/ICCTPV2.sol`. Used only to
+ * enrich the /cctp-status delivery record — never load-bearing for relay correctness.
+ */
+function parseBurnAmount(messageHex: string): string | undefined {
+  const hex = messageHex.startsWith("0x") ? messageHex.slice(2) : messageHex;
+  const end = (BURN_MSG_AMOUNT_ABSOLUTE_OFFSET + BURN_MSG_AMOUNT_LENGTH) * 2;
+  if (hex.length < end) return undefined;
+  return BigInt("0x" + hex.slice(BURN_MSG_AMOUNT_ABSOLUTE_OFFSET * 2, end)).toString();
+}
 
 /**
  * Fail-CLOSED decision on whether a scanned CCTP message is one we should relay. Pure + exported
@@ -618,8 +635,14 @@ export class IrisRelayModule {
   private nonceCoordinator: NonceCoordinator;
   /** Shared /health counters. Used here to make fail-closed message-filter rejections visible. */
   private counters: Counters;
+  /** Cross-chain delivery index surfaced via /cctp-status. Best-effort writes (frontend has a scan fallback). */
+  private deliveryStore: CctpDeliveryStore;
 
-  constructor(nonceCoordinator: NonceCoordinator, counters: Counters) {
+  constructor(
+    nonceCoordinator: NonceCoordinator,
+    counters: Counters,
+    deliveryStore: CctpDeliveryStore,
+  ) {
     const { iris } = armadaRelayerSettings;
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.irisClient = new IrisClient(iris.apiUrl);
@@ -628,6 +651,7 @@ export class IrisRelayModule {
     this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
     this.counters = counters;
+    this.deliveryStore = deliveryStore;
   }
 
   async initialize(): Promise<boolean> {
@@ -714,6 +738,8 @@ export class IrisRelayModule {
     this.deadLetters.set(sourceState.config.name, list);
     // Mark processed so a re-discovery (cursor rewind, restart) doesn't re-enqueue + re-burn gas.
     sourceState.processedMessages.set(msg.dedupKey, Date.now());
+    // Surface the permanent failure on /cctp-status so the frontend stops waiting (fails the tx).
+    this.deliveryStore.markFailed(msg.messageHash, `dead-letter: ${reason}`);
     console.error(
       `[iris-relay] DEAD-LETTER (${reason}): ${msg.dedupKey} (source tx ${msg.sourceTxHash}). Recorded to relayer/state/deadletter-${sourceState.config.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}.json for manual relay.`,
     );
@@ -1153,6 +1179,9 @@ export class IrisRelayModule {
     console.log(`  Msg length:  ${(messageBytes.length - 2) / 2} bytes`);
     console.log(`  Iris URL:    ${irisUrl}`);
     console.log(`  Queued for attestation polling (non-blocking)`);
+    // Surface "in flight" on /cctp-status (keyed by messageHash) so the frontend's delivery poll
+    // gets a positive signal instead of a 404 while awaiting attestation. Best-effort.
+    this.deliveryStore.markPending(messageHash, { amount: parseBurnAmount(messageBytes) });
     return true;
   }
 
@@ -1429,6 +1458,10 @@ export class IrisRelayModule {
         console.log(
           `[iris-relay] ${state.config.name}: confirmed ${msg.submittedTxHash!.slice(0, 18)}... in block ${receipt.blockNumber} (${msg.retryAttempts} retries, ${Math.round((now - (msg.submittedAt ?? now)) / 1000)}s submit→confirm)`,
         );
+        // Authoritative delivery signal for /cctp-status — the destination mint confirmed.
+        this.deliveryStore.markDelivered(msg.messageHash, msg.submittedTxHash!, {
+          amount: parseBurnAmount(msg.messageBytes),
+        });
         if (sourceState) dirtyChains.add(sourceState);
       } else {
         // Reverted on chain — re-submit through the retry/backoff path. The nonce was consumed

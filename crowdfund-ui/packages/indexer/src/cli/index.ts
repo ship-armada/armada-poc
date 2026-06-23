@@ -3,55 +3,22 @@
 
 import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
+import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
+import type { IndexerStore } from '../db/store.js'
+import type { IngestRangeRecord } from '../types.js'
 import { parseCliArgs, runReadOnlyCommand } from './commands.js'
+import type { ParsedCliArgs } from './commands.js'
 import { createRpcChainStateReader } from '../alerts/chainState.js'
 import { createFileAlertStateStore } from '../alerts/state.js'
 import { createDiscordNotifierFromEnv, runAlertsOnce } from '../alerts/runner.js'
 import type { CrowdfundParams } from '../alerts/types.js'
-import { backfillVerifiedRanges } from '../ingest/backfill.js'
+import { backfillVerifiedRanges, planBackfillRanges } from '../ingest/backfill.js'
+import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
-import { buildSnapshot } from '../snapshots/build.js'
+import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
-import type { CursorState, ReconciliationResult } from '../types.js'
-
-function readNumberEnv(name: string, fallback: number): number {
-  const raw = process.env[name]
-  if (!raw) return fallback
-  const parsed = Number(raw)
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new Error(`Invalid numeric environment variable: ${name}`)
-  }
-  return parsed
-}
-
-function getInitialCursor(): CursorState {
-  const deployBlock = readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0)
-  return {
-    deployBlock,
-    confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
-    overlapWindow: readNumberEnv('CROWDFUND_OVERLAP_WINDOW', 100),
-    chainHead: deployBlock,
-    confirmedHead: deployBlock,
-    ingestedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-    verifiedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-  }
-}
-
-function readRequiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`Missing required environment variable: ${name}`)
-  return value
-}
-
-function readBooleanEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name]
-  if (!value) return fallback
-  if (value === 'true') return true
-  if (value === 'false') return false
-  throw new Error(`Invalid boolean environment variable: ${name}`)
-}
 
 async function resolveToBlock(
   toBlock: number | 'latest' | null,
@@ -69,12 +36,28 @@ async function main(): Promise<void> {
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
-  const data = await store.read()
+  try {
+    await runCommand(args, store)
+  } finally {
+    // Release the Postgres pool (no-op for the file store) so the CLI exits promptly.
+    await store.close()
+  }
+}
+
+async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<void> {
+  // Operator commands only need cursor/range/metadata state; the snapshot commands add
+  // raw logs on demand below.
+  const data = await store.readMeta()
 
   if (args.command === 'verify' || args.command === 'repair' || args.command === 'backfill') {
     const provider = createJsonRpcRangeProvider(readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL'))
     const auditRpcUrl = process.env.CROWDFUND_AUDIT_RPC_URL
     const auditProvider = auditRpcUrl ? createJsonRpcRangeProvider(auditRpcUrl) : undefined
+    if (!auditRpcUrl) {
+      process.stderr.write(
+        'Warning: CROWDFUND_AUDIT_RPC_URL is unset — ranges are verified against the same provider twice (no independent audit).\n',
+      )
+    }
     const config = {
       chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
       contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
@@ -130,24 +113,31 @@ async function main(): Promise<void> {
       return
     }
 
-    const range = { fromBlock, toBlock }
-    const records = args.command === 'verify'
-      ? [await verifyRange({
+    // Chunk an explicit span so a large --from/--to range does not hit a single oversized
+    // getLogs call (which providers reject). One chunk reproduces the previous behavior.
+    const chunks = planBackfillRanges({ fromBlock, toBlock, maxBlockRange: readNumberEnv('CROWDFUND_MAX_BLOCK_RANGE', 500) })
+    const records: IngestRangeRecord[] = []
+    if (args.command === 'verify') {
+      for (const chunk of chunks) {
+        records.push(await verifyRange({
           ...config,
           store,
           provider,
           auditProvider,
           auditProviderName: auditProvider ? 'audit' : undefined,
-          range,
-        })]
-      : await repairRanges({
-          ...config,
-          store,
-          provider,
-          auditProvider,
-          auditProviderName: auditProvider ? 'audit' : undefined,
-          ranges: [range],
-        })
+          range: chunk,
+        }))
+      }
+    } else {
+      records.push(...await repairRanges({
+        ...config,
+        store,
+        provider,
+        auditProvider,
+        auditProviderName: auditProvider ? 'audit' : undefined,
+        ranges: chunks,
+      }))
+    }
 
     process.stdout.write(
       records.map((record) => `${record.status}: ${record.fromBlock}-${record.toBlock} (${record.logCount} logs)`).join('\n') + '\n',
@@ -158,31 +148,35 @@ async function main(): Promise<void> {
   if (args.command === 'rebuild-snapshot' || args.command === 'publish-snapshot') {
     const chainId = readNumberEnv('CROWDFUND_CHAIN_ID', 11155111)
     const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
-    let reconciliation: ReconciliationResult | undefined
 
-    const pendingSnapshot = buildSnapshot({ data, chainId, contractAddress })
+    const snapshotData = { ...data, rawLogs: await store.readLogs(data.cursor.verifiedCursor) }
+    let snapshot = buildSnapshot({ data: snapshotData, chainId, contractAddress })
     const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
     if (rpcUrl) {
       const provider = new JsonRpcProvider(rpcUrl)
-      const contract = createReadableCrowdfundContract(provider, contractAddress)
-      reconciliation = await reconcileSnapshot({
-        graph: pendingSnapshot.graph,
-        contract,
-        checkedBlock: data.cursor.verifiedCursor,
-        providerName: 'primary',
-      })
+      try {
+        const contract = createReadableCrowdfundContract(provider, contractAddress)
+        const reconciliation = await reconcileSnapshot({
+          graph: snapshot.graph,
+          contract,
+          checkedBlock: data.cursor.verifiedCursor,
+          providerName: 'primary',
+        })
+        snapshot = withReconciliation(snapshot, reconciliation)
+      } finally {
+        provider.destroy()
+      }
     }
-
-    const snapshot = buildSnapshot({ data, chainId, contractAddress, reconciliation })
     if (args.command === 'rebuild-snapshot') {
-      await store.update((current) => ({
-        ...current,
+      await store.patchMeta({
         latestSnapshotHash: snapshot.metadata.snapshotHash,
-        lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
-        lastError: snapshot.metadata.reconciliation.status === 'failed'
-          ? snapshot.metadata.reconciliation.mismatches.join('; ')
-          : current.lastError,
-      }))
+        ...(snapshot.metadata.reconciliation.checkedAt
+          ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
+          : {}),
+        ...(snapshot.metadata.reconciliation.status === 'failed'
+          ? { lastError: sanitizeErrorMessage(snapshot.metadata.reconciliation.mismatches.join('; ')) }
+          : {}),
+      })
       process.stdout.write(`rebuilt snapshot ${snapshot.metadata.snapshotHash} at block ${snapshot.metadata.verifiedBlock}\n`)
       return
     }
@@ -208,13 +202,14 @@ async function main(): Promise<void> {
           snapshot,
           process.env.CROWDFUND_SNAPSHOT_DIR ?? join(process.cwd(), 'data/crowdfund-indexer/snapshots'),
         )
-    await store.update((current) => ({
-      ...current,
+    await store.patchMeta({
       latestSnapshotHash: snapshot.metadata.snapshotHash,
       latestStaticSnapshotUrl: result.latestUrl ?? result.latestPath,
-      lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
+      ...(snapshot.metadata.reconciliation.checkedAt
+        ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
+        : {}),
       lastError: null,
-    }))
+    })
     process.stdout.write(`published ${result.snapshotFileName}\nlatest ${result.latestUrl ?? result.latestPath}\n`)
     return
   }
@@ -240,24 +235,38 @@ async function main(): Promise<void> {
       : null
     const stateFile = process.env.CROWDFUND_ALERT_STATE_FILE
       ?? join(process.cwd(), 'data/crowdfund-indexer/alerts.json')
-    const result = await runAlertsOnce({
-      store,
-      stateStore: createFileAlertStateStore(stateFile),
-      params,
-      repairMaxAttempts: readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6),
-      chainState,
-      notifier: createDiscordNotifierFromEnv(),
-    })
+    let result
+    try {
+      result = await runAlertsOnce({
+        store,
+        stateStore: createFileAlertStateStore(stateFile),
+        params,
+        repairMaxAttempts: readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6),
+        staleAfterMs: readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000),
+        chainState,
+        notifier: createDiscordNotifierFromEnv(),
+      })
+    } finally {
+      chainState?.close?.()
+    }
     process.stdout.write(
-      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}\n`,
+      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}; failed ${result.failed.length}; undelivered ${result.undelivered.length}\n`,
     )
     for (const e of result.delivered) {
       process.stdout.write(`  [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)
     }
+    for (const e of result.undelivered) {
+      process.stderr.write(`  UNDELIVERED [${e.severity} ${e.id}] ${e.title} — no webhook configured for ${e.severity}\n`)
+    }
+    for (const e of result.failed) {
+      process.stderr.write(`  FAILED [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)
+    }
+    // Non-zero exit so a scheduler surfaces delivery failures (and retries next tick).
+    if (result.failed.length > 0) process.exitCode = 1
     return
   }
 
-  const result = runReadOnlyCommand(args, data)
+  const result = runReadOnlyCommand(args, data, readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000))
   process.stdout.write(`${result.output}\n`)
   process.exitCode = result.exitCode
 }

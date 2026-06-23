@@ -1,7 +1,7 @@
 // ABOUTME: Unit tests for alert-state persistence — file roundtrip + missing-file behavior.
 // ABOUTME: Uses a tmp directory; cleans up between tests.
 
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -32,5 +32,16 @@ describe('createFileAlertStateStore', () => {
     await store.write({ firedKeys: new Set(['A11', 'A1', 'A4:80']) })
     const reread = await store.read()
     expect(Array.from(reread.firedKeys).sort()).toEqual(['A1', 'A11', 'A4:80'])
+  })
+
+  it('overwrites prior state cleanly (atomic replace, no leftover temp file)', async () => {
+    const path = join(dir, 'state.json')
+    const store = createFileAlertStateStore(path)
+    await store.write({ firedKeys: new Set(['A1']) })
+    await store.write({ firedKeys: new Set(['A2']) })
+    const reread = await store.read()
+    expect(Array.from(reread.firedKeys)).toEqual(['A2'])
+    // The atomic write must not leave its temp file behind.
+    expect(readdirSync(dir).filter((f) => f.includes('.tmp'))).toEqual([])
   })
 })

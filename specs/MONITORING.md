@@ -362,6 +362,38 @@ Post-finalization, track:
 
 ---
 
+### Addendum — Indexer-health alerts (AH1, AH2)
+
+These alerts watch the indexer itself rather than the crowdfund. They exist because the
+time-vs-event rules (A2, A8, A9a, A9b) trust the indexed snapshot to be current. When the
+indexer falls behind or breaks, those rules are **suppressed** (a stale/unhealthy snapshot
+would otherwise produce false pages such as "finalize required" when the `Finalized` event
+simply has not been ingested). AH1 covers the resulting blind spot.
+
+#### AH1 — Indexer health degraded
+
+| Field | Value |
+|---|---|
+| **Signal** | `health.status` from the indexer health endpoint |
+| **Condition** | `status === 'unhealthy'` (P1) or `status === 'stale'` (P2) |
+| **Severity** | P1 (unhealthy) / P2 (stale) |
+| **Meaning** | The indexer cannot be trusted to reflect chain state; frontends serve the last verified snapshot and time-based alerts are paused until it recovers. |
+| **Dedupe** | `AH1:<status>:<UTC-date>` — a sustained outage re-pages once per day. |
+| **Runbook** | `CROWDFUND_INDEXER_RUNBOOK.md` health triage |
+
+#### AH2 — Indexer gaps require operator intervention
+
+| Field | Value |
+|---|---|
+| **Signal** | `health.gapsRequiringIntervention` |
+| **Condition** | one or more ranges have exhausted auto-repair attempts |
+| **Severity** | P1 |
+| **Meaning** | Auto-repair has given up on a block range; an operator must run `npm run crowdfund:indexer:cli -- repair`. |
+| **Dedupe** | `AH2:<from>-<to>,…` — a newly-exhausted gap re-pages. |
+| **Runbook** | `CROWDFUND_INDEXER_RUNBOOK.md` gap repair |
+
+---
+
 ## 9. Special Monitoring Notes
 
 ### 9.1 Duplicate same-hop invites are not an exploit

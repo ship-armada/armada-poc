@@ -5,63 +5,29 @@ import express from 'express'
 import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
 import { buildHealth } from './health.js'
+import { getInitialCursor, loadIndexerConfig, readBooleanEnv, readRequiredEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
-import type { IndexerStore } from '../db/store.js'
+import type { IndexerMeta, IndexerStore } from '../db/store.js'
 import { CrowdfundIndexerPoller } from '../ingest/poller.js'
 import { getRepairRanges } from '../ingest/ranges.js'
 import { getExhaustedRepairRanges } from '../ingest/reconcile.js'
 import { createJsonRpcRangeProvider } from '../ingest/rpc.js'
+import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
-import { buildSnapshot } from '../snapshots/build.js'
+import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { toJsonValue } from '../snapshots/json.js'
-import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
-import type { CursorState, IndexerStoreData, ReconciliationResult } from '../types.js'
+import { publishSnapshot, publishSnapshotToObjectStorage, type PublishSnapshotResult } from '../snapshots/publish.js'
+import type { IndexerStoreData } from '../types.js'
 
 export interface CreateIndexerApiOptions {
   store: IndexerStore
   chainId: number
   contractAddress: string
   repairMaxAttempts: number
+  staleAfterMs?: number
 }
 
-function readNumberEnv(name: string, fallback: number): number {
-  const raw = process.env[name]
-  if (!raw) return fallback
-  const parsed = Number(raw)
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new Error(`Invalid numeric environment variable: ${name}`)
-  }
-  return parsed
-}
-
-function readRequiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`Missing required environment variable: ${name}`)
-  return value
-}
-
-function readBooleanEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name]
-  if (!value) return fallback
-  if (value === 'true') return true
-  if (value === 'false') return false
-  throw new Error(`Invalid boolean environment variable: ${name}`)
-}
-
-function getInitialCursor(): CursorState {
-  const deployBlock = readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0)
-  return {
-    deployBlock,
-    confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
-    overlapWindow: readNumberEnv('CROWDFUND_OVERLAP_WINDOW', 100),
-    chainHead: deployBlock,
-    confirmedHead: deployBlock,
-    ingestedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-    verifiedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
-  }
-}
-
-function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number) {
+function buildHealthFromStore(data: IndexerMeta, repairMaxAttempts: number, staleAfterMs?: number) {
   return buildHealth({
     cursor: data.cursor,
     gapRanges: getRepairRanges(data.ranges),
@@ -72,6 +38,7 @@ function buildHealthFromStore(data: IndexerStoreData, repairMaxAttempts: number)
     lastError: data.lastError,
     latestSnapshotHash: data.latestSnapshotHash,
     latestStaticSnapshotUrl: data.latestStaticSnapshotUrl,
+    staleAfterMs,
   })
 }
 
@@ -81,28 +48,40 @@ function readOptionalNumber(value: unknown): number | null {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
 }
 
+// Only a publicly fetchable URL belongs in latestStaticSnapshotUrl, which is served
+// on the unauthenticated /health endpoint. The object-storage publisher provides a
+// real URL; the file publisher returns only a local disk path, which must not be
+// exposed — so fall back to null rather than leaking the path.
+export function selectStaticSnapshotUrl(result: PublishSnapshotResult): string | null {
+  return result.latestUrl ?? null
+}
+
 async function publishCurrentSnapshot(
   store: IndexerStore,
   chainId: number,
   contractAddress: string,
   primaryRpcUrl: string | null,
 ): Promise<void> {
-  const data = await store.read()
-  let reconciliation: ReconciliationResult | undefined
-  const pendingSnapshot = buildSnapshot({ data, chainId, contractAddress })
+  const meta = await store.readMeta()
+  const data: IndexerStoreData = { ...meta, rawLogs: await store.readLogs(meta.cursor.verifiedCursor) }
+  let snapshot = buildSnapshot({ data, chainId, contractAddress })
 
   if (primaryRpcUrl) {
     const provider = new JsonRpcProvider(primaryRpcUrl)
-    const contract = createReadableCrowdfundContract(provider, contractAddress)
-    reconciliation = await reconcileSnapshot({
-      graph: pendingSnapshot.graph,
-      contract,
-      checkedBlock: data.cursor.verifiedCursor,
-      providerName: 'primary',
-    })
+    try {
+      const contract = createReadableCrowdfundContract(provider, contractAddress)
+      const reconciliation = await reconcileSnapshot({
+        graph: snapshot.graph,
+        contract,
+        checkedBlock: data.cursor.verifiedCursor,
+        providerName: 'primary',
+      })
+      snapshot = withReconciliation(snapshot, reconciliation)
+    } finally {
+      provider.destroy()
+    }
   }
 
-  const snapshot = buildSnapshot({ data, chainId, contractAddress, reconciliation })
   if (snapshot.metadata.reconciliation.status === 'failed') {
     throw new Error(`Refusing to publish failed reconciliation: ${snapshot.metadata.reconciliation.mismatches.join('; ')}`)
   }
@@ -123,17 +102,40 @@ async function publishCurrentSnapshot(
         process.env.CROWDFUND_SNAPSHOT_DIR ?? join(process.cwd(), 'data/crowdfund-indexer/snapshots'),
       )
 
-  await store.update((current) => ({
-    ...current,
+  await store.patchMeta({
     latestSnapshotHash: snapshot.metadata.snapshotHash,
-    latestStaticSnapshotUrl: result.latestUrl ?? result.latestPath,
-    lastReconciledAt: snapshot.metadata.reconciliation.checkedAt ?? current.lastReconciledAt,
+    latestStaticSnapshotUrl: selectStaticSnapshotUrl(result),
+    ...(snapshot.metadata.reconciliation.checkedAt
+      ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
+      : {}),
     lastError: null,
-  }))
+  })
 }
 
 export function createIndexerApi(options: CreateIndexerApiOptions) {
   const app = express()
+
+  // Per-process snapshot cache keyed on the verified state. Building a snapshot parses
+  // every verified log and rebuilds the graph; without this, every /snapshot and /events
+  // request repeats that work. The key changes iff verified data changed (verifiedCursor
+  // advances and lastVerifiedAt updates together on each successful verification), so no
+  // TTL is needed. NOTE: this is not a request-rate limiter — front the service with a
+  // reverse proxy for that (tracked separately).
+  let snapshotCache: { key: string; snapshot: ReturnType<typeof buildSnapshot> } | null = null
+
+  async function getSnapshot(): Promise<ReturnType<typeof buildSnapshot>> {
+    const meta = await options.store.readMeta()
+    const key = `${meta.cursor.verifiedCursor}:${meta.lastVerifiedAt ?? ''}`
+    if (snapshotCache && snapshotCache.key === key) return snapshotCache.snapshot
+    const rawLogs = await options.store.readLogs(meta.cursor.verifiedCursor)
+    const snapshot = buildSnapshot({
+      data: { ...meta, rawLogs },
+      chainId: options.chainId,
+      contractAddress: options.contractAddress,
+    })
+    snapshotCache = { key, snapshot }
+    return snapshot
+  }
 
   app.use((_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -143,8 +145,8 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
   app.get('/health', async (_req, res, next) => {
     try {
-      const data = await options.store.read()
-      res.json(buildHealthFromStore(data, options.repairMaxAttempts))
+      const meta = await options.store.readMeta()
+      res.json(buildHealthFromStore(meta, options.repairMaxAttempts, options.staleAfterMs))
     } catch (err) {
       next(err)
     }
@@ -152,13 +154,7 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
   app.get('/snapshot', async (_req, res, next) => {
     try {
-      const data = await options.store.read()
-      const snapshot = buildSnapshot({
-        data,
-        chainId: options.chainId,
-        contractAddress: options.contractAddress,
-      })
-      res.json(toJsonValue(snapshot))
+      res.json(toJsonValue(await getSnapshot()))
     } catch (err) {
       next(err)
     }
@@ -168,12 +164,7 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
     try {
       const afterBlock = readOptionalNumber(req.query.afterBlock)
       const afterLogIndex = readOptionalNumber(req.query.afterLogIndex) ?? -1
-      const data = await options.store.read()
-      const snapshot = buildSnapshot({
-        data,
-        chainId: options.chainId,
-        contractAddress: options.contractAddress,
-      })
+      const snapshot = await getSnapshot()
       const events = snapshot.events.filter((event) => {
         if (afterBlock === null) return true
         if (event.blockNumber > afterBlock) return true
@@ -189,60 +180,73 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
   })
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    // Never echo the raw error to the client — it can carry RPC keys or DB credentials.
+    // Log the sanitized real message server-side; return a fixed message to the caller.
     const message = err instanceof Error ? err.message : 'Unknown indexer API error'
-    res.status(500).json({ error: message })
+    process.stderr.write(`Crowdfund indexer API error: ${sanitizeErrorMessage(message)}\n`)
+    res.status(500).json({ error: 'internal indexer error' })
   })
 
   return app
 }
 
 async function main(): Promise<void> {
-  const chainId = readNumberEnv('CROWDFUND_CHAIN_ID', 11155111)
-  const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
-  const port = readNumberEnv('CROWDFUND_INDEXER_PORT', 3002)
-  const maxBlockRange = readNumberEnv('CROWDFUND_MAX_BLOCK_RANGE', 500)
-  const pollOnStart = readBooleanEnv('CROWDFUND_POLL_ON_START', false)
-  const backfillOnStart = readBooleanEnv('CROWDFUND_BACKFILL_ON_START', false)
-  const publishOnPoll = readBooleanEnv('CROWDFUND_PUBLISH_ON_POLL', false)
-  const repairMaxAttempts = readNumberEnv('CROWDFUND_REPAIR_MAX_ATTEMPTS', 6)
-  const repairBackoffBaseMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_BASE_MS', 30_000)
-  const repairBackoffMaxMs = readNumberEnv('CROWDFUND_REPAIR_BACKOFF_MAX_MS', 1_800_000)
+  const config = loadIndexerConfig()
   const store = createIndexerStore({
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
   })
-  const app = createIndexerApi({ store, chainId, contractAddress, repairMaxAttempts })
-  app.listen(port, () => {
-    process.stdout.write(`Crowdfund indexer API listening on ${port}\n`)
+  const app = createIndexerApi({
+    store,
+    chainId: config.chainId,
+    contractAddress: config.contractAddress,
+    repairMaxAttempts: config.repairMaxAttempts,
+    staleAfterMs: config.staleAfterMs,
+  })
+  const server = app.listen(config.port, () => {
+    process.stdout.write(`Crowdfund indexer API listening on ${config.port}\n`)
   })
 
-  if (pollOnStart || backfillOnStart) {
-    const primaryRpcUrl = readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL')
-    const auditRpcUrl = process.env.CROWDFUND_AUDIT_RPC_URL
+  // Release the store backend (e.g. Postgres pool) on shutdown signals.
+  const shutdown = () => {
+    server.close()
+    void store.close().finally(() => process.exit(0))
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
+
+  if (config.pollOnStart || config.backfillOnStart) {
+    if (!config.primaryRpcUrl) throw new Error('Missing required environment variable: CROWDFUND_PRIMARY_RPC_URL')
+    const primaryRpcUrl = config.primaryRpcUrl
+    if (!config.auditRpcUrl) {
+      process.stderr.write(
+        'Warning: CROWDFUND_AUDIT_RPC_URL is unset — ranges are verified against the same provider twice (no independent audit).\n',
+      )
+    }
     const poller = new CrowdfundIndexerPoller({
-      chainId,
-      contractAddress,
+      chainId: config.chainId,
+      contractAddress: config.contractAddress,
       providerName: 'primary',
       store,
       provider: createJsonRpcRangeProvider(primaryRpcUrl),
-      auditProvider: auditRpcUrl ? createJsonRpcRangeProvider(auditRpcUrl) : undefined,
-      auditProviderName: auditRpcUrl ? 'audit' : undefined,
-      maxBlockRange,
-      pollIntervalMs: readNumberEnv('CROWDFUND_POLL_INTERVAL_MS', 15_000),
-      errorBackoffMs: readNumberEnv('CROWDFUND_POLL_ERROR_BACKOFF_MS', 60_000),
-      rpcTimeoutMs: readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000),
-      rpcMaxRetries: readNumberEnv('CROWDFUND_RPC_MAX_RETRIES', 3),
-      retryBaseDelayMs: readNumberEnv('CROWDFUND_RPC_RETRY_BASE_DELAY_MS', 1_000),
-      retryJitterMs: readNumberEnv('CROWDFUND_RPC_RETRY_JITTER_MS', 250),
+      auditProvider: config.auditRpcUrl ? createJsonRpcRangeProvider(config.auditRpcUrl) : undefined,
+      auditProviderName: config.auditRpcUrl ? 'audit' : undefined,
+      maxBlockRange: config.maxBlockRange,
+      pollIntervalMs: config.pollIntervalMs,
+      errorBackoffMs: config.errorBackoffMs,
+      rpcTimeoutMs: config.rpcTimeoutMs,
+      rpcMaxRetries: config.rpcMaxRetries,
+      retryBaseDelayMs: config.retryBaseDelayMs,
+      retryJitterMs: config.retryJitterMs,
       reconcileOptions: {
-        maxAttempts: repairMaxAttempts,
-        backoffBaseMs: repairBackoffBaseMs,
-        backoffMaxMs: repairBackoffMaxMs,
+        maxAttempts: config.repairMaxAttempts,
+        backoffBaseMs: config.repairBackoffBaseMs,
+        backoffMaxMs: config.repairBackoffMaxMs,
       },
-      publishOnPoll,
-      snapshotPublishIntervalMs: readNumberEnv('CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS', 60_000),
-      publishSnapshot: publishOnPoll
-        ? () => publishCurrentSnapshot(store, chainId, contractAddress, primaryRpcUrl)
+      publishOnPoll: config.publishOnPoll,
+      snapshotPublishIntervalMs: config.snapshotPublishIntervalMs,
+      publishSnapshot: config.publishOnPoll
+        ? () => publishCurrentSnapshot(store, config.chainId, config.contractAddress, primaryRpcUrl)
         : undefined,
       logger: {
         info: (message) => process.stdout.write(`${message}\n`),
@@ -250,7 +254,7 @@ async function main(): Promise<void> {
         error: (message) => process.stderr.write(`${message}\n`),
       },
     })
-    if (pollOnStart) {
+    if (config.pollOnStart) {
       poller.start()
       process.stdout.write('Crowdfund indexer polling worker started\n')
     } else {

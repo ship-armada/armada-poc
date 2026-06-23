@@ -1,7 +1,7 @@
 // ABOUTME: Persisted "already fired" alert dedupe state, stored as JSON next to the indexer store.
 // ABOUTME: Keeps a Set of dedupeKey strings; missing file is treated as empty.
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 export interface AlertState {
@@ -34,7 +34,11 @@ export function createFileAlertStateStore(filePath: string): AlertStateStore {
     async write(state) {
       const persisted: PersistedShape = { firedKeys: Array.from(state.firedKeys).sort() }
       await mkdir(dirname(filePath), { recursive: true })
-      await writeFile(filePath, JSON.stringify(persisted, null, 2) + '\n', 'utf8')
+      // Atomic write (tmp + rename) so a crash mid-write cannot corrupt the dedupe
+      // state and cause every alert to re-fire on the next tick.
+      const tmpPath = `${filePath}.${process.pid}.tmp`
+      await writeFile(tmpPath, JSON.stringify(persisted, null, 2) + '\n', 'utf8')
+      await rename(tmpPath, filePath)
     },
   }
 }

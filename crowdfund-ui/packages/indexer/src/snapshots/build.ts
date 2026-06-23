@@ -24,9 +24,18 @@ export interface BuildSnapshotInput {
   verifiedBlockHash?: string
 }
 
-function getVerifiedLogs(data: IndexerStoreData): IndexedRawLog[] {
+// Only logs matching this chain AND contract (and within the verified cursor) feed the
+// snapshot. Filtering on chain/contract prevents stale events from a previous deployment
+// — if the store ever holds logs for another address/chain — from silently merging into a
+// snapshot whose metadata claims the current address.
+function getVerifiedLogs(data: IndexerStoreData, chainId: number, contractAddress: string): IndexedRawLog[] {
+  const wantAddress = contractAddress.toLowerCase()
   return data.rawLogs
-    .filter((log) => log.blockNumber <= data.cursor.verifiedCursor)
+    .filter((log) =>
+      log.blockNumber <= data.cursor.verifiedCursor &&
+      log.chainId === chainId &&
+      log.contractAddress.toLowerCase() === wantAddress,
+    )
     .sort((a, b) => {
       if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber
       if (a.logIndex !== b.logIndex) return a.logIndex - b.logIndex
@@ -43,9 +52,25 @@ function getVerifiedBlockHash(logs: readonly IndexedRawLog[], verifiedBlockHash?
   return lastLog?.blockHash ?? ZERO_BLOCK_HASH
 }
 
-function createSnapshotHash(snapshot: Omit<CrowdfundSnapshot, 'metadata'> & { metadata: Omit<SnapshotMetadata, 'snapshotHash'> }): string {
+// The snapshot hash is a CONTENT ADDRESS: it must be byte-identical for identical
+// verified chain state. It therefore hashes only the content-defining fields and
+// deliberately excludes `generatedAt` (wall-clock, changes every build) and
+// `reconciliation` (a post-hoc check that withReconciliation can swap in without
+// altering snapshot identity).
+interface SnapshotHashInput {
+  schemaVersion: SnapshotMetadata['schemaVersion']
+  chainId: number
+  contractAddress: string
+  deployBlock: number
+  verifiedBlock: number
+  verifiedBlockHash: string
+  events: CrowdfundSnapshot['events']
+  graph: CrowdfundSnapshot['graph']
+}
+
+function createSnapshotHash(input: SnapshotHashInput): string {
   const hash = createHash('sha256')
-  hash.update(stableStringify(snapshot))
+  hash.update(stableStringify(input))
   return `0x${hash.digest('hex')}`
 }
 
@@ -60,7 +85,7 @@ function pendingReconciliation(): ReconciliationResult {
 }
 
 export function buildSnapshot(input: BuildSnapshotInput): CrowdfundSnapshot {
-  const logs = getVerifiedLogs(input.data)
+  const logs = getVerifiedLogs(input.data, input.chainId, input.contractAddress)
   const events = parseCrowdfundEvents(logs.map((log) => ({
     blockNumber: log.blockNumber,
     transactionHash: log.transactionHash,
@@ -80,7 +105,12 @@ export function buildSnapshot(input: BuildSnapshotInput): CrowdfundSnapshot {
     reconciliation: input.reconciliation ?? pendingReconciliation(),
   }
   const snapshotHash = createSnapshotHash({
-    metadata: metadataWithoutHash,
+    schemaVersion: metadataWithoutHash.schemaVersion,
+    chainId: metadataWithoutHash.chainId,
+    contractAddress: metadataWithoutHash.contractAddress,
+    deployBlock: metadataWithoutHash.deployBlock,
+    verifiedBlock: metadataWithoutHash.verifiedBlock,
+    verifiedBlockHash: metadataWithoutHash.verifiedBlockHash,
     events,
     graph,
   })
@@ -92,5 +122,21 @@ export function buildSnapshot(input: BuildSnapshotInput): CrowdfundSnapshot {
     },
     events,
     graph,
+  }
+}
+
+// Returns a snapshot with its reconciliation result swapped in. Because reconciliation
+// is excluded from the content hash, this does NOT rebuild or rehash the snapshot — it
+// lets callers reconcile once and attach the result without a second buildSnapshot pass.
+export function withReconciliation(
+  snapshot: CrowdfundSnapshot,
+  reconciliation: ReconciliationResult,
+): CrowdfundSnapshot {
+  return {
+    ...snapshot,
+    metadata: {
+      ...snapshot.metadata,
+      reconciliation,
+    },
   }
 }

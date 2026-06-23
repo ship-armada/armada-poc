@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest'
 import {
   ruleA1, ruleA2, ruleA3, ruleA4, ruleA5, ruleA6, ruleA7, ruleA8,
   ruleA9a, ruleA9b, ruleA10, ruleA11, ruleA12, ruleA13, ruleA17, ruleA18, ruleA19, ruleA20,
+  ruleAH1, ruleAH2,
   evaluateAllRules,
 } from './rules.js'
 import { ALERT_THRESHOLD_DEFAULTS } from './thresholds.js'
 import type { AlertContext, CrowdfundParams } from './types.js'
+import type { IndexerHealth, IndexerHealthStatus } from '../types.js'
 import type { CrowdfundEvent } from '../../../shared/src/lib/events.js'
 import type { AddressSummary, CrowdfundGraph, GraphEdge, GraphNode } from '../../../shared/src/lib/graph.js'
 
@@ -206,7 +208,8 @@ describe('ruleA6 — duplicate same-hop slots', () => {
     }
     const graph: CrowdfundGraph = { ...emptyGraph(), nodes }
     const out = ruleA6(makeContext({ snapshot: { ...makeContext().snapshot, graph } as never }))
-    expect(out[0]).toMatchObject({ id: 'A6', severity: 'P2' })
+    // 3/10 = 30% → bucketed to the 30% band (not the raw percent).
+    expect(out[0]).toMatchObject({ id: 'A6', severity: 'P2', dedupeKey: 'A6:30' })
   })
   it('does not fire below threshold', () => {
     const nodes = new Map<string, GraphNode>()
@@ -431,6 +434,66 @@ describe('time-gated rules', () => {
       } as never,
     })
     expect(ruleA20(ctx)[0]).toMatchObject({ id: 'A20' })
+  })
+})
+
+// ============ Health gating + AH1/AH2 ============
+function makeHealth(status: IndexerHealthStatus, overrides: Partial<IndexerHealth> = {}): IndexerHealth {
+  return {
+    status,
+    chainHead: 0, confirmedHead: 0, ingestedCursor: 0, verifiedCursor: 0, lagBlocks: 0,
+    lastIngestedAt: null, lastVerifiedAt: null, lastReconciledAt: null,
+    hasGaps: false, gapRanges: [], gapsRequiringIntervention: [],
+    lastError: null, latestSnapshotHash: null, latestStaticSnapshotUrl: null,
+    ...overrides,
+  }
+}
+
+describe('health gating of time-based rules', () => {
+  it('suppresses A2/A8/A9a/A9b when the indexer is unhealthy', () => {
+    const past = COMMIT_TS + 1
+    const ctx = makeContext({ now: past, health: makeHealth('unhealthy') })
+    expect(ruleA2(ctx)).toEqual([])
+    expect(ruleA8(ctx)).toEqual([])
+    expect(ruleA9a(ctx)).toEqual([])
+    expect(ruleA9b(ctx)).toEqual([])
+  })
+
+  it('suppresses A2 when the indexer is stale but fires it when healthy', () => {
+    expect(ruleA2(makeContext({ now: OPEN_TS + 1, health: makeHealth('stale') }))).toEqual([])
+    expect(ruleA2(makeContext({ now: OPEN_TS + 1, health: makeHealth('healthy') }))[0]).toMatchObject({ id: 'A2' })
+  })
+})
+
+describe('ruleAH1 — indexer health', () => {
+  it('fires P1 with a date-bucketed dedupe key when unhealthy', () => {
+    const ctx = makeContext({ health: makeHealth('unhealthy', { lastError: 'network: fetch failed' }) })
+    const out = ruleAH1(ctx)
+    expect(out[0]).toMatchObject({ id: 'AH1', severity: 'P1' })
+    expect(out[0].dedupeKey).toMatch(/^AH1:unhealthy:\d{4}-\d{2}-\d{2}$/)
+  })
+  it('fires P2 when stale', () => {
+    expect(ruleAH1(makeContext({ health: makeHealth('stale') }))[0]).toMatchObject({ id: 'AH1', severity: 'P2' })
+  })
+  it('does not fire when healthy or degraded', () => {
+    expect(ruleAH1(makeContext({ health: makeHealth('healthy') }))).toEqual([])
+    expect(ruleAH1(makeContext({ health: makeHealth('degraded') }))).toEqual([])
+  })
+})
+
+describe('ruleAH2 — gaps requiring intervention', () => {
+  it('fires P1 with the exhausted ranges in the dedupe key', () => {
+    const ctx = makeContext({
+      health: makeHealth('unhealthy', {
+        gapsRequiringIntervention: [{ fromBlock: 100, toBlock: 199 }, { fromBlock: 300, toBlock: 399 }],
+      }),
+    })
+    const out = ruleAH2(ctx)
+    expect(out[0]).toMatchObject({ id: 'AH2', severity: 'P1' })
+    expect(out[0].dedupeKey).toBe('AH2:100-199,300-399')
+  })
+  it('does not fire when there are no exhausted gaps', () => {
+    expect(ruleAH2(makeContext({ health: makeHealth('degraded') }))).toEqual([])
   })
 })
 

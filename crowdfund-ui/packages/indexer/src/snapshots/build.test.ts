@@ -2,10 +2,10 @@
 // ABOUTME: Uses real ABI-encoded logs to verify parsing, graph building, and deterministic metadata.
 
 import { Interface } from 'ethers'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CROWDFUND_ABI_FRAGMENTS } from '../../../shared/src/lib/constants.js'
-import { buildSnapshot } from './build.js'
-import type { IndexedRawLog, IndexerStoreData } from '../types.js'
+import { buildSnapshot, withReconciliation } from './build.js'
+import type { IndexedRawLog, IndexerStoreData, ReconciliationResult } from '../types.js'
 
 const iface = new Interface(CROWDFUND_ABI_FRAGMENTS)
 const participant = '0x1111111111111111111111111111111111111111'
@@ -64,5 +64,60 @@ describe('buildSnapshot', () => {
     expect(summary?.totalCommitted).toBe(1_000_000n)
     expect(snapshot.metadata.verifiedBlock).toBe(110)
     expect(snapshot.metadata.snapshotHash).toMatch(/^0x[0-9a-f]{64}$/)
+  })
+
+  it('excludes logs from a different chain or contract', () => {
+    const good = makeLog('SeedAdded', [participant], 100)
+    const foreignContract = { ...makeLog('SeedAdded', [participant], 101), contractAddress: '0x' + 'ab'.repeat(20) }
+    const foreignChain = { ...makeLog('Committed', [participant, 0, 5_000_000n], 102), chainId: 1 }
+    const snapshot = buildSnapshot({
+      data: makeStoreData([good, foreignContract, foreignChain]),
+      chainId: 11155111,
+      contractAddress,
+    })
+    expect(snapshot.events).toHaveLength(1)
+    expect(snapshot.events[0].type).toBe('SeedAdded')
+  })
+
+  it('produces a stable hash across wall-clock changes (content address)', () => {
+    const data = makeStoreData([
+      makeLog('SeedAdded', [participant], 100),
+      makeLog('Committed', [participant, 0, 1_000_000n], 105),
+    ])
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-06-15T00:00:00.000Z'))
+      const a = buildSnapshot({ data, chainId: 11155111, contractAddress })
+      vi.setSystemTime(new Date('2026-06-15T01:00:00.000Z'))
+      const b = buildSnapshot({ data, chainId: 11155111, contractAddress })
+      expect(a.metadata.generatedAt).not.toBe(b.metadata.generatedAt)
+      expect(a.metadata.snapshotHash).toBe(b.metadata.snapshotHash)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('changes the hash when verified events change', () => {
+    const base = makeStoreData([makeLog('SeedAdded', [participant], 100)])
+    const more = makeStoreData([
+      makeLog('SeedAdded', [participant], 100),
+      makeLog('Committed', [participant, 0, 1_000_000n], 105),
+    ])
+    const a = buildSnapshot({ data: base, chainId: 11155111, contractAddress })
+    const b = buildSnapshot({ data: more, chainId: 11155111, contractAddress })
+    expect(a.metadata.snapshotHash).not.toBe(b.metadata.snapshotHash)
+  })
+
+  it('withReconciliation swaps reconciliation without changing the hash or events', () => {
+    const data = makeStoreData([makeLog('SeedAdded', [participant], 100)])
+    const snapshot = buildSnapshot({ data, chainId: 11155111, contractAddress })
+    const reconciliation: ReconciliationResult = {
+      status: 'passed', checkedBlock: 110, provider: 'primary',
+      checkedAt: '2026-06-15T00:00:00.000Z', mismatches: [],
+    }
+    const updated = withReconciliation(snapshot, reconciliation)
+    expect(updated.metadata.snapshotHash).toBe(snapshot.metadata.snapshotHash)
+    expect(updated.metadata.reconciliation.status).toBe('passed')
+    expect(updated.events).toBe(snapshot.events)
   })
 })

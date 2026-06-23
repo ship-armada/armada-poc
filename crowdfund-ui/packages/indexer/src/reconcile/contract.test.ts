@@ -52,6 +52,47 @@ describe('contract reconciliation', () => {
     })
   })
 
+  it('counts whitelisted addresses per hop, not stacked invites', () => {
+    // Two seeds invite the same invitee into hop-1. On-chain this whitelists the
+    // invitee once (hopStats[1].whitelistCount == 1) and only stacks its
+    // invitesReceived. Reconciliation must count the distinct whitelisted node,
+    // not the sum of invites, or it over-counts against the contract.
+    const seedA = '0x1111111111111111111111111111111111111111'
+    const seedB = '0x2222222222222222222222222222222222222222'
+    const invitee = '0x3333333333333333333333333333333333333333'
+    const graph = buildGraph([
+      makeEvent('SeedAdded', { seed: seedA }, 100),
+      makeEvent('SeedAdded', { seed: seedB }, 101),
+      makeEvent('Invited', { inviter: seedA, invitee, hop: 1 }, 102),
+      makeEvent('Invited', { inviter: seedB, invitee, hop: 1 }, 103),
+    ])
+
+    const stats = deriveGraphAggregateStats(graph)
+    expect(stats.perHopWhitelistCount).toEqual([2, 1, 0])
+    // seedA, seedB, invitee — three distinct (address, hop) participant nodes.
+    expect(stats.participantCount).toBe(3)
+  })
+
+  it('counts a multi-hop address once per hop it is whitelisted in', () => {
+    // An address whitelisted at both hop-1 and hop-2 is two participant nodes
+    // on-chain (getParticipantCount returns participantNodes.length, which counts
+    // (address, hop) pairs), so reconciliation must not de-duplicate it to one.
+    const seed = '0x1111111111111111111111111111111111111111'
+    const hop1Inviter = '0x2222222222222222222222222222222222222222'
+    const multi = '0x3333333333333333333333333333333333333333'
+    const graph = buildGraph([
+      makeEvent('SeedAdded', { seed }, 100),
+      makeEvent('Invited', { inviter: seed, invitee: hop1Inviter, hop: 1 }, 101),
+      makeEvent('Invited', { inviter: seed, invitee: multi, hop: 1 }, 102),
+      makeEvent('Invited', { inviter: hop1Inviter, invitee: multi, hop: 2 }, 103),
+    ])
+
+    const stats = deriveGraphAggregateStats(graph)
+    // seed@0, hop1Inviter@1, multi@1, multi@2 = 4 participant nodes.
+    expect(stats.participantCount).toBe(4)
+    expect(stats.perHopWhitelistCount).toEqual([1, 2, 1])
+  })
+
   it('passes when contract reads match event-derived aggregates', async () => {
     const graph = buildGraph([
       makeEvent('SeedAdded', { seed: participant }, 100),
@@ -67,6 +108,66 @@ describe('contract reconciliation', () => {
 
     expect(result.status).toBe('passed')
     expect(result.mismatches).toEqual([])
+  })
+
+  it('pins every contract read to the checked block', async () => {
+    const graph = buildGraph([
+      makeEvent('SeedAdded', { seed: participant }, 100),
+      makeEvent('Committed', { participant, hop: 0, amount: 1_000_000n }, 101),
+    ])
+    const seenBlockTags: Array<number | undefined> = []
+    const contract: CrowdfundReadable = {
+      getParticipantCount: async (overrides) => {
+        seenBlockTags.push(overrides?.blockTag)
+        return 1n
+      },
+      getEstimatedCappedDemand: async (overrides) => {
+        seenBlockTags.push(overrides?.blockTag)
+        return [1_000_000n, [1_000_000n, 0n, 0n]]
+      },
+      getHopStats: async (hop, overrides) => {
+        seenBlockTags.push(overrides?.blockTag)
+        return hop === 0 ? [1_000_000n, 1_000_000n, 1n, 1n] : [0n, 0n, 0n, 0n]
+      },
+    }
+
+    const result = await reconcileSnapshot({ graph, contract, checkedBlock: 110, providerName: 'primary' })
+
+    expect(result.status).toBe('passed')
+    expect(seenBlockTags).toHaveLength(5)
+    expect(seenBlockTags.every((tag) => tag === 110)).toBe(true)
+  })
+
+  it('returns pending (not failed) when historical state is unavailable', async () => {
+    const graph = buildGraph([makeEvent('SeedAdded', { seed: participant }, 100)])
+    const contract: CrowdfundReadable = {
+      getParticipantCount: async () => {
+        throw new Error('missing trie node 0xabc (path ) state 0xdef is not available')
+      },
+      getEstimatedCappedDemand: async () => [0n, [0n, 0n, 0n]],
+      getHopStats: async () => [0n, 0n, 0n, 0n],
+    }
+
+    const result = await reconcileSnapshot({ graph, contract, checkedBlock: 110, providerName: 'primary' })
+
+    expect(result.status).toBe('pending')
+    expect(result.checkedBlock).toBe(110)
+    expect(result.mismatches.join(' ')).toContain('historical state')
+  })
+
+  it('rethrows non-state read errors', async () => {
+    const graph = buildGraph([makeEvent('SeedAdded', { seed: participant }, 100)])
+    const contract: CrowdfundReadable = {
+      getParticipantCount: async () => {
+        throw new Error('connection refused')
+      },
+      getEstimatedCappedDemand: async () => [0n, [0n, 0n, 0n]],
+      getHopStats: async () => [0n, 0n, 0n, 0n],
+    }
+
+    await expect(
+      reconcileSnapshot({ graph, contract, checkedBlock: 110, providerName: 'primary' }),
+    ).rejects.toThrow('connection refused')
   })
 
   it('fails when contract reads disagree with event-derived aggregates', async () => {

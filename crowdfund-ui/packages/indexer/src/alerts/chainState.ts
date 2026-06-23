@@ -9,6 +9,8 @@ export interface ChainStateReader {
   readFinalizedAt(): Promise<number>
   /** Treasury USDC balance in 6-decimal units. */
   readTreasuryUsdcBalance(): Promise<bigint>
+  /** Releases the underlying provider so a one-shot CLI process can exit promptly. */
+  close?(): void
 }
 
 export interface ChainStateOptions {
@@ -33,6 +35,9 @@ export function createRpcChainStateReader(options: ChainStateOptions): ChainStat
     },
     async readTreasuryUsdcBalance() {
       return await usdc.balanceOf(options.treasuryAddress)
+    },
+    close() {
+      provider.destroy()
     },
   }
 }

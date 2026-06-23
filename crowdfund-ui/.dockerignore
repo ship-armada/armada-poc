@@ -1,0 +1,11 @@
+# ABOUTME: Trims the crowdfund-ui Docker build context for the indexer image.
+# ABOUTME: Only packages/indexer and packages/shared source are needed.
+**/node_modules
+**/data
+**/dist
+packages/observer
+packages/committer
+packages/admin
+**/*.test.ts
+**/vitest.config.ts
+.git

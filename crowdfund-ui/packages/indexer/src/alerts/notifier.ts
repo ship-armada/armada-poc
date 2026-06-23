@@ -3,6 +3,13 @@
 
 import type { AlertEvent, Severity } from './types.js'
 
+/**
+ * Thrown when an alert's severity has no configured channel. Distinct from a
+ * delivery failure so the evaluator can leave the alert undeduped (to deliver once
+ * a webhook is configured) rather than treating a config gap as a transient error.
+ */
+export class NoWebhookConfiguredError extends Error {}
+
 export interface Notifier {
   send(event: AlertEvent): Promise<void>
 }
@@ -38,8 +45,7 @@ export function createDiscordNotifier(config: DiscordWebhookConfig): Notifier {
     async send(event) {
       const url = config.webhooks[event.severity]
       if (!url) {
-        process.stderr.write(`[alerts] no webhook configured for severity ${event.severity}; skipping ${event.id}\n`)
-        return
+        throw new NoWebhookConfiguredError(`no webhook configured for severity ${event.severity}`)
       }
       const mention = config.mentions?.[event.severity]
       const res = await doFetch(url, {

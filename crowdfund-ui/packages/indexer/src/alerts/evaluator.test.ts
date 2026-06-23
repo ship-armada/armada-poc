@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { evaluateAndDispatch } from './evaluator.js'
-import { createInMemoryNotifier, type Notifier } from './notifier.js'
+import { createInMemoryNotifier, NoWebhookConfiguredError, type Notifier } from './notifier.js'
 import { createInMemoryAlertStateStore } from './state.js'
 import type { AlertContext, AlertEvent } from './types.js'
 
@@ -116,6 +116,30 @@ describe('evaluateAndDispatch', () => {
     } finally {
       stderrSpy.mockRestore()
     }
+  })
+
+  it('does not dedupe an alert whose severity has no webhook, so it delivers once configured', async () => {
+    const state = createInMemoryAlertStateStore()
+    const evaluate = () => [SAMPLE_A1]
+    let hasWebhook = false
+    const notifier: Notifier = {
+      async send(event) {
+        if (!hasWebhook) throw new NoWebhookConfiguredError(`no webhook configured for severity ${event.severity}`)
+      },
+    }
+
+    const first = await evaluateAndDispatch({ context: MINIMAL_CTX, notifier, stateStore: state, evaluate })
+    expect(first.undelivered.map((e) => e.id)).toEqual(['A1'])
+    expect(first.delivered).toEqual([])
+    expect(first.failed).toEqual([])
+    // Crucially: not recorded as fired, so a missing webhook never silently consumes it.
+    expect(Array.from((await state.read()).firedKeys)).toEqual([])
+
+    // Once a webhook exists, the same still-true alert delivers on the next tick.
+    hasWebhook = true
+    const second = await evaluateAndDispatch({ context: MINIMAL_CTX, notifier, stateStore: state, evaluate })
+    expect(second.delivered.map((e) => e.id)).toEqual(['A1'])
+    expect(Array.from((await state.read()).firedKeys)).toEqual(['A1'])
   })
 
   it('persists state only when delivering at least one alert', async () => {

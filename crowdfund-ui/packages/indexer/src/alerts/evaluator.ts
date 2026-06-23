@@ -3,7 +3,7 @@
 
 import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { evaluateAllRules } from './rules.js'
-import type { Notifier } from './notifier.js'
+import { NoWebhookConfiguredError, type Notifier } from './notifier.js'
 import type { AlertStateStore } from './state.js'
 import type { AlertContext, AlertEvent } from './types.js'
 
@@ -13,6 +13,9 @@ export interface EvaluatorResult {
   skipped: AlertEvent[]
   /** Candidates whose delivery threw (e.g. webhook outage); retried next tick. */
   failed: AlertEvent[]
+  /** Candidates with no configured channel for their severity; not deduped, so they
+   *  deliver once a webhook is configured rather than being silently consumed. */
+  undelivered: AlertEvent[]
 }
 
 export interface EvaluateInput {
@@ -31,6 +34,7 @@ export async function evaluateAndDispatch(input: EvaluateInput): Promise<Evaluat
   const delivered: AlertEvent[] = []
   const skipped: AlertEvent[] = []
   const failed: AlertEvent[] = []
+  const undelivered: AlertEvent[] = []
 
   for (const event of candidates) {
     if (fired.has(event.dedupeKey)) {
@@ -40,6 +44,12 @@ export async function evaluateAndDispatch(input: EvaluateInput): Promise<Evaluat
     try {
       await input.notifier.send(event)
     } catch (err) {
+      if (err instanceof NoWebhookConfiguredError) {
+        // No channel for this severity: leave the alert undeduped so it delivers once
+        // a webhook is configured, rather than being silently consumed. Not a failure.
+        undelivered.push(event)
+        continue
+      }
       // A single webhook failure must not abandon the remaining alerts nor lose the
       // dedupe state for those already delivered this tick. Record and continue.
       const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err))
@@ -54,5 +64,5 @@ export async function evaluateAndDispatch(input: EvaluateInput): Promise<Evaluat
     await input.stateStore.write({ firedKeys: fired })
   }
 
-  return { total: candidates.length, delivered, skipped, failed }
+  return { total: candidates.length, delivered, skipped, failed, undelivered }
 }

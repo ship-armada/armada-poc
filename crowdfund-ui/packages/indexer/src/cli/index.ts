@@ -250,10 +250,13 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
       chainState?.close?.()
     }
     process.stdout.write(
-      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}; failed ${result.failed.length}\n`,
+      `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}; failed ${result.failed.length}; undelivered ${result.undelivered.length}\n`,
     )
     for (const e of result.delivered) {
       process.stdout.write(`  [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)
+    }
+    for (const e of result.undelivered) {
+      process.stderr.write(`  UNDELIVERED [${e.severity} ${e.id}] ${e.title} — no webhook configured for ${e.severity}\n`)
     }
     for (const e of result.failed) {
       process.stderr.write(`  FAILED [${e.severity} ${e.id}] ${e.title} (key=${e.dedupeKey})\n`)

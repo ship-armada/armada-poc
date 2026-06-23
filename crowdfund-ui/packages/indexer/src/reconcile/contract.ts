@@ -80,17 +80,27 @@ export function deriveGraphAggregateStats(graph: CrowdfundGraph): GraphAggregate
   const perHopCappedCommitted: [bigint, bigint, bigint] = [0n, 0n, 0n]
   const perHopUniqueCommitters: [number, number, number] = [0, 0, 0]
   const perHopWhitelistCount: [number, number, number] = [0, 0, 0]
+  // Counts distinct whitelisted (address, hop) nodes to match the contract's
+  // getParticipantCount() == participantNodes.length, which counts (address, hop)
+  // pairs. A multi-hop address is one node per hop, not de-duplicated by address.
+  let participantCount = 0
 
   for (const node of graph.nodes.values()) {
     if (node.hop < 0 || node.hop > 2) continue
     perHopTotalCommitted[node.hop] += node.rawDeposited
     perHopCappedCommitted[node.hop] += node.committed
     if (node.rawDeposited > 0n) perHopUniqueCommitters[node.hop] += 1
-    if (nodeHasWhitelist(node)) perHopWhitelistCount[node.hop] += node.invitesReceived
+    // hopStats[hop].whitelistCount on-chain counts distinct whitelisted addresses
+    // at the hop; a re-invited node stacks invitesReceived but is whitelisted once,
+    // so count the node, not its invites.
+    if (nodeHasWhitelist(node)) {
+      perHopWhitelistCount[node.hop] += 1
+      participantCount += 1
+    }
   }
 
   return {
-    participantCount: graph.summaries.size,
+    participantCount,
     perHopTotalCommitted,
     perHopCappedCommitted,
     perHopUniqueCommitters,

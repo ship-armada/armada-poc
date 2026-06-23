@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Interface } from 'ethers'
-import { createIndexerApi } from './server.js'
+import { createIndexerApi, selectStaticSnapshotUrl } from './server.js'
 import { FileIndexerStore } from '../db/fileStore.js'
+import type { PublishSnapshotResult } from '../snapshots/publish.js'
 import { CROWDFUND_ABI_FRAGMENTS } from '../../../shared/src/lib/constants.js'
 import type { CursorState, IndexedRawLog } from '../types.js'
 
@@ -56,6 +57,30 @@ async function makeStore(): Promise<FileIndexerStore> {
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+
+describe('selectStaticSnapshotUrl', () => {
+  it('uses the object-storage public URL when the publisher provides one', () => {
+    const result: PublishSnapshotResult = {
+      snapshotPath: 's3://bucket/crowdfund/snapshot-100.json',
+      latestPath: 's3://bucket/crowdfund/latest.json',
+      snapshotFileName: 'snapshot-100.json',
+      snapshotUrl: 'https://cdn.example.com/crowdfund/snapshot-100.json',
+      latestUrl: 'https://cdn.example.com/crowdfund/latest.json',
+    }
+    expect(selectStaticSnapshotUrl(result)).toBe('https://cdn.example.com/crowdfund/latest.json')
+  })
+
+  it('returns null for the file publisher instead of exposing the disk path', () => {
+    // The file publisher returns only a local latestPath; /health is public, so the
+    // path must never be served — the field is null when there is no public URL.
+    const result: PublishSnapshotResult = {
+      snapshotPath: 'data/crowdfund-indexer/snapshots/snapshot-100.json',
+      latestPath: 'data/crowdfund-indexer/snapshots/latest.json',
+      snapshotFileName: 'snapshot-100.json',
+    }
+    expect(selectStaticSnapshotUrl(result)).toBeNull()
+  })
 })
 
 describe('indexer API', () => {

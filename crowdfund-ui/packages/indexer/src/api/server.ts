@@ -16,7 +16,7 @@ import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { toJsonValue } from '../snapshots/json.js'
-import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
+import { publishSnapshot, publishSnapshotToObjectStorage, type PublishSnapshotResult } from '../snapshots/publish.js'
 import type { IndexerStoreData } from '../types.js'
 
 export interface CreateIndexerApiOptions {
@@ -46,6 +46,14 @@ function readOptionalNumber(value: unknown): number | null {
   if (typeof value !== 'string' || value.length === 0) return null
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+// Only a publicly fetchable URL belongs in latestStaticSnapshotUrl, which is served
+// on the unauthenticated /health endpoint. The object-storage publisher provides a
+// real URL; the file publisher returns only a local disk path, which must not be
+// exposed — so fall back to null rather than leaking the path.
+export function selectStaticSnapshotUrl(result: PublishSnapshotResult): string | null {
+  return result.latestUrl ?? null
 }
 
 async function publishCurrentSnapshot(
@@ -96,7 +104,7 @@ async function publishCurrentSnapshot(
 
   await store.patchMeta({
     latestSnapshotHash: snapshot.metadata.snapshotHash,
-    latestStaticSnapshotUrl: result.latestUrl ?? result.latestPath,
+    latestStaticSnapshotUrl: selectStaticSnapshotUrl(result),
     ...(snapshot.metadata.reconciliation.checkedAt
       ? { lastReconciledAt: snapshot.metadata.reconciliation.checkedAt }
       : {}),

@@ -9,8 +9,8 @@ WORKDIR /app
 
 # Install only the indexer package's own dependencies. The indexer has no
 # workspace deps, so it installs standalone without the rest of the monorepo
-# (and without --legacy-peer-deps). ts-node/typescript are devDependencies and
-# are required at runtime, so do not omit dev deps here.
+# (and without --legacy-peer-deps). tsx (the TypeScript/ESM runner) is a
+# devDependency and is required at runtime, so do not omit dev deps here.
 COPY package.json ./
 RUN npm install --no-audit --no-fund
 
@@ -28,4 +28,4 @@ ENV NODE_ENV=production
 EXPOSE 3002
 
 # API server by default; the alerts container overrides this command.
-CMD ["node", "--no-warnings", "--loader", "ts-node/esm", "src/api/server.ts"]
+CMD ["node_modules/.bin/tsx", "src/api/server.ts"]

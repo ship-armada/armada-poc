@@ -1,7 +1,0 @@
-# ABOUTME: Excludes dev-only and generated files from the indexer Docker build context.
-# ABOUTME: node_modules and data must be excluded so the image installs cleanly.
-node_modules
-data
-*.test.ts
-vitest.config.ts
-.git

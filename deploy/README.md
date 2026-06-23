@@ -17,7 +17,7 @@ infra on the same host — each service runs its own commit-tagged image.
 ```bash
 # from a checkout of this repo
 SHA=$(git rev-parse --short HEAD)
-docker build -f deploy/indexer.Dockerfile -t crowdfund-indexer:$SHA crowdfund-ui/packages/indexer
+docker build -f deploy/indexer.Dockerfile -t crowdfund-indexer:$SHA crowdfund-ui
 ```
 
 ## 2. Configure (in your ops dir, e.g. /opt/armada-infra/)
@@ -56,7 +56,7 @@ reload. It proxies `https://<host>` → `127.0.0.1:3002`.
 
 ```bash
 git pull && SHA=$(git rev-parse --short HEAD)
-docker build -f deploy/indexer.Dockerfile -t crowdfund-indexer:$SHA crowdfund-ui/packages/indexer
+docker build -f deploy/indexer.Dockerfile -t crowdfund-indexer:$SHA crowdfund-ui
 # bump INDEXER_IMAGE in .env, then:
 docker compose up -d            # add --profile postgres if used
 ```

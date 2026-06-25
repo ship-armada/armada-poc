@@ -1,7 +1,7 @@
 // ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/screens/Step3Review.tsx).
 // ABOUTME: Internal default imports of @armada/ui primitives (Steps, Tooltip, WalletItem) were rewritten to named imports from the package barrel.
 
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import styles from './Step3Review.module.css'
 import { Steps } from '@armada/ui'
 import { Button } from '@armada/ui'
@@ -35,6 +35,9 @@ interface Step3ReviewProps extends ParticipateStepBarProps {
    *  replaces the single 'Hop level' / 'Committing' rows with a per-hop
    *  list + an aggregate total. */
   hopCommits?: ReadonlyArray<Step3ReviewHopCommit>
+  /** Optional note rendered above the "commitments are final" warning. Used by
+   *  the self-fill ("max out") path to explain the bundled self-invites. */
+  note?: ReactNode
 }
 
 const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
@@ -58,6 +61,7 @@ export default function Step3Review({
   steps = DEFAULT_STEPS,
   stepIndex = 3,
   hopCommits,
+  note,
 }: Step3ReviewProps) {
   const isMulti = !!hopCommits && hopCommits.length > 1
   const totalAmount = isMulti
@@ -150,6 +154,21 @@ export default function Step3Review({
             </span>
           </div>
         </div>
+
+        {note && (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid rgba(168, 130, 255, 0.4)',
+              background: 'rgba(124, 92, 255, 0.08)',
+              fontSize: 13,
+              lineHeight: 1.45,
+            }}
+          >
+            {note}
+          </div>
+        )}
 
         {/* Warning block */}
         <div className={styles.warningBlock}>

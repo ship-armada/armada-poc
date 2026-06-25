@@ -50,6 +50,20 @@ export {
 export { estimateAllocation, estimateUserArmAllocation } from './lib/allocation.js'
 export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
 
+export {
+  computeSelfFillPlan,
+  fetchSelfFillState,
+  encodeSelfFillCalls,
+} from './lib/selfFillPlan.js'
+export type {
+  SelfFillHopState,
+  SelfFillState,
+  SelfFillInvite,
+  SelfFillCommit,
+  SelfFillPlan,
+  ComputeSelfFillOptions,
+} from './lib/selfFillPlan.js'
+
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 export {
   aggregate3,
@@ -260,12 +274,14 @@ export {
   Step5Confirmation,
   ParticipateFlowModal,
   ParticipateFlowInviteSlots,
+  MaxOutBanner,
   INVITE_LINK_STEPS,
   CROWDFUND_MODAL_STEPS,
 } from './components/ParticipateFlow/index.js'
 export type {
   Step0InviteProps,
   Step2CommitHopRow,
+  Step2MaxOutOption,
   Step3ReviewHopCommit,
   Step4ApproveProps,
   Step4Transaction,

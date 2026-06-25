@@ -159,10 +159,16 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'function claimed(address) view returns (bool)',
   'function getEffectiveCap(address addr, uint8 hop) view returns (uint256)',
   'function getInvitesRemaining(address addr, uint8 hop) view returns (uint16)',
+  'function getInvitesReceived(address addr, uint8 hop) view returns (uint16)',
+  'function getCommitment(address addr, uint8 hop) view returns (uint256 committed)',
   'function usedNonces(address inviter, uint256 nonce) view returns (bool)',
   // Write functions (used by committer and admin)
   'function commit(uint8 hop, uint256 amount) external',
   'function invite(address invitee, uint8 inviterHop) external',
+  // Batches multiple of the above calls into one tx (OZ Multicall, delegatecall
+  // to self — msg.sender preserved). Used by the self-fill ("max out") flow to
+  // bundle self-invites + per-hop commits atomically.
+  'function multicall(bytes[] data) returns (bytes[] results)',
   'function commitWithInvite(address inviter, uint8 fromHop, uint256 nonce, uint256 deadline, bytes signature, uint256 amount) external',
   'function revokeInviteNonce(uint256 nonce) external',
   'function claim(address delegate) external',

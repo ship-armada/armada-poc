@@ -20,6 +20,104 @@ import type { ParticipateStepBarProps } from '../participateFlowSteps'
  *  reverts a commit below this, so each hop's commit must individually clear it. */
 const MIN_COMMIT_USD = Number(CROWDFUND_CONSTANTS.MIN_COMMIT) / 1e6
 
+/** "Max out" affordance shown above the amount entry. When provided, renders a
+ *  banner inviting the user to self-invite across all their hops and commit the
+ *  maximum in a single bundled transaction. The flow controller computes the
+ *  plan; this component only surfaces the headline + CTA. */
+export interface Step2MaxOutOption {
+  /** Theoretical ceiling reachable via self-fill (USD) — the headline number. */
+  ceilingUsd: number
+  /** New USDC the bundle would commit now (USD). */
+  newCommitUsd: number
+  /** Number of self-invites the bundle would issue. */
+  inviteCount: number
+  /** Invoked when the user clicks "Max out". */
+  onMaxOut: () => void
+  /** True while the fresh on-chain plan is being fetched. */
+  loading?: boolean
+  /** True when the wallet balance can't cover the full bundle (CTA disabled). */
+  balanceLimited?: boolean
+  /** Error from a failed activation (e.g. the on-chain plan read failed), shown
+   *  inline under the subtitle so the click isn't a silent no-op. */
+  error?: string
+}
+
+/** Banner CTA for the self-fill ("max out") path. Can render inside the commit
+ *  card (via the `maxOut` prop) or be hoisted above the card by a flow
+ *  controller (Option A spike's "banner between the X and the modal"). */
+export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
+  const { ceilingUsd, newCommitUsd, inviteCount, onMaxOut, loading, balanceLimited, error } = maxOut
+  // When the plan needs no self-invites (no slots available, or already spent),
+  // "max out" is just a one-click commit-to-cap — drop the self-invite framing.
+  const commitUsd = `$${newCommitUsd.toLocaleString()}`
+  const invitePhrase = `${inviteCount} self-invite${inviteCount === 1 ? '' : 's'}`
+  const subtitle = balanceLimited
+    ? inviteCount > 0
+      ? `Top up your wallet to bundle ${invitePhrase} and commit ${commitUsd} across all your hops.`
+      : `Top up your wallet to commit ${commitUsd} across all your hops.`
+    : inviteCount > 0
+      ? `Bundle ${invitePhrase} + per-hop commits (${commitUsd}) into one transaction.`
+      : `Commit ${commitUsd} across all your hops in one transaction.`
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        padding: '14px 16px',
+        marginBottom: 18,
+        borderRadius: 14,
+        border: '1px solid rgba(168, 130, 255, 0.45)',
+        background:
+          'linear-gradient(120deg, rgba(124, 92, 255, 0.18), rgba(124, 92, 255, 0.06))',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>
+          Commit the maximum — up to ${ceilingUsd.toLocaleString()}
+        </span>
+        <span style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.35 }}>{subtitle}</span>
+        {error && (
+          <span
+            style={{
+              fontSize: 12,
+              lineHeight: 1.35,
+              fontWeight: 600,
+              color: 'var(--semantic-color-status-warning)',
+            }}
+          >
+            {error}
+          </span>
+        )}
+      </div>
+      {(() => {
+        const button = (
+          <Button
+            variant="gradient"
+            size="md"
+            label={loading ? 'Preparing…' : 'Max out'}
+            showIcon={false}
+            disabled={loading || balanceLimited}
+            onClick={onMaxOut}
+          />
+        )
+        // Explain why the button is dead when it's disabled for balance. The
+        // Tooltip listens on its wrapper div, so hover works over the disabled
+        // button. Only wrap in the balance case so an enabled / loading button
+        // keeps its normal (no-tooltip) behavior.
+        return balanceLimited && !loading ? (
+          <Tooltip variant="centered" content="Insufficient balance">
+            {button}
+          </Tooltip>
+        ) : (
+          button
+        )
+      })()}
+    </div>
+  )
+}
+
 /** One per-hop input row for the multi-hop variant. The single-hop path is
  *  triggered when `hopRows` is omitted or length === 1 — passing a single
  *  row through is supported, but the legacy big-number input is preferred
@@ -65,6 +163,8 @@ interface Step2CommitProps extends ParticipateStepBarProps {
    *  single amount input with stacked entries. Omit (or pass length ≤ 1) to
    *  keep the legacy designer-faithful single-hop UX. */
   hopRows?: ReadonlyArray<Step2CommitHopRow>
+  /** Optional "max out" self-fill banner shown above the amount entry. */
+  maxOut?: Step2MaxOutOption
 }
 
 const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
@@ -88,6 +188,7 @@ export default function Step2Commit({
   steps = DEFAULT_STEPS,
   stepIndex = 2,
   hopRows,
+  maxOut,
 }: Step2CommitProps) {
   const isMulti = !!hopRows && hopRows.length > 1
   return isMulti ? (
@@ -99,6 +200,7 @@ export default function Step2Commit({
       showBack={showBack}
       steps={steps}
       stepIndex={stepIndex}
+      maxOut={maxOut}
     />
   ) : (
     <SingleHopVariant
@@ -114,6 +216,7 @@ export default function Step2Commit({
       showBack={showBack}
       steps={steps}
       stepIndex={stepIndex}
+      maxOut={maxOut}
     />
   )
 }
@@ -133,6 +236,7 @@ function SingleHopVariant({
   showBack,
   steps,
   stepIndex,
+  maxOut,
 }: {
   onNext: (amount: number) => void
   onBack: () => void
@@ -146,6 +250,7 @@ function SingleHopVariant({
   showBack: boolean
   steps: readonly string[]
   stepIndex: number
+  maxOut?: Step2MaxOutOption
 }) {
   // Free-form string state so the input can hold mid-decimal entries ("0.",
   // "1.") without flickering the bar / ARM allocation numbers. Parsed via
@@ -244,6 +349,7 @@ function SingleHopVariant({
       <Steps steps={[...steps]} currentStep={stepIndex} />
 
       <div className={styles.content}>
+        {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.inputBlock}>
           <div className={styles.titleBlock}>
             {hopLabel && (
@@ -395,6 +501,7 @@ function MultiHopVariant({
   showBack,
   steps,
   stepIndex,
+  maxOut,
 }: {
   hopRows: ReadonlyArray<Step2CommitHopRow>
   onNextMulti: ((amounts: Record<0 | 1 | 2, number>) => void) | undefined
@@ -403,6 +510,7 @@ function MultiHopVariant({
   showBack: boolean
   steps: readonly string[]
   stepIndex: number
+  maxOut?: Step2MaxOutOption
 }) {
   // Amounts are tracked as strings so the user can clear a field without it
   // collapsing to "0" mid-typing. Numeric conversion happens for sums + the
@@ -539,6 +647,7 @@ function MultiHopVariant({
       <Steps steps={[...steps]} currentStep={stepIndex} />
 
       <div className={styles.content}>
+        {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.multiList}>
           <div>
             <h2 className={styles.multiTitle}>How much USDC?</h2>

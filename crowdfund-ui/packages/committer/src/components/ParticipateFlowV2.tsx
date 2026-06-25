@@ -1,10 +1,10 @@
 // ABOUTME: v2 Participate flow page-level controller — wires the designer's Step1–Step5 screens to the committer's eligibility/balance/tx hooks.
 // ABOUTME: Multi-hop aware — per-hop amount entry, single approve(total) + one commit(hop, amount) per non-zero hop. Real approve + commit transactions through the controlled Step4Approve.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useDisconnect } from 'wagmi'
-import { Contract, type Signer } from 'ethers'
+import { Contract, type JsonRpcProvider, type Signer } from 'ethers'
 import {
   ParticipateFlowInviteSlots,
   Step0Invite,
@@ -15,17 +15,25 @@ import {
   Step3Review,
   Step4Approve,
   Step5Confirmation,
+  MaxOutBanner,
   hopPillDotColor,
   type CrowdfundInviteSlotSection,
   type ReceiptLogLike,
   type Step2CommitHopRow,
+  type Step2MaxOutOption,
   type Step3ReviewHopCommit,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
+  HOP_CONFIGS,
   formatUsdc,
   formatUsdcPlain,
   estimateUserArmAllocation,
+  computeSelfFillPlan,
+  fetchSelfFillState,
+  type SelfFillHopState,
+  type SelfFillPlan,
+  type SelfFillState,
   type UserHopPosition,
   type HopStatsData,
   type HopVariant,
@@ -35,6 +43,7 @@ import { getHubNetworkLabel } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { isMobileBrowser } from '@/lib/isMobileBrowser'
 import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
+import { buildSelfFillSteps } from '@/lib/selfFillSteps'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
 import type { HopPosition } from '@/hooks/useEligibility'
@@ -45,6 +54,9 @@ export interface ParticipateFlowV2Props {
   walletConnected: boolean
   walletAddress: string | null
   signer: Signer | null
+  /** Read provider for the self-fill ("max out") plan's fresh on-chain state read.
+   *  Optional — the max-out path is simply unavailable without it. */
+  provider?: JsonRpcProvider | null
   positions: HopPosition[]
   balance: bigint
   needsApproval: (amount: bigint) => boolean
@@ -102,6 +114,31 @@ function armToNumber(amount: bigint): number {
 const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
+// Build a SelfFillState snapshot from the event-derived eligibility positions.
+// Used only for the instant max-out *preview* (banner headline). The executed
+// bundle is recomputed from a fresh on-chain read in `activateMaxOut`, so any
+// graph staleness here can't produce an invalid plan.
+//
+// Remaining outgoing invites are recomputed as `invitesReceived * maxInvites -
+// invitesUsed` (the contract's own formula) rather than read from the graph's
+// `invitesAvailable`: that derived field is set at invite time and does NOT
+// re-scale when a later invite raises `invitesReceived`, so it under-reports the
+// budget after a node is invited a second time to the same hop.
+function positionsToSelfFillState(positions: HopPosition[]): SelfFillState {
+  const mk = (hop: number): SelfFillHopState => {
+    const p = positions.find((q) => q.hop === hop)
+    if (!p) return { invitesReceived: 0, invitesRemaining: 0, committed: 0n }
+    const maxInvites = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop].maxInvites : 0
+    const budget = p.invitesReceived * maxInvites
+    return {
+      invitesReceived: p.invitesReceived,
+      invitesRemaining: Math.max(0, budget - p.invitesUsed),
+      committed: p.committed,
+    }
+  }
+  return [mk(0), mk(1), mk(2)]
+}
+
 type AmountsByHop = Record<0 | 1 | 2, number>
 const EMPTY_AMOUNTS: AmountsByHop = { 0: 0, 1: 0, 2: 0 }
 
@@ -109,6 +146,7 @@ export function ParticipateFlowV2({
   walletConnected,
   walletAddress,
   signer,
+  provider,
   positions,
   balance,
   needsApproval,
@@ -143,6 +181,15 @@ export function ParticipateFlowV2({
   // Defensive guard error when the user confirms with no signer/amount — shown
   // as a Step4 error row without involving the pipeline store.
   const [attemptError, setAttemptError] = useState<string | null>(null)
+  // Self-fill ("max out") state. `maxMode` swaps the review/pipeline over to the
+  // bundled self-invite + commit plan; `maxPlan` is the authoritative plan from
+  // a fresh on-chain read, set when the user activates the banner.
+  const [maxMode, setMaxMode] = useState(false)
+  const [maxPlan, setMaxPlan] = useState<SelfFillPlan | null>(null)
+  const [maxLoading, setMaxLoading] = useState(false)
+  // Activation error (plan read failed / nothing to maximize / not ready),
+  // surfaced inline on the banner so clicking "Max out" is never a silent no-op.
+  const [maxError, setMaxError] = useState<string | null>(null)
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
@@ -312,26 +359,129 @@ export function ParticipateFlowV2({
     )
   }, [renderablePositions, baselineCommittedByHopUsdc, hopStats, baselineCappedDemand, saleSize])
 
+  // ── Self-fill ("max out") ────────────────────────────────────────
+  // Instant preview plan from the event-derived positions — drives the banner
+  // headline. Recomputed authoritatively from a fresh on-chain read on activate.
+  const previewPlan = useMemo<SelfFillPlan>(
+    () => computeSelfFillPlan(positionsToSelfFillState(renderablePositions), { balance }),
+    [renderablePositions, balance],
+  )
+  // Gate on `provider`: without a read provider the on-chain plan can't be
+  // fetched, so don't offer a button that would no-op.
+  const showMaxOut =
+    windowOpen && !!provider && previewPlan.eligible && previewPlan.newCommitUsdc > 0n
+
+  // Fetch the authoritative plan from chain, then switch the flow into max mode
+  // and jump to review. The fresh read is the source of truth for the bundle.
+  const activateMaxOut = async () => {
+    if (!crowdfundAddress || !walletAddress || !provider) {
+      setMaxError('Wallet not ready — reconnect and retry.')
+      return
+    }
+    setMaxLoading(true)
+    setMaxError(null)
+    try {
+      const state = await fetchSelfFillState(provider, crowdfundAddress, walletAddress)
+      const plan = computeSelfFillPlan(state, { balance })
+      if (!plan.eligible || (plan.newCommitUsdc === 0n && plan.totalInvites === 0)) {
+        setMaxError('Nothing left to maximize — you may already be at your ceiling.')
+        return
+      }
+      setMaxPlan(plan)
+      setMaxMode(true)
+      setStep('review')
+    } catch (err) {
+      setMaxError(
+        err instanceof Error ? err.message : 'Could not prepare the max-out bundle.',
+      )
+    } finally {
+      setMaxLoading(false)
+    }
+  }
+
+  const maxOutOption: Step2MaxOutOption | undefined = showMaxOut
+    ? {
+        ceilingUsd: usdcToNumber(previewPlan.projectedCeilingUsdc),
+        newCommitUsd: usdcToNumber(previewPlan.newCommitUsdc),
+        inviteCount: previewPlan.totalInvites,
+        onMaxOut: () => void activateMaxOut(),
+        loading: maxLoading,
+        balanceLimited: previewPlan.balanceLimited,
+        error: maxError ?? undefined,
+      }
+    : undefined
+
+  // New USDC the active max plan commits (number form, for display).
+  const maxNewCommitUsd = maxPlan ? usdcToNumber(maxPlan.newCommitUsdc) : 0
+
+  // Projected ARM across every hop the max plan tops up to its cap.
+  const maxEstimatedArm = useMemo(() => {
+    if (!maxPlan) return 0
+    const projected: UserHopPosition[] = ([0, 1, 2] as const)
+      .map((h) => ({
+        hop: h,
+        committed: maxPlan.projectedCapByHop[h],
+        effectiveCap: maxPlan.projectedCapByHop[h],
+      }))
+      .filter((p) => p.committed > 0n)
+    return armToNumber(
+      estimateUserArmAllocation(
+        projected,
+        hopStats,
+        baselineCappedDemand + maxPlan.newCommitUsdc,
+        saleSize,
+      ),
+    )
+  }, [maxPlan, hopStats, baselineCappedDemand, saleSize])
+
   // The confirmation screen, shared by the normal post-commit path and the
   // "already fully committed" shortcut. `maxedOut` swaps in the no-new-commit
   // copy and shows the ARM reserved for the existing position.
-  const renderConfirmation = () => (
-    <Step5Confirmation
-      onViewPosition={onGoToMyPosition}
-      onInvite={() => {
-        if (inviteSlotSections && inviteSlotSections.length > 0) {
-          setStep('invites')
-        } else {
-          onGoToMyPosition()
-        }
-      }}
-      amount={totalNewAmountUsd}
-      estimatedArm={isFullyCommitted ? committedArmEstimate : estimatedArm}
-      isAdditionalCommit={isAdditionalCommit}
-      totalCommittedUsdc={initialCommittedTotal + totalNewAmountUsd}
-      maxedOut={isFullyCommitted}
-    />
-  )
+  const renderConfirmation = () => {
+    const inMax = maxMode && !!maxPlan
+    // Prefer the snapshot captured at run() time. It survives a modal
+    // close/reopen across the tx, where the local amount / maxPlan state does
+    // not. Absent (e.g. the `isFullyCommitted` shortcut never runs a pipeline),
+    // fall back to live local state.
+    const snap = pipeline.state.confirmation
+    return (
+      // Banner hoisted ABOVE the card (between the X and the modal), consistent
+      // with the commit step. When commit headroom still remains (fully
+      // committed at current caps but self-fill can raise them, or a partial
+      // commit), it offers Max out here instead of a dead-end; gated by
+      // `showMaxOut`, so it hides once there's nothing left to maximize.
+      <div style={{ width: '100%' }}>
+        {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
+        <Step5Confirmation
+          onViewPosition={onGoToMyPosition}
+          onInvite={() => {
+            if (inviteSlotSections && inviteSlotSections.length > 0) {
+              setStep('invites')
+            } else {
+              onGoToMyPosition()
+            }
+          }}
+          amount={snap?.amount ?? (inMax ? maxNewCommitUsd : totalNewAmountUsd)}
+          estimatedArm={
+            snap?.estimatedArm ??
+            (inMax
+              ? Math.round(maxEstimatedArm)
+              : isFullyCommitted
+                ? committedArmEstimate
+                : estimatedArm)
+          }
+          isAdditionalCommit={snap?.isAdditionalCommit ?? isAdditionalCommit}
+          totalCommittedUsdc={
+            snap?.totalCommittedUsdc ??
+            (inMax
+              ? usdcToNumber(maxPlan!.totalCommittedAfterUsdc)
+              : initialCommittedTotal + totalNewAmountUsd)
+          }
+          maxedOut={snap?.maxedOut ?? (isFullyCommitted && !inMax)}
+        />
+      </div>
+    )
+  }
 
   // Build the approve(total) + N×commit(hop, amount) tx list. The approve covers
   // the sum so the user signs one allowance bump even on a multi-hop commit;
@@ -377,7 +527,7 @@ export function ParticipateFlowV2({
   // Start (or retry) the pipeline. A defensive guard surfaces an actionable
   // error row instead of dropping into Step4's neutral state with nothing sent.
   const startPipeline = async () => {
-    if (!crowdfundAddress || !usdcAddress || totalNewAmountUsd <= 0) {
+    if (!crowdfundAddress || !usdcAddress || (!maxMode && totalNewAmountUsd <= 0)) {
       setAttemptError('Wallet not ready — reconnect and retry.')
       return
     }
@@ -399,11 +549,53 @@ export function ParticipateFlowV2({
       pipeline.retry()
       return
     }
+    // Max mode: run the bundled approve + multicall (self-invites + commits).
+    if (maxMode && maxPlan) {
+      if (!walletAddress) {
+        setAttemptError('Wallet not ready — reconnect and retry.')
+        return
+      }
+      pipeline.run(
+        buildSelfFillSteps({
+          signer: activeSigner,
+          selfAddress: walletAddress,
+          plan: maxPlan,
+          usdcAddress,
+          crowdfundAddress,
+          needsApproval,
+          refreshAllowance,
+          onReceiptLogs,
+        }),
+        {
+          onSuccess: () => { void refreshAllowance() },
+          // Snapshot the confirmation values so a closed-then-resumed max-out
+          // still renders the right summary (local maxMode/maxPlan are lost on
+          // remount; the pipeline + this snapshot survive).
+          confirmation: {
+            amount: maxNewCommitUsd,
+            estimatedArm: Math.round(maxEstimatedArm),
+            isAdditionalCommit,
+            totalCommittedUsdc: usdcToNumber(maxPlan.totalCommittedAfterUsdc),
+            maxedOut: false,
+          },
+        },
+      )
+      return
+    }
     pipeline.run(buildSteps(activeSigner), {
       // Refresh balance + allowance so the navbar badge and any subsequent open
       // see the post-commit numbers and don't skip approval on stale allowance.
       onSuccess: () => {
         void refreshAllowance()
+      },
+      // Same snapshot for the normal commit path (amounts are local state, lost
+      // on a close/reopen across the tx).
+      confirmation: {
+        amount: totalNewAmountUsd,
+        estimatedArm: Math.round(estimatedArm),
+        isAdditionalCommit,
+        totalCommittedUsdc: initialCommittedTotal + totalNewAmountUsd,
+        maxedOut: false,
       },
     })
   }
@@ -487,10 +679,16 @@ export function ParticipateFlowV2({
     }
     // Already at the cap on every eligible hop — nothing to enter. Skip straight
     // to the confirmation screen so the stepper, "What's next", and Invite
-    // options render (instead of a dead-end "fully committed" message).
+    // options render (instead of a dead-end "fully committed" message). When
+    // self-fill headroom remains, that confirmation surfaces the Max out banner.
     if (isFullyCommitted) {
       return renderConfirmation()
     }
+    // The "commit the maximum" banner is hoisted ABOVE the Step2Commit card
+    // (rather than inside it) so it reads as a banner between the modal's close
+    // (X) and the card. ParticipateFlowV2's output lands in the modal's `.step`
+    // slot, directly under the close button.
+    let commitCard: ReactNode = null
     if (isMulti) {
       // Multi-hop: stacked per-hop input rows. Single-hop falls through to
       // the legacy big-number variant below for an unchanged UX.
@@ -501,7 +699,7 @@ export function ParticipateFlowV2({
         maxAmount: usdcToNumber(p.effectiveCap),
         existingCommittedUsdc: initialCommittedByHop[p.hop],
       }))
-      return (
+      commitCard = (
         <Step2Commit
           hopRows={hopRows}
           availableBalance={usdcToNumber(balance)}
@@ -513,33 +711,98 @@ export function ParticipateFlowV2({
           onBack={() => (showSplash ? setStep('splash') : onGoToNetwork())}
         />
       )
+    } else if (primaryPosition) {
+      // Single-hop path — identical to pre-multi-hop UX.
+      const effectiveCapUsd = usdcToNumber(primaryPosition.effectiveCap)
+      const availableBalance = usdcToNumber(balance)
+      commitCard = (
+        <Step2Commit
+          onNext={(amt) => {
+            setAmounts({
+              0: primaryPosition.hop === 0 ? amt : 0,
+              1: primaryPosition.hop === 1 ? amt : 0,
+              2: primaryPosition.hop === 2 ? amt : 0,
+            })
+            setStep('review')
+          }}
+          onBack={() => (showSplash ? setStep('splash') : onGoToNetwork())}
+          maxAmount={effectiveCapUsd}
+          availableBalance={availableBalance}
+          maxArm={effectiveCapUsd}
+          existingCommittedUsdc={initialCommittedByHop[primaryPosition.hop]}
+          hopLabel={HOP_LABELS[primaryPosition.hop]}
+          hopColor={hopPillDotColor(HOP_DOT_KEYS[primaryPosition.hop])}
+        />
+      )
     }
-    // Single-hop path — identical to pre-multi-hop UX.
-    if (!primaryPosition) return null
-    const effectiveCapUsd = usdcToNumber(primaryPosition.effectiveCap)
-    const availableBalance = usdcToNumber(balance)
+    if (!commitCard) return null
     return (
-      <Step2Commit
-        onNext={(amt) => {
-          setAmounts({
-            0: primaryPosition.hop === 0 ? amt : 0,
-            1: primaryPosition.hop === 1 ? amt : 0,
-            2: primaryPosition.hop === 2 ? amt : 0,
-          })
-          setStep('review')
-        }}
-        onBack={() => (showSplash ? setStep('splash') : onGoToNetwork())}
-        maxAmount={effectiveCapUsd}
-        availableBalance={availableBalance}
-        maxArm={effectiveCapUsd}
-        existingCommittedUsdc={initialCommittedByHop[primaryPosition.hop]}
-        hopLabel={HOP_LABELS[primaryPosition.hop]}
-        hopColor={hopPillDotColor(HOP_DOT_KEYS[primaryPosition.hop])}
-      />
+      <div style={{ width: '100%' }}>
+        {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
+        {commitCard}
+      </div>
     )
   }
 
   if (step === 'review') {
+    // Max mode: review the bundled self-invite + commit plan.
+    if (maxMode && maxPlan) {
+      const hopCommits: Step3ReviewHopCommit[] = maxPlan.commits.map((c) => ({
+        hop: c.hop,
+        hopLabel: HOP_LABELS[c.hop],
+        hopColor: hopPillDotColor(HOP_DOT_KEYS[c.hop]),
+        amount: usdcToNumber(c.amount),
+      }))
+      const note = (
+        <>
+          {maxPlan.totalInvites > 0 ? (
+            <>
+              <strong>Self-invite bundle.</strong> Issues {maxPlan.totalInvites}{' '}
+              self-invite{maxPlan.totalInvites === 1 ? '' : 's'} to unlock your full
+              ceiling, then commits at every hop — all in one transaction. This spends
+              your own invite slots on yourself, so they won't be available to invite
+              others.
+            </>
+          ) : (
+            <>
+              <strong>Commit the maximum.</strong> Commits your full cap at every hop
+              — all in one transaction.
+            </>
+          )}
+          {maxPlan.balanceLimited && (
+            <div
+              style={{
+                marginTop: 'var(--primitives-spacing-2)',
+                fontWeight: 'var(--primitives-fontWeight-medium)',
+                color: 'var(--semantic-color-status-warning)',
+              }}
+            >
+              Your wallet is short ${usdcToNumber(maxPlan.shortfallUsdc).toLocaleString()} for
+              the full bundle — top up to continue.
+            </div>
+          )}
+        </>
+      )
+      return (
+        <Step3Review
+          onNext={() => {
+            setStep('approve')
+            void startPipeline()
+          }}
+          onBack={() => {
+            setMaxMode(false)
+            setMaxPlan(null)
+            setStep('commit')
+          }}
+          disabled={submitting || maxPlan.balanceLimited}
+          hopCommits={hopCommits.length > 1 ? hopCommits : undefined}
+          hopLevel={hopCommits.length === 1 ? HOP_LABELS[maxPlan.commits[0]!.hop] : undefined}
+          amount={maxNewCommitUsd}
+          estimatedArm={Math.round(maxEstimatedArm)}
+          note={note}
+        />
+      )
+    }
     if (isMulti) {
       const hopCommits: Step3ReviewHopCommit[] = renderablePositions
         .filter((p) => (amounts[p.hop] ?? 0) > 0)
@@ -587,7 +850,7 @@ export function ParticipateFlowV2({
       : pipeline.state.rows
     return (
       <Step4Approve
-        amount={totalNewAmountUsd}
+        amount={maxMode ? maxNewCommitUsd : totalNewAmountUsd}
         txs={rows.length ? rows : undefined}
         onDone={() => setStep('confirmation')}
         onBack={() => {

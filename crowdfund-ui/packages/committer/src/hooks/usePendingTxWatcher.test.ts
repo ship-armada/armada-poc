@@ -39,7 +39,7 @@ describe('usePendingTxWatcher', () => {
 
     await waitFor(() => expect(result.current[0]?.status).toBe('confirmed'))
     expect(loadPendingTxs()).toEqual([])
-    expect(onResolved).toHaveBeenCalledWith(HASH, 'confirmed')
+    expect(onResolved).toHaveBeenCalledWith(HASH, 'confirmed', 'Commit participation')
   })
 
   it('marks a reverted tx as failed and clears it', async () => {

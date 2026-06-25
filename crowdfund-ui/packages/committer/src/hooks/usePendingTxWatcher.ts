@@ -26,7 +26,7 @@ const RESCAN_MS = 4000
 export function usePendingTxWatcher(
   provider: JsonRpcProvider | null,
   chainId: number,
-  onResolved?: (txHash: string, status: WatchedTxStatus) => void,
+  onResolved?: (txHash: string, status: WatchedTxStatus, label: string) => void,
 ): WatchedTx[] {
   const [watched, setWatched] = useState<WatchedTx[]>([])
   // Hashes already being awaited, so a re-scan doesn't double-watch.
@@ -66,7 +66,7 @@ export function usePendingTxWatcher(
               prev.map((w) => (w.txHash === t.txHash ? { ...w, status } : w)),
             )
             removePendingTx(t.txHash)
-            onResolvedRef.current?.(t.txHash, status)
+            onResolvedRef.current?.(t.txHash, status, t.label)
           })
           .catch(() => {
             // Transient RPC failure — drop the watch guard so a later scan retries.

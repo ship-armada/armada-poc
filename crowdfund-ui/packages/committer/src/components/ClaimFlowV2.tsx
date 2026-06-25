@@ -341,6 +341,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         })
         setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }])
       },
+      // Race the direct read provider against the wallet's tx.wait() so the done
+      // screen lands as soon as the chain confirms, instead of waiting on the
+      // wallet provider's slower poll (which lagged the header chip by seconds).
+      provider,
     )
     runningRef.current = false
     setSubmitting(false)

@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { JsonRpcProvider } from 'ethers'
-import { loadPendingTxs, removePendingTx } from '@/lib/pendingTx'
+import { loadPendingTxs, removePendingTx, PENDING_TX_EVENT } from '@/lib/pendingTx'
 
 export type WatchedTxStatus = 'pending' | 'confirmed' | 'failed'
 
@@ -77,9 +77,14 @@ export function usePendingTxWatcher(
 
     scan()
     const id = setInterval(scan, RESCAN_MS)
+    // Re-scan immediately when a pending tx is saved/removed, so a tx whose
+    // lifetime is shorter than the poll interval (fast local-chain confirms)
+    // still surfaces in the chip instead of slipping between scans.
+    window.addEventListener(PENDING_TX_EVENT, scan)
     return () => {
       cancelled = true
       clearInterval(id)
+      window.removeEventListener(PENDING_TX_EVENT, scan)
     }
   }, [provider, chainId])
 

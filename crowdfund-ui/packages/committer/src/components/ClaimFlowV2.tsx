@@ -23,6 +23,8 @@ import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
+import { setClaimInFlight, getClaimInFlight, clearClaimInFlight } from '@/lib/claimInFlight'
+import { TX_WAIT_TIMEOUT_MS } from '@/lib/txWait'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { isMobileBrowser } from '@/lib/isMobileBrowser'
 import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
@@ -137,13 +139,72 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // Warn before a refresh/tab-close drops the user while a claim is broadcasting.
   useBeforeUnloadGuard(submitting)
 
-  const [step, setStep] = useState<FlowStep>('review')
-  const [txs, setTxs] = useState<Step4Transaction[] | null>(null)
+  // Reconstruct in-progress state from a persisted in-flight claim marker, so
+  // navigating away and back lands on "Submitting…" (or the eventual outcome)
+  // rather than resetting to the Review form — which looks un-submitted and
+  // invites a duplicate claim. The marker is keyed by wallet address.
+  const [step, setStep] = useState<FlowStep>(() =>
+    getClaimInFlight(walletAddress) ? 'submit' : 'review',
+  )
+  const [txs, setTxs] = useState<Step4Transaction[] | null>(() => {
+    const marker = getClaimInFlight(walletAddress)
+    if (!marker) return null
+    const opLabel = marker.mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
+    return [
+      { label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash: marker.hash, explorerUrl: getExplorerUrl() },
+    ]
+  })
 
   // Decide claim mode based on contract state. Phase 2 (cancelled) → refund.
   // Phase 0 with refundMode (cappedDemand < min) → refund. Otherwise → ARM.
   // This mirrors v1 ClaimTab's mode derivation.
   const mode: ClaimMode = phase === 2 || refundMode ? 'refund' : 'arm'
+
+  // Watch a reconstructed in-flight claim (from the marker) to its outcome.
+  // Pure observation via the read provider — it never re-sends, so there's no
+  // double-claim risk. Runs once per mount (the page is keyed by wallet address).
+  useEffect(() => {
+    const marker = getClaimInFlight(walletAddress)
+    if (!marker || !provider) return
+    let watchCancelled = false
+    const opLabel = marker.mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
+    const explorerUrl = getExplorerUrl()
+    provider
+      .waitForTransaction(marker.hash, 1, TX_WAIT_TIMEOUT_MS)
+      .then((receipt) => {
+        if (watchCancelled) return
+        if (receipt && receipt.status === 1) {
+          onReceiptLogs?.(receipt.logs as unknown as readonly ReceiptLogLike[])
+          void refreshAllowance?.()
+          clearClaimInFlight()
+          setJustClaimed(true)
+          setStep('done')
+          return
+        }
+        // status 0 = reverted; null = our wait window elapsed (still pending).
+        // Surface an actionable error state instead of a perpetual "Submitting…";
+        // the marker stays until Back/Retry acknowledges it.
+        const reverted = !!receipt && receipt.status === 0
+        setTxs([
+          {
+            label: opLabel,
+            status: 'error',
+            errorMessage: reverted
+              ? 'Transaction reverted.'
+              : 'Still pending — it may still confirm. Check the explorer or retry.',
+            hash: marker.hash,
+            explorerUrl,
+          },
+        ])
+      })
+      .catch(() => {
+        // Transient RPC failure — leave the submitting state; a later mount re-watches.
+      })
+    return () => {
+      watchCancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, walletAddress])
 
   // Default delegate to the connected wallet address when it becomes available
   // (self-delegate), unless the user has already edited the field.
@@ -339,6 +400,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           label: opLabel,
           sentAt: Date.now(),
         })
+        // Page-owned marker so a remount mid-flight reconstructs this tx's state.
+        setClaimInFlight({ hash, mode, address: startAddress ?? '', sentAt: Date.now() })
         setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }])
       },
       // Race the direct read provider against the wallet's tx.wait() so the done
@@ -355,6 +418,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
     if (result.outcome === 'success') {
       setTxs([{ label: opLabel, status: 'done', hash: result.hash, explorerUrl }])
+      clearClaimInFlight()
       setJustClaimed(true)
       // Fast-path the Allocated / RefundClaimed receipt log into the event store
       // and refresh balances.
@@ -725,10 +789,12 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           txs={txs ?? undefined}
           onDone={() => setStep('done')}
           onBack={() => {
+            clearClaimInFlight()
             setTxs(null)
             setStep('review')
           }}
           onRetry={() => {
+            clearClaimInFlight()
             setTxs(null)
             void runClaim()
           }}

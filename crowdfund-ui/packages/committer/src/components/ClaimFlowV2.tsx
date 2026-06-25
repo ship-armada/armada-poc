@@ -22,10 +22,11 @@ import {
 import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
+import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { isMobileBrowser } from '@/lib/isMobileBrowser'
 import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
-import { getExplorerUrl } from '@/config/network'
+import { getExplorerUrl, getHubChainId } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
 import styles from './ClaimFlowV2.module.css'
@@ -327,11 +328,26 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         }
         return mode === 'arm' ? crowdfund.claim(delegateAddress!) : crowdfund.claimRefund()
       },
-      (hash) =>
-        setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }]),
+      (hash) => {
+        // Persist the broadcast so the header tx chip (via usePendingTxWatcher)
+        // surfaces it across pages, and the watcher refreshes balances + resolves
+        // it even if the user navigates away or reloads before it confirms.
+        savePendingTx({
+          chainId: getHubChainId(),
+          address: startAddress ?? '',
+          txHash: hash,
+          label: opLabel,
+          sentAt: Date.now(),
+        })
+        setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }])
+      },
     )
     runningRef.current = false
     setSubmitting(false)
+
+    // A resolved tx no longer needs watching; a timed-out one may still confirm,
+    // so it stays persisted for the post-timeout watcher. Mirrors the commit pipeline.
+    if (result.hash && result.outcome !== 'timeout') removePendingTx(result.hash)
 
     if (result.outcome === 'success') {
       setTxs([{ label: opLabel, status: 'done', hash: result.hash, explorerUrl }])

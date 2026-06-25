@@ -398,7 +398,19 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       pipeline.retry()
       return
     }
-    pipeline.run(buildSteps(activeSigner))
+    pipeline.run(buildSteps(activeSigner), {
+      // Snapshot the confirmation values so a closed-then-resumed redemption
+      // still renders the right summary (the local `amount` state is lost on
+      // remount; the pipeline + this snapshot survive). This is a first commit
+      // at the target hop, so it is never an "additional" commit.
+      confirmation: {
+        amount,
+        estimatedArm: Math.round(estimateArmForAmount(amount)),
+        isAdditionalCommit: false,
+        totalCommittedUsdc: amount,
+        maxedOut: false,
+      },
+    })
   }
 
   // ── Step renderers ─────────────────────────────────────────────────────
@@ -406,13 +418,20 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // The confirmation screen, shared by the normal post-commit path and the
   // "already fully committed" shortcut. `maxedOut` swaps in the no-new-commit
   // copy and shows the ARM reserved for the existing position.
-  const renderConfirmation = (maxedOut: boolean) => (
+  const renderConfirmation = (maxedOut: boolean) => {
+    // On the post-commit path, prefer the snapshot captured at run() time — it
+    // survives a close/reopen across the tx, where the local `amount` does not.
+    // The maxed-out shortcut never runs a pipeline, so it always uses live state.
+    const snap = maxedOut ? undefined : pipeline.state.confirmation
+    return (
     <Step5Confirmation
       steps={MODAL_STEPS}
       stepIndex={4}
       stepsStatus="confirmed"
-      amount={maxedOut ? 0 : amount}
-      estimatedArm={maxedOut ? committedArmEstimate : Math.round(estimateArmForAmount(amount))}
+      amount={maxedOut ? 0 : snap?.amount ?? amount}
+      estimatedArm={
+        maxedOut ? committedArmEstimate : snap?.estimatedArm ?? Math.round(estimateArmForAmount(amount))
+      }
       totalCommittedUsdc={maxedOut ? usdcToNumber(existingCommittedUsdc) : undefined}
       maxedOut={maxedOut}
       showViewPositionButton
@@ -428,7 +447,8 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         }
       }}
     />
-  )
+    )
+  }
 
   const renderCurrentStep = () => {
     if (deployError) {

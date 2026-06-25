@@ -809,6 +809,7 @@ export function App() {
           walletConnected={wallet.connected}
           walletAddress={wallet.address}
           signer={wallet.signer}
+          provider={provider}
           positions={eligibility.positions}
           balance={allowance.balance}
           needsApproval={allowance.needsApproval}

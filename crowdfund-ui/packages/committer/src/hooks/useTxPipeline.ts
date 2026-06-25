@@ -34,9 +34,27 @@ export type PipelinePhase =
   | 'aborted'
   | 'rejected'
 
+/**
+ * Snapshot of the confirmation-screen values, captured when a pipeline starts.
+ * A modal flow's "what did I just commit" state lives in component-local state
+ * that is lost when the modal is closed and reopened — but the pipeline (and
+ * this snapshot) survive in the store. On re-attach, the confirmation reads this
+ * instead of the reset-to-zero local state, so a backgrounded-then-resumed
+ * commit shows the right numbers.
+ */
+export interface PipelineConfirmation {
+  amount: number
+  estimatedArm: number
+  isAdditionalCommit: boolean
+  totalCommittedUsdc: number
+  maxedOut?: boolean
+}
+
 export interface PipelineState {
   rows: Step4Transaction[]
   phase: PipelinePhase
+  /** Confirmation snapshot captured at run() time (see PipelineConfirmation). */
+  confirmation?: PipelineConfirmation
 }
 
 const IDLE_STATE: PipelineState = { rows: [], phase: 'idle' }
@@ -177,11 +195,13 @@ export interface RunTxPipelineParams {
   address: string
   steps: TxStep[]
   onSuccess?: () => void | Promise<void>
+  /** Confirmation snapshot to surface if the flow re-attaches after a close. */
+  confirmation?: PipelineConfirmation
 }
 
 /** Start a pipeline for `address`. No-op if one is already running or paused (single-flight). */
 export function runTxPipeline(store: Store, params: RunTxPipelineParams): void {
-  const { address, steps, onSuccess } = params
+  const { address, steps, onSuccess, confirmation } = params
   const existing = records.get(address)
   const phase = readState(store, address).phase
   if (existing && (existing.running || phase === 'running' || phase === 'paused')) return
@@ -194,7 +214,7 @@ export function runTxPipeline(store: Store, params: RunTxPipelineParams): void {
     aborted: false,
     onSuccess,
   })
-  writeState(store, address, { rows: initialRows(steps), phase: 'running' })
+  writeState(store, address, { rows: initialRows(steps), phase: 'running', confirmation })
   void drive(store, address)
 }
 
@@ -317,7 +337,10 @@ export function getPipelineState(store: Store, address: string | null): Pipeline
 
 export interface UseTxPipelineResult {
   state: PipelineState
-  run: (steps: TxStep[], opts?: { onSuccess?: () => void | Promise<void> }) => void
+  run: (
+    steps: TxStep[],
+    opts?: { onSuccess?: () => void | Promise<void>; confirmation?: PipelineConfirmation },
+  ) => void
   retry: () => void
   reset: () => void
 }
@@ -339,9 +362,17 @@ export function useTxPipeline(address: string | null): UseTxPipelineResult {
   }, [store, address])
 
   const run = useCallback(
-    (steps: TxStep[], opts?: { onSuccess?: () => void | Promise<void> }) => {
+    (
+      steps: TxStep[],
+      opts?: { onSuccess?: () => void | Promise<void>; confirmation?: PipelineConfirmation },
+    ) => {
       if (!address) return
-      runTxPipeline(store, { address, steps, onSuccess: opts?.onSuccess })
+      runTxPipeline(store, {
+        address,
+        steps,
+        onSuccess: opts?.onSuccess,
+        confirmation: opts?.confirmation,
+      })
     },
     [store, address],
   )

@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useStore, useAtomValue } from 'jotai'
+import { toast } from 'sonner'
 import { type JsonRpcProvider } from 'ethers'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
@@ -414,10 +415,31 @@ export function App() {
   // mid-session — via the fallback provider. On resolution, refresh balances and
   // flip the matching pipeline row to done/reverted (post-timeout watcher).
   const onWatchedTxResolved = useCallback(
-    (txHash: string, status: 'pending' | 'confirmed' | 'failed') => {
+    (txHash: string, status: 'pending' | 'confirmed' | 'failed', label: string) => {
       void allowance.refresh()
       if (status !== 'pending') {
         applyWatchedTxResult(jotaiStore, txHash, status === 'confirmed' ? 'confirmed' : 'reverted')
+      }
+      // Surface a reverted tx cross-page. The header chip only renders the
+      // in-flight (pending) state and clears on any resolution, so without this
+      // a failure that lands while the user is on another page (or after they
+      // closed the flow) is otherwise silent. Covers every flow that persists a
+      // pending tx (commit, invite, claim).
+      if (status === 'failed') {
+        const explorerUrl = getExplorerUrl()
+        toast.error(`${label} failed`, {
+          description: 'The transaction reverted on-chain.',
+          duration: 10_000,
+          ...(explorerUrl
+            ? {
+                action: {
+                  label: 'View',
+                  onClick: () =>
+                    window.open(`${explorerUrl}/tx/${txHash}`, '_blank', 'noopener,noreferrer'),
+                },
+              }
+            : {}),
+        })
       }
     },
     [allowance, jotaiStore],

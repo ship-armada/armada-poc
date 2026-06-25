@@ -8,6 +8,8 @@ import { createElement, type ReactElement, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { JsonRpcProvider } from 'ethers'
 import { ClaimFlowV2, type ClaimFlowV2Props } from './ClaimFlowV2'
+import { clearClaimInFlight } from '@/lib/claimInFlight'
+import { clearPendingTxs } from '@/lib/pendingTx'
 
 // ClaimFlowV2 reads via react-query — each render gets a fresh client so query
 // caches don't leak across tests.
@@ -66,6 +68,10 @@ const baseProps: ClaimFlowV2Props = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Isolate sessionStorage between tests so an in-flight claim marker (or pending
+  // tx) from one test doesn't make the next reconstruct an in-progress state.
+  clearClaimInFlight()
+  clearPendingTxs()
   claimedFor = () => Promise.resolve(false)
   allocationFor = () => Promise.resolve([0n, 0n])
   claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => Promise.resolve({ status: 1, logs: [] }) })

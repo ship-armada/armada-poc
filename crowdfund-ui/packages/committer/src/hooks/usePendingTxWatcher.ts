@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { JsonRpcProvider } from 'ethers'
-import { loadPendingTxs, removePendingTx } from '@/lib/pendingTx'
+import { loadPendingTxs, removePendingTx, PENDING_TX_EVENT } from '@/lib/pendingTx'
 
 export type WatchedTxStatus = 'pending' | 'confirmed' | 'failed'
 
@@ -26,7 +26,7 @@ const RESCAN_MS = 4000
 export function usePendingTxWatcher(
   provider: JsonRpcProvider | null,
   chainId: number,
-  onResolved?: (txHash: string, status: WatchedTxStatus) => void,
+  onResolved?: (txHash: string, status: WatchedTxStatus, label: string) => void,
 ): WatchedTx[] {
   const [watched, setWatched] = useState<WatchedTx[]>([])
   // Hashes already being awaited, so a re-scan doesn't double-watch.
@@ -66,7 +66,7 @@ export function usePendingTxWatcher(
               prev.map((w) => (w.txHash === t.txHash ? { ...w, status } : w)),
             )
             removePendingTx(t.txHash)
-            onResolvedRef.current?.(t.txHash, status)
+            onResolvedRef.current?.(t.txHash, status, t.label)
           })
           .catch(() => {
             // Transient RPC failure — drop the watch guard so a later scan retries.
@@ -77,9 +77,14 @@ export function usePendingTxWatcher(
 
     scan()
     const id = setInterval(scan, RESCAN_MS)
+    // Re-scan immediately when a pending tx is saved/removed, so a tx whose
+    // lifetime is shorter than the poll interval (fast local-chain confirms)
+    // still surfaces in the chip instead of slipping between scans.
+    window.addEventListener(PENDING_TX_EVENT, scan)
     return () => {
       cancelled = true
       clearInterval(id)
+      window.removeEventListener(PENDING_TX_EVENT, scan)
     }
   }, [provider, chainId])
 

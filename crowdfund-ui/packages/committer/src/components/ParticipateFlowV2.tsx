@@ -20,20 +20,13 @@ import {
   type CrowdfundInviteSlotSection,
   type ReceiptLogLike,
   type Step2CommitHopRow,
-  type Step2MaxOutOption,
   type Step3ReviewHopCommit,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
-  HOP_CONFIGS,
   formatUsdc,
   formatUsdcPlain,
   estimateUserArmAllocation,
-  computeSelfFillPlan,
-  fetchSelfFillState,
-  type SelfFillHopState,
-  type SelfFillPlan,
-  type SelfFillState,
   type UserHopPosition,
   type HopStatsData,
   type HopVariant,
@@ -43,8 +36,8 @@ import { getHubNetworkLabel } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { isMobileBrowser } from '@/lib/isMobileBrowser'
 import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
-import { buildSelfFillSteps } from '@/lib/selfFillSteps'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
+import { useSelfFill } from '@/hooks/useSelfFill'
 import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
 import type { HopPosition } from '@/hooks/useEligibility'
 
@@ -114,31 +107,6 @@ function armToNumber(amount: bigint): number {
 const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
-// Build a SelfFillState snapshot from the event-derived eligibility positions.
-// Used only for the instant max-out *preview* (banner headline). The executed
-// bundle is recomputed from a fresh on-chain read in `activateMaxOut`, so any
-// graph staleness here can't produce an invalid plan.
-//
-// Remaining outgoing invites are recomputed as `invitesReceived * maxInvites -
-// invitesUsed` (the contract's own formula) rather than read from the graph's
-// `invitesAvailable`: that derived field is set at invite time and does NOT
-// re-scale when a later invite raises `invitesReceived`, so it under-reports the
-// budget after a node is invited a second time to the same hop.
-function positionsToSelfFillState(positions: HopPosition[]): SelfFillState {
-  const mk = (hop: number): SelfFillHopState => {
-    const p = positions.find((q) => q.hop === hop)
-    if (!p) return { invitesReceived: 0, invitesRemaining: 0, committed: 0n }
-    const maxInvites = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop].maxInvites : 0
-    const budget = p.invitesReceived * maxInvites
-    return {
-      invitesReceived: p.invitesReceived,
-      invitesRemaining: Math.max(0, budget - p.invitesUsed),
-      committed: p.committed,
-    }
-  }
-  return [mk(0), mk(1), mk(2)]
-}
-
 type AmountsByHop = Record<0 | 1 | 2, number>
 const EMPTY_AMOUNTS: AmountsByHop = { 0: 0, 1: 0, 2: 0 }
 
@@ -181,15 +149,6 @@ export function ParticipateFlowV2({
   // Defensive guard error when the user confirms with no signer/amount — shown
   // as a Step4 error row without involving the pipeline store.
   const [attemptError, setAttemptError] = useState<string | null>(null)
-  // Self-fill ("max out") state. `maxMode` swaps the review/pipeline over to the
-  // bundled self-invite + commit plan; `maxPlan` is the authoritative plan from
-  // a fresh on-chain read, set when the user activates the banner.
-  const [maxMode, setMaxMode] = useState(false)
-  const [maxPlan, setMaxPlan] = useState<SelfFillPlan | null>(null)
-  const [maxLoading, setMaxLoading] = useState(false)
-  // Activation error (plan read failed / nothing to maximize / not ready),
-  // surfaced inline on the banner so clicking "Max out" is never a silent no-op.
-  const [maxError, setMaxError] = useState<string | null>(null)
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
@@ -360,79 +319,34 @@ export function ParticipateFlowV2({
   }, [renderablePositions, baselineCommittedByHopUsdc, hopStats, baselineCappedDemand, saleSize])
 
   // ── Self-fill ("max out") ────────────────────────────────────────
-  // Instant preview plan from the event-derived positions — drives the banner
-  // headline. Recomputed authoritatively from a fresh on-chain read on activate.
-  const previewPlan = useMemo<SelfFillPlan>(
-    () => computeSelfFillPlan(positionsToSelfFillState(renderablePositions), { balance }),
-    [renderablePositions, balance],
-  )
-  // Gate on `provider`: without a read provider the on-chain plan can't be
-  // fetched, so don't offer a button that would no-op.
-  const showMaxOut =
-    windowOpen && !!provider && previewPlan.eligible && previewPlan.newCommitUsdc > 0n
-
-  // Fetch the authoritative plan from chain, then switch the flow into max mode
-  // and jump to review. The fresh read is the source of truth for the bundle.
-  const activateMaxOut = async () => {
-    if (!crowdfundAddress || !walletAddress || !provider) {
-      setMaxError('Wallet not ready — reconnect and retry.')
-      return
-    }
-    setMaxLoading(true)
-    setMaxError(null)
-    try {
-      const state = await fetchSelfFillState(provider, crowdfundAddress, walletAddress)
-      const plan = computeSelfFillPlan(state, { balance })
-      if (!plan.eligible || (plan.newCommitUsdc === 0n && plan.totalInvites === 0)) {
-        setMaxError('Nothing left to maximize — you may already be at your ceiling.')
-        return
-      }
-      setMaxPlan(plan)
-      setMaxMode(true)
-      setStep('review')
-    } catch (err) {
-      setMaxError(
-        err instanceof Error ? err.message : 'Could not prepare the max-out bundle.',
-      )
-    } finally {
-      setMaxLoading(false)
-    }
-  }
-
-  const maxOutOption: Step2MaxOutOption | undefined = showMaxOut
-    ? {
-        ceilingUsd: usdcToNumber(previewPlan.projectedCeilingUsdc),
-        newCommitUsd: usdcToNumber(previewPlan.newCommitUsdc),
-        inviteCount: previewPlan.totalInvites,
-        onMaxOut: () => void activateMaxOut(),
-        loading: maxLoading,
-        balanceLimited: previewPlan.balanceLimited,
-        error: maxError ?? undefined,
-      }
-    : undefined
-
-  // New USDC the active max plan commits (number form, for display).
-  const maxNewCommitUsd = maxPlan ? usdcToNumber(maxPlan.newCommitUsdc) : 0
-
-  // Projected ARM across every hop the max plan tops up to its cap.
-  const maxEstimatedArm = useMemo(() => {
-    if (!maxPlan) return 0
-    const projected: UserHopPosition[] = ([0, 1, 2] as const)
-      .map((h) => ({
-        hop: h,
-        committed: maxPlan.projectedCapByHop[h],
-        effectiveCap: maxPlan.projectedCapByHop[h],
-      }))
-      .filter((p) => p.committed > 0n)
-    return armToNumber(
-      estimateUserArmAllocation(
-        projected,
-        hopStats,
-        baselineCappedDemand + maxPlan.newCommitUsdc,
-        saleSize,
-      ),
-    )
-  }, [maxPlan, hopStats, baselineCappedDemand, saleSize])
+  // Shared controller: preview plan + banner option, fresh-read activation
+  // (advances to review via onActivated), and the bundled-pipeline helpers.
+  const {
+    maxOutOption,
+    maxMode,
+    maxPlan,
+    maxNewCommitUsd,
+    maxEstimatedArm,
+    resetMax,
+    buildMaxSteps,
+    maxConfirmation,
+  } = useSelfFill({
+    positions: renderablePositions,
+    balance,
+    provider,
+    walletAddress,
+    crowdfundAddress,
+    usdcAddress,
+    hopStats,
+    cappedDemand: baselineCappedDemand,
+    saleSize,
+    needsApproval,
+    refreshAllowance,
+    onReceiptLogs,
+    windowOpen,
+    isAdditionalCommit,
+    onActivated: () => setStep('review'),
+  })
 
   // The confirmation screen, shared by the normal post-commit path and the
   // "already fully committed" shortcut. `maxedOut` swaps in the no-new-commit
@@ -555,31 +469,13 @@ export function ParticipateFlowV2({
         setAttemptError('Wallet not ready — reconnect and retry.')
         return
       }
-      pipeline.run(
-        buildSelfFillSteps({
-          signer: activeSigner,
-          selfAddress: walletAddress,
-          plan: maxPlan,
-          usdcAddress,
-          crowdfundAddress,
-          needsApproval,
-          refreshAllowance,
-          onReceiptLogs,
-        }),
-        {
-          onSuccess: () => { void refreshAllowance() },
-          // Snapshot the confirmation values so a closed-then-resumed max-out
-          // still renders the right summary (local maxMode/maxPlan are lost on
-          // remount; the pipeline + this snapshot survive).
-          confirmation: {
-            amount: maxNewCommitUsd,
-            estimatedArm: Math.round(maxEstimatedArm),
-            isAdditionalCommit,
-            totalCommittedUsdc: usdcToNumber(maxPlan.totalCommittedAfterUsdc),
-            maxedOut: false,
-          },
-        },
-      )
+      pipeline.run(buildMaxSteps(activeSigner), {
+        onSuccess: () => { void refreshAllowance() },
+        // Snapshot the confirmation values so a closed-then-resumed max-out
+        // still renders the right summary (local maxMode/maxPlan are lost on
+        // remount; the pipeline + this snapshot survive).
+        confirmation: maxConfirmation,
+      })
       return
     }
     pipeline.run(buildSteps(activeSigner), {
@@ -790,8 +686,7 @@ export function ParticipateFlowV2({
             void startPipeline()
           }}
           onBack={() => {
-            setMaxMode(false)
-            setMaxPlan(null)
+            resetMax()
             setStep('commit')
           }}
           disabled={submitting || maxPlan.balanceLimited}

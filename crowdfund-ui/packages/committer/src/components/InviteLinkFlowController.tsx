@@ -12,7 +12,9 @@ import {
   Step3Review,
   Step4Approve,
   Step5Confirmation,
+  MaxOutBanner,
   INVITE_LINK_STEPS,
+  type Step3ReviewHopCommit,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
@@ -47,6 +49,7 @@ import { useWallet } from '@/hooks/useWallet'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
+import { useSelfFill } from '@/hooks/useSelfFill'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
 import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
@@ -366,12 +369,49 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     return steps
   }
 
+  // Self-fill ("max out") — offered on the confirmation once the link is
+  // redeemed. By then the invitee is a whitelisted hop participant, so the
+  // shared controller's plain invite+commit bundle applies (no commitWithInvite
+  // in the bundle). Only the SEED→HOP-1 case has downward headroom; the hook's
+  // `showMaxOut` gate handles the rest.
+  const windowOpen =
+    contractState.armLoaded &&
+    contractState.blockTimestamp >= contractState.windowStart &&
+    contractState.blockTimestamp <= contractState.windowEnd
+  const {
+    maxOutOption,
+    maxMode,
+    maxPlan,
+    maxNewCommitUsd,
+    maxEstimatedArm,
+    resetMax,
+    buildMaxSteps,
+    maxConfirmation,
+  } = useSelfFill({
+    positions: eligibility.positions,
+    balance,
+    provider,
+    walletAddress: lowerAddress,
+    crowdfundAddress: deployment?.contracts.crowdfund ?? null,
+    usdcAddress: deployment?.contracts.usdc ?? null,
+    hopStats: contractState.hopStats,
+    cappedDemand: contractState.cappedDemand,
+    saleSize: contractState.saleSize,
+    needsApproval: allowanceState.needsApproval,
+    refreshAllowance: allowanceState.refresh,
+    onReceiptLogs: ingestReceiptLogs,
+    windowOpen,
+    isAdditionalCommit: true,
+    onActivated: () => transitionTo('review'),
+  })
+
   // Start (or retry) the pipeline. A defensive guard surfaces an actionable
   // error row instead of dropping into Step4's neutral state with nothing sent.
   const startPipeline = async () => {
     // Distinguish the blockers so the error is actionable (and tells us which
-    // one actually fired) rather than a lumped "wallet not ready".
-    if (amount <= 0) {
+    // one actually fired) rather than a lumped "wallet not ready". Max mode runs
+    // the prebuilt bundle and doesn't use the redemption `amount`.
+    if (!maxMode && amount <= 0) {
       setAttemptError('Enter an amount to commit.')
       return
     }
@@ -396,6 +436,12 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     setAttemptError(null)
     if (phase === 'error') {
       pipeline.retry()
+      return
+    }
+    // Max mode: run the bundled self-invite + commit (the link was already
+    // redeemed, so this is plain invite/commit — no commitWithInvite).
+    if (maxMode && maxPlan) {
+      pipeline.run(buildMaxSteps(activeSigner), { confirmation: maxConfirmation })
       return
     }
     pipeline.run(buildSteps(activeSigner), {
@@ -424,29 +470,35 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     // The maxed-out shortcut never runs a pipeline, so it always uses live state.
     const snap = maxedOut ? undefined : pipeline.state.confirmation
     return (
-    <Step5Confirmation
-      steps={MODAL_STEPS}
-      stepIndex={4}
-      stepsStatus="confirmed"
-      amount={maxedOut ? 0 : snap?.amount ?? amount}
-      estimatedArm={
-        maxedOut ? committedArmEstimate : snap?.estimatedArm ?? Math.round(estimateArmForAmount(amount))
-      }
-      totalCommittedUsdc={maxedOut ? usdcToNumber(existingCommittedUsdc) : undefined}
-      maxedOut={maxedOut}
-      showViewPositionButton
-      onViewPosition={() => navigate('/?view=myposition')}
-      onInvite={() => {
-        // Match ParticipateFlowV2: stay in the flow's slot, swap to the
-        // invite-slots step. Falls back to navigating to MyPosition only if
-        // `useInviteSlots` couldn't derive a live config.
-        if (!inviteSlots.empty) {
-          transitionTo('invites')
-        } else {
-          navigate('/?view=myposition')
-        }
-      }}
-    />
+      // Banner hoisted above the card, consistent with the commit flow. By this
+      // step the link is redeemed, so "Max out" offers to extend the invitee's
+      // ceiling (self-invite + commit) when headroom remains.
+      <div style={{ width: '100%' }}>
+        {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
+        <Step5Confirmation
+          steps={MODAL_STEPS}
+          stepIndex={4}
+          stepsStatus="confirmed"
+          amount={maxedOut ? 0 : snap?.amount ?? amount}
+          estimatedArm={
+            maxedOut ? committedArmEstimate : snap?.estimatedArm ?? Math.round(estimateArmForAmount(amount))
+          }
+          totalCommittedUsdc={maxedOut ? usdcToNumber(existingCommittedUsdc) : undefined}
+          maxedOut={maxedOut}
+          showViewPositionButton
+          onViewPosition={() => navigate('/?view=myposition')}
+          onInvite={() => {
+            // Match ParticipateFlowV2: stay in the flow's slot, swap to the
+            // invite-slots step. Falls back to navigating to MyPosition only if
+            // `useInviteSlots` couldn't derive a live config.
+            if (!inviteSlots.empty) {
+              transitionTo('invites')
+            } else {
+              navigate('/?view=myposition')
+            }
+          }}
+        />
+      </div>
     )
   }
 
@@ -522,6 +574,56 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
       }
 
       case 'review': {
+        // Max mode: review the bundled self-invite + commit plan.
+        if (maxMode && maxPlan) {
+          const hopCommits: Step3ReviewHopCommit[] = maxPlan.commits.map((c) => ({
+            hop: c.hop,
+            hopLabel: hopLabel(c.hop),
+            hopColor: hopPillDotColor(c.hop === 0 ? 'seed' : c.hop === 1 ? 'hop-1' : 'hop-2'),
+            amount: usdcToNumber(c.amount),
+          }))
+          const note = (
+            <>
+              <strong>Self-invite bundle.</strong> Issues {maxPlan.totalInvites}{' '}
+              self-invite{maxPlan.totalInvites === 1 ? '' : 's'} to unlock your full
+              ceiling, then commits at every hop — all in one transaction. This spends
+              your own invite slots on yourself, so they won't be available to invite
+              others.
+              {maxPlan.balanceLimited && (
+                <div
+                  style={{
+                    marginTop: 'var(--primitives-spacing-2)',
+                    fontWeight: 'var(--primitives-fontWeight-medium)',
+                    color: 'var(--semantic-color-status-warning)',
+                  }}
+                >
+                  Your wallet is short ${usdcToNumber(maxPlan.shortfallUsdc).toLocaleString()} for
+                  the full bundle — top up to continue.
+                </div>
+              )}
+            </>
+          )
+          return (
+            <Step3Review
+              steps={MODAL_STEPS}
+              stepIndex={3}
+              disabled={submitting || maxPlan.balanceLimited}
+              hopCommits={hopCommits.length > 1 ? hopCommits : undefined}
+              hopLevel={hopCommits.length === 1 ? hopLabel(maxPlan.commits[0]!.hop) : undefined}
+              amount={maxNewCommitUsd}
+              estimatedArm={Math.round(maxEstimatedArm)}
+              note={note}
+              onBack={() => {
+                resetMax()
+                transitionTo('confirmation')
+              }}
+              onNext={() => {
+                transitionTo('approve')
+                void startPipeline()
+              }}
+            />
+          )
+        }
         const estimatedArm = Math.round(estimateArmForAmount(amount))
         return (
           <Step3Review

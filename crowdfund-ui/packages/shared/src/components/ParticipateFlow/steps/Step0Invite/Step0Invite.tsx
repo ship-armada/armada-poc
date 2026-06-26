@@ -18,6 +18,10 @@ export interface Step0InviteProps {
    *  {@link formatTimeLeft} helper so the splash agrees with the stats banner
    *  and progress tag: whole days until under one day, then hours/minutes. */
   secondsLeft?: number
+  /** Seconds until *this invite link* expires (Path 1 landing only). Rendered
+   *  as a secondary line under the headline, distinct from the campaign
+   *  `secondsLeft` countdown in the meta row. Omit in the modal variants. */
+  inviteExpiresInSeconds?: number
   onJoin: () => void
   /** Path 2/3 modal: wallet already connected — hide pre-connect eyebrow. */
   hideConnectEyebrow?: boolean
@@ -29,6 +33,7 @@ export interface Step0InviteProps {
 export default function Step0Invite({
   hopVariant = 'hop-1',
   secondsLeft = 3 * 86400,
+  inviteExpiresInSeconds,
   onJoin,
   hideConnectEyebrow = false,
   variant = 'default',
@@ -50,6 +55,15 @@ export default function Step0Invite({
   // window has closed (formatTimeLeft returns '' at <= 0).
   const timeLeftLabel =
     secondsLeft <= 0 ? 'ENDS TODAY' : `${formatTimeLeft(secondsLeft).toUpperCase()} LEFT`
+
+  // The invite link's own expiry — a secondary line under the headline, separate
+  // from the campaign "TIME LEFT" meta label. Only the Path 1 landing passes it.
+  const inviteExpiryLabel =
+    inviteExpiresInSeconds === undefined
+      ? null
+      : inviteExpiresInSeconds <= 0
+        ? 'This invite has expired'
+        : `This invite expires in ${formatTimeLeft(inviteExpiresInSeconds)}`
 
   return (
     <div
@@ -90,6 +104,7 @@ export default function Step0Invite({
               <p className={styles.eyebrow}>CONNECT YOUR WALLET</p>
             )}
             <h1 className={styles.headline}>You are invited to join the fleet</h1>
+            {inviteExpiryLabel && <p className={styles.inviteExpiry}>{inviteExpiryLabel}</p>}
           </div>
           <div className={[styles.footer, isLanding && styles.footerLanding].filter(Boolean).join(' ')}>
             <HopPill

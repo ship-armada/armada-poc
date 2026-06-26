@@ -99,6 +99,16 @@
   color: var(--semantic-color-text-primary);
 }
 
+/* Invite link's own expiry (Path 1 landing only) — secondary line under the
+   headline, distinct from the campaign "TIME LEFT" meta label. */
+.inviteExpiry {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+}
+
 .footer {
   display: flex;
   justify-content: space-between;

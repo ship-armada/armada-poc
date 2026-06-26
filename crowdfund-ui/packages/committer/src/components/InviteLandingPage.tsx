@@ -72,21 +72,26 @@ export function InviteLandingPage() {
   )
 
   const secondsLeft = useMemo(() => {
-    // 1) Explicit `?days=N` URL override always wins (used for screenshots /
-    //    showcase) — N whole days expressed in seconds. 2) Live on-chain
-    //    `windowEnd` minus the chain block timestamp once the pre-check resolved
-    //    (same clock as the main crowdfund page). 3) Fall back to a small
-    //    constant while loading so the card doesn't render half-blank on first
-    //    paint. Step0Invite floors/ceils nothing — the shared formatTimeLeft
-    //    helper handles the day-vs-hour formatting uniformly.
-    const raw = searchParams.get('days')
-    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
-    if (Number.isFinite(parsed) && parsed > 0) return parsed * 86400
+    // Live on-chain `windowEnd` minus the chain block timestamp once the
+    // pre-check resolved (same clock as the main crowdfund page). Falls back to
+    // a small constant while loading so the card doesn't render half-blank on
+    // first paint. Step0Invite floors/ceils nothing — the shared formatTimeLeft
+    // helper handles the day-vs-hour formatting uniformly.
     if (windowEndSec !== null && blockTimestampSec !== null) {
       return Math.max(0, windowEndSec - blockTimestampSec)
     }
     return DEFAULT_DAYS_LEFT * 86400
-  }, [searchParams, windowEndSec, blockTimestampSec])
+  }, [windowEndSec, blockTimestampSec])
+
+  // Seconds until *this invite link* expires, anchored on the chain block time
+  // fetched during pre-check (falling back to wall-clock before it resolves) so
+  // it agrees with the campaign countdown above. Surfaced on the landing card so
+  // the invitee sees the link's own deadline, not just the campaign close.
+  const inviteSecondsLeft = useMemo(() => {
+    if (!inviteData) return undefined
+    const nowSec = blockTimestampSec ?? Math.floor(Date.now() / 1000)
+    return Math.max(0, inviteData.deadline - nowSec)
+  }, [inviteData, blockTimestampSec])
 
   // Pre-redemption nonce + slot + deadline validation. Mirrors the legacy
   // InviteLinkRedemption useEffect — surfaces the same four failure modes so
@@ -314,6 +319,7 @@ export function InviteLandingPage() {
             variant="landing"
             hopVariant={hopVariant}
             secondsLeft={secondsLeft}
+            inviteExpiresInSeconds={inviteSecondsLeft}
             onJoin={() => setJoined(true)}
           />
         )}

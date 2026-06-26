@@ -2,7 +2,6 @@
 // ABOUTME: Pure functions for invite link lifecycle — no React dependency.
 
 import { tryGetChecksumAddress } from '@armada/crowdfund-shared'
-import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 
 /** Max hop index in the URL — matches `HOP_CONFIGS.length - 1`. Anything
  * outside this band can't represent a real inviter so we reject pre-contract. */
@@ -170,25 +169,6 @@ export async function updateInviteLinkStatus(
   })
 }
 
-/**
- * All invite nonces an inviter has consumed on-chain — both redeemed links /
- * direct invites (`Invited`) and revocations (`InviteNonceRevoked`). Used to
- * seed `getNextNonce` from chain truth so a fresh device or cleared storage
- * doesn't re-sign an already-consumed nonce.
- */
-export function inviterOnChainNonces(events: CrowdfundEvent[], inviter: string): number[] {
-  const lower = inviter.toLowerCase()
-  const out: number[] = []
-  for (const e of events) {
-    if (e.type === 'Invited' && String(e.args.inviter).toLowerCase() === lower) {
-      out.push(Number(e.args.nonce))
-    } else if (e.type === 'InviteNonceRevoked' && String(e.args.inviter).toLowerCase() === lower) {
-      out.push(Number(e.args.nonce))
-    }
-  }
-  return out
-}
-
 /** Block timestamp for signing, falling back to wall-clock when state hasn't
  *  hydrated yet (blockTimestamp === 0) — never sign a 1970-relative deadline. */
 export function effectiveTimestamp(blockTimestamp: number): number {
@@ -219,13 +199,35 @@ export function classifyStoredLinks(
 }
 
 /**
- * Next invite nonce for an inviter: one past the max of the local IndexedDB
- * history AND any nonces already consumed on-chain (passed in via
- * `onChainNonces`). Starts at 1.
+ * Random invite nonce in the JS safe-integer range. The contract treats `nonce`
+ * as an arbitrary per-inviter `uint256` key, so any unused value is valid. A
+ * large random space makes cross-device collisions (two devices each minting a
+ * pending link) astronomically unlikely WITHOUT any on-chain coordination —
+ * pending links touch no chain state, so a sequential "max + 1" scheme can't see
+ * another device's outstanding links. Staying under 2^53 keeps `nonce` a plain
+ * `number` end to end (signing, URL, IndexedDB key). Never returns 0 — that's
+ * reserved on-chain for direct (non-link) invites.
  */
-export async function getNextNonce(inviter: string, onChainNonces: number[] = []): Promise<number> {
-  const links = await getStoredInviteLinks(inviter)
-  const localMax = links.length > 0 ? Math.max(...links.map((l) => l.nonce)) : 0
-  const onChainMax = onChainNonces.length > 0 ? Math.max(...onChainNonces) : 0
-  return Math.max(localMax, onChainMax) + 1
+export function randomSafeNonce(): number {
+  const buf = new Uint32Array(2)
+  crypto.getRandomValues(buf)
+  // 53-bit value: 21 high bits from buf[0], 32 low bits from buf[1].
+  const n = (buf[0] % 0x20_0000) * 0x1_0000_0000 + buf[1]
+  return n === 0 ? 1 : n
+}
+
+/**
+ * Allocate a fresh invite nonce: pick at random and confirm it is free on-chain
+ * via `isUsedOnChain` (which should read the contract's `usedNonces` mapping —
+ * authoritative for both redeemed and revoked nonces, immune to indexer lag).
+ * Re-rolls on the (astronomically rare) clash with an already-consumed value.
+ */
+export async function pickInviteNonce(
+  isUsedOnChain: (nonce: number) => Promise<boolean>,
+): Promise<number> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = randomSafeNonce()
+    if (!(await isUsedOnChain(candidate))) return candidate
+  }
+  throw new Error('Could not allocate a free invite nonce')
 }

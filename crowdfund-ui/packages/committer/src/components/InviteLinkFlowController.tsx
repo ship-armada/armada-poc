@@ -687,18 +687,20 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     }
   }
 
-  // The 'invites' step (post-commit invite-slot list) can exceed the
-  // 480×500 footprint when the user has many slots. Apply the override
-  // classes only for that step so the other steps keep their fixed sizing.
+  // Steps that can exceed the fixed 480×500 footprint opt into a grow + scroll
+  // override so `.step`'s overflow: hidden doesn't clip their content: the
+  // post-commit 'invites' slot list (many slots), and the 'confirmation' step
+  // once the Max out banner is hoisted above the 500px card.
   const isInvitesStep = renderStep === 'invites'
+  const isExpandedStep = isInvitesStep || (renderStep === 'confirmation' && !!maxOutOption)
   return (
     <div
-      className={[inlineStyles.slot, isInvitesStep && inlineStyles.slotInvites]
+      className={[inlineStyles.slot, isExpandedStep && inlineStyles.slotInvites]
         .filter(Boolean)
         .join(' ')}
     >
       <div
-        className={[inlineStyles.step, isInvitesStep && inlineStyles.stepInvites]
+        className={[inlineStyles.step, isExpandedStep && inlineStyles.stepInvites]
           .filter(Boolean)
           .join(' ')}
       >

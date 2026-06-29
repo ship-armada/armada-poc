@@ -1,11 +1,17 @@
 // ABOUTME: Fetches a named deployment instance from the armada-deployments repo into deployments/instances/.
-// ABOUTME: Usage: npm run fetch-deployment -- <instance> [--ref <git-ref>]
+// ABOUTME: Usage: npm run fetch-deployment -- <instance> [--network testnet|mainnet] [--ref <git-ref>]
 
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const REPO_BASE = 'https://raw.githubusercontent.com/ship-armada/armada-deployments'
 const DEFAULT_REF = 'main'
+// Top-level folder in the armada-deployments repo. Defaults to `testnet` so the
+// existing `npm run fetch-deployment -- <instance>` flow is unchanged; mainnet
+// instances live under `mainnet/` and are reached with `--network mainnet`.
+const DEFAULT_NETWORK = 'testnet'
+const NETWORKS = ['testnet', 'mainnet'] as const
+type Network = (typeof NETWORKS)[number]
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 const OUT_ROOT = path.join(PROJECT_ROOT, 'deployments', 'instances')
 
@@ -19,15 +25,23 @@ interface DeploymentManifest {
   chains: Record<string, { chainId: number; role: string; artifacts: string[] }>
 }
 
-function parseArgs(argv: string[]): { instance: string; ref: string } {
+function parseArgs(argv: string[]): { instance: string; ref: string; network: Network } {
   const positional: string[] = []
   let ref = DEFAULT_REF
+  let network: Network = DEFAULT_NETWORK
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--ref') {
       const next = argv[i + 1]
       if (!next) throw new Error('--ref requires a value (commit SHA, tag, or branch name)')
       ref = next
+      i++
+    } else if (arg === '--network') {
+      const next = argv[i + 1]
+      if (!next || !NETWORKS.includes(next as Network)) {
+        throw new Error(`--network requires one of: ${NETWORKS.join(', ')}`)
+      }
+      network = next as Network
       i++
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown flag: ${arg}`)
@@ -38,7 +52,7 @@ function parseArgs(argv: string[]): { instance: string; ref: string } {
   if (positional.length !== 1) {
     throw new Error('Expected exactly one positional argument: <instance>')
   }
-  return { instance: positional[0], ref }
+  return { instance: positional[0], ref, network }
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -58,8 +72,8 @@ async function fetchText(url: string): Promise<string> {
 }
 
 async function main() {
-  const { instance, ref } = parseArgs(process.argv.slice(2))
-  const base = `${REPO_BASE}/${ref}/testnet/${instance}`
+  const { instance, ref, network } = parseArgs(process.argv.slice(2))
+  const base = `${REPO_BASE}/${ref}/${network}/${instance}`
   const outDir = path.join(OUT_ROOT, instance)
 
   console.log(`Fetching deployment instance '${instance}' from ${base}`)

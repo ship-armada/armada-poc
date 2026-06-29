@@ -3,8 +3,8 @@
 
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { http, fallback } from 'wagmi'
-import { sepolia, hardhat } from 'wagmi/chains'
-import { getHubRpcUrls, getHubChainId, isLocalMode } from './network'
+import { mainnet, sepolia, hardhat } from 'wagmi/chains'
+import { getHubRpcUrls, getHubChainId, getNetworkMode } from './network'
 
 // Define the local Anvil chain — uses wagmi's hardhat chain as a base,
 // but overrides the RPC URL to match our local config.
@@ -18,7 +18,10 @@ const anvilChain = {
 } as const
 
 const hubChainId = getHubChainId()
-const chains = isLocalMode() ? [anvilChain] : [sepolia]
+// Register only the active hub chain so the wallet prompts to the right network.
+const mode = getNetworkMode()
+const hubChain = mode === 'local' ? anvilChain : mode === 'mainnet' ? mainnet : sepolia
+const chains = [hubChain]
 const rpcUrls = getHubRpcUrls()
 
 // In dev, fall back to a placeholder project id so the app boots without a

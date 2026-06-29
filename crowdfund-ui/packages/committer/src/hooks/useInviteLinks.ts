@@ -18,7 +18,7 @@ import {
   effectiveTimestamp,
   classifyStoredLinks,
 } from '@/lib/inviteLinks'
-import { getHubChainId } from '@/config/network'
+import { getHubChainId, getTxConfirmations } from '@/config/network'
 import { TX_WAIT_TIMEOUT_MS, isUserRejection } from '@/lib/txWait'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 
@@ -170,7 +170,7 @@ export function useInviteLinks(
     try {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
       const tx = await crowdfund.revokeInviteNonce(nonce)
-      const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
+      const receipt = await tx.wait(getTxConfirmations(), TX_WAIT_TIMEOUT_MS)
       if (!receipt || receipt.status === 0) return false
       await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked')
       await refreshLinks()

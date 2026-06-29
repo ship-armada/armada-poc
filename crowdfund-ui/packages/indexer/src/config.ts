@@ -46,6 +46,19 @@ export function readNumberEnv(name: string, fallback: number): number {
   return parsed
 }
 
+/** Like readNumberEnv but with no fallback — for values where a wrong default is
+ *  dangerous (e.g. CROWDFUND_CHAIN_ID: silently defaulting to a testnet chain id
+ *  would let a mainnet box index/label itself as the wrong network). */
+export function readRequiredNumberEnv(name: string): number {
+  const raw = process.env[name]
+  if (!raw) throw new Error(`Missing required environment variable: ${name}`)
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid numeric environment variable: ${name}`)
+  }
+  return parsed
+}
+
 export function readBooleanEnv(name: string, fallback: boolean): boolean {
   const value = process.env[name]
   if (!value) return fallback
@@ -69,7 +82,7 @@ export function getInitialCursor(): CursorState {
 
 export function loadIndexerConfig(): IndexerConfig {
   return {
-    chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
+    chainId: readRequiredNumberEnv('CROWDFUND_CHAIN_ID'),
     contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
     deployBlock: readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0),
     primaryRpcUrl: process.env.CROWDFUND_PRIMARY_RPC_URL ?? null,

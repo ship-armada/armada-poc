@@ -4,7 +4,7 @@
 import { sendTransaction, waitForTransactionReceipt } from 'wagmi/actions'
 import type { Contract, TransactionResponse } from 'ethers'
 import type { ReceiptLogLike } from '@armada/crowdfund-shared'
-import { getHubChainId } from '@/config/network'
+import { getHubChainId, getTxConfirmations } from '@/config/network'
 import { TX_WAIT_TIMEOUT_MS } from './txWait'
 
 /** viem raises a named `WaitForTransactionReceiptTimeoutError` on receipt timeout. */
@@ -43,11 +43,11 @@ export async function submitTxViaWagmi(
 
   const response = {
     hash,
-    wait: async (_confirmations?: number, timeoutMs: number = TX_WAIT_TIMEOUT_MS) => {
+    wait: async (confirmations: number = getTxConfirmations(), timeoutMs: number = TX_WAIT_TIMEOUT_MS) => {
       try {
         const receipt = await waitForTransactionReceipt(wagmiConfig, {
           hash,
-          confirmations: 1,
+          confirmations,
           timeout: timeoutMs,
         })
         return {

@@ -1,4 +1,4 @@
-// ABOUTME: Startup environment validation for the committer.
+// ABOUTME: Startup environment validation for the admin app.
 // ABOUTME: Hard-fails production builds that are missing critical VITE_* config.
 
 /** The subset of the Vite env we validate. All fields optional so the pure
@@ -6,8 +6,6 @@
 export interface EnvRecord {
   PROD?: boolean
   VITE_NETWORK?: string
-  VITE_WALLETCONNECT_PROJECT_ID?: string
-  VITE_CROWDFUND_INDEXER_URL?: string
   VITE_CROWDFUND_PROFILE?: string
   VITE_DEPLOYMENT_INSTANCE?: string
 }
@@ -23,8 +21,13 @@ function missing(value?: string): boolean {
  *
  * Enforces for any non-local PROD build (sepolia, mainnet, or an unset network —
  * unset is itself a misconfiguration we want to surface loudly rather than let
- * silently fall back to a local/localhost config). Dev builds always pass: they
- * default to local and tolerate absent vars.
+ * silently fall back). Dev builds always pass: they default to local and tolerate
+ * absent vars.
+ *
+ * The admin app uses a plain `window.ethereum` wallet (no WalletConnect) and reads
+ * events over RPC (no indexer), so — unlike the committer — it requires neither
+ * VITE_WALLETCONNECT_PROJECT_ID nor VITE_CROWDFUND_INDEXER_URL. It does consume the
+ * profile-driven CROWDFUND_CONSTANTS, so the instance/profile pairing still matters.
  */
 export function validateEnv(env: EnvRecord): EnvValidationResult {
   const isProd = env.PROD === true
@@ -38,16 +41,6 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
 
   if (missing(network)) {
     errors.push('VITE_NETWORK is not set (expected "sepolia" or "mainnet" for production).')
-  }
-  if (missing(env.VITE_WALLETCONNECT_PROJECT_ID)) {
-    errors.push(
-      'VITE_WALLETCONNECT_PROJECT_ID is not set — wallet connection will not work.',
-    )
-  }
-  if (missing(env.VITE_CROWDFUND_INDEXER_URL)) {
-    errors.push(
-      'VITE_CROWDFUND_INDEXER_URL is not set — no event indexer is configured.',
-    )
   }
   if (!missing(env.VITE_DEPLOYMENT_INSTANCE) && missing(env.VITE_CROWDFUND_PROFILE)) {
     errors.push(

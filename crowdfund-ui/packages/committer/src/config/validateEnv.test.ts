@@ -22,8 +22,56 @@ describe('validateEnv', () => {
     expect(validateEnv({})).toEqual({ ok: true })
   })
 
-  it('skips validation for an explicit non-sepolia PROD build', () => {
+  it('skips validation only for an explicit local PROD build', () => {
     expect(validateEnv({ PROD: true, VITE_NETWORK: 'local' })).toEqual({ ok: true })
+  })
+
+  it('enforces a mainnet PROD build, not just sepolia (H4)', () => {
+    // mainnet was previously skipped; a mainnet build missing WalletConnect/indexer must fail.
+    const result = validateEnv({ PROD: true, VITE_NETWORK: 'mainnet' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('VITE_WALLETCONNECT_PROJECT_ID'))).toBe(true)
+      expect(result.errors.some((e) => e.includes('VITE_CROWDFUND_INDEXER_URL'))).toBe(true)
+    }
+  })
+
+  it('passes a fully configured mainnet production build', () => {
+    expect(
+      validateEnv({
+        PROD: true,
+        VITE_NETWORK: 'mainnet',
+        VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+        VITE_CROWDFUND_PROFILE: 'mainnet',
+        VITE_DEPLOYMENT_INSTANCE: 'launch1',
+      }),
+    ).toEqual({ ok: true })
+  })
+
+  it('rejects a non-mainnet profile on a mainnet build', () => {
+    const result = validateEnv({
+      PROD: true,
+      VITE_NETWORK: 'mainnet',
+      VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+      VITE_CROWDFUND_PROFILE: 'medi',
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+    }
+  })
+
+  it('allows an unset profile on a mainnet build (defaults to mainnet)', () => {
+    expect(
+      validateEnv({
+        PROD: true,
+        VITE_NETWORK: 'mainnet',
+        VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+      }),
+    ).toEqual({ ok: true })
   })
 
   it('fails a PROD build with VITE_NETWORK unset', () => {

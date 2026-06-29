@@ -64,6 +64,31 @@ export type {
   ComputeSelfFillOptions,
 } from './lib/selfFillPlan.js'
 
+export {
+  resolveNetworkMode,
+  isLocalNetwork,
+  chainIdForMode,
+  networkLabelForChainId,
+  resolveHubRpcUrls,
+  resolveIndexerUrl,
+  resolveDeploymentFileName,
+  pollIntervalForMode,
+  maxBlockRangeForMode,
+  explorerUrlForMode,
+  getNetworkMode,
+  isLocalMode,
+  getHubChainId,
+  getHubNetworkLabel,
+  getHubRpcUrl,
+  getHubRpcUrls,
+  getIndexerUrl,
+  getDeploymentFileName,
+  getPollIntervalMs,
+  getMaxBlockRange,
+  getExplorerUrl,
+} from './lib/network.js'
+export type { NetworkMode, NetworkEnv } from './lib/network.js'
+
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 export {
   aggregate3,

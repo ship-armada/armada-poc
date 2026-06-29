@@ -404,6 +404,7 @@ describe('time-gated rules', () => {
       totalCommitted: HOP0_CAP,
       perHop: new Map(),
       displayInviter: 'armada',
+      allInviters: [],
       allocatedArm: null,
       refundUsdc: 1_000_000n, // refundable
       allocatedPerHop: new Map(),

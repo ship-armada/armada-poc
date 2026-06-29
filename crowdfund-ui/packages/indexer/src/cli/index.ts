@@ -3,7 +3,7 @@
 
 import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
-import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv } from '../config.js'
+import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv, readRequiredNumberEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
 import type { IndexerStore } from '../db/store.js'
 import type { IngestRangeRecord } from '../types.js'
@@ -59,7 +59,7 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
       )
     }
     const config = {
-      chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
+      chainId: readRequiredNumberEnv('CROWDFUND_CHAIN_ID'),
       contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
       providerName: 'primary',
     }
@@ -146,7 +146,7 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
   }
 
   if (args.command === 'rebuild-snapshot' || args.command === 'publish-snapshot') {
-    const chainId = readNumberEnv('CROWDFUND_CHAIN_ID', 11155111)
+    const chainId = readRequiredNumberEnv('CROWDFUND_CHAIN_ID')
     const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
 
     const snapshotData = { ...data, rawLogs: await store.readLogs(data.cursor.verifiedCursor) }
@@ -216,7 +216,7 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
 
   if (args.command === 'evaluate-alerts') {
     const params: CrowdfundParams = {
-      chainId: readNumberEnv('CROWDFUND_CHAIN_ID', 11155111),
+      chainId: readRequiredNumberEnv('CROWDFUND_CHAIN_ID'),
       contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
       treasuryAddress: readRequiredEnv('CROWDFUND_TREASURY_ADDRESS'),
       openTimestamp: readNumberEnv('CROWDFUND_OPEN_TIMESTAMP', 0),

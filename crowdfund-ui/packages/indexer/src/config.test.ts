@@ -29,7 +29,8 @@ afterEach(() => {
 })
 
 describe('loadIndexerConfig', () => {
-  it('applies documented defaults when only the contract address is set', () => {
+  it('applies documented defaults when chain id + contract address are set', () => {
+    process.env.CROWDFUND_CHAIN_ID = '11155111'
     process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
     const config = loadIndexerConfig()
     expect(config).toMatchObject({
@@ -63,11 +64,18 @@ describe('loadIndexerConfig', () => {
     expect(config.staleAfterMs).toBe(120_000)
   })
 
+  it('throws when the required chain id is missing', () => {
+    process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
+    expect(() => loadIndexerConfig()).toThrow('CROWDFUND_CHAIN_ID')
+  })
+
   it('throws when the required contract address is missing', () => {
+    process.env.CROWDFUND_CHAIN_ID = '11155111'
     expect(() => loadIndexerConfig()).toThrow('CROWDFUND_CONTRACT_ADDRESS')
   })
 
   it('rejects an invalid numeric variable', () => {
+    process.env.CROWDFUND_CHAIN_ID = '11155111'
     process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
     process.env.CROWDFUND_MAX_BLOCK_RANGE = '-5'
     expect(() => loadIndexerConfig()).toThrow('CROWDFUND_MAX_BLOCK_RANGE')

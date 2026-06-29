@@ -2,6 +2,7 @@
 // ABOUTME: Pure functions for invite link lifecycle — no React dependency.
 
 import { tryGetChecksumAddress } from '@armada/crowdfund-shared'
+import { getHubChainId } from '@/config/network'
 
 /** Max hop index in the URL — matches `HOP_CONFIGS.length - 1`. Anything
  * outside this band can't represent a real inviter so we reject pre-contract. */
@@ -102,14 +103,22 @@ export function decodeInviteUrl(searchParams: URLSearchParams): InviteLinkData |
   return { inviter, fromHop, nonce, deadline, signature }
 }
 
-// IndexedDB helpers
-const DB_NAME = 'armada-invite-links'
+// IndexedDB helpers. The database is namespaced per chain id so invite links
+// created on one network (e.g. a Sepolia test instance) never surface in the UI on
+// another (e.g. mainnet): an invite's EIP-712 signature carries the chain id in its
+// domain separator and fails validation cross-chain, so a stale link would only
+// confuse. Each chain gets its own isolated database.
+const DB_NAME_PREFIX = 'armada-invite-links'
 const STORE_NAME = 'links'
 const DB_VERSION = 1
 
+function dbName(): string {
+  return `${DB_NAME_PREFIX}-${getHubChainId()}`
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    const request = indexedDB.open(dbName(), DB_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {

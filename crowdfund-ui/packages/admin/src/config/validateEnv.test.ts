@@ -65,4 +65,16 @@ describe('validateEnv (admin)', () => {
     // A sepolia build with only VITE_NETWORK set and no instance passes.
     expect(validateEnv({ PROD: true, VITE_NETWORK: 'sepolia' })).toEqual({ ok: true })
   })
+
+  it('rejects a non-mainnet profile on a mainnet build', () => {
+    const result = validateEnv({ PROD: true, VITE_NETWORK: 'mainnet', VITE_CROWDFUND_PROFILE: 'medi' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+    }
+  })
+
+  it('allows an unset profile on a mainnet build (defaults to mainnet)', () => {
+    expect(validateEnv({ PROD: true, VITE_NETWORK: 'mainnet' })).toEqual({ ok: true })
+  })
 })

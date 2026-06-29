@@ -49,6 +49,31 @@ describe('validateEnv', () => {
     ).toEqual({ ok: true })
   })
 
+  it('rejects a non-mainnet profile on a mainnet build', () => {
+    const result = validateEnv({
+      PROD: true,
+      VITE_NETWORK: 'mainnet',
+      VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+      VITE_CROWDFUND_PROFILE: 'medi',
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+    }
+  })
+
+  it('allows an unset profile on a mainnet build (defaults to mainnet)', () => {
+    expect(
+      validateEnv({
+        PROD: true,
+        VITE_NETWORK: 'mainnet',
+        VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+      }),
+    ).toEqual({ ok: true })
+  })
+
   it('fails a PROD build with VITE_NETWORK unset', () => {
     const result = validateEnv({ PROD: true })
     expect(result.ok).toBe(false)

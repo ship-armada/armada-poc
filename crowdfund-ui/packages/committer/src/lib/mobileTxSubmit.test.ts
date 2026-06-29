@@ -13,7 +13,7 @@ vi.mock('wagmi/actions', () => ({
 }))
 
 vi.mock('@/config/wagmi', () => ({ wagmiConfig: { __testConfig: true } }))
-vi.mock('@/config/network', () => ({ getHubChainId: () => 11155111 }))
+vi.mock('@/config/network', () => ({ getHubChainId: () => 11155111, getTxConfirmations: () => 1 }))
 
 import { submitTxViaWagmi } from './mobileTxSubmit'
 

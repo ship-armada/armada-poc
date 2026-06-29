@@ -48,6 +48,19 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
         'the UI would apply mainnet sale constants to the deployed instance.',
     )
   }
+  // A non-mainnet profile (e.g. the medi/Sepolia profile) on a mainnet build would
+  // render $1k-scale sale numbers over the real $1.2M sale. Unset is allowed — it
+  // defaults to the mainnet profile.
+  if (
+    network === 'mainnet' &&
+    !missing(env.VITE_CROWDFUND_PROFILE) &&
+    env.VITE_CROWDFUND_PROFILE!.trim() !== 'mainnet'
+  ) {
+    errors.push(
+      `VITE_CROWDFUND_PROFILE is "${env.VITE_CROWDFUND_PROFILE!.trim()}" on a mainnet build — ` +
+        'mainnet must use the "mainnet" profile (or leave it unset, which defaults to mainnet).',
+    )
+  }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }

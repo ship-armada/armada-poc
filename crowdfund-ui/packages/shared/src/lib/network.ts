@@ -128,6 +128,25 @@ export function maxBlockRangeForMode(mode: NetworkMode): number {
   return mode === 'local' ? 10 : 2_000
 }
 
+/**
+ * Guard a loaded deployment manifest against the build's target chain. Throws on
+ * mismatch so a build can never silently use one network's contract addresses on
+ * another (e.g. a mainnet site accidentally fed a Sepolia manifest) — the wallet
+ * would expect chain X while the app talked to chain-Y addresses.
+ */
+export function assertDeploymentChainId(
+  manifestChainId: number,
+  expectedChainId: number,
+  source: string,
+): void {
+  if (manifestChainId !== expectedChainId) {
+    throw new Error(
+      `Deployment chain mismatch: ${source} is for chain ${manifestChainId}, but this ` +
+        `build targets chain ${expectedChainId}. Check VITE_NETWORK / VITE_DEPLOYMENT_INSTANCE.`,
+    )
+  }
+}
+
 /** Block explorer base URL. Returns undefined for local mode (no explorer). */
 export function explorerUrlForMode(mode: NetworkMode): string | undefined {
   switch (mode) {

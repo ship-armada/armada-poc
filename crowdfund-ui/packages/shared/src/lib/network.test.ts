@@ -13,6 +13,7 @@ import {
   pollIntervalForMode,
   maxBlockRangeForMode,
   explorerUrlForMode,
+  assertDeploymentChainId,
   type NetworkEnv,
 } from './network.js'
 
@@ -157,6 +158,18 @@ describe('resolveDeploymentFileName', () => {
   it('falls back to the legacy per-mode file when no instance is set', () => {
     expect(resolveDeploymentFileName({ VITE_NETWORK: 'sepolia' })).toBe('crowdfund-hub-sepolia.json')
     expect(resolveDeploymentFileName({ VITE_NETWORK: 'mainnet' })).toBe('crowdfund-hub-mainnet.json')
+  })
+})
+
+describe('assertDeploymentChainId', () => {
+  it('passes when the manifest matches the build target', () => {
+    expect(() => assertDeploymentChainId(1, 1, 'crowdfund.json')).not.toThrow()
+  })
+
+  it('throws a descriptive error on mismatch', () => {
+    expect(() => assertDeploymentChainId(11155111, 1, 'crowdfund-hub-mainnet.json')).toThrow(
+      /chain mismatch.*11155111.*chain 1/,
+    )
   })
 })
 

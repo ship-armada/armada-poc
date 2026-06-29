@@ -75,6 +75,7 @@ export {
   pollIntervalForMode,
   maxBlockRangeForMode,
   explorerUrlForMode,
+  assertDeploymentChainId,
   getNetworkMode,
   isLocalMode,
   getHubChainId,

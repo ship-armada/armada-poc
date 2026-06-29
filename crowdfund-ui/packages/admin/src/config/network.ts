@@ -13,5 +13,6 @@ export {
   getPollIntervalMs,
   getMaxBlockRange,
   getExplorerUrl,
+  assertDeploymentChainId,
 } from '@armada/crowdfund-shared'
 export type { NetworkMode } from '@armada/crowdfund-shared'

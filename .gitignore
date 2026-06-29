@@ -65,6 +65,7 @@ relayer/state/*
 
 # OS
 .DS_Store
+._*
 *.swp
 Thumbs.db
 

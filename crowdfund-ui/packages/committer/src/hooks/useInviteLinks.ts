@@ -14,8 +14,7 @@ import {
   storeInviteLink,
   getStoredInviteLinks,
   updateInviteLinkStatus,
-  getNextNonce,
-  inviterOnChainNonces,
+  pickInviteNonce,
   effectiveTimestamp,
   classifyStoredLinks,
 } from '@/lib/inviteLinks'
@@ -38,8 +37,8 @@ export function useInviteLinks(
   signer: Signer | null,
   crowdfundAddress: string | null,
   blockTimestamp: number,
-  /** Full event stream — lets the hook persist `redeemed` from chain truth and
-   *  seed nonces past any already-consumed on-chain nonce. */
+  /** Full event stream — lets the hook persist `redeemed` link status from chain
+   *  truth (display only; nonce selection reads `usedNonces` directly). */
   events: CrowdfundEvent[] = [],
 ): UseInviteLinksResult {
   // Raw stored links — read from IndexedDB only on address change (and after an
@@ -125,11 +124,14 @@ export function useInviteLinks(
 
     try {
       const chainId = getHubChainId()
-      // Seed the nonce from chain truth so a fresh device / cleared storage
-      // doesn't re-sign a nonce already consumed on-chain.
-      const nonce = await getNextNonce(
-        address.toLowerCase(),
-        inviterOnChainNonces(events, address),
+      // Pick a random nonce and confirm it is unused on-chain. Random (not
+      // sequential) avoids colliding with a pending link minted on another
+      // device — pending links leave no on-chain trace for a "max + 1" scheme to
+      // see, so only a large random space sidesteps the clash without on-chain
+      // coordination. `usedNonces` is authoritative for redeemed + revoked.
+      const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
+      const nonce = await pickInviteNonce(
+        (n) => crowdfund.usedNonces(address, n) as Promise<boolean>,
       )
       // Never sign a 1970-relative deadline before block time hydrates.
       const baseTs = effectiveTimestamp(blockTimestamp)
@@ -160,7 +162,7 @@ export function useInviteLinks(
       }
       return null
     }
-  }, [address, signer, crowdfundAddress, blockTimestamp, events, refreshLinks])
+  }, [address, signer, crowdfundAddress, blockTimestamp, refreshLinks])
 
   const revokeLink = useCallback(async (nonce: number): Promise<boolean> => {
     if (!crowdfundAddress || !address || !signer) return false

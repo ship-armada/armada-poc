@@ -10,36 +10,15 @@ import {
   storeInviteLink,
   getStoredInviteLinks,
   updateInviteLinkStatus,
-  getNextNonce,
-  inviterOnChainNonces,
+  randomSafeNonce,
+  pickInviteNonce,
   effectiveTimestamp,
   classifyStoredLinks,
   type InviteLinkData,
   type StoredInviteLink,
 } from './inviteLinks'
-import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 
 const TEST_INVITER = '0x1111111111111111111111111111111111111111'
-
-function invitedEvent(inviter: string, nonce: number): CrowdfundEvent {
-  return {
-    type: 'Invited',
-    blockNumber: nonce + 1,
-    transactionHash: '0x' + (nonce + 1).toString(16).padStart(64, '0'),
-    logIndex: 0,
-    args: { inviter, invitee: '0x' + '22'.repeat(20), hop: 1, nonce: BigInt(nonce) },
-  }
-}
-
-function revokedEvent(inviter: string, nonce: number): CrowdfundEvent {
-  return {
-    type: 'InviteNonceRevoked',
-    blockNumber: nonce + 500,
-    transactionHash: '0x' + (nonce + 500).toString(16).padStart(64, '0'),
-    logIndex: 0,
-    args: { inviter, nonce: BigInt(nonce) },
-  }
-}
 
 function storedLink(
   nonce: number,
@@ -243,63 +222,44 @@ describe('IndexedDB CRUD', () => {
     const retrieved = await getStoredInviteLinks(inviter)
     expect(retrieved[0].status).toBe('revoked')
   })
+})
 
-  it('getNextNonce returns 1 for empty db', async () => {
-    const inviter = uniqueInviter()
-    const nonce = await getNextNonce(inviter)
-    expect(nonce).toBe(1)
-  })
-
-  it('getNextNonce returns max + 1', async () => {
-    const inviter = uniqueInviter()
-    await storeInviteLink({
-      inviter,
-      fromHop: 0,
-      nonce: 5,
-      deadline: 1700000000,
-      signature: '0xabc',
-      createdAt: Date.now(),
-      status: 'pending',
-    })
-    await storeInviteLink({
-      inviter,
-      fromHop: 0,
-      nonce: 3,
-      deadline: 1700000000,
-      signature: '0xdef',
-      createdAt: Date.now(),
-      status: 'pending',
-    })
-    const nonce = await getNextNonce(inviter)
-    expect(nonce).toBe(6)
+describe('randomSafeNonce', () => {
+  it('draws distinct positive integers inside the JS safe-integer range', () => {
+    const seen = new Set<number>()
+    for (let i = 0; i < 1000; i++) {
+      const n = randomSafeNonce()
+      expect(Number.isSafeInteger(n)).toBe(true)
+      expect(n).toBeGreaterThanOrEqual(1)
+      seen.add(n)
+    }
+    // 1000 draws from a 2^53 space collide with probability ~1e-10 — distinct.
+    expect(seen.size).toBe(1000)
   })
 })
 
-describe('inviterOnChainNonces', () => {
-  it('collects redeemed (Invited) and revoked nonces for the inviter', () => {
-    const events: CrowdfundEvent[] = [
-      invitedEvent(TEST_INVITER, 1),
-      revokedEvent(TEST_INVITER, 2),
-      invitedEvent('0x9999999999999999999999999999999999999999', 7), // other inviter
-    ]
-    expect(inviterOnChainNonces(events, TEST_INVITER).sort((a, b) => a - b)).toEqual([1, 2])
+describe('pickInviteNonce', () => {
+  it('returns the first candidate when it is unused on-chain', async () => {
+    const n = await pickInviteNonce(async () => false)
+    expect(Number.isSafeInteger(n)).toBe(true)
+    expect(n).toBeGreaterThanOrEqual(1)
   })
 
-  it('is case-insensitive on the inviter address', () => {
-    const events = [invitedEvent(TEST_INVITER.toUpperCase(), 3)]
-    expect(inviterOnChainNonces(events, TEST_INVITER.toLowerCase())).toEqual([3])
+  it('re-rolls past an already-used candidate', async () => {
+    let calls = 0
+    // First probe reports the candidate used; the second reports it free.
+    const n = await pickInviteNonce(async () => {
+      calls++
+      return calls === 1
+    })
+    expect(calls).toBe(2)
+    expect(Number.isSafeInteger(n)).toBe(true)
   })
-})
 
-describe('getNextNonce with on-chain history', () => {
-  it('returns 1 for empty local + empty on-chain', async () => {
-    expect(await getNextNonce('0xempty-' + Math.random().toString(16))).toBe(1)
-  })
-
-  it('seeds past consumed on-chain nonces on a fresh device (1-3 → 4)', async () => {
-    // Fresh inviter key (no local links) but nonces 1..3 consumed on-chain.
-    const fresh = '0x' + 'ab'.repeat(20)
-    expect(await getNextNonce(fresh, [1, 2, 3])).toBe(4)
+  it('throws when no free nonce turns up within the retry budget', async () => {
+    await expect(pickInviteNonce(async () => true)).rejects.toThrow(
+      'Could not allocate a free invite nonce',
+    )
   })
 })
 

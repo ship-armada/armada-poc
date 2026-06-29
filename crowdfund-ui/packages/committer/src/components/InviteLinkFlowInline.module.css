@@ -21,14 +21,13 @@
   overflow: hidden;
 }
 
-/* ── Post-commit "invites" step overrides ──
- * The post-commit invite-slots screen renders `ParticipateFlowInviteSlots`,
- * which is a shell + a Return-button footer. With many slots its combined
- * height exceeds the 480×500 footprint inherited from Step0Invite, and the
- * shell's bottom border + Return button get clipped by the `.slot` /
- * `.step` overflow: hidden. These opt-in classes are applied by
- * InviteLinkFlowController only when `renderStep === 'invites'` — every
- * other step of the same controller keeps the original 480×500. */
+/* ── Grow + scroll overrides (steps taller than 480×500) ──
+ * Some steps render content taller than the 480×500 footprint inherited from
+ * Step0Invite, which the `.slot` / `.step` overflow: hidden would otherwise
+ * clip: the post-commit invite-slots screen (`ParticipateFlowInviteSlots` —
+ * shell + Return-button footer, tall with many slots), and the 'confirmation'
+ * step once the Max out banner is hoisted above the 500px card. The controller
+ * opts those steps in; every other step keeps the original fixed 480×500. */
 .slotInvites,
 .stepInvites {
   height: auto;

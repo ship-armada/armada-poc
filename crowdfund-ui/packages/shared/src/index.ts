@@ -74,6 +74,7 @@ export {
   resolveDeploymentFileName,
   pollIntervalForMode,
   maxBlockRangeForMode,
+  confirmationsForMode,
   explorerUrlForMode,
   assertDeploymentChainId,
   getNetworkMode,
@@ -86,6 +87,7 @@ export {
   getDeploymentFileName,
   getPollIntervalMs,
   getMaxBlockRange,
+  getTxConfirmations,
   getExplorerUrl,
 } from './lib/network.js'
 export type { NetworkMode, NetworkEnv } from './lib/network.js'

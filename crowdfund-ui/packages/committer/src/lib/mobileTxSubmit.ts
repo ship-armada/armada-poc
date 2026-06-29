@@ -43,11 +43,11 @@ export async function submitTxViaWagmi(
 
   const response = {
     hash,
-    wait: async (_confirmations?: number, timeoutMs: number = TX_WAIT_TIMEOUT_MS) => {
+    wait: async (confirmations: number = 1, timeoutMs: number = TX_WAIT_TIMEOUT_MS) => {
       try {
         const receipt = await waitForTransactionReceipt(wagmiConfig, {
           hash,
-          confirmations: 1,
+          confirmations,
           timeout: timeoutMs,
         })
         return {

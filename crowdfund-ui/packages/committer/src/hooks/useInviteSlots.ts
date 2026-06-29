@@ -8,7 +8,7 @@ import { type StoredInviteLink } from '@/lib/inviteLinks'
 import { buildSlotRows } from '@/lib/slotRows'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError } from '@/lib/txWait'
 import { mapRevertToMessage } from '@/lib/revertMessages'
-import { getHubNetworkLabel } from '@/config/network'
+import { getHubNetworkLabel, getTxConfirmations } from '@/config/network'
 import {
   CROWDFUND_ABI_FRAGMENTS,
   HOP_CONFIGS,
@@ -214,7 +214,7 @@ function useHopSection(args: {
       try {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
         const tx = await crowdfund.invite(invitee, hop)
-        const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS)
+        const receipt = await tx.wait(getTxConfirmations(), TX_WAIT_TIMEOUT_MS)
         if (!receipt || receipt.status === 0) {
           throw new Error('Transaction reverted')
         }

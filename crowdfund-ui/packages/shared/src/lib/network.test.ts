@@ -12,6 +12,7 @@ import {
   resolveDeploymentFileName,
   pollIntervalForMode,
   maxBlockRangeForMode,
+  confirmationsForMode,
   explorerUrlForMode,
   assertDeploymentChainId,
   type NetworkEnv,
@@ -183,6 +184,12 @@ describe('poll interval / block range / explorer', () => {
   it('uses a small block range locally and a wide one on live networks', () => {
     expect(maxBlockRangeForMode('local')).toBe(10)
     expect(maxBlockRangeForMode('mainnet')).toBe(2_000)
+  })
+
+  it('waits deeper for confirmations on mainnet than local/testnet', () => {
+    expect(confirmationsForMode('local')).toBe(1)
+    expect(confirmationsForMode('sepolia')).toBe(1)
+    expect(confirmationsForMode('mainnet')).toBe(2)
   })
 
   it('maps each mode to its explorer (none for local)', () => {

@@ -129,6 +129,17 @@ export function maxBlockRangeForMode(mode: NetworkMode): number {
 }
 
 /**
+ * Confirmations to await before treating a transaction as terminally successful.
+ * Deeper on mainnet so a single-block reorg can't surface a dropped tx as
+ * confirmed (showing "done" for a commit that never landed). Instant local chains
+ * and the low-stakes testnet stay at 1. Keep this small enough that
+ * confirmations × ~12s stays well within the tx-wait timeout.
+ */
+export function confirmationsForMode(mode: NetworkMode): number {
+  return mode === 'mainnet' ? 2 : 1
+}
+
+/**
  * Guard a loaded deployment manifest against the build's target chain. Throws on
  * mismatch so a build can never silently use one network's contract addresses on
  * another (e.g. a mainnet site accidentally fed a Sepolia manifest) — the wallet
@@ -205,6 +216,10 @@ export function getPollIntervalMs(): number {
 
 export function getMaxBlockRange(): number {
   return maxBlockRangeForMode(getNetworkMode())
+}
+
+export function getTxConfirmations(): number {
+  return confirmationsForMode(getNetworkMode())
 }
 
 export function getExplorerUrl(): string | undefined {

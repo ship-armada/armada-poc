@@ -12,6 +12,7 @@ export {
   getDeploymentFileName,
   getPollIntervalMs,
   getMaxBlockRange,
+  getTxConfirmations,
   getExplorerUrl,
   assertDeploymentChainId,
 } from '@armada/crowdfund-shared'

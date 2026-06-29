@@ -5,6 +5,7 @@ import type { JsonRpcProvider, TransactionReceipt, TransactionResponse } from 'e
 import type { ReceiptLogLike } from '@armada/crowdfund-shared'
 import { mapRevertToMessage } from '@/lib/revertMessages'
 import { TX_WAIT_TIMEOUT_MS, TX_PENDING_MESSAGE, isTxTimeoutError, isUserRejection } from '@/lib/txWait'
+import { getTxConfirmations } from '@/config/network'
 
 export type TxOutcome = 'success' | 'reverted' | 'timeout' | 'rejected' | 'error'
 
@@ -50,11 +51,14 @@ export async function sendAndWaitTx(
     // which we convert to a rejection so it can't win the race as a fake
     // receipt; if BOTH paths fail we fall back to the wallet wait's
     // authoritative error so timeout/revert classification below is unchanged.
-    const walletWait = tx.wait(1, TX_WAIT_TIMEOUT_MS)
+    // Deeper on mainnet (see confirmationsForMode) so a 1-block reorg can't show a
+    // dropped tx as confirmed; 1 on local/testnet keeps those instant.
+    const confirmations = getTxConfirmations()
+    const walletWait = tx.wait(confirmations, TX_WAIT_TIMEOUT_MS)
     let receipt: TransactionReceipt | null
     if (readProvider) {
       const readWait = readProvider
-        .waitForTransaction(hash, 1, TX_WAIT_TIMEOUT_MS)
+        .waitForTransaction(hash, confirmations, TX_WAIT_TIMEOUT_MS)
         .then((r) => (r ? r : Promise.reject(new Error('read wait timed out'))))
       receipt = await Promise.any([walletWait, readWait]).catch(() => walletWait)
     } else {

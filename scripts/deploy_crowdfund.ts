@@ -377,6 +377,39 @@ async function main() {
     await timelockCall(timelockAddress, call.target, call.calldata, `${call.label}.setWindDownContract()`, nm);
   }
 
+  // 12b. Initialize treasury outflow rate limits (timelock-only). Done at deploy so
+  // the treasury is rate-limited from launch rather than via a fragile first
+  // governance vote. PLACEHOLDER limits — see config.outflowConfig / issue #348.
+  console.log("12b. Initializing treasury outflow limits...");
+  const outflowTokens = [
+    { token: usdcAddress, params: config.outflowConfig.usdc, label: "USDC" },
+    { token: armTokenAddress, params: config.outflowConfig.arm, label: "ARM" },
+    { token: ethers.ZeroAddress, params: config.outflowConfig.eth, label: "ETH" },
+  ];
+  for (const t of outflowTokens) {
+    const calldata = treasury.interface.encodeFunctionData("initOutflowConfig", [
+      t.token, t.params.windowDuration, t.params.limitBps, t.params.limitAbsolute, t.params.floorAbsolute,
+    ]);
+    await timelockCall(timelockAddress, treasuryAddress, calldata, `treasury.initOutflowConfig(${t.label})`, nm);
+  }
+
+  // 12c. Harden: raise the timelock delay to its production value as the FINAL
+  // timelock op. The deploy ran the timelock at minDelay 0 so the bootstrap ops above
+  // executed instantly; after this the real delay is in force (issue #347).
+  //
+  // ORDERING INVARIANT: in a hardened run this script must be the LAST one to perform
+  // any timelock-only op. Step 14 below renounces the deployer's PROPOSER/EXECUTOR
+  // roles, so any later timelock-only wiring (e.g. fee-module setFeeCollector, adapter
+  // authorizeAdapter in the shielded-pool deploy) would revert. The mainnet orchestrator
+  // enforces crowdfund-last ordering for hardened runs; do not harden a full multi-phase
+  // deploy that wires the shielded pool after the crowdfund.
+  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
+  if (config.hardenTimelock) {
+    console.log(`12c. Raising timelock delay to ${config.timelockDelay}s (harden)...`);
+    const updateDelayCalldata = timelock.interface.encodeFunctionData("updateDelay", [config.timelockDelay]);
+    await timelockCall(timelockAddress, timelockAddress, updateDelayCalldata, "timelock.updateDelay(production)", nm);
+  }
+
   // 13. Update governance manifest with redemption/windDown addresses
   console.log("13. Updating governance manifest...");
   govDeployment.contracts.redemption = redemptionAddress;
@@ -384,9 +417,19 @@ async function main() {
   saveDeployment(govFilename, govDeployment);
   console.log(`   Updated ${govFilename} with redemption + windDown addresses`);
 
-  // 14. Renounce timelock admin (final action — all deployment wiring complete)
-  console.log("14. Renouncing timelock admin...");
-  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
+  // 14. Renounce deployer timelock roles (final action — all wiring complete).
+  console.log("14. Renouncing timelock roles...");
+  if (config.hardenTimelock) {
+    // Harden: the deployer temporarily held the ops roles to bootstrap timelock-only
+    // wiring above; drop them so no key retains timelock power post-deploy (issue #347).
+    const PROPOSER_ROLE = await timelock.PROPOSER_ROLE();
+    const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
+    const CANCELLER_ROLE = await timelock.CANCELLER_ROLE();
+    await (await timelock.renounceRole(PROPOSER_ROLE, deployer.address, nm.override())).wait();
+    await (await timelock.renounceRole(EXECUTOR_ROLE, deployer.address, nm.override())).wait();
+    await (await timelock.renounceRole(CANCELLER_ROLE, deployer.address, nm.override())).wait();
+    console.log("   Renounced PROPOSER/EXECUTOR/CANCELLER from deployer");
+  }
   const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
   await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");

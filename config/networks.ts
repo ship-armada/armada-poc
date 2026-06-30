@@ -90,6 +90,10 @@ export interface NetworkConfig {
   revenueLockBeneficiaries: RevenueLockBeneficiary[];
   /** Security council address for crowdfund cancel authority. Required for non-local. */
   securityCouncilAddress: string;
+  /** Launch team address — issues crowdfund seeds and direct invites during the
+   *  window. Kept separate from the deployer to limit deployer-key exposure once
+   *  the deployer's privileges are renounced post-deploy. Required for non-local. */
+  launchTeamAddress: string;
   /** Crowdfund open delay in seconds from deployment time. Default 600 (10 minutes) —
    *  an operational buffer that lets the post-deploy verification checklist complete
    *  before commits can flow. Production deploys should set this explicitly via
@@ -283,6 +287,7 @@ export function getNetworkConfig(): NetworkConfig {
     },
     revenueLockBeneficiaries,
     securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
+    launchTeamAddress: optionalEnv("LAUNCH_TEAM_ADDRESS", ""),
     crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 600),
     windDownDeadline: optionalEnv("WINDDOWN_DEADLINE", "2026-12-31T00:00:00Z"),
     windDownRevenueThreshold: optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),

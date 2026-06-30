@@ -156,9 +156,14 @@ async function main() {
   const crowdfund = await ArmadaCrowdfund.deploy(
     usdcAddress, armTokenAddress, treasuryAddress, launchTeamAddress, securityCouncilAddress, openTimestamp, nm.override()
   );
-  await crowdfund.deploymentTransaction()!.wait();
+  const crowdfundReceipt = await crowdfund.deploymentTransaction()!.wait();
+  // Record the contract-creation block (not an end-of-script block number). The
+  // indexer and frontends backfill events from this block; capturing it here —
+  // before the multi-minute post-deploy wiring runs — ensures early events like
+  // ArmLoaded are not skipped (issue #324).
+  const crowdfundDeployBlock = crowdfundReceipt!.blockNumber;
   const crowdfundAddress = await crowdfund.getAddress();
-  console.log(`   ArmadaCrowdfund: ${crowdfundAddress}`);
+  console.log(`   ArmadaCrowdfund: ${crowdfundAddress} (block ${crowdfundDeployBlock})`);
 
   // 4. Set transfer whitelist (one-shot — must happen before any ARM transfers)
   // Per ARM token spec §5: crowdfund, treasury, revenueLock.
@@ -387,11 +392,10 @@ async function main() {
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
   // Save deployment
-  const currentBlock = await ethers.provider.getBlockNumber();
   const deployment: CrowdfundDeployment = {
     chainId,
     deployer: deployer.address,
-    deployBlock: currentBlock,
+    deployBlock: crowdfundDeployBlock,
     contracts: {
       armToken: armTokenAddress,
       usdc: usdcAddress,

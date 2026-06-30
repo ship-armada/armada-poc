@@ -136,9 +136,9 @@ export function addTransferOutput(
   showSenderAddress: boolean = false,
   memoText?: string
 ): void {
-  const { TransactNote, decodeAddress } = require('@railgun-community/engine');
+  const { TransactNote, RailgunEngine } = require('@railgun-community/engine');
 
-  const recipientAddressData = decodeAddress(recipient);
+  const recipientAddressData = RailgunEngine.decodeAddress(recipient);
   const tokenData = getTokenDataERC20(tokenAddress);
 
   const note = TransactNote.createTransfer(

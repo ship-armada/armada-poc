@@ -93,9 +93,15 @@ async function main() {
   const timelock = await TimelockController.deploy(
     timelockDelay, [], [], deployer.address, nm.override()
   );
-  await timelock.deploymentTransaction()!.wait();
+  const timelockReceipt = await timelock.deploymentTransaction()!.wait();
+  // Record the creation block of the first contract deployed in this script. The
+  // governance manifest covers many contracts; using the earliest creation block
+  // as the manifest deployBlock guarantees event backfill starts before any
+  // governance contract's first event, rather than at an end-of-script block
+  // number tens of blocks past contract creation (issue #324).
+  const governanceDeployBlock = timelockReceipt!.blockNumber;
   const timelockAddress = await timelock.getAddress();
-  console.log(`   TimelockController: ${timelockAddress}`);
+  console.log(`   TimelockController: ${timelockAddress} (block ${governanceDeployBlock})`);
 
   // 2. Deploy ArmadaToken (needs timelock address for addToWhitelist gating)
   console.log("2. Deploying ArmadaToken...");
@@ -326,11 +332,10 @@ async function main() {
   console.log("15-16. Wind-down wiring + admin renounce: DEFERRED (completed by deploy_crowdfund.ts)");
 
   // Save deployment
-  const currentBlock = await ethers.provider.getBlockNumber();
   const deployment: GovernanceDeployment = {
     chainId,
     deployer: deployer.address,
-    deployBlock: currentBlock,
+    deployBlock: governanceDeployBlock,
     contracts: {
       timelockController: timelockAddress,
       armToken: armTokenAddress,

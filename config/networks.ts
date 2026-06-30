@@ -15,7 +15,7 @@ import "dotenv/config";
 // Types
 // ============================================================================
 
-export type DeployEnv = "local" | "sepolia";
+export type DeployEnv = "local" | "sepolia" | "mainnet";
 export type CCTPMode = "mock" | "real";
 export type ChainRole = "hub" | "clientA" | "clientB";
 
@@ -191,6 +191,19 @@ export function getNetworkConfig(): NetworkConfig {
   const env = (optionalEnv("DEPLOY_ENV", "local")) as DeployEnv;
   const cctpMode = (optionalEnv("CCTP_MODE", "mock")) as CCTPMode;
 
+  // Reject a typo'd or unknown DEPLOY_ENV rather than letting it silently behave
+  // like an unconfigured environment (e.g. a misspelled "mainnet" must not slip through).
+  const VALID_ENVS: ReadonlyArray<DeployEnv> = ["local", "sepolia", "mainnet"];
+  if (!VALID_ENVS.includes(env)) {
+    throw new Error(`Invalid DEPLOY_ENV "${env}". Must be one of: ${VALID_ENVS.join(", ")}`);
+  }
+
+  // Mainnet must never run against mock CCTP — that would deploy a fake USDC and
+  // mock bridge against a production deployment. Fail loud.
+  if (env === "mainnet" && cctpMode !== "real") {
+    throw new Error('CCTP_MODE must be "real" on mainnet (refusing to deploy mock CCTP/USDC).');
+  }
+
   // Deployer key: required for real testnets, default Anvil key for local
   const defaultKey = env === "local"
     ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -207,7 +220,7 @@ export function getNetworkConfig(): NetworkConfig {
     cctpDomain: numEnv("HUB_CCTP_DOMAIN", 100),
     name: "Hub",
     role: "hub",
-    hardhatNetwork: env === "local" ? "hub" : "sepoliaHub",
+    hardhatNetwork: env === "local" ? "hub" : `${env}Hub`,
     deploymentPrefix: "hub",
   };
 
@@ -217,7 +230,7 @@ export function getNetworkConfig(): NetworkConfig {
     cctpDomain: numEnv("CLIENT_A_CCTP_DOMAIN", 101),
     name: "Client A",
     role: "clientA",
-    hardhatNetwork: env === "local" ? "client" : "sepoliaClientA",
+    hardhatNetwork: env === "local" ? "client" : `${env}ClientA`,
     deploymentPrefix: "client",
   };
 
@@ -227,7 +240,7 @@ export function getNetworkConfig(): NetworkConfig {
     cctpDomain: numEnv("CLIENT_B_CCTP_DOMAIN", 102),
     name: "Client B",
     role: "clientB",
-    hardhatNetwork: env === "local" ? "clientB" : "sepoliaClientB",
+    hardhatNetwork: env === "local" ? "clientB" : `${env}ClientB`,
     deploymentPrefix: "clientB",
   };
 

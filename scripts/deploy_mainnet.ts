@@ -16,9 +16,11 @@
  * belong to the separate shielded-pool launch and must not be part of a hardened run.
  *
  * Env-driven via config.hub.hardhatNetwork (mainnetHub / sepoliaHub):
- *   - Mainnet launch:  source config/mainnet.env && npm run setup:mainnet
+ *   - Mainnet launch:  source config/mainnet.env && npm run setup:mainnet -- --confirm-mainnet
  *   - #319 dry-run:    source config/sepolia.env && HARDEN_TIMELOCK=true npm run setup:mainnet
  *   - Preview only:    add `-- --dry-run` to print the sequence without executing
+ *
+ * A live mainnet deploy requires the explicit --confirm-mainnet flag (real-funds guard).
  *
  * Prerequisites (fail loud if missing): deployer key funded on the hub; real CCTP V2
  * addresses + USDC configured; treasury / security council / launch team / RevenueLock
@@ -30,6 +32,13 @@ import { getNetworkConfig } from "../config/networks";
 
 // --dry-run prints the deploy sequence without executing it (preview the launch plan).
 const DRY_RUN = process.argv.slice(2).includes("--dry-run");
+// --confirm-mainnet is required to actually deploy to mainnet (real-funds guard).
+const CONFIRM_MAINNET = process.argv.slice(2).includes("--confirm-mainnet");
+
+// The only network this orchestrator should ever target is a hub network. Asserting
+// it against a fixed set both prevents an unexpected value from reaching execSync and
+// catches a missing `source config/<env>.env` (CWE-78 defense-in-depth).
+const HUB_NETWORKS: ReadonlyArray<string> = ["sepoliaHub", "mainnetHub"];
 
 function banner(description: string, cmd: string): void {
   console.log(`\n${"=".repeat(60)}`);
@@ -83,6 +92,17 @@ async function main() {
   }
   if (!config.deployerPrivateKey) {
     console.error("Error: DEPLOYER_PRIVATE_KEY is required.");
+    process.exit(1);
+  }
+  if (!HUB_NETWORKS.includes(hubNet)) {
+    console.error(`Error: unexpected hub network "${hubNet}". Did you source config/mainnet.env or config/sepolia.env?`);
+    process.exit(1);
+  }
+  // Real-funds guard: a live mainnet deploy must be explicitly confirmed.
+  if (config.env === "mainnet" && !DRY_RUN && !CONFIRM_MAINNET) {
+    console.error("Refusing to deploy to MAINNET without explicit confirmation.");
+    console.error("  Preview:  npm run setup:mainnet -- --dry-run");
+    console.error("  Deploy:   npm run setup:mainnet -- --confirm-mainnet");
     process.exit(1);
   }
 

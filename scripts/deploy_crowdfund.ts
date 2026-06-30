@@ -136,10 +136,25 @@ async function main() {
   if (securityCouncilAddress.toLowerCase() === deployer.address.toLowerCase()) {
     throw new Error("Security council address must differ from deployer address");
   }
-  console.log(`   Launch team: ${deployer.address}`);
+  // Launch team: config-driven for non-local (a separate key limits deployer
+  // exposure during the crowdfund window — see issue #218), deployer fallback
+  // for local. When explicitly configured it must differ from the deployer.
+  let launchTeamAddress: string;
+  if (config.launchTeamAddress) {
+    launchTeamAddress = config.launchTeamAddress;
+    rejectAnvilAddresses([launchTeamAddress], "Launch team");
+    if (launchTeamAddress.toLowerCase() === deployer.address.toLowerCase()) {
+      throw new Error("Launch team address must differ from deployer address");
+    }
+  } else if (isLocal()) {
+    launchTeamAddress = deployer.address;
+  } else {
+    throw new Error("LAUNCH_TEAM_ADDRESS is required for non-local deployments");
+  }
+  console.log(`   Launch team: ${launchTeamAddress}`);
   console.log(`   Security council: ${securityCouncilAddress}`);
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncilAddress, openTimestamp, nm.override()
+    usdcAddress, armTokenAddress, treasuryAddress, launchTeamAddress, securityCouncilAddress, openTimestamp, nm.override()
   );
   await crowdfund.deploymentTransaction()!.wait();
   const crowdfundAddress = await crowdfund.getAddress();

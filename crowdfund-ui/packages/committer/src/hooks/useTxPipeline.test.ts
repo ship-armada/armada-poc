@@ -3,7 +3,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createStore } from 'jotai'
-import { loadPendingTxs, clearPendingTxs } from '@/lib/pendingTx'
+import { loadPendingTxs, removePendingTx, clearPendingTxs } from '@/lib/pendingTx'
+import { TX_PENDING_MESSAGE } from '@/lib/txWait'
 import {
   runTxPipeline,
   setPipelineAttached,
@@ -216,6 +217,61 @@ describe('tx pipeline store', () => {
     applyWatchedTxResult(store, '0xcommit', 'reverted')
     expect(getPipelineState(store, A).rows[0].status).toBe('error')
     expect(getPipelineState(store, A).rows[0].errorMessage).toBe('Transaction reverted')
+  })
+
+  it('does not re-broadcast a timed-out row while its tx is still pending (no double-send)', async () => {
+    // send broadcasts (hash known) but the receipt wait times out; the pending
+    // entry is deliberately kept so the row can still confirm out-of-band.
+    const a = makeStep('commit', () => Promise.reject({ code: 'TIMEOUT' }))
+    runTxPipeline(store, { address: A, steps: [a.step] })
+
+    await waitFor(() => getPipelineState(store, A).phase === 'error')
+    expect(a.send).toHaveBeenCalledOnce()
+    expect(loadPendingTxs().some((t) => t.txHash === '0xcommit')).toBe(true)
+
+    // Retry while the original tx is still pending must NOT send a duplicate.
+    retryTxPipeline(store, A)
+    await flush()
+    expect(a.send).toHaveBeenCalledOnce()
+    // The guard restores an actionable error row (Retry still offered) — not a
+    // stuck spinner.
+    const row = getPipelineState(store, A).rows[0]
+    expect(row.status).toBe('error')
+    expect(row.errorMessage).toBe(TX_PENDING_MESSAGE)
+    expect(getPipelineState(store, A).phase).toBe('error')
+
+    // When the watcher finally confirms the original tx, the pipeline completes —
+    // still exactly one send.
+    removePendingTx('0xcommit')
+    applyWatchedTxResult(store, '0xcommit', 'confirmed')
+    expect(getPipelineState(store, A).rows[0].status).toBe('done')
+    expect(getPipelineState(store, A).phase).toBe('success')
+    expect(a.send).toHaveBeenCalledOnce()
+  })
+
+  it('advances past a watcher-confirmed middle row so retry continues, never re-sending it', async () => {
+    const a = makeStep('approve', () => Promise.resolve({ status: 1, logs: [] }))
+    const b = makeStep('commit1', () => Promise.reject({ code: 'TIMEOUT' }))
+    const c = makeStep('commit2', () => Promise.resolve({ status: 1, logs: [] }))
+
+    runTxPipeline(store, { address: A, steps: [a.step, b.step, c.step] })
+    await waitFor(() => getPipelineState(store, A).phase === 'error')
+    expect(a.send).toHaveBeenCalledOnce()
+    expect(b.send).toHaveBeenCalledOnce()
+    expect(c.send).not.toHaveBeenCalled()
+
+    // The watcher confirms the timed-out commit1 (mirrors production order: the
+    // pending entry is cleared before the resolution callback runs).
+    removePendingTx('0xcommit1')
+    applyWatchedTxResult(store, '0xcommit1', 'confirmed')
+    expect(getPipelineState(store, A).rows[1].status).toBe('done')
+
+    // Retry continues from commit2 — commit1 is never re-sent.
+    retryTxPipeline(store, A)
+    await waitFor(() => getPipelineState(store, A).phase === 'success')
+    expect(b.send).toHaveBeenCalledOnce()
+    expect(c.send).toHaveBeenCalledOnce()
+    expect(getPipelineState(store, A).rows.map((r) => r.status)).toEqual(['done', 'done', 'done'])
   })
 
   it('retry resumes from the failed row and keeps earlier successes', async () => {

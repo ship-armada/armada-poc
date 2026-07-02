@@ -323,6 +323,34 @@ async function main() {
   const redemptionAddress = await redemption.getAddress();
   console.log(`   ArmadaRedemption: ${redemptionAddress}`);
 
+  // 9b. Redemption circulating-supply invariant (deploy-time misconfiguration guard).
+  // ArmadaRedemption.circulatingSupply() subtracts revenueLock.lockedAtWindDown() and the
+  // crowdfund unsold-in-contract from circulatingSupplyOf([treasury, redemption]) — both
+  // UNCLAMPED against the running total (only the inner cfBalance-cfStillOwed is clamped).
+  // If the excluded/locked terms ever exceed the base, every redeem() reverts permanently
+  // and the redemption contract has no admin. This asserts correct parameterization at
+  // go-live (security review). It is boundary-exact at deploy (circulating is legitimately
+  // ~0), so compare with <=. A runtime clamp is deferred to a future contract revision.
+  console.log("9b. Asserting redemption circulating-supply invariant...");
+  const revenueLockView = await ethers.getContractAt("RevenueLock", revenueLockAddress);
+  const circBase = await armToken.circulatingSupplyOf([treasuryAddress, redemptionAddress]);
+  const lockedAtWindDown = await revenueLockView.lockedAtWindDown();
+  const cfBalance = await armToken.balanceOf(crowdfundAddress);
+  const cfStillOwed = await crowdfund.armStillOwed();
+  const cfUnsold = cfStillOwed >= cfBalance ? 0n : cfBalance - cfStillOwed;
+  const excludedSum = lockedAtWindDown + cfUnsold;
+  if (excludedSum > circBase) {
+    throw new Error(
+      `Redemption invariant FAILED — excluded terms exceed circulating base:\n` +
+      `  lockedAtWindDown (${ethers.formatUnits(lockedAtWindDown, 18)}) + cfUnsold (${ethers.formatUnits(cfUnsold, 18)}) ` +
+      `= ${ethers.formatUnits(excludedSum, 18)}\n` +
+      `  > circulatingSupplyOf([treasury, redemption]) = ${ethers.formatUnits(circBase, 18)}\n` +
+      `  ArmadaRedemption.circulatingSupply() would underflow and permanently brick redemptions.\n` +
+      `  Check the ARM distribution / RevenueLock allocation parameters.`
+    );
+  }
+  console.log(`   OK: locked+cfUnsold ${ethers.formatUnits(excludedSum, 18)} <= circulating base ${ethers.formatUnits(circBase, 18)}`);
+
   // 10. Deploy ArmadaWindDown (requires redemption address)
   console.log("10. Deploying ArmadaWindDown...");
   const windDownDeadline = Math.floor(new Date(config.windDownDeadline).getTime() / 1000);
@@ -348,34 +376,48 @@ async function main() {
   await (await redemption.setWindDown(windDownAddress, nm.override())).wait();
   console.log(`   redemption.setWindDown(${windDownAddress})`);
 
-  // 11c. Wire wind-down to RevenueCounter and RevenueLock for the trigger-time
-  // freeze hooks (issue #90 fix). Both are permissionless one-shot setters.
-  console.log("11c. Wiring wind-down to RevenueCounter + RevenueLock...");
-  const revenueCounterContract = await ethers.getContractAt("RevenueCounter", revenueCounterAddress);
-  await (await revenueCounterContract.setWindDownContract(windDownAddress, nm.override())).wait();
-  console.log(`   revenueCounter.setWindDownContract(${windDownAddress})`);
+  // 11c. Wire wind-down to RevenueLock — deployer-gated one-shot setter, so a direct
+  // deployer call. RevenueCounter's setter is now owner-gated (owner == timelock) and
+  // is wired via the timelock in step 12 alongside the other timelock-owned contracts.
+  console.log("11c. Wiring wind-down to RevenueLock...");
   const revenueLockContract = await ethers.getContractAt("RevenueLock", revenueLockAddress);
   await (await revenueLockContract.setWindDownContract(windDownAddress, nm.override())).wait();
   console.log(`   revenueLock.setWindDownContract(${windDownAddress})`);
 
-  // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
-  // On local: uses Anvil impersonation to execute as the timelock directly.
-  // On non-local: logs the governance proposals needed.
-  console.log("12. Wiring wind-down to governor/treasury/shieldPause (timelock-only)...");
+  // 12. Wire wind-down to the timelock-owned contracts (governor, treasury, shieldPause,
+  // revenueCounter) via the timelock. On local: Anvil impersonation. On non-local: real
+  // schedule + execute (instant under the harden profile's minDelay-0 bootstrap).
+  console.log("12. Wiring wind-down to governor/treasury/shieldPause/revenueCounter (timelock-only)...");
 
   const governorContract = await ethers.getContractAt("ArmadaGovernor", governorAddress);
   const treasury = await ethers.getContractAt("ArmadaTreasuryGov", treasuryAddress);
   const shieldPause = await ethers.getContractAt("ShieldPauseController", shieldPauseAddress);
+  const revenueCounterContract = await ethers.getContractAt("RevenueCounter", revenueCounterAddress);
 
   const windDownCalls = [
     { target: governorAddress, calldata: governorContract.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "governor" },
     { target: treasuryAddress, calldata: treasury.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "treasury" },
     { target: shieldPauseAddress, calldata: shieldPause.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "shieldPause" },
+    { target: revenueCounterAddress, calldata: revenueCounterContract.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "revenueCounter" },
   ];
 
   for (const call of windDownCalls) {
     await timelockCall(timelockAddress, call.target, call.calldata, `${call.label}.setWindDownContract()`, nm);
   }
+
+  // 12a. Verify-after-bind (defense-in-depth). The windDown setters on RevenueLock
+  // (immutable) and RevenueCounter (one-shot) are now caller-gated, so a front-run is
+  // prevented — this read-back catches a wiring bug (wrong address). A mismatch cannot be
+  // repaired in place (one-shot), so abort the deploy.
+  const rlBoundWindDown = await revenueLockContract.windDownContract();
+  const rcBoundWindDown = await revenueCounterContract.windDownContract();
+  if (rlBoundWindDown.toLowerCase() !== windDownAddress.toLowerCase()) {
+    throw new Error(`RevenueLock.windDownContract mis-bound: ${rlBoundWindDown} != expected ${windDownAddress}`);
+  }
+  if (rcBoundWindDown.toLowerCase() !== windDownAddress.toLowerCase()) {
+    throw new Error(`RevenueCounter.windDownContract mis-bound: ${rcBoundWindDown} != expected ${windDownAddress}`);
+  }
+  console.log("   Verified windDown binding on RevenueLock + RevenueCounter");
 
   // 12b. Initialize treasury outflow rate limits (timelock-only). Done at deploy so
   // the treasury is rate-limited from launch rather than via a fragile first

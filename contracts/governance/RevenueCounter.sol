@@ -192,10 +192,10 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     // ============ Wind-Down ============
 
     /// @notice Register the wind-down contract. One-shot setter; locks after the
-    ///         first non-zero call. Permissionless because the lock + zero-address
-    ///         checks make a misregistration recoverable only via UUPS upgrade.
+    ///         first non-zero call. Owner-only (the owner is the timelock) so it
+    ///         cannot be front-run and bound to a foreign address before wiring.
     /// @param _windDownContract The wind-down contract authorized to call freeze().
-    function setWindDownContract(address _windDownContract) external {
+    function setWindDownContract(address _windDownContract) external onlyOwner {
         require(!windDownContractSet, "RevenueCounter: wind-down already set");
         require(_windDownContract != address(0), "RevenueCounter: zero address");
         windDownContractSet = true;

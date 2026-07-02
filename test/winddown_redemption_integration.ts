@@ -180,7 +180,7 @@ describe("Wind-Down & Redemption Integration", function () {
     await armToken.setWindDownContract(await windDown.getAddress());
 
     // RevenueCounter: set wind-down contract for freeze() at trigger time.
-    await revenueCounter.setWindDownContract(await windDown.getAddress());
+    await revenueCounter.connect(await asTimelock()).setWindDownContract(await windDown.getAddress());
 
     // Redemption: wire wind-down reference (deployer-only one-time setter).
     // ArmadaRedemption reads windDown.triggerTime() to enforce REDEMPTION_DELAY.
@@ -1178,7 +1178,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     // Wire governance contracts
     await armToken.setWindDownContract(await windDown.getAddress());
     await redemption.setWindDown(await windDown.getAddress());
-    await revenueCounter.setWindDownContract(await windDown.getAddress());
+    await revenueCounter.connect(await asTimelock()).setWindDownContract(await windDown.getAddress());
 
     const timelockSigner = await asTimelock();
     await governor.connect(timelockSigner).setSecurityCouncil(carol.address);

@@ -398,6 +398,30 @@ describe("RevenueCounter", function () {
   });
 
   // ============================================================
+  // ============================================================
+  // setWindDownContract access control
+  // ============================================================
+
+  describe("setWindDownContract", function () {
+    // WHY: the one-shot windDown setter was permissionless — anyone could
+    // front-run the deployer and bind it to a foreign address between deploy
+    // and wiring, bricking wind-down. It is now owner-gated (owner == timelock).
+    it("reverts when called by a non-owner", async function () {
+      await expect(
+        revenueCounter.connect(alice).setWindDownContract(bob.address)
+      ).to.be.revertedWith("Ownable: caller is not the owner");
+    });
+
+    it("allows the owner to bind it once", async function () {
+      await revenueCounter.setWindDownContract(bob.address);
+      expect(await revenueCounter.windDownContract()).to.equal(bob.address);
+      // one-shot: a second call reverts even from the owner
+      await expect(
+        revenueCounter.setWindDownContract(alice.address)
+      ).to.be.revertedWith("RevenueCounter: wind-down already set");
+    });
+  });
+
   // 4. setFeeCollector
   // ============================================================
 

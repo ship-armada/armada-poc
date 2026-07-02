@@ -8,7 +8,7 @@ import { createElement, type ReactElement, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { JsonRpcProvider } from 'ethers'
 import { ClaimFlowV2, type ClaimFlowV2Props } from './ClaimFlowV2'
-import { clearClaimInFlight } from '@/lib/claimInFlight'
+import { clearClaimInFlight, setClaimInFlight } from '@/lib/claimInFlight'
 import { clearPendingTxs } from '@/lib/pendingTx'
 
 // ClaimFlowV2 reads via react-query — each render gets a fresh client so query
@@ -227,6 +227,30 @@ describe('ClaimFlowV2 read semantics', () => {
     // Phase 2 → refund mode; with no committed USDC, the nothing-to-claim screen.
     expect(await screen.findByText('No refund to claim.')).toBeTruthy()
     expect(alloc).not.toHaveBeenCalled()
+  })
+})
+
+describe('ClaimFlowV2 in-flight watcher', () => {
+  it('surfaces a "still pending" row (not a stuck spinner) when the receipt wait times out', async () => {
+    // Reconstruct an in-flight claim from a persisted marker, then have the read
+    // provider's waitForTransaction reject with an ethers v6 TIMEOUT (its real
+    // timeout semantics — it rejects, it does not resolve null).
+    setClaimInFlight({ hash: '0xpending', mode: 'arm', address: ADDR_A, sentAt: 1 })
+    // Non-zero allocation so the flow lands on the reconstructed submit step
+    // rather than the zero-allocation "nothing to claim" screen.
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n])
+    const waitForTransaction = vi.fn().mockRejectedValue({ code: 'TIMEOUT', message: 'timeout' })
+    const provider = { waitForTransaction } as unknown as JsonRpcProvider
+
+    renderClaim(<ClaimFlowV2 {...baseProps} provider={provider} walletAddress={ADDR_A} />)
+
+    // The timeout must land on an actionable "still pending" error, not leave the
+    // user parked on "Submitting…" forever.
+    expect(
+      await screen.findByText(/Still pending — it may still confirm/),
+    ).toBeTruthy()
+    // Confirmations + timeout are threaded to the wait call.
+    expect(waitForTransaction).toHaveBeenCalledWith('0xpending', expect.any(Number), expect.any(Number))
   })
 })
 

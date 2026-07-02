@@ -10,6 +10,7 @@ import {
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
+  HOP_CONFIGS,
   formatArm,
   formatUsdc,
   formatCountdown,
@@ -89,7 +90,6 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     crowdfundAddress,
     phase,
     refundMode,
-    totalCommitted,
     claimAvailable,
     claimCountdownSeconds,
     onGoToMyPosition,
@@ -159,6 +159,14 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // Phase 0 with refundMode (cappedDemand < min) → refund. Otherwise → ARM.
   // This mirrors v1 ClaimTab's mode derivation.
   const mode: ClaimMode = phase === 2 || refundMode ? 'refund' : 'arm'
+
+  // Past the ARM claim deadline, `claim()` still succeeds but transfers ZERO ARM
+  // (the allocation is forfeited on-chain) — only the over-cap USDC refund, if
+  // any, still moves. Gate the ARM path so the UI never walks the user into a
+  // claim showing ARM numbers it won't deliver. Refund-mode sales have no ARM and
+  // no deadline, so this only applies to the ARM path.
+  const armClaimWindowClosed =
+    mode === 'arm' && props.claimDeadline > 0 && props.blockTimestamp > props.claimDeadline
 
   // Watch a reconstructed in-flight claim (from the marker) to its outcome.
   // Pure observation via the read provider — it never re-sends, so there's no
@@ -302,15 +310,25 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     retry: false,
     queryFn: async () => {
       const contract = new Contract(crowdfundAddress!, CROWDFUND_ABI_FRAGMENTS, provider!)
-      const [claimedRes, allocRes] = await Promise.allSettled([
+      const [claimedRes, allocRes, committedRes] = await Promise.allSettled([
         contract.claimed(walletAddress) as Promise<boolean>,
         phase === 1
           ? (contract.computeAllocation(walletAddress) as Promise<[bigint, bigint]>)
+          : Promise.resolve(null),
+        // A cancelled sale (phase 2) can't `computeAllocation` (it reverts), so sum
+        // the raw per-hop commitments. This makes the refund gate + amount
+        // contract-authoritative rather than indexer-derived — the indexer lags on
+        // a cold load and would otherwise flash a false "no refund to claim".
+        phase === 2
+          ? Promise.all(
+              HOP_CONFIGS.map((_, h) => contract.getCommitment(walletAddress, h) as Promise<bigint>),
+            )
           : Promise.resolve(null),
       ])
       const hasClaimed = claimedRes.status === 'fulfilled' ? claimedRes.value : false
       let armAmount = 0n
       let refundAmount = 0n
+      let committedTotal = 0n
       let readError = false
       if (phase === 1) {
         if (allocRes.status === 'fulfilled' && allocRes.value) {
@@ -320,11 +338,24 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           readError = true
         }
       }
-      return { hasClaimed, armAmount, refundAmount, readError }
+      if (phase === 2) {
+        if (committedRes.status === 'fulfilled' && committedRes.value) {
+          committedTotal = committedRes.value.reduce((sum, c) => sum + c, 0n)
+        } else if (committedRes.status === 'rejected') {
+          readError = true
+        }
+      }
+      return { hasClaimed, armAmount, refundAmount, committedTotal, readError }
     },
   })
 
-  const reads = claimQuery.data ?? { hasClaimed: false, armAmount: 0n, refundAmount: 0n, readError: false }
+  const reads = claimQuery.data ?? {
+    hasClaimed: false,
+    armAmount: 0n,
+    refundAmount: 0n,
+    committedTotal: 0n,
+    readError: false,
+  }
   const hasClaimed = reads.hasClaimed || justClaimed
   const armAmount = reads.armAmount
   const refundAmount = reads.refundAmount
@@ -333,11 +364,19 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // so the gate states render). An account switch re-keys the query → loading.
   const loading = claimReadsEnabled && claimQuery.isPending
 
+  // Contract-authoritative USDC the user can claim back on the refund path: a
+  // cancelled sale (phase 2) refunds the full raw commitment (summed above); a
+  // finalized refund-mode sale returns it as `computeAllocation`'s refund. Using
+  // this instead of the indexer-derived `totalCommitted` fixes both the false
+  // "no refund" flash on a cold load and the over-cap understatement (claimRefund
+  // returns the raw deposit, which the capped graph value understates).
+  const refundClaimable = phase === 2 ? reads.committedTotal : refundAmount
+
   // What the user actually gets back.
   const armDisplay = useMemo(() => formatArm(armAmount), [armAmount])
   const refundDisplay = useMemo(
-    () => formatUsdc(mode === 'refund' ? totalCommitted : refundAmount),
-    [mode, totalCommitted, refundAmount],
+    () => formatUsdc(mode === 'refund' ? refundClaimable : refundAmount),
+    [mode, refundClaimable, refundAmount],
   )
 
   // Submit the claim/refund transaction through the shared single-step engine,
@@ -345,7 +384,9 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // handling. Updates `txs` so Step4Approve renders controlled status.
   const runClaim = async () => {
     if (runningRef.current) return
-    const opLabel = mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
+    // Past the deadline the ARM path claims only the USDC refund — label it honestly.
+    const opLabel =
+      mode === 'arm' && !armClaimWindowClosed ? 'Claim ARM' : 'Claim USDC refund'
     if (!crowdfundAddress) {
       // Surface an error row instead of bailing into Step4's neutral state.
       setTxs([
@@ -357,7 +398,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     // handleDelegateChange (from ENS resolution or a direct 0x… entry). Fall
     // back to checksumming the raw input as a defense-in-depth backstop.
     const delegateAddress = resolvedDelegate || tryGetChecksumAddress(delegate)
-    if (mode === 'arm' && (!delegateAddress || delegateAddress === ZeroAddress)) {
+    // Past the ARM claim deadline the contract skips delegation entirely (ARM is
+    // forfeited), so no delegate is required — the claim returns only the USDC
+    // refund. Don't block that refund-only claim on delegate validation.
+    if (mode === 'arm' && !armClaimWindowClosed && (!delegateAddress || delegateAddress === ZeroAddress)) {
       setTxs([
         { label: opLabel, status: 'error', errorMessage: 'Enter a valid delegate address.' },
       ])
@@ -533,6 +577,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     return (
       <DoneScreen
         mode={mode}
+        armForfeited={armClaimWindowClosed}
         armDisplay={armDisplay}
         refundDisplay={refundDisplay}
         refundAmount={refundAmount}
@@ -624,7 +669,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // different wallet). Renders in the same shell as the DoneScreen so the
   // terminal state is visually consistent with a successful claim.
   const armNothing = mode === 'arm' && armAmount === 0n && refundAmount === 0n
-  const refundNothing = mode === 'refund' && totalCommitted === 0n
+  const refundNothing = mode === 'refund' && refundClaimable === 0n
   if (armNothing || refundNothing) {
     return (
       <NothingToClaimScreen
@@ -638,6 +683,47 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   }
 
   // ── Active flow ─────────────────────────────────────────────────
+
+  // Past the ARM claim deadline: ARM is forfeited on-chain. Offer only the USDC
+  // refund (if any) rather than the normal ARM review, which would show ARM
+  // numbers the claim won't deliver. Gated on `step === 'review'` so the submit /
+  // done screens still render once a refund claim is in flight.
+  if (step === 'review' && armClaimWindowClosed) {
+    const hasRefund = refundAmount > 0n
+    return (
+      <CardShell title="ARM claim window closed">
+        <p className={styles.gateBody}>
+          The window to claim your ARM allocation has closed, so the ARM is forfeited.
+          {hasRefund
+            ? ` You can still claim your USDC refund of ${formatUsdc(refundAmount)} from over-cap commitments.`
+            : ' There is nothing left to claim.'}
+        </p>
+        <div className={styles.gateActions}>
+          {hasRefund && (
+            <ArmadaButton
+              variant="gradient"
+              size="md"
+              label={`Claim ${formatUsdc(refundAmount)} refund`}
+              showIcon={false}
+              disabled={submitting}
+              onClick={() => {
+                setTxs(null)
+                setStep('submit')
+                void runClaim()
+              }}
+            />
+          )}
+          <ArmadaButton
+            variant="secondary"
+            size="md"
+            label="Back to crowdfund"
+            showIcon={false}
+            onClick={onGoToNetwork}
+          />
+        </div>
+      </CardShell>
+    )
+  }
 
   if (step === 'review') {
     const delegateValid = delegateEns === 'resolved' && resolvedDelegate !== ''
@@ -820,6 +906,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   return (
     <DoneScreen
       mode={mode}
+      armForfeited={armClaimWindowClosed}
       armDisplay={armDisplay}
       refundDisplay={refundDisplay}
       refundAmount={refundAmount}
@@ -941,6 +1028,7 @@ function NothingToClaimScreen({
 
 function DoneScreen({
   mode,
+  armForfeited,
   armDisplay,
   refundDisplay,
   refundAmount,
@@ -948,6 +1036,12 @@ function DoneScreen({
   onGoToNetwork,
 }: {
   mode: ClaimMode
+  /** The ARM claim deadline has passed — `claim()` delivered no ARM (forfeited),
+   *  only the USDC refund (if any). Suppresses the "ARM is in your wallet" copy.
+   *  Stays neutral rather than asserting "forfeited": a user who claimed in time
+   *  but revisits after the deadline is also `hasClaimed`, and `claimed` alone
+   *  can't tell us which. */
+  armForfeited: boolean
   armDisplay: string
   refundDisplay: string
   /** Over-cap USDC refund delivered by the ARM `claim()` call. Used to swap in
@@ -961,27 +1055,36 @@ function DoneScreen({
   // from the user's perspective, and "You already claimed" reads like an
   // error. Past-tense success copy works for both cases.
   const armHasRefund = mode === 'arm' && refundAmount > 0n
-  const headline = mode === 'arm' ? 'ARM claimed.' : 'Refund claimed.'
-  const subline =
-    mode === 'arm' ? (
-      armHasRefund ? (
-        <>
-          {armDisplay} is in your wallet.
-          <br />
-          {refundDisplay} USDC refund returned too.
-        </>
-      ) : (
-        <>
-          {armDisplay} is in your wallet.
-          <br />
-          Your delegate now holds your governance voting power.
-        </>
-      )
+  const armForfeitedPath = mode === 'arm' && armForfeited
+  const headline =
+    mode === 'arm' ? (armForfeited ? 'Claim complete.' : 'ARM claimed.') : 'Refund claimed.'
+  const subline = armForfeitedPath ? (
+    // Past the deadline: never assert ARM landed. Show the refund if there was one.
+    armHasRefund ? (
+      <>{refundDisplay} USDC refund returned to your wallet.</>
     ) : (
-      <>{refundDisplay} returned to your wallet.</>
+      <>Your claim has settled on-chain.</>
     )
-  const nextText =
-    mode === 'arm'
+  ) : mode === 'arm' ? (
+    armHasRefund ? (
+      <>
+        {armDisplay} is in your wallet.
+        <br />
+        {refundDisplay} USDC refund returned too.
+      </>
+    ) : (
+      <>
+        {armDisplay} is in your wallet.
+        <br />
+        Your delegate now holds your governance voting power.
+      </>
+    )
+  ) : (
+    <>{refundDisplay} returned to your wallet.</>
+  )
+  const nextText = armForfeitedPath
+    ? 'ARM is delivered only when claimed within the claim window; any USDC refund settles regardless. View your position to confirm your balances, or head back to the crowdfund.'
+    : mode === 'arm'
       ? armHasRefund
         ? 'Both transfers are already settled on-chain. View your position to confirm balances, or head back to the crowdfund to see how the rest of the fleet finalized.'
         : 'Your ARM is settled on-chain and your delegate is active. View your position to confirm the balance, or head back to the crowdfund.'

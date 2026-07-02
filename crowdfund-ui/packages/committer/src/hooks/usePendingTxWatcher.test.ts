@@ -42,6 +42,19 @@ describe('usePendingTxWatcher', () => {
     expect(onResolved).toHaveBeenCalledWith(HASH, 'confirmed', 'Commit participation')
   })
 
+  it('waits with the configured confirmation count (reorg safety)', async () => {
+    seed()
+    const waitForTransaction = vi.fn().mockResolvedValue({ status: 1 })
+    const provider = makeProvider(waitForTransaction)
+
+    const { result } = renderHook(() => usePendingTxWatcher(provider, CHAIN, undefined))
+
+    await waitFor(() => expect(result.current[0]?.status).toBe('confirmed'))
+    // Confirmations are threaded through (not left to ethers' default of 1) so a
+    // mainnet build can require >1 confirmation before treating a tx as landed.
+    expect(waitForTransaction).toHaveBeenCalledWith(HASH, expect.any(Number))
+  })
+
   it('marks a reverted tx as failed and clears it', async () => {
     seed()
     const provider = makeProvider(vi.fn().mockResolvedValue({ status: 0 }))

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JsonRpcProvider } from 'ethers'
 import { loadPendingTxs, removePendingTx, PENDING_TX_EVENT } from '@/lib/pendingTx'
+import { getTxConfirmations } from '@/config/network'
 
 export type WatchedTxStatus = 'pending' | 'confirmed' | 'failed'
 
@@ -58,7 +59,7 @@ export function usePendingTxWatcher(
         if (watchingRef.current.has(t.txHash)) continue
         watchingRef.current.add(t.txHash)
         provider
-          .waitForTransaction(t.txHash)
+          .waitForTransaction(t.txHash, getTxConfirmations())
           .then((receipt) => {
             if (cancelled) return
             const status: WatchedTxStatus = receipt && receipt.status === 1 ? 'confirmed' : 'failed'

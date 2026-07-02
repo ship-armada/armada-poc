@@ -24,11 +24,11 @@ import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
 import { setClaimInFlight, getClaimInFlight, clearClaimInFlight } from '@/lib/claimInFlight'
-import { TX_WAIT_TIMEOUT_MS } from '@/lib/txWait'
+import { TX_WAIT_TIMEOUT_MS, isTxTimeoutError } from '@/lib/txWait'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { isMobileBrowser } from '@/lib/isMobileBrowser'
 import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
-import { getExplorerUrl, getHubChainId } from '@/config/network'
+import { getExplorerUrl, getHubChainId, getTxConfirmations } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
 import styles from './ClaimFlowV2.module.css'
@@ -170,7 +170,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const opLabel = marker.mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
     const explorerUrl = getExplorerUrl()
     provider
-      .waitForTransaction(marker.hash, 1, TX_WAIT_TIMEOUT_MS)
+      .waitForTransaction(marker.hash, getTxConfirmations(), TX_WAIT_TIMEOUT_MS)
       .then((receipt) => {
         if (watchCancelled) return
         if (receipt && receipt.status === 1) {
@@ -181,24 +181,37 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           setStep('done')
           return
         }
-        // status 0 = reverted; null = our wait window elapsed (still pending).
-        // Surface an actionable error state instead of a perpetual "Submitting…";
-        // the marker stays until Back/Retry acknowledges it.
-        const reverted = !!receipt && receipt.status === 0
+        // status 0 = reverted. A wait-window timeout does NOT resolve here — ethers
+        // v6 rejects it with a TIMEOUT error (handled in .catch below) rather than
+        // resolving null. Surface an actionable error instead of a perpetual
+        // "Submitting…"; the marker stays until Back/Retry acknowledges it.
         setTxs([
           {
             label: opLabel,
             status: 'error',
-            errorMessage: reverted
-              ? 'Transaction reverted.'
-              : 'Still pending — it may still confirm. Check the explorer or retry.',
+            errorMessage: 'Transaction reverted.',
             hash: marker.hash,
             explorerUrl,
           },
         ])
       })
-      .catch(() => {
-        // Transient RPC failure — leave the submitting state; a later mount re-watches.
+      .catch((err) => {
+        if (watchCancelled) return
+        // ethers v6 rejects a `waitForTransaction` timeout with code 'TIMEOUT'. The
+        // tx may still confirm later, so show a "still pending" error row instead of
+        // stranding the user on "Submitting…". Any other rejection is a transient RPC
+        // failure — leave the submitting state and let a later mount re-watch.
+        if (isTxTimeoutError(err)) {
+          setTxs([
+            {
+              label: opLabel,
+              status: 'error',
+              errorMessage: 'Still pending — it may still confirm. Check the explorer or retry.',
+              hash: marker.hash,
+              explorerUrl,
+            },
+          ])
+        }
       })
     return () => {
       watchCancelled = true

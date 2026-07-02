@@ -37,12 +37,35 @@ describe('mapRevertToMessage', () => {
     expect(mapRevertToMessage(new Error('claim expired'))).toBe('The 3-year claim deadline has passed.')
   })
 
-  it('maps refundMode', () => {
-    expect(mapRevertToMessage(new Error('refundMode'))).toBe('No ARM allocations (refund mode). Use Claim Refund instead.')
+  it('maps the contract "sale in refund mode" string', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: sale in refund mode'))).toBe(
+      'No ARM allocations (refund mode). Use Claim Refund instead.',
+    )
   })
 
   it('maps invalid signature', () => {
     expect(mapRevertToMessage(new Error('invalid signature'))).toBe('This invite link has an invalid signature.')
+  })
+
+  it('maps the contract "invalid invite signature" string', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: invalid invite signature'))).toBe(
+      'This invite link has an invalid signature.',
+    )
+  })
+
+  it('maps max invites received', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: max invites received'))).toBe(
+      "You've already accepted the maximum number of invites for this hop.",
+    )
+  })
+
+  it('maps "not active window" without being shadowed by "not active"', () => {
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: not active window'))).toBe(
+      'Commitment window is not open.',
+    )
+    expect(mapRevertToMessage(new Error('ArmadaCrowdfund: not active'))).toBe(
+      'Crowdfund is not in the active phase.',
+    )
   })
 
   it('maps nonce consumed', () => {

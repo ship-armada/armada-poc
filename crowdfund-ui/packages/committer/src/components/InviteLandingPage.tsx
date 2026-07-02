@@ -49,7 +49,7 @@ function parseHopVariant(fromHop: number): HopVariant {
 }
 
 export function InviteLandingPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const [joined, setJoined] = useState(false)
   const [preCheckError, setPreCheckError] = useState<PreCheckError | null>(null)
@@ -61,10 +61,20 @@ export function InviteLandingPage() {
   const [windowEndSec, setWindowEndSec] = useState<number | null>(null)
   const [blockTimestampSec, setBlockTimestampSec] = useState<number | null>(null)
 
-  const inviteData = useMemo<InviteLinkData | null>(
-    () => decodeInviteUrl(searchParams),
-    [searchParams],
-  )
+  // Capture the invite once, on mount, so the flow no longer depends on the query
+  // string — that lets the effect below strip the signed link out of the URL
+  // without tearing the landing card / commit flow down.
+  const [inviteData] = useState<InviteLinkData | null>(() => decodeInviteUrl(searchParams))
+
+  // The invite signature is a single-use bearer credential (the invitee isn't
+  // bound in the signed struct), so an un-redeemed link left in the address bar or
+  // browser history is a live token on a shared or synced machine. Once it's been
+  // captured above, scrub the query params from the URL. `inviteData` is held in
+  // state, so the InviteLinkFlowController (which reads its props, not the URL)
+  // keeps working after the query is gone.
+  useEffect(() => {
+    if (inviteData) setSearchParams(new URLSearchParams(), { replace: true })
+  }, [inviteData, setSearchParams])
 
   const hopVariant = useMemo(
     () => (inviteData ? parseHopVariant(inviteData.fromHop) : 'hop-1'),

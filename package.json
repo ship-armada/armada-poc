@@ -76,6 +76,7 @@
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
     "demo:build": "cd usdc-v2-frontend && npm run build",
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",
+    "setup:mainnet": "npx ts-node scripts/deploy_mainnet.ts",
     "setup:sepolia:phase1": "npx ts-node scripts/deploy_sepolia.ts --phase 1",
     "setup:sepolia:phase2": "npx ts-node scripts/deploy_sepolia.ts --phase 2",
     "setup:sepolia:phase3": "npx ts-node scripts/deploy_sepolia.ts --phase 3",

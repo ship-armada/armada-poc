@@ -1,6 +1,8 @@
 // ABOUTME: Shared network configuration for local (Anvil), Sepolia, and mainnet.
 // ABOUTME: Pure resolvers (testable) + import.meta.env wrappers used by the apps.
 
+import { getAddress } from 'ethers'
+
 export type NetworkMode = 'local' | 'sepolia' | 'mainnet'
 
 /** The subset of Vite env the network resolvers read. All optional so the pure
@@ -17,6 +19,10 @@ export interface NetworkEnv {
   VITE_SEPOLIA_RPC_FALLBACK?: string
   VITE_CROWDFUND_INDEXER_URL?: string
   VITE_DEPLOYMENT_INSTANCE?: string
+  /** Trusted crowdfund address supplied out-of-band from the mainnet deploy
+   *  output. Used to verify the fetched manifest's crowdfund (USDC approve/commit
+   *  target) address against a value that does not come from armada-deployments. */
+  VITE_EXPECTED_CROWDFUND_ADDRESS?: string
 }
 
 // Default public RPCs, used only when no env-configured URL is present. A money
@@ -158,6 +164,34 @@ export function assertDeploymentChainId(
   }
 }
 
+/**
+ * Guard a loaded deployment manifest's critical address against an out-of-band
+ * expected value. Defends against a compromised/wrong manifest (supply-chain gap
+ * on the armada-deployments fetch) redirecting the USDC approve/commit target.
+ * Case/checksum-insensitive. Throws on mismatch or a malformed input.
+ */
+export function assertExpectedAddress(
+  actual: string,
+  expected: string,
+  field: string,
+  source: string,
+): void {
+  let a: string
+  let e: string
+  try {
+    a = getAddress(actual)
+    e = getAddress(expected)
+  } catch {
+    throw new Error(`Address integrity check failed for ${field} in ${source}: malformed address`)
+  }
+  if (a !== e) {
+    throw new Error(
+      `Address integrity check failed: ${field} in ${source} is ${a}, but this build expects ${e}. ` +
+        `Refusing to load — possible supply-chain tampering of the deployment manifest.`,
+    )
+  }
+}
+
 /** Block explorer base URL. Returns undefined for local mode (no explorer). */
 export function explorerUrlForMode(mode: NetworkMode): string | undefined {
   switch (mode) {
@@ -224,4 +258,8 @@ export function getTxConfirmations(): number {
 
 export function getExplorerUrl(): string | undefined {
   return explorerUrlForMode(getNetworkMode())
+}
+
+export function getExpectedCrowdfundAddress(): string | undefined {
+  return env().VITE_EXPECTED_CROWDFUND_ADDRESS?.trim() || undefined
 }

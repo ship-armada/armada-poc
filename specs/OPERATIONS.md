@@ -83,6 +83,7 @@ Complete every item before calling the deploy script. Sign off with initials and
 |---|---|
 | Observer URL is live and loading events | ☐ |
 | Committer URL is live and wallet connection works | ☐ |
+| Committer `DEPLOYMENT_REF` (commit SHA) and `VITE_EXPECTED_CROWDFUND_ADDRESS` set on the mainnet Netlify site (see §3 Step 8) | ☐ |
 | RPC fallback providers configured and tested | ☐ |
 | Monitoring alerts configured (see §8) | ☐ |
 | Security Council members confirmed reachable | ☐ |
@@ -147,9 +148,9 @@ Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 
 Record: `loadArm_tx = [hash]`
 
-> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 9 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the week-1 window is active.
+> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the week-1 window is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
 
-> **At or after `openTimestamp`:** Continue to Steps 6, 7, 8, and 9 in order.
+> **At or after `openTimestamp`:** Continue to Steps 6, 7, 8, 9, and 10 in order.
 
 ### Step 6: Add initial seeds
 
@@ -163,19 +164,36 @@ See §4 (Week-1 operating cadence) for the full seed addition procedure. The fir
 
 See §4 for the launch-team invite procedure.
 
-### Step 8: Verify observer and committer
+### Step 8: Configure the committer's supply-chain integrity anchor (Netlify env)
+
+The mainnet committer fetches its contract addresses (including the `crowdfund`
+address every user grants a USDC `approve()` to) from the `ship-armada/armada-deployments`
+repo at build time. Two per-site Netlify env vars pin and verify that fetch so a
+later push to the deployments repo cannot silently redirect the approve target.
+This step may be performed as soon as the contract address (Step 1) and the
+published manifest exist — it does not depend on `openTimestamp`.
+
+| | |
+|---|---|
+| **Actor** | Deployer / ops |
+| **Action** | 1. Capture the deployed `crowdfund` address from the Step 1 deploy output. 2. Publish the deployment manifest to `armada-deployments` and record the resulting **commit SHA**. 3. In the mainnet committer Netlify site env (Site settings → Environment variables), set `DEPLOYMENT_REF=<that commit SHA>` (a full SHA, not a branch) and `VITE_EXPECTED_CROWDFUND_ADDRESS=<deployed crowdfund address>`. 4. Trigger a committer redeploy. |
+| **Preconditions** | Step 1 complete (crowdfund address known); manifest published to `armada-deployments` |
+| **On-chain confirmation** | Build log prints `crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS`; the app loads without an address-integrity error |
+| **Fallback** | If the build fails with `FATAL: fetched crowdfund … != expected …`, the pinned manifest's crowdfund address does not match the trusted value — do NOT override the check; confirm the correct manifest/SHA and the correct expected address before redeploying. A mainnet build also hard-fails `validateEnv` if `VITE_EXPECTED_CROWDFUND_ADDRESS` is unset. |
+
+### Step 9: Verify observer and committer
 
 | | |
 |---|---|
 | **Actor** | Deployer or ops |
 | **Action** | Load observer; confirm `ArmLoaded` and any `SeedAdded` events appear; confirm stats banner shows correct state. If `block.timestamp < openTimestamp`: observer should show "ARMED / PRE-OPEN" (or equivalent) — not "OPEN". Commitments will start working once the open timestamp is reached. If `block.timestamp ≥ openTimestamp`: observer should show "OPEN" with correct countdown. Test wallet connection on committer. |
-| **Preconditions** | Pre-open path: Step 5 complete. Open path: Steps 5–7 complete. |
+| **Preconditions** | Pre-open path: Steps 5 and 8 complete. Open path: Steps 5–8 complete. |
 | **On-chain confirmation** | Observer reflects correct state (pre-open or open) and correct hop-0 count |
 | **Fallback** | If observer not loading: check RPC provider; check contract address in observer config |
 
-### Step 9: Announce sale open
+### Step 10: Announce sale open
 
-**Do not announce until Step 8 confirms observer shows OPEN (not merely ARMED / PRE-OPEN).** Publish observer and committer URLs. Send participant communications.
+**Do not announce until Step 9 confirms observer shows OPEN (not merely ARMED / PRE-OPEN).** Publish observer and committer URLs. Send participant communications.
 
 ---
 

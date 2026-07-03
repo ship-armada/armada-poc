@@ -10,6 +10,7 @@ export interface EnvRecord {
   VITE_CROWDFUND_INDEXER_URL?: string
   VITE_CROWDFUND_PROFILE?: string
   VITE_DEPLOYMENT_INSTANCE?: string
+  VITE_EXPECTED_CROWDFUND_ADDRESS?: string
 }
 
 export type EnvValidationResult = { ok: true } | { ok: false; errors: string[] }
@@ -66,6 +67,15 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
     errors.push(
       `VITE_CROWDFUND_PROFILE is "${env.VITE_CROWDFUND_PROFILE!.trim()}" on a mainnet build — ` +
         'mainnet must use the "mainnet" profile (or leave it unset, which defaults to mainnet).',
+    )
+  }
+  // The crowdfund address is the USDC approve/commit target. On mainnet it must be
+  // pinned to a trusted out-of-band value so the app can reject a compromised/wrong
+  // manifest fetched from armada-deployments; refuse to build without the anchor.
+  if (network === 'mainnet' && missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS)) {
+    errors.push(
+      'VITE_EXPECTED_CROWDFUND_ADDRESS is not set on a mainnet build — the committer cannot ' +
+        'verify the fetched crowdfund (USDC approve target) address against a trusted value.',
     )
   }
 

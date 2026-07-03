@@ -15,6 +15,7 @@ import {
   confirmationsForMode,
   explorerUrlForMode,
   assertDeploymentChainId,
+  assertExpectedAddress,
   type NetworkEnv,
 } from './network.js'
 
@@ -171,6 +172,40 @@ describe('assertDeploymentChainId', () => {
     expect(() => assertDeploymentChainId(11155111, 1, 'crowdfund-hub-mainnet.json')).toThrow(
       /chain mismatch.*11155111.*chain 1/,
     )
+  })
+})
+
+describe('assertExpectedAddress', () => {
+  // A valid checksummed address and the same address in different casings.
+  const CHECKSUMMED = '0x52908400098527886E0F7030069857D2E4169EE7'
+  const LOWER = CHECKSUMMED.toLowerCase()
+  const OTHER = '0x8617E340B3D01FA5F11F306F4090FD50E238070D'
+
+  it('passes when both sides are the same address regardless of casing', () => {
+    expect(() =>
+      assertExpectedAddress(LOWER, CHECKSUMMED, 'contracts.crowdfund', 'crowdfund.json'),
+    ).not.toThrow()
+    expect(() =>
+      assertExpectedAddress(CHECKSUMMED, LOWER, 'contracts.crowdfund', 'crowdfund.json'),
+    ).not.toThrow()
+  })
+
+  it('throws a supply-chain warning when the addresses differ', () => {
+    expect(() =>
+      assertExpectedAddress(OTHER, CHECKSUMMED, 'contracts.crowdfund', 'crowdfund.json'),
+    ).toThrow(/Address integrity check failed.*contracts\.crowdfund.*supply-chain/s)
+  })
+
+  it('throws on a malformed actual address', () => {
+    expect(() =>
+      assertExpectedAddress('not-an-address', CHECKSUMMED, 'contracts.crowdfund', 'crowdfund.json'),
+    ).toThrow(/malformed address/)
+  })
+
+  it('throws on a malformed expected address', () => {
+    expect(() =>
+      assertExpectedAddress(CHECKSUMMED, '0x123', 'contracts.crowdfund', 'crowdfund.json'),
+    ).toThrow(/malformed address/)
   })
 })
 

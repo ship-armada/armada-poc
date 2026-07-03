@@ -16,6 +16,18 @@
 #                           instance's scale or the UI misrepresents the sale.
 #   DEPLOYMENT_INSTANCE     named armada-deployments instance; defaults to "medi2".
 #                           Re-exported as VITE_DEPLOYMENT_INSTANCE for the runtime.
+#   DEPLOYMENT_REF          git ref of ship-armada/armada-deployments to fetch the
+#                           manifest from. Pins the fetch to an immutable point so a
+#                           later push to `main` cannot change what ships after review.
+#                           MUST be a full commit SHA on the mainnet site; defaults to
+#                           "main" (unpinned) for Sepolia, which is low-stakes.
+#   VITE_EXPECTED_CROWDFUND_ADDRESS  trusted crowdfund contract address, supplied
+#                           out-of-band from the mainnet deploy output (NOT from
+#                           armada-deployments). The build fails if the fetched
+#                           manifest's crowdfund address does not match it, and the
+#                           runtime refuses to load a mismatching manifest. REQUIRED on
+#                           mainnet (validateEnv hard-fails without it); optional on
+#                           Sepolia (checked only when set).
 #   VITE_HUB_RPC            dedicated hub RPC URL (+ optional VITE_HUB_RPC_FALLBACK).
 #                           Strongly recommended on mainnet; without it the app falls
 #                           back to a public node. (Legacy VITE_SEPOLIA_RPC still works
@@ -50,10 +62,13 @@
     export VITE_CROWDFUND_PROFILE="${VITE_CROWDFUND_PROFILE:-medi}" && \
     INSTANCE="${DEPLOYMENT_INSTANCE:-medi2}" && \
     export VITE_DEPLOYMENT_INSTANCE="${INSTANCE}" && \
-    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/main/${NETWORK}/${INSTANCE}" && \
-    echo "Fetching ${NETWORK}/${INSTANCE} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE})" && \
+    REF="${DEPLOYMENT_REF:-main}" && \
+    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/${NETWORK}/${INSTANCE}" && \
+    echo "Fetching ${NETWORK}/${INSTANCE}@${REF} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE})" && \
     mkdir -p "crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}" && \
-    curl -sfL -o "crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}/crowdfund.json" "${BASE}/${VITE_NETWORK}/crowdfund.json" && \
+    export CF_MANIFEST_PATH="crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}/crowdfund.json" && \
+    curl -sfL -o "${CF_MANIFEST_PATH}" "${BASE}/${VITE_NETWORK}/crowdfund.json" && \
+    node -e "const fs=require('fs');const p=process.env.CF_MANIFEST_PATH;const exp=process.env.VITE_EXPECTED_CROWDFUND_ADDRESS;if(exp){const d=JSON.parse(fs.readFileSync(p,'utf8'));const got=(d.contracts&&d.contracts.crowdfund||'').toLowerCase();if(got!==exp.toLowerCase()){console.error('FATAL: fetched crowdfund '+got+' != expected '+exp.toLowerCase());process.exit(1);}console.log('crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS');}else{console.log('VITE_EXPECTED_CROWDFUND_ADDRESS unset — skipping build-time address check');}" && \
     rm -rf node_modules package-lock.json && \
     npm install --legacy-peer-deps && \
     npm run build --workspace=@armada/crowdfund-committer

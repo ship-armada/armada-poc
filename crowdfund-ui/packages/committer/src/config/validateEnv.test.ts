@@ -45,6 +45,7 @@ describe('validateEnv', () => {
         VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
         VITE_CROWDFUND_PROFILE: 'mainnet',
         VITE_DEPLOYMENT_INSTANCE: 'launch1',
+        VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886E0F7030069857D2E4169EE7',
       }),
     ).toEqual({ ok: true })
   })
@@ -70,7 +71,29 @@ describe('validateEnv', () => {
         VITE_NETWORK: 'mainnet',
         VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
         VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+        VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886E0F7030069857D2E4169EE7',
       }),
+    ).toEqual({ ok: true })
+  })
+
+  it('fails a mainnet build without VITE_EXPECTED_CROWDFUND_ADDRESS', () => {
+    const result = validateEnv({
+      PROD: true,
+      VITE_NETWORK: 'mainnet',
+      VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('VITE_EXPECTED_CROWDFUND_ADDRESS'))).toBe(true)
+    }
+  })
+
+  it('does not require VITE_EXPECTED_CROWDFUND_ADDRESS on a sepolia build', () => {
+    // COMPLETE_PROD is a sepolia build with no expected-address var; must stay green.
+    expect(validateEnv(COMPLETE_PROD)).toEqual({ ok: true })
+    expect(
+      validateEnv({ ...COMPLETE_PROD, VITE_EXPECTED_CROWDFUND_ADDRESS: undefined }),
     ).toEqual({ ok: true })
   })
 

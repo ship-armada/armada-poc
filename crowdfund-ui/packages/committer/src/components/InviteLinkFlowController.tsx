@@ -52,7 +52,7 @@ import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
 import { useSelfFill } from '@/hooks/useSelfFill'
 import { useAllowance } from '@/hooks/useAllowance'
 import { useEligibility } from '@/hooks/useEligibility'
-import { effectiveInviteCapUsdc } from '@/lib/inviteCapMath'
+import { effectiveInviteCapUsdc, isAtInviteCap } from '@/lib/inviteCapMath'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 
@@ -208,6 +208,14 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // input step and land on the confirmation screen with "fully committed" copy,
   // matching the participate modal, instead of a dead-end input message.
   const isFullyCommitted = existingCommittedUsdc > 0n && existingCommittedUsdc >= effectiveCapUsdc
+  // Every commitWithInvite stacks another invite onto the invitee, which the
+  // contract rejects once they're at the hop's `maxInvitesReceived`. Detect that
+  // up front so an already-maxed re-invitee is blocked before signing a useless
+  // approve, rather than hitting a revert after it. A first-time invitee (0
+  // received) is never at the cap.
+  const maxInvitesReceived =
+    targetHop <= 2 ? HOP_CONFIGS[targetHop as 0 | 1 | 2].maxInvitesReceived : 0
+  const atInviteCap = isAtInviteCap(existingInvitesReceived, maxInvitesReceived)
 
   // Pro-rata ARM for a given new USD commit at the target hop — same math as
   // ParticipateFlowV2's Step3, so all /invite screens show one consistent number.
@@ -542,6 +550,41 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         )
 
       case 'commit': {
+        // At the invite-stacking cap for this hop — redeeming would revert
+        // ("max invites received"), since commitWithInvite stacks another invite.
+        // Block before the approve so no gas is wasted; the invitee can still
+        // commit to their existing position via the normal flow.
+        if (atInviteCap) {
+          const hasHeadroom = existingCommittedUsdc < effectiveCapUsdc
+          return (
+            <div className="space-y-4 p-6 text-center">
+              <h2 className="text-lg font-semibold">Invite limit reached</h2>
+              <p className="text-muted-foreground text-sm">
+                You've already accepted the maximum number of invites at {hopLabel(targetHop)}, so
+                this invite link can't be redeemed.
+                {hasHeadroom
+                  ? ' You can still commit to your existing position from My Position.'
+                  : ''}
+              </p>
+              <div className="flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigate('/?view=myposition')}
+                  className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted"
+                >
+                  View my position
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted"
+                >
+                  Back to crowdfund
+                </button>
+              </div>
+            </div>
+          )
+        }
         // No room left to commit — skip straight to the confirmation screen
         // (stepper, What's next, Invite) instead of a dead-end input message.
         if (isFullyCommitted) {

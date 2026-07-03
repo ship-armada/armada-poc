@@ -6,7 +6,8 @@ import { atom, useAtomValue, useStore } from 'jotai'
 import type { TransactionResponse } from 'ethers'
 import type { ReceiptLogLike, Step4Transaction } from '@armada/crowdfund-shared'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
-import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
+import { savePendingTx, removePendingTx, loadPendingTxs } from '@/lib/pendingTx'
+import { TX_PENDING_MESSAGE } from '@/lib/txWait'
 import { getHubChainId, getExplorerUrl } from '@/config/network'
 
 /** One transaction in a pipeline: a labelled wallet send plus optional follow-ups. */
@@ -14,9 +15,13 @@ export interface TxStep {
   label: string
   /** Issues the tx (pops the wallet prompt). */
   send: () => Promise<TransactionResponse>
-  /** Receipt logs on success — e.g. ingest commit events into the graph store. */
+  /** Receipt logs on success — e.g. ingest commit events into the graph store.
+   *  Skipped when a step is confirmed out-of-band by the pending-tx watcher (only
+   *  the drive() path calls it) — must not be load-bearing for a later send. */
   onReceipt?: (logs: readonly ReceiptLogLike[]) => void
-  /** Side effect after this step confirms, before the next send (e.g. refresh allowance). */
+  /** Side effect after this step confirms, before the next send (e.g. refresh
+   *  allowance). Like onReceipt, skipped on watcher-confirmed steps — must not
+   *  gate the correctness of a later send. */
   after?: () => Promise<void>
 }
 
@@ -112,6 +117,14 @@ async function drive(store: Store, address: string): Promise<void> {
   rec.running = true
   try {
     while (rec.cursor < rec.steps.length) {
+      // Skip any row already completed out-of-band (e.g. confirmed by the
+      // background watcher while this step sat timed-out). Keeps the cursor
+      // self-healing so a resumed/retried pipeline never re-sends — or stomps —
+      // a done row, independent of the watcher's remove/resolve ordering.
+      if (readState(store, address).rows[rec.cursor]?.status === 'done') {
+        rec.cursor += 1
+        continue
+      }
       // Decision point before each send — never prompt the wallet without UI.
       if (rec.aborted) {
         setPhase(store, address, 'aborted')
@@ -123,6 +136,30 @@ async function drive(store: Store, address: string): Promise<void> {
       }
       const i = rec.cursor
       const step = rec.steps[i]
+
+      // Idempotency guard: if a prior attempt already broadcast this step and
+      // that tx is still unresolved (persisted pending), do NOT broadcast a
+      // duplicate. The contract accepts over-cap commits, so a second commit on
+      // a fresh nonce would pull USDC twice. The pending-tx watcher owns resolving
+      // this hash and resumes the pipeline via applyWatchedTxResult once it lands.
+      // TODO: recovering a genuinely dropped/replaced tx needs same-nonce,
+      // gas-bumped resubmission — until then, in-tab recovery is a page reload (a
+      // fresh flow's rows carry no hash, so the guard can't block it) or speeding
+      // up / cancelling the tx in the wallet.
+      const existingRow = readState(store, address).rows[i]
+      if (existingRow?.hash && loadPendingTxs().some((t) => t.txHash === existingRow.hash)) {
+        setRow(store, address, i, {
+          status: 'error',
+          phaseLabel: undefined,
+          hash: existingRow.hash,
+          explorerUrl: getExplorerUrl(),
+          errorMessage: TX_PENDING_MESSAGE,
+          errorDetails: `Transaction hash: ${existingRow.hash}`,
+        })
+        setPhase(store, address, 'error')
+        return
+      }
+
       // Phase 1: waiting for the wallet to confirm (no hash yet).
       setRow(store, address, i, {
         label: step.label,
@@ -148,9 +185,12 @@ async function drive(store: Store, address: string): Promise<void> {
           sentAt: Date.now(),
         })
       })
-      // A resolved tx no longer needs watching; a timed-out one may still
-      // confirm, so it stays persisted for the post-timeout watcher (3.4).
-      if (result.hash && result.outcome !== 'timeout') {
+      // A tx that definitively resolved no longer needs watching: `success` is
+      // done, and `reverted` changed no state (safe to re-send on retry). A
+      // `timeout` or `error` with a broadcast hash may still be in the mempool —
+      // keep it persisted so the post-timeout watcher resolves it AND the
+      // idempotency guard above blocks a duplicate re-send until it does.
+      if (result.hash && (result.outcome === 'success' || result.outcome === 'reverted')) {
         removePendingTx(result.hash)
       }
       if (result.outcome === 'success') {
@@ -268,11 +308,9 @@ export function retryTxPipeline(store: Store, address: string): void {
   if (readState(store, address).phase !== 'error') return
   rec.aborted = false
   rec.attached = true
-  setRow(store, address, rec.cursor, {
-    status: 'loading',
-    errorMessage: undefined,
-    errorDetails: undefined,
-  })
+  // Don't pre-set the cursor row here: drive() skips any watcher-confirmed `done`
+  // row (so retry never stomps it), sets the target row to `loading` on the send
+  // path, or restores an actionable `error` row if the idempotency guard fires.
   setPhase(store, address, 'running')
   void drive(store, address)
 }
@@ -299,6 +337,12 @@ export function applyWatchedTxResult(
         errorMessage: undefined,
         errorDetails: undefined,
       })
+      // Reconcile the engine cursor so a resumed/retried pipeline continues past
+      // this row instead of re-sending it. The record may be gone (a reset /
+      // account-switch abort / clear raced this resolution) — null-guard it; the
+      // row mutation above is render-only and safe without a record.
+      const rec = records.get(address)
+      if (rec && rec.cursor <= idx) rec.cursor = idx + 1
       if (readState(store, address).rows.every((r) => r.status === 'done')) {
         setPhase(store, address, 'success')
       }

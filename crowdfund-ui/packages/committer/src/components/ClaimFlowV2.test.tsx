@@ -23,6 +23,8 @@ function renderClaim(ui: ReactElement) {
 // Per-test read implementations, driven by the connected address.
 let claimedFor: (addr: string) => Promise<boolean>
 let allocationFor: (addr: string) => Promise<[bigint, bigint]>
+// Raw per-hop commitment (phase-2 refund path reads getCommitment per hop).
+let commitmentFor: (addr: string, hop: number) => Promise<bigint>
 let claimImpl: () => Promise<unknown>
 // Captures the delegate argument passed to the on-chain `claim(delegate)` call.
 let lastClaimDelegate: string | undefined
@@ -35,6 +37,7 @@ vi.mock('ethers', async (importOriginal) => {
       return {
         claimed: (addr: string) => claimedFor(addr),
         computeAllocation: (addr: string) => allocationFor(addr),
+        getCommitment: (addr: string, hop: number) => commitmentFor(addr, hop),
         claim: (delegate: string) => {
           lastClaimDelegate = delegate
           return claimImpl()
@@ -74,6 +77,7 @@ beforeEach(() => {
   clearPendingTxs()
   claimedFor = () => Promise.resolve(false)
   allocationFor = () => Promise.resolve([0n, 0n])
+  commitmentFor = () => Promise.resolve(0n)
   claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => Promise.resolve({ status: 1, logs: [] }) })
   lastClaimDelegate = undefined
 })
@@ -251,6 +255,72 @@ describe('ClaimFlowV2 in-flight watcher', () => {
     ).toBeTruthy()
     // Confirmations + timeout are threaded to the wait call.
     expect(waitForTransaction).toHaveBeenCalledWith('0xpending', expect.any(Number), expect.any(Number))
+  })
+})
+
+describe('ClaimFlowV2 refund gate (contract-authoritative)', () => {
+  it('shows the on-chain refund even when the indexer total lags on a cold load (phase 2)', async () => {
+    // Cancelled sale: the event-graph total is still 0 (cold load / lagging
+    // indexer), but the contract reports a real commitment via getCommitment.
+    commitmentFor = (_addr, hop) => Promise.resolve(hop === 0 ? 500_000_000n : 0n) // 500 USDC at hop 0
+
+    renderClaim(<ClaimFlowV2 {...baseProps} phase={2} totalCommitted={0n} walletAddress={ADDR_A} />)
+
+    // The refund review renders from the contract amount — never the false
+    // "No refund to claim." terminal screen the graph total would have produced.
+    expect(await screen.findByText('Claim your refund')).toBeTruthy()
+    expect(screen.queryByText('No refund to claim.')).toBeNull()
+  })
+
+  it('still shows "No refund to claim" when the address genuinely committed nothing (phase 2)', async () => {
+    commitmentFor = () => Promise.resolve(0n)
+
+    renderClaim(<ClaimFlowV2 {...baseProps} phase={2} totalCommitted={0n} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText('No refund to claim.')).toBeTruthy()
+  })
+})
+
+describe('ClaimFlowV2 ARM claim deadline', () => {
+  const PAST = { claimDeadline: 1_000, blockTimestamp: 2_000 }
+
+  it('gates the ARM claim past the deadline instead of showing phantom ARM', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM, no refund
+
+    renderClaim(<ClaimFlowV2 {...baseProps} {...PAST} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText('ARM claim window closed')).toBeTruthy()
+    expect(screen.getByText(/nothing left to claim/i)).toBeTruthy()
+    // No phantom "in your wallet" ARM copy, and no claim action (nothing to claim).
+    expect(screen.queryByText(/in your wallet/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Claim/ })).toBeNull()
+  })
+
+  it('offers the USDC refund claim past the deadline when there is an over-cap refund', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 250_000_000n]) // ARM forfeited, 250 USDC refund
+
+    renderClaim(<ClaimFlowV2 {...baseProps} {...PAST} signer={{} as never} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText('ARM claim window closed')).toBeTruthy()
+    // The refund is claimable; ARM is not offered.
+    const refundBtn = screen.getByRole('button', { name: /Claim .*refund/ })
+    expect(refundBtn).toBeTruthy()
+    expect(screen.queryByText(/in your wallet/)).toBeNull()
+
+    // Claiming past the deadline succeeds without a delegate (contract skips it).
+    fireEvent.click(refundBtn)
+    await waitFor(() => expect(lastClaimDelegate).toBeDefined())
+  })
+
+  it('done screen past the deadline never asserts ARM landed', async () => {
+    claimedFor = () => Promise.resolve(true) // already claimed, revisited after the deadline
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n])
+
+    renderClaim(<ClaimFlowV2 {...baseProps} {...PAST} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText('Claim complete.')).toBeTruthy()
+    expect(screen.queryByText(/in your wallet/)).toBeNull()
+    expect(screen.queryByText('ARM claimed.')).toBeNull()
   })
 })
 

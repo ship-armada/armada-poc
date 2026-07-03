@@ -26,8 +26,7 @@ import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
 import { setClaimInFlight, getClaimInFlight, clearClaimInFlight } from '@/lib/claimInFlight'
 import { TX_WAIT_TIMEOUT_MS, isTxTimeoutError } from '@/lib/txWait'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
-import { isMobileBrowser } from '@/lib/isMobileBrowser'
-import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
+import { submitWrite } from '@/lib/submitWrite'
 import { getExplorerUrl, getHubChainId, getTxConfirmations } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
@@ -392,15 +391,12 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const result = await sendAndWaitTx(
       () => {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, activeSigner)
-        // Mobile: submit via wagmi so MetaMask Mobile surfaces the request (the
-        // ethers signer transport doesn't trigger the WC redirect). Desktop keeps
-        // the ethers path unchanged.
-        if (isMobileBrowser()) {
-          return mode === 'arm'
-            ? submitTxViaWagmi(crowdfund, 'claim', [delegateAddress!])
-            : submitTxViaWagmi(crowdfund, 'claimRefund', [])
-        }
-        return mode === 'arm' ? crowdfund.claim(delegateAddress!) : crowdfund.claimRefund()
+        // submitWrite routes mobile through wagmi (so MetaMask Mobile surfaces the
+        // request) and desktop through ethers after asserting the wallet is on the
+        // hub chain.
+        return mode === 'arm'
+          ? submitWrite(crowdfund, 'claim', [delegateAddress!], activeSigner)
+          : submitWrite(crowdfund, 'claimRefund', [], activeSigner)
       },
       (hash) => {
         // Persist the broadcast so the header tx chip (via usePendingTxWatcher)

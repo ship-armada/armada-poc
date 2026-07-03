@@ -43,8 +43,7 @@ import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
-import { isMobileBrowser } from '@/lib/isMobileBrowser'
-import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
+import { submitWrite } from '@/lib/submitWrite'
 import { useWallet } from '@/hooks/useWallet'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
@@ -332,9 +331,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
         label: `Approve ${formatUsdc(amountBig)} USDC`,
         send: () => {
           const usdc = new Contract(deployment!.contracts.usdc, ERC20_ABI_FRAGMENTS, activeSigner)
-          return isMobileBrowser()
-            ? submitTxViaWagmi(usdc, 'approve', [deployment!.contracts.crowdfund, amountBig])
-            : usdc.approve(deployment!.contracts.crowdfund, amountBig)
+          return submitWrite(usdc, 'approve', [deployment!.contracts.crowdfund, amountBig], activeSigner)
         },
         // Re-read allowance so a retry's skip-approval decision sees the real value.
         after: allowanceState.refresh,
@@ -356,9 +353,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
           inviteData.signature,
           amountBig,
         ] as const
-        return isMobileBrowser()
-          ? submitTxViaWagmi(crowdfund, 'commitWithInvite', commitArgs)
-          : crowdfund.commitWithInvite(...commitArgs)
+        return submitWrite(crowdfund, 'commitWithInvite', commitArgs, activeSigner)
       },
       // Fast-path the Invited + Committed events into the graph so the user has a
       // recognized hop position the moment we hit Step5.

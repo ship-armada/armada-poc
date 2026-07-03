@@ -1,13 +1,12 @@
 /**
  * Verification Key Loading Utilities
  *
- * Loads verification keys from railgun-circuit-test-artifacts package
- * and formats them for the RailgunSmartWallet contract.
+ * Loads verification keys from Armada's own compiled circuits
+ * and formats them for the PrivacyPool contract.
  */
 
-// Use require for CommonJS module
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const artifacts = require("railgun-circuit-test-artifacts");
+// Armada's own circuit artifacts (replaces unlicensed railgun-circuit-test-artifacts)
+import * as armadaArtifacts from './sdk/armada-artifacts';
 
 export interface VKey {
   protocol: string;
@@ -104,14 +103,14 @@ export const TESTING_ARTIFACT_CONFIGS: ArtifactConfig[] = [
  * Get all available artifact configurations
  */
 export function listArtifacts(): ArtifactConfig[] {
-  return artifacts.listArtifacts();
+  return armadaArtifacts.listArtifacts();
 }
 
 /**
  * Get verification key for a specific circuit configuration
  */
 export function getVKey(nullifiers: number, commitments: number): VKey {
-  return artifacts.getVKey(nullifiers, commitments);
+  return armadaArtifacts.getVKey(nullifiers, commitments);
 }
 
 /**
@@ -122,7 +121,7 @@ export function getArtifact(nullifiers: number, commitments: number): {
   wasm: Uint8Array;
   vkey: VKey;
 } {
-  return artifacts.getArtifact(nullifiers, commitments);
+  return armadaArtifacts.getArtifact(nullifiers, commitments);
 }
 
 /**

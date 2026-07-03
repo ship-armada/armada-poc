@@ -10,8 +10,7 @@ import {
   type ReceiptLogLike,
   type SelfFillPlan,
 } from '@armada/crowdfund-shared'
-import { isMobileBrowser } from '@/lib/isMobileBrowser'
-import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
+import { submitWrite } from '@/lib/submitWrite'
 import type { TxStep } from '@/hooks/useTxPipeline'
 
 export interface BuildSelfFillStepsParams {
@@ -51,9 +50,7 @@ export function buildSelfFillSteps({
       label: `Approve ${formatUsdc(plan.newCommitUsdc)} USDC`,
       send: () => {
         const usdc = new Contract(usdcAddress, ERC20_ABI_FRAGMENTS, signer)
-        return isMobileBrowser()
-          ? submitTxViaWagmi(usdc, 'approve', [crowdfundAddress, plan.newCommitUsdc])
-          : usdc.approve(crowdfundAddress, plan.newCommitUsdc)
+        return submitWrite(usdc, 'approve', [crowdfundAddress, plan.newCommitUsdc], signer)
       },
       // Re-read allowance so the multicall step's view of approval is real.
       after: refreshAllowance,
@@ -64,10 +61,7 @@ export function buildSelfFillSteps({
   const calls = encodeSelfFillCalls(crowdfund.interface, selfAddress, plan)
   steps.push({
     label: `Self-invite & commit · ${plan.totalInvites} invites + ${plan.commits.length} commits`,
-    send: () =>
-      isMobileBrowser()
-        ? submitTxViaWagmi(crowdfund, 'multicall', [calls])
-        : crowdfund.multicall(calls),
+    send: () => submitWrite(crowdfund, 'multicall', [calls], signer),
     onReceipt: (logs) => onReceiptLogs?.(logs),
     after: refreshAllowance,
   })

@@ -351,6 +351,24 @@ async function captureShape(
 
   console.log(`Total outputs captured: ${outputs.length} (expected ${numCommitments})`);
 
+  // For unshield: if we're short an output, add the unshield preimage as a pseudo-output.
+  // The SDK treats the unshield recipient address as npkOut, with value from unshieldPreimage.
+  if (outputs.length < numCommitments && operation === 'unshield') {
+    const unshieldNpk = provedTx.unshieldPreimage.npk;
+    const unshieldValue = BigInt(provedTx.unshieldPreimage.value);
+    const recipientAddr = await bobSigner.getAddress();
+    console.log(`  Unshield output: npk=${toHex(BigInt(unshieldNpk)).slice(0, 20)}... value=${ethers.formatUnits(unshieldValue, 6)}`);
+    outputs.push({
+      notePublicKey: toHex(BigInt(unshieldNpk)),
+      tokenAddress: usdcAddress,
+      tokenHash: inputWitnesses[0].tokenHash,
+      value: unshieldValue.toString(),
+      random: '0',  // unshield has no note randomness
+      recipientAddress: recipientAddr,
+    });
+    console.log(`  Added unshield output (${outputs.length}/${numCommitments})`);
+  }
+
   // ── Build fixture ────────────────────────────────────────
   const vector: TransferVector = {
     operation: 'transfer',

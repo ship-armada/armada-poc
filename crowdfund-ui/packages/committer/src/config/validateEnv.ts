@@ -78,6 +78,18 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
         'verify the fetched crowdfund (USDC approve target) address against a trusted value.',
     )
   }
+  // If an expected address is supplied (any network), it must be a well-formed
+  // 20-byte hex address. Catch a typo here at startup rather than deferring to the
+  // manifest-load-time getAddress() in assertExpectedAddress. Format-only (no EIP-55
+  // checksum) so a lowercase-entered value is accepted.
+  if (
+    !missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS) &&
+    !/^0x[0-9a-fA-F]{40}$/.test(env.VITE_EXPECTED_CROWDFUND_ADDRESS!.trim())
+  ) {
+    errors.push(
+      'VITE_EXPECTED_CROWDFUND_ADDRESS is not a valid Ethereum address (expected 0x + 40 hex chars).',
+    )
+  }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }

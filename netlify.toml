@@ -19,8 +19,10 @@
 #   DEPLOYMENT_REF          git ref of ship-armada/armada-deployments to fetch the
 #                           manifest from. Pins the fetch to an immutable point so a
 #                           later push to `main` cannot change what ships after review.
-#                           MUST be a full commit SHA on the mainnet site; defaults to
-#                           "main" (unpinned) for Sepolia, which is low-stakes.
+#                           MUST be a full 40-char commit SHA on the mainnet site —
+#                           the build hard-fails otherwise (a branch ref would defeat
+#                           the pin). Defaults to "main" (unpinned) for Sepolia, which
+#                           is low-stakes.
 #   VITE_EXPECTED_CROWDFUND_ADDRESS  trusted crowdfund contract address, supplied
 #                           out-of-band from the mainnet deploy output (NOT from
 #                           armada-deployments). The build fails if the fetched
@@ -63,6 +65,7 @@
     INSTANCE="${DEPLOYMENT_INSTANCE:-medi2}" && \
     export VITE_DEPLOYMENT_INSTANCE="${INSTANCE}" && \
     REF="${DEPLOYMENT_REF:-main}" && \
+    if [ "${VITE_NETWORK}" = "mainnet" ] && ! echo "${REF}" | grep -Eq '^[0-9a-f]{40}$'; then echo "FATAL: DEPLOYMENT_REF must be a full 40-char commit SHA on mainnet (got: ${REF}) — pinning to a branch defeats the supply-chain guard"; exit 1; fi && \
     BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/${NETWORK}/${INSTANCE}" && \
     echo "Fetching ${NETWORK}/${INSTANCE}@${REF} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE})" && \
     mkdir -p "crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}" && \

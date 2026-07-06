@@ -89,6 +89,36 @@ describe('validateEnv', () => {
     }
   })
 
+  it('rejects a malformed VITE_EXPECTED_CROWDFUND_ADDRESS on any network', () => {
+    const mainnet = validateEnv({
+      PROD: true,
+      VITE_NETWORK: 'mainnet',
+      VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+      VITE_EXPECTED_CROWDFUND_ADDRESS: '0x123',
+    })
+    expect(mainnet.ok).toBe(false)
+    if (!mainnet.ok) {
+      expect(mainnet.errors.some((e) => e.includes('not a valid Ethereum address'))).toBe(true)
+    }
+    // Also enforced when opted into on sepolia.
+    const sepolia = validateEnv({ ...COMPLETE_PROD, VITE_EXPECTED_CROWDFUND_ADDRESS: 'nope' })
+    expect(sepolia.ok).toBe(false)
+  })
+
+  it('accepts a lowercase (non-checksummed) VITE_EXPECTED_CROWDFUND_ADDRESS', () => {
+    // Format-only check — a lowercase-entered address must not be rejected.
+    expect(
+      validateEnv({
+        PROD: true,
+        VITE_NETWORK: 'mainnet',
+        VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+        VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886e0f7030069857d2e4169ee7',
+      }),
+    ).toEqual({ ok: true })
+  })
+
   it('does not require VITE_EXPECTED_CROWDFUND_ADDRESS on a sepolia build', () => {
     // COMPLETE_PROD is a sepolia build with no expected-address var; must stay green.
     expect(validateEnv(COMPLETE_PROD)).toEqual({ ok: true })

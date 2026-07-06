@@ -22,7 +22,7 @@ import { createWallet, DEFAULT_ENCRYPTION_KEY } from '../../lib/sdk/wallet';
 import { initializeProver } from '../../lib/sdk/prover';
 import { createShieldRequest, generateShieldPrivateKey, calculateNpk } from '../../lib/sdk/shield';
 import { loadNetworkIntoEngine, scanWalletBalances, getMerkleRoot, getMerkleProof } from '../../lib/sdk/network';
-import { createPrivateTransfer } from '../../lib/sdk/transfer';
+import { createPrivateTransfer, createUnshield } from '../../lib/sdk/transfer';
 import { getChainById, getRpcUrl } from '../../lib/sdk/chain-config';
 import { loadVerificationKeys, TESTING_ARTIFACT_CONFIGS } from '../../lib/artifacts';
 
@@ -130,8 +130,10 @@ interface ShapeConfig {
   description: string;
   // Shield amounts to set up the UTXO set for Alice
   shieldAmounts: bigint[];
-  // Amount to transfer (Alice → Bob)
-  transferAmount: bigint;
+  // Amount to transfer or unshield
+  amount: bigint;
+  // Operation type
+  operation: 'transfer' | 'unshield';
 }
 
 async function captureShape(
@@ -143,7 +145,7 @@ async function captureShape(
   usdcAddress: string,
   chain: any,
 ): Promise<void> {
-  const { name, description, shieldAmounts, transferAmount } = config;
+  const { name, description, shieldAmounts, amount, operation } = config;
 
   console.log('\n' + '='.repeat(60));
   console.log(`  Capturing: ${name} — ${description}`);
@@ -230,29 +232,58 @@ async function captureShape(
   const spendingKeyPair = await aliceWallet.getSpendingKeyPair(DEFAULT_ENCRYPTION_KEY);
   const nullifyingKey = aliceWallet.nullifyingKey;
 
-  // ── Execute transfer ─────────────────────────────────────
-  console.log(`\nTransferring ${ethers.formatUnits(transferAmount, 6)} USDC to Bob...`);
+  let provedTx: any;
+  let txHash: string;
 
-  const transferResult = await createPrivateTransfer({
-    wallet: aliceWallet,
-    chain,
-    tokenAddress: usdcAddress,
-    recipientAddress: bobShieldedAddress,
-    amount: transferAmount,
-    encryptionKey: DEFAULT_ENCRYPTION_KEY,
-    progressCallback: (p: any) => console.log(`  [${Math.round(p.progress)}%] ${p.status}`),
-  });
+  // ── Execute transfer or unshield ────────────────────
+  if (operation === 'unshield') {
+    const bobAddress = await bobSigner.getAddress();
+    console.log(`\nUnshielding ${ethers.formatUnits(amount, 6)} USDC to ${bobAddress}...`);
 
-  // Submit on-chain
-  const transferTx = await aliceSigner.sendTransaction({
-    to: transferResult.contractTransaction.to,
-    data: transferResult.contractTransaction.data,
-  });
-  const transferReceipt = await transferTx.wait();
-  console.log('Transfer tx:', transferReceipt!.hash);
+    const unshieldResult = await createUnshield({
+      wallet: aliceWallet,
+      chain,
+      tokenAddress: usdcAddress,
+      recipientAddress: bobAddress,
+      amount,
+      encryptionKey: DEFAULT_ENCRYPTION_KEY,
+      progressCallback: (p: any) => console.log(`  [${Math.round(p.progress)}%] ${p.status}`),
+    });
 
-  // ── Extract proved transaction ───────────────────────────
-  const provedTx = transferResult.transactions[0];
+    // Submit on-chain
+    const tx = await aliceSigner.sendTransaction({
+      to: unshieldResult.contractTransaction.to,
+      data: unshieldResult.contractTransaction.data,
+    });
+    const receipt = await tx.wait();
+    txHash = receipt!.hash;
+    console.log('Unshield tx:', txHash);
+
+    provedTx = unshieldResult.transactions[0];
+  } else {
+    console.log(`\nTransferring ${ethers.formatUnits(amount, 6)} USDC to Bob...`);
+
+    const transferResult = await createPrivateTransfer({
+      wallet: aliceWallet,
+      chain,
+      tokenAddress: usdcAddress,
+      recipientAddress: bobShieldedAddress,
+      amount,
+      encryptionKey: DEFAULT_ENCRYPTION_KEY,
+      progressCallback: (p: any) => console.log(`  [${Math.round(p.progress)}%] ${p.status}`),
+    });
+
+    // Submit on-chain
+    const tx = await aliceSigner.sendTransaction({
+      to: transferResult.contractTransaction.to,
+      data: transferResult.contractTransaction.data,
+    });
+    const receipt = await tx.wait();
+    txHash = receipt!.hash;
+    console.log('Transfer tx:', txHash);
+
+    provedTx = transferResult.transactions[0];
+  }
   const numNullifiers = provedTx.nullifiers.length;
   const numCommitments = provedTx.commitments.length;
   console.log(`Circuit shape: ${numNullifiers}x${numCommitments}`);
@@ -345,16 +376,16 @@ async function captureShape(
     },
     publicSignals,
     boundParamsHash,
-    txHash: transferReceipt!.hash,
+    txHash: txHash,
     metadata: {
       tokenAddress: usdcAddress,
-      transferAmount: transferAmount.toString(),
+      transferAmount: amount.toString(),
       senderAddress: aliceShieldedAddress,
       recipientAddress: bobShieldedAddress,
     },
   };
 
-  const filename = `transfer-${numNullifiers}x${numCommitments}.json`;
+  const filename = `${operation === 'unshield' ? 'unshield' : 'transfer'}-${numNullifiers}x${numCommitments}.json`;
   const fixturePath = path.join(FIXTURES_DIR, filename);
   writeJSON(fixturePath, vector);
   console.log(`\n✓ Written: ${fixturePath}`);
@@ -387,15 +418,29 @@ async function main() {
       name: '2x2',
       description: '2 inputs (50+50), transfer 80 → 2 outputs (80 + 20 change)',
       shieldAmounts: [ethers.parseUnits('50', 6), ethers.parseUnits('50', 6)],
-      transferAmount: ethers.parseUnits('80', 6),
+      amount: ethers.parseUnits('80', 6),
+      operation: 'transfer',
     },
     {
-      // Shield fee is 50bps (0.5%), so shielding 100 USDC yields 99.5 USDC UTXO.
-      // Transferring the exact UTXO value means zero change → 1 output.
       name: '1x1',
       description: '1 input (exact spend), transfer full 99.5 USDC UTXO → 1 output (no change)',
       shieldAmounts: [ethers.parseUnits('100', 6)],
-      transferAmount: ethers.parseUnits('99.5', 6),
+      amount: ethers.parseUnits('99.5', 6),
+      operation: 'transfer',
+    },
+    {
+      name: '3x2',
+      description: '3 inputs (30+30+30), transfer 70 → 2 outputs (70 + 20 change)',
+      shieldAmounts: [ethers.parseUnits('30', 6), ethers.parseUnits('30', 6), ethers.parseUnits('30', 6)],
+      amount: ethers.parseUnits('70', 6),
+      operation: 'transfer',
+    },
+    {
+      name: '2x1-unshield',
+      description: '2 inputs (50+50), unshield 80 to public address → 1 output (change)',
+      shieldAmounts: [ethers.parseUnits('50', 6), ethers.parseUnits('50', 6)],
+      amount: ethers.parseUnits('80', 6),
+      operation: 'unshield',
     },
   ];
 

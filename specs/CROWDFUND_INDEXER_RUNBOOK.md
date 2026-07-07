@@ -314,6 +314,23 @@ Expected healthy fields:
 
 Two alerts watch the indexer itself (see `MONITORING.md` §8 addendum): **AH1** pages when `status` is `stale` (P2) or `unhealthy` (P1); **AH2** pages when `gapsRequiringIntervention` is non-empty (P1). While the indexer is `stale`/`unhealthy`, the time-based crowdfund alerts (A2/A8/A9a/A9b) are suppressed to avoid false pages off a lagging snapshot.
 
+### Rate limiting
+
+Rate limiting is enforced at the nginx reverse proxy, not in the Node process. The API
+deliberately sets permissive CORS and ships no app-level limiter, so the reverse proxy is
+the single throttling point in front of the public port (`CROWDFUND_INDEXER_PORT`, default
+`3002`).
+
+The chosen limits (in `deploy/nginx-indexer.conf`):
+
+- **10 requests/second per IP** (`limit_req_zone ... rate=10r/s`, keyed on `$binary_remote_addr`).
+- **Burst of 20** with `nodelay`, so short spikes are absorbed rather than queued.
+- **HTTP 429** returned on excess (`limit_req_status 429`), not 503.
+
+The limits are tunable — adjust `rate` and `burst` in the conf and reload nginx. The public
+endpoints (`/health`, `/snapshot`, `/events`) are cheap and cached, so this budget is generous
+for real users while throttling a request flood from a single source.
+
 ---
 
 ## Operator Commands

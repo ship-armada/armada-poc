@@ -8,7 +8,6 @@ import type { CursorState } from '../types.js'
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 150,
   confirmedHead: 138,
   ingestedCursor: 138,

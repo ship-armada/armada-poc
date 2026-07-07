@@ -54,7 +54,6 @@ export interface IngestRangeRecord extends BlockRange {
 export interface CursorState {
   deployBlock: number
   confirmationDepth: number
-  overlapWindow: number
   chainHead: number
   confirmedHead: number
   ingestedCursor: number

@@ -2,7 +2,7 @@
 // ABOUTME: Stores cursors, range verification records, raw logs, and snapshot metadata in durable tables.
 
 import { Pool } from 'pg'
-import { getLogIdentity } from '../ingest/ranges.js'
+import { getLogDedupeKey } from '../ingest/ranges.js'
 import { createEmptyStoreData } from './fileStore.js'
 import type { IndexerMeta, IndexerMetaPatch, IndexerStore } from './store.js'
 import type { CursorState, IndexedRawLog, IndexerStoreData, IngestRangeRecord, IngestRangeStatus } from '../types.js'
@@ -21,7 +21,6 @@ interface DbClient {
 interface CursorRow {
   deploy_block: number
   confirmation_depth: number
-  overlap_window: number
   chain_head: number
   confirmed_head: number
   ingested_cursor: number
@@ -67,7 +66,6 @@ CREATE TABLE IF NOT EXISTS crowdfund_indexer_cursor (
   id boolean PRIMARY KEY DEFAULT true CHECK (id),
   deploy_block integer NOT NULL,
   confirmation_depth integer NOT NULL,
-  overlap_window integer NOT NULL,
   chain_head integer NOT NULL,
   confirmed_head integer NOT NULL,
   ingested_cursor integer NOT NULL,
@@ -148,7 +146,6 @@ function toCursor(row: CursorRow): CursorState {
   return {
     deployBlock: row.deploy_block,
     confirmationDepth: row.confirmation_depth,
-    overlapWindow: row.overlap_window,
     chainHead: row.chain_head,
     confirmedHead: row.confirmed_head,
     ingestedCursor: row.ingested_cursor,
@@ -196,21 +193,20 @@ function rangeKey(range: Pick<IngestRangeRecord, 'fromBlock' | 'toBlock'>): stri
 
 function dedupeLogs(logs: readonly IndexedRawLog[]): IndexedRawLog[] {
   const records = new Map<string, IndexedRawLog>()
-  for (const log of logs) records.set(getLogIdentity(log), log)
+  for (const log of logs) records.set(getLogDedupeKey(log), log)
   return [...records.values()]
 }
 
 async function ensureSeedRows(client: DbClient, initialCursor: CursorState): Promise<void> {
   await client.query(
     `INSERT INTO crowdfund_indexer_cursor (
-      id, deploy_block, confirmation_depth, overlap_window, chain_head, confirmed_head, ingested_cursor, verified_cursor
+      id, deploy_block, confirmation_depth, chain_head, confirmed_head, ingested_cursor, verified_cursor
     )
-    VALUES (true, $1, $2, $3, $4, $5, $6, $7)
+    VALUES (true, $1, $2, $3, $4, $5, $6)
     ON CONFLICT (id) DO NOTHING`,
     [
       initialCursor.deployBlock,
       initialCursor.confirmationDepth,
-      initialCursor.overlapWindow,
       initialCursor.chainHead,
       initialCursor.confirmedHead,
       initialCursor.ingestedCursor,
@@ -227,13 +223,12 @@ async function ensureSeedRows(client: DbClient, initialCursor: CursorState): Pro
 async function upsertCursorRow(client: DbClient, cursor: CursorState): Promise<void> {
   await client.query(
     `INSERT INTO crowdfund_indexer_cursor (
-      id, deploy_block, confirmation_depth, overlap_window, chain_head, confirmed_head, ingested_cursor, verified_cursor
+      id, deploy_block, confirmation_depth, chain_head, confirmed_head, ingested_cursor, verified_cursor
     )
-    VALUES (true, $1, $2, $3, $4, $5, $6, $7)
+    VALUES (true, $1, $2, $3, $4, $5, $6)
     ON CONFLICT (id) DO UPDATE SET
       deploy_block = EXCLUDED.deploy_block,
       confirmation_depth = EXCLUDED.confirmation_depth,
-      overlap_window = EXCLUDED.overlap_window,
       chain_head = EXCLUDED.chain_head,
       confirmed_head = EXCLUDED.confirmed_head,
       ingested_cursor = EXCLUDED.ingested_cursor,
@@ -242,7 +237,6 @@ async function upsertCursorRow(client: DbClient, cursor: CursorState): Promise<v
     [
       cursor.deployBlock,
       cursor.confirmationDepth,
-      cursor.overlapWindow,
       cursor.chainHead,
       cursor.confirmedHead,
       cursor.ingestedCursor,

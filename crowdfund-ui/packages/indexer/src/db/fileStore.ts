@@ -3,7 +3,7 @@
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { getLogIdentity } from '../ingest/ranges.js'
+import { getLogDedupeKey } from '../ingest/ranges.js'
 import { applyMetaPatch } from './store.js'
 import type { IndexerMeta, IndexerMetaPatch, IndexerStore } from './store.js'
 import type { CursorState, IndexedRawLog, IndexerStoreData, IngestRangeRecord } from '../types.js'
@@ -125,8 +125,8 @@ export class FileIndexerStore implements IndexerStore {
 
   async upsertRawLogs(logs: readonly IndexedRawLog[]): Promise<IndexerStoreData> {
     return this.update((data) => {
-      const records = new Map(data.rawLogs.map((log) => [getLogIdentity(log), log]))
-      for (const log of logs) records.set(getLogIdentity(log), log)
+      const records = new Map(data.rawLogs.map((log) => [getLogDedupeKey(log), log]))
+      for (const log of logs) records.set(getLogDedupeKey(log), log)
       return {
         ...data,
         rawLogs: sortLogs([...records.values()]),

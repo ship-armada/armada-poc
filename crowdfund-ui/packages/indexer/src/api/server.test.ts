@@ -19,7 +19,6 @@ const contractAddress = '0xF681A7c700420e5CA93f77c8988d3eED02767035'
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 120,
   confirmedHead: 110,
   ingestedCursor: 110,

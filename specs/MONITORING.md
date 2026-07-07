@@ -172,15 +172,11 @@ Post-finalization, track:
 
 ---
 
-### A3 — Week-1 action outside week-1 window
+### A3 — (retired)
 
-| Field | Value |
-|---|---|
-| **Signal** | `SeedAdded` or ROOT-issued `Invited` |
-| **Condition** | Event timestamp after `week1Deadline` |
-| **Severity** | P0 |
-| **Meaning** | Contract or monitoring assumptions broken — this should not be possible |
-| **Runbook** | `OPERATIONS.md` §9 failure investigation; Security Council review |
+A week-1 action (`SeedAdded` / `LaunchTeamInvited`) emitted after the week-1 deadline is
+enforced on-chain by the crowdfund's `_requireArmLoadedAndPreInviteEnd` guard, so no
+off-chain alert covers that condition.
 
 ---
 
@@ -490,7 +486,6 @@ Each alert must include:
 | Alert(s) | `OPERATIONS.md` section |
 |---|---|
 | A1, A2 | §3 Deployment sequence (Steps 4–8) |
-| A3 | §9 Failure scenarios — immediate investigation |
 | A4, A5 | §4 Week-1 cadence; §10 Decision log; §11 Checkpoint 2 |
 | A6 | §4/§5 Monitoring; no automatic action |
 | A7, A8 | §5 Weeks 2–3 cadence; §11 Checkpoint 3 |

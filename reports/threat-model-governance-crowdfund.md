@@ -99,3 +99,5 @@
    - Any future redemption frontend must enumerate the token list from `TokenSwept` events / the router, never let the user hand-edit `tokens[]`.
 
    Remaining exposure after mitigations: assets swept *after* a user has redeemed (inherent to sequential pro-rata with permanently locked ARM — addressed only by completing sweeps within the window), and direct callers who ignore the published manifest and router.
+
+9. **Indexer reorg handling:** `CROWDFUND_CONFIRMATION_DEPTH` (default 12) is the stated reorg guarantee — only data at least that many blocks behind the chain head is verified. Reorgs deeper than that are unhandled but acceptable on the Ethereum L1 mainnet hub (chain id 1), where a >12-block reorg implies a consensus/finality failure rather than normal operation. Raw logs are deduped by `(chainId, contract, txHash, logIndex)` — excluding `blockHash` — so a tx re-mined at a new block cannot double-apply (Postgres via its primary key, file store via `getLogDedupeKey`).

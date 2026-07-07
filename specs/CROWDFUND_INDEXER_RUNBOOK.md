@@ -28,6 +28,17 @@ Data layers:
 - Snapshots are derived artifacts and can be rebuilt from raw logs.
 - Static snapshots are outage fallback artifacts, published as `snapshot-{block}.json` plus `latest.json`.
 
+### Reorg Handling
+
+`CROWDFUND_CONFIRMATION_DEPTH` (default 12) is the stated reorg guarantee: only data at
+least that many blocks behind the chain head is verified. Reorgs deeper than that are
+unhandled but acceptable on the Ethereum L1 mainnet hub (chain id 1), where a >12-block
+reorg implies a consensus/finality failure rather than normal operation.
+
+Raw logs are deduped by `(chainId, contract, txHash, logIndex)` — excluding `blockHash` —
+so a tx re-mined at a new block cannot double-apply. Postgres enforces this via the
+`crowdfund_indexer_raw_logs` primary key; the file store enforces it via `getLogDedupeKey`.
+
 ---
 
 ## Required Environment
@@ -63,7 +74,6 @@ Cursor and range tuning:
 
 ```bash
 export CROWDFUND_CONFIRMATION_DEPTH=12
-export CROWDFUND_OVERLAP_WINDOW=100
 export CROWDFUND_MAX_BLOCK_RANGE=500
 ```
 
@@ -120,7 +130,6 @@ Cursor and range variables:
 | Variable | Default | Behavior |
 |----------|---------|----------|
 | `CROWDFUND_CONFIRMATION_DEPTH` | `12` | Blocks behind chain head required before data is verified. Lower only for dev. |
-| `CROWDFUND_OVERLAP_WINDOW` | `100` | Stored cursor setting reserved for a future overlap/rescan policy. **Not yet consumed by any code path** — it does not currently provide reorg protection beyond `CROWDFUND_CONFIRMATION_DEPTH`. Tracked for implementation-or-removal (see GitHub issues). |
 | `CROWDFUND_MAX_BLOCK_RANGE` | `500` | Maximum inclusive block range per `eth_getLogs` chunk. |
 
 API and polling variables:
@@ -163,7 +172,7 @@ Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONI
 | `CROWDFUND_TREASURY_ADDRESS` | required | Treasury address — used to read USDC balance for A13 mismatch detection. |
 | `CROWDFUND_USDC_ADDRESS` | optional | USDC contract — required for A13 (treasury balance). Omit to skip A13. |
 | `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens. Drives A2/A8/A9. |
-| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Drives A3. |
+| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Marks the week-1 → weeks-2–3 phase boundary in the monitoring model. |
 | `CROWDFUND_COMMITMENT_DEADLINE` | `0` | Unix seconds when the 3-week window closes (openTimestamp + 21 days). Drives A8/A9. |
 | `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P1` | unset | Discord webhook URL for P1 (same-day) alerts. |

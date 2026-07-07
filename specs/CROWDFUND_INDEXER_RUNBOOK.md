@@ -578,6 +578,19 @@ npm run crowdfund:indexer:cli -- status
 npm run crowdfund:indexer:cli -- backfill latest
 ```
 
+### Automated backups (Dockerized deploy)
+
+For the containerized deploy (`deploy/docker-compose.yml`), `deploy/backup-indexer.sh`
+runs nightly via cron: it tars the `indexer-data` volume (file store + snapshots +
+alert dedupe) and, when the `postgres` service is running, adds a `pg_dump`, with local
+retention pruning and an optional off-host copy hook (`BACKUP_REMOTE_CMD`). Set up cron
+and off-host copy per `deploy/README.md` → **Persistence & backups**; the full **Restore**
+and **Rollback** procedures live there too. A backup on the same VPS does not survive VPS
+loss — always configure the off-host copy before launch.
+
+Because raw logs are canonical and snapshots are derived, restoring Postgres (or the file
+store) recovers everything; the indexer resumes from the restored `verifiedCursor`.
+
 Keep database dumps out of git.
 
 ---

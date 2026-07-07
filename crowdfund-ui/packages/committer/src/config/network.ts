@@ -15,5 +15,7 @@ export {
   getTxConfirmations,
   getExplorerUrl,
   assertDeploymentChainId,
+  assertExpectedAddress,
+  getExpectedCrowdfundAddress,
 } from '@armada/crowdfund-shared'
 export type { NetworkMode } from '@armada/crowdfund-shared'

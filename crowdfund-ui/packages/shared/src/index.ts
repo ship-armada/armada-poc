@@ -77,6 +77,7 @@ export {
   confirmationsForMode,
   explorerUrlForMode,
   assertDeploymentChainId,
+  assertExpectedAddress,
   getNetworkMode,
   isLocalMode,
   getHubChainId,
@@ -89,6 +90,7 @@ export {
   getMaxBlockRange,
   getTxConfirmations,
   getExplorerUrl,
+  getExpectedCrowdfundAddress,
 } from './lib/network.js'
 export type { NetworkMode, NetworkEnv } from './lib/network.js'
 

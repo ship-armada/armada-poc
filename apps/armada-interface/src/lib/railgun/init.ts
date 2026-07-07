@@ -95,9 +95,70 @@ export async function initRailgunEngine(): Promise<void> {
   }
 }
 
+/**
+ * Load Armada circuit artifacts from the Vite dev server and inject them into
+ * the Railgun SDK's in-memory cache via overrideArtifact().
+ *
+ * In local mode, artifacts are served from armada-circuits/build/ via the
+ * serveCircuitArtifacts() Vite middleware at /api/circuits/<N>x<M>/.
+ *
+ * Only loads the shapes registered on-chain (TESTING_ARTIFACT_CONFIGS).
+ * Each shape's WASM (~4MB) + ZKEY (~13MB) are fetched once and cached for
+ * the session. Lazy loading is handled by the SDK — overrideArtifact just
+ * primes the cache so the first proof doesn't pay the IPFS + hash-check penalty.
+ */
+
+// The shapes registered on PrivacyPool during deployment
+const ARMADA_SHAPES: Array<[number, number]> = [
+  [1, 1], [1, 2], [2, 2], [2, 3], [8, 4],
+  [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1], [8, 1],
+  [3, 2], [4, 2], [5, 2], [6, 2],
+  [1, 3], [3, 3], [4, 3],
+]
+
+async function loadArmadaCircuits(
+  overrideArtifact: (variant: string, artifact: { wasm: Uint8Array; zkey: Uint8Array; vkey: unknown }) => void,
+): Promise<void> {
+  // eslint-disable-next-line no-console
+  console.log('[railgun] Loading Armada circuit artifacts...')
+
+  for (const [n, m] of ARMADA_SHAPES) {
+    const variant = `${n.toString().padStart(2, '0')}x${m.toString().padStart(2, '0')}`
+    const shape = `${n}x${m}`
+    const base = `/api/circuits/${shape}`
+
+    try {
+      const [wasmRes, zkeyRes, vkeyRes] = await Promise.all([
+        fetch(`${base}/wasm`),
+        fetch(`${base}/zkey`),
+        fetch(`${base}/vkey`),
+      ])
+
+      if (!wasmRes.ok || !zkeyRes.ok || !vkeyRes.ok) {
+        // eslint-disable-next-line no-console
+        console.warn(`[railgun] Skipping ${variant}: artifacts not available (WASM:${wasmRes.status} ZKEY:${zkeyRes.status})`)
+        continue
+      }
+
+      const wasm = new Uint8Array(await wasmRes.arrayBuffer())
+      const zkey = new Uint8Array(await zkeyRes.arrayBuffer())
+      const vkey = await vkeyRes.json()
+
+      overrideArtifact(variant, { wasm, zkey, vkey })
+    } catch (err) {
+      // Non-fatal — the SDK will fall back to IPFS for this shape
+      // eslint-disable-next-line no-console
+      console.warn(`[railgun] Failed to load ${variant}:`, err)
+    }
+  }
+
+  // eslint-disable-next-line no-console
+  console.log('[railgun] Armada circuit artifacts loaded')
+}
+
 async function doInit(): Promise<void> {
   const [
-    { startRailgunEngine, setLoggers, setOnUTXOMerkletreeScanCallback },
+    { startRailgunEngine, setLoggers, setOnUTXOMerkletreeScanCallback, overrideArtifact },
     { POI },
     { MerkletreeScanStatus },
   ] = await Promise.all([
@@ -134,6 +195,16 @@ async function doInit(): Promise<void> {
     undefined, // customPOILists
     true, // verboseScanLogging
   )
+
+  // Override the SDK's IPFS artifact pipeline with Armada's own circuits.
+  // startRailgunEngine hardcodes artifactGetterDownloadJustInTime which downloads
+  // from IPFS and validates against Railgun's hash manifest. overrideArtifact()
+  // writes directly into the in-memory cache, bypassing both IPFS and hash checks.
+  // In local mode we serve artifacts from armada-circuits/build/ via Vite middleware.
+  // In sepolia mode, skip the override and let the SDK use IPFS.
+  if (import.meta.env.VITE_NETWORK !== 'sepolia') {
+    await loadArmadaCircuits(overrideArtifact)
+  }
 
   // Wire SDK merkletree scan progress into syncStateAtom so the UI can show a banner +
   // progress bar during the initial historical scan. The SDK emits one of four statuses;

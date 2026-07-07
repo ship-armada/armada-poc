@@ -11,7 +11,6 @@ export interface IndexerConfig {
   primaryRpcUrl: string | null
   auditRpcUrl: string | null
   confirmationDepth: number
-  overlapWindow: number
   maxBlockRange: number
   port: number
   staleAfterMs: number
@@ -72,7 +71,6 @@ export function getInitialCursor(): CursorState {
   return {
     deployBlock,
     confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
-    overlapWindow: readNumberEnv('CROWDFUND_OVERLAP_WINDOW', 100),
     chainHead: deployBlock,
     confirmedHead: deployBlock,
     ingestedCursor: deployBlock > 0 ? deployBlock - 1 : 0,
@@ -88,7 +86,6 @@ export function loadIndexerConfig(): IndexerConfig {
     primaryRpcUrl: process.env.CROWDFUND_PRIMARY_RPC_URL ?? null,
     auditRpcUrl: process.env.CROWDFUND_AUDIT_RPC_URL ?? null,
     confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
-    overlapWindow: readNumberEnv('CROWDFUND_OVERLAP_WINDOW', 100),
     maxBlockRange: readNumberEnv('CROWDFUND_MAX_BLOCK_RANGE', 500),
     port: readNumberEnv('CROWDFUND_INDEXER_PORT', 3002),
     staleAfterMs: readNumberEnv('CROWDFUND_STALE_AFTER_MS', 300_000),

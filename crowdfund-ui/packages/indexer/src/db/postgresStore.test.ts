@@ -43,12 +43,12 @@ function makeFakePool(rows: { cursor?: unknown[]; metadata?: unknown[]; ranges?:
 }
 
 const initialCursor: CursorState = {
-  deployBlock: 100, confirmationDepth: 12, overlapWindow: 100,
+  deployBlock: 100, confirmationDepth: 12,
   chainHead: 0, confirmedHead: 0, ingestedCursor: 99, verifiedCursor: 99,
 }
 
 const cursorRow = {
-  deploy_block: 100, confirmation_depth: 12, overlap_window: 100,
+  deploy_block: 100, confirmation_depth: 12,
   chain_head: 150, confirmed_head: 138, ingested_cursor: 120, verified_cursor: 110,
 }
 

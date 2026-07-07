@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  ruleA1, ruleA2, ruleA3, ruleA4, ruleA5, ruleA6, ruleA7, ruleA8,
+  ruleA1, ruleA2, ruleA4, ruleA5, ruleA6, ruleA7, ruleA8,
   ruleA9a, ruleA9b, ruleA10, ruleA11, ruleA12, ruleA13, ruleA17, ruleA18, ruleA19, ruleA20,
   ruleAH1, ruleAH2,
   evaluateAllRules,
@@ -134,30 +134,6 @@ describe('ruleA2 — sale open, not armed', () => {
   })
   it('does not fire before openTimestamp', () => {
     expect(ruleA2(makeContext({ now: OPEN_TS - 1 }))).toEqual([])
-  })
-})
-
-// ============ A3 ============
-describe('ruleA3 — week-1 action after week1Deadline', () => {
-  it('no-ops without event timestamps (current indexer state)', () => {
-    const ctx = makeContext({
-      now: WEEK1_TS + 100,
-      snapshot: {
-        ...makeContext().snapshot,
-        events: [makeEvent('SeedAdded', { seed: '0xs' })],
-      } as never,
-    })
-    expect(ruleA3(ctx)).toEqual([])
-  })
-  it('fires P0 when an event carries a _timestamp beyond week1Deadline', () => {
-    const ctx = makeContext({
-      snapshot: {
-        ...makeContext().snapshot,
-        events: [makeEvent('SeedAdded', { seed: '0xs', _timestamp: WEEK1_TS + 1 })],
-      } as never,
-    })
-    const out = ruleA3(ctx)
-    expect(out[0]).toMatchObject({ id: 'A3', severity: 'P0' })
   })
 })
 

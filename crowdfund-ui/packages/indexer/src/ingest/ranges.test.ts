@@ -6,6 +6,7 @@ import {
   createRangeDigest,
   findFirstGap,
   getContiguousVerifiedCursor,
+  getLogDedupeKey,
   getLogIdentity,
   getRepairRanges,
 } from './ranges.js'
@@ -54,6 +55,21 @@ describe('range ingestion helpers', () => {
         '0',
       ].join(':'),
     )
+  })
+
+  it('dedupes reorged copies by tx identity while the digest still tracks blockHash', () => {
+    const original = makeLog()
+    // Same tx re-mined at a new block after a reorg: only blockHash/blockNumber differ.
+    const reorged = makeLog({
+      blockHash: '0x' + 'aa'.repeat(32),
+      blockNumber: 10750005,
+    })
+
+    // Store dedup key ignores blockHash/blockNumber, so a re-mined tx cannot double-apply.
+    expect(getLogDedupeKey(original)).toBe(getLogDedupeKey(reorged))
+    // Verification identity keeps blockHash, so the two copies stay distinguishable for
+    // the dual-RPC range digest.
+    expect(getLogIdentity(original)).not.toBe(getLogIdentity(reorged))
   })
 
   it('creates the same digest regardless of input order', () => {

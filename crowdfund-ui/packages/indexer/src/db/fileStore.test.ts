@@ -13,7 +13,6 @@ const tempDirs: string[] = []
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 150,
   confirmedHead: 138,
   ingestedCursor: 99,
@@ -180,5 +179,27 @@ describe('FileIndexerStore', () => {
 
     const restored = await store.read()
     expect(restored.rawLogs).toEqual([earlier, replacement])
+  })
+
+  it('does not create a second entry when a reorged copy of the same tx is re-ingested', async () => {
+    const store = await makeStore()
+    const original = {
+      chainId: 11155111,
+      contractAddress: '0xF681A7c700420e5CA93f77c8988d3eED02767035',
+      blockNumber: 120,
+      blockHash: '0x' + '11'.repeat(32),
+      transactionHash: '0x' + '22'.repeat(32),
+      logIndex: 1,
+      topics: ['0x' + '33'.repeat(32)],
+      data: '0x01',
+    }
+    // Same tx re-mined at a new block after a reorg: only blockHash/blockNumber differ.
+    const reorged = { ...original, blockHash: '0x' + 'aa'.repeat(32), blockNumber: 125 }
+
+    await store.upsertRawLogs([original])
+    await store.upsertRawLogs([reorged])
+
+    const restored = await store.read()
+    expect(restored.rawLogs).toEqual([reorged])
   })
 })

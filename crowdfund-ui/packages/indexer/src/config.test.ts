@@ -7,7 +7,7 @@ import { getInitialCursor, loadIndexerConfig } from './config.js'
 const TOUCHED = [
   'CROWDFUND_CONTRACT_ADDRESS', 'CROWDFUND_CHAIN_ID', 'CROWDFUND_DEPLOY_BLOCK',
   'CROWDFUND_PRIMARY_RPC_URL', 'CROWDFUND_AUDIT_RPC_URL', 'CROWDFUND_CONFIRMATION_DEPTH',
-  'CROWDFUND_OVERLAP_WINDOW', 'CROWDFUND_MAX_BLOCK_RANGE', 'CROWDFUND_INDEXER_PORT',
+  'CROWDFUND_MAX_BLOCK_RANGE', 'CROWDFUND_INDEXER_PORT',
   'CROWDFUND_STALE_AFTER_MS', 'CROWDFUND_REPAIR_MAX_ATTEMPTS', 'CROWDFUND_POLL_ON_START',
   'CROWDFUND_POLL_INTERVAL_MS', 'CROWDFUND_RPC_MAX_RETRIES',
 ]
@@ -40,7 +40,6 @@ describe('loadIndexerConfig', () => {
       primaryRpcUrl: null,
       auditRpcUrl: null,
       confirmationDepth: 12,
-      overlapWindow: 100,
       maxBlockRange: 500,
       port: 3002,
       staleAfterMs: 300_000,

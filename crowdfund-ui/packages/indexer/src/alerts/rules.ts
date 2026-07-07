@@ -118,37 +118,6 @@ export const ruleA2: AlertRule = (ctx) => {
   }]
 }
 
-// A3 — Week-1 action outside week-1 window (P0)
-export const ruleA3: AlertRule = (ctx) => {
-  const out: AlertEvent[] = []
-  for (const e of ctx.snapshot.events) {
-    if (e.type !== 'SeedAdded' && e.type !== 'LaunchTeamInvited') continue
-    // The graph keeps events ordered by block; we cannot trivially derive timestamp
-    // from the event itself, but the indexer guarantees no event past the contract's
-    // own week-1 guard. A week-1 violation would mean a contract or RPC failure.
-    // Use blockNumber as the dedupe seed so each offending event fires once.
-    if (e.blockNumber === 0) continue
-    // Coarse-grained timestamp comparison would require block-timestamp lookups;
-    // the contract's _requireArmLoadedAndPreInviteEnd already enforces this. If a
-    // week-1 event ever appears past week1Deadline, the indexer + chain are
-    // inconsistent — surface it.
-    // For now, A3 is wired but only fires when an indexer extension supplies
-    // event timestamps. Skip when timestamp is unknown.
-    const timestamp = Number((e.args as { _timestamp?: number })._timestamp ?? 0)
-    if (timestamp === 0) continue
-    if (timestamp <= ctx.params.week1Deadline) continue
-    out.push({
-      id: 'A3',
-      severity: 'P0',
-      dedupeKey: `A3:${e.type}:${e.transactionHash}:${e.logIndex}`,
-      title: 'Week-1 action emitted after week-1 deadline',
-      body: `${e.type} emitted at block ${e.blockNumber} after week1Deadline. Investigate immediately.`,
-      runbook: 'OPERATIONS.md §9 failure investigation',
-    })
-  }
-  return out
-}
-
 // A4 — Seed budget thresholds (P2 → P1)
 export const ruleA4: AlertRule = (ctx) => {
   const seedCount = eventsOfType(ctx.snapshot.events, 'SeedAdded').length
@@ -526,7 +495,6 @@ export const ruleAH2: AlertRule = (ctx) => {
 export const ALL_RULES: ReadonlyArray<{ id: string; rule: AlertRule }> = [
   { id: 'A1', rule: ruleA1 },
   { id: 'A2', rule: ruleA2 },
-  { id: 'A3', rule: ruleA3 },
   { id: 'A4', rule: ruleA4 },
   { id: 'A5', rule: ruleA5 },
   { id: 'A6', rule: ruleA6 },

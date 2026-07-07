@@ -16,7 +16,6 @@ function makeStoreData(rawLogs: readonly IndexedRawLog[]): IndexerStoreData {
     cursor: {
       deployBlock: 100,
       confirmationDepth: 12,
-      overlapWindow: 100,
       chainHead: 150,
       confirmedHead: 138,
       ingestedCursor: 120,

@@ -67,6 +67,9 @@ relayer/state/*
 *.secret
 *.wallet
 *.keystore
+# Key-material fixtures — never recreate a committed wallets/ dir (old one lives in _legacy/)
+/wallets/
+*.wallet.json
 
 # OS
 .DS_Store

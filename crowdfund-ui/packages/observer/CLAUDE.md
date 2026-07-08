@@ -1,5 +1,10 @@
 # @armada/crowdfund-observer
 
+> **DEPRECATED as a standalone app.** The observer is not part of the mainnet launch
+> (only committer + admin ship). Do not refactor or invest in this app. Its view
+> components (StatsBar, TreeView, TableView) live in `@armada/crowdfund-shared` and
+> remain actively used by the committer — changes to those go through shared, not here.
+
 Read-only, real-time visualization of the Armada crowdfund: invite graph, commitment data, and allocation status. No wallet connection, no write transactions.
 
 ## Spec

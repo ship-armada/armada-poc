@@ -7,7 +7,7 @@ import { Provider, createStore } from 'jotai'
 import { ShieldModal } from './ShieldModal'
 import { openModalAtom } from '@/state/ui'
 import { activeRailgunWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
-import { feeQuoteAtom } from '@/state/fees'
+import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { txListAtom } from '@/state/tx'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
@@ -76,6 +76,10 @@ function renderModal(opts?: { open?: boolean; max?: bigint }) {
   // the guard. The id value isn't asserted; it just satisfies the invariant.
   store.set(activeRailgunWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
+  // staleAtom treats a quote with no fetch timestamp as stale (350e084), which would send
+  // Confirm down the real refresh()/fetchFees path — unreachable in jsdom. A fresh
+  // fetchedAt keeps the seeded FAKE_QUOTE inside the 4-minute freshness window.
+  store.set(feeQuoteFetchedAtAtom, Date.now())
   render(withTestQueryClient(
     <Provider store={store}>
       <ShieldModal />

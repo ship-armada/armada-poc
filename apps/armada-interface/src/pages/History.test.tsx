@@ -91,7 +91,11 @@ describe('<History>', () => {
       record('b', 'failed'),
     ])
     fireEvent.click(screen.getByRole('tab', { name: 'Complete' }))
-    expect(screen.getAllByRole('status').length).toBe(1)
+    // Completed rows deliberately render NO status chip (TxRow.showChip — the chip only carries
+    // information for non-completed states), so count rows via the amount line instead: exactly
+    // the completed record's "$1" renders; the failed record is filtered out.
+    expect(screen.getAllByText('$1').length).toBe(1)
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('groups failed/expired/cancelled under the Failed filter', () => {

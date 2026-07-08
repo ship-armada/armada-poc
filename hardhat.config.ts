@@ -126,6 +126,34 @@ const config: HardhatUserConfig = {
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
       gasMultiplier: 1.2,
     },
+
+    // ========== Mainnet Networks ==========
+    // Production. RPC must be supplied via env (HUB_RPC / CLIENT_A_RPC / CLIENT_B_RPC);
+    // the public fallbacks are last-resort defaults, not production endpoints.
+    // The crowdfund/governance launch is hub-only — clients are for the later
+    // shielded-pool deployment.
+
+    // Hub: Ethereum mainnet
+    mainnetHub: {
+      url: process.env.HUB_RPC || "https://ethereum-rpc.publicnode.com",
+      chainId: 1,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
+    },
+    // Client A: Base mainnet
+    mainnetClientA: {
+      url: process.env.CLIENT_A_RPC || "https://mainnet.base.org",
+      chainId: 8453,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
+    },
+    // Client B: Arbitrum One
+    mainnetClientB: {
+      url: process.env.CLIENT_B_RPC || "https://arb1.arbitrum.io/rpc",
+      chainId: 42161,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
+    },
   },
   paths: {
     sources: "./contracts",

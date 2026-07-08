@@ -8,7 +8,7 @@ export { ArmadaSymbol } from './components/ArmadaSymbol/ArmadaSymbol'
 export type { ArmadaSymbolProps } from './components/ArmadaSymbol/ArmadaSymbol'
 
 export { Button } from './components/Button'
-export type { ButtonProps, ButtonVariant, ButtonSize } from './components/Button'
+export type { ButtonProps, ButtonVariant, ButtonSize, ButtonIcon } from './components/Button'
 
 export { Text } from './components/Text'
 export type { TextProps, TypographyVariant } from './components/Text'
@@ -25,8 +25,8 @@ export type { NavItemProps } from './components/NavItem'
 export { NavBar } from './components/NavBar'
 export type { NavBarProps, NavBarItem } from './components/NavBar'
 
-export { Header } from './components/Header'
-export type { HeaderProps } from './components/Header'
+export { Header, WalletPillMenu } from './components/Header'
+export type { HeaderProps, WalletPillMenuProps } from './components/Header'
 
 export { BarTrackTicks } from './components/BarTrackTicks'
 
@@ -36,5 +36,21 @@ export type { ProgressProps } from './components/Progress'
 export { WalletButton } from './components/WalletButton'
 export type { WalletButtonProps } from './components/WalletButton'
 
-export { WalletPillMenu } from './components/WalletPillMenu/WalletPillMenu'
-export type { WalletPillMenuProps } from './components/WalletPillMenu/WalletPillMenu'
+export { Steps } from './components/Steps'
+export type { StepsProps } from './components/Steps'
+
+export { Tooltip } from './components/Tooltip'
+export type { TooltipProps, TooltipSimpleProps, TooltipRichProps, TooltipPlacement } from './components/Tooltip'
+
+export { WalletItem } from './components/WalletItem'
+export type { WalletItemProps } from './components/WalletItem'
+
+export {
+  THEME_STORAGE_KEY,
+  isTheme,
+  getSavedTheme,
+  getSystemTheme,
+  getAppliedTheme,
+  setTheme,
+} from './utils/theme'
+export type { Theme } from './utils/theme'

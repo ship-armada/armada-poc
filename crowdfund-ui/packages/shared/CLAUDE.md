@@ -76,6 +76,19 @@ import { StatsBar } from '@armada/crowdfund-shared/components/StatsBar'
 - React is a peer dependency — it is NOT bundled with this package.
 - All files must start with two-line ABOUTME comments.
 
+## Token decimals — USDC ≠ ARM
+
+Two different decimal precisions in this codebase. Mixing them is a silent-zero / silent-trillion class of bug — the TypeScript types are `bigint` on both sides and won't catch the mismatch.
+
+| Token | Decimals | Display helper | Parser helper | Notes |
+|---|---|---|---|---|
+| **USDC** | 6 | `formatUsdc` (with `' USDC'` suffix), `formatUsdcPlain` (no suffix, plain string) | `parseUsdcInput(string)` → `{ value: bigint, error? }` | Used for: commit amounts, balances, allocations expressed in USDC terms (e.g. `cappedDemand`, `saleSize`, `position.committed`, `position.effectiveCap`). |
+| **ARM** | 18 (standard ERC20) | `formatArm` (with `' ARM'` suffix) | — (no parser yet; add one if a UI ever takes ARM input) | Used for: outputs of `estimateUserArmAllocation`, on-chain ARM balances, claim amounts. |
+
+**Common pitfall**: routing an ARM bigint through `formatUsdc` (or vice versa) silently rescales by 10^12. The display number will be either trillions-too-large (ARM through USDC) or sub-cent dust (USDC through ARM). Always pick the helper by the token, not by visual familiarity.
+
+When converting bigints to plain `number` for display (e.g. to pass to a non-bigint UI prop), beware `Number(big) / 1e18` overflows precision past `Number.MAX_SAFE_INTEGER`. The committer's `armToNumber` in `ParticipateFlowV2.tsx` splits whole/frac first — copy that pattern if you need an unwrapped number rather than a formatted string.
+
 ## UI Primitives (shadcn/ui)
 
 All shadcn primitives live in this package under `src/components/ui/` and are consumed by every app via the `@armada/crowdfund-shared` barrel export. There is only one shadcn installation in the workspace; the apps do NOT have per-app `components.json` or `ui/` directories.

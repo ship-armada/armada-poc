@@ -1,6 +1,7 @@
 // ABOUTME: Auto-reconcile orchestration with bounded retry and exponential backoff.
 // ABOUTME: Lets the polling loop self-heal transient gaps while escalating persistent failures.
 
+import { findFirstGap } from './ranges.js'
 import { verifyRange } from './rpc.js'
 import type { IndexerStore } from '../db/store.js'
 import type { RangeLogProvider, RangePipelineConfig } from './rpc.js'
@@ -93,9 +94,15 @@ export function getExhaustedRepairRanges(
   maxAttempts: number,
 ): BlockRange[] {
   if (maxAttempts <= 0) return []
+  // Skip exhausted records that are actually covered by verified ranges (phantom gaps
+  // from a chunk-boundary change), so health does not demand operator action for them.
+  const verified = records
+    .filter((record) => record.status === 'verified')
+    .map((record) => ({ fromBlock: record.fromBlock, toBlock: record.toBlock }))
   return records
     .filter(isRepairCandidate)
     .filter((record) => record.attempts >= maxAttempts)
+    .filter((record) => findFirstGap(verified, record.fromBlock, record.toBlock) !== null)
     .map((record) => ({ fromBlock: record.fromBlock, toBlock: record.toBlock }))
 }
 
@@ -105,8 +112,8 @@ export async function autoReconcileGaps(input: AutoReconcileInput): Promise<Auto
   }
 
   const now = (input.now ?? (() => new Date()))()
-  const data = await input.store.read()
-  const { eligible, deferred, exhausted } = classifyRepairableRanges(data.ranges, input.options, now)
+  const meta = await input.store.readMeta()
+  const { eligible, deferred, exhausted } = classifyRepairableRanges(meta.ranges, input.options, now)
 
   const attempted: IngestRangeRecord[] = []
   for (const candidate of eligible) {
@@ -127,7 +134,7 @@ export async function autoReconcileGaps(input: AutoReconcileInput): Promise<Auto
     // written record back from the store so that `attempts` reflects the increment
     // applied during this cycle.
     if (result.status !== 'verified') {
-      const after = await input.store.read()
+      const after = await input.store.readMeta()
       const written = after.ranges.find(
         (record) => record.fromBlock === range.fromBlock && record.toBlock === range.toBlock,
       )
@@ -136,16 +143,15 @@ export async function autoReconcileGaps(input: AutoReconcileInput): Promise<Auto
           ...written,
           nextRetryAt: computeNextRetryAt(written.attempts, input.options, (input.now ?? (() => new Date()))()),
         }
-        await input.store.upsertRange(scheduled)
+        await input.store.patchRange(scheduled)
       }
     }
   }
 
   if (attempted.length > 0) {
-    await input.store.update((current) => ({
-      ...current,
+    await input.store.patchMeta({
       lastReconciledAt: (input.now ?? (() => new Date()))().toISOString(),
-    }))
+    })
   }
 
   return {

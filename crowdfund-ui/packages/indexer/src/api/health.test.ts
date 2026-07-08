@@ -8,7 +8,6 @@ import type { CursorState } from '../types.js'
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 150,
   confirmedHead: 138,
   ingestedCursor: 138,
@@ -97,6 +96,74 @@ describe('buildHealth', () => {
 
     expect(health.status).toBe('unhealthy')
     expect(health.gapsRequiringIntervention).toEqual([{ fromBlock: 120, toBlock: 125 }])
+  })
+
+  it('stays healthy when verification is recent and cursors are at the confirmed head', () => {
+    const now = () => new Date('2026-06-15T12:05:00.000Z')
+    const health = buildHealth({
+      cursor,
+      gapRanges: [],
+      lastIngestedAt: '2026-06-15T12:04:30.000Z',
+      lastVerifiedAt: '2026-06-15T12:04:30.000Z',
+      lastReconciledAt: null,
+      lastError: null,
+      latestSnapshotHash: null,
+      latestStaticSnapshotUrl: null,
+      staleAfterMs: 300_000,
+      now,
+    })
+    expect(health.status).toBe('healthy')
+  })
+
+  it('reports unhealthy when verification is stale by wall-clock and an error is pending', () => {
+    const now = () => new Date('2026-06-15T12:15:00.000Z')
+    const health = buildHealth({
+      cursor,
+      gapRanges: [],
+      lastIngestedAt: '2026-06-15T12:04:00.000Z',
+      lastVerifiedAt: '2026-06-15T12:04:00.000Z',
+      lastReconciledAt: null,
+      lastError: 'network: fetch failed',
+      latestSnapshotHash: null,
+      latestStaticSnapshotUrl: null,
+      staleAfterMs: 300_000,
+      now,
+    })
+    expect(health.status).toBe('unhealthy')
+  })
+
+  it('reports stale when verification is stale by wall-clock with no pending error', () => {
+    const now = () => new Date('2026-06-15T12:15:00.000Z')
+    const health = buildHealth({
+      cursor,
+      gapRanges: [],
+      lastIngestedAt: '2026-06-15T12:04:00.000Z',
+      lastVerifiedAt: '2026-06-15T12:04:00.000Z',
+      lastReconciledAt: null,
+      lastError: null,
+      latestSnapshotHash: null,
+      latestStaticSnapshotUrl: null,
+      staleAfterMs: 300_000,
+      now,
+    })
+    expect(health.status).toBe('stale')
+  })
+
+  it('reports unhealthy when nothing has ever verified and an error is pending', () => {
+    const now = () => new Date('2026-06-15T12:15:00.000Z')
+    const health = buildHealth({
+      cursor,
+      gapRanges: [],
+      lastIngestedAt: null,
+      lastVerifiedAt: null,
+      lastReconciledAt: null,
+      lastError: 'network: fetch failed',
+      latestSnapshotHash: null,
+      latestStaticSnapshotUrl: null,
+      staleAfterMs: 300_000,
+      now,
+    })
+    expect(health.status).toBe('unhealthy')
   })
 
   it('keeps degraded (transient) status when gaps exist but none have exhausted auto-repair', () => {

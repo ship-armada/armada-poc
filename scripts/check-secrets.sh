@@ -21,6 +21,7 @@ ALLOWED_FILES=(
   "apps/armada-interface/src/lib/tx/poller.test.ts"  # Fake 0xaaaa... tx hash fixture for mocked /status polling
   "config/secrets.env.template"  # Placeholder mnemonic ("word word word..."); real secret lives in gitignored secrets.env
   "relayer/test/modules/railgun-wallet.test.ts"  # Anvil's publicly-known test mnemonic — required to prove deterministic derivation
+  "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

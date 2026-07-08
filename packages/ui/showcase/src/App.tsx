@@ -10,6 +10,9 @@ import {
   Progress,
   BarTrackTicks,
   WalletButton,
+  Steps,
+  Tooltip,
+  WalletItem,
   type NavBarItem,
 } from '@armada/ui'
 import s from './showcase.module.css'
@@ -40,7 +43,7 @@ export function App() {
     <>
       <div className={s.bgRadial} aria-hidden />
 
-      <Header navItems={NAV} autoHideOnScroll={false} className={s.headerInset} />
+      <Header activeNav="crowdfund" autoHideOnScroll={false} className={s.headerInset} />
 
       <main className={s.page}>
         <section className={s.section}>
@@ -107,6 +110,7 @@ export function App() {
             <Tag label="WARNING" dot="warning" />
             <Tag label="ERROR" dot="error" />
             <Tag label="NEUTRAL" dot="neutral" />
+            <Tag label="LAVENDER" dot="lavender" />
             <Tag label="3 DAYS LEFT" />
             <Tag label="85 PARTICIPANTS" />
           </div>
@@ -173,6 +177,66 @@ export function App() {
             <div style={{ position: 'relative', width: 582, height: 10 }}>
               <BarTrackTicks />
             </div>
+          </div>
+        </section>
+
+        <section className={s.section}>
+          <div className={s.sectionHead}>
+            <h2 className={s.h2}>Steps</h2>
+            <span className={s.dim}>multi-step progress indicator — default, error, confirmed</span>
+          </div>
+
+          <p className={s.subhead}>Default — step 2 of 4 active</p>
+          <div className={s.row}>
+            <div style={{ width: 360 }}>
+              <Steps steps={['Wallet', 'Commit', 'Review', 'Approve']} currentStep={2} />
+            </div>
+          </div>
+
+          <p className={s.subhead}>Error — step 3 of 4 failed</p>
+          <div className={s.row}>
+            <div style={{ width: 360 }}>
+              <Steps steps={['Wallet', 'Commit', 'Review', 'Approve']} currentStep={3} status="error" />
+            </div>
+          </div>
+
+          <p className={s.subhead}>Confirmed — all segments succeeded</p>
+          <div className={s.row}>
+            <div style={{ width: 360 }}>
+              <Steps steps={['Wallet', 'Commit', 'Review', 'Approve']} currentStep={4} status="confirmed" />
+            </div>
+          </div>
+        </section>
+
+        <section className={s.section}>
+          <div className={s.sectionHead}>
+            <h2 className={s.h2}>Tooltip</h2>
+            <span className={s.dim}>hover/focus the trigger — centered (single line) and rich (title + bullets) variants</span>
+          </div>
+          <div className={s.row} style={{ paddingTop: 60 }}>
+            <Tooltip variant="centered" content="A short helpful note.">
+              <Button variant="secondary" size="md" label="Centered" showIcon={false} />
+            </Tooltip>
+            <Tooltip
+              variant="rich"
+              title="Pro-rata allocation"
+              description="Your committed amount earns a share of the sale, calculated at finalization."
+              bullets={['Capped at hop maximum', 'Excess refunded in USDC', 'ARM delegation required']}
+            >
+              <Button variant="secondary" size="md" label="Rich" showIcon={false} />
+            </Tooltip>
+          </div>
+        </section>
+
+        <section className={s.section}>
+          <div className={s.sectionHead}>
+            <h2 className={s.h2}>WalletItem</h2>
+            <span className={s.dim}>full-width clickable row for wallet pickers</span>
+          </div>
+          <div className={s.row} style={{ flexDirection: 'column', alignItems: 'stretch', maxWidth: 320 }}>
+            <WalletItem name="MetaMask" balance="0.45 ETH" onClick={() => {}} />
+            <WalletItem name="WalletConnect" onClick={() => {}} />
+            <WalletItem name="Coinbase Wallet" balance="—" onClick={() => {}} disabled />
           </div>
         </section>
 

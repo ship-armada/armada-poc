@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserProvider, JsonRpcSigner } from 'ethers'
-import { getHubChainId, isLocalMode, getHubRpcUrl } from '@/config/network'
+import { getHubChainId, getNetworkMode, getHubRpcUrl, getExplorerUrl } from '@/config/network'
 
 export interface UseWalletResult {
   address: string | null
@@ -27,14 +27,18 @@ async function ensureCorrectChain(ethereum: any, expectedChainId: number): Promi
   } catch (err: any) {
     // Error 4902: chain not yet added to wallet — add it then retry
     if (err?.code === 4902) {
+      const mode = getNetworkMode()
+      const chainName =
+        mode === 'local' ? 'Anvil (Local)' : mode === 'mainnet' ? 'Ethereum' : 'Sepolia'
+      const explorerUrl = getExplorerUrl()
       await ethereum.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: hexChainId,
-          chainName: isLocalMode() ? 'Anvil (Local)' : 'Sepolia',
+          chainName,
           nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
           rpcUrls: [getHubRpcUrl()],
-          ...(isLocalMode() ? {} : { blockExplorerUrls: ['https://sepolia.etherscan.io'] }),
+          ...(explorerUrl ? { blockExplorerUrls: [explorerUrl] } : {}),
         }],
       })
     } else {

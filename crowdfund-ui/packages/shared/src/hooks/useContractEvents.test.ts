@@ -8,6 +8,8 @@ import {
   lastFetchedBlockAtom,
   eventsLoadingAtom,
   eventsErrorAtom,
+  mergePolledEvents,
+  mergeReceiptEvents,
 } from './useContractEvents.js'
 import type { CrowdfundEvent } from '../lib/events.js'
 
@@ -151,5 +153,55 @@ describe('dedup logic', () => {
     ]
     store.set(crowdfundEventsAtom, sameBlock)
     expect(store.get(crowdfundEventsAtom)).toHaveLength(3)
+  })
+})
+
+describe('mergePolledEvents', () => {
+  it('advances the cursor to the resolved scan upper bound on an empty result', () => {
+    const current = { events: [mkEvent('Committed', 10)], cursor: 10 }
+    const { snapshot, unique } = mergePolledEvents(current, [], 25)
+    // Cursor follows resolvedTo (25), not a later getBlockNumber; events unchanged.
+    expect(snapshot.cursor).toBe(25)
+    expect(snapshot.events).toEqual(current.events)
+    expect(unique).toEqual([])
+  })
+
+  it('dedups new events against the current snapshot', () => {
+    const current = { events: [mkEvent('Committed', 10, 0)], cursor: 10 }
+    const incoming = [
+      mkEvent('Committed', 10, 0), // duplicate of current
+      mkEvent('Committed', 11, 0), // new
+    ]
+    const { snapshot, unique } = mergePolledEvents(current, incoming, 11)
+    expect(snapshot.events).toHaveLength(2)
+    expect(unique).toHaveLength(1)
+    expect(unique[0].blockNumber).toBe(11)
+  })
+
+  it('never moves the cursor backwards', () => {
+    const current = { events: [], cursor: 100 }
+    const { snapshot } = mergePolledEvents(current, [], 50)
+    expect(snapshot.cursor).toBe(100)
+  })
+})
+
+describe('mergeReceiptEvents', () => {
+  it('does not advance the cursor (re-fetch is idempotent)', () => {
+    const prior = { events: [mkEvent('Committed', 10)], cursor: 10 }
+    const receipt = [mkEvent('Committed', 14, 0)]
+    const { snapshot, unique } = mergeReceiptEvents(prior, receipt, 0)
+    // Cursor stays at 10 so the next poll re-scans 11..14 for other participants.
+    expect(snapshot.cursor).toBe(10)
+    expect(unique).toHaveLength(1)
+    expect(snapshot.events).toHaveLength(2)
+  })
+
+  it('ignores receipt events already present and keeps chronological order', () => {
+    const prior = { events: [mkEvent('Committed', 10, 0), mkEvent('Committed', 12, 0)], cursor: 12 }
+    const receipt = [mkEvent('Committed', 11, 0), mkEvent('Committed', 10, 0)]
+    const { snapshot, unique } = mergeReceiptEvents(prior, receipt, 0)
+    expect(unique).toHaveLength(1) // only block 11 is new
+    expect(snapshot.events.map((e) => e.blockNumber)).toEqual([10, 11, 12])
+    expect(snapshot.cursor).toBe(12)
   })
 })

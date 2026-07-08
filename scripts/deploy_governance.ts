@@ -88,14 +88,25 @@ async function main() {
   console.log("");
 
   // 1. Deploy TimelockController (needed before ArmadaToken for timelock address)
+  // When hardening (mainnet / sepolia dry-run), deploy at minDelay 0 so the deployer
+  // can run all timelock-only bootstrap ops instantly; deploy_crowdfund raises the
+  // delay to timelockDelay as the final op before renouncing (issue #347).
+  const constructorDelay = config.hardenTimelock ? 0 : timelockDelay;
   console.log("1. Deploying TimelockController...");
+  console.log(`   Initial minDelay: ${constructorDelay}s${config.hardenTimelock ? ` (harden — raised to ${timelockDelay}s post-bootstrap)` : ""}`);
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(
-    timelockDelay, [], [], deployer.address, nm.override()
+    constructorDelay, [], [], deployer.address, nm.override()
   );
-  await timelock.deploymentTransaction()!.wait();
+  const timelockReceipt = await timelock.deploymentTransaction()!.wait();
+  // Record the creation block of the first contract deployed in this script. The
+  // governance manifest covers many contracts; using the earliest creation block
+  // as the manifest deployBlock guarantees event backfill starts before any
+  // governance contract's first event, rather than at an end-of-script block
+  // number tens of blocks past contract creation (issue #324).
+  const governanceDeployBlock = timelockReceipt!.blockNumber;
   const timelockAddress = await timelock.getAddress();
-  console.log(`   TimelockController: ${timelockAddress}`);
+  console.log(`   TimelockController: ${timelockAddress} (block ${governanceDeployBlock})`);
 
   // 2. Deploy ArmadaToken (needs timelock address for addToWhitelist gating)
   console.log("2. Deploying ArmadaToken...");
@@ -271,15 +282,19 @@ async function main() {
   await (await timelock.grantRole(CANCELLER_ROLE, governorAddress, nm.override())).wait();
   console.log("   Granted CANCELLER_ROLE to governor (for SC veto)");
 
-  // Testnet only: grant the deployer the operational roles so the deploy + post-deploy ops
-  // pipeline (e.g. authorizing the YieldAdapter via AdapterRegistry) can schedule + execute
-  // timelock actions. The Governor is unusable for ops on testnet (requires ARM tokens,
-  // proposal threshold, quorum, voting period). Anvil covers this via impersonation; mainnet
-  // must NEVER take this branch — adding a mainnet value to DeployEnv must NOT silently
-  // grant operator roles to the deployer. The explicit allowlist below makes that invariant
-  // unmissable. Any future testnet env (goerli, holesky, base-sepolia-hub, …) is opt-in.
+  // Grant the deployer the operational roles (PROPOSER/EXECUTOR/CANCELLER) so the
+  // deploy can drive timelock-only setup directly. Two cases:
+  //   - Testnet ops envs (sepolia): granted and KEPT — the Governor is unusable for
+  //     ops on testnet (needs ARM/quorum/voting), so the deployer stays able to run
+  //     timelock actions post-deploy.
+  //   - Harden envs (mainnet, and the sepolia dry-run): granted TEMPORARILY to
+  //     bootstrap launch wiring, then renounced at the end of deploy_crowdfund so no
+  //     key retains timelock power (issue #347).
+  // A mainnet value in DeployEnv does NOT by itself take this branch — only the
+  // explicit hardenTimelock profile (or the testnet allowlist) does.
   const TESTNET_OPS_ENVS: ReadonlyArray<string> = ["sepolia"];
-  if (TESTNET_OPS_ENVS.includes(config.env)) {
+  const grantDeployerOps = TESTNET_OPS_ENVS.includes(config.env) || config.hardenTimelock;
+  if (grantDeployerOps) {
     const [deployerSigner] = await ethers.getSigners();
     await (await timelock.grantRole(PROPOSER_ROLE, deployerSigner.address, nm.override())).wait();
     console.log(`   Granted PROPOSER_ROLE to deployer (${config.env} ops)`);
@@ -326,11 +341,10 @@ async function main() {
   console.log("15-16. Wind-down wiring + admin renounce: DEFERRED (completed by deploy_crowdfund.ts)");
 
   // Save deployment
-  const currentBlock = await ethers.provider.getBlockNumber();
   const deployment: GovernanceDeployment = {
     chainId,
     deployer: deployer.address,
-    deployBlock: currentBlock,
+    deployBlock: governanceDeployBlock,
     contracts: {
       timelockController: timelockAddress,
       armToken: armTokenAddress,

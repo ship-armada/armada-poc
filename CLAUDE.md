@@ -42,7 +42,7 @@ npm run test:governance     # Governance lifecycle + adversarial tests
 npm run test:crowdfund      # Crowdfund lifecycle + adversarial tests
 
 # Crowdfund testing tools
-npm run crowdfund:observer  # Start crowdfund observer UI (port 5173)
+npm run crowdfund:observer  # Start crowdfund observer UI (port 5173) — DEPRECATED standalone app; components live on in shared
 npm run crowdfund:committer # Start crowdfund committer UI (port 5174)
 npm run crowdfund:admin     # Start crowdfund admin UI (port 5175)
 npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
@@ -50,6 +50,11 @@ npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
 # Sepolia testnet
 npm run setup:sepolia       # Deploy to Sepolia (requires config/secrets.env)
 npm run relayer:sepolia     # Start relayer in real CCTP mode (Iris attestation)
+
+# Named deployment instances (pulls manifests from armada-deployments repo)
+npm run fetch-deployment -- medi2   # → deployments/instances/medi2/
+# Then point an app at it:
+VITE_NETWORK=sepolia VITE_DEPLOYMENT_INSTANCE=medi2 npm run crowdfund:committer
 ```
 
 ## Known POC Shortcuts (Do Not Replicate)
@@ -93,11 +98,11 @@ When writing new code, follow production security practices even though these le
 | `scripts/` | Hardhat deployment and utility scripts |
 | `relayer/` | Node.js relayer service |
 | `usdc-v2-frontend/` | Temporary React frontend |
-| `crowdfund-ui/` | Crowdfund UIs — observer, committer, admin (React, Vite, Jotai) |
+| `crowdfund-ui/` | Crowdfund UIs — committer, admin (React, Vite, Jotai); observer is deprecated as a standalone app |
 | `lib/` | Foundry deps (forge-std, halmos) + Railgun SDK helpers |
 | `config/` | Environment configs (local.env, sepolia.env, networks.ts) |
 | `deployments/` | Generated deployment manifests (Sepolia ones are committed) |
-| `audit-reports/` | AI-assisted security audit (57 findings, Trail of Bits methodology) |
+| `_legacy/llm-analysis-2026-02/` | LLM-generated security analysis snapshot (Feb 2026, formerly `audit-reports/`) — historical, predates fee module/governance/July review |
 | `reports/` | Threat models, formal verification notes, analysis reports |
 | `docs/` | Implementation plans and specs |
 | `mcp-server/` | MCP server exposing read-only dev tools for AI coding agents |

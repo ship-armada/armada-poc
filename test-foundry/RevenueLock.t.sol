@@ -186,6 +186,27 @@ contract RevenueLockTest is Test {
         new RevenueLock(address(armToken), address(revenueCounter), MAX_INCREASE_PER_DAY, b, a);
     }
 
+    // WHY: the one-shot windDown setter was permissionless — anyone could front-run
+    // the deployer and bind it to a foreign address between deploy and wiring. Because
+    // RevenueLock is immutable, a mis-bind is unrecoverable and bricks wind-down. It is
+    // now deployer-gated (the deployer is captured at construction).
+    function test_setWindDownContract_onlyDeployer() public {
+        address windDown = address(0xBEEF);
+
+        // A non-deployer cannot bind it.
+        vm.prank(nonBeneficiary);
+        vm.expectRevert("RevenueLock: not deployer");
+        revenueLock.setWindDownContract(windDown);
+
+        // The deployer (address(this)) can, once.
+        revenueLock.setWindDownContract(windDown);
+        assertEq(revenueLock.windDownContract(), windDown);
+
+        // One-shot: a second bind reverts even from the deployer.
+        vm.expectRevert("RevenueLock: wind-down already set");
+        revenueLock.setWindDownContract(address(0xCAFE));
+    }
+
     function test_constructor_zeroBeneficiaryAddress_reverts() public {
         address[] memory b = new address[](1);
         b[0] = address(0);

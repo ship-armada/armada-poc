@@ -70,6 +70,22 @@ function severityForBudget(crossedTier: number): 'P1' | 'P2' {
   return crossedTier >= 100 ? 'P1' : 'P2'
 }
 
+// Time-vs-event rules compare wall-clock `now` against *indexed* events. When the
+// indexer is stale or unhealthy the snapshot may be missing recent events, so those
+// rules would fire false positives (e.g. "finalize required" because the Finalized
+// event has not been ingested yet). Suppress them in that case; AH1 separately pages
+// that the indexer itself is degraded.
+function isSnapshotTrustworthy(ctx: AlertContext): boolean {
+  return ctx.health.status !== 'unhealthy' && ctx.health.status !== 'stale'
+}
+
+// UTC calendar-day bucket (YYYY-MM-DD) derived from the injected clock. Used in
+// health-alert dedupe keys so a persistent outage re-pages once per day rather than on
+// every cron tick (dedupe keys persist forever with no resolve/re-arm mechanism).
+function utcDateBucket(nowSeconds: number): string {
+  return new Date(nowSeconds * 1000).toISOString().slice(0, 10)
+}
+
 // ============ Rule implementations ============
 
 // A1 — ARM loaded (P3, once)
@@ -88,6 +104,7 @@ export const ruleA1: AlertRule = (ctx) => {
 
 // A2 — Sale should be open but not yet armed (P1)
 export const ruleA2: AlertRule = (ctx) => {
+  if (!isSnapshotTrustworthy(ctx)) return []
   if (ctx.now < ctx.params.openTimestamp) return []
   const armed = eventsOfType(ctx.snapshot.events, 'ArmLoaded').length > 0
   if (armed) return []
@@ -99,37 +116,6 @@ export const ruleA2: AlertRule = (ctx) => {
     body: `openTimestamp=${ctx.params.openTimestamp} has passed but no ArmLoaded event has been seen.`,
     runbook: 'OPERATIONS.md §3 Steps 4–5',
   }]
-}
-
-// A3 — Week-1 action outside week-1 window (P0)
-export const ruleA3: AlertRule = (ctx) => {
-  const out: AlertEvent[] = []
-  for (const e of ctx.snapshot.events) {
-    if (e.type !== 'SeedAdded' && e.type !== 'LaunchTeamInvited') continue
-    // The graph keeps events ordered by block; we cannot trivially derive timestamp
-    // from the event itself, but the indexer guarantees no event past the contract's
-    // own week-1 guard. A week-1 violation would mean a contract or RPC failure.
-    // Use blockNumber as the dedupe seed so each offending event fires once.
-    if (e.blockNumber === 0) continue
-    // Coarse-grained timestamp comparison would require block-timestamp lookups;
-    // the contract's _requireArmLoadedAndPreInviteEnd already enforces this. If a
-    // week-1 event ever appears past week1Deadline, the indexer + chain are
-    // inconsistent — surface it.
-    // For now, A3 is wired but only fires when an indexer extension supplies
-    // event timestamps. Skip when timestamp is unknown.
-    const timestamp = Number((e.args as { _timestamp?: number })._timestamp ?? 0)
-    if (timestamp === 0) continue
-    if (timestamp <= ctx.params.week1Deadline) continue
-    out.push({
-      id: 'A3',
-      severity: 'P0',
-      dedupeKey: `A3:${e.type}:${e.transactionHash}:${e.logIndex}`,
-      title: 'Week-1 action emitted after week-1 deadline',
-      body: `${e.type} emitted at block ${e.blockNumber} after week1Deadline. Investigate immediately.`,
-      runbook: 'OPERATIONS.md §9 failure investigation',
-    })
-  }
-  return out
 }
 
 // A4 — Seed budget thresholds (P2 → P1)
@@ -188,10 +174,13 @@ export const ruleA6: AlertRule = (ctx) => {
   const duplicates = duplicateSlotNodeCount(ctx.snapshot.graph)
   const ratio = duplicates / occupied
   if (ratio < ctx.thresholds.duplicateSlotFraction) return []
+  // Bucket the ratio into 10-point bands so a fluctuating ratio fires once per band
+  // rather than once per whole-percent (which produced up to ~100 distinct alerts).
+  const bucket = Math.floor((ratio * 100) / 10) * 10
   return [{
     id: 'A6',
     severity: 'P2',
-    dedupeKey: `A6:${Math.round(ratio * 100)}`,
+    dedupeKey: `A6:${bucket}`,
     title: `Duplicate same-hop slot ratio ${(ratio * 100).toFixed(1)}%`,
     body: `${duplicates}/${occupied} hop-1+hop-2 nodes have multiple slots. Intentional under the design; this is an awareness alert (see MONITORING.md §9.1).`,
     runbook: 'OPERATIONS.md §4/§5 monitoring; no automatic intervention',
@@ -220,6 +209,7 @@ export const ruleA7: AlertRule = (ctx) => {
 
 // A8 — Minimum raise at risk late in sale (P2)
 export const ruleA8: AlertRule = (ctx) => {
+  if (!isSnapshotTrustworthy(ctx)) return []
   const capped = cappedDemandTotal(ctx.snapshot.graph)
   if (capped >= CROWDFUND_CONSTANTS.MIN_SALE) return []
   const remaining = ctx.params.commitmentDeadline - ctx.now
@@ -243,6 +233,7 @@ export const ruleA8: AlertRule = (ctx) => {
 
 // A9a — Deadline passed, qualified, finalization needed (P1 → P0 after grace)
 export const ruleA9a: AlertRule = (ctx) => {
+  if (!isSnapshotTrustworthy(ctx)) return []
   if (ctx.now <= ctx.params.commitmentDeadline) return []
   const finalized = eventsOfType(ctx.snapshot.events, 'Finalized').length > 0
   const cancelled = eventsOfType(ctx.snapshot.events, 'Cancelled').length > 0
@@ -264,6 +255,7 @@ export const ruleA9a: AlertRule = (ctx) => {
 
 // A9b — Deadline passed, sub-minimum demand (P1)
 export const ruleA9b: AlertRule = (ctx) => {
+  if (!isSnapshotTrustworthy(ctx)) return []
   if (ctx.now <= ctx.params.commitmentDeadline) return []
   const finalized = eventsOfType(ctx.snapshot.events, 'Finalized').length > 0
   const cancelled = eventsOfType(ctx.snapshot.events, 'Cancelled').length > 0
@@ -331,6 +323,12 @@ export const ruleA12: AlertRule = (ctx) => {
 // participantNodes.length (NOT × NUM_HOPS as the spec text claims — see contract
 // line 511). Treasury balance increase must equal netProceeds within that
 // buffer; anything more is a real mismatch.
+//
+// LIMITATION: ctx.treasuryUsdcBalance is the treasury's CURRENT balance, not its balance
+// at the finalization block. A pre-existing balance, or any treasury inflow/outflow after
+// finalization, will skew the comparison and can produce a false positive. Properly fixing
+// this needs a balance-at-finalization-block read; until then the alert body tells the
+// responder to verify against the finalization-block balance before escalating.
 export const ruleA13: AlertRule = (ctx) => {
   const f = findLatestEvent(ctx.snapshot.events, 'Finalized')
   if (!f) return []
@@ -347,7 +345,7 @@ export const ruleA13: AlertRule = (ctx) => {
     severity: 'P0',
     dedupeKey: 'A13',
     title: 'Treasury proceeds mismatch',
-    body: `Treasury USDC balance=${ctx.treasuryUsdcBalance.toString()} vs Finalized.netProceeds=${netProceeds.toString()}; diff=${diff.toString()} exceeds rounding buffer ${participantNodes.toString()}.`,
+    body: `Treasury USDC balance=${ctx.treasuryUsdcBalance.toString()} vs Finalized.netProceeds=${netProceeds.toString()}; diff=${diff.toString()} exceeds rounding buffer ${participantNodes.toString()}. NOTE: this compares the treasury's CURRENT balance, not its balance at the finalization block — a pre-existing balance or later treasury movement can cause a false positive. Verify against the finalization-block balance before escalating.`,
     runbook: 'OPERATIONS.md §8 proceeds verification',
     context: {
       treasuryUsdcBalance: ctx.treasuryUsdcBalance.toString(),
@@ -455,10 +453,48 @@ export const ruleA20: AlertRule = (ctx) => {
   }]
 }
 
+// AH1 — Indexer health degraded (unhealthy → P1, stale → P2)
+//
+// Fires when the indexer can no longer be trusted to reflect chain state. The dedupe
+// key is bucketed by UTC day so a sustained outage re-pages once per day; a single
+// cron tick never double-fires.
+export const ruleAH1: AlertRule = (ctx) => {
+  const status = ctx.health.status
+  if (status !== 'unhealthy' && status !== 'stale') return []
+  const severity: 'P1' | 'P2' = status === 'unhealthy' ? 'P1' : 'P2'
+  return [{
+    id: 'AH1',
+    severity,
+    dedupeKey: `AH1:${status}:${utcDateBucket(ctx.now)}`,
+    title: `Indexer health ${status}`,
+    body: `Indexer status is ${status} (verifiedCursor=${ctx.health.verifiedCursor}, lagBlocks=${ctx.health.lagBlocks}, lastError=${ctx.health.lastError ?? 'none'}). Frontends are serving the last verified snapshot; time-based alerts are suppressed until it recovers.`,
+    runbook: 'CROWDFUND_INDEXER_RUNBOOK.md health triage',
+    context: { status, lagBlocks: ctx.health.lagBlocks, verifiedCursor: ctx.health.verifiedCursor },
+  }]
+}
+
+// AH2 — Indexer gaps require operator intervention (P0/manual) — P1
+//
+// Fires when auto-repair has exhausted its attempt limit on one or more ranges. The
+// dedupe key includes the formatted range list so a newly-exhausted gap re-pages.
+export const ruleAH2: AlertRule = (ctx) => {
+  const gaps = ctx.health.gapsRequiringIntervention
+  if (!gaps || gaps.length === 0) return []
+  const ranges = gaps.map((g) => `${g.fromBlock}-${g.toBlock}`).join(',')
+  return [{
+    id: 'AH2',
+    severity: 'P1',
+    dedupeKey: `AH2:${ranges}`,
+    title: 'Indexer gaps require operator intervention',
+    body: `${gaps.length} block range(s) have exhausted auto-repair and need manual repair: ${ranges}. Run: npm run crowdfund:indexer:cli -- repair`,
+    runbook: 'CROWDFUND_INDEXER_RUNBOOK.md gap repair',
+    context: { ranges, count: gaps.length },
+  }]
+}
+
 export const ALL_RULES: ReadonlyArray<{ id: string; rule: AlertRule }> = [
   { id: 'A1', rule: ruleA1 },
   { id: 'A2', rule: ruleA2 },
-  { id: 'A3', rule: ruleA3 },
   { id: 'A4', rule: ruleA4 },
   { id: 'A5', rule: ruleA5 },
   { id: 'A6', rule: ruleA6 },
@@ -474,6 +510,8 @@ export const ALL_RULES: ReadonlyArray<{ id: string; rule: AlertRule }> = [
   { id: 'A18', rule: ruleA18 },
   { id: 'A19', rule: ruleA19 },
   { id: 'A20', rule: ruleA20 },
+  { id: 'AH1', rule: ruleAH1 },
+  { id: 'AH2', rule: ruleAH2 },
 ]
 
 export function evaluateAllRules(ctx: AlertContext): AlertEvent[] {

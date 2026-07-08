@@ -121,9 +121,11 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 ---
 
-## 8. Governance Parameters (reference only — not crowdfund constructor inputs)
+## 8. Governance & RevenueLock Parameters
 
-These values are defined in GOVERNANCE.md and affect the ARM token / governor contracts, not the crowdfund contract itself. They are included here for cross-reference only. Do not use this section as a constructor argument source.
+### 8.1 Reference values (not constructor inputs)
+
+These values are defined in GOVERNANCE.md and affect the ARM token / governor contracts, not the crowdfund contract itself. They are included here for cross-reference only. Do not use this subsection as a constructor argument source.
 
 | Parameter | Value | Source | Notes |
 |---|---|---|---|
@@ -133,6 +135,20 @@ These values are defined in GOVERNANCE.md and affect the ARM token / governor co
 | Quorum | max(20% circulating, 100,000 ARM) | GOVERNANCE.md | |
 | `LIMIT_ACTIVATION_DELAY` | 24 days (2,073,600 seconds) | GOVERNANCE.md §Treasury Outflow Limits | Hardcoded constant in `ArmadaTreasuryGov`. Not governance-settable. Constrained by `_maxExtendedCycle() < LIMIT_ACTIVATION_DELAY` — governor timing setters revert if they would violate this invariant. |
 | `MAX_REVENUE_INCREASE_PER_DAY` | 10,000 × 10^6 (= $10,000 USDC/day) | REVENUE_LOCK.md §6, ARM_TOKEN.md §5.1 | Immutable, set at deployment in RevenueLock constructor. Not governance-settable. Calibrated to require minimum 100 days for malicious $0 → $1M full-unlock acceleration under captured governance, assuming `syncObservedRevenue()` is called at least daily. Defensive security calibration, not steady-state economic parameter. Effective rate cap depends on regular sync calls; without regular syncs, the cap accumulates over idle periods. |
+
+### 8.2 Deploy inputs — freeze before deploy
+
+Unlike §8.1, these **are** deployment inputs for the governance / RevenueLock deploy (independent of the crowdfund constructor). They are immutable or protection-critical once set and must be finalized and two-person verified before deploy. Source of record: `config/networks.ts` (mainnet) → this sheet. This subsection is the single freeze location for these values — the tracking issues below should reference it rather than re-listing values.
+
+| Parameter | Value | Mutability | Verified | Notes / tracking |
+|---|---|---|---|---|
+| RevenueLock beneficiary list | `[TBD — finalized (address, amount) JSON]` | Immutable (RevenueLock constructor) | ☐ | Must sum **exactly** to 2,400,000 × 10^18 ARM (1,800,000 team + 600,000 airdrop). Loaded via `REVENUE_LOCK_BENEFICIARIES_FILE`; deploy rejects Anvil placeholders on non-local. Tracking: #144. |
+| Treasury daily outflow limit — USDC | `[TBD]` | Set at deploy (timelock `initOutflowConfig`); governance-adjustable after | ☐ | Currently a **placeholder** in `config/networks.ts`. Tracking: #348. |
+| Treasury daily outflow limit — ARM | `[TBD]` | Set at deploy (timelock `initOutflowConfig`); governance-adjustable after | ☐ | Placeholder in `config/networks.ts`. Tracking: #348. |
+| Treasury daily outflow limit — ETH (`address(0)`) | `[TBD]` | Set at deploy (timelock `initOutflowConfig`); governance-adjustable after | ☐ | Placeholder in `config/networks.ts`. Tracking: #348. |
+| Outflow window / activation params | `[TBD]` | Set at deploy | ☐ | Window duration, limit BPS, absolute + floor per `initOutflowConfig`. Tracking: #348. |
+
+> Steward budget is **not** a deploy input — it is authorized via governance post-launch (see #222), so there is no value to freeze here.
 
 ---
 
@@ -220,6 +236,8 @@ Before deployment, every row must be verified. This is the final sign-off.
 |---|---|---|
 | All `[TBD]` fields filled | ☐ | |
 | All addresses confirmed by counterparty (treasury, ROOT, SC members) | ☐ | |
+| RevenueLock beneficiary list finalized and sums to 2,400,000e18 (§8.2, #144) | ☐ | |
+| Treasury outflow limits finalized — USDC/ARM/ETH + window params (§8.2, #348) | ☐ | |
 | All timestamps independently converted and verified | ☐ | |
 | All decimal-encoded values independently computed and verified | ☐ | |
 | EIP-712 domain fields confirmed | ☐ | |

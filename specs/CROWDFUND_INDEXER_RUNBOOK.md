@@ -28,6 +28,17 @@ Data layers:
 - Snapshots are derived artifacts and can be rebuilt from raw logs.
 - Static snapshots are outage fallback artifacts, published as `snapshot-{block}.json` plus `latest.json`.
 
+### Reorg Handling
+
+`CROWDFUND_CONFIRMATION_DEPTH` (default 12) is the stated reorg guarantee: only data at
+least that many blocks behind the chain head is verified. Reorgs deeper than that are
+unhandled but acceptable on the Ethereum L1 mainnet hub (chain id 1), where a >12-block
+reorg implies a consensus/finality failure rather than normal operation.
+
+Raw logs are deduped by `(chainId, contract, txHash, logIndex)` — excluding `blockHash` —
+so a tx re-mined at a new block cannot double-apply. Postgres enforces this via the
+`crowdfund_indexer_raw_logs` primary key; the file store enforces it via `getLogDedupeKey`.
+
 ---
 
 ## Required Environment
@@ -63,7 +74,6 @@ Cursor and range tuning:
 
 ```bash
 export CROWDFUND_CONFIRMATION_DEPTH=12
-export CROWDFUND_OVERLAP_WINDOW=100
 export CROWDFUND_MAX_BLOCK_RANGE=500
 ```
 
@@ -120,7 +130,6 @@ Cursor and range variables:
 | Variable | Default | Behavior |
 |----------|---------|----------|
 | `CROWDFUND_CONFIRMATION_DEPTH` | `12` | Blocks behind chain head required before data is verified. Lower only for dev. |
-| `CROWDFUND_OVERLAP_WINDOW` | `100` | Stored cursor setting reserved for overlap/rescan policy. |
 | `CROWDFUND_MAX_BLOCK_RANGE` | `500` | Maximum inclusive block range per `eth_getLogs` chunk. |
 
 API and polling variables:
@@ -141,6 +150,7 @@ API and polling variables:
 | `CROWDFUND_REPAIR_MAX_ATTEMPTS` | `6` | Total attempts (initial + auto-repair retries) before a range is exhausted and surfaced in `gapsRequiringIntervention`. Set to `0` to disable auto-reconcile entirely. |
 | `CROWDFUND_REPAIR_BACKOFF_BASE_MS` | `30000` | Base delay for exponential backoff between auto-repair attempts. The Nth attempt waits `base * 2^(attempts-1)`, capped by `BACKOFF_MAX_MS`. |
 | `CROWDFUND_REPAIR_BACKOFF_MAX_MS` | `1800000` | Cap on the backoff delay between auto-repair attempts (default 30 minutes). |
+| `CROWDFUND_STALE_AFTER_MS` | `300000` | Wall-clock budget after which a frozen indexer is reported `stale` (or `unhealthy` if an error is pending) even when there are no gaps and block-lag reads 0. Detects a dead/stuck RPC where cursors stop advancing. Default 5 minutes. |
 
 Snapshot publication variables:
 
@@ -162,7 +172,7 @@ Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONI
 | `CROWDFUND_TREASURY_ADDRESS` | required | Treasury address — used to read USDC balance for A13 mismatch detection. |
 | `CROWDFUND_USDC_ADDRESS` | optional | USDC contract — required for A13 (treasury balance). Omit to skip A13. |
 | `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens. Drives A2/A8/A9. |
-| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Drives A3. |
+| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Marks the week-1 → weeks-2–3 phase boundary in the monitoring model. |
 | `CROWDFUND_COMMITMENT_DEADLINE` | `0` | Unix seconds when the 3-week window closes (openTimestamp + 21 days). Drives A8/A9. |
 | `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P1` | unset | Discord webhook URL for P1 (same-day) alerts. |
@@ -221,6 +231,13 @@ export CROWDFUND_INDEXER_STORE_PATH=data/crowdfund-indexer/store.json
 ```
 
 Do not use the JSON file store for production campaigns.
+
+**Single-writer only.** The JSON file store has no cross-process lock. Its writes are
+read-modify-write, so running a mutating CLI command (`verify`, `repair`, `backfill`)
+while the API's polling worker is active will race — the last writer wins and updates are
+lost. Stop the polling worker before running mutating CLI commands against the file store,
+or use the Postgres backend (which serializes writes via an advisory lock). Read-only
+commands (`status`) are always safe.
 
 ---
 
@@ -285,6 +302,34 @@ Expected healthy fields:
 - `hasGaps: false`
 - `lagBlocks` near `0`
 - `verifiedCursor` close to `confirmedHead`
+
+### Health status semantics
+
+`status` is derived in this order:
+
+- `unhealthy` — one or more gaps have exhausted auto-repair (`gapsRequiringIntervention` non-empty); or a gap exists alongside a current `lastError`; or nothing has ever verified while an error is pending.
+- `degraded` — gaps exist but auto-repair is still retrying them.
+- `stale` — verification has not advanced within `CROWDFUND_STALE_AFTER_MS` (wall-clock), **or** block-lag exceeds the SLA threshold. The wall-clock check catches a dead/stuck RPC where the cursors freeze and `lagBlocks` would otherwise read `0`. If an error is pending during that window, status escalates to `unhealthy`.
+- `healthy` — none of the above.
+
+Two alerts watch the indexer itself (see `MONITORING.md` §8 addendum): **AH1** pages when `status` is `stale` (P2) or `unhealthy` (P1); **AH2** pages when `gapsRequiringIntervention` is non-empty (P1). While the indexer is `stale`/`unhealthy`, the time-based crowdfund alerts (A2/A8/A9a/A9b) are suppressed to avoid false pages off a lagging snapshot.
+
+### Rate limiting
+
+Rate limiting is enforced at the nginx reverse proxy, not in the Node process. The API
+deliberately sets permissive CORS and ships no app-level limiter, so the reverse proxy is
+the single throttling point in front of the public port (`CROWDFUND_INDEXER_PORT`, default
+`3002`).
+
+The chosen limits (in `deploy/nginx-indexer.conf`):
+
+- **10 requests/second per IP** (`limit_req_zone ... rate=10r/s`, keyed on `$binary_remote_addr`).
+- **Burst of 20** with `nodelay`, so short spikes are absorbed rather than queued.
+- **HTTP 429** returned on excess (`limit_req_status 429`), not 503.
+
+The limits are tunable — adjust `rate` and `burst` in the conf and reload nginx. The public
+endpoints (`/health`, `/snapshot`, `/events`) are cheap and cached, so this budget is generous
+for real users while throttling a request flood from a single source.
 
 ---
 
@@ -532,6 +577,19 @@ psql "$CROWDFUND_DATABASE_URL" < crowdfund-indexer-backup.sql
 npm run crowdfund:indexer:cli -- status
 npm run crowdfund:indexer:cli -- backfill latest
 ```
+
+### Automated backups (Dockerized deploy)
+
+For the containerized deploy (`deploy/docker-compose.yml`), `deploy/backup-indexer.sh`
+runs nightly via cron: it tars the `indexer-data` volume (file store + snapshots +
+alert dedupe) and, when the `postgres` service is running, adds a `pg_dump`, with local
+retention pruning and an optional off-host copy hook (`BACKUP_REMOTE_CMD`). Set up cron
+and off-host copy per `deploy/README.md` → **Persistence & backups**; the full **Restore**
+and **Rollback** procedures live there too. A backup on the same VPS does not survive VPS
+loss — always configure the off-host copy before launch.
+
+Because raw logs are canonical and snapshots are derived, restoring Postgres (or the file
+store) recovers everything; the indexer resumes from the restored `verifiedCursor`.
 
 Keep database dumps out of git.
 

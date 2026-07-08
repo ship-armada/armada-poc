@@ -1,0 +1,61 @@
+/* ABOUTME: CSS Module for HopPill — wide label + colored hop tag with backdrop blur. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-4) var(--primitives-spacing-4)
+    var(--primitives-spacing-5);
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.label {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
+  white-space: nowrap;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-1) var(--primitives-spacing-3);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.tagLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-wider);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+  white-space: nowrap;
+}
+
+/* Invite landing card — match JoinButton height */
+.landing {
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  min-height: var(--primitives-spacing-16);
+  box-sizing: border-box;
+}
+
+.landing .tag {
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-4);
+}

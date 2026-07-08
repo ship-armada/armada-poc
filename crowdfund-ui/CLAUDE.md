@@ -5,7 +5,7 @@ Monorepo containing the Armada crowdfund frontend, split into four npm workspace
 | Package | Name | Type | Port | Purpose |
 |---------|------|------|------|---------|
 | `packages/shared` | `@armada/crowdfund-shared` | Library | — | Data layer, event types, graph logic, shared view components |
-| `packages/observer` | `@armada/crowdfund-observer` | Vite app | 5173 | Read-only crowdfund visualization (tree + table + stats) |
+| `packages/observer` | `@armada/crowdfund-observer` | Vite app | 5173 | **DEPRECATED as standalone app** — read-only visualization; its view components live in shared and are still used by committer |
 | `packages/committer` | `@armada/crowdfund-committer` | Vite app | 5174 | Participant actions: commit USDC, invite, claim ARM/refunds |
 | `packages/admin` | `@armada/crowdfund-admin` | Vite app | 5175 | Launch team & security council operations |
 
@@ -23,7 +23,7 @@ The **shared** package is a TypeScript library (no Vite, no build step). It expo
 
 The three apps import from shared via `@armada/crowdfund-shared`. npm workspaces resolves this to the local package.
 
-**Observer** is both a standalone app and a component library. Its view components (StatsBar, TreeView, TableView) live in shared so the Committer can embed them. The Observer app wires these components into a standalone layout with its own data fetching.
+**Observer** is both a standalone app and a component library. Its view components (StatsBar, TreeView, TableView) live in shared so the Committer can embed them. The Observer app wires these components into a standalone layout with its own data fetching. The standalone app is **deprecated** (not part of the mainnet launch — only committer + admin ship); the components in shared remain active.
 
 **Committer** embeds the Observer's view components as a read-only left panel and adds a wallet-connected action panel on the right.
 
@@ -53,3 +53,21 @@ All three apps share the same visual theme — dark mode, oklch color tokens, Ge
 - Tailwind v4 via `@tailwindcss/vite` plugin
 - TypeScript strict mode
 - `npm install --legacy-peer-deps` is required (Railgun SDK peer dep conflicts in the root project)
+
+## Picking the right primitive across packages
+
+Several primitives have multiple sources in this workspace. Get the imports right or you'll get visual regressions or runtime ESM errors that TypeScript may not catch (especially under `tsc -b`'s incremental cache).
+
+| Symbol | Lives in | Use when | Do NOT confuse with |
+|---|---|---|---|
+| `Button` | `@armada/ui` | New v2 code — designer's pill button with `variant: 'primary' \| 'secondary' \| 'ghost' \| 'gradient'`, sizes, `icon: 'arrow-right' \| 'arrow-right-micro'`. | `Button` from `@armada/crowdfund-shared` (legacy shadcn-generated, different prop shape, used by v1 chrome like `AppHeader`'s mobile sheet). |
+| `Steps`, `Tooltip`, `WalletItem`, `Tag`, `NavBar`, `NavItem`, `Header`, `WalletButton`, `ArmadaLogo`, `BarTrackTicks`, `Progress` | `@armada/ui` | Always import directly from `@armada/ui` — crowdfund-shared does NOT re-export these. | n/a — runtime ESM error if pulled from `@armada/crowdfund-shared`. |
+| `JoinButton`, `HopPill`, `HopStatCard`, `ParticipantsTable`, `HeroParticipantsPanel`, `MyPosition*`, `SlotCard`, `InviteSlots`, `Step1Wallet`–`Step5Confirmation`, `Step0Invite`, `CrowdfundExperience`, `Participate`, `NodeSphere` | `@armada/crowdfund-shared` | These are crowdfund-domain components — they live in shared, not in `@armada/ui`. | Don't try to import from `@armada/ui`. |
+
+**Rule of thumb**: if it's a chrome / layout / form primitive that any Armada app might use, it's in `@armada/ui`. If it's crowdfund-specific (talks about hops, invites, allocations, the campaign), it's in `@armada/crowdfund-shared`.
+
+## Typechecking the committer / observer / admin
+
+Each app's `package.json` ships a `typecheck` script that runs `tsc -b --force --noEmit`. The `--force` flag is intentional: it bypasses the `.tsbuildinfo` incremental cache so cross-package import errors can't be hidden by a stale cache (e.g. a symbol that was renamed in `crowdfund-shared` after the consuming app's cache was last written). Run it before pushing.
+
+If you ever need to wipe build info manually, each app exposes `npm run clean --workspace=<app>` (deletes `*.tsbuildinfo` next to the package's `tsconfig`).

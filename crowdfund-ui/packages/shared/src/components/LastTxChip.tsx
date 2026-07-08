@@ -4,7 +4,7 @@
 import { useAtomValue, useSetAtom } from 'jotai'
 import { CheckCircle2, CircleDashed, Copy, Loader2, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { lastTxAtom, type LastTxStatus } from '../hooks/useTxToast.js'
+import { lastTxAtom, type LastTx, type LastTxStatus } from '../hooks/useTxToast.js'
 import { Button } from './ui/button.js'
 import { CopyToast } from './CopyToast.js'
 import {
@@ -33,9 +33,19 @@ function shortHash(hash: string | null): string {
   return `${hash.slice(0, 6)}…${hash.slice(-4)}`
 }
 
-export function LastTxChip() {
-  const lastTx = useAtomValue(lastTxAtom)
+export interface LastTxChipProps {
+  /** When provided, the chip renders from this value instead of `lastTxAtom`,
+   *  letting a caller drive it from its own source (e.g. a multi-tx pipeline
+   *  store). The Dismiss control is hidden in this mode — the source manages
+   *  the chip's lifecycle. */
+  override?: LastTx | null
+}
+
+export function LastTxChip({ override }: LastTxChipProps = {}) {
+  const atomTx = useAtomValue(lastTxAtom)
   const setLastTx = useSetAtom(lastTxAtom)
+  const usingOverride = override !== undefined
+  const lastTx = usingOverride ? override : atomTx
   if (!lastTx) return null
 
   const hashDisplay = shortHash(lastTx.hash)
@@ -100,15 +110,17 @@ export function LastTxChip() {
               {lastTx.error}
             </div>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={() => setLastTx(null)}
-          >
-            Dismiss
-          </Button>
+          {!usingOverride && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setLastTx(null)}
+            >
+              Dismiss
+            </Button>
+          )}
         </div>
       </PopoverContent>
     </Popover>

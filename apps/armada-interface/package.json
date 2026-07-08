@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@armada/ui": "*",
+    "@heroicons/react": "^2.2.0",
     "@noble/ciphers": "^0.4.1",
     "@noble/hashes": "^1.8.0",
     "@railgun-community/engine": "9.5.1",

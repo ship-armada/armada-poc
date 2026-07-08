@@ -350,6 +350,10 @@
         "value": "40",
         "type": "spacing"
       },
+      "11": {
+        "value": "44",
+        "type": "spacing"
+      },
       "12": {
         "value": "48",
         "type": "spacing"
@@ -368,6 +372,10 @@
       }
     },
     "borderRadius": {
+      "xs": {
+        "value": "2",
+        "type": "borderRadius"
+      },
       "sm": {
         "value": "4",
         "type": "borderRadius"
@@ -583,16 +591,27 @@
           "type": "typography",
           "description": "20px \u2014 card titles"
         },
+        "heading-xl": {
+          "value": {
+            "fontFamily": "{fontFamily.ui}",
+            "fontWeight": "{fontWeight.medium}",
+            "fontSize": "{fontSize.3xl}",
+            "lineHeight": "{lineHeight.snug}",
+            "letterSpacing": "{letterSpacing.tight}"
+          },
+          "type": "typography",
+          "description": "32px \u2014 prominent step titles"
+        },
         "heading-sm": {
           "value": {
             "fontFamily": "{fontFamily.ui}",
             "fontWeight": "{fontWeight.medium}",
             "fontSize": "{fontSize.lg}",
-            "lineHeight": "{lineHeight.snug}",
+            "lineHeight": "{spacing.6}",
             "letterSpacing": "{letterSpacing.tight}"
           },
           "type": "typography",
-          "description": "17px \u2014 subheadings"
+          "description": "17px / 24px line-height \u2014 step titles, subheadings"
         },
         "body-lg": {
           "value": {

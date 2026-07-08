@@ -6,6 +6,7 @@ import { render, screen } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { InProgressCard } from './InProgressCard'
 import { txListAtom } from '@/state/tx'
+import { activeRailgunWalletIdAtom } from '@/state/wallet'
 import type { TxRecord } from '@/lib/tx/types'
 
 function record(
@@ -35,6 +36,8 @@ function record(
 
 function renderWith(records: TxRecord[]) {
   const store = createStore()
+  // V2 Phase 6: pendingTxsAtom now sources from activeTxListAtom, which filters by activeId.
+  store.set(activeRailgunWalletIdAtom, 'rg')
   store.set(txListAtom, records)
   return render(
     <Provider store={store}>

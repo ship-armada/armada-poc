@@ -23,6 +23,8 @@ export interface EarnReviewStepProps {
   /** Label paired with `netAmount` — also per-tab from the modal. */
   netLabel: string
   submitBlockedReason?: string | null
+  /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
+  isSubmitting?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -42,6 +44,7 @@ export function EarnReviewStep({
   netAmount,
   netLabel,
   submitBlockedReason,
+  isSubmitting,
   onBack,
   onConfirm,
 }: EarnReviewStepProps) {
@@ -92,7 +95,7 @@ export function EarnReviewStep({
         primary={{
           label: tab === 'add' ? 'Confirm deposit' : 'Confirm withdrawal',
           onClick: onConfirm,
-          disabled: Boolean(submitBlockedReason),
+          disabled: Boolean(submitBlockedReason) || isSubmitting,
         }}
         secondary={{ label: 'Back', onClick: onBack }}
       />

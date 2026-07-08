@@ -19,6 +19,10 @@ vi.mock('@/lib/railgun/wallet', () => ({
   unlockFromBackup: vi.fn(),
   lockWallet: vi.fn(async () => {}),
   resetWallet: vi.fn(async () => {}),
+  // `readStoredWalletIdFor(evmAddress, account)` drives the signIn first-vs-subsequent branch.
+  // Default to null (= first-ever sign-in, double-sign determinism check fires); individual
+  // tests override the mock to simulate returning users.
+  readStoredWalletIdFor: vi.fn(() => null),
   // Deprecated shims — present so the hook compiles; never exercised here.
   createWallet: vi.fn(),
   unlockWallet: vi.fn(),
@@ -41,6 +45,7 @@ import {
   unlockFromRootSecret,
   unlockFromBackup,
   lockWallet,
+  readStoredWalletIdFor,
   resetWallet,
 } from '@/lib/railgun/wallet'
 import { getRootSecret } from '@/lib/railgun/keyManager'
@@ -52,6 +57,7 @@ const mockUnlockFromBackup = unlockFromBackup as unknown as ReturnType<typeof vi
 const mockLockWallet = lockWallet as unknown as ReturnType<typeof vi.fn>
 const mockResetWallet = resetWallet as unknown as ReturnType<typeof vi.fn>
 const mockGetRootSecret = getRootSecret as unknown as ReturnType<typeof vi.fn>
+const mockReadStoredWalletIdFor = readStoredWalletIdFor as unknown as ReturnType<typeof vi.fn>
 const mockSignTypedData = signTypedData as unknown as ReturnType<typeof vi.fn>
 
 // Deterministic 65-byte sample sig hex (r||s||v with v=27). The exact value doesn't matter —
@@ -92,10 +98,16 @@ beforeEach(() => {
   mockResetWallet.mockReset()
   mockGetRootSecret.mockReset()
   mockSignTypedData.mockReset()
+  mockReadStoredWalletIdFor.mockReset()
   // Default: wagmi returns a successful signature.
   mockSignTypedData.mockResolvedValue(SAMPLE_SIG_HEX)
   mockLockWallet.mockResolvedValue(undefined)
   mockResetWallet.mockResolvedValue(undefined)
+  // Default: simulate a returning user (cached walletId present). This skips the double-sign
+  // determinism check so the existing signIn/enroll happy-path tests don't have to re-mock
+  // signTypedData a second time. Tests that exercise the FIRST-ever-sign-in branch override
+  // this to return null.
+  mockReadStoredWalletIdFor.mockReturnValue('cached-wallet-id')
 })
 
 describe('enroll', () => {
@@ -136,6 +148,141 @@ describe('enroll', () => {
 
     await expect(capture.current!.enroll()).rejects.toThrow(/rejected/)
     expect(mockEnroll).not.toHaveBeenCalled()
+  })
+})
+
+describe('signIn (v2 primary)', () => {
+  it('signs the EIP-712 message and mirrors the resulting state into atoms', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValueOnce({
+      rootSecret: new Uint8Array(32),
+      state: SAMPLE_STATE,
+    })
+    const capture = renderWithStore(store)
+
+    let result: { rootSecret: Uint8Array; state: ShieldedWalletState } | undefined
+    await act(async () => {
+      result = await capture.current!.signIn()
+    })
+
+    expect(mockSignTypedData).toHaveBeenCalledTimes(1)
+    expect(mockEnroll).toHaveBeenCalledTimes(1)
+    expect(result!.state.id).toBe('wallet-id-1')
+    expect(store.get(activeRailgunWalletIdAtom)).toBe('wallet-id-1')
+  })
+
+  it('defaults the account index to 0 in the signed message', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.signIn()
+    })
+
+    const args = mockSignTypedData.mock.calls[0]?.[1] as { message: { account: string } } | undefined
+    expect(args?.message.account).toBe('0')
+  })
+
+  it('threads a non-zero account index through to the signed message', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.signIn(7n)
+    })
+
+    const args = mockSignTypedData.mock.calls[0]?.[1] as { message: { account: string } } | undefined
+    expect(args?.message.account).toBe('7')
+  })
+
+  it('rejects when no EVM wallet is connected', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, null)
+    const capture = renderWithStore(store)
+
+    await expect(capture.current!.signIn()).rejects.toThrow(/Connect an EVM wallet/)
+    expect(mockSignTypedData).not.toHaveBeenCalled()
+  })
+
+  it('enroll() is a thin alias for signIn(0n) — same behaviour, same outputs', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockEnroll.mockResolvedValue({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.enroll()
+    })
+
+    const args = mockSignTypedData.mock.calls[0]?.[1] as { message: { account: string } } | undefined
+    expect(args?.message.account).toBe('0')
+  })
+
+  it('first-ever sign-in double-signs and proceeds when the wallet is deterministic', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockReadStoredWalletIdFor.mockReturnValue(null) // no cached id = first-ever sign-in
+    mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.signIn()
+    })
+
+    // Two wagmi prompts: one to obtain the first signature, one to verify reproducibility.
+    expect(mockSignTypedData).toHaveBeenCalledTimes(2)
+    expect(mockEnroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('first-ever sign-in throws NonDeterministicSignerError when the two signatures differ', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    mockReadStoredWalletIdFor.mockReturnValue(null)
+    // First call returns SAMPLE_SIG_HEX (from beforeEach default), second returns a different
+    // signature → bytes differ → typed error.
+    const DIFFERENT_SIG_HEX = '0x' + '33'.repeat(32) + '44'.repeat(32) + '1b'
+    mockSignTypedData.mockReset()
+    mockSignTypedData.mockResolvedValueOnce(SAMPLE_SIG_HEX)
+    mockSignTypedData.mockResolvedValueOnce(DIFFERENT_SIG_HEX)
+    const capture = renderWithStore(store)
+
+    let captured: unknown
+    await act(async () => {
+      try {
+        await capture.current!.signIn()
+      } catch (err) {
+        captured = err
+      }
+    })
+    expect(captured).toBeDefined()
+    const errObj = captured as { kind?: string; reason?: string }
+    expect(errObj.kind).toBe('NonDeterministicSignerError')
+    expect(errObj.reason).toBe('first-sign-mismatch')
+    // Importantly: enrollFromSignature must NOT have been called — we hard-fail before
+    // any identity gets bound on the device.
+    expect(mockEnroll).not.toHaveBeenCalled()
+  })
+
+  it('subsequent sign-in (cached walletId) does NOT double-sign', async () => {
+    const store = createStore()
+    store.set(evmAddressAtom, '0xabc')
+    // Default beforeEach already returns 'cached-wallet-id', but be explicit for the test's
+    // intent. Returning users get their determinism check inside enrollFromSignature via the
+    // cached-checksum comparison; the hook doesn't re-prompt.
+    mockReadStoredWalletIdFor.mockReturnValue('cached-wallet-id')
+    mockEnroll.mockResolvedValueOnce({ rootSecret: new Uint8Array(32), state: SAMPLE_STATE })
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.signIn()
+    })
+
+    expect(mockSignTypedData).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -229,6 +376,11 @@ describe('unlockByBackup', () => {
 })
 
 describe('exportBackup', () => {
+  // Longer timeout: `exportBackup` runs spec-mandated PBKDF2-SHA-256 @ 600k iterations
+  // (PBKDF2_ITERATIONS_V1) with no test-mode override surface. On a quiet machine the call
+  // completes in ~1s; under full-suite parallel load the same call can take 3–4s and graze
+  // the default 5s timeout. Bumping per-test rather than globally so the rest of the suite
+  // stays honest about its own timing.
   it('reads root_secret from the keyManager and returns an encrypted blob', async () => {
     const store = createStore()
     store.set(shieldedWalletsAtom, { [SAMPLE_STATE.id]: SAMPLE_STATE })
@@ -246,7 +398,7 @@ describe('exportBackup', () => {
     expect(blob!.format).toBe('armada-backup-v2')
     expect(blob!.ciphertext.length).toBe(80) // v2: 40-byte plaintext → 80 hex chars
     expect(mockGetRootSecret).toHaveBeenCalledTimes(1)
-  })
+  }, 15000)
 
   it('propagates the locked-state error from the keyManager', async () => {
     const store = createStore()

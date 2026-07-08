@@ -1,8 +1,18 @@
 // ABOUTME: RPC provider creation with ordered fallback across multiple URLs.
 // ABOUTME: Duplicated from @armada/crowdfund-shared/lib/rpc.ts (with crowdfund-specific log fetching trimmed). Extract to @armada/eth-utils when both apps evolve it.
 
-import { JsonRpcProvider } from 'ethers'
+import { FetchRequest, JsonRpcProvider } from 'ethers'
 import type { JsonRpcPayload, JsonRpcResult } from 'ethers'
+
+/** ethers' default FetchRequest timeout is ~300s, which defeats fallback — a black-holed URL
+ *  hangs for 5 min before the next is tried. Bound every internal provider at 15s. (P1-18) */
+const RPC_FETCH_TIMEOUT_MS = 15_000
+
+function timeoutRequest(url: string): FetchRequest {
+  const req = new FetchRequest(url)
+  req.timeout = RPC_FETCH_TIMEOUT_MS
+  return req
+}
 
 /**
  * JsonRpcProvider subclass that tries multiple RPC URLs in order.
@@ -24,8 +34,8 @@ export class FallbackJsonRpcProvider extends JsonRpcProvider {
     if (urls.length === 0) throw new Error('FallbackJsonRpcProvider: at least one URL required')
     const first = urls[0]
     if (!first) throw new Error('FallbackJsonRpcProvider: first URL is empty')
-    super(first)
-    this._providers = urls.map(u => new JsonRpcProvider(u))
+    super(timeoutRequest(first))
+    this._providers = urls.map(u => new JsonRpcProvider(timeoutRequest(u)))
   }
 
   override async _send(payload: JsonRpcPayload | JsonRpcPayload[]): Promise<JsonRpcResult[]> {
@@ -78,6 +88,6 @@ export function createProvider(urls: readonly string[]): JsonRpcProvider {
   if (urls.length === 0) throw new Error('createProvider: no RPC URLs provided')
   const first = urls[0]
   if (!first) throw new Error('createProvider: first URL is empty')
-  if (urls.length === 1) return new JsonRpcProvider(first)
+  if (urls.length === 1) return new JsonRpcProvider(timeoutRequest(first))
   return new FallbackJsonRpcProvider(urls)
 }

@@ -11,12 +11,18 @@
       "default": "./src/index.ts"
     },
     "./styles/tokens.css": "./src/styles/tokens.css",
+    "./styles/typography.css": "./src/styles/typography.css",
     "./styles/global.css": "./src/styles/global.css",
     "./tokens/armada-tokens.json": "./src/tokens/armada-tokens.json",
     "./package.json": "./package.json"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tokens:typography": "node scripts/build-typography.mjs"
+  },
+  "dependencies": {
+    "@heroicons/react": "^2.2.0",
+    "@web3icons/react": "^4.1.17"
   },
   "peerDependencies": {
     "@heroicons/react": "^2.2.0",

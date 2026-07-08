@@ -81,7 +81,10 @@ export interface UserFeeOpts {
 
 export function userFeeForKind(
   kind: TxKind,
-  amount: bigint,
+  // Reserved for future kinds whose broadcaster fee is amount-proportional. All current
+  // kinds source their broadcaster fee from a flat per-op `quote.fees.<tier>` value or
+  // return 0 (no broadcaster involved on this path), so `amount` is unused today.
+  _amount: bigint,
   quote?: FeeSchedule | null,
   opts?: UserFeeOpts,
 ): bigint {
@@ -91,10 +94,13 @@ export function userFeeForKind(
       // chain, burns `amount` through CCTP, transfers `fee` to the relayer. The relayer's
       // `shieldXchain` fee is per-chain (Base Sepolia ≠ Ethereum Sepolia — see the relayer's
       // FeeCalculator), so the modal MUST pass the quote for the SOURCE chain via
-      // `fetchFees(chainId)`. Direct path keeps the CCTP fast-fee estimate (~2 bps of amount)
-      // since no relayer fee applies — the user pays gas in ETH themselves.
+      // `fetchFees(chainId)`. Direct path returns 0 — the user pays native gas themselves and
+      // there's no broadcaster involved. The CCTP fast-fee (which still applies on the destination
+      // mint) is surfaced as a separate `cctpFee` channel via `cctpFastFeeForAmount`, NOT shoved
+      // into the broadcaster slot, so the fee-breakdown tooltip can label it "CCTP fee" rather
+      // than the misleading "Relayer fee".
       if (opts?.gasless) return quote ? BigInt(quote.fees.shieldXchain) : 0n
-      return (amount * CCTP_FAST_FEE_BPS) / 10_000n
+      return 0n
     case 'unshield-xchain':
       // A5 — relayer-mediated hub burn. The visible "fee" is the relayer's broadcaster fee from
       // the `crossChainUnshield` tier (covers proof verification + the CCTP burn). The CCTP
@@ -121,6 +127,10 @@ export function userFeeForKind(
       // ETH gas themselves and the wrapper doesn't enter the picture — fee is 0.
       if (opts?.gasless) return quote ? BigInt(quote.fees.shield) : 0n
       return 0n
+    case 'transfer-shielded-received':
+      // Synthetic received-transfer records are reconstructed from chain, never submitted —
+      // no fee applies. Reaching here is a caller bug; throw rather than fabricate a fee.
+      throw new Error('userFeeForKind: received transfers carry no fee')
   }
 }
 
@@ -174,6 +184,10 @@ export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
       // submit path stays `no-fee` (user pays ETH gas themselves; no USDC line item).
       if (opts?.gasless) return 'fee-from-recipient'
       return 'no-fee'
+    case 'transfer-shielded-received':
+      // Synthetic received-transfer records never reach fee-model logic (no modal, no submit).
+      // Throw to assert the invariant rather than fabricate a model.
+      throw new Error('feeModelForKind: received transfers have no fee model')
   }
 }
 
@@ -201,27 +215,47 @@ export function computeFeeBreakdown(
   amount: bigint,
   fee: bigint,
   max: bigint,
-  opts?: { secondaryFee?: bigint },
+  opts?: { secondaryFee?: bigint; protocolFee?: bigint; gasless?: boolean },
 ): FeeBreakdown {
-  switch (feeModelForKind(kind)) {
+  // `protocolFee` is an additional USDC deduction from the recipient side, layered on top of
+  // the model's existing fee plumbing. For `shield` this is the on-chain shield fee module's
+  // calculated take (PrivacyPool deducts it before crediting the shielded balance — invisible
+  // to the FeeBreakdown contract today but soon surfaced via useDisplayFees). For other kinds
+  // it stays 0n by default, preserving existing semantics.
+  //
+  // `gasless` flows through to feeModelForKind because the `shield` kind has a model that
+  // depends on submission mode: direct-submit hub shield is 'no-fee' (user pays ETH gas, no
+  // broadcaster fee), but the gasless permit path is 'fee-from-recipient' (the wrapper takes
+  // `fee` from the user's USDC and shields the remainder). Without this flag the gasless path
+  // would land in 'no-fee' and recipientReceives would skip the broadcaster fee.
+  const protocolFee = opts?.protocolFee ?? 0n
+  switch (feeModelForKind(kind, { gasless: opts?.gasless })) {
     case 'no-fee':
-      return { recipientReceives: amount, totalDeducted: amount, inputMax: max }
-    case 'fee-from-recipient':
       return {
-        recipientReceives: amount > fee ? amount - fee : 0n,
+        recipientReceives: amount > protocolFee ? amount - protocolFee : 0n,
         totalDeducted: amount,
         inputMax: max,
       }
+    case 'fee-from-recipient': {
+      const totalDeduction = fee + protocolFee
+      return {
+        recipientReceives: amount > totalDeduction ? amount - totalDeduction : 0n,
+        totalDeducted: amount,
+        inputMax: max,
+      }
+    }
     case 'fee-on-top':
       return {
-        recipientReceives: amount,
+        recipientReceives: amount > protocolFee ? amount - protocolFee : 0n,
         totalDeducted: amount + fee,
         inputMax: max > fee ? max - fee : 0n,
       }
     case 'fee-on-top-and-from-recipient': {
       const secondary = opts?.secondaryFee ?? 0n
+      const totalRecipientDeduction = secondary + protocolFee
       return {
-        recipientReceives: amount > secondary ? amount - secondary : 0n,
+        recipientReceives:
+          amount > totalRecipientDeduction ? amount - totalRecipientDeduction : 0n,
         totalDeducted: amount + fee,
         inputMax: max > fee ? max - fee : 0n,
       }
@@ -306,6 +340,41 @@ async function parseError(res: Response): Promise<RelayerError> {
 }
 
 /**
+ * Wrap a relayer fetch with a hard timeout (P0-11). A stalled VPS relayer would otherwise pin a tx
+ * flow in an undismissable progress modal up to the lifecycle cap. Combines the caller's signal
+ * (user cancel) with `AbortSignal.timeout` via `AbortSignal.any`. Discrimination on rejection:
+ *   - caller's signal aborted → user cancel; rethrow untouched so cancel stays cancel.
+ *   - our timeout fired → throw a transient `RelayerError` (RELAYER_BUSY, httpStatus 0) so it
+ *     surfaces honest copy / backs off rather than a raw TimeoutError string.
+ *   - anything else (DNS, connection refused) → propagate as before.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal
+  try {
+    return await fetch(url, { ...init, signal })
+  } catch (err) {
+    if (callerSignal?.aborted) throw err
+    if (timeoutSignal.aborted) {
+      throw new RelayerError(
+        'RELAYER_BUSY',
+        0,
+        `Relayer didn't respond within ${Math.round(timeoutMs / 1000)}s. It may be down or overloaded — try again.`,
+      )
+    }
+    throw err
+  }
+}
+
+// Internal — exported for tests only. Do not import from app code.
+export { fetchWithTimeout as _fetchWithTimeout }
+
+/**
  * Fetch the current fee schedule from the relayer. The relayer caches its own schedule with a
  * 5-min TTL and returns the cached value when valid; the client caches at the atom layer via
  * `useFees`. Both can re-fetch independently — relayer is the source of truth.
@@ -322,11 +391,10 @@ export async function fetchFees(
     chainId === undefined
       ? relayerEndpoint(RELAYER_ENDPOINTS.fees)
       : `${relayerEndpoint(RELAYER_ENDPOINTS.fees)}?chainId=${chainId}`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    signal,
-  })
+  }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as FeeSchedule
 }
@@ -344,12 +412,11 @@ export async function fetchFees(
  * A4 (transfer + yield), then A5 (`unshield-xchain` hub burn). See `.claude/RELAYER_MEDIATION_PLAN.md`.
  */
 export async function submitRelay(req: RelayRequest, signal?: AbortSignal): Promise<RelayResponse> {
-  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.relay), {
+  const res = await fetchWithTimeout(relayerEndpoint(RELAYER_ENDPOINTS.relay), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(req),
-    signal,
-  })
+  }, signal, 30_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as RelayResponse
 }
@@ -385,11 +452,10 @@ export interface RelayerHealthResponse {
  * the status. AbortSignal forwards to fetch so a hook can cancel on unmount.
  */
 export async function fetchHealth(signal?: AbortSignal): Promise<RelayerHealthResponse> {
-  const res = await fetch(relayerEndpoint(RELAYER_ENDPOINTS.health), {
+  const res = await fetchWithTimeout(relayerEndpoint(RELAYER_ENDPOINTS.health), {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    signal,
-  })
+  }, signal, 10_000)
   // 503 still carries a JSON body — both status codes parse the same shape.
   if (!res.ok && res.status !== 503) throw await parseError(res)
   return (await res.json()) as RelayerHealthResponse
@@ -397,11 +463,10 @@ export async function fetchHealth(signal?: AbortSignal): Promise<RelayerHealthRe
 
 /** Poll a previously-submitted relay tx's status. */
 export async function pollStatus(txHash: string, signal?: AbortSignal): Promise<StatusResponse> {
-  const res = await fetch(`${relayerEndpoint(RELAYER_ENDPOINTS.status)}/${txHash}`, {
+  const res = await fetchWithTimeout(`${relayerEndpoint(RELAYER_ENDPOINTS.status)}/${txHash}`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
-    signal,
-  })
+  }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as StatusResponse
 }

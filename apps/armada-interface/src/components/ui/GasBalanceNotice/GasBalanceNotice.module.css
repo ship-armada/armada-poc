@@ -1,0 +1,12 @@
+/* ABOUTME: Gas balance warning — matches xchain notice styling on flow input steps. */
+
+.notice {
+  background: rgba(243, 208, 160, 0.08);
+  border: 1px solid var(--semantic-color-border-amber);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  color: var(--semantic-color-text-amber);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: var(--primitives-lineHeight-normal);
+}

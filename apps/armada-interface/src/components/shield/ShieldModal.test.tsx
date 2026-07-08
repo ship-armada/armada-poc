@@ -1,14 +1,60 @@
 // ABOUTME: Tests for ShieldModal orchestrator — open/closed gating, step advancement (input → review → progress), close resets state.
 // ABOUTME: Seeds openModalAtom + usdcBalancesAtom so the user can enter an amount and proceed.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ShieldModal } from './ShieldModal'
 import { openModalAtom } from '@/state/ui'
-import { usdcBalancesAtom } from '@/state/wallet'
-import { feeQuoteAtom } from '@/state/fees'
+import { activeRailgunWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
+import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
+import { txListAtom } from '@/state/tx'
 import { withTestQueryClient } from '@/test-utils/queryClient'
+
+// useDisplayFees calls wagmi's useReadContract which requires a WagmiProvider; these tests
+// don't mount one, so stub the hook with a deterministic DisplayFees value. The protocolFee
+// arithmetic is exercised by relayer.test.ts; this mock just keeps the modal renderable.
+// This tab is the executor leader (single-tab test env) so useTx.submit isn't refused (P1-26).
+vi.mock('@/lib/tx/executor', async (importActual) => ({
+  ...await importActual<typeof import('@/lib/tx/executor')>(),
+  getIsLeader: () => true,
+}))
+
+vi.mock('@/hooks/useDisplayFees', () => ({
+  useDisplayFees: () => ({
+    fees: {
+      protocolFee: 0n,
+      gasFee: 0n,
+      nativeGas: null,
+      totalFee: 0n,
+      feeInclusive: true,
+    },
+    isLoading: false,
+  }),
+}))
+
+// useGasBalanceWarning calls wagmi's useAccount/useBalance — same provider requirement.
+// "No warning" keeps the GasBalanceNotice hidden; gasless-mode branching is asserted in
+// ShieldInputStep.test.tsx by directly setting gaslessMode (no integration concern here).
+vi.mock('@/hooks/useGasBalanceWarning', () => ({
+  useGasBalanceWarning: () => ({
+    show: false,
+    nativeSymbol: 'ETH',
+    formattedBalance: null,
+  }),
+}))
+
+// Phase 7: tx/storage now requires an unlocked keyManager (records are AES-256-GCM encrypted
+// at rest under the active wallet's historyEncryptionKey). Modal tests don't drive the
+// onboarding flow, so the keyManager is locked here. Mock storage to no-op the writes so the
+// Confirm-clicks-through-to-progress assertions exercise the UI orchestration without
+// tripping the "wallet locked" guard. Storage encryption itself is covered in lib/tx/storage.test.ts.
+vi.mock('@/lib/tx/storage', () => ({
+  putTxIfFresh: vi.fn(async () => true),
+  putTx: vi.fn(async () => {}),
+  deleteTx: vi.fn(async () => {}),
+  loadAllTx: vi.fn(async () => []),
+}))
 
 const FAKE_QUOTE = {
   cacheId: 'test-cache',
@@ -24,7 +70,16 @@ function renderModal(opts?: { open?: boolean; max?: bigint }) {
   if (opts?.max !== undefined) {
     store.set(usdcBalancesAtom, { 31337: opts.max })
   }
+  // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
+  // scoping invariant — every TxRecord must be filterable by walletContext.railgunWalletId).
+  // Seed a placeholder id so the Confirm flow exercises the orchestration without tripping
+  // the guard. The id value isn't asserted; it just satisfies the invariant.
+  store.set(activeRailgunWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
+  // staleAtom treats a quote with no fetch timestamp as stale (350e084), which would send
+  // Confirm down the real refresh()/fetchFees path — unreachable in jsdom. A fresh
+  // fetchedAt keeps the seeded FAKE_QUOTE inside the 4-minute freshness window.
+  store.set(feeQuoteFetchedAtAtom, Date.now())
   render(withTestQueryClient(
     <Provider store={store}>
       <ShieldModal />
@@ -42,13 +97,13 @@ describe('<ShieldModal>', () => {
   it('renders the input step when open', () => {
     renderModal({ open: true, max: 10_000_000n })
     expect(screen.getByRole('dialog', { name: 'Deposit' })).toBeInTheDocument()
-    expect(screen.getByLabelText('How much USDC?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
   })
 
   it('advances to the review step after entering a valid amount', () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByText('Review your deposit')).toBeInTheDocument()
     // 5.00 appears in both the hero numeral and the FeeSummary net-amount row.
     expect(screen.getAllByText('5.00').length).toBeGreaterThanOrEqual(1)
@@ -56,10 +111,10 @@ describe('<ShieldModal>', () => {
 
   it('Back from review returns to the input step', () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Back/ }))
-    expect(screen.getByLabelText('How much USDC?')).toBeInTheDocument()
+    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
   })
 
   it('Cancel closes the modal', () => {
@@ -70,8 +125,8 @@ describe('<ShieldModal>', () => {
 
   it('Confirm submits the tx and advances to the progress step', async () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
     })
@@ -81,5 +136,22 @@ describe('<ShieldModal>', () => {
     await waitFor(() => {
       expect(screen.getByText('Pending')).toBeInTheDocument()
     })
+  })
+
+  it('does not create a second record when Confirm is double-clicked (P0-7)', async () => {
+    const store = renderModal({ open: true, max: 10_000_000n })
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
+    const confirm = screen.getByRole('button', { name: /Confirm deposit/ })
+    // Fire twice before React can flush the disabled state — the synchronous submittingRef guard
+    // must make the second click a no-op. Without it, a fast double-click = two real deposits.
+    await act(async () => {
+      fireEvent.click(confirm)
+      fireEvent.click(confirm)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Pending')).toBeInTheDocument()
+    })
+    expect(store.get(txListAtom).length).toBe(1)
   })
 })

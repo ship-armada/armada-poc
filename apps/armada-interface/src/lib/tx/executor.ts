@@ -4,8 +4,9 @@
 import { getDefaultStore } from 'jotai'
 import { track, trackError } from '../telemetry'
 import { lifecycleFor } from './lifecycles'
-import { markCancelled, markDismissed, markExpired, markRetrying, shouldResume } from './reducer'
+import { markCancelled, markDismissed, markExpired, markFailed, markRetrying } from './reducer'
 import { loadAllTx, putTxIfFresh } from './storage'
+import { isTerminalState } from './types'
 import type { StageFor, TxKind, TxRecord } from './types'
 import { txListAtom, upsertTxAtom } from '@/state/tx'
 import { tabVisibleAtom } from '@/state/visibility'
@@ -45,6 +46,9 @@ const handlers = new Map<TxKind, StageHandler<TxKind>>()
 const running = new Map<string, AbortController>()
 let isLeader = false
 let engineStarted = false
+// Wallets we've already run resume for this session — resume is idempotent per (walletId, session)
+// so a lock/unlock cycle or a re-render of the resume hook can't double-dispatch.
+const resumedWallets = new Set<string>()
 
 /* ----- Public API ----- */
 
@@ -147,10 +151,14 @@ export function canRetryTx(record: TxRecord): boolean {
 }
 
 /**
- * Mark the record as retrying and re-dispatch the handler chain. No-op if the record doesn't
- * exist, the stage isn't retryable, or the record is already in a non-terminal state.
+ * Mark the record as retrying and re-dispatch the handler chain. Returns true if the retry was
+ * accepted (record exists, stage is retryable) and dispatched; false if it was refused — callers
+ * (e.g. `useTx.retry`) use this to avoid flipping a modal to its progress step on a no-op retry.
+ *
+ * Safe re-broadcast: WS1.3 made every submit stage idempotent, so re-entering `submit-relayer`
+ * with a known `sourceTxHash` resumes the receipt/status wait instead of broadcasting again.
  */
-export function retryTx(id: string): void {
+export function retryTx(id: string): boolean {
   const store = getDefaultStore()
   const record = store.get(txListAtom).find(t => t.id === id)
   if (!record) {
@@ -158,19 +166,20 @@ export function retryTx(id: string): void {
       scope: 'tx.executor',
       message: `retryTx called for unknown id ${id}`,
     })
-    return
+    return false
   }
   if (!canRetryTx(record)) {
     trackError('tx.executor.retry', new Error('not retryable'), {
       scope: 'tx.executor',
       message: `retry rejected: state=${record.executionState} stage=${record.stage} kind=${record.kind}`,
     })
-    return
+    return false
   }
   const retried = markRetrying(record)
   store.set(upsertTxAtom, retried)
   void putTxIfFresh(retried)
   executeTx(id)
+  return true
 }
 
 /**
@@ -199,6 +208,29 @@ export function dismissTx(id: string): void {
   abortAndMark(id, 'dismiss')
 }
 
+/**
+ * Abort + terminalize every in-flight tx. Used on session-teardown triggers like an EVM
+ * account switch (`useWallet`): the executor is module-scope, so without this it would keep
+ * running a handler bound to the OLD account under the new unlock screen — orphaned wallet
+ * prompts, and a gasless permit signed by the wrong signer. Each record routes through
+ * `abortAndMark`, so a pre-broadcast record becomes `cancelled` and an already-broadcast one
+ * becomes `dismissed` (hash preserved for the explorer). (P1-15)
+ *
+ * MUST be called while the wallet is still unlocked — the terminal-record persist
+ * (`putTxIfFresh`) needs the historyEncryptionKey. Call it BEFORE `lockWallet`.
+ */
+export function cancelAllRunning(reason: string): void {
+  // Snapshot ids first — abortAndMark mutates `running` (deletes each controller) as it goes.
+  const ids = [...running.keys()]
+  if (ids.length === 0) return
+  track('tx.cancel-all', { reason, count: ids.length })
+  for (const id of ids) {
+    // 'cancel' intent; abortAndMark routes a record that already has a sourceTxHash to dismissed
+    // (honest "Stopped tracking" + explorer link) automatically — see WS1.2c.
+    abortAndMark(id, 'cancel')
+  }
+}
+
 function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
   const controller = running.get(id)
   if (controller) {
@@ -206,17 +238,20 @@ function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
     running.delete(id)
   }
   const store = getDefaultStore()
+  // Re-read the LATEST record — a broadcast may have raced this abort and just patched the hash.
   const record = store.get(txListAtom).find(t => t.id === id)
   if (!record) return
   // Don't clobber an already-terminal record. OCC accepts the bumped seq, so without this guard
   // a cancel on a completed/failed/expired tx would rewrite its terminal state in atom + IDB.
-  if (record.executionState === 'completed'
-    || record.executionState === 'failed'
-    || record.executionState === 'expired'
-    || record.executionState === 'cancelled') {
+  if (isTerminalState(record.executionState)) {
     return
   }
-  const next = kind === 'dismiss' ? markDismissed(record) : markCancelled(record)
+  // Honest routing: if the tx already broadcast (we have a sourceTxHash), the on-chain tx runs
+  // regardless of what the user clicked — labelling it "Cancelled before submission" would be a
+  // lie and would drop the explorer link. Route to dismissed so the hash + "Stopped tracking"
+  // copy survive, even when the caller asked to cancel. (P0-3 WS1.2c)
+  const hasHash = Boolean((record.artifacts as { sourceTxHash?: `0x${string}` }).sourceTxHash)
+  const next = (kind === 'dismiss' || hasHash) ? markDismissed(record) : markCancelled(record)
   store.set(upsertTxAtom, next)
   void putTxIfFresh(next)
   track('tx.cancelled', { id: next.id, kind: next.kind })
@@ -227,45 +262,69 @@ function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
 function onBecomeLeader(): void {
   isLeader = true
   track('tx.engine.started', { isLeader: true })
-  void resumeNonTerminal()
+  // Resume is NOT kicked here. The leader lock is acquired pre-unlock (from App mount), when no
+  // walletId / decryption key is available yet — `loadAllTx` would return []. Resume runs from
+  // `useTxResume` once the active wallet unlocks (and only on the leader). See resumeForWallet.
 }
 
 /**
- * Walk persisted records on app load; resume non-terminal ones; expire stale.
+ * Resume persisted, non-terminal tx records for `walletId` after an app reload / crash. Called
+ * from `useTxResume` on unlock, leader-gated and idempotent per (walletId, session). (P0-2)
  *
- * Reads from IDB directly rather than `txListAtom` because hydration
- * (`useTxHistory`) races against leader-lock acquisition. If the lock is
- * acquired before hydration completes, the atom is still empty and we'd miss
- * everything. `upsertTxAtom` is OCC-safe so seeding records here cannot
- * regress any newer in-memory state that hydration produces later.
+ * Reads from IDB directly rather than `txListAtom` because hydration (`useTxHistory`) races this;
+ * `upsertTxAtom` is OCC-safe so seeding records here can't regress newer in-memory state.
+ *
+ * Policy — what we resume is deliberately narrow:
+ *  - past the per-kind wall-clock budget → `expired` (now actually reachable; resume used to be
+ *    dead code that ran pre-unlock with no walletId and silently did nothing).
+ *  - has a `sourceTxHash` → the tx is ON CHAIN; re-attach the watcher (receipt / relayer status /
+ *    cross-chain delivery polling). Safe because every submit stage is idempotent (WS1.3): a
+ *    re-entry with a known hash never re-broadcasts. This is the ONLY thing we resume.
+ *  - otherwise (no hash) → we never confirmed a broadcast: interrupted at build-proof, or at
+ *    submit-relayer before the tx hit the wire. Resuming would re-prompt the wallet / re-POST out
+ *    of nowhere, so we fail honestly with `INTERRUPTED` ("nothing was sent") rather than resume.
  */
-async function resumeNonTerminal(): Promise<void> {
+export async function resumeForWallet(walletId: string): Promise<void> {
+  if (!isLeader) return
+  if (!walletId) return
+  if (resumedWallets.has(walletId)) return
+  resumedWallets.add(walletId)
+
   const store = getDefaultStore()
   let records: TxRecord[]
   try {
-    records = await loadAllTx()
+    records = await loadAllTx(walletId)
   } catch (err) {
+    resumedWallets.delete(walletId) // let a later unlock retry
     trackError('tx.executor.resume', err, { scope: 'tx.executor', message: 'loadAllTx failed' })
     return
   }
+
   for (const record of records) {
-    if (record.executionState === 'completed'
-      || record.executionState === 'failed'
-      || record.executionState === 'expired'
-      || record.executionState === 'cancelled') {
-      continue
-    }
-    // Seed the atom so executeTx() can find the record even if useTxHistory
-    // hasn't finished hydrating yet. OCC ensures we don't clobber newer state.
-    store.set(upsertTxAtom, record)
-    if (shouldResume(record)) {
-      executeTx(record.id)
-    } else {
+    if (isTerminalState(record.executionState)) continue
+
+    if (Date.now() - record.createdAt > lifecycleFor(record.kind).maxDurationMs) {
       const expired = markExpired(record)
       store.set(upsertTxAtom, expired)
       await putTxIfFresh(expired)
       track('tx.expired', { id: expired.id, kind: expired.kind })
+      continue
     }
+
+    if ((record.artifacts as { sourceTxHash?: `0x${string}` }).sourceTxHash) {
+      // Seed the atom so executeTx() can find the record even if hydration hasn't landed yet.
+      store.set(upsertTxAtom, record)
+      executeTx(record.id)
+      continue
+    }
+
+    const failed = markFailed(record, {
+      code: 'INTERRUPTED',
+      message: 'This transaction was interrupted before it was sent — nothing left your wallet. Start a new transaction.',
+    })
+    store.set(upsertTxAtom, failed)
+    await putTxIfFresh(failed)
+    track('tx.interrupted', { id: record.id, kind: record.kind })
   }
 }
 
@@ -286,10 +345,7 @@ async function runHandlerChain(
       }
 
       // Terminal? Stop the chain.
-      if (current.executionState === 'completed'
-        || current.executionState === 'failed'
-        || current.executionState === 'expired'
-        || current.executionState === 'cancelled') {
+      if (isTerminalState(current.executionState)) {
         break
       }
 
@@ -307,6 +363,13 @@ async function runHandlerChain(
       const next = store.get(txListAtom).find(t => t.id === current.id)
       if (!next) break
       current = next
+
+      // Terminal? The handler just reached a settled state (completed / failed / cancelled /
+      // expired). Stop the chain WITHOUT running the expiry check below — otherwise a record
+      // that reached a terminal state after maxDurationMs (e.g. a long hidden-tab pause counted
+      // against the wall-clock cap) would be clobbered from `completed`/`failed` to `expired`,
+      // losing the success or the original TxError. (P0-5)
+      if (isTerminalState(current.executionState)) break
 
       // Handler put us in 'waiting'? Pause the chain; external trigger (e.g. a
       // poller completing, or executeTx being called again) will resume.

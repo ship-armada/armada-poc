@@ -19,7 +19,7 @@ vi.mock('@/hooks/useWallet', () => ({
   useWallet: vi.fn(),
 }))
 
-import { useUsdcBalances } from './useUsdcBalances'
+import { useUsdcBalances, mergeUsdcBalances } from './useUsdcBalances'
 import { readContract } from 'wagmi/actions'
 import { loadDeployments } from '@/config/deployments'
 import { useWallet } from '@/hooks/useWallet'
@@ -123,6 +123,27 @@ describe('useUsdcBalances', () => {
     await waitFor(() => expect(store.get(usdcBalancesAtom)).toEqual({}))
   })
 
+  it('retries a flaky deployments load so balances still populate (P2/WS3.4)', async () => {
+    // Without retry, a single manifest-fetch hiccup leaves `pairs` empty (blank balances) until a
+    // window refocus. The query's retry (1s backoff) self-heals it.
+    mockUseWallet.mockReturnValue({ address: TEST_ADDR })
+    mockReadContract.mockResolvedValue(1_000_000n)
+    mockLoadDeployments.mockReset()
+    mockLoadDeployments
+      .mockRejectedValueOnce(new Error('manifest fetch failed'))
+      .mockResolvedValue(DEPLOYMENTS)
+
+    const { store } = renderHarness()
+
+    // First attempt fails; the retry (~1s) succeeds and balances land. Real timers + a longer
+    // waitFor budget than the 1s backoff.
+    await waitFor(
+      () => expect(store.get(usdcBalancesAtom)[31337]).toBe(1_000_000n),
+      { timeout: 5_000 },
+    )
+    expect(mockLoadDeployments.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('does not refetch on the interval while tab is hidden', async () => {
     mockUseWallet.mockReturnValue({ address: TEST_ADDR })
     mockReadContract.mockResolvedValue(1_000_000n)
@@ -139,5 +160,42 @@ describe('useUsdcBalances', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('mergeUsdcBalances', () => {
+  it('returns the SAME reference when no balance changed (steady-state poll → no re-render)', () => {
+    // WHY: React Query hands back a fresh `results` array on every poll tick even when the on-chain
+    // balances are unchanged. Without this bail-out the mirror effect wrote a new object each tick,
+    // notifying every usdcBalancesAtom subscriber (the MAX button, etc.) for nothing.
+    const prev = { 31337: 1_000_000n, 31338: 2_000_000n }
+    const results = [
+      { data: { chainId: 31337, balance: 1_000_000n } },
+      { data: { chainId: 31338, balance: 2_000_000n } },
+    ]
+    expect(mergeUsdcBalances(prev, results)).toBe(prev)
+  })
+
+  it('returns a new map with merged values when a balance changed', () => {
+    const prev = { 31337: 1_000_000n }
+    const results = [{ data: { chainId: 31337, balance: 1_500_000n } }]
+    const next = mergeUsdcBalances(prev, results)
+    expect(next).not.toBe(prev)
+    expect(next[31337]).toBe(1_500_000n)
+  })
+
+  it('adds a chain that was not present before', () => {
+    const prev = { 31337: 1_000_000n }
+    const results = [{ data: { chainId: 31338, balance: 7n } }]
+    const next = mergeUsdcBalances(prev, results)
+    expect(next).not.toBe(prev)
+    expect(next[31338]).toBe(7n)
+    expect(next[31337]).toBe(1_000_000n)
+  })
+
+  it('ignores unfulfilled (no data) entries and keeps the prior reference', () => {
+    const prev = { 31337: 1_000_000n }
+    const results = [{ data: undefined }, { data: { chainId: 31337, balance: 1_000_000n } }]
+    expect(mergeUsdcBalances(prev, results)).toBe(prev)
   })
 })

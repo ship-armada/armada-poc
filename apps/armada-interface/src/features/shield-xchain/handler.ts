@@ -6,7 +6,6 @@ import {
   getPublicClient,
   readContract,
   sendTransaction,
-  signMessage,
   writeContract,
 } from 'wagmi/actions'
 import { erc20Abi, maxUint256 } from 'viem'
@@ -23,8 +22,7 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   createShieldRequest,
-  deriveShieldPrivateKey,
-  SHIELD_SIGNATURE_MESSAGE,
+  generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
 import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
@@ -32,6 +30,7 @@ import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll } from '@/lib/tx/poller'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { classifyHandlerError } from '@/lib/tx/errors'
@@ -167,10 +166,10 @@ async function runBuildProof(
   await ensureChain(record.meta.fromChainId)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Same flow as same-chain shield: prompt RAILGUN_SHIELD, derive the per-session key, ask the
-  // engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK construction —
-  // only what we do with the result on-chain.
-  const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
+  // Same flow as same-chain shield: generate an ephemeral per-deposit shieldPrivateKey and ask
+  // the engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK
+  // construction — only what we do with the result on-chain. See lib/railgun/shield.ts for why
+  // randomness is correct (the Railgun-convention wallet prompt is unnecessary in our model).
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Determine the value that lands in the shielded commitment. Gasless path: the wrapper takes
@@ -187,7 +186,7 @@ async function runBuildProof(
       'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
     )
   }
-  const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
+  const shieldPrivateKey = generateRandomShieldPrivateKey()
   const request = await createShieldRequest(
     railgunAddress,
     shieldValue,
@@ -277,6 +276,15 @@ async function runDirectSubmit(
   ctx: Parameters<typeof shieldXchainHandler.run>[1],
 ): Promise<void> {
   const artifacts = record.artifacts
+
+  // Idempotency guard (P0-1): once the client-chain crossChainShield broadcast we persist its
+  // hash. NEVER re-send — a second crossChainShield is a second real USDC burn. On re-entry
+  // (Retry after a delivery timeout / resume-on-reload) finalize on the known hash instead.
+  if (artifacts.sourceTxHash) {
+    await finalizeBurnAndAdvance(record, ctx, artifacts.sourceTxHash)
+    return
+  }
+
   const shieldRequest = artifacts.shieldRequest!
   const privacyPoolClientAddress = artifacts.privacyPoolClientAddress!
   const clientUsdcAddress = artifacts.clientUsdcAddress!
@@ -357,6 +365,15 @@ async function runGaslessSubmit(
   ctx: Parameters<typeof shieldXchainHandler.run>[1],
 ): Promise<void> {
   const artifacts = record.artifacts
+
+  // Idempotency guard (P0-1): never re-POST a gasless cross-chain shield we already submitted —
+  // a duplicate gets a 409 and a fresh POST against an expired permit is doomed. On re-entry
+  // finalize on the known hash instead.
+  if (artifacts.sourceTxHash) {
+    await finalizeBurnAndAdvance(record, ctx, artifacts.sourceTxHash)
+    return
+  }
+
   const shieldRequest = artifacts.shieldRequest!
   const permitV = artifacts.permitV
   const permitR = artifacts.permitR
@@ -374,6 +391,15 @@ async function runGaslessSubmit(
   const ownerCaptured = record.walletContext.evmAddress
   if (!ownerCaptured) {
     throw new Error('Shield-xchain gasless submit requires a connected EVM wallet; none captured at submit time.')
+  }
+
+  // Permit-deadline guard (P0-1): an expired EIP-2612 permit makes the wrapper call revert, so
+  // POSTing is doomed. Fail with honest copy. Nothing was sent (PRE_FLIGHT_REVERT).
+  if (record.meta.permitDeadline * 1000 <= Date.now()) {
+    throw asTxError({
+      code: 'PRE_FLIGHT_REVERT',
+      message: 'This quote expired before it could be submitted. Start a new transaction.',
+    })
   }
 
   const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
@@ -473,9 +499,9 @@ async function finalizeBurnAndAdvance(
   // record MUST be threaded into the final advance below — `record` is now stale (lower
   // updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq write that
   // OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, hash, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   // Use the client chain's public client to wait for the receipt + extract the CCTP MessageSent
   // event. The receipt is on the source chain regardless of who broadcast the tx, so this works
@@ -602,6 +628,9 @@ async function runWaitForDelivery(
       if (outcome.kind === 'no-new-blocks') return null
 
       scanFromBlock = outcome.nextScanFromBlock
+      // A cancel/dismiss may have fired during the async scan above. Skip the cursor persist so we
+      // don't resurrect a record abortAndMark has already moved to a terminal state. (P0-3 WS1.2b)
+      if (signal.aborted) return null
       cursor = patchArtifacts(cursor, { destFromBlock: scanFromBlock.toString() })
       await ctx.upsert(cursor)
       return null

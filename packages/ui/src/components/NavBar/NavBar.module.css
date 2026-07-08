@@ -9,4 +9,10 @@
   padding: 0 var(--semantic-component-navbar-padding-x);
   background: var(--semantic-component-navbar-bg);
   border-radius: 100px;
+  /* Frosted-glass effect — visible only when --semantic-component-navbar-bg is translucent
+     (e.g. armada-interface overrides to rgba(0,0,0,~0.10) so the nav floats over a gradient
+     backdrop). For consumers whose token resolves to an opaque color (crowdfund-*) this is
+     a no-op since there's nothing to see through. */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

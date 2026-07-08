@@ -17,7 +17,8 @@ export function formatUsdcPlain(amount: bigint): string {
  * `error` field; `value` is always present (0n on error) so the common UI gating pattern
  * `value > 0n` still works.
  *
- *  'invalid'           — not a number (NaN, "abc", empty, scientific overflow like "1e500")
+ *  'invalid'           — not a plain decimal ("abc", "NaN", "Infinity", scientific notation like
+ *                        "1e3", a leading "+", grouping commas, multiple dots, or a lone ".")
  *  'negative'          — number is negative
  *  'too-many-decimals' — input has more than 6 fractional digits; truncation would lose precision
  */
@@ -42,30 +43,30 @@ export function parseUsdcInput(input: string): UsdcInputResult {
   const trimmed = input.trim()
   if (trimmed === '') return { value: 0n }
 
-  // Decimal-precision check happens BEFORE numeric parse so "1.1234567" reports 'too-many-decimals'
-  // rather than silently rounding to 1.123456 via Math.floor below.
+  // Categorize a leading '-' as 'negative' before the shape check so "-5" / "-0.01" report
+  // 'negative' rather than 'invalid'.
+  if (trimmed.startsWith('-')) return { value: 0n, error: 'negative' }
+
+  // Pure decimal-string parsing — NO parseFloat/Number. parseFloat loses precision at 6dp:
+  // parseFloat("8.165") * 1e6 is 8164999.99…, which Math.floor'd to 8164999 (off by one). We
+  // validate the shape (optional integer part, optional single dot, optional fraction) then
+  // assemble the raw bigint from the digit groups directly, so the result is exact. The shape
+  // check also rejects scientific notation ("1e3"), a leading "+", grouping commas, multiple
+  // dots, and a lone ".".
+  if (trimmed === '.' || !/^\d*\.?\d*$/.test(trimmed)) {
+    return { value: 0n, error: 'invalid' }
+  }
+
   const dot = trimmed.indexOf('.')
-  if (dot !== -1 && trimmed.length - dot - 1 > 6) {
-    return { value: 0n, error: 'too-many-decimals' }
-  }
+  const whole = dot === -1 ? trimmed : trimmed.slice(0, dot)
+  const frac = dot === -1 ? '' : trimmed.slice(dot + 1)
 
-  const num = parseFloat(trimmed)
-  // Reject non-finite (NaN, ±Infinity, "1e500"). parseFloat accepts "Infinity" silently;
-  // without the isFinite guard, BigInt(Infinity) throws RangeError.
-  if (!Number.isFinite(num)) return { value: 0n, error: 'invalid' }
-  if (num < 0) return { value: 0n, error: 'negative' }
+  // >6 fractional digits would lose precision — surface 'too-many-decimals' rather than truncate.
+  if (frac.length > 6) return { value: 0n, error: 'too-many-decimals' }
 
-  // Scale to 6 decimals via string surgery, not float math: `8469.8 * 1e6` is
-  // `8469799999.999…`, so `Math.floor` would yield 8469799999n (off by 1 µUSDC).
-  // Decimals are already guaranteed ≤ 6 by the check above.
-  const [wholePart, fracPart = ''] = trimmed.split('.')
-  const whole = wholePart.replace(/^\+/, '') || '0'
-  if (!/^\d+$/.test(whole) || !/^\d*$/.test(fracPart)) {
-    // Non-plain-decimal (e.g. scientific notation) — fall back to a rounded
-    // numeric scale rather than producing a malformed BigInt string.
-    return { value: BigInt(Math.round(num * 1e6)) }
-  }
-  return { value: BigInt(whole + fracPart.padEnd(6, '0')) }
+  const wholePart = whole === '' ? 0n : BigInt(whole)
+  const fracPart = frac === '' ? 0n : BigInt(frac.padEnd(6, '0'))
+  return { value: wholePart * 1_000_000n + fracPart }
 }
 
 /** Format an ARM amount (18 decimals) as a token string, e.g. "1,200,000 ARM" */

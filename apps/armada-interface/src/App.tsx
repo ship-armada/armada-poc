@@ -1,21 +1,26 @@
-// ABOUTME: Top-level route shell + wallet-status guard — installs the visibility listener once, hydrates tx history, starts the executor, and renders OnboardingFlow / UnlockFlow / Outlet based on local mode.
+// ABOUTME: Top-level route shell + wallet-status guard — runs the v2 schema migration before anything else, installs the visibility listener, hydrates tx history, starts the executor, and renders OnboardingFlow / UnlockFlow / Outlet based on local mode.
 // ABOUTME: Guard uses a local mode state (not direct atom read) so the onboarding success screen gets to render even after createWallet flips the atom.
 
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AppLayout } from '@/components/AppLayout'
-import { OnboardingFlow, UnlockFlow } from '@/components/onboarding'
+import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
 import { UnshieldModal } from '@/components/unshield'
 import { SendModal } from '@/components/payments'
+import { ReceiveDialog } from '@/components/receive'
 import { EarnModal } from '@/components/yield'
 import { useAutoLock } from '@/hooks/useAutoLock'
+import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
+import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
+import { useNowTicker } from '@/hooks/useNowTicker'
 import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
+import { useTxResume } from '@/hooks/useTxResume'
 import { useUsdcBalances } from '@/hooks/useUsdcBalances'
 import { useWallet } from '@/hooks/useWallet'
 // Side-effect imports: register each feature's stage handler with the tx executor at module load.
@@ -28,19 +33,30 @@ import '@/features/transfer-shielded'
 import '@/features/yield-deposit'
 import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
+import { trackError } from '@/lib/telemetry'
+import { appModeForWalletStatus, type GuardMode } from '@/lib/app-mode'
 import { initRailgunEngine } from '@/lib/railgun/init'
-import { readStoredWalletId } from '@/lib/railgun/wallet'
+import { preloadArtifactsFromOrigin } from '@/lib/railgun/artifacts'
+import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
+import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
+import { isLocalMode } from '@/config/network'
+import {
+  DEFAULT_DEV_MOCK_BALANCE,
+  devMockBalanceAtom,
+} from '@/state/devMockBalance'
 import {
   activeRailgunWalletIdAtom,
   shieldedWalletAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
 
-type GuardMode = 'pre-init' | 'onboarding' | 'unlock' | 'app'
-
 export function App() {
   useTabVisible()
+  useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
+  useTxResume() // on unlock (leader only), resume watchers for broadcast txs / fail pre-broadcast interruptions (P0-2)
+  useHistoryRecovery() // chain-recover synthetic rows on unlock + re-scan epoch (Phase 9.3)
+  useIncomingTransferDetector() // re-scan on balance events so received transfers surface live (Phase 9.4)
   useAutoLock()  // idle-timer-driven lock for the shielded wallet
   // Mirror wagmi's connection state into evmAddressAtom for atom-consumers (OnboardingFlow's
   // SignEnrollment step, UnshieldModal's recipient pre-fill, useShieldedWallet.enroll). Mounted
@@ -62,7 +78,42 @@ export function App() {
   // modal opens (otherwise the first modal sees `quote=null` briefly).
   useFees()
 
+  const setDevMockBalance = useSetAtom(devMockBalanceAtom)
+
+  // First local boot: enable mock USDC unless opted out (VITE_DEV_MOCK_BALANCE=false) or Debug saved a preference.
   useEffect(() => {
+    if (!isLocalMode()) return
+    if (import.meta.env.VITE_DEV_MOCK_BALANCE === 'false') return
+    if (localStorage.getItem('armada-interface.devMockBalance') != null) return
+    setDevMockBalance({ ...DEFAULT_DEV_MOCK_BALANCE, enabled: true })
+  }, [setDevMockBalance])
+
+  const wallet = useAtomValue(shieldedWalletAtom)
+  const setShieldedWallets = useSetAtom(shieldedWalletsAtom)
+  const setActiveWalletId = useSetAtom(activeRailgunWalletIdAtom)
+  const [mode, setMode] = useState<GuardMode>('pre-migration')
+
+  // v2 schema migration: drops legacy localStorage keys + IndexedDB databases on first run of
+  // the v2 schema. Synchronous portion (localStorage) is done by the time the awaited promise
+  // resolves; async portion (IDB drops) is awaited before we transition out of `pre-migration`
+  // so the Railgun engine init below doesn't race against `armada-shielded` being deleted.
+  // Idempotent — `runSchemaMigrationIfNeeded` short-circuits when the on-disk version is current,
+  // making StrictMode's double-mount safe.
+  useEffect(() => {
+    if (mode !== 'pre-migration') return
+    let cancelled = false
+    void runSchemaMigrationIfNeeded()
+      .catch((err) => trackError('schema-migration', err))
+      .finally(() => {
+        if (!cancelled) setMode('pre-init')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mode])
+
+  useEffect(() => {
+    if (mode === 'pre-migration') return
     // Start the tx execution engine. Idempotent + module-scope, so this runs
     // safely under StrictMode's double-mount and never spawns a second engine.
     startEngine()
@@ -71,13 +122,14 @@ export function App() {
     // this, the first proof-generating tx pays a 1-2s warmup before the SDK can do anything.
     // Idempotent: a later enroll/unlock call also goes through ensureRailgunReady() which is a
     // no-op once initialized.
+    //
+    // After init resolves, preload the demo-critical circuit artifacts from our own origin into
+    // the SDK cache (P0-12) so the first proof doesn't fetch ~10 MB from IPFS at click time.
+    // Fire-and-forget, sequenced after init, off the critical path — failures fall back to IPFS.
     void initRailgunEngine()
-  }, [])
-
-  const wallet = useAtomValue(shieldedWalletAtom)
-  const setShieldedWallets = useSetAtom(shieldedWalletsAtom)
-  const setActiveWalletId = useSetAtom(activeRailgunWalletIdAtom)
-  const [mode, setMode] = useState<GuardMode>('pre-init')
+      .then(() => preloadArtifactsFromOrigin())
+      .catch((err) => trackError('railgun.artifacts.preload', err))
+  }, [mode])
   // Sticky flag: true when this device boot started with NO persisted walletId. Drives whether
   // we offer the bidirectional Onboarding ↔ Unlock fork. A returning user (had a wallet at boot)
   // never sees the "Create new" link in UnlockFlow — preventing accidental orphaning of their
@@ -113,14 +165,22 @@ export function App() {
     setMode('onboarding')
   }, [mode, wallet.status, setShieldedWallets, setActiveWalletId])
 
-  // After initial derivation, react to subsequent lock events (auto-lock timer).
+  // After initial derivation, react to subsequent wallet-status changes while in app mode:
+  //   locked  → auto-lock timer / account-switch locked the wallet → back to the unlock screen.
+  //   missing → Settings → Reset wiped the wallet, or an account-switch landed on an account with
+  //             no wallet on this device → back to onboarding. Without this, the app shell renders
+  //             with no active wallet and the first action throws 'no active shielded walletId'. (P1-14)
   useEffect(() => {
-    if (mode === 'app' && wallet.status === 'locked') setMode('unlock')
+    const next = appModeForWalletStatus(mode, wallet.status)
+    if (next) setMode(next)
   }, [mode, wallet.status])
 
-  if (mode === 'pre-init') {
-    // Brief pre-render gap — atom hydration is synchronous in Jotai so this
-    // usually never paints. Return null to avoid flashing the wrong shell.
+  if (mode === 'pre-migration' || mode === 'pre-init') {
+    // Brief pre-render gap. `pre-migration` waits for the v2 schema-migration to drop legacy
+    // localStorage + IDB state (usually under 50ms — synchronous localStorage clear plus a
+    // single-tick IDB delete that's a no-op when the DBs are already absent). `pre-init` is
+    // the brief window before the cold-boot derivation effect fires. Either state should
+    // rarely paint; null avoids flashing the wrong shell.
     return null
   }
 
@@ -128,17 +188,33 @@ export function App() {
     // Always offer the Restore escape hatch — the onboarding flow has no way to know whether
     // the user is genuinely new vs. arriving on a new device with an existing backup. The link
     // is harmless for genuinely new users (they ignore it) and load-bearing for the second case.
-    return <OnboardingFlow onDone={() => setMode('app')} onRestore={() => setMode('unlock')} />
+    return <OnboardingFlowV2 onDone={() => setMode('app')} onRestore={() => setMode('unlock')} />
   }
 
   if (mode === 'unlock') {
-    // Only expose the Create-new link when there's no persisted wallet on this device. A
-    // returning user (had a persisted wallet at boot) MUST go through Unlock — accidentally
-    // starting Create would orphan their existing IDB-stored wallet without recovery.
+    const handleStartOver = () => {
+      if (
+        hadPersistedWalletAtBoot &&
+        !window.confirm(
+          "Clear the saved login on this device? If you sign in again with the same EVM wallet, your account is restored — your shielded funds are not affected. " +
+            'Only continue if you want to switch wallets. If you originally restored from a backup file or recovery secret, make sure you still have it before continuing.',
+        )
+      ) {
+        return
+      }
+      clearStoredWalletIdentity()
+      setShieldedWallets({})
+      setActiveWalletId(null)
+      setHadPersistedWalletAtBoot(false)
+      setMode('onboarding')
+    }
     return (
       <UnlockFlow
         onUnlocked={() => setMode('app')}
-        onCreateNew={hadPersistedWalletAtBoot ? undefined : () => setMode('onboarding')}
+        onCreateNew={handleStartOver}
+        createNewLabel={
+          hadPersistedWalletAtBoot ? "Clear this browser's saved login" : undefined
+        }
       />
     )
   }
@@ -153,6 +229,7 @@ export function App() {
       <UnshieldModal />
       <SendModal />
       <EarnModal />
+      <ReceiveDialog />
     </>
   )
 }

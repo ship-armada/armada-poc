@@ -2,6 +2,7 @@
 // ABOUTME: Mirrors lib/railgun/unshield.ts in structure; differences are the 0zk recipient and two extra SDK args (showSenderAddressToRecipient, memoText).
 
 import { loadHubNetwork } from './network'
+import { yieldToPaint } from '@/lib/paint'
 
 type RailgunSdk = typeof import('@railgun-community/wallet')
 type SharedModels = typeof import('@railgun-community/shared-models')
@@ -76,6 +77,9 @@ export async function generateTransferProofForRecipient(opts: {
     sharedModels(),
   ])
   const sendWithPublicWallet = opts.broadcasterFee === null
+  // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
+  // blocks the main thread for 20-30s.
+  await yieldToPaint()
   await generateTransferProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,

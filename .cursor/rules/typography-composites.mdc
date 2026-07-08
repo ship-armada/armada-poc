@@ -1,0 +1,30 @@
+---
+description: Typography composites in @armada/ui — use the React primitives or generated classes, not hand-rolled font-size CSS.
+globs: apps/armada-interface/**/*.{tsx,css}, packages/ui/src/**/*.{tsx,css,mjs,json}
+alwaysApply: false
+---
+
+# Typography composites — @armada/ui
+
+The `@armada/ui` package owns typography composites (`ui/heading-sm`, `ui/body-lg`, etc.). They are generated from `packages/ui/src/tokens/armada-tokens.json` by `packages/ui/scripts/build-typography.mjs`. The output is two files:
+
+- `packages/ui/src/styles/typography.css` — `--semantic-typography-*` vars + `.armada-text-*` classes.
+- `packages/ui/src/typography/variants.ts` — `TypographyVariant` union + `typographyClassName()`.
+
+## How to consume
+
+1. **React primitive (preferred):** `import { HeadingSm, Text } from '@armada/ui'`. Use `<HeadingSm>` for step titles; `<Text variant="ui-body-lg">` for other roles.
+2. **Global class (CSS Modules `composes`, or className):** `armada-text-ui-heading-sm`, `armada-text-ui-body-sm`, etc.
+3. **Raw CSS vars (custom layout):** `var(--semantic-typography-ui-heading-sm-font-size)`, etc.
+
+## Rules
+
+- **Never edit `typography.css` or `variants.ts` by hand.** They are regenerated.
+- **Never hand-pick `font-size` / `font-weight` / `line-height` for step titles, body copy, labels.** Pick a composite.
+- **Adding a new composite:** edit `armada-tokens.json` → run `npm run tokens:typography --workspace=@armada/ui` → commit both.
+- **Crowdfund apps** do not consume composites today; do not introduce composites into crowdfund-shared without an explicit design decision.
+
+## Files
+
+- `packages/ui/TYPOGRAPHY.md` — reference table + recipe.
+- `docs/DECISION_LOG.md` (armada-interface) — design decisions D1–D4 (May 2026).

@@ -7,7 +7,7 @@ Transaction-rendering primitives. Each one consumes a `TxRecord` and renders som
 | Component | Purpose |
 |---|---|
 | `TxLifecycleStepper` | Vertical stepper for any `TxKind`. Reads `lifecycleFor(record.kind)` + record state. Status chip + per-stage rows + technical-details disclosure. |
-| `TxRow` | Compact row — title + amount + status + relative time. Optional sub-line (stage copy) and progress strip for InProgressCard. |
+| `TxRow` | Compact row — title + amount + status + relative time. Optional sub-line (stage copy) and progress strip for InProgressCard. V1 Phase 9 added the `transfer-shielded-received` kind: incoming privately-paid USDC rendered with the Inbox glyph + green inflow amount; synthesized from chain by useHistoryRecovery / useIncomingTransferDetector. |
 | `TxStatusChip` | Maps `TxExecutionState` → `StatusChip` variant + label. Consolidates pre-terminal states (`pending`/`active`/`waiting`/`retrying`) under a single "Pending" badge. |
 | `stageCopy.ts` | Pure helpers: `stageCopy(kind, stage, executionState?)`, `kindTitle(kind)`, `recordTitle(record)`. Single source of truth for tx microcopy. |
 

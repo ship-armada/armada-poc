@@ -1,7 +1,5 @@
-// ABOUTME: Shield request builder — derives shieldPrivateKey + constructs ShieldNoteERC20 via the Railgun engine (Poseidon NPK + ECIES bundle).
+// ABOUTME: Shield request builder — generates an ephemeral shieldPrivateKey + constructs ShieldNoteERC20 via the Railgun engine (Poseidon NPK + ECIES bundle).
 // ABOUTME: Pure SDK-side logic; the contract call lives in features/shield/handler.ts. Dynamic imports avoid jsdom's circomlibjs crash.
-
-import { keccak256 } from 'viem'
 
 // `@railgun-community/engine` ships circomlibjs at module-load and crashes under jsdom; defer.
 type RailgunEngine = typeof import('@railgun-community/engine')
@@ -10,25 +8,32 @@ async function railgunEngine(): Promise<RailgunEngine> {
 }
 
 /**
- * Canonical message the user signs to derive a per-session shield private key. Same string the
- * Railgun SDK uses everywhere — must match exactly so signatures are portable across wallets +
- * tools that consume the same convention.
- */
-export const SHIELD_SIGNATURE_MESSAGE = 'RAILGUN_SHIELD'
-
-/**
- * `shieldPrivateKey` is a 32-byte secret used inside the engine's ECIES + Poseidon machinery
- * when constructing a shield note. It MUST be derived deterministically from the user's wallet
- * signature so the same EVM identity always produces compatible shield requests.
+ * Generate a fresh ephemeral `shieldPrivateKey` per deposit — 32 random bytes as 64-char lowercase
+ * hex (no `0x` prefix; the SDK consumes it that way).
  *
- * Returns a 64-char lowercase hex string (no `0x` prefix) — the SDK consumes it that way.
+ * Why random instead of `personal_sign('RAILGUN_SHIELD')`-derived (Railgun's convention):
+ * - `shieldPrivateKey` is a per-deposit ECIES *sender* secret. The recipient's chain scan
+ *   decrypts via their viewing key + the on-chain `shieldKey` (which is the public viewing key
+ *   of `shieldPrivateKey`). The sender's key is never re-needed after the shield is built —
+ *   randomness is correct.
+ * - Railgun's deterministic convention enables "sender-side history recovery from EVM wallet
+ *   alone" across Railgun wallets. We don't use that recovery path (our identity layer is
+ *   `root_secret`-derived with a non-deterministic enrollment, so EVM-only recovery isn't
+ *   available regardless), so the convention has no value for our app.
+ * - Eliminates one wallet prompt per deposit; the engine's own `relay-adapt-helper` already
+ *   uses `randomHex(32)` for its internal shields, proving correctness end-to-end.
+ *
+ * Uses `crypto.getRandomValues` (Web Crypto) — same source the SDK's `ByteUtils.randomHex` uses
+ * for its random salt input on the same code path.
  */
-export function deriveShieldPrivateKey(signatureHex: string): string {
-  // viem's keccak256 accepts a `0x`-prefixed hex string and decodes-then-hashes the bytes.
-  // (Using toBytes() first would UTF-8-encode the hex chars instead — wrong domain entirely.)
-  const normalized = signatureHex.startsWith('0x') ? signatureHex : `0x${signatureHex}`
-  const hash = keccak256(normalized as `0x${string}`)
-  return hash.slice(2) // strip the 0x for SDK compat
+export function generateRandomShieldPrivateKey(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  let hex = ''
+  for (const b of bytes) {
+    hex += b.toString(16).padStart(2, '0')
+  }
+  return hex
 }
 
 /**

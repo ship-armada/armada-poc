@@ -3,6 +3,7 @@
 
 import { ethers } from 'ethers'
 import { loadHubNetwork } from './network'
+import { yieldToPaint } from '@/lib/paint'
 
 type RailgunSdk = typeof import('@railgun-community/wallet')
 type RailgunEngine = typeof import('@railgun-community/engine')
@@ -217,6 +218,9 @@ export async function buildYieldAdaptTransaction(opts: {
   // Generate the cross-contract-calls proof. The unshield recipient is the adapter address;
   // the proof binds via adaptContract + adaptParams so the adapter cannot redirect.
   const sendWithPublicWallet = opts.broadcasterFee === null
+  // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
+  // blocks the main thread for 20-30s.
+  await yieldToPaint()
   const { provedTransactions } = await generateProofTransactions(
     ProofType.CrossContractCalls,
     NetworkName.Hardhat,

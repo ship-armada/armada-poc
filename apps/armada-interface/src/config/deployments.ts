@@ -184,3 +184,35 @@ export async function loadYieldDeployment(): Promise<YieldDeployment | null> {
     return null
   }
 }
+
+export interface FeeModuleDeployment {
+  chainId: number
+  contracts: {
+    feeModuleProxy: string
+  }
+}
+
+let feeModuleCached: `0x${string}` | null | undefined
+
+/** ArmadaFeeModule proxy on the hub chain — used for on-chain shield fee quotes. */
+export async function loadFeeModuleAddress(): Promise<`0x${string}` | null> {
+  if (feeModuleCached !== undefined) return feeModuleCached
+  const cfg = getNetworkConfig()
+  const suffix = cfg.mode === 'sepolia' ? '-sepolia' : ''
+  const name = `fee-module-hub${suffix}.json`
+  try {
+    const res = await fetch(`/api/deployments/${name}`)
+    if (!res.ok) {
+      feeModuleCached = null
+      return null
+    }
+    const json = (await res.json()) as FeeModuleDeployment
+    const addr = json.contracts?.feeModuleProxy
+    feeModuleCached =
+      addr && /^0x[0-9a-fA-F]{40}$/.test(addr) ? (addr as `0x${string}`) : null
+    return feeModuleCached
+  } catch {
+    feeModuleCached = null
+    return null
+  }
+}

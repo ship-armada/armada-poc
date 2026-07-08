@@ -21,14 +21,33 @@
   margin-left: auto;
 }
 
+.rootStack {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-3);
+  padding: 0;
+  border-top: none;
+}
+
+.rootStack :global(button) {
+  width: auto;
+}
+
 @media (max-width: 480px) {
   .root {
-    flex-direction: column-reverse;
+    flex-direction: column;
     align-items: stretch;
     gap: var(--primitives-spacing-2);
   }
   .left, .right {
     width: 100%;
+  }
+  .right {
+    order: 1;
+  }
+  .left {
+    order: 2;
   }
   .left :global(button), .right :global(button) {
     width: 100%;

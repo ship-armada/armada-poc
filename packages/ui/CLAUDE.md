@@ -13,8 +13,10 @@ The strategy, scope, deferred work, and open questions for the designer are capt
 
 | Path | Purpose |
 |------|---------|
-| `src/styles/tokens.css` | Design tokens (CSS custom properties — `--primitives-*` and `--semantic-*`). Live source of truth. |
+| `src/styles/tokens.css` | Design tokens (CSS custom properties — `--primitives-*` and `--semantic-*`). Live source of truth for colors/spacing. |
+| `src/styles/typography.css` | **Generated** typography composites (`--semantic-typography-*`, `.armada-text-*`). See `TYPOGRAPHY.md`. |
 | `src/styles/global.css` | Reset and base body styles. Import once at the app entry point. |
+| `src/components/Text`, `HeadingSm` | Typography primitives — use instead of per-screen title CSS. |
 
 > **Consumers must import `tokens.css`** — every component CSS Module in this
 > package references `--primitives-*` / `--semantic-*` variables defined

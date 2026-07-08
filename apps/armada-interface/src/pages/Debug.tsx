@@ -10,8 +10,9 @@ import { Card, SectionHeader } from '@/components/ui'
 import { Button } from '@armada/ui'
 import { useWallet } from '@/hooks/useWallet'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
+import { useRelayerHealth } from '@/hooks/useRelayerHealth'
 import { loadDeployments, type ResolvedDeployments } from '@/config/deployments'
-import { getNetworkConfig, isLocalMode, type ChainIdentity } from '@/config/network'
+import { getNetworkConfig, isLocalMode, isRelayerConfigured, type ChainIdentity } from '@/config/network'
 import { railgunEngineAtom, shieldedUsdcAtom } from '@/state/wallet'
 import { formatUsdcAmount, truncateAddress } from '@/lib/format'
 import styles from './Debug.module.css'
@@ -169,6 +170,11 @@ export function Debug() {
   const [dripError, setDripError] = useState<string | null>(null)
   const [resettingEngine, setResettingEngine] = useState(false)
 
+  // Relayer health pill next to the URL. Polled only when a relayer is actually configured —
+  // hosted builds without VITE_RELAYER_URL set `isRelayerConfigured()` to false and would
+  // otherwise hit `fetch('')` every 60s for no benefit.
+  const relayerHealth = useRelayerHealth({ enabled: isRelayerConfigured() })
+
   // Refresh chain balances against the currently-connected EVM address. Called on mount,
   // after a successful faucet drip, and via the "Refresh" button.
   const refreshBalances = useCallback(async () => {
@@ -291,7 +297,11 @@ export function Debug() {
           </dd>
           <dt>Hub chain</dt><dd>{getNetworkConfig().hub.name} ({getNetworkConfig().hub.chainId})</dd>
           <dt>Client chains</dt><dd>{getNetworkConfig().clients.map(c => `${c.name} (${c.chainId})`).join(', ')}</dd>
-          <dt>Relayer URL</dt><dd><code>{getNetworkConfig().relayerUrl ?? '—'}</code></dd>
+          <dt>Relayer URL</dt>
+          <dd>
+            <code>{getNetworkConfig().relayerUrl || '—'}</code>
+            {isRelayerConfigured() ? <RelayerHealthPill state={relayerHealth} /> : null}
+          </dd>
         </dl>
       </Card>
 
@@ -302,7 +312,7 @@ export function Debug() {
           <dt>Wallet chain</dt><dd>{connectedChainId ?? '—'}</dd>
           <AddressRow label="Shielded wallet ID" value={shieldedState?.id} />
           <dt>Shielded status</dt><dd>{shieldedState?.status ?? 'missing'}</dd>
-          <AddressRow label="Railgun address" value={shieldedState?.railgunAddress} truncate />
+          <AddressRow label="Shielded address" value={shieldedState?.railgunAddress} truncate />
           <dt>Anti-phish checksum</dt><dd>{shieldedState?.checksum ?? '—'}</dd>
           <dt>Shielded USDC</dt><dd>{shielded === null ? '— not synced —' : `${formatUsdcAmount(shielded)} USDC`}</dd>
         </dl>
@@ -403,5 +413,35 @@ export function Debug() {
         )}
       </Card>
     </div>
+  )
+}
+
+// Health pill — small colored dot + status label. Healthy = green, stale/unhealthy = amber,
+// unreachable (query error) = red, in-flight first fetch = gray "checking…". The hook itself
+// is gated on isRelayerConfigured() at the call site so this only renders when there's a real
+// endpoint to poll.
+function RelayerHealthPill({ state }: { state: ReturnType<typeof useRelayerHealth> }) {
+  const { data, error, isLoading } = state
+
+  let dotClass = styles.healthDot
+  let label: string
+  if (error) {
+    dotClass = `${styles.healthDot} ${styles.healthDotUnreachable}`
+    label = 'unreachable'
+  } else if (isLoading || !data) {
+    label = 'checking…'
+  } else if (data.status === 'healthy') {
+    dotClass = `${styles.healthDot} ${styles.healthDotHealthy}`
+    label = 'healthy'
+  } else {
+    dotClass = `${styles.healthDot} ${styles.healthDotDegraded}`
+    label = data.status // 'stale' | 'unhealthy'
+  }
+
+  return (
+    <span className={styles.healthPill} aria-label={`Relayer health: ${label}`}>
+      <span className={dotClass} aria-hidden />
+      {label}
+    </span>
   )
 }

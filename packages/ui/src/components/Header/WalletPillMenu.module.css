@@ -184,3 +184,25 @@
   color: var(--semantic-color-status-error);
   background: color-mix(in srgb, var(--semantic-color-status-error) 12%, transparent);
 }
+
+/* armada-interface two-row trigger (shieldedAddress prop) — see components/CLAUDE.md deviations. */
+.triggerTwoRow {
+  align-items: center;
+  height: auto;
+  padding-block: var(--primitives-spacing-4);
+}
+.triggerStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.15;
+}
+.triggerRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+.triggerShieldedLabel {
+  color: var(--primitives-color-purple-300, #c4a8e8);
+}

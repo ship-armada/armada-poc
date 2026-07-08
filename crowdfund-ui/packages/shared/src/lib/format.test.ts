@@ -96,6 +96,27 @@ describe('parseUsdcInput', () => {
   it('parses zero', () => {
     expect(parseUsdcInput('0')).toEqual({ value: 0n })
   })
+
+  it('parses with exact decimal precision — no float rounding (P1-21)', () => {
+    // WHY: the parseFloat impl returned 8164999n for "8.165" (8.165 * 1e6 is 8164999.99… in
+    // IEEE-754, Math.floor dropped the cent). Pure decimal-string assembly is exact. Locked
+    // regression cases — kept in lockstep with apps/armada-interface/src/lib/format.test.ts.
+    expect(parseUsdcInput('8.165')).toEqual({ value: 8_165_000n })
+    expect(parseUsdcInput('1.000001')).toEqual({ value: 1_000_001n })
+    expect(parseUsdcInput('1e3')).toEqual({ value: 0n, error: 'invalid' })
+  })
+
+  it('rejects malformed decimal shapes as invalid', () => {
+    expect(parseUsdcInput('1,000')).toEqual({ value: 0n, error: 'invalid' })
+    expect(parseUsdcInput('1.2.3')).toEqual({ value: 0n, error: 'invalid' })
+    expect(parseUsdcInput('.')).toEqual({ value: 0n, error: 'invalid' })
+    expect(parseUsdcInput('+5')).toEqual({ value: 0n, error: 'invalid' })
+  })
+
+  it('accepts bare leading/trailing dot forms exactly', () => {
+    expect(parseUsdcInput('.5')).toEqual({ value: 500_000n })
+    expect(parseUsdcInput('5.')).toEqual({ value: 5_000_000n })
+  })
 })
 
 describe('formatArm', () => {

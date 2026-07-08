@@ -12,6 +12,11 @@
 #   DEPLOYMENT_INSTANCE            optional override; defaults to "demo1"
 #                                  (build-step variable only, no VITE_ prefix
 #                                   because it's never exposed to bundled JS)
+#   DEPLOYMENT_REF                 optional — commit SHA of ship-armada/armada-deployments to
+#                                  fetch manifests from; defaults to the mutable `main` branch
+#                                  when unset (P1-23). These manifests carry fund-receiving
+#                                  addresses, so PIN to a SHA for production to freeze them; the
+#                                  `main` default is convenient but floats. Bump per release. Non-VITE.
 
 [build]
   base    = "apps/armada-interface"
@@ -19,20 +24,22 @@
   # Build flow:
   #   1. cd to workspace root (npm needs the root package.json + lockfile)
   #   2. clean any cached node_modules from a previous deploy attempt
-  #   3. install with --legacy-peer-deps (Railgun SDK peer-dep conflict)
+  #   3. install with `npm ci` (respects the committed lockfile — never re-resolves the dep graph
+  #      fresh; --legacy-peer-deps for the Railgun SDK peer-dep conflict) (P0-9)
   #   4. fetch the selected deployment instance's manifests from the
   #      armada-deployments repo and write them under public/api/deployments/
   #      with the legacy filenames the interface fetches today
   #   5. build the workspace
   command = """
     cd ../.. && \
-    rm -rf node_modules package-lock.json && \
-    npm install --legacy-peer-deps && \
+    rm -rf node_modules && \
+    npm ci --legacy-peer-deps && \
     cd apps/armada-interface && \
     mkdir -p public/api/deployments && \
     INSTANCE="${DEPLOYMENT_INSTANCE:-demo1}" && \
-    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/main/testnet/${INSTANCE}" && \
-    echo "Fetching deployment manifests from instance: ${INSTANCE}" && \
+    REF="${DEPLOYMENT_REF:-main}" && \
+    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/testnet/${INSTANCE}" && \
+    echo "Fetching deployment manifests from instance: ${INSTANCE} (ref: ${REF})" && \
     curl -sfL -o public/api/deployments/hub-sepolia-v3.json               "${BASE}/sepolia/cctp.json" && \
     curl -sfL -o public/api/deployments/client-sepolia-v3.json            "${BASE}/base-sepolia/cctp.json" && \
     curl -sfL -o public/api/deployments/clientB-sepolia-v3.json           "${BASE}/arbitrum-sepolia/cctp.json" && \
@@ -40,6 +47,8 @@
     curl -sfL -o public/api/deployments/privacy-pool-client-sepolia.json  "${BASE}/base-sepolia/privacy-pool.json" && \
     curl -sfL -o public/api/deployments/privacy-pool-clientB-sepolia.json "${BASE}/arbitrum-sepolia/privacy-pool.json" && \
     curl -sfL -o public/api/deployments/yield-hub-sepolia.json            "${BASE}/sepolia/yield.json" && \
+    cp ../../deployments/fee-module-hub-sepolia.json public/api/deployments/fee-module-hub-sepolia.json && \
+    npm run prepare:artifacts && \
     cd ../.. && \
     npm run build --workspace=@armada/interface
   """
@@ -47,15 +56,17 @@
 [build.environment]
   NPM_FLAGS    = "--legacy-peer-deps"
   NODE_VERSION = "20"
-  # Bump V8 heap above the ~2 GB default. Vite's bundle phase OOMs around 2 GB
-  # while deduping the RainbowKit transitive graph (multiple `ox`/viem variants
-  # via WalletConnect + Coinbase Wallet SDK + Reown AppKit) plus the Railgun
-  # WASM + snarkjs payload. 4096 MB is the safe ceiling on Netlify's free-tier
-  # build container (~4 GB total, OS + npm leave Node a usable 3-3.5 GB). If
-  # the build outgrows this, options are (in order of effort): upgrade to a
-  # Pro plan for 8 GB containers and bump to 6144; code-split RainbowKit /
-  # Railgun more aggressively; or move the build off Netlify entirely.
-  NODE_OPTIONS = "--max-old-space-size=4096"
+  # Bump V8 heap above the ~2 GB default. Vite's bundle phase is memory-heavy:
+  # deduping the RainbowKit transitive graph (multiple `ox`/viem variants via
+  # WalletConnect + Coinbase Wallet SDK + Reown AppKit) plus the Railgun WASM +
+  # snarkjs payload. Enabling Sentry's `hidden` source maps (when SENTRY_AUTH_TOKEN
+  # is set) pushes peak heap past 4 GB, so we run at 6144 — the safe ceiling for
+  # Netlify's 8 GB Pro build container (leaves ~2 GB for node overhead). Do NOT set
+  # this above container RAM: a value with no headroom flips the OOM into a SIGKILL
+  # (exit 137). If 6144 still OOMs (clean V8 "heap out of memory"), the box can't
+  # generate full maps for this bundle — drop SENTRY_AUTH_TOKEN to build without
+  # maps, or code-split Railgun/RainbowKit more aggressively.
+  NODE_OPTIONS = "--max-old-space-size=6144"
   # Switches all network-dependent decisions in the app (manifest filename
   # suffix, hub chain id + RPC, explorer URLs, poll cadence) to sepolia.
   VITE_NETWORK = "sepolia"
@@ -65,3 +76,21 @@
   from   = "/*"
   to     = "/index.html"
   status = 200
+
+# Security headers (P0-8). KEEP IN SYNC with vercel.json's "headers" — the CSP value below must be
+# byte-identical across both deploy targets. COOP/COEP are deliberately omitted: snarkjs here runs
+# without SharedArrayBuffer, and COEP would break Google Fonts + WalletConnect iframes.
+#
+# The CSP ships as Content-Security-Policy-Report-Only FIRST so it can't break a flow before a
+# human has clicked through every path on a preview deploy with devtools open. Promote to the
+# enforcing `Content-Security-Policy` header only after that sweep — and AFTER adding the runtime
+# relayer origin (VITE_RELAYER_URL host) and any IPFS artifact-gateway host to connect-src, neither
+# of which is statically known here.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://sepolia.base.org https://sepolia-rollup.arbitrum.io https://iris-api-sandbox.circle.com wss://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.rainbow.me https://*.sentry.io; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"

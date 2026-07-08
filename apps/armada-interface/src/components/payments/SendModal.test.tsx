@@ -1,13 +1,58 @@
 // ABOUTME: Tests for SendModal orchestrator — open/closed gating, tab switching clears recipient, kind selection visible in review, progress advance.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { SendModal } from './SendModal'
 import { openModalAtom } from '@/state/ui'
-import { shieldedUsdcAtom } from '@/state/wallet'
-import { feeQuoteAtom } from '@/state/fees'
+import { activeRailgunWalletIdAtom, shieldedUsdcAtom } from '@/state/wallet'
+import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
+
+// useDisplayFees + useGasBalanceWarning hit wagmi hooks that require a WagmiProvider; these
+// tests don't mount one. Stub with neutral defaults so the modal renders.
+// This tab is the executor leader (single-tab test env) so useTx.submit isn't refused (P1-26).
+vi.mock('@/lib/tx/executor', async (importActual) => ({
+  ...await importActual<typeof import('@/lib/tx/executor')>(),
+  getIsLeader: () => true,
+}))
+
+vi.mock('@/hooks/useDisplayFees', () => ({
+  useDisplayFees: () => ({
+    fees: {
+      protocolFee: 0n,
+      gasFee: 0n,
+      nativeGas: null,
+      totalFee: 0n,
+      feeInclusive: false,
+    },
+    isLoading: false,
+  }),
+}))
+vi.mock('@/hooks/useGasBalanceWarning', () => ({
+  useGasBalanceWarning: () => ({
+    show: false,
+    nativeSymbol: 'ETH',
+    formattedBalance: null,
+  }),
+}))
+
+// The private-send submit path strict-validates the 0zk recipient via the Railgun SDK
+// (validateShieldedAddressStrict → dynamic import), which crashes jsdom at load. Keep the sync
+// validators real; stub only the strict async check to pass for the test's fake 0zk fixture.
+vi.mock('@/lib/address', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/address')>()),
+  validateShieldedAddressStrict: vi.fn(async () => true),
+}))
+
+// Phase 7: tx/storage requires an unlocked keyManager (encrypted writes). UI tests don't drive
+// onboarding; mock storage to no-op. Storage encryption is covered in lib/tx/storage.test.ts.
+vi.mock('@/lib/tx/storage', () => ({
+  putTxIfFresh: vi.fn(async () => true),
+  putTx: vi.fn(async () => {}),
+  deleteTx: vi.fn(async () => {}),
+  loadAllTx: vi.fn(async () => []),
+}))
 
 const VALID_EVM = '0x1234567890abcdef1234567890abcdef12345678'
 const VALID_0ZK = '0zk' + 'a'.repeat(40)
@@ -25,7 +70,14 @@ function renderModal(opts?: { open?: boolean; shielded?: bigint }) {
   const store = createStore()
   if (opts?.open) store.set(openModalAtom, 'payment')
   if (opts?.shielded !== undefined) store.set(shieldedUsdcAtom, opts.shielded)
+  // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
+  // scoping invariant). Seed a placeholder so the Confirm flow doesn't trip the guard.
+  store.set(activeRailgunWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
+  // staleAtom treats a quote with no fetch timestamp as stale (350e084), which would send
+  // Confirm down the real refresh()/fetchFees path — unreachable in jsdom. A fresh
+  // fetchedAt keeps the seeded FAKE_QUOTE inside the 4-minute freshness window.
+  store.set(feeQuoteFetchedAtAtom, Date.now())
   render(withTestQueryClient(
     <Provider store={store}>
       <SendModal />
@@ -49,18 +101,25 @@ describe('<SendModal>', () => {
   it('private tab: enters 0zk recipient, advances to review with "Private transfer" label', () => {
     renderModal({ open: true, shielded: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: VALID_0ZK } })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByText('Private transfer')).toBeInTheDocument()
   })
 
   it('external + xchain: shows the cross-chain tag in review', () => {
     renderModal({ open: true, shielded: 10_000_000n })
     fireEvent.click(screen.getByRole('tab', { name: /External wallet/ }))
-    fireEvent.change(screen.getByLabelText('To chain'), { target: { value: '31338' } })
+    // DepositAmountCard's chain dropdown is a button + listbox (no native <select>), so we
+    // open it and click the desired option instead of fireEvent.change.
+    fireEvent.click(screen.getByRole('button', { name: /Network|Anvil|Sepolia|Base|Arbitrum/i }))
+    // Anvil chain 31338 in local mode shows up as the second option ("Client A"). Use a
+    // partial match because the exact label depends on config.
+    const options = screen.getAllByRole('option')
+    const clientOption = options.find(o => o.textContent?.match(/Client|31338/i)) ?? options[1]
+    fireEvent.click(clientOption!)
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: VALID_EVM } })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByText('cross-chain')).toBeInTheDocument()
   })
 
@@ -74,8 +133,8 @@ describe('<SendModal>', () => {
   it('Confirm advances to the progress step', async () => {
     renderModal({ open: true, shielded: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: VALID_0ZK } })
-    fireEvent.change(screen.getByLabelText('How much USDC?'), { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     })

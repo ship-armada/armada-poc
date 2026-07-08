@@ -113,6 +113,26 @@ describe('useFees (React Query)', () => {
     expect(fetchFeesSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('exposes isUnavailable after repeated relayer failures and clears it on recovery (P1-28)', async () => {
+    fetchFeesSpy.mockRejectedValue(new Error('relayer down'))
+    const { results } = renderHarness()
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      // useFees forces retry:true with a 5s→15s→30s cold schedule; advance enough to rack up the
+      // ≥3 consecutive failures that flip isUnavailable.
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+      expect(results.at(-1)?.isUnavailable).toBe(true)
+
+      // Relayer recovers — the next successful fetch resets failureCount → isUnavailable clears.
+      fetchFeesSpy.mockResolvedValue(makeQuote(60_000))
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
+      expect(results.at(-1)?.isUnavailable).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // Visibility test isolates fake timers — RTL's waitFor uses real time, so we can't share fake
   // timers with the success-path tests above. This test mounts with tab hidden and verifies that
   // advancing time well past the refetch window produces no additional fetches.

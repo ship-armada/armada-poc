@@ -1,0 +1,6 @@
+# ZK circuit bundle (~62MB) — run `npm run prepare:artifacts` after clone
+public/artifacts/
+
+# Personal dev overrides (copy from .env.example)
+.env.development
+.env.local

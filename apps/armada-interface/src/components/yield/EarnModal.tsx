@@ -1,7 +1,7 @@
 // ABOUTME: EarnModal — vault deposit + withdrawal. Add Funds tab uses yield-deposit; Withdraw tab uses yield-withdraw.
 // ABOUTME: Matches either openModalAtom === 'yield-deposit' or === 'yield-withdraw'; the entry point picks the initial tab.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom, type ModalKind } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
@@ -11,24 +11,27 @@ import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { useYieldRate } from '@/hooks/useYieldRate'
+import { getNetworkConfig } from '@/config/network'
 import { formatUsdcAmount, parseUsdcInput } from '@/lib/format'
 import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { sharesToUsdc } from '@/lib/yield'
 import {
-  ActionFlowShell,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
-import { EarnInputStep, type EarnTab } from './EarnInputStep'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { EarnInputStepContent, EarnInputStepFooter, type EarnTab } from './EarnInputStep'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { EarnReviewStep } from './EarnReviewStep'
 import { EarnCompleteStep } from './EarnCompleteStep'
 
 type LocalStep = FlowStep
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 const EARN_KINDS: ReadonlyArray<ModalKind> = ['yield-deposit', 'yield-withdraw']
 
@@ -48,6 +51,9 @@ export function EarnModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<'yield-deposit' | 'yield-withdraw' | null>(null)
+  // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Source data
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -84,12 +90,26 @@ export function EarnModal() {
   //     fee comes from a SEPARATE unshield of user's pre-existing private USDC (see
   //     adapter.redeemAndShield + SDK CrossContractCalls broadcaster handling). Net private
   //     balance change is +(amount - fee); vault balance drops by `amount`-worth of shares.
+  const hubChainId = getNetworkConfig().hub.chainId
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    yieldKind,
+    amount,
+    hubChainId,
+    quote,
+  )
   const { recipientReceives, totalDeducted, inputMax: feeOnTopInputMax } = computeFeeBreakdown(
     yieldKind,
     amount,
     fee,
     max,
+    { protocolFee: displayFees.protocolFee },
   )
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    recipientReceives,
+    totalDeducted,
+    recipientLabel: tab === 'add' ? 'Vault receives' : "You'll receive into private balance",
+  }
   // For withdraw the fee doesn't come from the vault — it's debited from private USDC via a
   // separate unshield in the same proof. Reserving `fee` against the vault `max` would collapse
   // the typeable cap to 0 whenever `fee >= vault balance` (e.g. a $0.50 fee on a $0.40 vault
@@ -171,8 +191,13 @@ export function EarnModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
+      // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
+      let submittedId: string | null = null
       const activeQuote = quote && !isStale ? quote : await refresh()
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
@@ -190,7 +215,7 @@ export function EarnModal() {
       const broadcasterRailgunAddress = activeQuote.broadcasterRailgunAddress
       if (tab === 'add') {
         setSubmittedKind('yield-deposit')
-        await txDeposit.submit({
+        submittedId = await txDeposit.submit({
           amount,
           feeCacheId,
           broadcasterFeeAmount,
@@ -209,7 +234,7 @@ export function EarnModal() {
           effectiveRate !== null && effectiveRate.rate > 0n
             ? (amount * 1_000_000_000_000_000_000n) / effectiveRate.rate
             : 0n
-        await txWithdraw.submit({
+        submittedId = await txWithdraw.submit({
           amount,
           feeCacheId,
           shares,
@@ -218,56 +243,75 @@ export function EarnModal() {
           useWalletOverride: effectiveUseWalletOverride,
         })
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
   if (!isOpen) return null
 
   return (
-    <ActionFlowShell
+    <DepositOverlayShell
       open
       onClose={close}
-      title="Earn"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Earn"
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
-        <EarnInputStep
-          tab={tab}
-          onTabChange={t => {
-            setTab(t)
-            setAmountStr('') // amount caps differ per tab
-          }}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          rate={yieldRate}
-          fee={fee}
-          netAmount={displayNetAmount}
-          netLabel={displayNetLabel}
-          continueBlockedReason={withdrawFeeBlockedReason}
-          isFeeRefreshing={isStale}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <EarnInputStepContent
+            tab={tab}
+            onTabChange={t => {
+              setTab(t)
+              setAmountStr('') // amount caps differ per tab
+            }}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            max={max}
+            maxInput={inputMax}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            gasChainId={hubChainId}
+            // Add tab → relayer-mediated (gasless). Withdraw tab → force-routed through wallet
+            // because `redeemAndShield`'s multi-Transaction shape doesn't fit the broadcaster
+            // path today (tracked at ship-armada/armada-poc#312). `effectiveUseWalletOverride`
+            // already encodes this; the input step shows the gas notice when it's true.
+            gaslessMode={!effectiveUseWalletOverride}
+            rate={yieldRate}
+            continueBlockedReason={withdrawFeeBlockedReason}
+          />
+          <EarnInputStepFooter
+            amountStr={amountStr}
+            maxInput={inputMax}
+            continueBlockedReason={withdrawFeeBlockedReason}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <EarnReviewStep
           tab={tab}
           amount={amount}
           rate={yieldRate}
-          fee={fee}
+          // Inclusive Fee total — broadcaster + protocol. No CCTP on yield kinds.
+          fee={fee + displayFees.protocolFee}
           netAmount={displayNetAmount}
           netLabel={displayNetLabel}
           submitBlockedReason={submitBlockedReason}
           onBack={() => setStep('input')}
+          isSubmitting={isSubmitting}
           onConfirm={handleSubmit}
         />
       )}
@@ -291,9 +335,26 @@ export function EarnModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
-          onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
+          onRetry={
+            errorAtStep === 'review'
+              ? () => {
+                  setSubmitError(null)
+                  setErrorAtStep(undefined)
+                  setStep('review')
+                }
+              : () => {
+                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                  // the user on the error step with the honest error + explorer link, not flip to a
+                  // stuck spinner — that was the P0-4 no-op bug.
+                  setErrorAtStep(undefined)
+                  void activeTx?.retry()?.then((accepted) => {
+                    if (accepted) setStep('progress')
+                  })
+                }
+          }
         />
       )}
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

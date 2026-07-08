@@ -4,27 +4,55 @@
 .root {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-3);
+  align-items: center;
+  gap: var(--primitives-spacing-4);
+  text-align: center;
 }
 
 .headline {
-  font-weight: var(--primitives-fontWeight-semibold);
-  color: var(--semantic-color-text-primary);
+  margin: 0;
+  width: 100%;
 }
 
 .body {
   color: var(--semantic-color-text-muted);
+  max-width: 46ch;
   margin: 0;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-1);
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  align-self: stretch;
+  text-align: left;
+}
+
+.body + .field {
+  margin-top: calc(var(--primitives-spacing-8) - var(--primitives-spacing-4));
+}
+
+.field + .field {
+  margin-top: calc(var(--primitives-spacing-5) - var(--primitives-spacing-4));
+}
+
+.labelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
 }
 
 .label {
-  color: var(--semantic-color-text-muted);
+  color: var(--semantic-color-text-secondary);
+}
+
+.labelHint {
+  color: var(--semantic-color-text-secondary);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  white-space: nowrap;
 }
 
 .input {
@@ -43,9 +71,25 @@
 
 .error {
   color: var(--semantic-color-status-error);
+  margin: 0;
+  width: 100%;
+  text-align: center;
+}
+
+.success {
+  color: var(--semantic-color-status-success);
+  margin: 0;
+  width: 100%;
+  text-align: center;
 }
 
 .footer {
   align-self: stretch;
-  margin: var(--primitives-spacing-6) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+  margin-top: var(--primitives-spacing-8);
+}
+
+@media (max-width: 767px) {
+  .footer {
+    margin-top: var(--primitives-spacing-5);
+  }
 }

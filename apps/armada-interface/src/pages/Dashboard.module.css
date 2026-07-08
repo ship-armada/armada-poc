@@ -4,14 +4,63 @@
 .page {
   width: 100%;
   max-width: 1100px;
-  /* AppLayout's <main> uses justify-content: center, which would otherwise center
-     the page vertically. margin-bottom: auto pushes us to the top while leaving
-     the horizontal centering (margin: 0 auto) intact. */
+  /* AppLayout's <main> top-aligns its content (justify-start), so this just needs horizontal
+     auto-centering. The trailing `auto` (margin-bottom) is a harmless holdover from when <main>
+     centered vertically and each page opted out to the top. */
   margin: 0 auto auto;
-  padding: var(--primitives-spacing-6);
+  /* Vertical padding kept full-size; horizontal trimmed so the hero + action row breathe
+     closer to the viewport edges. */
+  padding: var(--primitives-spacing-6) var(--primitives-spacing-3);
   display: flex;
   flex-direction: column;
   gap: var(--primitives-spacing-5);
+  /* `isolation: isolate` creates a new stacking context — the backdrop's z-index: -1 stays
+     contained INSIDE this context, painting behind .page's other children but above body bg.
+     Without it, position: fixed on the backdrop would create its own stacking context that
+     paints over static-positioned card siblings. */
+  position: relative;
+  isolation: isolate;
+}
+
+/* Decorative gradient fixed to the viewport behind the dashboard chrome. Sits below z-index 1
+   (the header is z-40, modals are z-100+). Soft purple at the top, blush pink in the middle,
+   fades to transparent before reaching the activity card so the lower half of the page reads
+   as the normal dark theme. */
+.backdrop {
+  position: fixed;
+  inset: 0 0 auto 0;
+  /* Reaches ~halfway down the BalanceHero card on typical desktop heights.
+     Tuned in conjunction with the AppLayout header offset (~112px) + BalanceHero
+     min-height (340px). */
+  height: 280px;
+  z-index: -1;
+  pointer-events: none;
+  /* Linear (vertical) gradient — fills the top 60vh edge-to-edge, transitioning from saturated
+     purple (#C98AE9, designer spec) to warm peach (#EFC4A6, designer spec). The transition to
+     the dark page bg happens at the .backdrop's bottom edge: the element ends, body bg shows
+     through immediately — gives a hard color → black seam instead of a soft fade. */
+  background:
+    linear-gradient(
+      180deg,
+      rgb(201, 138, 233) 0%,
+      rgb(239, 196, 166) 100%
+    );
+}
+
+/* Top row — BalanceHero left at fixed-ish width, 3-up ActionGrid filling the rest. The hero
+   keeps a minimum width of 240px and a maximum of 280px so the action cards have room to
+   breathe; under 900px the row collapses to a single column. */
+.heroRow {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) 1fr;
+  gap: var(--primitives-spacing-4);
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .heroRow {
+    grid-template-columns: 1fr;
+  }
 }
 
 .split {

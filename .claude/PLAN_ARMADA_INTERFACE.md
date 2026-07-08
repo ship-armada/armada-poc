@@ -72,7 +72,7 @@ apps/armada-interface/
     │   │   └── sync.ts               shielded balance sync hooks
     │   └── tx/                       CLAUDE.md (tx lifecycle modeling — see §7)
     │       ├── types.ts              TxRecord, TxKind, TxStage discriminated unions
-    │       ├── lifecycles.ts         per-kind stage definitions + retry/terminal rules
+    │       ├── lifecycles.ts         per-kind stage definitions + terminal/retryable-stage rules
     │       ├── reducer.ts            pure state transitions
     │       ├── storage.ts            IndexedDB persistence + hydration
     │       └── poller.ts             abortable, jittered, backoff-aware
@@ -138,13 +138,14 @@ This is the most important section. The committer's `useTransactionFlow` is sing
 
 ```ts
 type TxKind =
-  | 'shield'              // EVM USDC → shielded USDC (hub)
-  | 'unshield-local'      // shielded USDC → EVM USDC (hub)
-  | 'unshield-xchain'     // shielded USDC → EVM USDC (client chain, via CCTP)
-  | 'transfer-shielded'   // shielded → shielded
-  | 'yield-deposit'       // shielded USDC → shielded yield shares
-  | 'yield-withdraw'      // shielded yield shares → shielded USDC
-  | 'payment-xchain'      // shielded → EVM (client chain, via CCTP)
+  | 'shield'                      // EVM USDC → shielded USDC (hub)
+  | 'shield-xchain'               // EVM USDC on a client chain → shielded USDC (via CCTP to hub)
+  | 'unshield-local'              // shielded USDC → EVM USDC (hub)
+  | 'unshield-xchain'             // shielded USDC → EVM USDC (client chain, via CCTP)
+  | 'transfer-shielded'           // shielded → shielded (outgoing)
+  | 'transfer-shielded-received'  // incoming shielded transfer (synthesized from chain history)
+  | 'yield-deposit'               // shielded USDC → shielded yield shares
+  | 'yield-withdraw'              // shielded yield shares → shielded USDC
 
 // Reviewer rec #1 — execution state is separate from protocol stage to avoid
 // semantic overlap (e.g. `stage = iris-attestation-pending` + `status = submitted`
@@ -180,7 +181,7 @@ type TxRecord<K extends TxKind = TxKind> = {
 }
 ```
 
-Each `TxKind` declares its **stage sequence + retry policy + duration cap** in `lib/tx/lifecycles.ts`. Per-kind expiry (reviewer #7) replaces the original global 30 min cap. Example (cross-chain unshield):
+Each `TxKind` declares its **stage sequence + retryable stages + duration cap** in `lib/tx/lifecycles.ts`. Per-kind expiry (reviewer #7) replaces the original global 30 min cap. Retry is MANUAL only — there is deliberately no automatic-retry policy (a buggy auto-resubmit could double-submit a shielded tx and lose funds); `retryableStages` just gates the user-driven "Try Again". Example (cross-chain unshield):
 
 ```ts
 const unshieldXchain: TxLifecycle = {
@@ -194,7 +195,6 @@ const unshieldXchain: TxLifecycle = {
   retryableStages: ['submit-relayer', 'iris-attestation-pending'],
   estDuration: { p50: 30_000, p90: 120_000 },
   maxDurationMs: 60 * 60_000,                                    // xchain: 60 min cap
-  retry: { maxAttempts: 5, backoffMs: 10_000 },
 }
 ```
 

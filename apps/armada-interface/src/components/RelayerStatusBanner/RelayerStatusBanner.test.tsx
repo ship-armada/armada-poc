@@ -30,7 +30,7 @@ describe('<RelayerStatusBanner>', () => {
     // WHY: the banner is a degradation signal — surfacing it when everything is fine would train
     // users to ignore it. A regression that always rendered (e.g., status undefined defaulted to
     // "show") would burn that signal out.
-    mockUseRelayerHealth.mockReturnValue({ isDegraded: false, data: { status: 'healthy' } })
+    mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: false, data: { status: 'healthy' } })
     const store = createStore()
     const { container } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
     expect(container.firstChild).toBeNull()
@@ -39,7 +39,7 @@ describe('<RelayerStatusBanner>', () => {
   it('renders nothing when the user already has submitFromWallet enabled', () => {
     // WHY: if the user has opted into the wallet path globally, the banner is noise — the
     // handler will take the wallet path regardless of relayer health.
-    mockUseRelayerHealth.mockReturnValue({ isDegraded: true, data: { status: 'unhealthy' } })
+    mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: true, data: { status: 'unhealthy' } })
     const store = createStore()
     store.set(preferencesAtom, { ...DEFAULT_PREFERENCES, submitFromWallet: true })
     const { container } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
@@ -50,7 +50,7 @@ describe('<RelayerStatusBanner>', () => {
     // WHY: the status word must reach the user — "stale" vs "unhealthy" tell them whether to
     // hand-fall-back now or wait. The role="status" container holds the message; assert against
     // its textContent so the surrounding <strong> emphasis tag doesn't trip the matcher.
-    mockUseRelayerHealth.mockReturnValue({ isDegraded: true, data: { status: 'stale' } })
+    mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: true, data: { status: 'stale' } })
     const store = createStore()
     const { getByRole } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
     const statusRegion = getByRole('status')
@@ -62,16 +62,26 @@ describe('<RelayerStatusBanner>', () => {
   it('falls back to "unreachable" when the hook returned no data', () => {
     // WHY: a network-level failure has no `data.status` to read — the banner must still render
     // something meaningful. "unreachable" is the right semantic distinction from "stale".
-    mockUseRelayerHealth.mockReturnValue({ isDegraded: true, data: undefined })
+    mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: true, data: undefined })
     const store = createStore()
     const { getByRole } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
     expect(getByRole('status').textContent).toMatch(/unreachable/i)
   })
 
+  it('renders a distinct "no relayer configured" banner with a wallet-submit CTA (P0-10)', () => {
+    // WHY: a sepolia build without VITE_RELAYER_URL must say so explicitly (not masquerade as a
+    // transient "degraded") and steer the user to the wallet path, which works without a relayer.
+    mockUseRelayerHealth.mockReturnValue({ isConfigured: false, isDegraded: false, data: undefined })
+    const store = createStore()
+    const { getByRole } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
+    expect(getByRole('status').textContent).toMatch(/no relayer is configured/i)
+    expect(getByRole('button', { name: /Submit from my wallet/i })).toBeInTheDocument()
+  })
+
   it('flips submitFromWallet to true when the user clicks the action', () => {
     // WHY: this is the load-bearing user gesture for the override path. A regression that wrote
     // to the wrong field would silently keep the relayer path active despite the click.
-    mockUseRelayerHealth.mockReturnValue({ isDegraded: true, data: { status: 'unhealthy' } })
+    mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: true, data: { status: 'unhealthy' } })
     const store = createStore()
     render(wrapWith(store, <RelayerStatusBanner isOpen />))
     fireEvent.click(screen.getByRole('button', { name: /Submit from my wallet instead/i }))

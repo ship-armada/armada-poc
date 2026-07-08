@@ -6,12 +6,14 @@
  *   --primitives-*  raw values (color scales, font sizes, spacing, radii, etc.)
  *   --semantic-*    contextual aliases (surface bg, text color, button-md height, etc.)
  *
+ * Typography composites (ui/heading-sm, etc.) are generated — see typography.css via
+ * `npm run tokens:typography --workspace=@armada/ui`. Primitives/semantic colors here
+ * are still hand-maintained; keep armada-tokens.json in sync when editing.
+ *
  * Theme scoping:
  *   Tokens are scoped to `[data-theme="dark"]` and `[data-theme="light"]` selectors
  *   instead of `:root`. The consuming app MUST set a `data-theme` attribute on
- *   <html> (or any ancestor of the component tree) for tokens to resolve. The
- *   light block is currently a value-identical stub of the dark block — light
- *   theme values are TBD from the designer.
+ *   <html> (or any ancestor of the component tree) for tokens to resolve.
  *
  * Forward direction: a build script will regenerate this file from armada-tokens.json
  * once recovered or rewritten. Until then, this CSS is the live source of truth — edit
@@ -79,6 +81,7 @@
   --primitives-fontWeight-semibold: 600;
   --primitives-fontFamily-display: Charis SIL;
   --primitives-fontFamily-ui: Geist;
+  /* Optional — use for hashes / code when explicitly needed; default UI type is Geist. */
   --primitives-fontFamily-mono: Geist Mono;
   --primitives-lineHeight-none: 100%;
   --primitives-lineHeight-tight: 110%;
@@ -104,6 +107,7 @@
   --primitives-spacing-16: 64px;
   --primitives-spacing-20: 80px;
   --primitives-spacing-24: 96px;
+  --primitives-borderRadius-xs: 2;
   --primitives-borderRadius-sm: 4;
   --primitives-borderRadius-md: 6;
   --primitives-borderRadius-lg: 8;
@@ -143,6 +147,8 @@
   --semantic-borderRadius-button: var(--primitives-borderRadius-full);
   --semantic-borderRadius-input: var(--primitives-borderRadius-md);
   --semantic-borderRadius-badge: var(--primitives-borderRadius-sm);
+  --semantic-borderRadius-item: 8px;
+  --semantic-borderRadius-modal: 20px;
   --semantic-component-button-primary-bg: var(--primitives-color-purple-500);
   --semantic-component-button-primary-bg-hover: var(--primitives-color-purple-400);
   --semantic-component-button-primary-bg-active: var(--primitives-color-purple-600);
@@ -489,3 +495,5 @@
   --semantic-component-tag-dot-neutral: #9990a9;
   --semantic-component-tag-dot-lavender: var(--semantic-color-brand-lavender);
 }
+
+@import "./typography.css";

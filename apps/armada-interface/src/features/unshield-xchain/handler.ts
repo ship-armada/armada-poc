@@ -46,7 +46,8 @@ type EthersScanLog = {
   data: string
 }
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
-import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { scanCctpDeliveryWindow } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -197,7 +198,7 @@ async function runBuildProof(
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  const progress = createProofProgressWriter(record)
+  const progress = createProofProgressWriter(record, ctx.signal)
   await generateXchainUnshieldProof({
     walletId,
     encryptionKey,
@@ -217,71 +218,85 @@ async function runSubmitAndBurn(
   record: TxRecord<'unshield-xchain'>,
   ctx: Parameters<typeof unshieldXchainHandler.run>[1],
 ): Promise<void> {
-  const walletId = kmGetWalletId()
   const deployments = await loadDeployments()
-  const tokenAddress = deployments.hub.cctp.usdc
   const privacyPoolAddress = deployments.hub.contracts.privacyPool
   const hubChainId = getNetworkConfig().hub.chainId
+  const existingHash = record.artifacts.sourceTxHash
 
-  // Map destination chain id → CCTP domain. Both come from the network config.
-  const destChain = getNetworkConfig().clients.find(c => c.chainId === record.meta.toChainId)
-  if (!destChain) {
-    throw new Error(`Unknown destination chain ${record.meta.toChainId}`)
+  // Build the hub-burn calldata only when we still need to broadcast. On re-entry (Retry /
+  // resume-on-reload) the hash is already persisted; rebuilding it would re-run the SDK proof
+  // (whose in-memory cache doesn't survive a reload) and serve no purpose. (P0-1)
+  let calldata: `0x${string}` | undefined
+  if (!existingHash) {
+    const walletId = kmGetWalletId()
+    const tokenAddress = deployments.hub.cctp.usdc
+
+    // Map destination chain id → CCTP domain. Both come from the network config.
+    const destChain = getNetworkConfig().clients.find(c => c.chainId === record.meta.toChainId)
+    if (!destChain) {
+      throw new Error(`Unknown destination chain ${record.meta.toChainId}`)
+    }
+    const destinationDomain = destChain.domain
+    const destClientDeployment = deployments.clients.find(c => c.chainId === record.meta.toChainId)
+    if (!destClientDeployment) {
+      throw new Error(`No deployment for destination chain ${record.meta.toChainId}`)
+    }
+    const destHookRouter = destClientDeployment.contracts.hookRouter
+
+    // Build the Transaction struct (decoded from the SDK's populated transact() calldata). The
+    // broadcaster fee must be passed here EXACTLY as it was passed to generateXchainUnshieldProof —
+    // the SDK's in-memory proof cache is keyed by it, and a mismatch throws "proof not found".
+    const txStruct = await buildXchainUnshieldTransactionStruct({
+      walletId,
+      tokenAddress,
+      privacyPoolAddress,
+      amount: record.meta.amount,
+      broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+
+    // destinationCaller: bytes32 form of the destination hook router; restricts who can call
+    // receiveMessage on the destination MessageTransmitter (the router atomically delivers).
+    const destinationCaller = destHookRouter && destHookRouter !== ethers.ZeroAddress
+      ? pad(destHookRouter as `0x${string}`, { size: 32 })
+      : `0x${'00'.repeat(32)}` as `0x${string}`
+
+    // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
+    // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
+    // Fee is deducted from the amount minted on the destination — recipient receives
+    // (amount − feeExecuted). The modal's Review step shows the realistic fee (without the bound
+    // multiplier) so the user sees what they will actually pay, not the contract bound.
+    const maxFee = cctpMaxFeeForKind('unshield-xchain', record.meta.amount)
+
+    calldata = encodeAtomicCrossChainUnshield(
+      txStruct,
+      destinationDomain,
+      record.meta.recipient as `0x${string}`,
+      destinationCaller,
+      maxFee,
+    )
   }
-  const destinationDomain = destChain.domain
-  const destClientDeployment = deployments.clients.find(c => c.chainId === record.meta.toChainId)
-  if (!destClientDeployment) {
-    throw new Error(`No deployment for destination chain ${record.meta.toChainId}`)
-  }
-  const destHookRouter = destClientDeployment.contracts.hookRouter
-
-  // Build the Transaction struct (decoded from the SDK's populated transact() calldata). The
-  // broadcaster fee must be passed here EXACTLY as it was passed to generateXchainUnshieldProof —
-  // the SDK's in-memory proof cache is keyed by it, and a mismatch throws "proof not found".
-  const txStruct = await buildXchainUnshieldTransactionStruct({
-    walletId,
-    tokenAddress,
-    privacyPoolAddress,
-    amount: record.meta.amount,
-    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
-  })
-  if (ctx.signal.aborted) throw new Error('cancelled')
-
-  // destinationCaller: bytes32 form of the destination hook router; restricts who can call
-  // receiveMessage on the destination MessageTransmitter (the router atomically delivers).
-  const destinationCaller = destHookRouter && destHookRouter !== ethers.ZeroAddress
-    ? pad(destHookRouter as `0x${string}`, { size: 32 })
-    : `0x${'00'.repeat(32)}` as `0x${string}`
-
-  // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
-  // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
-  // Fee is deducted from the amount minted on the destination — recipient receives
-  // (amount − feeExecuted). The modal's Review step shows the realistic fee (without the bound
-  // multiplier) so the user sees what they will actually pay, not the contract bound.
-  const maxFee = cctpMaxFeeForKind('unshield-xchain', record.meta.amount)
-
-  const calldata = encodeAtomicCrossChainUnshield(
-    txStruct,
-    destinationDomain,
-    record.meta.recipient as `0x${string}`,
-    destinationCaller,
-    maxFee,
-  )
 
   // A6 wallet-override path — submit the wrapper calldata via the user's EVM wallet. The
   // CCTP-message extraction + destination polling are identical to the relayer path; the only
   // difference is the source of the hub-side tx hash.
   if (record.meta.useWalletOverride) {
-    await ensureChain(hubChainId)
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    const userHash = await sendTransaction(wagmiConfig, {
-      to: privacyPoolAddress as `0x${string}`,
-      data: calldata,
-      value: 0n,
-    })
-    const broadcastRecord = patchArtifacts(record, { sourceTxHash: userHash })
-    await ctx.upsert(broadcastRecord)
-    if (ctx.signal.aborted) throw new Error('cancelled')
+    // Idempotency guard (P0-1): never re-broadcast a hub burn we already sent. On re-entry skip
+    // to the receipt wait + CCTP extraction for the known hash.
+    let userHash = existingHash
+    let broadcastRecord = record
+    if (!userHash) {
+      await ensureChain(hubChainId)
+      if (ctx.signal.aborted) throw new Error('cancelled')
+      userHash = await sendTransaction(wagmiConfig, {
+        to: privacyPoolAddress as `0x${string}`,
+        data: calldata!,
+        value: 0n,
+      })
+      const broadcast = await recordBroadcastHash(record, userHash, ctx)
+      if (broadcast.dismissed) return
+      broadcastRecord = broadcast.record
+    }
     await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal })
     await extractCctpRefAndAdvance({
       ctx,
@@ -304,39 +319,47 @@ async function runSubmitAndBurn(
   //   FEE_EXPIRED            — cacheId expired between modal validation and relayer submit
   //   GAS_ESTIMATION_FAILED  — would revert on-chain
   //   SUBMISSION_FAILED      — relayer wallet couldn't broadcast
-  let submitResponse
-  try {
-    submitResponse = await submitRelay(
-      {
-        chainId: hubChainId,
-        to: privacyPoolAddress,
-        data: calldata,
-        feesCacheId: record.meta.feeCacheId,
-      },
-      ctx.signal,
-    )
-  } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+  // Idempotency guard (P0-1): once the relayer accepted the POST we persist the returned txHash.
+  // NEVER re-POST — a duplicate gets a 409 and surfaces a false failure. On re-entry skip to the
+  // status poll for the known hash.
+  let txHash = existingHash
+  let broadcastRecord = record
+  if (!txHash) {
+    let submitResponse
+    try {
+      submitResponse = await submitRelay(
+        {
+          chainId: hubChainId,
+          to: privacyPoolAddress,
+          data: calldata!,
+          feesCacheId: record.meta.feeCacheId,
+        },
+        ctx.signal,
+      )
+    } catch (err) {
+      if (err instanceof RelayerError) {
+        track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+      }
+      throw err
     }
-    throw err
+
+    track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+    // Persist sourceTxHash immediately so cancel/timeout/revert can carry the hash forward, and so
+    // the guard above sees it on re-entry. The patched record MUST be threaded into the final
+    // advance below — `record` is now stale (lower updatedSeq than the atom/IDB) so an advance from
+    // it would produce an equal-seq write that OCC silently drops, stranding the executor.
+    txHash = submitResponse.txHash as `0x${string}`
+    const broadcast = await recordBroadcastHash(record, txHash, ctx)
+    if (broadcast.dismissed) return
+    broadcastRecord = broadcast.record
   }
-
-  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
-
-  // Persist sourceTxHash immediately so cancel/timeout/revert can carry the hash forward. The
-  // patched record MUST be threaded into the final advance below — `record` is now stale (lower
-  // updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq write that
-  // OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Poll the relayer's /status until terminal. Same shape as unshield-local — the generic poll
   // loop handles jittered backoff + abort propagation.
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
-    { signal: ctx.signal },
+    (signal) => pollRelayStatusOnce(txHash, signal, hubChainId),
+    { signal: ctx.signal, timeoutMs: pollBudgetMs(record) },
   )
 
   if (pollResult.status === 'aborted') throw new Error('cancelled')
@@ -345,7 +368,7 @@ async function runSubmitAndBurn(
       code: 'POLL_TIMEOUT',
       message:
         'The relayer hasn\'t reported a final status for the hub burn. The transaction may still complete on chain — check the explorer.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     const failed = markFailed(broadcastRecord, error)
     await ctx.upsert(failed)
@@ -360,7 +383,7 @@ async function runSubmitAndBurn(
     const error: TxError = {
       code: 'TX_REVERTED',
       message: final.error ?? 'Relayer-broadcast hub burn reverted on chain.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     const failed = markFailed(broadcastRecord, error)
     await ctx.upsert(failed)
@@ -371,7 +394,7 @@ async function runSubmitAndBurn(
   await extractCctpRefAndAdvance({
     ctx,
     record: broadcastRecord,
-    txHash: submitResponse.txHash as `0x${string}`,
+    txHash,
     hubChainId,
     messageTransmitter: deployments.hub.cctp.messageTransmitter as `0x${string}`,
     destChainId: record.meta.toChainId,
@@ -538,6 +561,11 @@ async function runWaitForDelivery(
       // Advance the cursor and persist so a crash + resume starts where we left off rather than
       // re-scanning everything back to burn-time head.
       scanFromBlock = outcome.nextScanFromBlock
+      // A cancel/dismiss may have fired during the async scan above. Skip the cursor persist so we
+      // don't resurrect a record abortAndMark has already moved to a terminal state — the terminal-
+      // write guard in upsertTxAtom would refuse it anyway, but skipping is clearer + avoids a
+      // pointless write. (P0-3 WS1.2b)
+      if (signal.aborted) return null
       cursor = patchArtifacts(cursor, { destFromBlock: scanFromBlock.toString() })
       await ctx.upsert(cursor)
       return null

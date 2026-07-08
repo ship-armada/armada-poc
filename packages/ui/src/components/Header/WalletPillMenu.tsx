@@ -1,7 +1,7 @@
 // ABOUTME: Connected-wallet pill with a dropdown menu (provider icon, full address, balance, copy + disconnect).
 // ABOUTME: Ported byte-identical from the armada-crowdfund mockup (Header/WalletPillMenu.tsx) — co-located as a Header sub-primitive.
 
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   ArrowRightOnRectangleIcon,
   ChevronDownIcon,
@@ -17,6 +17,7 @@ import {
   WalletWalletConnect,
 } from '@web3icons/react'
 import buttonStyles from '../Button/Button.module.css'
+import { ArmadaSymbol } from '../ArmadaSymbol/ArmadaSymbol'
 import { getAppliedTheme, setTheme, type Theme } from '../../utils/theme'
 import styles from './WalletPillMenu.module.css'
 
@@ -34,6 +35,28 @@ export interface WalletPillMenuProps {
    *  trigger and opens leftward, so it can't overflow the viewport when the pill
    *  sits at a screen edge (e.g. a header right slot with no trailing CTA). */
   align?: 'center' | 'right'
+  /**
+   * Extra class applied to the trigger button so consumers can override its background, border,
+   * or other Button-derived secondary-variant defaults without forking the component. Used by
+   * armada-interface to swap the default transparent pill for a solid black background.
+   */
+  triggerClassName?: string
+  /**
+   * Optional content rendered inside the dropdown card, below the copy/disconnect actions.
+   * Consumer-supplied. `armada-interface` uses this to surface a "Shielded identity" section
+   * (post V2 redesign: the EVM and shielded addresses are 1:1, so they share one pill).
+   * Crowdfund consumers omit the prop and render no extra section — back-compat.
+   *
+   * See packages/ui/src/components/CLAUDE.md "Approved deviations from byte-identical port".
+   */
+  extraSection?: ReactNode
+  /**
+   * Optional truncated shielded (0zk…) address to render as a second row beneath the EVM
+   * address on the pill trigger. When supplied, the provider icon is replaced with the
+   * `ArmadaSymbol` flotilla glyph. When undefined, the trigger renders the original
+   * single-row EVM-only layout — crowdfund consumers are unaffected.
+   */
+  shieldedAddress?: string
 }
 
 const PROVIDER_ICON_PX = 20
@@ -74,6 +97,9 @@ export function WalletPillMenu({
   usdcBalance = 0,
   onDisconnect,
   align = 'center',
+  triggerClassName,
+  extraSection,
+  shieldedAddress,
 }: WalletPillMenuProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -139,16 +165,42 @@ export function WalletPillMenu({
           buttonStyles.md,
           buttonStyles.noIcon,
           styles.trigger,
-        ].join(' ')}
+          shieldedAddress && styles.triggerTwoRow,
+          triggerClassName,
+        ].filter(Boolean).join(' ')}
         aria-expanded={open}
         aria-haspopup="menu"
         aria-controls={menuId}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span className={styles.triggerIcon}>
-          <WalletProviderIcon provider={walletProvider} size={16} />
-        </span>
-        <span className={styles.triggerLabel}>{displayAddress}</span>
+        {shieldedAddress ? (
+          // Two-row layout: each row pairs an identity-specific glyph with its address. The
+          // outer stack handles vertical layout; each `.triggerRow` is its own flex line with
+          // the glyph and label aligned to a shared baseline.
+          <span className={styles.triggerStack}>
+            <span className={styles.triggerRow}>
+              <span className={styles.triggerIcon}>
+                <WalletProviderIcon provider={walletProvider} size={14} />
+              </span>
+              <span className={styles.triggerLabel}>{displayAddress}</span>
+            </span>
+            <span className={styles.triggerRow}>
+              <span className={styles.triggerIcon}>
+                <ArmadaSymbol size={14} />
+              </span>
+              <span className={[styles.triggerLabel, styles.triggerShieldedLabel].join(' ')}>
+                {shieldedAddress}
+              </span>
+            </span>
+          </span>
+        ) : (
+          <>
+            <span className={styles.triggerIcon}>
+              <WalletProviderIcon provider={walletProvider} size={16} />
+            </span>
+            <span className={styles.triggerLabel}>{displayAddress}</span>
+          </>
+        )}
         <ChevronDownIcon
           className={[styles.chevron, open && styles.chevronOpen].filter(Boolean).join(' ')}
           aria-hidden
@@ -232,6 +284,8 @@ export function WalletPillMenu({
                 </button>
               )}
             </div>
+
+            {extraSection}
           </div>
         </div>
       )}

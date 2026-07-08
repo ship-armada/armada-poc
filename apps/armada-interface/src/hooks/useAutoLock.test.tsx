@@ -134,4 +134,71 @@ describe('useAutoLock', () => {
     })
     expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
   })
+
+  it('locks 5 minutes after the tab becomes hidden, before the idle timeout would fire', () => {
+    // Phase 5 hidden-grace: when the document hides, we lock faster than the idle timer
+    // (15-min default → 5-min hidden grace). The user briefly switching tabs is not punished
+    // (covered by the visible-cancels-grace test below), but a tab they walked away from gets
+    // locked sooner than a foreground idle tab.
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15 })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    // Hide the document → starts a 5-min hidden-grace timer.
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // 4 minutes hidden — not yet locked.
+    act(() => {
+      vi.advanceTimersByTime(4 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
+    // 1 more minute (total 5) — grace expires, lock fires.
+    act(() => {
+      vi.advanceTimersByTime(1 * 60_000 + 1)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
+  })
+
+  it('cancels the hidden grace when the tab becomes visible again', () => {
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15 })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // 4 minutes hidden, then visible again — grace cancelled.
+    act(() => {
+      vi.advanceTimersByTime(4 * 60_000)
+    })
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // Advance another 2 minutes (would have crossed the hidden grace if not cancelled).
+    act(() => {
+      vi.advanceTimersByTime(2 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
+  })
+
+  it('locks synchronously on beforeunload (best-effort zeroize before the page is torn down)', () => {
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15 })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    act(() => {
+      window.dispatchEvent(new Event('beforeunload'))
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
+  })
 })

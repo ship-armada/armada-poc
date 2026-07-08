@@ -24,6 +24,53 @@
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+.loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.loading:disabled {
+  opacity: 1;
+  cursor: wait;
+}
+
+.loading.primary:disabled {
+  background: var(--semantic-component-button-primary-bg);
+  color: var(--semantic-component-button-primary-text);
+}
+
+.loading.secondary:disabled {
+  color: var(--semantic-component-button-secondary-text);
+  border-color: var(--semantic-component-button-secondary-border);
+}
+
+.spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: buttonSpin 700ms linear infinite;
+}
+
+.md .spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.lg .spinner {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes buttonSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Sizes — Figma: fixed height, asymmetric horizontal padding, 4px gap */
 .sm {
   height: var(--semantic-component-button-primary-sm-height);
@@ -54,6 +101,13 @@
 .noIcon.lg {
   padding-right: var(--semantic-component-button-primary-lg-padding-x);
 }
+
+/* Leading icon — mirror the trailing-icon left-padding token so the icon doesn't sit too tight
+   against the button's leading edge. Not in the mockup; added as a sibling to `.icon` to support
+   armada-interface's "Connect Wallet" pill. */
+.leading.sm { padding-left: var(--semantic-component-button-primary-sm-padding-x-icon); }
+.leading.md { padding-left: var(--semantic-component-button-primary-md-padding-x-icon); }
+.leading.lg { padding-left: var(--semantic-component-button-primary-lg-padding-x-icon); }
 
 /* Primary */
 .primary { background: var(--semantic-component-button-primary-bg); color: var(--semantic-component-button-primary-text); }

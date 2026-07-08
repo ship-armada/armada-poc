@@ -1,42 +1,43 @@
-/* ABOUTME: WelcomeStep layout — centered icon, headline, body paragraph, edge-to-edge footer. */
-/* ABOUTME: Uses the brand purple icon chip pattern to echo the BalanceHero / ActionCard accent. */
+/* ABOUTME: WelcomeStep layout — centered display title, body, stacked hug-width CTAs. */
 
 .root {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--primitives-spacing-3);
+  gap: var(--primitives-spacing-4);
   text-align: center;
 }
 
-.icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(196, 145, 229, 0.12);
-  color: var(--semantic-color-brand-lavender);
-  margin-bottom: var(--primitives-spacing-2);
+.eyebrow {
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
 }
 
 .title {
-  font-family: "Charis SIL", serif;
-  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
-  line-height: var(--primitives-lineHeight-tight);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-primary);
-  margin: 0;
+  max-width: 20ch;
 }
 
 .body {
   color: var(--semantic-color-text-muted);
   max-width: 46ch;
   margin: 0;
+  line-height: var(--primitives-lineHeight-normal);
 }
 
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-6) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  margin-top: var(--primitives-spacing-8);
+}
+
+.actions :global(button) {
+  width: auto;
+}
+
+@media (max-width: 767px) {
+  .actions {
+    margin-top: var(--primitives-spacing-5);
+  }
 }

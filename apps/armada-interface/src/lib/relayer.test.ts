@@ -11,6 +11,7 @@ import {
   feeModelForKind,
   submitRelay,
   RelayerError,
+  _fetchWithTimeout,
   type FeeSchedule,
   type RelayRequest,
   type RelayResponse,
@@ -140,19 +141,24 @@ describe('userFeeForKind', () => {
     })
   })
 
-  it('returns CCTP fast-fee (2 bps of amount) for shield-xchain', () => {
-    // 2 bps of 100 USDC = 0.02 USDC = 20_000 raw
-    expect(userFeeForKind('shield-xchain', HUNDRED_USDC)).toBe(20_000n)
+  it('returns 0 for direct-submit shield-xchain — CCTP fast-fee moved to its own channel', () => {
+    // WHY: pre-fee-bundling, `userFeeForKind('shield-xchain', !gasless)` returned the CCTP fast-
+    // fee and the tooltip labeled it "Relayer fee" — misleading on the direct path where no
+    // broadcaster is involved. CCTP is now surfaced via `flowBreakdown.cctpFee` in the modal so
+    // the tooltip can show it as "CCTP fee" alongside Protocol fee. `userFeeForKind` here means
+    // strictly the broadcaster/relayer fee; 0 when no relayer participates.
+    expect(userFeeForKind('shield-xchain', HUNDRED_USDC)).toBe(0n)
   })
 
   describe('shield-xchain — Phase B4 gasless mode', () => {
-    it('returns CCTP fast-fee estimate when gasless flag is omitted (direct-submit default)', () => {
-      // WHY: any caller pre-dating B4 (or explicitly direct-submitting) must keep seeing the
-      // proportional CCTP fast-fee. A regression here would double-charge — the modal would
-      // surface a relayer-tier fee even on the direct path where no relayer is involved.
+    it('returns 0n on direct-submit even when a quote is present (CCTP is its own channel)', () => {
+      // WHY: regression guard for the broadcaster/CCTP split. Direct shield-xchain takes no
+      // broadcaster fee; the CCTP fast-fee lives in `flowBreakdown.cctpFee` and is added to the
+      // displayed total by ShieldModal. A regression here that re-routed CCTP through the
+      // broadcaster slot would re-introduce the misleading "Relayer fee" label on direct.
       const quote = quoteWith({ shieldXchain: '500000' })
-      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote)).toBe(20_000n)
-      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote, { gasless: false })).toBe(20_000n)
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote)).toBe(0n)
+      expect(userFeeForKind('shield-xchain', HUNDRED_USDC, quote, { gasless: false })).toBe(0n)
     })
 
     it('reads quote.fees.shieldXchain when gasless flag is set', () => {
@@ -188,22 +194,15 @@ describe('userFeeForKind', () => {
     expect(userFeeForKind('unshield-xchain', HUNDRED_USDC, null)).toBe(0n)
   })
 
-  it('shield-xchain rounds toward zero for small amounts (bigint integer division)', () => {
-    // 2 bps of 1 USDC = 200 raw → no rounding issue here
-    expect(userFeeForKind('shield-xchain', ONE_USDC)).toBe(200n)
-    // 2 bps of 4999 raw = 9999 / 10000 = 0 (rounds down)
-    expect(userFeeForKind('shield-xchain', 4_999n)).toBe(0n)
-    // 2 bps of 5000 raw = 10000 / 10000 = 1
-    expect(userFeeForKind('shield-xchain', 5_000n)).toBe(1n)
-  })
-
-  it('returns 0n when amount is 0n for shield-xchain (no rejection, just nothing to fee)', () => {
+  it('returns 0n on direct shield-xchain regardless of amount magnitude', () => {
+    // WHY: post-CCTP-channel-split, direct shield-xchain has no broadcaster fee — the user pays
+    // native gas themselves and CCTP fees flow through `flowBreakdown.cctpFee`. Independence
+    // from amount distinguishes "no broadcaster" from "a small broadcaster fee that rounded to
+    // zero," which would still scale with amount on bigger inputs. The amount-proportional
+    // CCTP fast-fee math + rounding edges are covered by the `cctpFastFeeForAmount` test below.
     expect(userFeeForKind('shield-xchain', 0n)).toBe(0n)
-  })
-
-  it('shield-xchain scales linearly with amount', () => {
-    const big = HUNDRED_USDC * 10_000n // 1M USDC
-    expect(userFeeForKind('shield-xchain', big)).toBe(big * 2n / 10_000n)
+    expect(userFeeForKind('shield-xchain', ONE_USDC)).toBe(0n)
+    expect(userFeeForKind('shield-xchain', HUNDRED_USDC * 10_000n)).toBe(0n)
   })
 })
 
@@ -358,6 +357,82 @@ describe('computeFeeBreakdown', () => {
     expect(r.totalDeducted).toBe(AMOUNT + FEE)
     expect(r.inputMax).toBe(MAX - FEE)
   })
+
+  it('protocolFee subtracts from recipient on fee-from-recipient (shield-xchain with shield-fee-module)', () => {
+    // WHY: cross-chain shield deducts BOTH the broadcaster/CCTP fee (already plumbed via `fee`)
+    // AND the on-chain shield fee module's take from the user's entered amount. recipientReceives
+    // must reflect both deductions so the user sees the true shielded value.
+    const protocolFee = 500_000n // 0.5 USDC (50 bps of 100)
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX, { protocolFee })
+    expect(r.recipientReceives).toBe(AMOUNT - FEE - protocolFee)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee subtracts from recipient on no-fee (direct hub shield with fee-module take)', () => {
+    // WHY: direct hub shield has no broadcaster fee (`feeModelForKind('shield')` returns 'no-fee')
+    // but the on-chain shield fee module still takes its bps. Without protocolFee, recipientReceives
+    // over-reports — UI says "100 shielded" when reality is "99.5 shielded". With it plumbed, both
+    // halves reconcile.
+    const protocolFee = 500_000n
+    const r = computeFeeBreakdown('shield', AMOUNT, 0n, MAX, { protocolFee })
+    expect(r.recipientReceives).toBe(AMOUNT - protocolFee)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee defaults to 0n when omitted (no behavior change for callers that do not opt in)', () => {
+    // WHY: backwards-compat — every existing call site (49 tests above) passes nothing for
+    // protocolFee. Default must keep the current numbers exact so this seam is purely additive.
+    // shield-xchain is the cleanest fee-from-recipient regression test.
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX)
+    expect(r.recipientReceives).toBe(AMOUNT - FEE)
+    expect(r.totalDeducted).toBe(AMOUNT)
+    expect(r.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee floors recipientReceives at 0n when total deduction exceeds amount', () => {
+    // WHY: defensive floor — a misconfigured fee module or stale quote could in principle make
+    // (broadcasterFee + protocolFee) > amount. Returning a negative bigint would crash the UI.
+    const protocolFee = AMOUNT
+    const r = computeFeeBreakdown('shield-xchain', AMOUNT, FEE, MAX, { protocolFee })
+    expect(r.recipientReceives).toBe(0n)
+  })
+
+  it('gasless shield: opts.gasless routes through fee-from-recipient so recipientReceives subtracts BOTH broadcaster + protocol fees', () => {
+    // WHY: regression test for the deposit fee tooltip bug. feeModelForKind('shield') returns
+    // 'no-fee' by default (direct hub shield), which only subtracts protocolFee and ignores
+    // the broadcaster fee. With the gasless permit path, the wrapper deducts both, so the
+    // helper must route through 'fee-from-recipient' to keep recipientReceives honest.
+    const protocolFee = 500_000n
+    const direct = computeFeeBreakdown('shield', AMOUNT, FEE, MAX, { protocolFee })
+    // Direct (no opt) still uses no-fee: ignores broadcaster fee.
+    expect(direct.recipientReceives).toBe(AMOUNT - protocolFee)
+
+    const gasless = computeFeeBreakdown('shield', AMOUNT, FEE, MAX, {
+      protocolFee,
+      gasless: true,
+    })
+    // Gasless routes through fee-from-recipient: deducts both.
+    expect(gasless.recipientReceives).toBe(AMOUNT - FEE - protocolFee)
+    expect(gasless.totalDeducted).toBe(AMOUNT)
+    expect(gasless.inputMax).toBe(MAX)
+  })
+
+  it('protocolFee combines with secondaryFee on unshield-xchain (CCTP fast-fee + protocol take)', () => {
+    // WHY: covers the cross-chain shape — both `secondaryFee` (CCTP) and `protocolFee` deduct
+    // from the recipient side. Future-proofing for unshield-xchain if it ever surfaces a
+    // protocol-side take; today protocolFee defaults to 0 for this kind so callers can opt in.
+    const cctpFee = 2_000n
+    const protocolFee = 100_000n
+    const r = computeFeeBreakdown('unshield-xchain', AMOUNT, FEE, MAX, {
+      secondaryFee: cctpFee,
+      protocolFee,
+    })
+    expect(r.recipientReceives).toBe(AMOUNT - cctpFee - protocolFee)
+    expect(r.totalDeducted).toBe(AMOUNT + FEE)
+    expect(r.inputMax).toBe(MAX - FEE)
+  })
 })
 
 describe('cctpMaxFeeForKind', () => {
@@ -467,7 +542,9 @@ describe('submitRelay', () => {
     expect(err.message).toBe('Relayer request failed (500)')
   })
 
-  it('forwards the caller-supplied AbortSignal to fetch (so cancelTx propagates)', async () => {
+  it('aborts the underlying fetch when the caller signal aborts (cancelTx propagates through the combined signal)', async () => {
+    // P0-11: fetchWithTimeout now passes a COMBINED signal (caller ∪ timeout) to fetch, so we no
+    // longer assert identity — instead verify the caller's abort still drives the fetch signal.
     const ctrl = new AbortController()
     fetchMock.mockResolvedValueOnce(
       new Response('{"txHash":"0x00","status":"pending"}', { status: 200 }),
@@ -476,6 +553,41 @@ describe('submitRelay', () => {
     await submitRelay(validRequest, ctrl.signal)
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(init.signal).toBe(ctrl.signal)
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(init.signal!.aborted).toBe(false)
+    ctrl.abort()
+    expect(init.signal!.aborted).toBe(true)
+  })
+
+  it('throws a transient RelayerError when the relayer does not respond within the timeout (P0-11)', async () => {
+    // fetch that only ever settles when its signal aborts — i.e. a hung relayer.
+    fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+    )
+
+    const err = await _fetchWithTimeout('http://relayer.test', { method: 'GET' }, undefined, 20)
+      .then(() => null, (e) => e)
+
+    expect(err).toBeInstanceOf(RelayerError)
+    expect(err.code).toBe('RELAYER_BUSY')
+    expect(err.httpStatus).toBe(0)
+  })
+
+  it('rethrows a caller-initiated abort untouched (not a RelayerError) so cancel stays cancel (P0-11)', async () => {
+    const ctrl = new AbortController()
+    fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+    )
+
+    const p = _fetchWithTimeout('http://relayer.test', { method: 'GET' }, ctrl.signal, 10_000)
+      .catch((e) => e)
+    ctrl.abort()
+    const err = await p
+
+    expect(err).not.toBeInstanceOf(RelayerError)
   })
 })

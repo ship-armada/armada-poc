@@ -1,15 +1,10 @@
 // ABOUTME: Onboarding step — verifies the user can re-import their backup file by decrypting it locally and matching its checksum to the live one.
 // ABOUTME: Pure dry-run: never touches keyManager, never calls SDK. Pass on success; surface decrypt failures inline.
 
-import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
-import { CheckCircle2 } from 'lucide-react'
+import { useEffect, useId, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Text } from '@armada/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
-import {
-  antiPhishChecksumBytes,
-  decryptBackup,
-  formatChecksumDisplay,
-  parseBackupBlob,
-} from '@/lib/crypto/kdf'
+import { normalizeBackupUnlockError, verifyBackupFileText } from '@/lib/crypto/kdf'
 import styles from './PassphraseStep.module.css'
 
 export interface ConfirmBackupStepProps {
@@ -27,45 +22,36 @@ export function ConfirmBackupStep({ expectedChecksum, onBack, onConfirmed }: Con
   const [error, setError] = useState<string | null>(null)
   const idBase = useId()
 
+  useEffect(() => {
+    if (!verified) return
+    const timer = window.setTimeout(() => onConfirmed(), 400)
+    return () => clearTimeout(timer)
+  }, [verified, onConfirmed])
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!file || !passphrase) return
     setError(null)
     setVerifying(true)
     setVerified(false)
-    let rootSecret: Uint8Array | null = null
     try {
       const text = await file.text()
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(text)
-      } catch {
-        throw new Error('Backup file is not valid JSON.')
-      }
-      const blob = parseBackupBlob(parsed)
-      const payload = decryptBackup(blob, passphrase)
-      rootSecret = payload.rootSecret
-      const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
-      if (checksum !== expectedChecksum) {
-        throw new Error(
-          `Backup checksum (${checksum}) does not match your live wallet (${expectedChecksum}). ` +
-            'Did you upload the right file?',
-        )
-      }
+      // Shared round-trip verifier (parse → decrypt → checksum match → zeroize). Same helper as
+      // Settings → Export recovery so the two verification paths can't drift.
+      await verifyBackupFileText(text, passphrase, expectedChecksum)
       setVerified(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed.')
+      setError(normalizeBackupUnlockError(err).message)
     } finally {
-      // Zero out the recovered root_secret — it's a local-only verification copy; the keyManager
-      // already holds the authoritative reference.
-      if (rootSecret) rootSecret.fill(0)
       setVerifying(false)
     }
   }
 
   return (
     <form className={styles.root} onSubmit={handleSubmit}>
-      <div className={styles.headline}>Confirm your backup</div>
+      <Text variant="display-lg" as="h2" className={styles.headline}>
+        Confirm your backup
+      </Text>
       <p className={styles.body}>
         Re-upload the backup file you just downloaded and enter the passphrase you set. This
         confirms you can restore your account — your account isn't activated until this succeeds.
@@ -107,22 +93,18 @@ export function ConfirmBackupStep({ expectedChecksum, onBack, onConfirmed }: Con
         <div role="alert" className={styles.error}>{error}</div>
       ) : null}
       {verified ? (
-        <div style={{ color: 'var(--semantic-color-status-success)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <CheckCircle2 size={16} aria-hidden="true" /> Backup verified — checksum matches.
-        </div>
+        <p className={styles.success}>Backup verified — checksum matches.</p>
       ) : null}
       <FlowFooter
         className={styles.footer}
-        primary={
-          verified
-            ? { label: 'Continue', type: 'button', onClick: onConfirmed }
-            : {
-                label: verifying ? 'Verifying…' : 'Verify backup',
-                type: 'submit',
-                disabled: !file || !passphrase || verifying,
-              }
-        }
-        secondary={{ label: 'Back', onClick: onBack, disabled: verifying }}
+        layout="stack"
+        primary={{
+          label: verifying ? 'Verifying…' : 'Verify backup',
+          type: 'submit',
+          disabled: !file || !passphrase || verifying || verified,
+          showIcon: false,
+        }}
+        secondary={{ label: 'Back', onClick: onBack, disabled: verifying, showIcon: false }}
       />
     </form>
   )

@@ -107,4 +107,4 @@ Classify severity (Critical / High / Medium / Low) based on:
 - [Threat Model — Yield](reports/threat-model-yield.md)
 - [Manual Security Review](reports/manual-review-security.md)
 - [Slither Report](reports/slither-report.txt)
-- [Audit Reports](audit-reports/)
+- [LLM-Generated Analysis Snapshot, Feb 2026](_legacy/llm-analysis-2026-02/) — AI-assisted review, not a professional audit; predates several contract subsystems

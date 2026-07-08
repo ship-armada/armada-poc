@@ -5,7 +5,7 @@ Monorepo containing the Armada crowdfund frontend, split into four npm workspace
 | Package | Name | Type | Port | Purpose |
 |---------|------|------|------|---------|
 | `packages/shared` | `@armada/crowdfund-shared` | Library | — | Data layer, event types, graph logic, shared view components |
-| `packages/observer` | `@armada/crowdfund-observer` | Vite app | 5173 | Read-only crowdfund visualization (tree + table + stats) |
+| `packages/observer` | `@armada/crowdfund-observer` | Vite app | 5173 | **DEPRECATED as standalone app** — read-only visualization; its view components live in shared and are still used by committer |
 | `packages/committer` | `@armada/crowdfund-committer` | Vite app | 5174 | Participant actions: commit USDC, invite, claim ARM/refunds |
 | `packages/admin` | `@armada/crowdfund-admin` | Vite app | 5175 | Launch team & security council operations |
 
@@ -23,7 +23,7 @@ The **shared** package is a TypeScript library (no Vite, no build step). It expo
 
 The three apps import from shared via `@armada/crowdfund-shared`. npm workspaces resolves this to the local package.
 
-**Observer** is both a standalone app and a component library. Its view components (StatsBar, TreeView, TableView) live in shared so the Committer can embed them. The Observer app wires these components into a standalone layout with its own data fetching.
+**Observer** is both a standalone app and a component library. Its view components (StatsBar, TreeView, TableView) live in shared so the Committer can embed them. The Observer app wires these components into a standalone layout with its own data fetching. The standalone app is **deprecated** (not part of the mainnet launch — only committer + admin ship); the components in shared remain active.
 
 **Committer** embeds the Observer's view components as a read-only left panel and adds a wallet-connected action panel on the right.
 

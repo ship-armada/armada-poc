@@ -1,5 +1,6 @@
 {
   "name": "@armada/crowdfund-observer",
+  "description": "DEPRECATED as a standalone app (not part of the mainnet launch). Its view components live in @armada/crowdfund-shared and remain in use by the committer.",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -14,6 +14,13 @@ import type { RelayRequest, RelayerHealth } from "../types";
 import type { PrivacyRelay } from "./privacy-relay";
 import type { FeeCalculator } from "./fee-calculator";
 import type { Counters } from "./counters";
+import type { IdempotencyStore } from "./idempotency-store";
+import type { CctpDeliveryStore } from "./cctp-delivery-store";
+import { armadaRelayerSettings } from "../config";
+import { RateLimiter, clientKey, type RateLimitedRequest } from "../lib/rate-limiter";
+
+/** Max accepted idempotency-key length — a ulid is 26 chars; cap well above that, reject abuse. */
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 
 // ============ HTTP API ============
 
@@ -28,7 +35,12 @@ export class HttpApi {
   private defaultChainId: number;
   private getHealth: () => RelayerHealth;
   private counters: Counters;
+  private idempotencyStore: IdempotencyStore;
+  private cctpDeliveryStore: CctpDeliveryStore;
   private server: ReturnType<express.Application["listen"]> | null = null;
+  /** Per-IP token buckets — stricter on the expensive write path than on reads. */
+  private relayLimiter: RateLimiter;
+  private getLimiter: RateLimiter;
 
   constructor(
     port: number,
@@ -37,6 +49,8 @@ export class HttpApi {
     defaultChainId: number,
     getHealth: () => RelayerHealth,
     counters: Counters,
+    idempotencyStore: IdempotencyStore,
+    cctpDeliveryStore: CctpDeliveryStore,
   ) {
     this.port = port;
     this.privacyRelay = privacyRelay;
@@ -44,19 +58,46 @@ export class HttpApi {
     this.defaultChainId = defaultChainId;
     this.getHealth = getHealth;
     this.counters = counters;
+    this.idempotencyStore = idempotencyStore;
+    this.cctpDeliveryStore = cctpDeliveryStore;
+
+    const { relayPerMin, getPerMin } = armadaRelayerSettings.rateLimit;
+    // capacity = one minute's budget (burst), refilling at that budget / 60 per second.
+    this.relayLimiter = new RateLimiter({ capacity: relayPerMin, refillPerSec: relayPerMin / 60 });
+    this.getLimiter = new RateLimiter({ capacity: getPerMin, refillPerSec: getPerMin / 60 });
 
     this.app = express();
     this.app.use(cors());
-    this.app.use(express.json());
+    // Explicit body limit (NOT the silent 100kb default) — see armadaRelayerSettings.maxRequestBodyBytes.
+    this.app.use(express.json({ limit: armadaRelayerSettings.maxRequestBodyBytes }));
 
     this.setupRoutes();
+  }
+
+  /**
+   * Route-level guard: consume a token for the caller's key and 429 when exhausted. Counted on
+   * /health so operators can see throttling. `trustProxy` (RELAYER_TRUST_PROXY) decides whether
+   * X-Forwarded-For is honoured.
+   */
+  private rateLimitGuard(
+    limiter: RateLimiter,
+  ): (req: express.Request, res: express.Response, next: express.NextFunction) => void {
+    return (req, res, next) => {
+      const key = clientKey(req as unknown as RateLimitedRequest, armadaRelayerSettings.rateLimit.trustProxy);
+      if (limiter.allow(key)) {
+        next();
+        return;
+      }
+      this.counters.inc("rateLimited");
+      res.status(429).json({ error: "Too many requests — slow down.", code: "RATE_LIMITED" });
+    };
   }
 
   private setupRoutes(): void {
     // GET /fees[?chainId=N] — Current fee schedule for the chain. Phase B2 made fees per-chain;
     // omitting the query param falls back to the hub so existing Phase A frontend callers (the
     // ones that pre-date the per-chain API) keep working without change.
-    this.app.get("/fees", async (req, res) => {
+    this.app.get("/fees", this.rateLimitGuard(this.getLimiter), async (req, res) => {
       try {
         const raw = req.query.chainId;
         let chainId = this.defaultChainId;
@@ -85,9 +126,9 @@ export class HttpApi {
     });
 
     // POST /relay — Submit a shielded transaction
-    this.app.post("/relay", async (req, res) => {
+    this.app.post("/relay", this.rateLimitGuard(this.relayLimiter), async (req, res) => {
       try {
-        const { chainId, to, data, feesCacheId } = req.body as RelayRequest;
+        const { chainId, to, data, feesCacheId, idempotencyKey } = req.body as RelayRequest;
 
         // Basic request validation
         if (!chainId || !to || !data || !feesCacheId) {
@@ -96,11 +137,35 @@ export class HttpApi {
           });
           return;
         }
+        // idempotencyKey is optional, but if present must be a sane non-empty string.
+        if (idempotencyKey !== undefined) {
+          if (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+            res.status(400).json({ error: "Invalid idempotencyKey", code: "INVALID_DATA" });
+            return;
+          }
+        }
 
         console.log(
           `[http-api] Relay request: chain=${chainId} to=${to.slice(0, 10)}... ` +
-            `data=${data.slice(0, 10)}... feesCacheId=${feesCacheId}`
+            `data=${data.slice(0, 10)}... feesCacheId=${feesCacheId}` +
+            (idempotencyKey ? ` idem=${idempotencyKey}` : "")
         );
+
+        // Idempotent path: a repeat (or concurrent) POST with the same key returns the original
+        // broadcast's hash WITHOUT re-broadcasting — durable across restarts. Requests without a
+        // key fall through to the legacy submit (calldata dedup in wallet-manager still applies).
+        if (idempotencyKey) {
+          const outcome = await this.idempotencyStore.submitOnce(idempotencyKey, async () => {
+            const r = await this.privacyRelay.handleRelayRequest({ chainId, to, data, feesCacheId });
+            return { txHash: r.txHash, chainId };
+          });
+          if (outcome.replayed) {
+            this.counters.inc("idempotentReplay");
+            console.log(`[http-api] Idempotent replay for ${idempotencyKey} → ${outcome.txHash}`);
+          }
+          res.json({ txHash: outcome.txHash, status: outcome.status });
+          return;
+        }
 
         const result = await this.privacyRelay.handleRelayRequest({
           chainId,
@@ -131,9 +196,11 @@ export class HttpApi {
     // GET /status/:txHash[?chainId=N] — Check transaction status. `chainId` is optional;
     // when omitted the relay fans out across every configured chain in parallel and returns
     // the first found receipt. Existing Phase A callers (pollRelayStatusOnce) don't pass it.
-    this.app.get("/status/:txHash", async (req, res) => {
+    this.app.get("/status/:txHash", this.rateLimitGuard(this.getLimiter), async (req, res) => {
       try {
-        const { txHash } = req.params;
+        // Single-value path param. The multi-handler overload widens req.params to allow arrays;
+        // this route always binds one txHash, so narrow it explicitly.
+        const { txHash } = req.params as { txHash: string };
 
         if (!txHash || !txHash.startsWith("0x") || txHash.length !== 66) {
           res.status(400).json({ error: "Invalid transaction hash" });
@@ -152,10 +219,46 @@ export class HttpApi {
         }
 
         const status = await this.privacyRelay.getTransactionStatus(txHash, chainId);
+        // Backfill the idempotency record's terminal status (best-effort, non-blocking) so a late
+        // repeat POST with the same key returns confirmed/failed rather than a stale "pending".
+        if (status.status === "confirmed" || status.status === "failed") {
+          void this.idempotencyStore.updateStatusByTxHash(txHash, status.status);
+        }
         res.json(status);
       } catch (e: any) {
         console.error("[http-api] Status check error:", e);
         res.status(500).json({ error: "Failed to check status" });
+      }
+    });
+
+    // GET /cctp-status/:messageHash — Cross-chain delivery status for a CCTP message, keyed by the
+    // SOURCE messageHash (keccak256(messageBytes)). The relayer performs the destination mint in
+    // both modes and records the outcome here; the frontend polls this as the PRIMARY delivery
+    // signal and falls back to its on-chain destination scan on a 404 / non-2xx (so shipping the
+    // frontend first is safe — every poll just 404s until this route exists).
+    this.app.get("/cctp-status/:messageHash", this.rateLimitGuard(this.getLimiter), (req, res) => {
+      try {
+        const { messageHash } = req.params as { messageHash: string };
+        if (!messageHash || !messageHash.startsWith("0x") || messageHash.length !== 66) {
+          res.status(400).json({ error: "Invalid messageHash" });
+          return;
+        }
+        const record = this.cctpDeliveryStore.get(messageHash);
+        if (!record) {
+          // Unknown hash → 404 (NOT 500): the frontend treats this as "fall back to the scan."
+          res.status(404).json({ status: "unknown" });
+          return;
+        }
+        res.json({
+          status: record.status,
+          destTxHash: record.destTxHash,
+          amount: record.amount,
+          feeExecuted: record.feeExecuted,
+          error: record.error,
+        });
+      } catch (e: any) {
+        console.error("[http-api] cctp-status error:", e);
+        res.status(500).json({ error: "Failed to look up delivery status" });
       }
     });
 
@@ -169,6 +272,7 @@ export class HttpApi {
           "GET /fees",
           "POST /relay",
           "GET /status/:txHash",
+          "GET /cctp-status/:messageHash",
           "GET /health",
         ],
       });
@@ -229,6 +333,8 @@ export class HttpApi {
         return 409; // Conflict
       case "RELAYER_BUSY":
         return 503; // Service Unavailable
+      case "RATE_LIMITED":
+        return 429; // Too Many Requests
       case "GAS_ESTIMATION_FAILED":
         return 422; // Unprocessable Entity
       case "SUBMISSION_FAILED":
@@ -256,13 +362,19 @@ export class HttpApi {
   }
 
   /**
-   * Stop the HTTP server
+   * Stop the HTTP server, awaiting until it has actually closed. Idle keep-alive connections are
+   * terminated first so close() doesn't block on them — previously stop() was fire-and-forget, so
+   * `shutdown()` could call process.exit before the listener released its port.
    */
-  stop(): void {
-    if (this.server) {
-      this.server.close();
-      this.server = null;
-      console.log("[http-api] Server stopped");
-    }
+  async stop(): Promise<void> {
+    const server = this.server;
+    if (!server) return;
+    this.server = null;
+    // Node 18.2+: drop idle keep-alive sockets so close() resolves promptly.
+    server.closeIdleConnections?.();
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+    console.log("[http-api] Server stopped");
   }
 }

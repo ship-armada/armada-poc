@@ -75,6 +75,12 @@ export class FeeCalculator {
   private provider: ethers.JsonRpcProvider;
   private chainId: number;
   private currentSchedule: FeeSchedule | null = null;
+  /**
+   * The immediately-prior schedule, kept so a quote issued just before a regeneration is still
+   * honoured (and verified against ITS OWN prices) for the variance-buffer window. Regeneration
+   * happens at most once per TTL, so one-deep history is sufficient.
+   */
+  private previousSchedule: FeeSchedule | null = null;
   private scheduleCounter = 0;
 
   private profitMarginBps: number;
@@ -163,9 +169,20 @@ export class FeeCalculator {
    */
   async generateFeeSchedule(): Promise<FeeSchedule> {
     // Single gas-price read per schedule — see calculateFeeForGas doc. getFeeData is the only
-    // RPC call in schedule generation.
+    // RPC call in schedule generation, and all seven tiers are priced off this one reading.
     const feeData = await this.provider.getFeeData();
-    const gasPrice = feeData.gasPrice || 1_000_000_000n; // Default 1 gwei
+    // Some EIP-1559-only RPCs return a null `gasPrice` (they only populate maxFeePerGas /
+    // maxPriorityFeePerGas). Fall back to maxFeePerGas before the 1-gwei floor so we don't silently
+    // under-quote on those chains; warn loudly if BOTH are missing (the 1-gwei default would
+    // materially under-price a real chain).
+    let gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
+    if (gasPrice === null) {
+      console.warn(
+        `[fee-calculator chain=${this.chainId}] getFeeData() returned neither gasPrice nor maxFeePerGas — ` +
+          `falling back to 1 gwei. Quotes on this chain may be under-priced; investigate the RPC.`,
+      );
+      gasPrice = 1_000_000_000n;
+    }
 
     const transferFee = this.calculateFeeForGas(GAS_ESTIMATES.transfer, gasPrice);
     const unshieldFee = this.calculateFeeForGas(GAS_ESTIMATES.unshield, gasPrice);
@@ -193,6 +210,10 @@ export class FeeCalculator {
     // the request's chainId, so this is defense-in-depth — humans grep-debugging cacheIds also
     // see which chain they belong to).
     const cacheId = `fee-${this.chainId}-${Date.now()}-${this.scheduleCounter}`;
+
+    // Demote the outgoing schedule to `previousSchedule` so an in-flight quote built against it is
+    // still resolvable (and verified against its own prices) within the variance buffer.
+    this.previousSchedule = this.currentSchedule;
 
     this.currentSchedule = {
       cacheId,
@@ -224,18 +245,34 @@ export class FeeCalculator {
   }
 
   /**
-   * Validate that a fee cache ID is still valid
+   * Resolve the schedule a quote's cacheId was issued from — current OR the one-deep previous —
+   * provided it is still within its own expiry + variance buffer. Returns null when the cacheId
+   * matches neither or has aged out.
    *
-   * @returns true if the cacheId matches the current schedule and hasn't expired
+   * This is what makes the variance buffer actually work: a quote issued just before a
+   * regeneration resolves to the PREVIOUS schedule and is verified against THAT schedule's prices,
+   * instead of being silently re-priced against freshly-regenerated (possibly higher) gas. The
+   * caller (PrivacyRelay) MUST use the returned schedule's fees, not a fresh getCurrentFees().
+   */
+  getScheduleByCacheId(cacheId: string): FeeSchedule | null {
+    const bufferMs = (this.feeTtlSeconds * 1000 * this.feeVarianceBufferBps) / 10000;
+    const now = Date.now();
+    for (const schedule of [this.currentSchedule, this.previousSchedule]) {
+      if (schedule && schedule.cacheId === cacheId && now < schedule.expiresAt + bufferMs) {
+        return schedule;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Validate that a fee cache ID is still valid (matches current or previous schedule, within the
+   * variance buffer). Thin wrapper over getScheduleByCacheId.
+   *
+   * @returns true if the cacheId resolves to a still-valid schedule.
    */
   validateFeesCacheId(cacheId: string): boolean {
-    if (!this.currentSchedule) return false;
-    if (this.currentSchedule.cacheId !== cacheId) return false;
-
-    // Allow some buffer beyond expiry for in-flight requests
-    const bufferMs =
-      (this.feeTtlSeconds * 1000 * this.feeVarianceBufferBps) / 10000;
-    return Date.now() < this.currentSchedule.expiresAt + bufferMs;
+    return this.getScheduleByCacheId(cacheId) !== null;
   }
 
   /**

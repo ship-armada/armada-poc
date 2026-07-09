@@ -21,7 +21,7 @@ import { JsonStateStore } from "./json-state-store";
  * previously-delivered message; the destination contract's "already processed" check is
  * the safety net.
  */
-const PENDING_SCHEMA_VERSION = 2 as const;
+const PENDING_SCHEMA_VERSION = 3 as const;
 
 /**
  * Persisted shape of a pending CCTP message. Mirrors the iris-relay `PendingMessage` interface
@@ -78,19 +78,25 @@ export interface PersistedPendingMessage {
   submittedAt?: number;
 }
 
+/**
+ * A delivered-message dedup record: the `dedupKey` plus the unix-ms timestamp it was marked
+ * processed. v3 added the timestamp so the consumer can prune entries that are older than any
+ * message could still be re-discovered (≈ MAX_ATTESTATION_AGE_MS × 2), bounding the set's growth.
+ */
+export interface ProcessedEntry {
+  key: string;
+  at: number;
+}
+
 export interface PendingStateData {
   pending: PersistedPendingMessage[];
   /**
-   * Set of `dedupKey`s (format `${sourceTxHash}:${logIndex}`) for messages we've already
-   * delivered (relayWithHook returned success OR the destination contract said
-   * "already processed"). Used to short-circuit `enqueueMessage` when the scanner re-discovers
-   * a message after a restart. Stored as a sorted array on disk for JSON-friendliness.
-   *
-   * Note: this grows without bound at the relayer's current volume (handful of messages per hour
-   * at most). At ~80 bytes per entry, 10k entries = 800KB. Future Phase 3 polish: prune entries
-   * older than MAX_ATTESTATION_AGE_MS × 2 since they're irrelevant by then.
+   * Delivered-message dedup records (`dedupKey` + timestamp), format key
+   * `${sourceTxHash}:${logIndex}`. Used to short-circuit `enqueueMessage` when the scanner
+   * re-discovers a message after a restart. Stored sorted by key on disk for JSON-friendliness.
+   * The timestamp lets the consumer prune aged-out entries rather than growing forever.
    */
-  processed: string[];
+  processed: ProcessedEntry[];
   updatedAt: number;
   version: typeof PENDING_SCHEMA_VERSION;
 }
@@ -114,7 +120,7 @@ export class PendingStateStore {
       filenamePrefix: "pending",
       expectedVersion: PENDING_SCHEMA_VERSION,
       validate,
-      migrate: migrateV1ToV2,
+      migrate: migrateToCurrent,
     });
   }
 
@@ -125,18 +131,18 @@ export class PendingStateStore {
   async write(
     chainName: string,
     pending: PersistedPendingMessage[],
-    processed: Set<string>,
+    processed: Map<string, number>,
   ): Promise<void> {
-    const sortedProcessed = Array.from(processed).sort();
-    // Defensive size signal — fires when the processed-hash set grows past a level that
-    // suggests either real volume scale-up or a dedup bug. At the relayer's intended POC
-    // volume (handful per hour) we expect <100 entries even after months of uptime; crossing
-    // 10k means either we should ship the Phase 3 prune logic OR something is wrong (e.g. the
-    // dedup short-circuit in enqueueMessage broke and we're re-adding hashes that should have
-    // been caught). Either way operators should investigate.
+    const sortedProcessed: ProcessedEntry[] = Array.from(processed.entries())
+      .map(([key, at]) => ({ key, at }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    // Defensive size signal — fires when the processed set grows past a level that suggests either
+    // real volume scale-up or a dedup bug. With pruning in place this should stay small; crossing
+    // 10k means either prune isn't keeping up OR something is wrong (e.g. the dedup short-circuit
+    // in enqueueMessage broke and we're re-adding keys). Either way operators should investigate.
     if (sortedProcessed.length > PROCESSED_SET_WARN_THRESHOLD) {
       console.warn(
-        `[pending-store] ${chainName}: processed-hash set has grown to ${sortedProcessed.length} entries (warn threshold ${PROCESSED_SET_WARN_THRESHOLD}). At current volume this is unexpected — investigate or ship Phase 3 prune logic.`,
+        `[pending-store] ${chainName}: processed set has grown to ${sortedProcessed.length} entries (warn threshold ${PROCESSED_SET_WARN_THRESHOLD}). Unexpected at current volume — investigate.`,
       );
     }
     await this.inner.write(chainName, {
@@ -168,8 +174,8 @@ const PROCESSED_SET_WARN_THRESHOLD = 10_000;
  * check is the safety net (submitRelay returns 'already-processed', the message is then
  * marked processed under v2). One wasted RPC call per stale message, not a real issue.
  */
-function migrateV1ToV2(oldPayload: unknown, oldVersion: number): PendingStateData {
-  if (oldVersion !== 1) {
+function migrateToCurrent(oldPayload: unknown, oldVersion: number): PendingStateData {
+  if (oldVersion !== 1 && oldVersion !== 2) {
     throw new Error(
       `pending-store: cannot migrate from version ${oldVersion} — no migrator defined for that path.`,
     );
@@ -180,31 +186,49 @@ function migrateV1ToV2(oldPayload: unknown, oldVersion: number): PendingStateDat
     updatedAt?: unknown;
   };
   if (!Array.isArray(candidate.pending)) {
-    throw new Error(`pending-store: v1 migration failed — 'pending' is not an array.`);
+    throw new Error(`pending-store: v${oldVersion} migration failed — 'pending' is not an array.`);
   }
   if (typeof candidate.updatedAt !== "number") {
-    throw new Error(`pending-store: v1 migration failed — 'updatedAt' is missing or non-numeric.`);
+    throw new Error(
+      `pending-store: v${oldVersion} migration failed — 'updatedAt' is missing or non-numeric.`,
+    );
   }
+
+  // v1 pending entries predate dedupKey; back-fill it from sourceTxHash. v2+ already carry it.
   const migratedPending = candidate.pending.map((raw, idx) => {
     if (typeof raw !== "object" || raw === null) {
-      throw new Error(`pending-store: v1 migration failed — pending[${idx}] is not an object.`);
+      throw new Error(`pending-store: v${oldVersion} migration failed — pending[${idx}] is not an object.`);
     }
     const r = raw as Partial<PersistedPendingMessage> & { sourceTxHash?: string };
     if (typeof r.sourceTxHash !== "string") {
       throw new Error(
-        `pending-store: v1 migration failed — pending[${idx}].sourceTxHash missing or non-string; cannot synthesize dedupKey.`,
+        `pending-store: v${oldVersion} migration failed — pending[${idx}].sourceTxHash missing or non-string.`,
       );
     }
-    return { ...r, dedupKey: `${r.sourceTxHash}:0` } as PersistedPendingMessage;
+    if (oldVersion === 1) return { ...r, dedupKey: `${r.sourceTxHash}:0` } as PersistedPendingMessage;
+    return r as PersistedPendingMessage;
   });
+
+  // Processed entries:
+  //   v1 — keccak256(messageBytes) hashes, incompatible with the dedupKey scheme → drop.
+  //   v2 — `string[]` of dedupKeys with no timestamp → wrap each at "now" (they age out from load,
+  //        which is correct enough: a delivered message older than the migration is already past
+  //        any re-discovery window).
+  const now = Date.now();
+  let processed: ProcessedEntry[] = [];
+  if (oldVersion === 2 && Array.isArray(candidate.processed)) {
+    processed = candidate.processed
+      .filter((k): k is string => typeof k === "string")
+      .map((key) => ({ key, at: now }));
+  }
   console.warn(
-    `[pending-store] Migrating v1 → v2: dropping ${
-      Array.isArray(candidate.processed) ? candidate.processed.length : 0
-    } legacy processed-hash entries; back-filled dedupKey on ${migratedPending.length} pending message(s). Any previously-relayed messages re-discovered by the scanner will get a one-shot 'already processed' bounce on first re-submit.`,
+    `[pending-store] Migrating v${oldVersion} → v${PENDING_SCHEMA_VERSION}: ${migratedPending.length} pending, ` +
+      `${processed.length} processed entr${processed.length === 1 ? "y" : "ies"} carried` +
+      `${oldVersion === 1 ? " (v1 legacy processed hashes dropped — back-filled dedupKeys on pending)" : " (timestamps stamped at load)"}.`,
   );
   return {
     pending: migratedPending,
-    processed: [], // legacy keccak256(messageBytes) entries are not convertible — drop them.
+    processed,
     updatedAt: candidate.updatedAt,
     version: PENDING_SCHEMA_VERSION,
   };
@@ -241,14 +265,25 @@ function validate(
   const pending = candidate.pending.map((msg, idx) =>
     validatePending(msg, chainName, path, idx),
   );
-  // Processed entries are just message-hash strings; light validation.
-  const processed = candidate.processed.map((s, idx) => {
-    if (typeof s !== "string") {
+  // Processed entries are { key, at } records (v3). Light validation of each.
+  const processed = candidate.processed.map((entry, idx): ProcessedEntry => {
+    if (typeof entry !== "object" || entry === null) {
       throw new Error(
-        `pending-store: processed[${idx}] for chain '${chainName}' at ${path} is not a string. Delete to reset.`,
+        `pending-store: processed[${idx}] for chain '${chainName}' at ${path} is not an object. Delete to reset.`,
       );
     }
-    return s;
+    const e = entry as Partial<ProcessedEntry>;
+    if (typeof e.key !== "string") {
+      throw new Error(
+        `pending-store: processed[${idx}].key for chain '${chainName}' at ${path} is not a string. Delete to reset.`,
+      );
+    }
+    if (typeof e.at !== "number" || !Number.isFinite(e.at)) {
+      throw new Error(
+        `pending-store: processed[${idx}].at for chain '${chainName}' at ${path} is not a finite number. Delete to reset.`,
+      );
+    }
+    return { key: e.key, at: e.at };
   });
   return {
     pending,

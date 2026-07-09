@@ -10,17 +10,42 @@
  *   - Matches the existing CCTP relay (`cctp-relay.ts` / `iris-relay.ts`) which submits on
  *     every chain from the same key.
  *   - One key to fund, one balance to monitor.
- *   - Per-chain key splits are tracked as future hardening (relayer/CLAUDE.md).
+ *
+ * The key itself is `relayerPrivateKey` from config — a dedicated `RELAYER_PRIVATE_KEY` when set,
+ * otherwise the deployer key (with a boot warning on non-local). Per-chain key splits remain future
+ * hardening; see relayer/CLAUDE.md "Relayer key" notes.
  */
 
 import { ethers } from "ethers";
-import { accounts, allChains } from "../config";
+import { allChains, relayerPrivateKey } from "../config";
+import { NonceCoordinator } from "../lib/nonce-coordinator";
+import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { createStaticProvider } from "../lib/static-provider";
+import type { Counters } from "./counters";
+
+/**
+ * How long to wait on a broadcast tx's receipt in the background before declaring it stuck. On
+ * Anvil txs mine instantly so this never fires; on a real chain a tx with no receipt after this
+ * budget is wedged (dropped or underpriced) and needs operator attention.
+ */
+const BACKGROUND_RECEIPT_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ============ Types ============
 
 interface SubmitResult {
   txHash: string;
+}
+
+/**
+ * Thrown when a submit loses the per-chain lock race (another tx is mid-broadcast on this chain).
+ * A typed error lets PrivacyRelay map it to RELAYER_BUSY/503 instead of misreporting it as a
+ * generic SUBMISSION_FAILED/502 — string-matching the message would be brittle.
+ */
+export class WalletLockedError extends Error {
+  constructor(public readonly chainId: number) {
+    super(`Wallet is locked on chain ${chainId} — another transaction is in progress`);
+    this.name = "WalletLockedError";
+  }
 }
 
 interface ChainState {
@@ -46,10 +71,23 @@ export class WalletManager {
   /** Dedup cache TTL in ms (10 minutes) */
   private readonly DEDUP_TTL_MS = 10 * 60 * 1000;
 
-  constructor() {
+  /**
+   * Process-wide nonce authority. Shared with the CCTP relay modules because they submit from the
+   * SAME EOA on the SAME chains — without one authority the two paths read the nonce independently
+   * and one path's tx silently replaces the other's in the mempool.
+   */
+  private nonceCoordinator: NonceCoordinator;
+
+  /** In-process counters surfaced on /health. Used here to record stuck broadcasts. */
+  private counters: Counters;
+
+  constructor(nonceCoordinator: NonceCoordinator, counters: Counters) {
+    this.nonceCoordinator = nonceCoordinator;
+    this.counters = counters;
     for (const chain of allChains) {
+      // Pinned static provider (main's RPC-quota optimization) + our dedicated relayer key.
       const provider = createStaticProvider(chain.rpc, chain.chainId);
-      const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
+      const wallet = new ethers.Wallet(relayerPrivateKey, provider);
       this.chains.set(chain.chainId, { provider, wallet, locked: false });
     }
   }
@@ -145,9 +183,7 @@ export class WalletManager {
     }
 
     if (state.locked) {
-      throw new Error(
-        `Wallet is locked on chain ${chainId} — another transaction is in progress`,
-      );
+      throw new WalletLockedError(chainId);
     }
 
     // Check dedup cache (chain-scoped — see note on `txCache`).
@@ -165,16 +201,9 @@ export class WalletManager {
     state.locked = true;
 
     try {
-      // Always fetch fresh nonce from chain. WalletManager shares the deployer account with
-      // the CCTP relay paths (cctp-relay / iris-relay), which may have submitted txs on the
-      // SAME chain (e.g. receiveMessage for cross-chain deposits) that consumed nonces.
-      // Caching would cause "nonce already used" when the privacy relay then submits.
-      const nonce = await state.provider.getTransactionCount(
-        state.wallet.address,
-        "pending",
-      );
-
-      // Estimate gas if not provided
+      // Estimate gas if not provided. Done OUTSIDE the nonce-coordinator critical section — gas
+      // estimation needs no nonce, so holding the per-chain nonce mutex across it would serialise
+      // estimation between the privacy relay and the CCTP relay for no benefit.
       let estimatedGas = gasLimit;
       if (!estimatedGas) {
         try {
@@ -190,18 +219,32 @@ export class WalletManager {
         }
       }
 
-      console.log(
-        `[wallet-manager] Submitting tx (chain=${chainId}, nonce=${nonce}, gas=${estimatedGas})`,
-      );
       console.log(`  To: ${to}`);
       console.log(`  Data: ${data.slice(0, 10)}... (${(data.length - 2) / 2} bytes)`);
 
-      const tx = await state.wallet.sendTransaction({
-        to,
-        data,
-        nonce,
-        gasLimit: estimatedGas,
-      });
+      // Allocate the nonce + broadcast through the shared coordinator. It seeds from
+      // `getTransactionCount('pending')` once and tracks locally thereafter, serialising the
+      // allocate→broadcast window against the CCTP relay paths that share this EOA. The previous
+      // fetch-fresh-every-time approach was both the source of the Sepolia load-balancer drift and
+      // unable to see nonces the CCTP relay had already reserved this tick.
+      let submittedNonce: number | undefined;
+      const tx = await this.nonceCoordinator.withNonce(
+        chainId,
+        state.provider,
+        state.wallet.address,
+        (nonce) => {
+          submittedNonce = nonce;
+          console.log(
+            `[wallet-manager] Submitting tx (chain=${chainId}, nonce=${nonce}, gas=${estimatedGas})`,
+          );
+          return state.wallet.sendTransaction({
+            to,
+            data,
+            nonce,
+            gasLimit: estimatedGas,
+          });
+        },
+      );
 
       console.log(`[wallet-manager] Tx submitted (chain=${chainId}): ${tx.hash}`);
 
@@ -216,8 +259,17 @@ export class WalletManager {
       // handler used to keep the HTTP connection open for the full block time, which intermediary
       // proxies (Cloudflare etc.) often cut at 60-100s — surfacing in the browser as a "Failed to
       // fetch" / no-CORS error even though the broadcast itself succeeded.
-      void tx
-        .wait()
+      //
+      // The wait is bounded: a privacy-relay tx that never confirms (dropped/underpriced) would
+      // otherwise leave a promise pending forever with zero operator signal, while later txs queue
+      // behind its nonce. On timeout we surface it loudly and count it.
+      // TODO(relayer-hardening 1.4): automatic same-nonce fee-bump replacement for stuck
+      // privacy-relay txs is intentionally out of scope here — operator action for now.
+      void withTimeout(
+        tx.wait(),
+        BACKGROUND_RECEIPT_TIMEOUT_MS,
+        `tx.wait chain=${chainId} ${tx.hash.slice(0, 12)}`,
+      )
         .then((receipt) => {
           if (!receipt) {
             console.warn(`[wallet-manager] Tx ${tx.hash} confirmed without receipt`);
@@ -225,6 +277,11 @@ export class WalletManager {
           }
           if (receipt.status === 0) {
             console.error(`[wallet-manager] Tx reverted (chain=${chainId}): ${tx.hash}`);
+            // Surface on /health — a climbing revert count is the visible signal of the
+            // estimateGas-passes-then-front-run griefing race (a user spends the nullifier before
+            // our relay lands, so our tx reverts and we eat the gas). Can't prevent the race here,
+            // but it must not be invisible.
+            this.counters.inc(`revertedTx.${chainId}`);
             return;
           }
           console.log(
@@ -232,6 +289,16 @@ export class WalletManager {
           );
         })
         .catch((err) => {
+          if (err instanceof RpcTimeoutError) {
+            console.error(
+              `[wallet-manager] STUCK TX (chain=${chainId}, nonce=${submittedNonce}): ${tx.hash} ` +
+                `has no receipt after ${Math.round(BACKGROUND_RECEIPT_TIMEOUT_MS / 60000)}min. ` +
+                `Likely dropped or underpriced — a same-nonce fee-bump replacement (operator action) ` +
+                `is required; later txs on this chain will queue behind its nonce until resolved.`,
+            );
+            this.counters.inc(`stuckTx.${chainId}`);
+            return;
+          }
           console.warn(
             `[wallet-manager] Background receipt tracking failed for ${tx.hash}: ${err?.message ?? err}`,
           );
@@ -242,11 +309,14 @@ export class WalletManager {
       if (
         e.message?.includes("nonce") ||
         e.message?.includes("NONCE") ||
-        e.code === "NONCE_EXPIRED"
+        e.code === "NONCE_EXPIRED" ||
+        e.code === "REPLACEMENT_UNDERPRICED"
       ) {
         console.warn(
-          `[wallet-manager] Nonce error on chain ${chainId} (another process may have used the account)`,
+          `[wallet-manager] Nonce error on chain ${chainId} (another process may have used the account) — resetting coordinator`,
         );
+        // Drop the coordinator's cached counter so the next submit re-seeds from the provider.
+        this.nonceCoordinator.reset(chainId);
       }
       throw e;
     } finally {

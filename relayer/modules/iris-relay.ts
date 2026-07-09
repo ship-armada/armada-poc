@@ -21,7 +21,7 @@
 import { ethers } from "ethers";
 import {
   allChains,
-  accounts,
+  relayerPrivateKey,
   armadaRelayerSettings,
   type ChainConfig,
 } from "../config";
@@ -33,6 +33,14 @@ import { getLogsChunked } from "../lib/get-logs-chunked";
 import { PendingStateStore, type PersistedPendingMessage } from "../lib/pending-state-store";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
+import { NonceCoordinator } from "../lib/nonce-coordinator";
+import {
+  DeadLetterStore,
+  type DeadLetterRecord,
+  type DeadLetterReason,
+} from "../lib/dead-letter-store";
+import type { Counters } from "./counters";
+import type { CctpDeliveryStore } from "./cctp-delivery-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live. Module-relative so the relayer is location-independent. */
@@ -127,7 +135,9 @@ interface ChainState {
    * on the destination). Restart-safe via PendingStateStore — survives so we don't burn gas
    * re-relaying messages already delivered before the restart.
    */
-  processedMessages: Set<string>;
+  /** Delivered/abandoned dedupKeys → unix-ms when marked processed. Map (not Set) so aged-out
+   *  entries can be pruned, bounding growth. */
+  processedMessages: Map<string, number>;
   /**
    * Last scan error for this chain, or null when the most recent tick succeeded. Surfaces in
    * future health endpoint + immediately makes "scanner stuck" visible to operators. Replaces
@@ -142,15 +152,6 @@ interface ChainState {
    * `chainHead - lastProcessedBlock` is the cursor lag operators care about. 0 = never scanned.
    */
   lastChainHead: number;
-  /**
-   * Locally-tracked pending nonce for transactions THIS relayer sends to this chain. Refreshed
-   * from `eth_getTransactionCount(addr, 'pending')` on first use or after a nonce error. Without
-   * this, the production CCTP relay is vulnerable to the Sepolia load-balancer nonce drift that
-   * project memory documents: a fresh request lands on a backend that hasn't seen the prior
-   * submit's nonce yet, ethers picks a stale "pending" → "nonce too low" rejection. The
-   * mock cctp-relay has done this for a while; production iris-relay was the gap.
-   */
-  pendingNonce: number | null;
 }
 
 // ============ Constants ============
@@ -164,6 +165,10 @@ interface ChainState {
 const REAL_MESSAGE_SENT_ABI = [
   "event MessageSent(bytes message)",
 ];
+
+/** Hoisted once — building an Interface parses ABI fragments; doing it per chunk/per log is waste. */
+const REAL_MESSAGE_SENT_IFACE = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
+const REAL_MESSAGE_SENT_TOPIC = REAL_MESSAGE_SENT_IFACE.getEvent("MessageSent")!.topicHash;
 
 const REAL_MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes calldata message, bytes calldata attestation) external returns (bool)",
@@ -196,6 +201,13 @@ const MSG_NONCE_OFFSET = 12;
 const MSG_NONCE_LENGTH = 32; // bytes32 in real CCTP V2 (NOT 8-byte uint64)
 const MSG_DEST_CALLER_OFFSET = 108;
 const MSG_DEST_CALLER_LENGTH = 32;
+/** finalityThresholdExecuted — 4 bytes Iris fills in on the corrected message (volatile field). */
+const MSG_FINALITY_EXECUTED_OFFSET = 144;
+const MSG_FINALITY_EXECUTED_LENGTH = 4;
+/** Minimum plausible attestation length (bytes): one 65-byte ECDSA signature. */
+const MIN_ATTESTATION_BYTES = 65;
+/** Default timeout (ms) for an Iris HTTP request when the source chain config is unavailable. */
+const DEFAULT_IRIS_FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * BurnMessageV2 mintRecipient offset within the full MessageV2.
@@ -211,6 +223,156 @@ const MSG_BODY_OFFSET = 148;
 const BURN_MSG_MINT_RECIPIENT_OFFSET = 36;
 const MINT_RECIPIENT_ABSOLUTE_OFFSET = MSG_BODY_OFFSET + BURN_MSG_MINT_RECIPIENT_OFFSET;
 const MINT_RECIPIENT_LENGTH = 32;
+
+/**
+ * BurnMessageV2 body minimum length (bytes), no hookData:
+ *   version(4) + burnToken(32) + mintRecipient(32) + amount(32) + messageSender(32)
+ *   + maxFee(32) + feeExecuted(32) + expirationBlock(32) = 228.
+ * Matches `contracts/cctp/ICCTPV2.sol` BurnMessageV2 layout.
+ */
+const BURN_MSG_MIN_BODY_BYTES = 228;
+/** Minimum full MessageV2 length to contain a complete BurnMessageV2: 148 envelope + 228 body. */
+const MIN_BURN_MESSAGE_BYTES = MSG_BODY_OFFSET + BURN_MSG_MIN_BODY_BYTES;
+/** BurnMessageV2.version constant (ICCTPV2.sol `BURN_MESSAGE_VERSION`). A genuine burn body carries 1. */
+const BURN_MESSAGE_VERSION = 1;
+/** bytes32(0) — a legitimate destinationCaller value (Armada burn paths let the user choose it). */
+const ZERO_CALLER = "0x" + "0".repeat(64);
+
+/** BurnMessageV2.amount — body offset 68 (version 4 + burnToken 32 + mintRecipient 32) → abs 216. */
+const BURN_MSG_AMOUNT_ABSOLUTE_OFFSET = MSG_BODY_OFFSET + 68;
+const BURN_MSG_AMOUNT_LENGTH = 32;
+
+/**
+ * Parse the burn amount (raw USDC) from a full MessageV2 hex. Returns undefined when the message is
+ * too short to contain it. Offsets validated against `contracts/cctp/ICCTPV2.sol`. Used only to
+ * enrich the /cctp-status delivery record — never load-bearing for relay correctness.
+ */
+function parseBurnAmount(messageHex: string): string | undefined {
+  const hex = messageHex.startsWith("0x") ? messageHex.slice(2) : messageHex;
+  const end = (BURN_MSG_AMOUNT_ABSOLUTE_OFFSET + BURN_MSG_AMOUNT_LENGTH) * 2;
+  if (hex.length < end) return undefined;
+  return BigInt("0x" + hex.slice(BURN_MSG_AMOUNT_ABSOLUTE_OFFSET * 2, end)).toString();
+}
+
+/**
+ * Fail-CLOSED decision on whether a scanned CCTP message is one we should relay. Pure + exported
+ * for unit testing.
+ *
+ * The destination MessageTransmitter is shared (anyone can emit MessageSent on it via the
+ * permissionless `sendMessage`), and the relayer pays gas to deliver whatever it relays — so a
+ * crafted short/foreign message that slips through is an unmetered gas-drain on the relayer. We
+ * therefore relay ONLY messages we can positively identify as a genuine BurnMessageV2 addressed to
+ * one of our pool contracts:
+ *   1. length ≥ MIN_BURN_MESSAGE_BYTES (else it can't be a BurnMessageV2 — reject, don't fail open)
+ *   2. body version == BURN_MESSAGE_VERSION
+ *   3. mintRecipient ∈ knownRecipients (MANDATORY — empty set or unknown recipient ⇒ reject)
+ *   4. destinationCaller is either zero (allowed — user's choice) OR equals our hookRouter
+ *
+ * `destinationCaller == 0` is explicitly accepted: Armada's burn paths
+ * (`TransactModule.atomicCrossChainUnshield`, `PrivacyPoolClient.crossChainShield`) pass a
+ * user-supplied destinationCaller that may legitimately be zero. The mintRecipient allowlist is the
+ * real authentication, which is why it cannot fail open.
+ */
+export function classifyMessageForRelay(
+  messageHex: string,
+  knownRecipients: ReadonlySet<string>,
+  hookRouter: string | null,
+): { relay: true; mintRecipient: string } | { relay: false; reason: string } {
+  const hex = messageHex.startsWith("0x") ? messageHex.slice(2) : messageHex;
+  const byteLen = Math.floor(hex.length / 2);
+
+  if (byteLen < MIN_BURN_MESSAGE_BYTES) {
+    return {
+      relay: false,
+      reason: `not a BurnMessageV2 — ${byteLen}B < ${MIN_BURN_MESSAGE_BYTES}B minimum`,
+    };
+  }
+  const bodyVersion = parseInt(hex.slice(MSG_BODY_OFFSET * 2, (MSG_BODY_OFFSET + 4) * 2), 16);
+  if (bodyVersion !== BURN_MESSAGE_VERSION) {
+    return {
+      relay: false,
+      reason: `body version ${bodyVersion} != BurnMessageV2 v${BURN_MESSAGE_VERSION}`,
+    };
+  }
+  const mintRecipient =
+    "0x" +
+    hex
+      .slice(MINT_RECIPIENT_ABSOLUTE_OFFSET * 2, (MINT_RECIPIENT_ABSOLUTE_OFFSET + MINT_RECIPIENT_LENGTH) * 2)
+      .toLowerCase();
+  if (knownRecipients.size === 0) {
+    return {
+      relay: false,
+      reason: `no known recipients configured for destination — refusing to relay (check deployment file)`,
+    };
+  }
+  if (!knownRecipients.has(mintRecipient)) {
+    return { relay: false, reason: `mintRecipient ${mintRecipient} not in knownRecipients` };
+  }
+  const destinationCaller =
+    "0x" +
+    hex
+      .slice(MSG_DEST_CALLER_OFFSET * 2, (MSG_DEST_CALLER_OFFSET + MSG_DEST_CALLER_LENGTH) * 2)
+      .toLowerCase();
+  if (destinationCaller !== ZERO_CALLER && hookRouter) {
+    const ourHookRouterBytes32 = ethers.zeroPadValue(hookRouter, 32).toLowerCase();
+    if (destinationCaller !== ourHookRouterBytes32) {
+      return {
+        relay: false,
+        reason: `destinationCaller ${destinationCaller.slice(0, 20)}... is set but != our hookRouter`,
+      };
+    }
+  }
+  return { relay: true, mintRecipient };
+}
+
+/**
+ * Is `s` a 0x-prefixed hex string of at least `minBytes` bytes? Used to validate the Iris API's
+ * `attestation` / `message` fields before we sign+broadcast them. Pure + exported for tests.
+ */
+export function isPlausibleHexBytes(s: unknown, minBytes: number): boolean {
+  if (typeof s !== "string" || !s.startsWith("0x")) return false;
+  const body = s.slice(2);
+  if (body.length % 2 !== 0) return false;
+  if (!/^[0-9a-fA-F]*$/.test(body)) return false;
+  return body.length / 2 >= minBytes;
+}
+
+/** Zero a byte range in a (no-0x) hex string. */
+function zeroHexRange(hex: string, startByte: number, lenBytes: number): string {
+  return (
+    hex.slice(0, startByte * 2) +
+    "0".repeat(lenBytes * 2) +
+    hex.slice((startByte + lenBytes) * 2)
+  );
+}
+
+/**
+ * Do two MessageV2 byte strings match on every field EXCEPT the ones Iris legitimately fills in
+ * (the nonce slot — zero in the source event, real value from Iris — and finalityThresholdExecuted)?
+ * Pure + exported for tests.
+ *
+ * Used to (a) select the right entry when Iris returns multiple messages for one source tx and
+ * (b) guard, before broadcasting, that the bytes Iris handed us are the same message we observed
+ * emitted on the source chain — so a compromised/buggy Iris response can't make us sign arbitrary
+ * bytes (the destination MessageTransmitter would reject a mismatched attestation, but we'd still
+ * pay gas for the revert).
+ */
+export function irisMessageMatches(localHex: string, irisHex: string): boolean {
+  const a = (localHex.startsWith("0x") ? localHex.slice(2) : localHex).toLowerCase();
+  const b = (irisHex.startsWith("0x") ? irisHex.slice(2) : irisHex).toLowerCase();
+  if (a.length !== b.length) return false;
+  const na = zeroHexRange(
+    zeroHexRange(a, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
+    MSG_FINALITY_EXECUTED_OFFSET,
+    MSG_FINALITY_EXECUTED_LENGTH,
+  );
+  const nb = zeroHexRange(
+    zeroHexRange(b, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
+    MSG_FINALITY_EXECUTED_OFFSET,
+    MSG_FINALITY_EXECUTED_LENGTH,
+  );
+  return na === nb;
+}
 
 /**
  * Max time to keep polling for an attestation before giving up (ms). Default 60 min, configurable
@@ -297,6 +459,33 @@ function parseMessageFields(messageHex: string): {
   return { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller };
 }
 
+/**
+ * Map `items` through async `fn` with at most `limit` in flight at once, preserving input order in
+ * the result. Used to fan out the per-message Iris attestation checks (network reads) without
+ * issuing an unbounded burst. `fn` must not throw (the Iris checker returns null on error).
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]!, i);
+    }
+  }
+  const n = Math.min(Math.max(1, limit), items.length || 1);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return results;
+}
+
+/** Bounded concurrency for the per-tick Iris attestation checks. */
+const IRIS_CHECK_CONCURRENCY = 8;
+
 function elapsed(since: number): string {
   const seconds = Math.floor((Date.now() - since) / 1000);
   if (seconds < 60) return `${seconds}s`;
@@ -320,12 +509,18 @@ class IrisClient {
    */
   async checkAttestation(
     sourceDomain: number,
-    sourceTxHash: string
+    sourceTxHash: string,
+    expectedMessageHex: string,
+    timeoutMs: number,
   ): Promise<{ attestation: string; message: string; status: string } | null> {
     const url = `${this.baseUrl}/v2/messages/${sourceDomain}?transactionHash=${sourceTxHash}`;
 
+    // Bound the fetch with an AbortController — a hung Iris connection would otherwise stall the
+    // (sequential) pending-message loop for this whole tick.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
 
       if (response.status === 404) {
         return null; // Not yet indexed
@@ -342,8 +537,39 @@ class IrisClient {
         return null;
       }
 
-      const msg = data.messages[0];
+      // Select the entry that corresponds to OUR message. A single source tx can in principle emit
+      // more than one MessageSent; unconditionally taking messages[0] would deliver the wrong one.
+      // Fall back to [0] only when there's exactly one entry.
+      let msg: IrisMessageResponse["messages"][number] | undefined;
+      if (data.messages.length === 1) {
+        msg = data.messages[0];
+      } else {
+        msg = data.messages.find(
+          (m) => typeof m.message === "string" && irisMessageMatches(expectedMessageHex, m.message),
+        );
+        if (!msg) {
+          console.warn(
+            `    [iris] ${data.messages.length} messages for tx ${sourceTxHash}, none match the locally-observed bytes — skipping this tick.`,
+          );
+          return null;
+        }
+      }
+
       if (msg.status === "complete" && msg.attestation) {
+        // Validate the fields we're about to sign+broadcast are well-formed hex of plausible size.
+        // A malformed-but-truthy attestation/message would otherwise be forwarded blind.
+        if (!isPlausibleHexBytes(msg.attestation, MIN_ATTESTATION_BYTES)) {
+          console.warn(
+            `    [iris] attestation for tx ${sourceTxHash} is not plausible hex (>=${MIN_ATTESTATION_BYTES}B) — skipping.`,
+          );
+          return null;
+        }
+        if (!isPlausibleHexBytes(msg.message, MIN_BURN_MESSAGE_BYTES)) {
+          console.warn(
+            `    [iris] message for tx ${sourceTxHash} is not plausible hex (>=${MIN_BURN_MESSAGE_BYTES}B) — skipping.`,
+          );
+          return null;
+        }
         return {
           attestation: msg.attestation,
           message: msg.message,
@@ -354,8 +580,11 @@ class IrisClient {
       // Return status for logging (pending, pending_confirmations)
       return { attestation: "", message: "", status: msg.status };
     } catch (e: any) {
-      console.warn(`    [iris] Poll error: ${e.message}`);
+      const reason = e?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : e?.message ?? e;
+      console.warn(`    [iris] Poll error: ${reason}`);
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -384,15 +613,46 @@ export class IrisRelayModule {
    * pair in `enqueueMessage` cannot be torn by another writer. No lock is required.
    */
   private pendingMessages: Map<string, PendingMessage> = new Map();
+  /**
+   * Destination tx hashes we've already logged as "stuck in mempool" (likely underpriced), so the
+   * per-tick poll doesn't re-log the same incident every cycle. Ephemeral — not persisted; a
+   * restart re-logs once, which is fine. Entries are removed when the message leaves the in-flight
+   * state (mined / reverted / dropped-and-resubmitted).
+   */
+  private mempoolStuckWarned: Set<string> = new Set();
   private cursorStore: CursorStore;
   private pendingStateStore: PendingStateStore;
+  private deadLetterStore: DeadLetterStore;
+  /**
+   * Per-source-chain dead-letter records (keyed by chain name), held in memory so getHealth can
+   * report counts synchronously; the full list is also persisted on every append.
+   */
+  private deadLetters: Map<string, DeadLetterRecord[]> = new Map();
+  /**
+   * Process-wide nonce authority, shared with the privacy relay's WalletManager. All three submit
+   * paths sign from the same EOA on the same chains, so a single coordinator is what keeps their
+   * nonce views from colliding (one path replacing another's tx in the mempool).
+   */
+  private nonceCoordinator: NonceCoordinator;
+  /** Shared /health counters. Used here to make fail-closed message-filter rejections visible. */
+  private counters: Counters;
+  /** Cross-chain delivery index surfaced via /cctp-status. Best-effort writes (frontend has a scan fallback). */
+  private deliveryStore: CctpDeliveryStore;
 
-  constructor() {
+  constructor(
+    nonceCoordinator: NonceCoordinator,
+    counters: Counters,
+    deliveryStore: CctpDeliveryStore,
+  ) {
     const { iris } = armadaRelayerSettings;
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.irisClient = new IrisClient(iris.apiUrl);
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.pendingStateStore = new PendingStateStore(RELAYER_STATE_DIR);
+    this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
+    this.nonceCoordinator = nonceCoordinator;
+    this.counters = counters;
+    this.deliveryStore = deliveryStore;
   }
 
   async initialize(): Promise<boolean> {
@@ -424,7 +684,74 @@ export class IrisRelayModule {
     console.log(
       `[iris-relay] Initialized ${this.chains.size}/${allChains.length} chains`
     );
+
+    // Restore any persisted dead-letter records so getHealth reports an accurate count across
+    // restarts (a non-zero count is an operator's signal that USDC may be stranded).
+    await this.loadDeadLetters();
+
     return allInitialized;
+  }
+
+  /** Rehydrate per-chain dead-letter records from disk. Best-effort — a read error starts empty. */
+  private async loadDeadLetters(): Promise<void> {
+    let total = 0;
+    for (const state of this.chains.values()) {
+      try {
+        const data = await this.deadLetterStore.read(state.config.name);
+        if (data && data.records.length > 0) {
+          this.deadLetters.set(state.config.name, data.records);
+          total += data.records.length;
+        }
+      } catch (err: any) {
+        console.error(
+          `[iris-relay] ${state.config.name}: failed to read dead-letter records (${err.message}). Starting empty for this chain.`,
+        );
+      }
+    }
+    if (total > 0) {
+      console.warn(
+        `[iris-relay] Restored ${total} dead-letter record(s) across all chains — these messages were never delivered and may need manual relay (see relayer/state/deadletter-*.json).`,
+      );
+    }
+  }
+
+  /**
+   * Permanently give up on a message: record it durably (so it's not just a log line), add its
+   * dedupKey to processedMessages so a cursor rewind / re-discovery won't re-relay it, and persist
+   * both the dead-letter log and the chain's pending/processed state. Awaited by callers.
+   */
+  private async deadLetter(
+    sourceState: ChainState,
+    msg: PendingMessage,
+    reason: DeadLetterReason,
+  ): Promise<void> {
+    const record: DeadLetterRecord = {
+      id: msg.dedupKey,
+      sourceTxHash: msg.sourceTxHash,
+      rawMessage: msg.messageBytes,
+      reason,
+      sourceDomain: msg.sourceDomain,
+      destinationDomain: msg.destinationDomain,
+      at: Date.now(),
+    };
+    const list = this.deadLetters.get(sourceState.config.name) ?? [];
+    list.push(record);
+    this.deadLetters.set(sourceState.config.name, list);
+    // Mark processed so a re-discovery (cursor rewind, restart) doesn't re-enqueue + re-burn gas.
+    sourceState.processedMessages.set(msg.dedupKey, Date.now());
+    // Surface the permanent failure on /cctp-status so the frontend stops waiting (fails the tx).
+    this.deliveryStore.markFailed(msg.messageHash, `dead-letter: ${reason}`);
+    console.error(
+      `[iris-relay] DEAD-LETTER (${reason}): ${msg.dedupKey} (source tx ${msg.sourceTxHash}). Recorded to relayer/state/deadletter-${sourceState.config.name.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}.json for manual relay.`,
+    );
+    try {
+      await this.deadLetterStore.write(sourceState.config.name, list);
+    } catch (err: any) {
+      console.error(
+        `[iris-relay] ${sourceState.config.name}: failed to persist dead-letter record (${err.message}).`,
+      );
+    }
+    await this.persistChain(sourceState);
   }
 
   private async initChain(chainConfig: ChainConfig): Promise<ChainState | null> {
@@ -454,8 +781,9 @@ export class IrisRelayModule {
         knownRecipients.add(ethers.zeroPadValue(poolAddr, 32).toLowerCase());
       }
 
+      // Pinned static provider (main's RPC-quota optimization) + our dedicated relayer key.
       const provider = createStaticProvider(chainConfig.rpc, chainConfig.chainId);
-      const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
+      const wallet = new ethers.Wallet(relayerPrivateKey, provider);
 
       // Verify connection up-front with the same timeout we'll use during polling.
       const currentBlock = Number(
@@ -476,7 +804,7 @@ export class IrisRelayModule {
       // re-discovered by the scanner (works because cursor is persisted), but messages already
       // successfully relayed before restart would be re-relayed and burn gas on the contract's
       // "already processed" check.
-      const processedMessages = new Set<string>();
+      const processedMessages = new Map<string, number>();
       try {
         const persisted = await this.pendingStateStore.read(chainConfig.name);
         if (persisted) {
@@ -488,8 +816,8 @@ export class IrisRelayModule {
             this.pendingMessages.set(p.dedupKey, p);
             restored++;
           }
-          for (const hash of persisted.processed) {
-            processedMessages.add(hash);
+          for (const entry of persisted.processed) {
+            processedMessages.set(entry.key, entry.at);
           }
           if (restored > 0 || persisted.processed.length > 0) {
             console.log(
@@ -516,7 +844,6 @@ export class IrisRelayModule {
         lastError: null,
         lastScanAt: 0,
         lastChainHead: 0,
-        pendingNonce: null,
       };
     } catch (e: any) {
       console.error(`    Connection error: ${e.message}`);
@@ -611,6 +938,13 @@ export class IrisRelayModule {
           pendingForChain.push(msg);
         }
       }
+      // Prune processed entries older than any message could still be re-discovered. The scanner's
+      // cursor advances past delivered messages, and a message can't outlive ~MAX_ATTESTATION_AGE_MS
+      // anyway; 2× that is a safe floor below which an entry can never be needed for dedup again.
+      const pruneBefore = Date.now() - MAX_ATTESTATION_AGE_MS * 2;
+      for (const [key, at] of state.processedMessages) {
+        if (at < pruneBefore) state.processedMessages.delete(key);
+      }
       await this.pendingStateStore.write(
         state.config.name,
         pendingForChain,
@@ -679,18 +1013,16 @@ export class IrisRelayModule {
       const fromBlock = state.lastProcessedBlock + 1;
       const toBlock = effectiveHead;
 
-      // Real CCTP emits: event MessageSent(bytes message)
-      const iface = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
-      const eventTopic = iface.getEvent("MessageSent")?.topicHash;
-      if (!eventTopic) return;
-
+      // Real CCTP emits: event MessageSent(bytes message). Interface + topic hoisted to module scope.
       await getLogsChunked(state.provider, {
         fromBlock,
         toBlock,
         maxRange: maxLogRange,
+        // We ingest via onChunk and discard the return — don't double-buffer the logs.
+        collect: false,
         filter: {
           address: state.messageTransmitter,
-          topics: [eventTopic],
+          topics: [REAL_MESSAGE_SENT_TOPIC],
         },
         // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor
         // is always ≤ what's been enqueued. A crash between chunks loses zero un-ingested
@@ -701,8 +1033,16 @@ export class IrisRelayModule {
               `\n[iris-relay] ${config.name}: Found ${logs.length} message(s) in blocks ${chunkFrom}-${toBlockInclusive}`,
             );
           }
+          let enqueuedAny = false;
           for (const log of logs) {
-            this.enqueueMessage(log, state);
+            if (this.enqueueMessage(log, state)) enqueuedAny = true;
+          }
+          // ORDER MATTERS: persist any newly-enqueued pending entries to disk BEFORE advancing
+          // the cursor. The invariant is "pending-state durable ⇒ cursor durable", never the
+          // reverse — a crash with the cursor ahead of un-persisted pending state would orphan
+          // those messages (restart skips their blocks, scanner never re-discovers them).
+          if (enqueuedAny) {
+            await this.persistChain(state);
           }
           state.lastProcessedBlock = toBlockInclusive;
           await this.cursorStore.write(config.name, {
@@ -729,10 +1069,14 @@ export class IrisRelayModule {
 
   /**
    * Parse a MessageSent event and add it to the pending queue.
+   *
+   * Returns `true` when a NEW pending entry was added (so the caller knows it must persist the
+   * source chain before advancing the cursor), `false` for every skip/filter/dedup path.
+   * Crucially, this method no longer persists on its own — the caller (`onChunk`) owns the
+   * persist→cursor ordering so the on-disk cursor never leads un-persisted pending state.
    */
-  private enqueueMessage(log: ethers.Log, sourceState: ChainState): void {
-    const iface = new ethers.Interface(REAL_MESSAGE_SENT_ABI);
-    const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data });
+  private enqueueMessage(log: ethers.Log, sourceState: ChainState): boolean {
+    const parsed = REAL_MESSAGE_SENT_IFACE.parseLog({ topics: log.topics as string[], data: log.data });
     if (!parsed) {
       // Topic matched MessageSent but the ABI decoder couldn't parse the payload — almost
       // certainly an ABI mismatch (event signature drift on chain, or non-CCTP contract reusing
@@ -741,7 +1085,7 @@ export class IrisRelayModule {
       console.warn(
         `[iris-relay] ${sourceState.config.name}: MessageSent ABI parse failed for tx ${log.transactionHash} log index ${log.index}. Skipping.`,
       );
-      return;
+      return false;
     }
 
     const messageBytes: string = parsed.args[0];
@@ -762,7 +1106,7 @@ export class IrisRelayModule {
       console.log(
         `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — already in processedMessages (previously delivered).`,
       );
-      return;
+      return false;
     }
     // Already queued in this process — re-discovery of an in-flight message (also non-steady
     // state). Same diagnostic value as the processed-set check.
@@ -770,41 +1114,37 @@ export class IrisRelayModule {
       console.log(
         `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — already in pendingMessages (in-flight).`,
       );
-      return;
+      return false;
     }
 
-    const { sourceDomain, destinationDomain, nonce, mintRecipient, destinationCaller } = parseMessageFields(messageBytes);
+    const { sourceDomain, destinationDomain, nonce } = parseMessageFields(messageBytes);
 
     const destState = this.getChainByDomain(destinationDomain);
     if (!destState) {
       console.log(`  [iris-relay] Unknown destination domain ${destinationDomain}, skipping`);
-      return;
+      return false;
     }
 
-    // Filter: only relay messages where BurnMessageV2.mintRecipient matches our contracts.
-    // On real CCTP V2, the MessageV2.recipient is always the dest TokenMessenger (shared),
-    // so we check mintRecipient (the actual contract that receives minted tokens).
-    if (destState.knownRecipients.size > 0 && mintRecipient && !destState.knownRecipients.has(mintRecipient)) {
-      // Not our message — someone else's CCTP transfer on the shared MessageTransmitter. Log
-      // it so a misconfigured knownRecipients set (stale deployment file, address typo) doesn't
-      // present as "the relayer silently dropped my message." Includes both the rejected
-      // mintRecipient and the expected set so operators can diff them.
+    // Fail-CLOSED filter: relay ONLY messages we can positively identify as a genuine
+    // BurnMessageV2 addressed to one of our pool contracts. A crafted short/foreign message that
+    // slipped through would make the relayer pay destination gas to deliver someone else's (or an
+    // attacker's) message — an unmetered drain on a shared, permissionless MessageTransmitter.
+    const classification = classifyMessageForRelay(
+      messageBytes,
+      destState.knownRecipients,
+      destState.hookRouter,
+    );
+    if (!classification.relay) {
+      // Count so a probe / deployment-drift is visible on /health, not just in logs.
+      this.counters.inc("messageFilterReject");
       console.log(
-        `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — mintRecipient ${mintRecipient} not in ${destState.config.name}'s knownRecipients ` +
-          `[${Array.from(destState.knownRecipients).join(", ")}]. Either a foreign CCTP transfer on the shared MessageTransmitter OR a deployment-address drift.`,
+        `  [iris-relay] ${sourceState.config.name}: skip ${dedupKey} — ${classification.reason}. ` +
+          `Either a foreign/crafted CCTP message on the shared MessageTransmitter OR a deployment-address drift ` +
+          `(known recipients on ${destState.config.name}: [${Array.from(destState.knownRecipients).join(", ")}]).`,
       );
-      return;
+      return false;
     }
-
-    // Filter: if destinationCaller is set and doesn't match our hookRouter, skip
-    const zeroCaller = "0x" + "0".repeat(64);
-    if (destinationCaller !== zeroCaller && destState.hookRouter) {
-      const ourHookRouterBytes32 = ethers.zeroPadValue(destState.hookRouter, 32).toLowerCase();
-      if (destinationCaller !== ourHookRouterBytes32) {
-        console.log(`  [iris-relay] Message destinationCaller ${destinationCaller.slice(0, 20)}... doesn't match our HookRouter, skipping`);
-        return;
-      }
-    }
+    const mintRecipient = classification.mintRecipient;
 
     const pending: PendingMessage = {
       messageBytes,
@@ -823,10 +1163,10 @@ export class IrisRelayModule {
     };
 
     this.pendingMessages.set(dedupKey, pending);
-    // Persist immediately so a crash between enqueue and the first Iris poll doesn't lose
-    // this entry — the cursor has already advanced past sourceBlock, so without persistence
-    // the scanner wouldn't re-discover it.
-    void this.persistChain(sourceState);
+    // NOTE: the persist happens in `onChunk` (awaited, BEFORE the cursor write) — not here. That
+    // ordering is the crash-safety contract: a durable cursor must never lead un-persisted pending
+    // entries, or a crash would orphan this message (the cursor skips its block on restart and the
+    // scanner never re-discovers it).
 
     const irisUrl = this.irisClient.getUrl(sourceDomain, log.transactionHash);
 
@@ -841,6 +1181,10 @@ export class IrisRelayModule {
     console.log(`  Msg length:  ${(messageBytes.length - 2) / 2} bytes`);
     console.log(`  Iris URL:    ${irisUrl}`);
     console.log(`  Queued for attestation polling (non-blocking)`);
+    // Surface "in flight" on /cctp-status (keyed by messageHash) so the frontend's delivery poll
+    // gets a positive signal instead of a 404 while awaiting attestation. Best-effort.
+    this.deliveryStore.markPending(messageHash, { amount: parseBurnAmount(messageBytes) });
+    return true;
   }
 
   // ========== Attestation Polling & Relay ==========
@@ -857,10 +1201,23 @@ export class IrisRelayModule {
     // the end rather than per-message — keeps disk write count linear in chains, not messages.
     const dirtyChains = new Set<ChainState>();
 
+    // ---- Phase 1: filter (serial — handles expiry, which mutates state) ----
+    // Collect the messages that actually need an Iris check this tick. Skips: already-broadcast
+    // (processInflightRelays owns them), expired (dead-lettered here), and backoff-windowed.
+    const toCheck: Array<{ hash: string; msg: PendingMessage; sourceState: ChainState | undefined }> = [];
     for (const [hash, msg] of entries) {
       const sourceState = this.getChainByDomain(msg.sourceDomain);
 
-      // Check if expired
+      // Skip if this message has already been broadcast and is waiting for receipt confirmation —
+      // that's processInflightRelays's domain (including stuck/dropped handling), not ours. The
+      // state-machine marker is `submittedTxHash`. CHECKED BEFORE expiry: a message broadcast near
+      // the age limit must NOT be expired out from under its in-flight receipt poll, or we'd lose
+      // track of a tx that is likely about to confirm.
+      if (msg.submittedTxHash) {
+        continue;
+      }
+
+      // Check if expired — only messages STILL AWAITING ATTESTATION (no submittedTxHash) reach here.
       const age = Date.now() - msg.detectedAt;
       if (age > MAX_ATTESTATION_AGE_MS) {
         // Loud expiry log — distinct from steady-state console.log so operators monitoring for
@@ -873,14 +1230,8 @@ export class IrisRelayModule {
         console.error(`  Iris URL:  ${this.irisClient.getUrl(msg.sourceDomain, msg.sourceTxHash)}`);
         console.error(`  Manual recovery: fetch attestation from Iris + call hookRouter.relayWithHook on destination chain.`);
         this.pendingMessages.delete(hash);
-        if (sourceState) dirtyChains.add(sourceState);
-        continue;
-      }
-
-      // Skip if this message has already been broadcast and is waiting for receipt
-      // confirmation — that's processInflightRelays's domain, not ours. The state-machine
-      // marker is `submittedTxHash`.
-      if (msg.submittedTxHash) {
+        // Record durably (deadLetter persists the chain + adds to processedMessages itself).
+        if (sourceState) await this.deadLetter(sourceState, msg, "expired");
         continue;
       }
 
@@ -891,12 +1242,28 @@ export class IrisRelayModule {
         continue;
       }
 
-      // Check Iris
+      toCheck.push({ hash, msg, sourceState });
+    }
+
+    // ---- Phase 2: Iris attestation checks (parallel, bounded) ----
+    // These are read-only network round-trips; fanning them out means one slow Iris response no
+    // longer serially stalls every later message this tick. Submissions stay serial in Phase 3.
+    const checkResults = await mapWithConcurrency(toCheck, IRIS_CHECK_CONCURRENCY, ({ msg, sourceState }) => {
       msg.pollAttempts++;
-      const result = await this.irisClient.checkAttestation(
+      const irisTimeoutMs =
+        sourceState?.config.scanner.rpcTimeoutMs ?? DEFAULT_IRIS_FETCH_TIMEOUT_MS;
+      return this.irisClient.checkAttestation(
         msg.sourceDomain,
-        msg.sourceTxHash
+        msg.sourceTxHash,
+        msg.messageBytes,
+        irisTimeoutMs,
       );
+    });
+
+    // ---- Phase 3: handle results + submit (serial — mutates pending/processed + nonce stream) ----
+    for (let i = 0; i < toCheck.length; i++) {
+      const { hash, msg, sourceState } = toCheck[i]!;
+      const result = checkResults[i]!;
 
       if (!result) {
         // Not indexed yet or error — log periodically
@@ -933,7 +1300,7 @@ export class IrisRelayModule {
       } else if (outcome === "already-processed") {
         // The destination contract reports we (or someone) already delivered this. Treat as
         // success — mark processed and remove from pending. Common after a crash mid-submit.
-        if (sourceState) sourceState.processedMessages.add(hash);
+        if (sourceState) sourceState.processedMessages.set(hash, Date.now());
         this.pendingMessages.delete(hash);
         if (sourceState) dirtyChains.add(sourceState);
       } else {
@@ -945,7 +1312,12 @@ export class IrisRelayModule {
             `[iris-relay] GAVE UP on submitRelay for ${hash.slice(0, 18)}... after ${msg.retryAttempts} attempts. Source Tx: ${msg.sourceTxHash}. Manual recovery may be required.`,
           );
           this.pendingMessages.delete(hash);
-          if (sourceState) dirtyChains.add(sourceState);
+          // Record durably (same as the scheduleResubmit give-up path) — a permanently-failing
+          // attested message means USDC may be stranded; deadLetter persists + marks processed.
+          if (sourceState) {
+            await this.deadLetter(sourceState, msg, "retries-exhausted");
+            dirtyChains.add(sourceState);
+          }
         } else {
           // Exponential backoff: 2s, 4s, 8s, 16s, 32s for attempts 1-5.
           const backoffMs = RELAY_RETRY_BASE_DELAY_MS * Math.pow(2, msg.retryAttempts - 1);
@@ -1006,7 +1378,9 @@ export class IrisRelayModule {
       ),
     );
 
-    let mutated = false;
+    // Collect source chains whose state changed this tick, so each is persisted exactly once at the
+    // end (instead of the old inline success-persist PLUS a re-persist of every in-flight chain).
+    const dirtyChains = new Set<ChainState>();
     for (let i = 0; i < inflight.length; i++) {
       const { hash, msg } = inflight[i]!;
       const result = receipts[i]!;
@@ -1026,65 +1400,102 @@ export class IrisRelayModule {
         // Still pending. Check stuck threshold.
         const sinceSubmit = now - (msg.submittedAt ?? now);
         if (sinceSubmit > STUCK_TX_THRESHOLD_MS) {
+          // Distinguish the two stuck causes — they need OPPOSITE handling:
+          //   - dropped from the mempool: the nonce was never consumed, so we reset the
+          //     coordinator (re-seed from getTransactionCount('pending') returns the dropped
+          //     nonce) and re-submit, FILLING the gap. This is the H2 fix.
+          //   - still in the mempool (underpriced): re-submitting at a fresh nonce would gap
+          //     behind this tx and never mine; the only real recovery is a same-nonce fee-bump
+          //     replacement, which is out of scope here. Resetting would be useless (the pending
+          //     count still includes this tx). So we leave it in flight and surface it loudly.
+          const stuckTxHash = msg.submittedTxHash!;
+          let stillInMempool = false;
+          try {
+            const txn = await withTimeout(
+              state.provider.getTransaction(stuckTxHash),
+              rpcTimeoutMs,
+              `getTransaction ${state.config.name} ${stuckTxHash.slice(0, 12)}`,
+            );
+            // Present in the node but not yet mined → still queued in the mempool.
+            stillInMempool = txn !== null && txn.blockNumber === null;
+          } catch (e: any) {
+            // Lookup failed — treat as unknown and fall through to the dropped/reset path, which
+            // is safe: re-seeding from 'pending' yields the correct next nonce in either case once
+            // the node is reachable again.
+            console.warn(
+              `  [iris-relay] ${state.config.name}: getTransaction ${stuckTxHash.slice(0, 18)}... failed (${e?.message ?? e}); assuming dropped.`,
+            );
+          }
+
+          if (stillInMempool) {
+            // Log once per incident to avoid per-tick spam; no state mutation — keep polling.
+            if (!this.mempoolStuckWarned.has(stuckTxHash)) {
+              this.mempoolStuckWarned.add(stuckTxHash);
+              console.error(
+                `[iris-relay] STUCK TX (in mempool, likely underpriced): ${stuckTxHash.slice(0, 18)}... no receipt after ${Math.round(sinceSubmit / 1000)}s. A same-nonce fee-bump replacement is required (operator action) — NOT auto-resubmitting to avoid a nonce gap.`,
+              );
+            }
+            continue;
+          }
+
           console.error(
-            `[iris-relay] STUCK TX: ${msg.submittedTxHash!.slice(0, 18)}... has no receipt after ${Math.round(sinceSubmit / 1000)}s (>${Math.round(STUCK_TX_THRESHOLD_MS / 1000)}s threshold). Re-submitting with fresh nonce on next cycle.`,
+            `[iris-relay] STUCK TX (dropped from mempool): ${stuckTxHash.slice(0, 18)}... no receipt after ${Math.round(sinceSubmit / 1000)}s (>${Math.round(STUCK_TX_THRESHOLD_MS / 1000)}s threshold). Resetting nonce coordinator + re-submitting on next cycle.`,
           );
-          this.scheduleResubmit(msg, state.config.name);
-          mutated = true;
+          // The dropped tx never consumed its nonce — re-seed so the resubmit fills the gap.
+          this.nonceCoordinator.reset(state.config.chainId);
+          this.mempoolStuckWarned.delete(stuckTxHash);
+          await this.scheduleResubmit(msg, state.config.name);
+          const dropSrc = this.getChainByDomain(msg.sourceDomain);
+          if (dropSrc) dirtyChains.add(dropSrc);
         }
         continue;
       }
 
       if (receipt.status === 1) {
         // Success — mark processed and remove from pending.
+        this.mempoolStuckWarned.delete(msg.submittedTxHash!);
         const sourceState = this.getChainByDomain(msg.sourceDomain);
-        if (sourceState) sourceState.processedMessages.add(hash);
+        if (sourceState) sourceState.processedMessages.set(hash, Date.now());
         this.pendingMessages.delete(hash);
         console.log(
           `[iris-relay] ${state.config.name}: confirmed ${msg.submittedTxHash!.slice(0, 18)}... in block ${receipt.blockNumber} (${msg.retryAttempts} retries, ${Math.round((now - (msg.submittedAt ?? now)) / 1000)}s submit→confirm)`,
         );
-        // Persist BOTH chains: the source chain (for processedMessages add + pending delete)
-        // AND the destination chain (no state mutation but conceptually relevant). We only
-        // mark the source dirty here; the destination's pending state for this message
-        // already ran through the source's persistChain since pendingMessages is keyed by
-        // dedupKey globally.
-        if (sourceState) await this.persistChain(sourceState);
-        mutated = true;
+        // Authoritative delivery signal for /cctp-status — the destination mint confirmed.
+        this.deliveryStore.markDelivered(msg.messageHash, msg.submittedTxHash!, {
+          amount: parseBurnAmount(msg.messageBytes),
+        });
+        if (sourceState) dirtyChains.add(sourceState);
       } else {
         // Reverted on chain — re-submit through the retry/backoff path. The nonce was consumed
-        // by the reverted tx, so we don't reset destState.pendingNonce — the next submit gets
-        // the next nonce.
+        // by the reverted tx (it mined), so we do NOT reset the coordinator — the next submit
+        // correctly gets the following nonce.
         console.error(
           `[iris-relay] REVERTED on chain: ${msg.submittedTxHash!.slice(0, 18)}... (tx mined but receipt.status=0). Will re-submit through retry/backoff.`,
         );
-        this.scheduleResubmit(msg, state.config.name);
-        mutated = true;
+        this.mempoolStuckWarned.delete(msg.submittedTxHash!);
+        await this.scheduleResubmit(msg, state.config.name);
+        const revertSrc = this.getChainByDomain(msg.sourceDomain);
+        if (revertSrc) dirtyChains.add(revertSrc);
       }
     }
 
-    // Persist any source chain whose state changed (stuck/revert clears submittedTxHash, success
-    // already persisted inline above to minimise the crash-recovery window).
-    if (mutated) {
-      const dirtySourceChains = new Set<ChainState>();
-      for (const { msg } of inflight) {
-        const sourceState = this.getChainByDomain(msg.sourceDomain);
-        if (sourceState) dirtySourceChains.add(sourceState);
-      }
-      for (const dirtyState of dirtySourceChains) {
-        await this.persistChain(dirtyState);
-      }
+    // One disk write per changed source chain — bounded by chain count, not message count. (Some
+    // give-up paths persist inline via deadLetter; a redundant write here is harmless and the
+    // JsonStateStore serialises per key.)
+    for (const dirtyState of dirtyChains) {
+      await this.persistChain(dirtyState);
     }
   }
 
   /**
    * Move a message from "awaiting confirmation" back into "needs submit" — clears
    * submittedTxHash + submittedAt, bumps retryAttempts + schedules backoff. The next
-   * processPendingMessages tick will re-submit with a fresh nonce (since destState.pendingNonce
-   * already advanced past the failed/stuck tx's nonce).
+   * processPendingMessages tick re-submits via the nonce coordinator, which hands out the next
+   * unconsumed nonce for the destination chain.
    *
    * Shared between revert + stuck-tx paths since both want the same outcome.
    */
-  private scheduleResubmit(msg: PendingMessage, chainLabel: string): void {
+  private async scheduleResubmit(msg: PendingMessage, chainLabel: string): Promise<void> {
     msg.submittedTxHash = undefined;
     msg.submittedAt = undefined;
     msg.retryAttempts++;
@@ -1093,6 +1504,9 @@ export class IrisRelayModule {
         `[iris-relay] ${chainLabel}: GAVE UP on ${msg.dedupKey} (hash ${msg.messageHash.slice(0, 18)}...) after ${msg.retryAttempts} attempts. Source Tx: ${msg.sourceTxHash}. Manual recovery may be required.`,
       );
       this.pendingMessages.delete(msg.dedupKey);
+      // Record durably so the give-up is more than a log line (and won't be re-relayed on rescan).
+      const sourceState = this.getChainByDomain(msg.sourceDomain);
+      if (sourceState) await this.deadLetter(sourceState, msg, "retries-exhausted");
     } else {
       const backoffMs = RELAY_RETRY_BASE_DELAY_MS * Math.pow(2, msg.retryAttempts - 1);
       msg.nextRetryAt = Date.now() + backoffMs;
@@ -1136,53 +1550,63 @@ export class IrisRelayModule {
     }
 
     try {
-      // Prefer the message from Iris (may include finalityThresholdExecuted filled in)
-      const msgToRelay = irisMessage || msg.messageBytes;
+      // Prefer the message from Iris (may include finalityThresholdExecuted filled in), BUT only
+      // after confirming it matches the bytes we observed emitted on the source chain (modulo the
+      // nonce / finalityThresholdExecuted slots Iris legitimately fills). A compromised or buggy
+      // Iris response otherwise has us signing+broadcasting bytes we never validated — the dest
+      // MessageTransmitter would reject a truly-mismatched attestation, but we'd still pay gas.
+      let msgToRelay = msg.messageBytes;
+      if (irisMessage) {
+        if (irisMessageMatches(msg.messageBytes, irisMessage)) {
+          msgToRelay = irisMessage;
+        } else {
+          console.error(
+            `  [iris-relay] Iris message for ${msg.dedupKey} does NOT match locally-observed bytes ` +
+              `(differs outside the nonce/finality slots). Refusing to broadcast — treating as failed.`,
+          );
+          return "failed";
+        }
+      }
 
       console.log(`  Source Tx: ${msg.sourceTxHash}`);
 
-      // Initialise / refresh explicit nonce tracking for this destination chain. The provider's
-      // `getTransactionCount('pending')` is the source of truth on first use; we then bump
-      // locally to avoid round-tripping for every relay. Resets to null on nonce errors so the
-      // catch block below can recover.
-      if (destState.pendingNonce === null) {
-        destState.pendingNonce = await destState.provider.getTransactionCount(
-          destState.wallet.address,
-          "pending",
-        );
-        console.log(
-          `  Initialized tx nonce for ${destState.config.name}: ${destState.pendingNonce}`,
-        );
-      }
-      const txNonce = destState.pendingNonce;
-
-      // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
-      let tx: ethers.ContractTransactionResponse;
-      if (destState.hookRouter) {
-        const hookRouter = new ethers.Contract(
-          destState.hookRouter,
-          HOOK_ROUTER_ABI,
-          destState.wallet
-        );
-        console.log(
-          `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`,
-        );
-        tx = await hookRouter.relayWithHook(msgToRelay, attestation, { nonce: txNonce });
-      } else {
-        const messageTransmitter = new ethers.Contract(
-          destState.messageTransmitter,
-          REAL_MESSAGE_TRANSMITTER_ABI,
-          destState.wallet
-        );
-        console.log(
-          `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`,
-        );
-        tx = await messageTransmitter.receiveMessage(msgToRelay, attestation, { nonce: txNonce });
-      }
-
-      // Bump the nonce now — broadcast happened, the chain's mempool has reserved this nonce.
-      // Even if the message later reverts on receipt, the nonce is consumed.
-      destState.pendingNonce = txNonce + 1;
+      // Allocate the nonce + broadcast through the shared coordinator (keyed by chainId, the
+      // actual nonce stream). It seeds from `getTransactionCount('pending')` on first use and
+      // serialises against the privacy relay, which signs from this same EOA. The coordinator
+      // advances the counter only when the broadcast resolves — a throw leaves the nonce for the
+      // next caller to reuse.
+      const tx = await this.nonceCoordinator.withNonce(
+        destState.config.chainId,
+        destState.provider,
+        destState.wallet.address,
+        (txNonce) => {
+          // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
+          if (destState.hookRouter) {
+            const hookRouter = new ethers.Contract(
+              destState.hookRouter,
+              HOOK_ROUTER_ABI,
+              destState.wallet
+            );
+            console.log(
+              `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`,
+            );
+            return hookRouter.relayWithHook(msgToRelay, attestation, {
+              nonce: txNonce,
+            }) as Promise<ethers.ContractTransactionResponse>;
+          }
+          const messageTransmitter = new ethers.Contract(
+            destState.messageTransmitter,
+            REAL_MESSAGE_TRANSMITTER_ABI,
+            destState.wallet
+          );
+          console.log(
+            `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`,
+          );
+          return messageTransmitter.receiveMessage(msgToRelay, attestation, {
+            nonce: txNonce,
+          }) as Promise<ethers.ContractTransactionResponse>;
+        },
+      );
 
       // Mutate the message so the caller can persist + transition to "awaiting receipt" state.
       msg.submittedTxHash = tx.hash;
@@ -1199,7 +1623,7 @@ export class IrisRelayModule {
         return "already-processed";
       }
       // Nonce-class errors (Sepolia load-balancer drift, replacement underpriced, etc.) — reset
-      // the local cache so the next attempt re-reads from the provider. Don't surface as a
+      // the coordinator's cache so the next attempt re-reads from the provider. Don't surface as a
       // hard failure since the underlying state may already be correct on chain.
       if (
         e.message?.includes("nonce") ||
@@ -1208,7 +1632,7 @@ export class IrisRelayModule {
         e.code === "REPLACEMENT_UNDERPRICED"
       ) {
         console.log(`  Nonce error detected, refreshing on next attempt`);
-        destState.pendingNonce = null;
+        this.nonceCoordinator.reset(destState.config.chainId);
       }
       console.error(`  [iris-relay] Submit failed: ${e.message || e}`);
       return "failed";
@@ -1378,6 +1802,7 @@ export class IrisRelayModule {
         lastScanAt: state.lastScanAt,
         lastError: state.lastError,
         pendingCount: pendingBySource.get(state.domain) ?? 0,
+        deadLetterCount: this.deadLetters.get(state.config.name)?.length ?? 0,
       });
     }
 

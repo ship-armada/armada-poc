@@ -40,6 +40,16 @@ export class JsonStateStore<T> {
   constructor(private readonly opts: JsonStateStoreOptions<T>) {}
 
   /**
+   * Per-key write serialisation. Concurrent `write(key, ...)` calls for the SAME key chain onto
+   * one another so their tmpfile+rename pairs can't interleave (an interleave could rename a
+   * stale or half-written snapshot over a newer one — a lost update). Different keys never block
+   * each other.
+   */
+  private writeTails: Map<string, Promise<void>> = new Map();
+  /** Monotonic counter to make each in-flight tmp filename unique even within one process. */
+  private writeSeq = 0;
+
+  /**
    * Read the payload for `key`. Returns null when the file does not exist (cold start case) —
    * the caller decides whether to bootstrap from defaults or fail loudly. Throws on malformed
    * JSON, validation failure, or unsupported version without a migrate path: don't silently
@@ -66,10 +76,33 @@ export class JsonStateStore<T> {
    * the version themselves.
    */
   async write(key: string, payload: T): Promise<void> {
+    // Serialise writes per key: append this write to the key's tail so two concurrent writes for
+    // the same key run strictly one-after-another. `prev` is awaited with its rejection swallowed
+    // (the previous write's error is surfaced to ITS own caller, not this one). The stored tail is
+    // likewise non-rejecting so a failed write doesn't poison the chain for the next writer.
+    const prev = this.writeTails.get(key) ?? Promise.resolve();
+    const run = prev.then(
+      () => this.writeNow(key, payload),
+      () => this.writeNow(key, payload),
+    );
+    this.writeTails.set(
+      key,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
+  /** The actual atomic tmpfile+rename write. Always invoked under the per-key serialisation. */
+  private async writeNow(key: string, payload: T): Promise<void> {
     const path = this.pathFor(key);
     await mkdir(dirname(path), { recursive: true });
     const versioned = { ...payload, version: this.opts.expectedVersion };
-    const tmpPath = `${path}.${process.pid}.tmp`;
+    // Tmp name is unique per write (pid + monotonic counter), so even if serialisation were ever
+    // bypassed, two in-flight writes can't clobber each other's tmp file mid-rename.
+    const tmpPath = `${path}.${process.pid}.${this.writeSeq++}.tmp`;
     await writeFile(tmpPath, `${JSON.stringify(versioned, null, 2)}\n`, "utf8");
     try {
       await rename(tmpPath, path);
@@ -77,7 +110,7 @@ export class JsonStateStore<T> {
       try {
         await unlink(tmpPath);
       } catch {
-        // ignored — orphan tmp will be overwritten on next write (PID-suffixed)
+        // ignored — orphan tmp is uniquely named; a later run won't collide with it
       }
       throw err;
     }

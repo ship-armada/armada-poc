@@ -220,6 +220,25 @@ export const relayerSettings = {
   pollIntervalMs: isLocal() ? 2000 : netConfig.iris.pollIntervalMs,
 };
 
+/**
+ * Private key the relayer's hot wallet signs with on EVERY chain and code path (privacy relay +
+ * CCTP relay). Prefer a DEDICATED `RELAYER_PRIVATE_KEY` so a relayer-host compromise doesn't also
+ * compromise the deployer/admin key. When unset, falls back to the deployer key (the long-standing
+ * behaviour) with a loud warning on non-local environments.
+ */
+export const relayerPrivateKey: string = (() => {
+  const dedicated = process.env.RELAYER_PRIVATE_KEY?.trim();
+  if (dedicated) return dedicated;
+  if (!isLocal()) {
+    console.warn(
+      "[config] WARNING: relayer is using the DEPLOYER key (RELAYER_PRIVATE_KEY unset). On a " +
+        "shared/VPS host this means a relayer compromise is also a protocol-admin compromise. Set " +
+        "RELAYER_PRIVATE_KEY to a dedicated, minimally-funded hot-wallet key.",
+    );
+  }
+  return accounts.deployer.privateKey;
+})();
+
 // CCTP finality mode from unified config
 function getCCTPFinalityMode(): "fast" | "standard" {
   return netConfig.cctpFinalityMode;
@@ -267,7 +286,43 @@ export const armadaRelayerSettings = {
    * relayer state (only the engine's leveldown sees derived keys).
    */
   railgunWalletMnemonic: process.env.RELAYER_RAILGUN_MNEMONIC ?? "",
+  /**
+   * HTTP request hardening for the public, unauthenticated API. Per-IP token-bucket rate limits
+   * (requests/minute) bound the cost-amplification of anonymous /relay (SNARK decrypt + estimateGas)
+   * and /status fan-out; the body limit caps JSON payload size deliberately rather than relying on
+   * Express's silent 100kb default. All env-overridable.
+   */
+  rateLimit: {
+    relayPerMin: envInt("RELAYER_RATE_LIMIT_RELAY_PER_MIN", 10),
+    getPerMin: envInt("RELAYER_RATE_LIMIT_GET_PER_MIN", 60),
+    /** Honour X-Forwarded-For (first hop) when behind a known reverse proxy. Default OFF — trusting
+     *  it blindly lets any client spoof its rate-limit key. */
+    trustProxy: envBool("RELAYER_TRUST_PROXY", false),
+  },
+  /**
+   * Max JSON request body in bytes. A multi-commitment `transact()` proof, hex-encoded inside JSON,
+   * can run to tens of KB; 256KB is a generous-but-bounded ceiling. Override via RELAYER_MAX_BODY_BYTES.
+   */
+  maxRequestBodyBytes: envInt("RELAYER_MAX_BODY_BYTES", 256 * 1024),
 };
+
+/** Parse a non-negative integer env var, falling back to `fallback` when unset/empty. */
+function envInt(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Invalid env var ${key}=${raw} — expected a non-negative number`);
+  }
+  return parsed;
+}
+
+/** Parse a boolean env var ("1"/"true"/"yes" → true). Falls back when unset/empty. */
+function envBool(key: string, fallback: boolean): boolean {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
 
 // Legacy config export for backward compatibility
 export const config = {

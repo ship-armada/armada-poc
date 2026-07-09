@@ -17,6 +17,7 @@
 import { RelayError } from "../types";
 import type { RelayRequest, TransactionStatus } from "../types";
 import type { WalletManager } from "./wallet-manager";
+import { WalletLockedError } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
 import type { VerifierContext } from "./broadcaster-fee-verifier";
 import { verifyBroadcasterFee } from "./broadcaster-fee-verifier";
@@ -186,8 +187,12 @@ export class PrivacyRelay {
       );
     }
 
-    // 3. Validate fee cache ID against THIS chain's schedule
-    if (!feeCalculator.validateFeesCacheId(feesCacheId)) {
+    // 3. Resolve the EXACT schedule this quote's cacheId was issued from (current, or the one-deep
+    // previous if still within the variance buffer). We verify the paid fee against THIS schedule's
+    // prices below — never a freshly-regenerated one — so honest proofs built against a quote that
+    // expired mid-flight aren't spuriously rejected by an upward gas-price re-quote.
+    const quotedSchedule = feeCalculator.getScheduleByCacheId(feesCacheId);
+    if (!quotedSchedule) {
       throw new RelayError(
         "FEE_EXPIRED",
         `Fee quote has expired or is invalid for chain ${chainId}. Please re-fetch fees.`,
@@ -216,8 +221,7 @@ export class PrivacyRelay {
     //    - Proof-bearing selectors: fee is encrypted inside a SNARK commitment ciphertext;
     //      verifier decrypts under the relayer's viewing key. Hub-only today — Phase A doesn't
     //      run any non-hub proof-bearing flow.
-    const fees = await feeCalculator.getCurrentFees();
-    const advertisedFee = advertisedFeeForSelector(selector, fees.fees);
+    const advertisedFee = advertisedFeeForSelector(selector, quotedSchedule.fees);
     try {
       if (GASLESS_SELECTORS.has(selector)) {
         verifyGaslessFee(
@@ -273,6 +277,16 @@ export class PrivacyRelay {
       this.counters.inc(`submitSuccess.${selectorName}`);
       return { txHash: result.txHash };
     } catch (e: any) {
+      // Lost the per-chain lock race to a concurrent submit on this chain. This is a transient
+      // "try again shortly" condition, not a real submission failure — surface it as RELAYER_BUSY
+      // (503) so the client retries, instead of SUBMISSION_FAILED (502).
+      if (e instanceof WalletLockedError) {
+        this.counters.inc(`submitFail.${selectorName}.RELAYER_BUSY`);
+        throw new RelayError(
+          "RELAYER_BUSY",
+          `Relayer wallet on chain ${chainId} is busy processing another transaction. Please retry shortly.`,
+        );
+      }
       const code = e.message?.includes("Duplicate") ? "DUPLICATE_TX" : "SUBMISSION_FAILED";
       this.counters.inc(`submitFail.${selectorName}.${code}`);
       if (code === "DUPLICATE_TX") {

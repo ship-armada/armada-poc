@@ -114,3 +114,56 @@ describe("FeeCalculator", () => {
     expect(schedule.broadcasterRailgunAddress).to.equal(BROADCASTER);
   });
 });
+
+// Resolving a quote to the schedule it was issued from (current or one-deep previous within the
+// variance buffer). WHY: with profitMarginBps=0, re-pricing an in-flight quote against a
+// freshly-regenerated (higher-gas) schedule spuriously rejects honest proofs as FEE_INSUFFICIENT.
+describe("FeeCalculator.getScheduleByCacheId", () => {
+  it("resolves the current schedule's cacheId", async () => {
+    const { provider } = stubProvider(1_000_000_000n);
+    const calc = new FeeCalculator(provider, CHAIN_ID, BROADCASTER);
+    const s = await calc.generateFeeSchedule();
+    expect(calc.getScheduleByCacheId(s.cacheId)).to.equal(s);
+  });
+
+  it("still resolves the PREVIOUS schedule's cacheId after a regeneration, with ITS OWN prices", async () => {
+    // WHY: the security/UX fix. A quote issued against s1 (cheap gas) must keep verifying against
+    // s1's fees even after s2 regenerates at a higher gas price — otherwise the honest user who
+    // built their proof against the s1 quote is rejected through no fault of their own.
+    const gas = { value: 1_000_000_000n };
+    const provider = {
+      getFeeData: async () => ({ gasPrice: gas.value }),
+    } as unknown as ethers.JsonRpcProvider;
+    const calc = new FeeCalculator(provider, CHAIN_ID, BROADCASTER);
+    const s1 = await calc.generateFeeSchedule();
+
+    gas.value = 5_000_000_000n; // gas price jumps before the next quote
+    const s2 = await calc.generateFeeSchedule();
+
+    expect(s2.fees.transfer).to.not.equal(s1.fees.transfer); // prices really did change
+    const resolved = calc.getScheduleByCacheId(s1.cacheId);
+    expect(resolved).to.equal(s1);
+    expect(resolved!.fees.transfer).to.equal(s1.fees.transfer); // verified against s1, not s2
+  });
+
+  it("returns null for an unknown cacheId", async () => {
+    const { provider } = stubProvider(1_000_000_000n);
+    const calc = new FeeCalculator(provider, CHAIN_ID, BROADCASTER);
+    await calc.generateFeeSchedule();
+    expect(calc.getScheduleByCacheId(`fee-${CHAIN_ID}-0-999`)).to.equal(null);
+  });
+
+  it("history is one-deep: a cacheId two regenerations old no longer resolves", async () => {
+    // WHY: bounds memory + replay window. After s3, s1 has fallen out of {current, previous} and
+    // must be rejected (forcing a re-fetch), while s2 and s3 still resolve.
+    const { provider } = stubProvider(1_000_000_000n);
+    const calc = new FeeCalculator(provider, CHAIN_ID, BROADCASTER);
+    const s1 = await calc.generateFeeSchedule();
+    const s2 = await calc.generateFeeSchedule();
+    const s3 = await calc.generateFeeSchedule();
+
+    expect(calc.getScheduleByCacheId(s1.cacheId)).to.equal(null);
+    expect(calc.getScheduleByCacheId(s2.cacheId)).to.equal(s2);
+    expect(calc.getScheduleByCacheId(s3.cacheId)).to.equal(s3);
+  });
+});

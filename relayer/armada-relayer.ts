@@ -23,11 +23,14 @@ import { PrivacyRelay } from "./modules/privacy-relay";
 import { RelayerRailgunWallet } from "./modules/railgun-wallet";
 import { HttpApi } from "./modules/http-api";
 import { Counters } from "./modules/counters";
+import { IdempotencyStore } from "./modules/idempotency-store";
+import { CctpDeliveryStore } from "./modules/cctp-delivery-store";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
 import { getNetworkConfig } from "../config/networks";
 import { installBisectingGetLogs } from "./lib/rpc-bisecting";
+import { NonceCoordinator } from "./lib/nonce-coordinator";
 
 // Install the eth_getLogs bisecting patch at module load — before ANY JsonRpcProvider is
 // constructed (the patch is at the prototype level so this is technically order-independent,
@@ -180,9 +183,21 @@ async function main() {
   );
   console.log();
 
+  // One nonce authority for the whole process. The privacy relay (WalletManager) and the CCTP
+  // relay (iris/cctp module) both submit from the SAME EOA on the SAME chains; sharing this
+  // coordinator is what stops their nonce streams from colliding and silently replacing each
+  // other's transactions in the mempool. Keyed by chainId — assumes one EOA per chain, which
+  // holds today (all paths use the deployer/relayer key) and after the optional RELAYER_PRIVATE_KEY
+  // split (still one key for every path).
+  const nonceCoordinator = new NonceCoordinator();
+
+  // In-process counters surfaced on /health. Created here (ahead of WalletManager) because the
+  // wallet manager records stuck-broadcast events into it.
+  const counters = new Counters();
+
   // Initialize wallet manager — multi-chain (one provider + same EOA across all chains)
   console.log("[armada] Initializing wallet manager...");
-  const walletManager = new WalletManager();
+  const walletManager = new WalletManager(nonceCoordinator, counters);
   await walletManager.initialize();
   console.log();
 
@@ -247,7 +262,6 @@ async function main() {
   // Initialize privacy relay. Multi-chain — receives requests from any configured chain,
   // dispatches via the right provider, fee-verifies via the right path.
   console.log("[armada] Initializing privacy relay...");
-  const counters = new Counters();
   const privacyRelay = new PrivacyRelay(
     walletManager,
     feeCalculators,
@@ -262,6 +276,13 @@ async function main() {
     counters,
   );
 
+  // Durable cross-chain delivery index — written by whichever relay mode is active, read by the
+  // /cctp-status endpoint. Loaded from disk so delivery status survives a restart. Constructed
+  // BEFORE the relay-module selection so it can be injected into the active module.
+  console.log("[armada] Initializing CCTP delivery store...");
+  const cctpDeliveryStore = new CctpDeliveryStore();
+  await cctpDeliveryStore.initialize();
+
   // Initialize CCTP relay module — select based on CCTP mode. `getHealth` is the contract
   // surfaced to http-api for the /health endpoint; both iris and cctp modules implement it.
   let cctpRelayModule: {
@@ -273,7 +294,7 @@ async function main() {
 
   if (armadaRelayerSettings.cctpReal) {
     console.log("[armada] Initializing REAL CCTP relay (Iris attestation)...");
-    const irisRelay = new IrisRelayModule();
+    const irisRelay = new IrisRelayModule(nonceCoordinator, counters, cctpDeliveryStore);
     const initialized = await irisRelay.initialize();
     if (!initialized) {
       console.warn("[armada] Some chains failed to initialize for Iris relay.");
@@ -281,7 +302,7 @@ async function main() {
     cctpRelayModule = irisRelay;
   } else {
     console.log("[armada] Initializing MOCK CCTP relay module...");
-    const cctpRelay = new CCTPRelayModule(async () => {
+    const cctpRelay = new CCTPRelayModule(nonceCoordinator, cctpDeliveryStore, async () => {
       // CCTP mock relay reads from the hub schedule today — keeps existing behaviour.
       const hubCalc = feeCalculators.get(hubChain.chainId)!;
       const fees = await hubCalc.getCurrentFees();
@@ -295,6 +316,25 @@ async function main() {
     }
     cctpRelayModule = cctpRelay;
   }
+
+  // A partial init (some chains failed) is a warning above and the relay runs on the chains that
+  // did come up. But ZERO chains means the CCTP relay is completely dead — the process would run
+  // looking partly alive (HTTP up) while silently relaying nothing. Treat that as fatal so
+  // monitoring (systemd/k8s) restarts it rather than masking the outage.
+  if (cctpRelayModule.chainCount === 0) {
+    console.error(
+      "[armada] FATAL: no CCTP chains initialized — the relay would run delivering nothing. " +
+        "Check RPC connectivity and deployment files. Exiting.",
+    );
+    process.exit(1);
+  }
+  console.log();
+
+  // Durable /relay idempotency store — loaded from disk so a re-POST after a restart returns the
+  // already-broadcast hash instead of double-spending. Swept of expired entries on load.
+  console.log("[armada] Initializing idempotency store...");
+  const idempotencyStore = new IdempotencyStore();
+  await idempotencyStore.initialize();
   console.log();
 
   // Initialize HTTP API — constructed AFTER cctpRelayModule so the /health closure can bind to
@@ -306,6 +346,8 @@ async function main() {
     hubChain.chainId,
     () => cctpRelayModule.getHealth(),
     counters,
+    idempotencyStore,
+    cctpDeliveryStore,
   );
 
   // Start HTTP server
@@ -326,9 +368,11 @@ async function main() {
   console.log(`  CCTP Relay:     Polling ${cctpRelayModule.chainCount} chain(s)`);
   console.log();
 
-  // Periodic dedup cache cleanup (every 5 minutes)
+  // Periodic cleanup (every 5 minutes): in-memory calldata dedup cache + durable store TTLs.
   const cleanupInterval = setInterval(() => {
     walletManager.cleanDedupCache();
+    void idempotencyStore.sweep();
+    void cctpDeliveryStore.sweep();
   }, 5 * 60 * 1000);
 
   // Handle graceful shutdown. CRITICAL: await `cctpRelayModule.stop()` BEFORE process.exit so
@@ -361,7 +405,7 @@ async function main() {
       console.error("[armada] Error during CCTP relay shutdown:", err);
     }
     try {
-      httpApi.stop();
+      await httpApi.stop();
     } catch (err) {
       console.error("[armada] Error during HTTP API shutdown:", err);
     }

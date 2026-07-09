@@ -28,6 +28,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { CursorStore } from "../lib/cursor-store";
+import { createStaticProvider } from "../lib/static-provider";
 import { getLogsChunked } from "../lib/get-logs-chunked";
 import { PendingStateStore, type PersistedPendingMessage } from "../lib/pending-state-store";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
@@ -453,7 +454,7 @@ export class IrisRelayModule {
         knownRecipients.add(ethers.zeroPadValue(poolAddr, 32).toLowerCase());
       }
 
-      const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
+      const provider = createStaticProvider(chainConfig.rpc, chainConfig.chainId);
       const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
 
       // Verify connection up-front with the same timeout we'll use during polling.

@@ -158,3 +158,31 @@ Everything else confirmed **still-present** (or **partly**, noted below). Curren
 - **T-M7** *(quick part)*: `unshield-xchain/handler.ts:541-554` `matchPredicate` recipient-only (`body.includes(pad32(recipient))`); add amount(±maxFee)+source-domain.
 - **DUPLICATE_TX recovery**: `errors.ts:49-50` classifies the code (S-H2 done); no `/status` recovery. `pollStatus` helper exists at `relayer.ts:465-472`.
 - **S-L7**: shield re-entry guards on `sourceTxHash` only; no unresolved-record / same-amount guard between POLL_TIMEOUT and recovery upgrade.
+
+---
+
+## Remaining LOW findings — consciously deferred, NOT filed as issues
+
+Decision (2026-07): the audit's HIGH + MEDIUM findings are all implemented or filed. The two
+trivial LOWs left were pulled in — **T-L5** (`83883dab`, shield-xchain dest explorer link) and
+**T-L9** (`66e1ccff`, removed the unused `useCctpAttestation` stub). The remaining LOW-severity
+items are **intentionally left unimplemented and NOT filed as GitHub issues** (the tracker is
+already large); recorded here instead so they're not lost:
+
+| ID | Finding | Why deferred (not trivial) |
+|---|---|---|
+| T-L6 | Retry offered when predictably futile (expired xchain re-fails fast) | Partly covered by S-H1 (fee-past-TTL gated); the xchain-expired part needs `canRetryTx` tightening |
+| T-L7 | `putTxIfFresh` OCC is non-atomic read-then-write | Self-healing; only wants a single-txn put or a documented acceptance |
+| T-L8 | INTERRUPTED copy ignores a mined approve leg | Needs to detect a confirmed approve before the interrupt — non-trivial |
+| W-6 | `signIn` click-to-prompt race stores identity under wrong key | Security-sensitive; assert active account after `promptSign()` across the signIn flow |
+| W-7 | `useWallet` switch effects run per mounted consumer; drop unused `signer` | Refactor into a mount-once `useAccountSwitchGuard()` |
+| W-9 | No wallet affordance below the `sm` breakpoint (mobile) | New responsive UI (`_unused` mobile-sheet state exists) |
+| W-10 | WalletConnect dead-ends on the placeholder project id | Needs a real WC project id or hiding WC connectors when unset |
+| S-L2 | `useFees().isUnavailable` has no consumers | Wire the relayer-fees-down signal into the fee row |
+| S-L3 | Proof generation isn't actually cancellable | "Document it" — no clean home; WASM prover has no abort hook |
+| S-L4 | A declined MetaMask prompt persists as a permanent "failed" row | `cancelled` semantics across all 8 handlers' catch + preserve copy |
+| S-L5 | No stuck/underpriced-tx replacement path | POLL_TIMEOUT copy could suggest "speed up in your wallet" (speculative) |
+| S-L6 | `StageHandler.resumableFrom` is dead code | Removal cascades to the interface + all 7 handlers + every test literal |
+
+**Also deferred, not filed:** T-M6 (BroadcastChannel cross-tab sync) — multi-tab v1 non-goal;
+T-H3 already removed the dangerous consequence. (T-M2 → #327, T-M4 → #328, S-M7 → #336 are filed.)

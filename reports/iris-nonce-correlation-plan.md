@@ -46,11 +46,10 @@ burns by their distinct source tx hashes — and yields the **authoritative burn
 
 ### Architecture — two options
 
-**Option A — frontend polls Iris directly.** Revive the `useCctpAttestation` stub
-(`hooks/useCctpAttestation.ts`, currently returns hardcoded `'pending'`, unused) to poll Iris by
-`sourceTxHash`/`messageHash`, gate on `tabVisibleAtom` + the lifecycle budget, and feed the
-delivery stage. Then match the destination `MessageReceived` by the Iris-assigned `eventNonce`
-(precise) instead of recipient content.
+**Option A — frontend polls Iris directly.** (The old `useCctpAttestation` stub was removed in
+T-L9; Option A would re-create a hook.) Poll Iris by `sourceTxHash`/`messageHash`, gate on
+`tabVisibleAtom` + the lifecycle budget, and feed the delivery stage. Then match the destination
+`MessageReceived` by the Iris-assigned `eventNonce` (precise) instead of recipient content.
 - Pros: no relayer dependency for real mode.
 - Cons: **doesn't help mock mode** (local `cctp-relay`, no Iris); possible CORS/rate-limit/latency
   handling on the client; duplicates the Iris integration the relayer already has.
@@ -69,13 +68,14 @@ destTxHash?, amount?, feeExecuted? }`). The frontend's delivery stage polls THAT
 ### Recommended shape
 1. **Relayer:** add the delivery-status endpoint (Option B), keyed by `messageHash` (we already
    store it). Real mode reads its Iris poll results; mock mode reads its `cctp-relay` mint results.
-2. **Frontend:** delivery stage polls the relayer endpoint as the **primary** signal; the current
-   destination-log scan (`scanCctpDeliveryWindow` + `matchesXchainDelivery`) stays as the
-   **fallback** when the relayer is unreachable. When the relayer reports `delivered`, take its
-   `destTxHash` + verify the amount within `maxFee` tolerance (now authoritative, no byte parsing).
-3. **Decommission or revive `useCctpAttestation`** accordingly (hooks/CLAUDE.md currently marks it
-   for removal — this either gives it a real job or confirms deletion in favour of a relayer-status
-   adapter).
+   Handoff: `reports/relayer-cctp-delivery-status-handoff.md`.
+2. **Frontend — ALREADY SHIPPED (`3470a3eb`).** The delivery stage polls the relayer endpoint
+   (`lib/relayer.ts::fetchCctpDeliveryStatus`) as the **primary** signal; the destination-log scan
+   (`scanCctpDeliveryWindow` + `matchesXchainDelivery`) stays as the **fallback** when the relayer
+   is unavailable. Once the relayer returns `amount`/`feeExecuted`, the frontend can additionally
+   verify within `maxFee` tolerance (dropping the fragile BurnMessage byte-parsing).
+3. `useCctpAttestation` was **removed** in T-L9 (Option B uses `fetchCctpDeliveryStatus`, not a
+   client Iris hook). Only Option A would need to re-create a hook.
 
 ## Tests
 - Iris/relayer status mock: pending → delivered transitions drive the stage to terminal with the

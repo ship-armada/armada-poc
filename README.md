@@ -1,12 +1,19 @@
-# Railgun CCTP POC
+# Armada
 
-A proof-of-concept demonstrating **cross-chain privacy with shielded yield** by combining Railgun's ZK-based shielded pool with CCTP-style USDC bridging and DeFi integrations.
+**Cross-chain privacy with shielded yield** — a Railgun-style ZK shielded pool combined with Circle's CCTP for cross-chain USDC bridging and DeFi yield integration.
+
+The project is transitioning from POC to production and ships in two launches:
+
+1. **Crowdfund + Governance** (near-term) — the token sale and on-chain governance stack. Apps live in `crowdfund-ui/` (committer, admin); see `specs/` for the governance, crowdfund, and operations specs.
+2. **Shielded Pool** (later) — the privacy pool, yield vault, fee module, and the `apps/armada-interface` user app. Deploys after the sale via governance proposals.
+
+This README covers the **local privacy-pool + shielded-yield demo**. For the crowdfund/governance apps and their deploy flows, see `CLAUDE.md`, `crowdfund-ui/`, and `specs/`.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) (for Anvil local chains)
   ```bash
   curl -L https://foundry.paradigm.xyz | bash
@@ -33,6 +40,8 @@ npm run setup
 npm run armada-relayer
 
 # 6. In a new terminal: start the demo app
+#    (npm run demo runs the deprecated usdc-v2-frontend, retained as the working
+#     local privacy-pool demo until apps/armada-interface's flows are wired for local)
 npm run demo
 
 # 7. Open http://localhost:5173 in your browser
@@ -175,19 +184,21 @@ poc/
 │   │   ├── ArmadaYieldVault.sol
 │   │   ├── ArmadaYieldAdapter.sol
 │   │   └── MockAaveSpoke.sol
+│   ├── governance/         # Governance, treasury, crowdfund, revenue contracts
+│   ├── fees/               # ArmadaFeeModule (volume tiers, integrators)
 │   ├── MockUSDC.sol        # CCTP simulation (burn/mint)
 │   └── Faucet.sol          # Test token faucet
-├── usdc-v2-frontend/       # React demo application
-│   ├── src/
-│   │   ├── hooks/
-│   │   │   ├── useShieldedWallet.ts    # Shielded balance management
-│   │   │   ├── useShieldedYieldTransaction.ts  # Lend/withdraw UX
-│   │   │   └── useYieldRate.ts         # Real-time yield display
-│   │   └── services/
-│   │       └── yield/
-│   │           └── shieldedYieldService.ts  # SDK integration
-├── relayer/                # CCTP message relay service
+├── apps/
+│   └── armada-interface/   # User app — shield/unshield/yield/payments (Launch 2)
+├── crowdfund-ui/           # Crowdfund committer + admin apps (Launch 1)
+├── governance-ui/          # Standalone governance proposal builder
+├── packages/               # Shared workspace packages (@armada/ui design system)
+├── usdc-v2-frontend/       # Deprecated demo frontend — used by `npm run demo`
+├── relayer/                # CCTP message relay + HTTP fee API
 ├── scripts/                # Deployment scripts
+├── tasks/                  # Hardhat CLI tasks (crowdfund, governance)
+├── specs/                  # Specifications (governance, crowdfund, fees, ops)
+├── deploy/                 # Crowdfund indexer deployment infra
 ├── deployments/            # Generated contract addresses
 └── lib/                    # SDK integration modules
 ```

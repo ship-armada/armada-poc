@@ -6,7 +6,7 @@
  *
  * Run: npx ts-node scripts/derive_relayer_railgun_address.ts
  *
- * Add the output to usdc-v2-frontend/src/config/relayer.ts as relayerRailgunAddress.
+ * Set the output as the relayer's BROADCASTER_RAILGUN_ADDRESS env var (see relayer/config.ts).
  */
 
 import { initializeEngine, shutdownEngine } from '../lib/sdk/init';

@@ -32,7 +32,7 @@ We ask that you do not publicly disclose the vulnerability until we have had a r
 ### Out of Scope
 
 - Third-party dependencies (OpenZeppelin, Railgun, Circle CCTP) — report upstream
-- Frontend applications (`usdc-v2-frontend/`, `crowdfund-ui/`) — temporary UIs, not production
+- Frontend applications (`apps/armada-interface/`, `crowdfund-ui/`) — UIs, not core protocol
 - Known findings documented in `reports/slither-report.txt`
 - Mock contracts used only in local/test environments
 

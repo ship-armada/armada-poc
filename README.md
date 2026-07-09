@@ -39,12 +39,10 @@ npm run setup
 # 5. Start the Armada Relayer (HTTP fee API + CCTP relay)
 npm run armada-relayer
 
-# 6. In a new terminal: start the demo app
-#    (npm run demo runs the deprecated usdc-v2-frontend, retained as the working
-#     local privacy-pool demo until apps/armada-interface's flows are wired for local)
+# 6. In a new terminal: start the demo app (apps/armada-interface, local mode)
 npm run demo
 
-# 7. Open http://localhost:5173 in your browser
+# 7. Open http://localhost:5176 in your browser
 ```
 
 ### Add Local Chains to MetaMask
@@ -155,7 +153,7 @@ This ensures the dashboard shows accurate yield even though yield accrues passiv
 | `npm run setup` | Compile & deploy all contracts |
 | `npm run armada-relayer` | Start the unified relayer (HTTP fee API + CCTP relay) |
 | `npm run relayer` | Start legacy CCTP-only relay (no HTTP API) |
-| `npm run demo` | Start the frontend demo app |
+| `npm run demo` | Start the frontend demo app (`apps/armada-interface`, port 5176) |
 | `npm run test` | Run integration tests |
 | `npm run clean` | Remove deployments and build artifacts |
 
@@ -193,7 +191,6 @@ poc/
 ├── crowdfund-ui/           # Crowdfund committer + admin apps (Launch 1)
 ├── governance-ui/          # Standalone governance proposal builder
 ├── packages/               # Shared workspace packages (@armada/ui design system)
-├── usdc-v2-frontend/       # Deprecated demo frontend — used by `npm run demo`
 ├── relayer/                # CCTP message relay + HTTP fee API
 ├── scripts/                # Deployment scripts
 ├── tasks/                  # Hardhat CLI tasks (crowdfund, governance)

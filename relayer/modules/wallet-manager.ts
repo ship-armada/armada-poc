@@ -15,6 +15,7 @@
 
 import { ethers } from "ethers";
 import { accounts, allChains } from "../config";
+import { createStaticProvider } from "../lib/static-provider";
 
 // ============ Types ============
 
@@ -47,7 +48,7 @@ export class WalletManager {
 
   constructor() {
     for (const chain of allChains) {
-      const provider = new ethers.JsonRpcProvider(chain.rpc);
+      const provider = createStaticProvider(chain.rpc, chain.chainId);
       const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
       this.chains.set(chain.chainId, { provider, wallet, locked: false });
     }

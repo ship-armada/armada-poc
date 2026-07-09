@@ -147,6 +147,8 @@ Unlike §8.1, these **are** deployment inputs for the governance / RevenueLock d
 | Treasury daily outflow limit — ARM | `[TBD]` | Set at deploy (timelock `initOutflowConfig`); governance-adjustable after | ☐ | Placeholder in `config/networks.ts`. Tracking: #348. |
 | Treasury daily outflow limit — ETH (`address(0)`) | `[TBD]` | Set at deploy (timelock `initOutflowConfig`); governance-adjustable after | ☐ | Placeholder in `config/networks.ts`. Tracking: #348. |
 | Outflow window / activation params | `[TBD]` | Set at deploy | ☐ | Window duration, limit BPS, absolute + floor per `initOutflowConfig`. Tracking: #348. |
+| Wind-down revenue threshold | `[TBD — default 10,000e18]` | Set at deploy (ArmadaWindDown constructor); governance-adjustable pre-trigger (`updateRevenueThreshold`) | ☐ | Below-threshold recognized revenue at the deadline makes wind-down **permissionlessly triggerable**. Recognized revenue only advances via the Launch 2 fee module — set with a Launch 2 schedule buffer so the pool has time to ship. `WINDDOWN_REVENUE_THRESHOLD` in `config/networks.ts`. Tracking: #381 (feasibility C2). |
+| Wind-down deadline | `[TBD — default 2026-12-31T00:00:00Z]` | Set at deploy (ArmadaWindDown constructor); governance-adjustable pre-trigger (`updateWindDownDeadline`) | ☐ | The date the permissionless trigger arms if revenue is under threshold. Must leave headroom for the Launch 2 (shielded pool) deploy + fee revenue ramp. `WINDDOWN_DEADLINE` in `config/networks.ts`. Tracking: #381 (feasibility C2). |
 
 > Steward budget is **not** a deploy input — it is authorized via governance post-launch (see #222), so there is no value to freeze here.
 
@@ -238,6 +240,7 @@ Before deployment, every row must be verified. This is the final sign-off.
 | All addresses confirmed by counterparty (treasury, ROOT, SC members) | ☐ | |
 | RevenueLock beneficiary list finalized and sums to 2,400,000e18 (§8.2, #144) | ☐ | |
 | Treasury outflow limits finalized — USDC/ARM/ETH + window params (§8.2, #348) | ☐ | |
+| Wind-down threshold + deadline set with Launch 2 schedule buffer (§8.2, #381 C2) | ☐ | |
 | All timestamps independently converted and verified | ☐ | |
 | All decimal-encoded values independently computed and verified | ☐ | |
 | EIP-712 domain fields confirmed | ☐ | |

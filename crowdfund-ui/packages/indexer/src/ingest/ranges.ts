@@ -15,6 +15,21 @@ export function getLogIdentity(log: IndexedRawLog): string {
   ].join(':')
 }
 
+// Store dedup key: mirrors the Postgres crowdfund_indexer_raw_logs primary key
+// (chain_id, contract_address, transaction_hash, log_index). It deliberately excludes
+// blockHash and blockNumber so a reorg that re-mines the same tx at a new block cannot
+// create a second raw-log entry — re-ingestion stays idempotent. getLogIdentity (which
+// keeps blockHash) is retained for createRangeDigest, where a blockHash divergence
+// between two RPCs must still change the digest so reorg divergence is detected.
+export function getLogDedupeKey(log: IndexedRawLog): string {
+  return [
+    log.chainId,
+    log.contractAddress.toLowerCase(),
+    log.transactionHash.toLowerCase(),
+    log.logIndex,
+  ].join(':')
+}
+
 export function createRangeDigest(logs: readonly IndexedRawLog[]): string {
   const hash = createHash('sha256')
   const sorted = [...logs].sort((a, b) => {
@@ -78,8 +93,15 @@ export function getContiguousVerifiedCursor(
 }
 
 export function getRepairRanges(records: readonly IngestRangeRecord[]): BlockRange[] {
+  // A failed/suspicious record whose span is fully covered by verified ranges is a
+  // phantom gap — its blocks were re-verified under different chunk boundaries (e.g.
+  // after CROWDFUND_MAX_BLOCK_RANGE changed). Drop it so it is not reported as a gap.
+  const verified = records
+    .filter((record) => record.status === 'verified')
+    .map((record) => ({ fromBlock: record.fromBlock, toBlock: record.toBlock }))
   return records
     .filter((record) => record.status === 'failed' || record.status === 'suspicious')
+    .filter((record) => findFirstGap(verified, record.fromBlock, record.toBlock) !== null)
     .map((record) => ({
       fromBlock: record.fromBlock,
       toBlock: record.toBlock,

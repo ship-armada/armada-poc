@@ -120,6 +120,38 @@ export function markDismissed<K extends TxKind>(record: TxRecord<K>): TxRecord<K
 }
 
 /**
+ * Reconcile a non-terminal-but-confirmed record discovered by history recovery: the chain shows
+ * the tx landed, but our local record terminated as `expired`/`failed`/`cancelled` (or is still
+ * mid-flight) because we lost the watcher. Upgrade it IN PLACE to `completed` — advance to the
+ * lifecycle's terminal-success stage, drop the stale error, keep `sourceTxHash` + the rest of the
+ * artifacts — rather than skipping (a permanent false "expired") or inserting a lossy `synth:` row
+ * beside it. (P1-24)
+ *
+ * The terminal-write guard allows this because it's terminal→`completed` (terminal→terminal). The
+ * caller MUST build this from the LATEST stored record so the bumped `updatedSeq` clears OCC.
+ */
+export function markRecoveredComplete<K extends TxKind>(record: TxRecord<K>): TxRecord<K> {
+  const lifecycle = lifecycleFor(record.kind)
+  const terminal = lifecycle.terminalSuccess
+  const stages = lifecycle.stages
+  const toIndex = stages.indexOf(terminal)
+  const newCompleted = [
+    ...new Set([...record.stagesCompleted, ...stages.slice(0, toIndex), terminal]),
+  ] as StageFor<K>[]
+  const nextArtifacts = { ...record.artifacts }
+  delete (nextArtifacts as { error?: unknown }).error
+  return {
+    ...record,
+    stage: terminal,
+    stagesCompleted: newCompleted,
+    executionState: 'completed',
+    updatedSeq: record.updatedSeq + 1,
+    updatedAt: Date.now(),
+    artifacts: nextArtifacts,
+  }
+}
+
+/**
  * Merge artifacts without touching stage or executionState. Used by polling handlers that need
  * to persist progress (e.g. advancing a log-scan cursor between ticks) while the record stays in
  * `waiting`. Increments updatedSeq so OCC writes succeed in order.

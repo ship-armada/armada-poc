@@ -18,6 +18,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { CursorStore } from "../lib/cursor-store";
+import { createStaticProvider } from "../lib/static-provider";
 import { getLogsChunked } from "../lib/get-logs-chunked";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
@@ -547,7 +548,8 @@ export class CCTPRelayModule {
         }
       }
 
-      const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
+      // Pinned static provider (main's RPC-quota optimization) + our dedicated relayer key.
+      const provider = createStaticProvider(chainConfig.rpc, chainConfig.chainId);
       const wallet = new ethers.Wallet(relayerPrivateKey, provider);
 
       // Verify connection up-front with the same timeout we'll use during polling.

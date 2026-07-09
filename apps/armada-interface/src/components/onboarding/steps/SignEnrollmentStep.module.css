@@ -1,0 +1,67 @@
+/* ABOUTME: SignEnrollmentStep — centered column, 400px max width, stacked hug-width CTAs. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+}
+
+.body {
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  line-height: var(--primitives-lineHeight-normal);
+}
+
+.bodyMuted {
+  composes: body;
+  color: var(--semantic-color-text-muted);
+}
+
+.error {
+  color: var(--semantic-color-status-error);
+  margin: 0;
+  width: 100%;
+}
+
+.retryLink {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--semantic-color-text-link);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  line-height: var(--primitives-lineHeight-normal);
+}
+
+.retryLink:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  margin-top: var(--primitives-spacing-8);
+  width: 100%;
+}
+
+.actions :global(button) {
+  width: auto;
+}
+
+@media (max-width: 767px) {
+  .actions {
+    margin-top: var(--primitives-spacing-4);
+  }
+}

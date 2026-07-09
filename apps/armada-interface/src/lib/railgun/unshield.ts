@@ -2,6 +2,7 @@
 // ABOUTME: Dynamic-imports the Railgun SDK + shared-models to dodge jsdom's circomlibjs crash; the populated calldata gets POSTed to /relay by features/unshield/handler.
 
 import { loadHubNetwork } from './network'
+import { yieldToPaint } from '@/lib/paint'
 
 type RailgunSdk = typeof import('@railgun-community/wallet')
 type SharedModels = typeof import('@railgun-community/shared-models')
@@ -87,6 +88,9 @@ export async function generateUnshieldProofForRecipient(opts: {
     sharedModels(),
   ])
   const sendWithPublicWallet = opts.broadcasterFee === null
+  // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
+  // blocks the main thread for 20-30s.
+  await yieldToPaint()
   await generateUnshieldProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -183,6 +187,9 @@ export async function generateXchainUnshieldProof(opts: {
     sharedModels(),
   ])
   const sendWithPublicWallet = opts.broadcasterFee === null
+  // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
+  // blocks the main thread for 20-30s.
+  await yieldToPaint()
   await generateUnshieldProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,

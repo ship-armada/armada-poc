@@ -1,0 +1,9 @@
+# ZK circuit artifacts. The root .gitignore ignores every `artifacts/` dir, so the small
+# demo-critical variants (01x02/02x02/02x03, ~33MB) are force-committed (`git add -f`) to
+# keep the app self-contained. The heavy 08x04 (~30MB) is deliberately left out — the SDK
+# fetches it from its IPFS read-through cache at runtime.
+public/artifacts/08x04/
+
+# Personal dev overrides (copy from .env.example)
+.env.development
+.env.local

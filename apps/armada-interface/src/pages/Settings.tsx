@@ -2,13 +2,22 @@
 // ABOUTME: Auxiliary dialogs (RecoverySecretExportDialog, ResetWalletDialog) are opened via local state, not openModalAtom.
 
 import { useEffect, useState, type ChangeEvent } from 'react'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Button } from '@armada/ui'
 import { Card, SectionHeader } from '@/components/ui'
-import { RecoverySecretExportDialog, ResetWalletDialog } from '@/components/settings'
+import {
+  ClearHistoryDialog,
+  RecoverySecretExportDialog,
+  ResetWalletDialog,
+} from '@/components/settings'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { preferencesAtom, type AutoLockMinutes } from '@/state/preferences'
-import { autoLockDeadlineAtom } from '@/state/wallet'
+import {
+  activeRailgunWalletIdAtom,
+  autoLockDeadlineAtom,
+} from '@/state/wallet'
+import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
+import { clearHistoryCheckpoint } from '@/lib/railgun/history-checkpoint'
 import { getNetworkMode } from '@/config/network'
 import styles from './Settings.module.css'
 
@@ -21,8 +30,21 @@ export function Settings() {
   const [prefs, setPrefs] = useAtom(preferencesAtom)
   const [exportOpen, setExportOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [clearHistoryOpen, setClearHistoryOpen] = useState(false)
+  const activeWalletId = useAtomValue(activeRailgunWalletIdAtom)
+  const recovery = useAtomValue(historyRecoveryAtom)
+  const setEpoch = useSetAtom(historyRecoveryEpochAtom)
 
   const walletUnlocked = state?.status === 'unlocked'
+  const isScanning = recovery.state === 'scanning'
+
+  function handleRescan() {
+    // Re-scan: drop the per-wallet checkpoint so useHistoryRecovery walks from the hub deploy
+    // block again, then bump the epoch to fire the effect. The user's existing rows stay in
+    // place; the dedup guard inside runScanAndPersist prevents duplicates.
+    if (activeWalletId) clearHistoryCheckpoint(activeWalletId)
+    setEpoch((prev) => prev + 1)
+  }
 
   return (
     <div className={styles.page}>
@@ -153,6 +175,50 @@ export function Settings() {
       </Card>
 
       <Card className={styles.section}>
+        <h3 className={styles.sectionTitle}>History</h3>
+        <ul className={styles.rows}>
+          <li className={styles.row}>
+            <div className={styles.rowLabel}>
+              Re-scan history from chain
+              <div className={styles.rowSubLabel}>
+                Re-fetches your shielded-pool activity from the hub chain. Useful if records
+                seem to be missing — chain history is the source of truth.
+              </div>
+            </div>
+            <div className={styles.rowAction}>
+              <Button
+                variant="secondary"
+                size="sm"
+                showIcon={false}
+                label={isScanning ? 'Scanning…' : 'Re-scan'}
+                onClick={handleRescan}
+                disabled={!walletUnlocked || isScanning}
+              />
+            </div>
+          </li>
+          <li className={styles.row}>
+            <div className={styles.rowLabel}>
+              Clear local history
+              <div className={styles.rowSubLabel}>
+                Removes the local activity log. Your wallet and funds are untouched. Chain
+                history is rebuilt automatically on the next scan.
+              </div>
+            </div>
+            <div className={styles.rowAction}>
+              <Button
+                variant="secondary"
+                size="sm"
+                showIcon={false}
+                label="Clear…"
+                onClick={() => setClearHistoryOpen(true)}
+                disabled={!walletUnlocked}
+              />
+            </div>
+          </li>
+        </ul>
+      </Card>
+
+      <Card className={styles.section}>
         <h3 className={styles.sectionTitle}>Advanced</h3>
         <ul className={styles.rows}>
           <li className={styles.row}>
@@ -168,6 +234,7 @@ export function Settings() {
 
       <RecoverySecretExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
       <ResetWalletDialog open={resetOpen} onClose={() => setResetOpen(false)} />
+      <ClearHistoryDialog open={clearHistoryOpen} onClose={() => setClearHistoryOpen(false)} />
     </div>
   )
 }

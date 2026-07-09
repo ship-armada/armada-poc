@@ -95,11 +95,15 @@
   --graph-edge-active: oklch(0.70 0.15 230);
   --graph-edge-chain: oklch(0.82 0.14 190);
 
-  /* Domain: tx lifecycle */
-  --status-pending: oklch(0.77 0.16 80);
-  --status-submitted: oklch(0.70 0.15 230);
-  --status-confirmed: oklch(0.72 0.19 150);
-  --status-failed: oklch(0.64 0.21 25);
+  /* Domain: tx lifecycle — aliased onto the @armada/ui semantic status palette
+     so the tx chip + status badges stay in lockstep with the toasts (which use
+     the same --semantic-color-status-* tokens). pending↔warning (amber),
+     confirmed↔success (green), failed↔error (red). `submitted` uses the brand
+     lavender to match the in-progress (loading) toast — both mean "tx in flight". */
+  --status-pending: var(--semantic-color-status-warning);
+  --status-submitted: var(--semantic-color-brand-lavender);
+  --status-confirmed: var(--semantic-color-status-success);
+  --status-failed: var(--semantic-color-status-error);
 }
 
 /* Paint the root element so WebKit/Chromium overscroll (rubber-band on macOS)

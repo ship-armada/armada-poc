@@ -82,7 +82,7 @@ export type {
   ReconcileSnapshotInput,
 } from './reconcile/contract.js'
 
-export { buildSnapshot } from './snapshots/build.js'
+export { buildSnapshot, withReconciliation } from './snapshots/build.js'
 export type { BuildSnapshotInput } from './snapshots/build.js'
 export { stableStringify, toJsonValue } from './snapshots/json.js'
 export { publishSnapshot, publishSnapshotToObjectStorage } from './snapshots/publish.js'

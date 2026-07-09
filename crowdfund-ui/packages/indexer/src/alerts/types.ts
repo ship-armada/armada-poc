@@ -3,10 +3,14 @@
 
 import type { CrowdfundSnapshot, IndexerHealth } from '../types.js'
 
-/** Alert identifier matching MONITORING.md §8 (A1–A20). */
+/**
+ * Alert identifier matching MONITORING.md §8 (A1–A20). AH1/AH2 are indexer-health
+ * alerts added by the hardening work (MONITORING.md §8 addendum).
+ */
 export type AlertId =
   | 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8'
   | 'A9a' | 'A9b' | 'A10' | 'A11' | 'A12' | 'A13' | 'A17' | 'A18' | 'A19' | 'A20'
+  | 'AH1' | 'AH2'
 
 /** Severity class per MONITORING.md §4. */
 export type Severity = 'P0' | 'P1' | 'P2' | 'P3'

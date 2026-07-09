@@ -20,6 +20,7 @@ import { ethers } from "ethers";
 import { allChains, relayerPrivateKey } from "../config";
 import { NonceCoordinator } from "../lib/nonce-coordinator";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
+import { createStaticProvider } from "../lib/static-provider";
 import type { Counters } from "./counters";
 
 /**
@@ -84,7 +85,8 @@ export class WalletManager {
     this.nonceCoordinator = nonceCoordinator;
     this.counters = counters;
     for (const chain of allChains) {
-      const provider = new ethers.JsonRpcProvider(chain.rpc);
+      // Pinned static provider (main's RPC-quota optimization) + our dedicated relayer key.
+      const provider = createStaticProvider(chain.rpc, chain.chainId);
       const wallet = new ethers.Wallet(relayerPrivateKey, provider);
       this.chains.set(chain.chainId, { provider, wallet, locked: false });
     }

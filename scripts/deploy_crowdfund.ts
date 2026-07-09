@@ -26,6 +26,7 @@ import {
   isLocal,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
+import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -66,6 +67,18 @@ async function main() {
   console.log(`Chain ID: ${chainId}`);
   console.log(`Environment: ${config.env}`);
   console.log("");
+
+  // Fresh Anvil has no Multicall3; the crowdfund UIs batch their contract reads
+  // through aggregate3 at the canonical address. Etch the runtime bytecode there
+  // (local only — Sepolia/mainnet already have it). Idempotent: skips if present.
+  if (isLocal()) {
+    const existing = await ethers.provider.getCode(MULTICALL3_ADDRESS);
+    if (existing === "0x") {
+      await ethers.provider.send("anvil_setCode", [MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE]);
+      console.log(`Etched Multicall3 at ${MULTICALL3_ADDRESS}`);
+      console.log("");
+    }
+  }
 
   // 1. Load governance deployment (required — provides shared ARM token + treasury)
   console.log("1. Loading governance deployment...");
@@ -123,14 +136,34 @@ async function main() {
   if (securityCouncilAddress.toLowerCase() === deployer.address.toLowerCase()) {
     throw new Error("Security council address must differ from deployer address");
   }
-  console.log(`   Launch team: ${deployer.address}`);
+  // Launch team: config-driven for non-local (a separate key limits deployer
+  // exposure during the crowdfund window — see issue #218), deployer fallback
+  // for local. When explicitly configured it must differ from the deployer.
+  let launchTeamAddress: string;
+  if (config.launchTeamAddress) {
+    launchTeamAddress = config.launchTeamAddress;
+    rejectAnvilAddresses([launchTeamAddress], "Launch team");
+    if (launchTeamAddress.toLowerCase() === deployer.address.toLowerCase()) {
+      throw new Error("Launch team address must differ from deployer address");
+    }
+  } else if (isLocal()) {
+    launchTeamAddress = deployer.address;
+  } else {
+    throw new Error("LAUNCH_TEAM_ADDRESS is required for non-local deployments");
+  }
+  console.log(`   Launch team: ${launchTeamAddress}`);
   console.log(`   Security council: ${securityCouncilAddress}`);
   const crowdfund = await ArmadaCrowdfund.deploy(
-    usdcAddress, armTokenAddress, treasuryAddress, deployer.address, securityCouncilAddress, openTimestamp, nm.override()
+    usdcAddress, armTokenAddress, treasuryAddress, launchTeamAddress, securityCouncilAddress, openTimestamp, nm.override()
   );
-  await crowdfund.deploymentTransaction()!.wait();
+  const crowdfundReceipt = await crowdfund.deploymentTransaction()!.wait();
+  // Record the contract-creation block (not an end-of-script block number). The
+  // indexer and frontends backfill events from this block; capturing it here —
+  // before the multi-minute post-deploy wiring runs — ensures early events like
+  // ArmLoaded are not skipped (issue #324).
+  const crowdfundDeployBlock = crowdfundReceipt!.blockNumber;
   const crowdfundAddress = await crowdfund.getAddress();
-  console.log(`   ArmadaCrowdfund: ${crowdfundAddress}`);
+  console.log(`   ArmadaCrowdfund: ${crowdfundAddress} (block ${crowdfundDeployBlock})`);
 
   // 4. Set transfer whitelist (one-shot — must happen before any ARM transfers)
   // Per ARM token spec §5: crowdfund, treasury, revenueLock.
@@ -290,6 +323,34 @@ async function main() {
   const redemptionAddress = await redemption.getAddress();
   console.log(`   ArmadaRedemption: ${redemptionAddress}`);
 
+  // 9b. Redemption circulating-supply invariant (deploy-time misconfiguration guard).
+  // ArmadaRedemption.circulatingSupply() subtracts revenueLock.lockedAtWindDown() and the
+  // crowdfund unsold-in-contract from circulatingSupplyOf([treasury, redemption]) — both
+  // UNCLAMPED against the running total (only the inner cfBalance-cfStillOwed is clamped).
+  // If the excluded/locked terms ever exceed the base, every redeem() reverts permanently
+  // and the redemption contract has no admin. This asserts correct parameterization at
+  // go-live (security review). It is boundary-exact at deploy (circulating is legitimately
+  // ~0), so compare with <=. A runtime clamp is deferred to a future contract revision.
+  console.log("9b. Asserting redemption circulating-supply invariant...");
+  const revenueLockView = await ethers.getContractAt("RevenueLock", revenueLockAddress);
+  const circBase = await armToken.circulatingSupplyOf([treasuryAddress, redemptionAddress]);
+  const lockedAtWindDown = await revenueLockView.lockedAtWindDown();
+  const cfBalance = await armToken.balanceOf(crowdfundAddress);
+  const cfStillOwed = await crowdfund.armStillOwed();
+  const cfUnsold = cfStillOwed >= cfBalance ? 0n : cfBalance - cfStillOwed;
+  const excludedSum = lockedAtWindDown + cfUnsold;
+  if (excludedSum > circBase) {
+    throw new Error(
+      `Redemption invariant FAILED — excluded terms exceed circulating base:\n` +
+      `  lockedAtWindDown (${ethers.formatUnits(lockedAtWindDown, 18)}) + cfUnsold (${ethers.formatUnits(cfUnsold, 18)}) ` +
+      `= ${ethers.formatUnits(excludedSum, 18)}\n` +
+      `  > circulatingSupplyOf([treasury, redemption]) = ${ethers.formatUnits(circBase, 18)}\n` +
+      `  ArmadaRedemption.circulatingSupply() would underflow and permanently brick redemptions.\n` +
+      `  Check the ARM distribution / RevenueLock allocation parameters.`
+    );
+  }
+  console.log(`   OK: locked+cfUnsold ${ethers.formatUnits(excludedSum, 18)} <= circulating base ${ethers.formatUnits(circBase, 18)}`);
+
   // 10. Deploy ArmadaWindDown (requires redemption address)
   console.log("10. Deploying ArmadaWindDown...");
   const windDownDeadline = Math.floor(new Date(config.windDownDeadline).getTime() / 1000);
@@ -315,33 +376,80 @@ async function main() {
   await (await redemption.setWindDown(windDownAddress, nm.override())).wait();
   console.log(`   redemption.setWindDown(${windDownAddress})`);
 
-  // 11c. Wire wind-down to RevenueCounter and RevenueLock for the trigger-time
-  // freeze hooks (issue #90 fix). Both are permissionless one-shot setters.
-  console.log("11c. Wiring wind-down to RevenueCounter + RevenueLock...");
-  const revenueCounterContract = await ethers.getContractAt("RevenueCounter", revenueCounterAddress);
-  await (await revenueCounterContract.setWindDownContract(windDownAddress, nm.override())).wait();
-  console.log(`   revenueCounter.setWindDownContract(${windDownAddress})`);
+  // 11c. Wire wind-down to RevenueLock — deployer-gated one-shot setter, so a direct
+  // deployer call. RevenueCounter's setter is now owner-gated (owner == timelock) and
+  // is wired via the timelock in step 12 alongside the other timelock-owned contracts.
+  console.log("11c. Wiring wind-down to RevenueLock...");
   const revenueLockContract = await ethers.getContractAt("RevenueLock", revenueLockAddress);
   await (await revenueLockContract.setWindDownContract(windDownAddress, nm.override())).wait();
   console.log(`   revenueLock.setWindDownContract(${windDownAddress})`);
 
-  // 12. Wire wind-down to governor, treasury, and shieldPause (timelock-only calls).
-  // On local: uses Anvil impersonation to execute as the timelock directly.
-  // On non-local: logs the governance proposals needed.
-  console.log("12. Wiring wind-down to governor/treasury/shieldPause (timelock-only)...");
+  // 12. Wire wind-down to the timelock-owned contracts (governor, treasury, shieldPause,
+  // revenueCounter) via the timelock. On local: Anvil impersonation. On non-local: real
+  // schedule + execute (instant under the harden profile's minDelay-0 bootstrap).
+  console.log("12. Wiring wind-down to governor/treasury/shieldPause/revenueCounter (timelock-only)...");
 
   const governorContract = await ethers.getContractAt("ArmadaGovernor", governorAddress);
   const treasury = await ethers.getContractAt("ArmadaTreasuryGov", treasuryAddress);
   const shieldPause = await ethers.getContractAt("ShieldPauseController", shieldPauseAddress);
+  const revenueCounterContract = await ethers.getContractAt("RevenueCounter", revenueCounterAddress);
 
   const windDownCalls = [
     { target: governorAddress, calldata: governorContract.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "governor" },
     { target: treasuryAddress, calldata: treasury.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "treasury" },
     { target: shieldPauseAddress, calldata: shieldPause.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "shieldPause" },
+    { target: revenueCounterAddress, calldata: revenueCounterContract.interface.encodeFunctionData("setWindDownContract", [windDownAddress]), label: "revenueCounter" },
   ];
 
   for (const call of windDownCalls) {
     await timelockCall(timelockAddress, call.target, call.calldata, `${call.label}.setWindDownContract()`, nm);
+  }
+
+  // 12a. Verify-after-bind (defense-in-depth). The windDown setters on RevenueLock
+  // (immutable) and RevenueCounter (one-shot) are now caller-gated, so a front-run is
+  // prevented — this read-back catches a wiring bug (wrong address). A mismatch cannot be
+  // repaired in place (one-shot), so abort the deploy.
+  const rlBoundWindDown = await revenueLockContract.windDownContract();
+  const rcBoundWindDown = await revenueCounterContract.windDownContract();
+  if (rlBoundWindDown.toLowerCase() !== windDownAddress.toLowerCase()) {
+    throw new Error(`RevenueLock.windDownContract mis-bound: ${rlBoundWindDown} != expected ${windDownAddress}`);
+  }
+  if (rcBoundWindDown.toLowerCase() !== windDownAddress.toLowerCase()) {
+    throw new Error(`RevenueCounter.windDownContract mis-bound: ${rcBoundWindDown} != expected ${windDownAddress}`);
+  }
+  console.log("   Verified windDown binding on RevenueLock + RevenueCounter");
+
+  // 12b. Initialize treasury outflow rate limits (timelock-only). Done at deploy so
+  // the treasury is rate-limited from launch rather than via a fragile first
+  // governance vote. PLACEHOLDER limits — see config.outflowConfig / issue #348.
+  console.log("12b. Initializing treasury outflow limits...");
+  const outflowTokens = [
+    { token: usdcAddress, params: config.outflowConfig.usdc, label: "USDC" },
+    { token: armTokenAddress, params: config.outflowConfig.arm, label: "ARM" },
+    { token: ethers.ZeroAddress, params: config.outflowConfig.eth, label: "ETH" },
+  ];
+  for (const t of outflowTokens) {
+    const calldata = treasury.interface.encodeFunctionData("initOutflowConfig", [
+      t.token, t.params.windowDuration, t.params.limitBps, t.params.limitAbsolute, t.params.floorAbsolute,
+    ]);
+    await timelockCall(timelockAddress, treasuryAddress, calldata, `treasury.initOutflowConfig(${t.label})`, nm);
+  }
+
+  // 12c. Harden: raise the timelock delay to its production value as the FINAL
+  // timelock op. The deploy ran the timelock at minDelay 0 so the bootstrap ops above
+  // executed instantly; after this the real delay is in force (issue #347).
+  //
+  // ORDERING INVARIANT: in a hardened run this script must be the LAST one to perform
+  // any timelock-only op. Step 14 below renounces the deployer's PROPOSER/EXECUTOR
+  // roles, so any later timelock-only wiring (e.g. fee-module setFeeCollector, adapter
+  // authorizeAdapter in the shielded-pool deploy) would revert. The mainnet orchestrator
+  // enforces crowdfund-last ordering for hardened runs; do not harden a full multi-phase
+  // deploy that wires the shielded pool after the crowdfund.
+  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
+  if (config.hardenTimelock) {
+    console.log(`12c. Raising timelock delay to ${config.timelockDelay}s (harden)...`);
+    const updateDelayCalldata = timelock.interface.encodeFunctionData("updateDelay", [config.timelockDelay]);
+    await timelockCall(timelockAddress, timelockAddress, updateDelayCalldata, "timelock.updateDelay(production)", nm);
   }
 
   // 13. Update governance manifest with redemption/windDown addresses
@@ -351,19 +459,28 @@ async function main() {
   saveDeployment(govFilename, govDeployment);
   console.log(`   Updated ${govFilename} with redemption + windDown addresses`);
 
-  // 14. Renounce timelock admin (final action — all deployment wiring complete)
-  console.log("14. Renouncing timelock admin...");
-  const timelock = await ethers.getContractAt("TimelockController", timelockAddress);
+  // 14. Renounce deployer timelock roles (final action — all wiring complete).
+  console.log("14. Renouncing timelock roles...");
+  if (config.hardenTimelock) {
+    // Harden: the deployer temporarily held the ops roles to bootstrap timelock-only
+    // wiring above; drop them so no key retains timelock power post-deploy (issue #347).
+    const PROPOSER_ROLE = await timelock.PROPOSER_ROLE();
+    const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
+    const CANCELLER_ROLE = await timelock.CANCELLER_ROLE();
+    await (await timelock.renounceRole(PROPOSER_ROLE, deployer.address, nm.override())).wait();
+    await (await timelock.renounceRole(EXECUTOR_ROLE, deployer.address, nm.override())).wait();
+    await (await timelock.renounceRole(CANCELLER_ROLE, deployer.address, nm.override())).wait();
+    console.log("   Renounced PROPOSER/EXECUTOR/CANCELLER from deployer");
+  }
   const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
   await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
   // Save deployment
-  const currentBlock = await ethers.provider.getBlockNumber();
   const deployment: CrowdfundDeployment = {
     chainId,
     deployer: deployer.address,
-    deployBlock: currentBlock,
+    deployBlock: crowdfundDeployBlock,
     contracts: {
       armToken: armTokenAddress,
       usdc: usdcAddress,

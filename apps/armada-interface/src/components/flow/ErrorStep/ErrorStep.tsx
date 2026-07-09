@@ -38,6 +38,10 @@ const COPY_BY_CODE: Record<TxError['code'], { title: string; body?: string }> = 
     title: 'Action declined',
     body: 'You declined the prompt in your wallet. Nothing was submitted.',
   },
+  INTERRUPTED: {
+    title: 'Transaction interrupted',
+    body: 'This transaction was interrupted before it was sent — nothing left your wallet. Start a new transaction.',
+  },
   CANCELLED: {
     title: 'Cancelled',
     body: 'No transaction was sent.',

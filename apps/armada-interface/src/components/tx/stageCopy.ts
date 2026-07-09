@@ -46,6 +46,9 @@ const COPY: Record<TxKind, Partial<Record<string, CopyEntry>>> = {
     'submit-relayer': 'Submitting privately',
     'hub-confirmed': 'Sent',
   },
+  'transfer-shielded-received': {
+    observed: 'Received',
+  },
   'yield-deposit': {
     'build-proof': 'Preparing transaction',
     'submit-relayer': 'Submitting privately',
@@ -85,6 +88,8 @@ const KIND_TITLES: Record<TxKind, string> = {
   'unshield-local': 'Withdraw',
   'unshield-xchain': 'Withdraw',
   'transfer-shielded': 'Private transfer',
+  // Incoming private transfer reconstructed from chain — someone sent USDC to our 0zk address.
+  'transfer-shielded-received': 'Received',
   'yield-deposit': 'Vault deposit',
   'yield-withdraw': 'Vault withdrawal',
 }

@@ -689,6 +689,15 @@ Where:
 - **`revenueLock.lockedAtWindDown()`** = `totalAllocation × (10000 − unlockBpsAtWindDown) / 10000`. The locked (unvested) portion. Frozen at wind-down trigger so the value is stable across the redemption window. The vested portion stays in the denominator: beneficiaries can call `release()` and then redeem with no fairness penalty.
 - **`crowdfundUnsoldInContract`** = `ARM.balanceOf(crowdfundContract) − crowdfundContract.armStillOwed()`. The unsold portion still in the crowdfund (will eventually be swept to treasury). Computed dynamically — once the unsold portion is swept via `withdrawUnallocatedArm`, this drops to 0 and the treasury balance subtraction picks it up. Allocated-unclaimed ARM stays in the denominator: participants can call `claim()` and then redeem with no fairness penalty.
 
+**Deployment invariant (no-underflow).** The subtractions run in checked arithmetic, and the `lockedAtWindDown()` and `crowdfundUnsoldInContract` terms are **not** individually bounded against the running total (only the inner `balanceOf(crowdfund) − armStillOwed()` is clamped to avoid a negative). If the excluded/locked terms ever exceed the circulating base, `circulatingSupply()` reverts — and because it is on the hot path of every `redeem()`, redemptions would be **permanently bricked** (the redemption contract has no admin). This cannot be induced at runtime; it can only arise from a **misconfigured ARM distribution** (e.g. a RevenueLock allocation too large relative to supply). The mainnet deploy therefore asserts, at go-live:
+
+```
+revenueLock.lockedAtWindDown() + max(0, ARM.balanceOf(crowdfund) − crowdfund.armStillOwed())
+    ≤ ARM.circulatingSupplyOf([treasury, redemptionContract])
+```
+
+`≤` (not `<`) because circulating is legitimately ~0 at deploy — all ARM sits in the excluded contracts — so the check is boundary-exact at go-live and only loosens as the sale settles and vesting proceeds. Enforced in `scripts/deploy_crowdfund.ts` (step 9b). A runtime clamp on these subtractions is deferred to a future contract revision.
+
 The treasury, redemption contract, RevenueLock, and Crowdfund addresses are **hardcoded** in the redemption contract — no registry, no governance-managed list. The revenue-gated lock mechanism is a one-time launch construct (see REVENUE_LOCK.md §11), so no future lock contracts need to be accounted for. Custom grants post-transfer-unlock are standard treasury transfers, not lock contracts.
 
 Participants can still call `claim()` after wind-down and then redeem. The denominator already accounts for their entitled-unclaimed ARM, so claim timing does not affect payout fairness. As holders redeem, the redemption contract's ARM balance grows and its portion is excluded from the denominator, ensuring correct pro-rata math for sequential redemptions.

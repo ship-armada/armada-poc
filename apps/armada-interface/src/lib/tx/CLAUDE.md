@@ -6,8 +6,8 @@ Transaction lifecycle model. The most important architectural surface in this ap
 
 | File | Purpose |
 |---|---|
-| `types.ts` | `TxKind` discriminated union; per-kind stage unions; `TxRecord<K>` with `executionState` + `stage` + `updatedSeq` + `walletContext`; `TxLifecycle<K>` with `maxDurationMs` + `retry`. |
-| `lifecycles.ts` | One `TxLifecycle` per `TxKind` — stage sequence, terminal-success stage, retryable stages, per-kind expiry cap + retry policy. |
+| `types.ts` | `TxKind` discriminated union; per-kind stage unions; `TxRecord<K>` with `executionState` + `stage` + `updatedSeq` + `walletContext`; `TxLifecycle<K>` with `maxDurationMs` + `retryableStages` (no auto-retry policy). |
+| `lifecycles.ts` | One `TxLifecycle` per `TxKind` — stage sequence, terminal-success stage, retryable stages (for the user-driven "Try Again"), per-kind expiry cap. |
 | `reducer.ts` | Pure transitions: `advance`, `markWaiting`, `markRetrying`, `markFailed`, `markExpired`, `markCancelled`, `shouldResume`. Every transition increments `updatedSeq`. |
 | `storage.ts` | IDB persistence: `putTxIfFresh` (OCC enforced via `updatedSeq`), `putTx` (unconditional, hydration only), `loadAllTx`, `deleteTx`. |
 | `executor.ts` | **Module-scope** execution engine. Runs stage handlers outside React, owns AbortControllers, leader-elected via `navigator.locks`. |
@@ -28,7 +28,7 @@ Transaction lifecycle model. The most important architectural surface in this ap
 2. Add a `Stage<NewKind>` union + extend `StageFor<K>`.
 3. Add a `Meta<NewKind>` interface + extend `MetaFor<K>`.
 4. (If cross-chain) extend `ArtifactsFor<K>` or reuse `ArtifactsXchain`.
-5. Add a `TxLifecycle<NewKind>` entry in `lifecycles.ts` with `maxDurationMs` + `retry`.
+5. Add a `TxLifecycle<NewKind>` entry in `lifecycles.ts` with `maxDurationMs` + `retryableStages`.
 6. Register a `StageHandler<NewKind>` somewhere that gets imported on app load (typically a `features/<area>/handler.ts` module that side-effects `registerHandler(...)`).
 7. Optionally: custom rendering in `components/tx/<NewKind>/`. The default stepper handles it if you skip.
 
@@ -42,7 +42,7 @@ Key behaviour:
 
 - **Single-leader via `navigator.locks`.** On `startEngine()` the engine requests an exclusive lock named `armada-tx-executor` with `ifAvailable: true`. The holder runs handlers; other tabs are passive observers (atoms still hydrate from IDB, but `executeTx` is a no-op). When the leader tab closes, the lock releases and a follower tab can take over on next start.
 - **Visibility-gated.** Even on the leader, when the tab is hidden (`tabVisibleAtom = false`) the handler chain pauses. Resumes on visibility change.
-- **Resume on cold load.** `startEngine()` walks `txListAtom`, finds non-terminal records, calls `shouldResume(record)` (per-kind expiry cap). Either resumes (calls `executeTx(record.id)`) or marks `expired`.
+- **Resume on unlock (leader only).** `resumeForWallet(walletId)` runs from `useTxResume` once the active wallet unlocks — NOT from `startEngine` (the leader lock is acquired pre-unlock, when there's no decryption key and `loadAllTx` returns `[]`). It reads non-terminal records from IDB and, per record: past the per-kind budget → `expired`; has a `sourceTxHash` (already broadcast) → `executeTx` re-attaches the watcher (safe because submit stages are idempotent — WS1.3); otherwise (no hash, never reached the wire) → `failed` with `INTERRUPTED` ("nothing was sent"). Idempotent per (walletId, session). Resume never re-broadcasts and never re-prompts the wallet on load.
 - **AbortController per running tx.** `cancelTx(id)` aborts the controller; the handler must check `ctx.signal` and propagate. Stage handlers wire `ctx.signal` into their pollers.
 
 ### Stage naming caveat — `'submit-relayer'` is a framework label
@@ -93,13 +93,34 @@ The abort-check-before-markFailed pattern is invariant across every handler. If 
 
 ## Resume policy
 
-On app load, `useTxHistory()` hydrates `txListAtom` from IDB. The executor (`resumeNonTerminal()`) walks the list:
+Resume runs from `useTxResume` (hooks/) when the active wallet unlocks — leader-gated and
+idempotent per (walletId, session) via a module-scope `Set`. It calls `resumeForWallet(walletId)`,
+which reads non-terminal records straight from IDB (`loadAllTx(walletId)`) rather than `txListAtom`
+(hydration races leader-lock acquisition; `upsertTxAtom` is OCC-safe so seeding here can't regress
+newer state). Per non-terminal record:
 
-- Terminal records (`completed | failed | expired | cancelled`) are left alone.
-- Non-terminal AND `shouldResume(record)` (i.e. `now - createdAt < lifecycle.maxDurationMs`) → `executeTx(record.id)`.
-- Otherwise → `markExpired` + persist + telemetry.
+- past `lifecycle.maxDurationMs` (wall-clock from `createdAt`) → `markExpired`.
+- has `artifacts.sourceTxHash` (the tx is already on chain) → `executeTx(record.id)` to re-attach
+  the watcher (receipt / relayer status / cross-chain delivery polling). Safe because every submit
+  stage is idempotent (WS1.3) — a re-entry with a known hash never re-broadcasts.
+- otherwise (no hash — interrupted at `build-proof`, or at `submit-relayer` before the tx hit the
+  wire) → `markFailed` with `INTERRUPTED`. Resuming would re-prompt the wallet / re-POST out of
+  nowhere, so we fail honestly: "nothing was sent — start a new transaction."
 
-`maxDurationMs` is per-kind: 10 min for same-chain (`shield`, `unshield-local`, `transfer-shielded`), 15 min for yield ops, 60 min for xchain.
+Resume thus only ever RE-WATCHES an already-broadcast tx; it never submits and never re-prompts on
+load. `maxDurationMs` is per-kind: 10 min same-chain (`shield`, `unshield-local`,
+`transfer-shielded`), 15 min yield, 60 min xchain. (`StageHandler.resumableFrom` is currently
+unread — the has-hash test supersedes it; see WS7 docs cleanup.)
+
+## Terminal-write guard
+
+`upsertTxAtom` (state/tx.ts) and `putTxIfFresh` (storage.ts) refuse any write that would move a
+record from a terminal state (`completed | failed | expired | cancelled`) to a non-terminal one,
+*regardless of `updatedSeq`* — this stops a late poller / proof-progress write (which can carry a
+higher seq from a stale in-flight reference) from resurrecting a cancelled/failed/expired record.
+Two carve-outs: terminal→terminal is allowed (the history-recovery `expired|failed → completed`
+upgrade path, WS1.7), and terminal→`retrying` is allowed (an intentional `retryTx`/`markRetrying`;
+stale writes only ever produce `active`/`waiting`, never `retrying`).
 
 ## Telemetry conventions
 

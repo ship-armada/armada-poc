@@ -22,3 +22,9 @@ export type { ProgressStepProps } from './ProgressStep'
 
 export { ErrorStep } from './ErrorStep'
 export type { ErrorStepProps } from './ErrorStep'
+
+export {
+  OVERLAY_STEP_LABELS,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
+} from './overlayFlow'

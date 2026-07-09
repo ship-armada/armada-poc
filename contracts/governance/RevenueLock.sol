@@ -69,6 +69,12 @@ contract RevenueLock {
     ///         See PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225.
     uint256 public immutable MAX_REVENUE_INCREASE_PER_DAY;
 
+    /// @notice Deployer — gates the one-shot windDown setter so it cannot be
+    ///         front-run and permanently bound to a foreign address between this
+    ///         contract's deployment and the deployer wiring it. Mirrors
+    ///         ArmadaToken.tokenDeployer.
+    address public immutable deployer;
+
     // ============ State ============
 
     /// @notice Per-beneficiary total allocation
@@ -173,6 +179,7 @@ contract RevenueLock {
         armToken = IArmadaTokenRevenueLock(_armToken);
         revenueCounter = IRevenueCounterRevenueLock(_revenueCounter);
         MAX_REVENUE_INCREASE_PER_DAY = _maxIncreasePerDay;
+        deployer = msg.sender;
 
         // CRITICAL: lastSyncTimestamp must start at block.timestamp, NOT 0.
         // A zero timestamp would make the first _updateMaxObservedRevenue() see
@@ -336,8 +343,11 @@ contract RevenueLock {
     // ============ Wind-Down ============
 
     /// @notice Register the wind-down contract. One-shot setter; locks after the
-    ///         first non-zero call. Permissionless (no admin on RevenueLock).
+    ///         first non-zero call. Deployer-only so it cannot be front-run and
+    ///         bound to a foreign address (RevenueLock is immutable — a mis-bind is
+    ///         unrecoverable).
     function setWindDownContract(address _windDownContract) external {
+        require(msg.sender == deployer, "RevenueLock: not deployer");
         require(!windDownContractSet, "RevenueLock: wind-down already set");
         require(_windDownContract != address(0), "RevenueLock: zero windDown");
         windDownContractSet = true;

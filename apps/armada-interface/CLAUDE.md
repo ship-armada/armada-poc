@@ -2,7 +2,9 @@
 
 USDC user app on the Armada protocol — shield, unshield, yield, payments, cross-chain. Replaces the legacy `usdc-v2-frontend` app.
 
-**Status:** Phase 1 Railgun integration landed — EIP-712-signature-derived wallet enroll/unlock/lock/reset wired through `lib/crypto` + `lib/railgun`. OnboardingFlow runs the full sign → checksum → backup ceremony; UnlockFlow offers paste / backup / sign-again. Tx flows (shield/unshield/payments/yield) still stub through `telemetry.track('stub.*')`.
+**Status:** V2 shielded-wallet redesign landed (Path C). Deterministic re-sign is the primary unlock path; backup-file + paste-secret remain as secondary recovery for smart-account wallets and cross-device portability. `OnboardingFlowV2` runs welcome → sign → checksum → complete (4 steps); `UnlockFlow` exposes three tabs (Sign in / Backup file / Paste secret). Per-(EVM address, account) walletId map in localStorage drives account-switch detection + auto-lock. Tx history is scoped to the active walletId and AES-256-GCM-encrypted at rest under a per-wallet key. See `specs/TX_SIGNING.md` + `specs/TX_SIGNING_V2_AMENDMENT.md`. Tx flows (shield/unshield/payments/yield) are wired end-to-end.
+
+**V1 Phase 9 — chain history recovery (landed):** on unlock, `useHistoryRecovery` calls the Railgun SDK's `getWalletTransactionHistory` and synthesizes terminal `TxRecord`s for shields / transacts / unshields / yield ops not already in local IDB. `useIncomingTransferDetector` re-fires the scan on every SDK balance event so received transfers (which the user didn't author) surface live. A per-wallet localStorage checkpoint makes subsequent scans incremental. Settings → "Re-scan history" / "Clear local history" let the user force a refresh or wipe locally. See `lib/railgun/history.ts`, `hooks/useHistoryRecovery.ts`, and `test/integration/history-recovery.test.tsx`.
 
 ## Plan
 
@@ -25,7 +27,7 @@ Architectural decisions and rationale: `../../.claude/PLAN_ARMADA_INTERFACE.md`.
 
 ```
 src/
-├── main.tsx                 provider tree (StrictMode → Wagmi → Query → RainbowKit → Jotai → Router → Motion)
+├── main.tsx                 provider tree (StrictMode → Wagmi → Query → RainbowKit → Jotai → Router)
 ├── App.tsx                  installs visibility listener + hydrates tx history; renders <AppLayout>
 ├── index.css                @import tailwindcss + @armada/ui tokens.css + global.css
 ├── config/                  env-driven config — network, wagmi, deployments, relayer
@@ -85,9 +87,9 @@ This model fixes the crowdfund-committer's `useTransactionFlow` single-tx limita
 
 ## What's intentionally NOT in the scaffold
 
-- Real contract/relayer/CCTP integration for tx flows (shield/unshield/payments/yield). Those hooks still stub through `telemetry.track('stub.*')`. Phase 1 Railgun wallet lifecycle IS real.
+- Tx flows (shield/shield-xchain/unshield-local/unshield-xchain/transfer/yield) are wired end-to-end against real contracts + CCTP and run real ZK proofs; what's NOT done: the relayer-*mediated* submit path (`lib/relayer.ts::submitRelay` — today every handler submits from the user's own wallet via wagmi) and finer-grained real-CCTP-mode Iris polling (the xchain handler collapses the last delivery stages on a single destination-balance detection).
 - e2e tests.
-- Real telemetry sink (console-only for now).
+- A remote telemetry sink beyond Sentry. Sentry error capture IS wired (`lib/sentry.ts`, DSN-gated via `VITE_SENTRY_DSN` — see DEPLOYMENT.md), but the structured `track()` info events remain console-only.
 - Service worker / offline support.
 - i18n.
 - Mnemonic import flow (only generate-on-first-run, per Plan §15.7).

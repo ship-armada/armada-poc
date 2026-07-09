@@ -120,22 +120,12 @@ export class FeeCalculator {
    *
    * fee = gasEstimate × gasPrice × (ethPrice / 1e18) × (1 + margin)
    * Result in USDC raw units (6 decimals)
+   *
+   * `gasPrice` is passed in rather than read here: `generateFeeSchedule` prices all seven
+   * operation tiers off a single gas-price reading, so the tiers are mutually consistent
+   * and a schedule regeneration costs one RPC round-trip instead of one per tier.
    */
-  private async calculateFeeForGas(gasEstimate: bigint): Promise<bigint> {
-    const feeData = await this.provider.getFeeData();
-    // Some EIP-1559-only RPCs return a null `gasPrice` (they only populate maxFeePerGas /
-    // maxPriorityFeePerGas). Fall back to maxFeePerGas before the 1-gwei floor so we don't silently
-    // under-quote on those chains; warn loudly if BOTH are missing (the 1-gwei default would
-    // materially under-price a real chain).
-    let gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
-    if (gasPrice === null) {
-      console.warn(
-        `[fee-calculator chain=${this.chainId}] getFeeData() returned neither gasPrice nor maxFeePerGas — ` +
-          `falling back to 1 gwei. Quotes on this chain may be under-priced; investigate the RPC.`,
-      );
-      gasPrice = 1_000_000_000n;
-    }
-
+  private calculateFeeForGas(gasEstimate: bigint, gasPrice: bigint): bigint {
     // Gas cost in wei
     const gasCostWei = gasEstimate * gasPrice;
 
@@ -178,23 +168,29 @@ export class FeeCalculator {
    * shape narrowing.
    */
   async generateFeeSchedule(): Promise<FeeSchedule> {
-    const [
-      transferFee,
-      unshieldFee,
-      crossContractFee,
-      crossChainShieldFee,
-      crossChainUnshieldFee,
-      shieldFee,
-      shieldXchainFee,
-    ] = await Promise.all([
-      this.calculateFeeForGas(GAS_ESTIMATES.transfer),
-      this.calculateFeeForGas(GAS_ESTIMATES.unshield),
-      this.calculateFeeForGas(GAS_ESTIMATES.crossContract),
-      this.calculateFeeForGas(GAS_ESTIMATES.crossChainShield),
-      this.calculateFeeForGas(GAS_ESTIMATES.crossChainUnshield),
-      this.calculateFeeForGas(GAS_ESTIMATES.shield),
-      this.calculateFeeForGas(GAS_ESTIMATES.shieldXchain),
-    ]);
+    // Single gas-price read per schedule — see calculateFeeForGas doc. getFeeData is the only
+    // RPC call in schedule generation, and all seven tiers are priced off this one reading.
+    const feeData = await this.provider.getFeeData();
+    // Some EIP-1559-only RPCs return a null `gasPrice` (they only populate maxFeePerGas /
+    // maxPriorityFeePerGas). Fall back to maxFeePerGas before the 1-gwei floor so we don't silently
+    // under-quote on those chains; warn loudly if BOTH are missing (the 1-gwei default would
+    // materially under-price a real chain).
+    let gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? null;
+    if (gasPrice === null) {
+      console.warn(
+        `[fee-calculator chain=${this.chainId}] getFeeData() returned neither gasPrice nor maxFeePerGas — ` +
+          `falling back to 1 gwei. Quotes on this chain may be under-priced; investigate the RPC.`,
+      );
+      gasPrice = 1_000_000_000n;
+    }
+
+    const transferFee = this.calculateFeeForGas(GAS_ESTIMATES.transfer, gasPrice);
+    const unshieldFee = this.calculateFeeForGas(GAS_ESTIMATES.unshield, gasPrice);
+    const crossContractFee = this.calculateFeeForGas(GAS_ESTIMATES.crossContract, gasPrice);
+    const crossChainShieldFee = this.calculateFeeForGas(GAS_ESTIMATES.crossChainShield, gasPrice);
+    const crossChainUnshieldFee = this.calculateFeeForGas(GAS_ESTIMATES.crossChainUnshield, gasPrice);
+    const shieldFee = this.calculateFeeForGas(GAS_ESTIMATES.shield, gasPrice);
+    const shieldXchainFee = this.calculateFeeForGas(GAS_ESTIMATES.shieldXchain, gasPrice);
 
     // In fast mode, add CCTP fast transfer fee estimate to cross-chain operations.
     // The fee is proportional to transfer amount, but since we don't know the

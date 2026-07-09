@@ -148,9 +148,12 @@ async function main() {
     amountArray,
     nm.override(),
   );
-  await lock.deploymentTransaction()!.wait();
+  const lockReceipt = await lock.deploymentTransaction()!.wait();
+  // Record the contract-creation block (not an end-of-script block number) so
+  // event backfill starts at the RevenueLock's first block (issue #324).
+  const lockDeployBlock = lockReceipt!.blockNumber;
   const lockAddress = await lock.getAddress();
-  console.log(`  RevenueLock deployed: ${lockAddress}`);
+  console.log(`  RevenueLock deployed: ${lockAddress} (block ${lockDeployBlock})`);
 
   // Verify read-back
   const onchainTotal = await lock.totalAllocation();
@@ -161,11 +164,10 @@ async function main() {
   }
 
   // Save manifest
-  const currentBlock = await ethers.provider.getBlockNumber();
   const manifest: CohortDeployment = {
     chainId,
     deployer: deployer.address,
-    deployBlock: currentBlock,
+    deployBlock: lockDeployBlock,
     cohortName,
     contracts: {
       revenueLock: lockAddress,

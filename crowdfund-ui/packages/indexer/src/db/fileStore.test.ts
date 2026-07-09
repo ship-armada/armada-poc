@@ -13,7 +13,6 @@ const tempDirs: string[] = []
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 150,
   confirmedHead: 138,
   ingestedCursor: 99,
@@ -92,6 +91,69 @@ describe('FileIndexerStore', () => {
     ])
   })
 
+  it('close resolves without error (no backend handle to release)', async () => {
+    const store = await makeStore()
+    await expect(store.close()).resolves.toBeUndefined()
+  })
+
+  it('readMeta returns store metadata without raw logs', async () => {
+    const store = await makeStore()
+    await store.upsertRawLogs([{
+      chainId: 11155111,
+      contractAddress: '0xF681A7c700420e5CA93f77c8988d3eED02767035',
+      blockNumber: 120,
+      blockHash: '0x' + '11'.repeat(32),
+      transactionHash: '0x' + '22'.repeat(32),
+      logIndex: 0,
+      topics: ['0x' + '33'.repeat(32)],
+      data: '0x01',
+    }])
+    await store.upsertRange(makeRange({ fromBlock: 100, toBlock: 109, status: 'verified' }))
+
+    const meta = await store.readMeta()
+    expect('rawLogs' in meta).toBe(false)
+    expect(meta.ranges.map((r) => r.status)).toEqual(['verified'])
+    expect(meta.cursor.verifiedCursor).toBe(99)
+  })
+
+  it('readLogs filters by upper block bound', async () => {
+    const store = await makeStore()
+    const base = {
+      chainId: 11155111,
+      contractAddress: '0xF681A7c700420e5CA93f77c8988d3eED02767035',
+      blockHash: '0x' + '11'.repeat(32),
+      topics: ['0x' + '33'.repeat(32)],
+      data: '0x01',
+    }
+    await store.appendRawLogs([
+      { ...base, blockNumber: 100, transactionHash: '0x' + 'a1'.repeat(32), logIndex: 0 },
+      { ...base, blockNumber: 200, transactionHash: '0x' + 'a2'.repeat(32), logIndex: 0 },
+    ])
+
+    expect((await store.readLogs()).length).toBe(2)
+    expect((await store.readLogs(150)).map((l) => l.blockNumber)).toEqual([100])
+  })
+
+  it('patchRange and patchMeta update only the targeted fields', async () => {
+    const store = await makeStore()
+    await store.patchRange(makeRange({ fromBlock: 120, toBlock: 129, status: 'failed' }))
+    await store.patchMeta({ lastError: 'boom', latestSnapshotHash: '0xhash' })
+
+    const data = await store.read()
+    expect(data.ranges.map((r) => [r.fromBlock, r.status])).toEqual([[120, 'failed']])
+    expect(data.lastError).toBe('boom')
+    expect(data.latestSnapshotHash).toBe('0xhash')
+    // Untouched fields keep their prior value.
+    expect(data.lastVerifiedAt).toBeNull()
+    expect(data.cursor.verifiedCursor).toBe(99)
+
+    // A null patch clears a field; an absent field is left as-is.
+    await store.patchMeta({ lastError: null })
+    const cleared = await store.read()
+    expect(cleared.lastError).toBeNull()
+    expect(cleared.latestSnapshotHash).toBe('0xhash')
+  })
+
   it('upserts raw logs by canonical identity and keeps them sorted', async () => {
     const store = await makeStore()
     const first = {
@@ -117,5 +179,27 @@ describe('FileIndexerStore', () => {
 
     const restored = await store.read()
     expect(restored.rawLogs).toEqual([earlier, replacement])
+  })
+
+  it('does not create a second entry when a reorged copy of the same tx is re-ingested', async () => {
+    const store = await makeStore()
+    const original = {
+      chainId: 11155111,
+      contractAddress: '0xF681A7c700420e5CA93f77c8988d3eED02767035',
+      blockNumber: 120,
+      blockHash: '0x' + '11'.repeat(32),
+      transactionHash: '0x' + '22'.repeat(32),
+      logIndex: 1,
+      topics: ['0x' + '33'.repeat(32)],
+      data: '0x01',
+    }
+    // Same tx re-mined at a new block after a reorg: only blockHash/blockNumber differ.
+    const reorged = { ...original, blockHash: '0x' + 'aa'.repeat(32), blockNumber: 125 }
+
+    await store.upsertRawLogs([original])
+    await store.upsertRawLogs([reorged])
+
+    const restored = await store.read()
+    expect(restored.rawLogs).toEqual([reorged])
   })
 })

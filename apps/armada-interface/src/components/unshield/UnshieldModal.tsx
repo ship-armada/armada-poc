@@ -5,30 +5,32 @@ import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
-import { evmAddressAtom, shieldedUsdcAtom } from '@/state/wallet'
+import { evmAddressAtom, shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { getNetworkConfig } from '@/config/network'
-import { parseUsdcInput } from '@/lib/format'
+import { formatUsdcPlain, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import {
-  ActionFlowShell,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
-import { UnshieldInputStep } from './UnshieldInputStep'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { UnshieldInputStepContent, UnshieldInputStepFooter } from './UnshieldInputStep'
 import { UnshieldReviewStep } from './UnshieldReviewStep'
 import { UnshieldCompleteStep } from './UnshieldCompleteStep'
 
 type LocalStep = FlowStep
 
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 type SubmittedKind = 'unshield-local' | 'unshield-xchain'
 
@@ -43,17 +45,19 @@ export function UnshieldModal() {
   const hubChainId = getNetworkConfig().hub.chainId
   const connectedEvm = useAtomValue(evmAddressAtom)
   const [destChainId, setDestChainId] = useState<number>(hubChainId)
-  const [recipient, setRecipient] = useState<string>('')
   const [amountStr, setAmountStr] = useState<string>('')
+  // Recipient is locked to the connected wallet — matches designer's pattern (Send/External
+  // tab covers "withdraw to a different address" so Unshield is always self-custody).
+  const recipient = connectedEvm ?? ''
 
   // Flow state.
   const [step, setStep] = useState<LocalStep>('input')
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
-  // One-shot guard so the connected-EVM prefill only runs on the modal's rising
-  // edge — otherwise clearing the recipient would immediately refill from the effect.
-  const didPrefillRef = useRef(false)
+  // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Source data.
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -83,23 +87,38 @@ export function UnshieldModal() {
   // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. The xchain branch uses
   // `secondaryFee` to model the CCTP fee being deducted from the recipient mint, separate from
   // the broadcaster fee on top.
+  // useDisplayFees provides on-chain protocol-fee read (0n for unshield kinds today, but the
+  // hook normalizes shape so the modal can pass DisplayFees through DepositAmountCard's tooltip).
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    computedKind,
+    amount,
+    destChainId,
+    quote,
+  )
   const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
     computedKind,
     amount,
     fee,
     max,
-    { secondaryFee: cctpFee },
+    { secondaryFee: cctpFee, protocolFee: displayFees.protocolFee },
   )
-
-  // Pre-fill recipient from the connected EVM wallet on the modal's rising edge only,
-  // so the user can clear the field afterwards without it getting repopulated.
-  useEffect(() => {
-    if (!isOpen) return
-    if (didPrefillRef.current) return
-    didPrefillRef.current = true
-    if (!recipient && connectedEvm) setRecipient(connectedEvm)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
+  // Initial-sync gate for the balance label/onMax — when null we don't know the real balance yet.
+  const syncState = useAtomValue(syncStateAtom)
+  const balanceSyncing = syncState.status === 'syncing'
+  const balanceLabel = balanceSyncing ? 'syncing…' : formatUsdcPlain(max)
+  // Tooltip-ready breakdown — surfaces broadcaster fee + recipient receives + total deducted
+  // inside FeeBreakdownTooltip so the input UI stays clean.
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    cctpFee: isXchain ? cctpFee : undefined,
+    recipientReceives,
+    totalDeducted,
+    recipientLabel: 'Recipient receives',
+  }
+  // Inclusive Fee total surfaced on both the input card's FEE row and the review FeeSummary —
+  // broadcaster + on-chain protocol + CCTP (when applicable). The breakdown tooltip exposes the
+  // individual components.
+  const displayedFee = fee + displayFees.protocolFee + cctpFee
 
   // Reset local state on close.
   useEffect(() => {
@@ -109,7 +128,6 @@ export function UnshieldModal() {
       setErrorAtStep(undefined)
       setAmountStr('')
       setSubmittedKind(null)
-      didPrefillRef.current = false
     }
   }, [isOpen])
 
@@ -130,8 +148,13 @@ export function UnshieldModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
+      // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
+      let submittedId: string | null = null
       const activeQuote = quote && !isStale ? quote : await refresh()
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
@@ -155,7 +178,7 @@ export function UnshieldModal() {
         // would risk drift if the quote rolls over between submit and proof-build. The
         // wallet-override flag is also frozen so a mid-flight preference toggle doesn't strand
         // the handler.
-        await txLocal.submit({
+        submittedId = await txLocal.submit({
           amount,
           feeCacheId,
           recipient,
@@ -174,7 +197,7 @@ export function UnshieldModal() {
           )
         }
         setSubmittedKind('unshield-xchain')
-        await txXchain.submit({
+        submittedId = await txXchain.submit({
           amount,
           feeCacheId,
           toChainId: destChainId,
@@ -184,55 +207,75 @@ export function UnshieldModal() {
           useWalletOverride: prefs.submitFromWallet,
         })
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
   if (!isOpen) return null
 
   return (
-    <ActionFlowShell
+    <DepositOverlayShell
       open
       onClose={close}
-      title="Withdraw"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Withdraw"
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
-        <UnshieldInputStep
-          destChainId={destChainId}
-          onDestChainIdChange={setDestChainId}
-          recipient={recipient}
-          onRecipientChange={setRecipient}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          fee={fee}
-          cctpFee={cctpFee}
-          totalDeducted={totalDeducted}
-          isXchain={isXchain}
-          isFeeRefreshing={isStale}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <UnshieldInputStepContent
+            destChainId={destChainId}
+            onDestChainIdChange={setDestChainId}
+            walletAddress={connectedEvm ?? null}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            maxInput={inputMax}
+            balanceLabel={balanceLabel}
+            balanceSyncing={balanceSyncing}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            // The user signs `unshield` / `atomicCrossChainUnshield` on HUB regardless of where
+            // CCTP delivers; gas-balance check must therefore target the hub chain. Previously
+            // passed `destChainId`, which wrongly warned about ETH on the destination chain even
+            // though no destination-chain tx is ever sent from the user's wallet.
+            gasChainId={hubChainId}
+            // The unshield handler routes through the relayer by default; the user pays native
+            // gas only when they've explicitly toggled "Submit transactions from my wallet" in
+            // Settings. Suppress the gas notice on the relayer path.
+            gaslessMode={!prefs.submitFromWallet}
+          />
+          <UnshieldInputStepFooter
+            walletAddress={connectedEvm ?? null}
+            amountStr={amountStr}
+            maxInput={inputMax}
+            balanceSyncing={balanceSyncing}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <UnshieldReviewStep
           destChainId={destChainId}
           recipient={recipient}
           amount={amount}
-          fee={fee}
-          cctpFee={cctpFee}
+          fee={displayedFee}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
+          isSubmitting={isSubmitting}
           onConfirm={handleSubmit}
         />
       )}
@@ -254,9 +297,26 @@ export function UnshieldModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
-          onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
+          onRetry={
+            errorAtStep === 'review'
+              ? () => {
+                  setSubmitError(null)
+                  setErrorAtStep(undefined)
+                  setStep('review')
+                }
+              : () => {
+                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                  // the user on the error step with the honest error + explorer link, not flip to a
+                  // stuck spinner — that was the P0-4 no-op bug.
+                  setErrorAtStep(undefined)
+                  void activeTx?.retry()?.then((accepted) => {
+                    if (accepted) setStep('progress')
+                  })
+                }
+          }
         />
       )}
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

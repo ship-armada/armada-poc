@@ -1,14 +1,77 @@
 # Netlify build config — committer app deploy.
-# Branch + VITE_WALLETCONNECT_PROJECT_ID are configured in the Netlify UI.
-# The build copies deployments/crowdfund-hub-sepolia.json into the committer's
-# public dir, so the deployed app targets whichever instance is recorded there.
+#
+# ONE committed config serves TWO independent Netlify sites (sepolia + mainnet).
+# Each site selects its network purely through per-site env vars set in the Netlify
+# UI; the defaults below reproduce today's Sepolia (medi2) build, so a site that
+# sets none of the network vars still builds the Sepolia committer unchanged.
+#
+# Per-site env vars (Netlify UI → Site settings → Environment variables):
+#   NETWORK                 armada-deployments top-level folder: "testnet" (default)
+#                           or "mainnet" — which repo folder the manifest is fetched from.
+#   VITE_NETWORK            app network mode: "sepolia" (default) or "mainnet". Switches
+#                           chain id, explorer, hub RPC, manifest chain subdir, poll
+#                           interval. Startup validateEnv hard-fails a blank PROD value.
+#   VITE_CROWDFUND_PROFILE  sale-parameter profile: "medi" (default, ~$1k Sepolia) or
+#                           "mainnet" ($1.2M sale, $15k hop caps). MUST match the
+#                           instance's scale or the UI misrepresents the sale.
+#   DEPLOYMENT_INSTANCE     named armada-deployments instance; defaults to "medi2".
+#                           Re-exported as VITE_DEPLOYMENT_INSTANCE for the runtime.
+#   DEPLOYMENT_REF          git ref of ship-armada/armada-deployments to fetch the
+#                           manifest from. Pins the fetch to an immutable point so a
+#                           later push to `main` cannot change what ships after review.
+#                           MUST be a full 40-char commit SHA on the mainnet site —
+#                           the build hard-fails otherwise (a branch ref would defeat
+#                           the pin). Defaults to "main" (unpinned) for Sepolia, which
+#                           is low-stakes.
+#   VITE_EXPECTED_CROWDFUND_ADDRESS  trusted crowdfund contract address, supplied
+#                           out-of-band from the mainnet deploy output (NOT from
+#                           armada-deployments). The build fails if the fetched
+#                           manifest's crowdfund address does not match it, and the
+#                           runtime refuses to load a mismatching manifest. REQUIRED on
+#                           mainnet (validateEnv hard-fails without it); optional on
+#                           Sepolia (checked only when set).
+#   VITE_HUB_RPC            dedicated hub RPC URL (+ optional VITE_HUB_RPC_FALLBACK).
+#                           Strongly recommended on mainnet; without it the app falls
+#                           back to a public node. (Legacy VITE_SEPOLIA_RPC still works
+#                           on the Sepolia site.)
+#   VITE_WALLETCONNECT_PROJECT_ID  required — WalletConnect modal is dead without it.
+#   VITE_CROWDFUND_INDEXER_URL     required — indexer API base URL for the active
+#                                  instance (e.g. https://api.knowable.run). Startup
+#                                  validateEnv hard-fails a PROD build when it is missing.
+#   VITE_SENTRY_DSN                error monitoring DSN; silent no-op if unset.
+#   VITE_SENTRY_RELEASE            release tag used to group events.
+#   VITE_SENTRY_ENVIRONMENT        deploy environment, e.g. "production".
+#   SENTRY_AUTH_TOKEN              build-time only — lets the Sentry Vite plugin upload
+#                                  and then delete sourcemaps.
 
 [build]
   base    = "."
   publish = "crowdfund-ui/packages/committer/dist"
+  # Build flow (all network selection comes from per-site env — see header):
+  #   1. Resolve network/profile/instance. Defaults reproduce the Sepolia medi2
+  #      build exactly, so the existing site needs no env changes.
+  #   2. Fetch the manifest from armada-deployments at
+  #      <NETWORK>/<instance>/<VITE_NETWORK>/crowdfund.json into the committer's
+  #      public/api/deployments/instances/<name>/<VITE_NETWORK>/ so the prod build
+  #      serves it under the same path the dev server's serveDeployments() exposes.
+  #   3. Install workspace deps with --legacy-peer-deps (Railgun SDK peer-dep conflict).
+  #   4. Build the committer.
+  # TODO: confirm the armada-deployments mainnet layout matches
+  # `mainnet/<instance>/mainnet/crowdfund.json` once the mainnet instance is published.
   command = """
-    mkdir -p crowdfund-ui/packages/committer/public/api/deployments && \
-    cp deployments/crowdfund-hub-sepolia.json crowdfund-ui/packages/committer/public/api/deployments/ && \
+    NETWORK="${NETWORK:-testnet}" && \
+    export VITE_NETWORK="${VITE_NETWORK:-sepolia}" && \
+    export VITE_CROWDFUND_PROFILE="${VITE_CROWDFUND_PROFILE:-medi}" && \
+    INSTANCE="${DEPLOYMENT_INSTANCE:-medi2}" && \
+    export VITE_DEPLOYMENT_INSTANCE="${INSTANCE}" && \
+    REF="${DEPLOYMENT_REF:-main}" && \
+    if [ "${VITE_NETWORK}" = "mainnet" ] && ! echo "${REF}" | grep -Eq '^[0-9a-f]{40}$'; then echo "FATAL: DEPLOYMENT_REF must be a full 40-char commit SHA on mainnet (got: ${REF}) — pinning to a branch defeats the supply-chain guard"; exit 1; fi && \
+    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/${NETWORK}/${INSTANCE}" && \
+    echo "Fetching ${NETWORK}/${INSTANCE}@${REF} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE})" && \
+    mkdir -p "crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}" && \
+    export CF_MANIFEST_PATH="crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}/crowdfund.json" && \
+    curl -sfL -o "${CF_MANIFEST_PATH}" "${BASE}/${VITE_NETWORK}/crowdfund.json" && \
+    node -e "const fs=require('fs');const p=process.env.CF_MANIFEST_PATH;const exp=process.env.VITE_EXPECTED_CROWDFUND_ADDRESS;if(exp){const d=JSON.parse(fs.readFileSync(p,'utf8'));const got=(d.contracts&&d.contracts.crowdfund||'').toLowerCase();if(got!==exp.toLowerCase()){console.error('FATAL: fetched crowdfund '+got+' != expected '+exp.toLowerCase());process.exit(1);}console.log('crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS');}else{console.log('VITE_EXPECTED_CROWDFUND_ADDRESS unset — skipping build-time address check');}" && \
     rm -rf node_modules package-lock.json && \
     npm install --legacy-peer-deps && \
     npm run build --workspace=@armada/crowdfund-committer
@@ -18,13 +81,51 @@
   # Required: Railgun SDK peer-dep conflict forces legacy resolution.
   NPM_FLAGS    = "--legacy-peer-deps"
   NODE_VERSION = "20"
-  # Switches all network-dependent decisions in the app (manifest filename,
-  # hub RPC, chain ID 11155111, sepolia.etherscan, 15s poll). VITE_WALLETCONNECT_PROJECT_ID
-  # is set via the Netlify UI as a deploy-context env var.
-  VITE_NETWORK = "sepolia"
+  # Sourcemap generation over the main chunk pushes V8 past the default heap
+  # limit and the build dies with "Reached heap limit" (exit 134). Raise it.
+  NODE_OPTIONS = "--max-old-space-size=4096"
+  # NOTE: VITE_NETWORK and VITE_CROWDFUND_PROFILE are intentionally NOT set here.
+  # They are per-site env vars (see header) so this one committed config can serve
+  # both the Sepolia and mainnet sites; the build command supplies Sepolia defaults
+  # (sepolia / medi) when a site leaves them unset.
 
 # SPA fallback — react-router serves /invite?... and other dynamic paths.
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
+
+# Security headers — this site publishes only the committer (publish dir above),
+# so /* scopes to the wallet app alone.
+#
+# The first four are ENFORCED immediately. Referrer-Policy is no-referrer so the
+# invite-link signature (a bearer token in the /invite query string) is never
+# leaked via the Referer header to RPCs, the indexer, WalletConnect, or Sentry.
+#
+# The CSP ships as Content-Security-Policy-Report-Only for launch week: it
+# reports violations without breaking the app, so a missing origin surfaces as a
+# console report instead of a dead wallet. Flip to Content-Security-Policy
+# (enforce) after a clean launch-week run. connect-src lists both Sepolia RPC
+# origins (primary + fallback), the indexer origin, the WalletConnect/web3modal
+# endpoints, and Sentry ingest. script-src is 'self' (no inline scripts in
+# index.html); style-src needs 'unsafe-inline' for RainbowKit/sonner.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options        = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "no-referrer"
+    Permissions-Policy     = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy-Report-Only = """\
+default-src 'self'; \
+script-src 'self'; \
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+font-src 'self' https://fonts.gstatic.com; \
+img-src 'self' data: https:; \
+connect-src 'self' https://sepolia.drpc.org https://ethereum-sepolia-rpc.publicnode.com https://api.knowable.run wss://relay.walletconnect.com wss://relay.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://api.web3modal.org https://pulse.walletconnect.org https://*.ingest.sentry.io; \
+frame-src https://verify.walletconnect.com https://verify.walletconnect.org; \
+frame-ancestors 'none'; \
+base-uri 'self'; \
+form-action 'self'; \
+object-src 'none'; \
+worker-src 'self' blob:"""

@@ -12,6 +12,8 @@ export interface ShieldReviewStepProps {
   amount: bigint
   fee: bigint | null
   netAmount: bigint
+  /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
+  isSubmitting?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -21,6 +23,7 @@ export function ShieldReviewStep({
   amount,
   fee,
   netAmount,
+  isSubmitting,
   onBack,
   onConfirm,
 }: ShieldReviewStepProps) {
@@ -41,7 +44,7 @@ export function ShieldReviewStep({
       <FeeSummary fee={fee} netAmount={netAmount} netLabel="You'll deposit" />
       <FlowFooter
         className={styles.footer}
-        primary={{ label: 'Confirm deposit', onClick: onConfirm }}
+        primary={{ label: 'Confirm deposit', onClick: onConfirm, disabled: isSubmitting }}
         secondary={{ label: 'Back', onClick: onBack }}
       />
     </div>

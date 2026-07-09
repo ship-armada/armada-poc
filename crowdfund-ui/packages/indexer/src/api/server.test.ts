@@ -4,10 +4,11 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Interface } from 'ethers'
-import { createIndexerApi } from './server.js'
+import { createIndexerApi, selectStaticSnapshotUrl } from './server.js'
 import { FileIndexerStore } from '../db/fileStore.js'
+import type { PublishSnapshotResult } from '../snapshots/publish.js'
 import { CROWDFUND_ABI_FRAGMENTS } from '../../../shared/src/lib/constants.js'
 import type { CursorState, IndexedRawLog } from '../types.js'
 
@@ -18,7 +19,6 @@ const contractAddress = '0xF681A7c700420e5CA93f77c8988d3eED02767035'
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 120,
   confirmedHead: 110,
   ingestedCursor: 110,
@@ -58,7 +58,109 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
+describe('selectStaticSnapshotUrl', () => {
+  it('uses the object-storage public URL when the publisher provides one', () => {
+    const result: PublishSnapshotResult = {
+      snapshotPath: 's3://bucket/crowdfund/snapshot-100.json',
+      latestPath: 's3://bucket/crowdfund/latest.json',
+      snapshotFileName: 'snapshot-100.json',
+      snapshotUrl: 'https://cdn.example.com/crowdfund/snapshot-100.json',
+      latestUrl: 'https://cdn.example.com/crowdfund/latest.json',
+    }
+    expect(selectStaticSnapshotUrl(result)).toBe('https://cdn.example.com/crowdfund/latest.json')
+  })
+
+  it('returns null for the file publisher instead of exposing the disk path', () => {
+    // The file publisher returns only a local latestPath; /health is public, so the
+    // path must never be served — the field is null when there is no public URL.
+    const result: PublishSnapshotResult = {
+      snapshotPath: 'data/crowdfund-indexer/snapshots/snapshot-100.json',
+      latestPath: 'data/crowdfund-indexer/snapshots/latest.json',
+      snapshotFileName: 'snapshot-100.json',
+    }
+    expect(selectStaticSnapshotUrl(result)).toBeNull()
+  })
+})
+
 describe('indexer API', () => {
+  it('returns a generic 500 that does not leak the raw error (and its RPC key)', async () => {
+    const leakyUrl = 'https://eth-sepolia.g.alchemy.com/v2/abc123SECRETkey'
+    const failingStore = {
+      readMeta: async () => {
+        throw new Error(`could not detect network (req to ${leakyUrl} failed)`)
+      },
+    } as unknown as FileIndexerStore
+    const app = createIndexerApi({
+      store: failingStore,
+      chainId: 11155111,
+      contractAddress,
+      repairMaxAttempts: 6,
+    })
+    const stderrLines: string[] = []
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stderrLines.push(String(chunk))
+      return true
+    })
+    const server = app.listen(0)
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('missing test server address')
+      const res = await fetch(`http://127.0.0.1:${address.port}/health`)
+      const body = await res.json() as { error: string }
+      expect(res.status).toBe(500)
+      expect(body.error).toBe('internal indexer error')
+      expect(JSON.stringify(body)).not.toContain('abc123SECRETkey')
+      // The server-side log is written but sanitized — host kept, key stripped.
+      const logged = stderrLines.join('')
+      expect(logged).not.toContain('abc123SECRETkey')
+      expect(logged).toContain('https://eth-sepolia.g.alchemy.com/[redacted]')
+    } finally {
+      stderrSpy.mockRestore()
+      server.close()
+    }
+  })
+
+  it('caches the built snapshot until verified state changes', async () => {
+    let readLogsCalls = 0
+    let lastVerifiedAt: string | null = '2026-06-15T00:00:00.000Z'
+    const fakeStore = {
+      readMeta: async () => ({
+        cursor,
+        ranges: [],
+        lastIngestedAt: null,
+        lastVerifiedAt,
+        lastReconciledAt: null,
+        lastError: null,
+        latestSnapshotHash: null,
+        latestStaticSnapshotUrl: null,
+      }),
+      readLogs: async () => {
+        readLogsCalls += 1
+        return []
+      },
+    } as unknown as FileIndexerStore
+
+    const app = createIndexerApi({ store: fakeStore, chainId: 11155111, contractAddress, repairMaxAttempts: 6 })
+    const server = app.listen(0)
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('missing test server address')
+      const baseUrl = `http://127.0.0.1:${address.port}`
+
+      await fetch(`${baseUrl}/snapshot`).then((res) => res.json())
+      await fetch(`${baseUrl}/events`).then((res) => res.json())
+      // Second request served from cache — no second rebuild.
+      expect(readLogsCalls).toBe(1)
+
+      // Verified state changes → cache key changes → rebuild.
+      lastVerifiedAt = '2026-06-15T01:00:00.000Z'
+      await fetch(`${baseUrl}/snapshot`).then((res) => res.json())
+      expect(readLogsCalls).toBe(2)
+    } finally {
+      server.close()
+    }
+  })
+
   it('serves health and snapshot data', async () => {
     const app = createIndexerApi({
       store: await makeStore(),

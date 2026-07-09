@@ -1,0 +1,82 @@
+/* ABOUTME: Wallet confirmation list — raised card with per-wallet-action rows (participate Step 4 parity). */
+
+.card {
+  width: 100%;
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: var(--semantic-borderRadius-item);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.label {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-primary);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid var(--semantic-color-border-lavender);
+  border-top-color: var(--semantic-color-brand-lavender);
+  animation: walletConfirmSpin 700ms linear infinite;
+}
+
+@keyframes walletConfirmSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid var(--semantic-color-border-default);
+}
+
+.check {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--semantic-color-status-success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--semantic-color-surface-bg);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

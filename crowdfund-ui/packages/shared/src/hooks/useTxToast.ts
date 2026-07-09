@@ -122,6 +122,9 @@ export function useTxToast(opts?: UseTxToastOptions): UseTxToastResult {
       toast.error(`${handle.label} failed`, {
         id: handle.id,
         description: errorMessage,
+        // Failures need time to read (tx hash / reason) — longer than the
+        // default success/info toast lifetime.
+        duration: 10_000,
       })
       setLastTx((prev) => ({
         status: 'failed',

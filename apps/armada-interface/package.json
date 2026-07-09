@@ -5,14 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/prepare-artifacts.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepare:artifacts": "node scripts/prepare-artifacts.mjs"
   },
   "dependencies": {
     "@armada/ui": "*",
+    "@heroicons/react": "^2.2.0",
     "@noble/ciphers": "^0.4.1",
     "@noble/hashes": "^1.8.0",
     "@railgun-community/engine": "9.5.1",
@@ -20,10 +23,10 @@
     "@railgun-community/wallet": "10.8.1",
     "@rainbow-me/rainbowkit": "^2.2.10",
     "@scure/bip39": "^1.3.0",
+    "@sentry/react": "^8.55.0",
     "@tanstack/react-query": "^5.96.0",
     "clsx": "^2.1.1",
     "ethers": "^6.15.0",
-    "framer-motion": "^12.0.0",
     "jotai": "^2.15.1",
     "level-js": "^6.1.0",
     "lucide-react": "^0.552.0",
@@ -44,6 +47,7 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
+    "@sentry/vite-plugin": "^5.3.0",
     "@vitejs/plugin-react": "^5.0.4",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.0.1",

@@ -26,6 +26,21 @@ async function railgunSharedModels() {
  */
 const RAILGUN_NETWORK_KEY = 'Hardhat'
 
+/** One-shot RPC timeout. ethers' default FetchRequest timeout is ~300s, which defeats failover —
+ *  a black-holed endpoint would hang for 5 min. Cap at 15s so callers fail (or fall back) fast. */
+const ONE_SHOT_RPC_TIMEOUT_MS = 15_000
+
+/**
+ * Build a one-shot JsonRpcProvider with an explicit fetch timeout (P1-18). Plain
+ * `new JsonRpcProvider(url)` inherits ethers' ~300s default, so a wedged RPC pins the caller far
+ * past any reasonable budget. Constructing from a `FetchRequest` lets us bound it.
+ */
+function timeoutProvider(url: string, timeoutMs: number = ONE_SHOT_RPC_TIMEOUT_MS): ethers.JsonRpcProvider {
+  const req = new ethers.FetchRequest(url)
+  req.timeout = timeoutMs
+  return new ethers.JsonRpcProvider(req)
+}
+
 function sdkPollIntervalMs(): number {
   return getNetworkConfig().mode === 'sepolia' ? 15_000 : 2_000
 }
@@ -129,7 +144,7 @@ export async function loadHubNetwork(): Promise<void> {
   if (!primaryRpc) {
     throw new Error('[railgun.network] hub chain has no configured RPC URLs')
   }
-  const provider = new ethers.JsonRpcProvider(primaryRpc)
+  const provider = timeoutProvider(primaryRpc)
   const code = await provider.getCode(privacyPool)
   if (!code || code === '0x') {
     throw new Error(
@@ -138,19 +153,20 @@ export async function loadHubNetwork(): Promise<void> {
     )
   }
 
-  // Single-provider fallback config (weight 2 is required for the SDK's quorum check even with
-  // one provider). Stall timeout differs by network — testnet RPCs are slower / chattier.
+  // Provider config — the SDK's FallbackProvider rotates across these on error (P1-18). Each
+  // configured hub RPC URL becomes an entry; the first is priority 1 (preferred), extras are
+  // priority 2+ so they only serve when the primary errors/stalls. weight 2 satisfies the SDK's
+  // quorum check; stallTimeout differs by network — testnet RPCs are slower / chattier.
+  const stallTimeout = getNetworkConfig().mode === 'sepolia' ? 10_000 : 2_500
   const fallbackConfig = {
     chainId: hubChainId,
-    providers: [
-      {
-        provider: primaryRpc,
-        priority: 1,
-        weight: 2,
-        maxLogsPerBatch: 10,
-        stallTimeout: getNetworkConfig().mode === 'sepolia' ? 10_000 : 2_500,
-      },
-    ],
+    providers: hubChain.rpcUrls.map((url, i) => ({
+      provider: url,
+      priority: i + 1,
+      weight: 2,
+      maxLogsPerBatch: 10,
+      stallTimeout,
+    })),
   }
 
   await loadProvider(fallbackConfig, NetworkName.Hardhat, sdkPollIntervalMs())
@@ -184,11 +200,46 @@ export async function getCurrentHubBlock(): Promise<number | null> {
   const primaryRpc = hubChain.rpcUrls[0]
   if (!primaryRpc) return null
   try {
-    const provider = new ethers.JsonRpcProvider(primaryRpc)
+    const provider = timeoutProvider(primaryRpc)
     return await provider.getBlockNumber()
   } catch {
     // Non-fatal — wallet enroll proceeds without creationBlockNumbers, engine just does
     // slightly more decryption work on the first scan. No correctness impact.
     return null
   }
+}
+
+/**
+ * Look up the chain timestamp (seconds since epoch) for one or more hub-chain block numbers.
+ * Used by `runHistoryScan` to backfill timestamps on SDK history items where the SDK didn't
+ * populate `item.timestamp` itself (observed on local Anvil chains and some RPC providers).
+ *
+ * Deduplicates input block numbers — N items sharing one block produce one RPC call. Results
+ * are returned as a `Map<blockNumber, timestampSeconds>`; missing entries mean the lookup
+ * failed and the caller should keep its existing (possibly zero) timestamp.
+ */
+export async function getHubBlockTimestamps(
+  blockNumbers: ReadonlyArray<number>,
+): Promise<Map<number, number>> {
+  const result = new Map<number, number>()
+  if (blockNumbers.length === 0) return result
+  const hubChain = getNetworkConfig().hub
+  const primaryRpc = hubChain.rpcUrls[0]
+  if (!primaryRpc) return result
+  // Dedup before issuing RPC calls — first-scan recovery on a busy wallet can hit dozens of
+  // items spread across a few blocks, and `eth_getBlockByNumber` is one of the more expensive
+  // public-RPC reads.
+  const unique = Array.from(new Set(blockNumbers))
+  const provider = timeoutProvider(primaryRpc)
+  const blocks = await Promise.allSettled(
+    unique.map((bn) => provider.getBlock(bn)),
+  )
+  for (let i = 0; i < unique.length; i++) {
+    const settled = blocks[i]
+    const blockNumber = unique[i]
+    if (settled?.status === 'fulfilled' && settled.value && blockNumber !== undefined) {
+      result.set(blockNumber, settled.value.timestamp)
+    }
+  }
+  return result
 }

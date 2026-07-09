@@ -1,0 +1,112 @@
+/* ABOUTME: CSS Module for JoinButton — pill-collapsed-to-circle gradient button with hover expand. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  width: 56px;
+  padding: 16px 20px;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    var(--primitives-color-purple-300),
+    var(--primitives-color-amber-300)
+  );
+  color: var(--semantic-color-surface-bg);
+  gap: 0px;
+  transition: width 220ms ease, padding 220ms ease, gap 220ms ease;
+  white-space: nowrap;
+}
+
+/* Light theme — dark label on the bright gradient. Scoped to light so dark
+   keeps surface-bg; the mockup applied this to the base rule. */
+:global([data-theme='light']) .button {
+  color: #291433;
+}
+
+.button:hover,
+.button.expanded {
+  width: 135px;
+  padding: 16px 16px 16px 20px;
+  gap: 12px;
+}
+
+.label {
+  font-family: var(--primitives-fontFamily-ui);
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  opacity: 0;
+  width: 0;
+  transition: opacity 180ms ease, width 220ms ease;
+  overflow: hidden;
+}
+
+.button:hover .label,
+.button.expanded .label {
+  opacity: 1;
+  width: auto;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.lg {
+  height: var(--primitives-spacing-16);
+  width: var(--primitives-spacing-16);
+  padding: var(--primitives-spacing-5);
+  flex-shrink: 0;
+}
+
+.lg .icon {
+  width: calc(var(--primitives-fontSize-xl) * 1px);
+  height: calc(var(--primitives-fontSize-xl) * 1px);
+}
+
+.lg:hover,
+.lg.expanded {
+  /* 135px (= the md size) leaves only ~59px for the label inside the lg
+   * padding + icon + gap, so the trailing "w" of "Join now" clips under the
+   * arrow. 168px lifts label space to ~92px, comfortably wider than the
+   * rendered text at fontSize-md. */
+  width: 168px;
+  padding: var(--primitives-spacing-5) var(--primitives-spacing-5) var(--primitives-spacing-5)
+    var(--primitives-spacing-6);
+}
+
+/* Touch devices — collapse hover/expanded to icon-only so the button doesn't
+ * get stuck expanded. Ported from the armada-crowdfund mockup mobile rework. */
+@media (hover: none), (pointer: coarse) {
+  .button:hover,
+  .button.expanded {
+    width: 56px;
+    padding: 16px 20px;
+    gap: 0;
+  }
+
+  .button:hover .label,
+  .button.expanded .label {
+    opacity: 0;
+    width: 0;
+  }
+
+  .lg:hover,
+  .lg.expanded {
+    width: var(--primitives-spacing-16);
+    padding: var(--primitives-spacing-5);
+    gap: 0;
+  }
+
+  .lg:hover .label,
+  .lg.expanded .label {
+    opacity: 0;
+    width: 0;
+  }
+}

@@ -5,11 +5,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the Railgun SDK at the module boundary so we don't need a live engine to test our wrapper.
 // We capture the per-test mock impls below for assertion.
+// Shared spy for the per-wallet decrypted-balance clear (WS7.2 Option A) so tests can assert it.
+const sdkHooks = vi.hoisted(() => ({
+  clearDecryptedBalances: vi.fn(async () => {}),
+}))
+
 vi.mock('@railgun-community/wallet', () => ({
   createRailgunWallet: vi.fn(),
   loadWalletByID: vi.fn(),
   unloadWalletByID: vi.fn(),
   deleteWalletByID: vi.fn(),
+  walletForID: vi.fn(() => ({
+    clearDecryptedBalancesAllTXIDVersions: sdkHooks.clearDecryptedBalances,
+  })),
 }))
 
 // Also mock our engine bootstrap modules — they eagerly import the SDK at top-level, which
@@ -44,6 +52,7 @@ import {
   unlockFromBackup,
   lockWallet,
   resetWallet,
+  MismatchedRecoverySecretError,
 } from './wallet'
 import { isUnlocked, getWalletId, getRailgunAddress, clear as clearKeyManager } from './keyManager'
 import { encryptBackup, deriveRootSecret } from '@/lib/crypto/kdf'
@@ -55,6 +64,30 @@ const mockDelete = deleteWalletByID as unknown as ReturnType<typeof vi.fn>
 
 const SAMPLE_WALLET_ID = '0d3a8e7c'
 const SAMPLE_RAILGUN_ADDRESS = '0zk1qexample…'
+const SAMPLE_EVM = '0xabcdef0123456789abcdef0123456789abcdef01' as `0x${string}`
+const SAMPLE_EVM_LC = SAMPLE_EVM.toLowerCase()
+
+// Helpers for seeding/reading the per-(EVM, account) localStorage map that wallet.ts uses now.
+function seedStoredWalletId(walletId: string, evmAddress: `0x${string}` = SAMPLE_EVM, account = '0'): void {
+  const key = 'armada.shielded.walletIds'
+  const raw = window.localStorage.getItem(key)
+  const map = raw ? JSON.parse(raw) : {}
+  const evm = evmAddress.toLowerCase()
+  map[evm] = { ...(map[evm] ?? {}), [account]: walletId }
+  window.localStorage.setItem(key, JSON.stringify(map))
+}
+function seedStoredChecksum(checksum: string, evmAddress: `0x${string}` = SAMPLE_EVM, account = '0'): void {
+  const key = 'armada.shielded.checksums'
+  const raw = window.localStorage.getItem(key)
+  const map = raw ? JSON.parse(raw) : {}
+  const evm = evmAddress.toLowerCase()
+  map[evm] = { ...(map[evm] ?? {}), [account]: checksum }
+  window.localStorage.setItem(key, JSON.stringify(map))
+}
+function readStoredMap(key: string): Record<string, Record<string, string>> {
+  const raw = window.localStorage.getItem(key)
+  return raw ? JSON.parse(raw) : {}
+}
 
 function fixedSig(seed = 0): Uint8Array {
   const out = new Uint8Array(65)
@@ -98,12 +131,21 @@ describe('enrollFromSignature', () => {
     expect(args[3]).toBe(0) // derivation index
   })
 
-  it('marks the keyManager unlocked + persists walletId to localStorage', async () => {
-    await enrollFromSignature(fixedSig())
+  it('marks the keyManager unlocked + persists walletId to the per-(EVM,account) localStorage map', async () => {
+    await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(isUnlocked()).toBe(true)
     expect(getWalletId()).toBe(SAMPLE_WALLET_ID)
     expect(getRailgunAddress()).toBe(SAMPLE_RAILGUN_ADDRESS)
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBe(SAMPLE_WALLET_ID)
+    const map = readStoredMap('armada.shielded.walletIds')
+    expect(map[SAMPLE_EVM_LC]?.['0']).toBe(SAMPLE_WALLET_ID)
+  })
+
+  it('skips the localStorage binding when no evmAddress is supplied (no-wallet-connected fallback)', async () => {
+    await enrollFromSignature(fixedSig())
+    expect(isUnlocked()).toBe(true)
+    expect(getWalletId()).toBe(SAMPLE_WALLET_ID)
+    // No entries in the map because we didn't pass an evmAddress.
+    expect(readStoredMap('armada.shielded.walletIds')).toEqual({})
   })
 
   it('is deterministic — same signature → same root_secret → same checksum', async () => {
@@ -132,12 +174,13 @@ describe('enrollFromSignature', () => {
     await expect(enrollFromSignature(new Uint8Array(64))).rejects.toThrow()
   })
 
-  it('try-loads an existing SDK wallet when a walletId is cached in localStorage', async () => {
-    // Simulates "Sign again" on UnlockFlow: same signature, but a walletId from a prior session
-    // is already persisted. Must call loadWalletByID, not createRailgunWallet, so the SDK
-    // preserves its scan cursor + UTXO set (otherwise shielded balance shows 0 after reload).
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
-    const { state } = await enrollFromSignature(fixedSig())
+  it('try-loads an existing SDK wallet when a walletId is cached for this (EVM,account) tuple', async () => {
+    // Simulates "Sign in" on UnlockFlow's primary tab: same signature, but a walletId from a
+    // prior session is already in the map. Must call loadWalletByID, not createRailgunWallet,
+    // so the SDK preserves its scan cursor + UTXO set (otherwise shielded balance shows 0
+    // after reload).
+    seedStoredWalletId(SAMPLE_WALLET_ID)
+    const { state } = await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).not.toHaveBeenCalled()
     expect(state.id).toBe(SAMPLE_WALLET_ID)
@@ -145,20 +188,76 @@ describe('enrollFromSignature', () => {
   })
 
   it('falls back to createRailgunWallet when the cached walletId fails to load (cleared IDB)', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+    seedStoredWalletId(SAMPLE_WALLET_ID)
     mockLoad.mockRejectedValueOnce(new Error('Could not load RAILGUN wallet'))
-    const { state } = await enrollFromSignature(fixedSig())
+    const { state } = await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).toHaveBeenCalledTimes(1)
     expect(state.id).toBe(SAMPLE_WALLET_ID)
   })
+
+  it('zeroes the input signature buffer after HKDF derivation (signature-discipline guarantee)', async () => {
+    // Per V2 amendment §"Signature discipline" — the caller's reference to the signature
+    // buffer must point to all-zeros after enrollFromSignature returns, even on the happy
+    // path. This is best-effort (JS gives no zeroization guarantees), but the in-place
+    // .fill(0) closes the window during which a heap scrape could recover the bytes.
+    const sig = fixedSig(0)
+    // Sanity: the signature is non-zero going in, so the post-call assertion is meaningful.
+    expect(Array.from(sig).some(b => b !== 0)).toBe(true)
+    await enrollFromSignature(sig)
+    expect(Array.from(sig).every(b => b === 0)).toBe(true)
+  })
+
+  it('zeroes the input signature buffer even when derivation throws (try/finally guarantee)', async () => {
+    // A 64-byte input fails the length assertion inside deriveRootSecret. The signature
+    // buffer must still be zeroed before the exception propagates.
+    const badSig = new Uint8Array(64)
+    for (let i = 0; i < 64; i++) badSig[i] = 0xab
+    await expect(enrollFromSignature(badSig)).rejects.toThrow()
+    expect(Array.from(badSig).every(b => b === 0)).toBe(true)
+  })
+
+  it('throws NonDeterministicSignerError when the re-sign derives a different identity than the cached one', async () => {
+    // Simulate the post-Phase-2a returning-user determinism check: the previous session
+    // stored a checksum for identity A; the user re-signs but the wallet now produces a
+    // signature for identity B. The cached-checksum-mismatch guard catches this before any
+    // identity is bound to the device, and surfaces a typed error the UI can render as a
+    // dedicated screen (rather than a generic toast).
+    seedStoredWalletId(SAMPLE_WALLET_ID)
+    seedStoredChecksum('aaaa bbbb cccc') // identity A
+    let captured: unknown
+    try {
+      await enrollFromSignature(fixedSig(0), { evmAddress: SAMPLE_EVM, account: 0n })
+    } catch (err) {
+      captured = err
+    }
+    expect(captured).toBeDefined()
+    const errObj = captured as { kind?: string; reason?: string }
+    expect(errObj.kind).toBe('NonDeterministicSignerError')
+    expect(errObj.reason).toBe('cached-checksum-mismatch')
+    // Critical: must NOT have called the SDK at all (no wallet bound on this device).
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockLoad).not.toHaveBeenCalled()
+  })
+
+  it('the cached-checksum mismatch is scoped to (evmAddress, account) — a different EVM address gets a fresh enrollment, not a mismatch', async () => {
+    // Phase 4 guarantee: switching EVM addresses lets a user enroll a fresh shielded identity
+    // for the new address without tripping the cached-mismatch guard tied to the old address.
+    seedStoredWalletId(SAMPLE_WALLET_ID, SAMPLE_EVM)
+    seedStoredChecksum('aaaa bbbb cccc', SAMPLE_EVM)
+    const otherEvm = '0x1234567890abcdef1234567890abcdef12345678' as `0x${string}`
+    // Different EVM address → no entry for the (otherEvm, 0) tuple → fresh-create path runs.
+    const { state } = await enrollFromSignature(fixedSig(0), { evmAddress: otherEvm, account: 0n })
+    expect(state.id).toBe(SAMPLE_WALLET_ID)
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('unlockFromRootSecret', () => {
-  it('fast-paths via loadWalletByID when a walletId is cached in localStorage', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+  it('fast-paths via loadWalletByID when a walletId is cached for the (EVM, account) tuple', async () => {
+    seedStoredWalletId(SAMPLE_WALLET_ID)
     const root = deriveRootSecret(fixedSig())
-    const state = await unlockFromRootSecret(root)
+    const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
 
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).not.toHaveBeenCalled()
@@ -169,10 +268,10 @@ describe('unlockFromRootSecret', () => {
   })
 
   it('falls back to createRailgunWallet when loadWalletByID throws (wallet missing on this device)', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', SAMPLE_WALLET_ID)
+    seedStoredWalletId(SAMPLE_WALLET_ID)
     mockLoad.mockRejectedValueOnce(new Error('Could not load RAILGUN wallet'))
     const root = deriveRootSecret(fixedSig())
-    const state = await unlockFromRootSecret(root)
+    const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
 
     expect(mockLoad).toHaveBeenCalledTimes(1)
     expect(mockCreate).toHaveBeenCalledTimes(1)
@@ -191,12 +290,45 @@ describe('unlockFromRootSecret', () => {
   it('rejects rootSecret of the wrong length', async () => {
     await expect(unlockFromRootSecret(new Uint8Array(16))).rejects.toThrow()
   })
+
+  // P1-13: a wrong pasted secret (or a backup for a different wallet) must NOT silently rebind the
+  // device. Refuse with a typed error and leave the binding maps untouched so the next correct
+  // sign-in doesn't hit the scary cached-checksum-mismatch.
+  it('refuses when the derived identity differs from the device binding, without rebinding', async () => {
+    seedStoredChecksum('aaaa bbbb cccc') // device bound to a different identity for (EVM, account)
+    const root = deriveRootSecret(fixedSig())
+
+    await expect(
+      unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n }),
+    ).rejects.toBeInstanceOf(MismatchedRecoverySecretError)
+
+    // Binding maps untouched, no SDK work attempted, wallet stays locked.
+    expect(readStoredMap('armada.shielded.checksums')[SAMPLE_EVM_LC]?.['0']).toBe('aaaa bbbb cccc')
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockLoad).not.toHaveBeenCalled()
+    expect(isUnlocked()).toBe(false)
+  })
+
+  it('unlocks + writes the binding on a fresh device (no stored checksum)', async () => {
+    const root = deriveRootSecret(fixedSig())
+    const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
+    expect(isUnlocked()).toBe(true)
+    expect(readStoredMap('armada.shielded.checksums')[SAMPLE_EVM_LC]?.['0']).toBe(state.checksum)
+  })
+
+  it('unlocks when the pasted secret matches the device binding (re-paste of the same secret)', async () => {
+    const first = await unlockFromRootSecret(deriveRootSecret(fixedSig()), { evmAddress: SAMPLE_EVM, account: 0n })
+    clearKeyManager()
+    const again = await unlockFromRootSecret(deriveRootSecret(fixedSig()), { evmAddress: SAMPLE_EVM, account: 0n })
+    expect(again.checksum).toBe(first.checksum)
+    expect(isUnlocked()).toBe(true)
+  })
 })
 
 describe('unlockFromBackup', () => {
   it('decrypts the backup blob and unlocks', async () => {
     const root = deriveRootSecret(fixedSig())
-    const blob = encryptBackup({ rootSecret: root, creationBlock: 0 }, 'passphrase-here', { iterations: 1000 })
+    const blob = await encryptBackup({ rootSecret: root, creationBlock: 0 }, 'passphrase-here', { iterations: 1000 })
     const state = await unlockFromBackup(blob, 'passphrase-here')
     expect(state.status).toBe('unlocked')
     expect(state.id).toBe(SAMPLE_WALLET_ID)
@@ -205,7 +337,7 @@ describe('unlockFromBackup', () => {
 
   it('propagates the authentication error when the passphrase is wrong', async () => {
     const root = deriveRootSecret(fixedSig())
-    const blob = encryptBackup({ rootSecret: root, creationBlock: 0 }, 'right-here', { iterations: 1000 })
+    const blob = await encryptBackup({ rootSecret: root, creationBlock: 0 }, 'right-here', { iterations: 1000 })
     await expect(unlockFromBackup(blob, 'wrong-here')).rejects.toThrow(/authentication failed/)
   })
 })
@@ -224,15 +356,41 @@ describe('lockWallet', () => {
     await lockWallet('whatever')
     expect(mockUnload).not.toHaveBeenCalled()
   })
+
+  it('clears decrypted balances before unloading the wallet (WS7.2 Option A)', async () => {
+    // WHY: the Railgun engine persists decrypted note plaintext (value, 0zk addresses, memo)
+    // unencrypted under wallet:<id>. On lock we wipe it so it doesn't sit at rest while locked;
+    // it must run while the SDK wallet handle is still loaded (i.e. before unloadWalletByID).
+    sdkHooks.clearDecryptedBalances.mockClear()
+    await enrollFromSignature(fixedSig())
+    await lockWallet('ignored')
+    expect(sdkHooks.clearDecryptedBalances).toHaveBeenCalledTimes(1)
+    expect(mockUnload).toHaveBeenCalledWith(SAMPLE_WALLET_ID)
+    // Ordering: the clear resolves before the unload is invoked.
+    expect(sdkHooks.clearDecryptedBalances.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockUnload.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('does not block the lock when the decrypted-balance clear throws', async () => {
+    // WHY: best-effort — a clear failure (wallet not loaded, SDK hiccup) must never strand the
+    // user in an unlocked state. The keyManager is already zeroized synchronously regardless.
+    sdkHooks.clearDecryptedBalances.mockRejectedValueOnce(new Error('clear failed'))
+    await enrollFromSignature(fixedSig())
+    await lockWallet('ignored')
+    expect(isUnlocked()).toBe(false)
+    expect(mockUnload).toHaveBeenCalledWith(SAMPLE_WALLET_ID)
+  })
 })
 
 describe('resetWallet', () => {
-  it('deletes the SDK wallet and clears the cached walletId', async () => {
-    await enrollFromSignature(fixedSig())
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBe(SAMPLE_WALLET_ID)
+  it('deletes the SDK wallet and clears the entire per-(EVM,account) map', async () => {
+    await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
+    expect(readStoredMap('armada.shielded.walletIds')[SAMPLE_EVM_LC]?.['0']).toBe(SAMPLE_WALLET_ID)
     await resetWallet('whatever-id-arg-is-ignored')
     expect(mockDelete).toHaveBeenCalledWith(SAMPLE_WALLET_ID)
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.walletIds')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.checksums')).toBeNull()
     expect(isUnlocked()).toBe(false)
   })
 
@@ -241,16 +399,16 @@ describe('resetWallet', () => {
   })
 
   it('uses the cached walletId when locked but a previous session left state', async () => {
-    window.localStorage.setItem('armada.shielded.walletId', 'cached-id-xyz')
+    seedStoredWalletId('cached-id-xyz')
     await resetWallet('whatever')
     expect(mockDelete).toHaveBeenCalledWith('cached-id-xyz')
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.walletIds')).toBeNull()
   })
 
   it('still clears localStorage even if SDK delete throws', async () => {
-    await enrollFromSignature(fixedSig())
+    await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     mockDelete.mockRejectedValueOnce(new Error('wallet not found'))
     await resetWallet('whatever')
-    expect(window.localStorage.getItem('armada.shielded.walletId')).toBeNull()
+    expect(window.localStorage.getItem('armada.shielded.walletIds')).toBeNull()
   })
 })

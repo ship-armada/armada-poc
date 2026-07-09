@@ -1,0 +1,27 @@
+/* ABOUTME: AppFooter styling — a slim, centered row of muted icon links that brighten on hover. */
+
+.footer {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: var(--primitives-spacing-5) var(--primitives-spacing-4);
+  border-top: 1px solid var(--semantic-color-border-default);
+}
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-6);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--semantic-color-text-muted);
+  transition: color 150ms ease-out;
+}
+
+.link:hover {
+  color: var(--semantic-color-text-primary);
+}

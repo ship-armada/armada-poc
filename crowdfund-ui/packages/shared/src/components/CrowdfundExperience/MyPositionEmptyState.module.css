@@ -1,0 +1,35 @@
+/* ABOUTME: Empty-state for the CrowdfundExperience My Position panel — shown when the wallet is disconnected or has no position. */
+/* ABOUTME: Co-located with the hero rather than promoted to a shared primitive since it's tightly coupled to the My Position card chrome. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-6) 0;
+  align-items: flex-start;
+}
+
+.headline {
+  font-family: var(--primitives-fontFamily-display, var(--primitives-fontFamily-ui)), serif;
+  font-size: var(--semantic-typography-h2-fontSize, 28px);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+}
+
+.subhead {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  max-width: 42ch;
+}
+
+.ctaRow {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  margin-top: var(--primitives-spacing-2);
+}

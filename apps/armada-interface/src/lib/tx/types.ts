@@ -7,6 +7,7 @@ export type TxKind =
   | 'unshield-local'
   | 'unshield-xchain'
   | 'transfer-shielded'
+  | 'transfer-shielded-received'
   | 'yield-deposit'
   | 'yield-withdraw'
 
@@ -38,6 +39,16 @@ export type TxExecutionState =
 export const NON_TERMINAL_STATES: ReadonlyArray<TxExecutionState> = [
   'pending', 'active', 'waiting', 'retrying',
 ]
+
+/** A terminal state is settled — resume, cancel, and expiry must never move a record out of it. */
+export const TERMINAL_STATES: ReadonlyArray<TxExecutionState> = [
+  'completed', 'failed', 'expired', 'cancelled',
+]
+
+/** True when the execution state is terminal (no further transitions expected). */
+export function isTerminalState(state: TxExecutionState): boolean {
+  return (TERMINAL_STATES as ReadonlyArray<string>).includes(state)
+}
 
 /* Stage unions — every TxKind declares its own sequence. Adding a stage means
  * adding to the union AND to the lifecycle definition in `lifecycles.ts`. */
@@ -84,6 +95,15 @@ export type StageTransferShielded =
   | 'submit-relayer'
   | 'hub-confirmed'
 
+/**
+ * Synthetic received-transfer kind. These records are not authored by the user — they're
+ * reconstructed from chain via `getWalletTransactionHistory` when another wallet shields to our
+ * 0zk address. There's no proof/submit/confirm flow we drove, so the lifecycle collapses to a
+ * single terminal `observed` stage: by the time we synthesize the record, the commitment is
+ * already on the merkle tree.
+ */
+export type StageReceived = 'observed'
+
 export type StageYieldDeposit =
   | 'build-proof'
   | 'submit-relayer'
@@ -100,6 +120,7 @@ export type TxStage =
   | StageUnshieldLocal
   | StageUnshieldXchain
   | StageTransferShielded
+  | StageReceived
   | StageYieldDeposit
   | StageYieldWithdraw
 
@@ -110,6 +131,7 @@ export type StageFor<K extends TxKind> =
   : K extends 'unshield-local' ? StageUnshieldLocal
   : K extends 'unshield-xchain' ? StageUnshieldXchain
   : K extends 'transfer-shielded' ? StageTransferShielded
+  : K extends 'transfer-shielded-received' ? StageReceived
   : K extends 'yield-deposit' ? StageYieldDeposit
   : K extends 'yield-withdraw' ? StageYieldWithdraw
   : never
@@ -231,6 +253,19 @@ export interface MetaTransferShielded extends MetaCommon, MetaBroadcaster {
   recipient: string
 }
 
+/**
+ * Meta for a synthetic received transfer. Deliberately does NOT extend `MetaCommon` — a received
+ * transfer carries no fee (we didn't author it, so there's no `feeCacheId` to attach). The sender
+ * is private by Railgun's design and not recoverable, so we only keep the amount + any plaintext
+ * memo the sender chose to attach.
+ */
+export interface MetaTransferShieldedReceived {
+  /** USDC raw amount (6 decimals) credited to our shielded balance. */
+  amount: bigint
+  /** Optional plaintext memo the sender attached (`memoText` on the SDK history item). */
+  memoText?: string
+}
+
 export type MetaYieldDeposit = MetaCommon & MetaBroadcaster
 export interface MetaYieldWithdraw extends MetaCommon, MetaBroadcaster {
   /** Yield share amount to redeem; `amount` is the expected USDC output. */
@@ -243,6 +278,7 @@ export type MetaFor<K extends TxKind> =
   : K extends 'unshield-local' ? MetaUnshieldLocal
   : K extends 'unshield-xchain' ? MetaUnshieldXchain
   : K extends 'transfer-shielded' ? MetaTransferShielded
+  : K extends 'transfer-shielded-received' ? MetaTransferShieldedReceived
   : K extends 'yield-deposit' ? MetaYieldDeposit
   : K extends 'yield-withdraw' ? MetaYieldWithdraw
   : never
@@ -260,6 +296,10 @@ export type MetaFor<K extends TxKind> =
  *                      the user should check their wallet or the explorer. Distinct from TX_REVERTED.
  *  RPC_ERROR         — wagmi/viem call threw before we got any tx hash. Usually safe to retry.
  *  USER_REJECTED     — the user declined a wallet signature or chain switch.
+ *  INTERRUPTED       — a non-terminal record was found on resume (app reload / crash) that never
+ *                      reached a broadcast (no sourceTxHash). Nothing was sent; resuming would
+ *                      re-prompt the wallet out of nowhere, so we fail honestly and ask the user
+ *                      to start a new transaction.
  *  CANCELLED         — user-initiated cancel on a record that hadn't broadcast yet. Nothing on-chain.
  *  DISMISSED         — user "stopped tracking" a record that HAD broadcast. The on-chain tx will run
  *                      to completion; we just stopped watching it. We persist the txHash so the user
@@ -272,6 +312,7 @@ export type TxErrorCode =
   | 'POLL_TIMEOUT'
   | 'RPC_ERROR'
   | 'USER_REJECTED'
+  | 'INTERRUPTED'
   | 'CANCELLED'
   | 'DISMISSED'
   | 'OTHER'
@@ -434,24 +475,19 @@ export interface TxRecord<K extends TxKind = TxKind> {
 
 /* Lifecycle metadata — drives steppers, retry buttons, expiry rules. */
 
-export interface TxRetryPolicy {
-  /** Maximum total retry attempts across the lifecycle's retryable stages. */
-  maxAttempts: number
-  /** Base backoff between retries (ms). Pollers add jitter on top. */
-  backoffMs: number
-}
-
 export interface TxLifecycle<K extends TxKind = TxKind> {
   kind: K
   stages: ReadonlyArray<StageFor<K>>
   /** The stage that means "fully successful". */
   terminalSuccess: StageFor<K>
-  /** Stages from which user can retry without restarting from scratch. */
+  /**
+   * Stages from which the user can MANUALLY retry (via ErrorStep's "Try Again" → useTx.retry)
+   * without restarting from scratch. There is intentionally NO automatic retry policy: a buggy
+   * auto-resubmit could double-submit a shielded tx and lose funds. Retry is always user-driven.
+   */
   retryableStages: ReadonlyArray<StageFor<K>>
   /** Heuristic durations for ETA UI (milliseconds). */
   estDuration: { p50: number; p90: number }
   /** Hard cap on total lifecycle duration. After this, executionState → expired. */
   maxDurationMs: number
-  /** Retry policy applied within retryableStages. */
-  retry: TxRetryPolicy
 }

@@ -1,0 +1,112 @@
+/* ABOUTME: CSS Module for Step5Confirmation — see Step5Confirmation.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.shell {
+  width: 480px;
+  height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+/* ── Hero block ── */
+.heroBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  align-items: center;
+  text-align: center;
+}
+
+/* Figma: display/lg — 32px Charis SIL, color/text/primary */
+.headline {
+  font-family: var(--primitives-fontFamily-display);
+  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  line-height: var(--primitives-lineHeight-snug);
+}
+
+/* Figma: ui/body-lg — 15px Geist Regular, color/text/secondary (70% white) */
+.subline {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ── What happens next card ── */
+.nextCard {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.nextEyebrow {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+/* Figma: ui/body-sm — 13px Geist Regular, color/text/muted */
+.nextText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Button row ── */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
+/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .buttonRow {
+    flex-direction: column-reverse;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}

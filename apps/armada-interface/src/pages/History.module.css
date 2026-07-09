@@ -1,5 +1,5 @@
 /* ABOUTME: History page layout — top-aligned column with section header, filter tabs, and the list card. */
-/* ABOUTME: Uses the same opt-out margin trick as Dashboard.module.css to escape AppLayout's vertical centering. */
+/* ABOUTME: Horizontally auto-centered within AppLayout's top-aligned <main> (same margin convention as Dashboard.module.css). */
 
 .page {
   width: 100%;
@@ -40,4 +40,15 @@
   padding: var(--primitives-spacing-4) var(--primitives-spacing-4) var(--primitives-spacing-5);
   background: var(--semantic-color-surface-default);
   border-top: 1px solid var(--semantic-color-border-default);
+}
+
+/* Spinner glyph shown next to the empty-state title while the chain-recovery scan is in flight. */
+.spin {
+  animation: historySpin 700ms linear infinite;
+}
+
+@keyframes historySpin {
+  to {
+    transform: rotate(360deg);
+  }
 }

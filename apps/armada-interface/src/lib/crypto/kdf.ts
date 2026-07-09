@@ -4,10 +4,10 @@
 import { hkdf } from '@noble/hashes/hkdf'
 import { expand as hkdfExpand } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha2'
-import { pbkdf2 } from '@noble/hashes/pbkdf2'
 import { gcm } from '@noble/ciphers/aes'
 import { entropyToMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english'
+import { bytesToHexNoPrefix, hexToBytesNoPrefix } from './hex'
 
 // ============================================================================
 // Constants (identity-determining — see specs/TX_SIGNING.md §"Enrollment Flow")
@@ -86,6 +86,21 @@ export function deriveSdkEncryptionKeyHex(rootSecret: Uint8Array): string {
   assertRootSecret(rootSecret)
   const bytes = hkdfExpand(sha256, rootSecret, HKDF_INFO_SDK_ENCRYPTION_V1, 32)
   return bytesToHexNoPrefix(bytes)
+}
+
+/**
+ * Derive a 32-byte AES-256 key for encrypting transaction-history records at rest. Consumed by
+ * `lib/cache.ts` once Phase 7 wires per-record encryption.
+ *
+ * Versioned info string — a future Phase 7.x can rotate to `:v2` without disturbing other key
+ * derivations. Like every other subkey here, this is HKDF-Expand from root_secret (root_secret
+ * is already a PRK output, so a second Extract would be redundant per RFC 5869 §3.3).
+ */
+const HKDF_INFO_HISTORY_ENCRYPTION_V1 = utf8('armada-tx-history:v1')
+
+export function deriveHistoryEncryptionKey(rootSecret: Uint8Array): Uint8Array {
+  assertRootSecret(rootSecret)
+  return hkdfExpand(sha256, rootSecret, HKDF_INFO_HISTORY_ENCRYPTION_V1, 32)
 }
 
 /**
@@ -230,6 +245,15 @@ export interface BackupPayload {
 }
 
 export const PBKDF2_ITERATIONS_V1 = 600_000
+
+/**
+ * Hard cap on PBKDF2 iterations accepted from an untrusted backup blob. A malicious or corrupt
+ * file could otherwise specify an astronomically large count (e.g. 2^53) that pins the browser
+ * inside `deriveBits` for minutes — a denial-of-service on the unlock path. 10M is ~16× the
+ * spec-mandated 600k, leaving headroom for a future hardening bump while still bounding worst-case
+ * unlock latency to a few seconds.
+ */
+const PBKDF2_ITERATIONS_MAX = 10_000_000
 const PAYLOAD_BYTES = 40 // 32 rootSecret + 8 creationBlock(uint64 BE)
 
 export interface EncryptOptions {
@@ -276,11 +300,11 @@ function decodePayload(plain: Uint8Array): BackupPayload {
  * Encrypt a backup payload with a user-chosen passphrase. Returns a v2 blob suitable for
  * serializing to JSON and saving to disk.
  */
-export function encryptBackup(
+export async function encryptBackup(
   payload: BackupPayload,
   passphrase: string,
   options?: EncryptOptions,
-): BackupBlob {
+): Promise<BackupBlob> {
   if (!passphrase || passphrase.length < 8) {
     throw new Error('encryptBackup: passphrase must be at least 8 characters')
   }
@@ -290,7 +314,7 @@ export function encryptBackup(
   }
   const salt = randomBytes(32)
   const nonce = randomBytes(12)
-  const key = deriveBackupKey(passphrase, salt, iterations)
+  const key = await deriveBackupKey(passphrase, salt, iterations)
   const plain = encodePayload(payload)
   const cipher = gcm(key, nonce)
   // @noble/ciphers gcm: tag is appended to the ciphertext; we split it for spec compliance.
@@ -318,7 +342,7 @@ export function encryptBackup(
  * `undefined` when calling into the SDK, producing a slow full-genesis rescan. This preserves
  * existing v1 backups as a "correct but slow" restore path rather than rejecting outright.
  */
-export function decryptBackup(blob: BackupBlob, passphrase: string): BackupPayload {
+export async function decryptBackup(blob: BackupBlob, passphrase: string): Promise<BackupPayload> {
   if (blob.format !== 'armada-backup-v1' && blob.format !== 'armada-backup-v2') {
     throw new Error(`decryptBackup: unsupported format "${blob.format}"`)
   }
@@ -335,7 +359,7 @@ export function decryptBackup(blob: BackupBlob, passphrase: string): BackupPaylo
   if (tag.length !== 16) throw new Error('decryptBackup: tag must be 16 bytes')
   if (nonce.length !== 12) throw new Error('decryptBackup: nonce must be 12 bytes')
 
-  const key = deriveBackupKey(passphrase, salt, blob.kdf_params.iterations)
+  const key = await deriveBackupKey(passphrase, salt, blob.kdf_params.iterations)
   const combined = new Uint8Array(ciphertext.length + tag.length)
   combined.set(ciphertext, 0)
   combined.set(tag, ciphertext.length)
@@ -359,10 +383,87 @@ export function decryptBackup(blob: BackupBlob, passphrase: string): BackupPaylo
 }
 
 /**
+ * Round-trip-verify a backup file's text: parse + decrypt with `passphrase`, then confirm the
+ * recovered secret's anti-phish checksum equals `expectedChecksum` (the live wallet's). Throws a
+ * user-facing error on parse / decrypt / mismatch. The recovered rootSecret is a local
+ * verification copy and is zeroized before returning. Shared by onboarding's ConfirmBackupStep and
+ * Settings → Export recovery's verify step so the two verification paths can't drift.
+ */
+export async function verifyBackupFileText(
+  text: string,
+  passphrase: string,
+  expectedChecksum: string,
+): Promise<void> {
+  const blob = parseBackupJsonText(text)
+  let rootSecret: Uint8Array | null = null
+  try {
+    const payload = await decryptBackup(blob, passphrase)
+    rootSecret = payload.rootSecret
+    const checksum = formatChecksumDisplay(antiPhishChecksumBytes(rootSecret))
+    if (checksum !== expectedChecksum) {
+      throw new Error(
+        `Backup checksum (${checksum}) does not match your wallet (${expectedChecksum}). ` +
+          'Did you upload the right file and enter the matching passphrase?',
+      )
+    }
+  } finally {
+    // Local verification copy only — the keyManager holds the authoritative secret.
+    if (rootSecret) rootSecret.fill(0)
+  }
+}
+
+const BACKUP_JSON_INVALID_MSG =
+  'Backup file is not valid JSON. The file may be corrupted, incomplete, or not an Armada export. ' +
+  'Open it in a text editor — it should be one object with `"format": "armada-backup-v2"`. ' +
+  'Export a fresh file from Settings → Export recovery secret while your wallet is unlocked.'
+
+/**
+ * Parse backup file text (from disk upload). Strips BOM, validates JSON, then `parseBackupBlob`.
+ */
+export function parseBackupJsonText(text: string): BackupBlob {
+  const trimmed = text.replace(/^\uFEFF/, '').trim()
+  if (!trimmed) {
+    throw new Error('Backup file is empty.')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error(BACKUP_JSON_INVALID_MSG)
+  }
+  return parseBackupBlob(parsed)
+}
+
+/** Map low-level parse / storage errors to user-facing unlock messages. */
+export function normalizeBackupUnlockError(err: unknown): Error {
+  if (err instanceof Error) {
+    if (err instanceof SyntaxError || /Unexpected token/i.test(err.message)) {
+      return new Error(BACKUP_JSON_INVALID_MSG)
+    }
+    return err
+  }
+  return new Error('Unlock failed.')
+}
+
+/**
  * Parse + validate an unknown JSON object as a BackupBlob. Rejects unknown top-level fields per
  * spec interop contract.
  */
 export function parseBackupBlob(json: unknown): BackupBlob {
+  if (Array.isArray(json)) {
+    if (
+      json.length === 1 &&
+      typeof json[0] === 'object' &&
+      json[0] !== null &&
+      !Array.isArray(json[0])
+    ) {
+      return parseBackupBlob(json[0])
+    }
+    throw new Error('parseBackupBlob: expected one backup object, not a JSON array')
+  }
+  if (typeof json === 'string') {
+    return parseBackupJsonText(json)
+  }
   if (typeof json !== 'object' || json === null) {
     throw new Error('parseBackupBlob: input is not an object')
   }
@@ -397,6 +498,11 @@ export function parseBackupBlob(json: unknown): BackupBlob {
   if (o.kdf === 'pbkdf2-sha256' && (typeof iterations !== 'number' || iterations < 1)) {
     throw new Error('parseBackupBlob: pbkdf2 iterations missing or invalid')
   }
+  // Cap iterations from an untrusted file so a malicious/corrupt blob can't pin the unlock path
+  // inside PBKDF2 for minutes (DoS). See PBKDF2_ITERATIONS_MAX.
+  if (o.kdf === 'pbkdf2-sha256' && (iterations as number) > PBKDF2_ITERATIONS_MAX) {
+    throw new Error(`parseBackupBlob: pbkdf2 iterations exceeds the safe maximum (${PBKDF2_ITERATIONS_MAX})`)
+  }
   // We only construct the strict Phase 1 shape; argon2id/scrypt parsing lands in Phase 2.
   if (o.kdf !== 'pbkdf2-sha256') {
     throw new Error(`parseBackupBlob: Phase 1 SDK cannot decrypt ${o.kdf} backups`)
@@ -413,8 +519,31 @@ export function parseBackupBlob(json: unknown): BackupBlob {
   }
 }
 
-function deriveBackupKey(passphrase: string, salt: Uint8Array, iterations = PBKDF2_ITERATIONS_V1): Uint8Array {
-  return pbkdf2(sha256, utf8(passphrase), salt, { c: iterations, dkLen: 32 })
+/**
+ * Derive the 32-byte AES key from the passphrase via PBKDF2-SHA-256.
+ *
+ * Uses the platform WebCrypto `subtle.deriveBits` rather than @noble's synchronous `pbkdf2` so the
+ * 600k-iteration stretch runs off the main thread instead of janking the UI for hundreds of ms
+ * during backup encrypt/decrypt (P1-20). The output is byte-identical to the previous @noble
+ * implementation for the same (passphrase, salt, iterations) — a frozen invariant locked by
+ * kdf.test.ts so the backup format stays interoperable. Algorithm and params are unchanged; only
+ * the implementation moved.
+ */
+async function deriveBackupKey(
+  passphrase: string,
+  salt: Uint8Array,
+  iterations = PBKDF2_ITERATIONS_V1,
+): Promise<Uint8Array> {
+  // Copy into fresh ArrayBuffer-backed views: WebCrypto's `BufferSource` typing requires an
+  // ArrayBuffer (not the ArrayBufferLike the @noble/TextEncoder helpers return, which TS widens
+  // to include SharedArrayBuffer). The copies are tiny (passphrase + 32-byte salt).
+  const keyMaterial = await crypto.subtle.importKey('raw', new Uint8Array(utf8(passphrase)), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new Uint8Array(salt), iterations },
+    keyMaterial,
+    256, // 32-byte key, expressed in bits
+  )
+  return new Uint8Array(bits)
 }
 
 // ============================================================================
@@ -437,33 +566,3 @@ function randomBytes(n: number): Uint8Array {
   return out
 }
 
-/** Lowercase hex string, no 0x prefix. */
-function bytesToHexNoPrefix(bytes: Uint8Array): string {
-  let s = ''
-  for (const b of bytes) {
-    s += b.toString(16).padStart(2, '0')
-  }
-  return s
-}
-
-function hexToBytesNoPrefix(hex: string): Uint8Array {
-  const s = hex.startsWith('0x') || hex.startsWith('0X') ? hex.slice(2) : hex
-  if (s.length % 2 !== 0) throw new Error('hex string must have even length')
-  if (!/^[0-9a-fA-F]*$/.test(s)) throw new Error('invalid hex characters')
-  const out = new Uint8Array(s.length / 2)
-  for (let i = 0; i < out.length; i++) {
-    const hi = hexNibble(s.charCodeAt(i * 2))
-    const lo = hexNibble(s.charCodeAt(i * 2 + 1))
-    out[i] = (hi << 4) | lo
-  }
-  return out
-}
-
-function hexNibble(charCode: number): number {
-  // IC-1: this never touches signature/key material directly — it's pure hex decoding for
-  // backup-blob hex fields. Used here instead of parseInt() to keep lint guards clean.
-  if (charCode >= 48 && charCode <= 57) return charCode - 48 // '0'-'9'
-  if (charCode >= 97 && charCode <= 102) return charCode - 87 // 'a'-'f'
-  if (charCode >= 65 && charCode <= 70) return charCode - 55 // 'A'-'F'
-  throw new Error('invalid hex character')
-}

@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { BarTrackTicks } from '../BarTrackTicks'
-import { Tag } from '../Tag'
+import { Tag, type TagDot } from '../Tag'
+import { Tooltip } from '../Tooltip'
 import styles from './Progress.module.css'
 
 export interface ProgressProps {
@@ -12,12 +13,25 @@ export interface ProgressProps {
   committedAmount?: number  // raw number e.g. 857000
   minRaiseAmount?: number   // e.g. 1200000
   maxAmount?: number        // full bar scale e.g. 1800000
-  daysLeft?: string
+  /** Countdown tag text (e.g. "3 DAYS LEFT"). Pass `null` to suppress the tag —
+   *  e.g. when the sale window has closed and a countdown is misleading. */
+  daysLeft?: string | null
+  /** Optional exact-time detail (e.g. "2d 14h 22m left · ends Jun 14, 2026,
+   *  2:42 PM") shown in a hover tooltip on the countdown tag. When omitted the
+   *  tag renders bare, exactly as in the designer's mockup. */
+  daysLeftTooltip?: string
   participants?: string
   className?: string
   animateOnMount?: boolean
   /** Hide title + status tags (e.g. dashboard layout with headline outside the card). */
   hideStatus?: boolean
+  /** Lifecycle status pill label. Defaults to 'ACTIVE' to preserve the
+   *  designer's mockup; consumers swap in 'CLOSED' / 'FINALIZED' / etc. as the
+   *  contract phase advances. */
+  status?: string
+  /** Dot color for the status pill — matches the `Tag` primitive's variants.
+   *  Defaults to 'active'. */
+  statusDot?: TagDot
 }
 
 function formatCommitted(amount: number) {
@@ -39,10 +53,13 @@ export function Progress({
   minRaiseAmount = 1200000,
   maxAmount = 1800000,
   daysLeft = '3 DAYS LEFT',
+  daysLeftTooltip,
   participants = '85 PARTICIPANTS',
   className,
   animateOnMount = true,
   hideStatus = false,
+  status = 'ACTIVE',
+  statusDot = 'active',
 }: ProgressProps) {
   // Bar position calculations
   const filledPct = Math.max(0, Math.min(100, (committedAmount / maxAmount) * 100))
@@ -84,6 +101,9 @@ export function Progress({
     return () => cancelAnimationFrame(raf)
   }, [animateOnMount, filledPct, committedAmount])
 
+  const gradientFillPct = Math.min(animatedPct, minRaisePct)
+  const overMinFillPct = Math.max(0, animatedPct - minRaisePct)
+
   return (
     <div className={[styles.card, hideStatus && styles.cardSansStatus, className].filter(Boolean).join(' ')}>
 
@@ -91,8 +111,15 @@ export function Progress({
         <div className={styles.status}>
           <p className={styles.title}>{title}</p>
           <div className={styles.tags}>
-            <Tag label="ACTIVE" dot="active" />
-            <Tag label={daysLeft} />
+            <Tag label={status} dot={statusDot} />
+            {daysLeft != null &&
+              (daysLeftTooltip ? (
+                <Tooltip variant="centered" content={daysLeftTooltip} placement="bottom">
+                  <Tag label={daysLeft} />
+                </Tooltip>
+              ) : (
+                <Tag label={daysLeft} />
+              ))}
             <Tag label={participants} />
           </div>
         </div>
@@ -114,8 +141,14 @@ export function Progress({
           <div className={styles.barTrack}>
             {/* Fixed tick grid; fill is painted above and covers the filled segment */}
             <BarTrackTicks />
-            {/* Gradient fill */}
-            <div className={styles.barFill} style={{ width: `${animatedPct}%` }} />
+            {/* Gradient up to min raise; lavender beyond */}
+            <div className={styles.barFillGradient} style={{ width: `${gradientFillPct}%` }} />
+            {overMinFillPct > 0 && (
+              <div
+                className={styles.barFillOverMin}
+                style={{ left: `${minRaisePct}%`, width: `${overMinFillPct}%` }}
+              />
+            )}
             {/* Threshold line — taller than bar */}
             <div className={styles.threshold} style={{ left: `${minRaisePct}%` }} />
           </div>
@@ -126,11 +159,11 @@ export function Progress({
             <div className={styles.labelLeft}>
               <div className={styles.stat}>
                 <span className={styles.statValue}>{raisedTowardMin}%</span>
-                <span className={styles.statKey}> RAISED</span>
+                <span className={styles.statKey}>RAISED</span>
               </div>
               <div className={styles.stat}>
                 <span className={styles.statValue}>{leftToMin}</span>
-                <span className={styles.statKey}> LEFT</span>
+                <span className={styles.statKey}>LEFT</span>
               </div>
             </div>
 
@@ -139,8 +172,10 @@ export function Progress({
               className={styles.labelMinRaise}
               style={{ left: `${minRaisePct}%` }}
             >
-              <span className={styles.statValue}>$1.2M</span>
-              <span className={styles.statKey}> MIN RAISE</span>
+              <div className={styles.stat}>
+                <span className={styles.statValue}>{formatCommitted(minRaiseAmount)}</span>
+                <span className={styles.statKey}>MIN RAISE</span>
+              </div>
             </div>
           </div>
         </div>

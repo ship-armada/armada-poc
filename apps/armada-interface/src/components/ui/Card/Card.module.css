@@ -3,7 +3,6 @@
 
 .card {
   background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-card) * 1px);
   padding: var(--semantic-spacing-card-padding);
 }

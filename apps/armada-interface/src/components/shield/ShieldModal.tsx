@@ -1,36 +1,38 @@
-// ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders ActionFlowShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
+// ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders DepositOverlayShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
 // ABOUTME: Dispatches between same-chain shield (hub source) and cross-chain shield-xchain (client source) based on fromChainId; B3 routes hub shield through GaslessShieldWrapper when available.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { useQuery } from '@tanstack/react-query'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
-import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
+import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { useBalances } from '@/hooks/useBalances'
 import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
 import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import {
-  ActionFlowShell,
   ProgressStep,
   ErrorStep,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
-import { ShieldInputStep } from './ShieldInputStep'
+import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
 
 type LocalStep = FlowStep
 type SubmittedKind = 'shield' | 'shield-xchain'
 
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 /**
  * Permit deadline window. The relayer's fee TTL is 5 min and proof building isn't required for
@@ -59,6 +61,11 @@ export function ShieldModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Double-submit guard (P0-7). The ref is the synchronous gate (state updates are async, so a
+  // rapid second click would otherwise pass an `isSubmitting` state check); the state drives the
+  // Confirm button's disabled prop so the button visibly locks during the pre-submit refresh().
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const balances = useBalances()
   const max = balances.unshielded[fromChainId] ?? 0n
@@ -114,19 +121,53 @@ export function ShieldModal() {
   const fee: bigint = userFeeForKind(computedKind, amount, quote, {
     gasless: useGasless,
   })
+  // On-chain protocol fee — PrivacyPool's fee module takes ~50 bps off the shielded amount on
+  // the hub regardless of submission path (gasless or direct). useDisplayFees reads
+  // calculateShieldFee from the deployed fee module via wagmi; layered into computeFeeBreakdown
+  // below as `protocolFee` so recipientReceives reflects the TRUE shielded value the user gets,
+  // not just `amount - broadcasterFee`. nativeGas is also surfaced for the wallet-submit fallback
+  // (gasless path doesn't pay native gas — Phase 6 hides that row).
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    computedKind,
+    amount,
+    fromChainId,
+    quote,
+  )
+  const protocolFee = displayFees.protocolFee
+  // CCTP fast-fee — applies to BOTH direct and gasless cross-chain shield (CCTP V2 always
+  // charges its fast-fee on a cross-chain mint regardless of how the burn was initiated).
+  // Routed through its own channel rather than the broadcaster slot so the tooltip can label it
+  // "CCTP fee" instead of "Relayer fee" (which would be misleading on the direct path where
+  // there's no broadcaster). Zero on any same-chain shield.
+  const cctpFee: bigint =
+    computedKind === 'shield-xchain' ? cctpFastFeeForAmount(amount) : 0n
   // Per-kind fee math (recipient receives / user is debited / how much they can type) lives in
   // the shared `computeFeeBreakdown` helper. Both gasless paths use `fee-from-recipient` so
   // the entered `amount` IS what's deducted from the user's USDC balance, and the shielded
-  // value is `amount - fee`. The wrapper splits on-chain: `(amount - fee)` to the pool,
-  // `fee` to the relayer. Direct hub shield is `no-fee` (full amount shielded, user pays ETH
-  // gas). Direct shield-xchain is `fee-from-recipient` with the CCTP fast-fee deducted from
-  // the destination mint.
-  const { recipientReceives: netAmount, inputMax } = computeFeeBreakdown(
-    computedKind,
-    amount,
-    fee,
-    max,
-  )
+  // value is `amount - fee - protocolFee - cctpFee` (gasless xchain) or `amount - fee - protocolFee`
+  // (everything else). The wrapper splits on-chain: `(amount - fee)` to the pool, which then
+  // takes `protocolFee` from the shielded credit. Direct hub shield is `no-fee` so only
+  // `protocolFee` deducts from the shielded value.
+  const {
+    recipientReceives: netAmount,
+    totalDeducted,
+    inputMax,
+  } = computeFeeBreakdown(computedKind, amount, fee, max, {
+    protocolFee: protocolFee + cctpFee,
+    // Routes the `shield` kind through the gasless `fee-from-recipient` model when the wrapper
+    // path is active — without this the helper falls back to `no-fee` and the tooltip's
+    // "You'll deposit" line skips the broadcaster fee (recipientReceives misses one deduction).
+    gasless: useGasless,
+  })
+  // Tooltip-ready breakdown — surfaces broadcaster fee + "You'll deposit" + "Total deducted"
+  // bullets inside FeeBreakdownTooltip so the input UI stays clean (no inline FeeSummary rows).
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    cctpFee: cctpFee > 0n ? cctpFee : undefined,
+    recipientReceives: netAmount,
+    totalDeducted,
+    recipientLabel: "You'll deposit",
+  }
   // Minimum valid amount = the live fee. Below or equal to it the wrapper's `shieldAmount =
   // totalAmount - fee` would underflow / be zero. Surfaced via ShieldInputStep's `minAmount`
   // prop so the user can't type a value that would inevitably revert. Zero for no-fee paths.
@@ -171,8 +212,14 @@ export function ShieldModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
+      // null ⇒ submit was refused on a follower tab (useTx.submit toasts + persists nothing); we
+      // keep the user on the review step rather than advancing to a never-driven progress spinner.
+      let submittedId: string | null = null
       // Submit with a fresh cacheId — if the cached quote is within the staleness window the
       // modal sat through, re-quote first so the relayer doesn't reject with FEE_EXPIRED.
       const activeQuote = quote && !isStale ? quote : await refresh()
@@ -200,7 +247,7 @@ export function ShieldModal() {
               `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
             )
           }
-          await txShield.submit({
+          submittedId = await txShield.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
@@ -210,7 +257,7 @@ export function ShieldModal() {
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
           })
         } else {
-          await txShield.submit({
+          submittedId = await txShield.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
@@ -235,7 +282,7 @@ export function ShieldModal() {
               `Relayer fee (${formatUsdc(liveFee)} USDC) increased to or above the deposit amount (${formatUsdc(amount)} USDC). Lower the fee by waiting for gas to drop, or raise the deposit amount.`,
             )
           }
-          await txShieldXchain.submit({
+          submittedId = await txShieldXchain.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
@@ -245,53 +292,79 @@ export function ShieldModal() {
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
           })
         } else {
-          await txShieldXchain.submit({
+          submittedId = await txShieldXchain.submit({
             amount,
             feeCacheId: activeQuote.cacheId,
             fromChainId,
           })
         }
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
   if (!isOpen) return null
 
+  // DepositOverlayShell renders a 3-segment indicator (Amount/Review/Confirm) — `progress`,
+  // `complete`, and `error` all map to segment 3. `overlayIndicatorStatus` flips the bar green
+  // on `complete` and red on `error`. Lavender otherwise. errorAtStep is no longer surfaced
+  // through the shell (the legacy 4-segment bar used it); instead the ErrorStep itself owns
+  // the retry button + copy.
+  const indicatorStep = overlayIndicatorStep(step)
+  const indicatorStatus = overlayIndicatorStatus(step)
+
   return (
-    <ActionFlowShell
-      open
+    <DepositOverlayShell
+      open={isOpen}
       onClose={close}
-      title="Deposit"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={step !== 'progress'}
+      flowLabel="Deposit"
+      currentStep={indicatorStep}
+      status={indicatorStatus}
     >
       {step === 'input' && (
-        <ShieldInputStep
-          fromChainId={fromChainId}
-          onFromChainIdChange={setFromChainId}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          minAmount={minAmount}
-          fee={fee}
-          netAmount={netAmount}
-          isFeeRefreshing={isStale}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <ShieldInputStepContent
+            fromChainId={fromChainId}
+            onFromChainIdChange={setFromChainId}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            max={max}
+            maxInput={inputMax}
+            minAmount={minAmount}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            gaslessMode={useGasless}
+          />
+          <ShieldInputStepFooter
+            amountStr={amountStr}
+            maxInput={inputMax}
+            minAmount={minAmount}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <ShieldReviewStep
           fromChainId={fromChainId}
           amount={amount}
-          fee={fee}
+          // Display "Fee" as the inclusive total — broadcaster + on-chain protocol fee + CCTP
+          // (gasless shield-xchain only; direct shield-xchain already has CCTP in `fee`) — so
+          // the user sees the same number that's used to derive `netAmount`. The tooltip below
+          // the amount card already breaks it out into individual rows.
+          fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
+          isSubmitting={isSubmitting}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
         />
@@ -303,10 +376,27 @@ export function ShieldModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
-          onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
+          onRetry={
+            errorAtStep === 'review'
+              ? () => {
+                  setSubmitError(null)
+                  setErrorAtStep(undefined)
+                  setStep('review')
+                }
+              : () => {
+                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                  // the user on the error step with the honest error + explorer link, not flip to a
+                  // stuck spinner — that was the P0-4 no-op bug.
+                  setErrorAtStep(undefined)
+                  void activeTx?.retry()?.then((accepted) => {
+                    if (accepted) setStep('progress')
+                  })
+                }
+          }
         />
       )}
       <RelayerStatusBanner isOpen={isOpen} />
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

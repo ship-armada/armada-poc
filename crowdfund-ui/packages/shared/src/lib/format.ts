@@ -17,7 +17,8 @@ export function formatUsdcPlain(amount: bigint): string {
  * `error` field; `value` is always present (0n on error) so the common UI gating pattern
  * `value > 0n` still works.
  *
- *  'invalid'           — not a number (NaN, "abc", empty, scientific overflow like "1e500")
+ *  'invalid'           — not a plain decimal ("abc", "NaN", "Infinity", scientific notation like
+ *                        "1e3", a leading "+", grouping commas, multiple dots, or a lone ".")
  *  'negative'          — number is negative
  *  'too-many-decimals' — input has more than 6 fractional digits; truncation would lose precision
  */
@@ -42,19 +43,30 @@ export function parseUsdcInput(input: string): UsdcInputResult {
   const trimmed = input.trim()
   if (trimmed === '') return { value: 0n }
 
-  // Decimal-precision check happens BEFORE numeric parse so "1.1234567" reports 'too-many-decimals'
-  // rather than silently rounding to 1.123456 via Math.floor below.
-  const dot = trimmed.indexOf('.')
-  if (dot !== -1 && trimmed.length - dot - 1 > 6) {
-    return { value: 0n, error: 'too-many-decimals' }
+  // Categorize a leading '-' as 'negative' before the shape check so "-5" / "-0.01" report
+  // 'negative' rather than 'invalid'.
+  if (trimmed.startsWith('-')) return { value: 0n, error: 'negative' }
+
+  // Pure decimal-string parsing — NO parseFloat/Number. parseFloat loses precision at 6dp:
+  // parseFloat("8.165") * 1e6 is 8164999.99…, which Math.floor'd to 8164999 (off by one). We
+  // validate the shape (optional integer part, optional single dot, optional fraction) then
+  // assemble the raw bigint from the digit groups directly, so the result is exact. The shape
+  // check also rejects scientific notation ("1e3"), a leading "+", grouping commas, multiple
+  // dots, and a lone ".".
+  if (trimmed === '.' || !/^\d*\.?\d*$/.test(trimmed)) {
+    return { value: 0n, error: 'invalid' }
   }
 
-  const num = parseFloat(trimmed)
-  // Reject non-finite (NaN, ±Infinity, "1e500"). parseFloat accepts "Infinity" silently;
-  // without the isFinite guard, BigInt(Infinity) throws RangeError.
-  if (!Number.isFinite(num)) return { value: 0n, error: 'invalid' }
-  if (num < 0) return { value: 0n, error: 'negative' }
-  return { value: BigInt(Math.floor(num * 1e6)) }
+  const dot = trimmed.indexOf('.')
+  const whole = dot === -1 ? trimmed : trimmed.slice(0, dot)
+  const frac = dot === -1 ? '' : trimmed.slice(dot + 1)
+
+  // >6 fractional digits would lose precision — surface 'too-many-decimals' rather than truncate.
+  if (frac.length > 6) return { value: 0n, error: 'too-many-decimals' }
+
+  const wholePart = whole === '' ? 0n : BigInt(whole)
+  const fracPart = frac === '' ? 0n : BigInt(frac.padEnd(6, '0'))
+  return { value: wholePart * 1_000_000n + fracPart }
 }
 
 /** Format an ARM amount (18 decimals) as a token string, e.g. "1,200,000 ARM" */
@@ -80,6 +92,58 @@ export function formatCountdown(seconds: number): string {
   if (days > 0) return `${days}d ${hours}h`
   if (hours > 0) return `${hours}h ${minutes}m`
   return `${minutes}m`
+}
+
+/**
+ * Crowdfund "time left" countdown shared by the stats banner, the hero progress
+ * tag, and the invite splash so they always agree. Shows whole days until under
+ * one day remains, then drops to hours + minutes. Floors throughout so the value
+ * only ever ticks down. Returns '' at or past the deadline — callers supply their
+ * own terminal wording (StatsBar → "Closed", the splash → "ENDS TODAY").
+ *
+ *   2 * 86400 + 16 * 3600  → "2 days"
+ *   1 * 86400              → "1 day"
+ *   13 * 3600 + 24 * 60    → "13h 24m"
+ *   9 * 60                 → "9m"
+ *   0                      → ""
+ */
+export function formatTimeLeft(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  const days = Math.floor(seconds / 86400)
+  if (days >= 1) return `${days} ${days === 1 ? 'day' : 'days'}`
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours >= 1) return `${hours}h ${minutes}m`
+  // Never show "0m left" while time genuinely remains — round the final
+  // sub-minute sliver up to one minute.
+  return `${Math.max(1, minutes)}m`
+}
+
+/** "May 28, 2:42 PM" (local) from a unix timestamp (seconds) — no year, so the
+ *  tooltip stays on one line. Returns '' at or before 0. Internal helper for
+ *  {@link formatTimeLeftDetail}. */
+function formatEndDateTime(unixSeconds: number): string {
+  if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) return ''
+  return new Date(unixSeconds * 1000).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/**
+ * Hover-tooltip detail for a crowdfund countdown: the local end timestamp, e.g.
+ * "Ends Jun 14, 2:42 PM" (no year, fits on one line). Shared by the stats banner
+ * and the hero progress tag so both tooltips read identically. `seconds` is the
+ * remaining duration — used only to suppress the tooltip once the deadline has
+ * passed; `windowEndUnix` is the absolute deadline (unix seconds). Returns '' at
+ * or past the deadline, or when the deadline is unknown.
+ */
+export function formatTimeLeftDetail(seconds: number, windowEndUnix: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  const end = formatEndDateTime(windowEndUnix)
+  return end ? `Ends ${end}` : ''
 }
 
 /** Get human-readable phase name */

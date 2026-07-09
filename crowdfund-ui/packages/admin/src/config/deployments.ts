@@ -1,7 +1,7 @@
 // ABOUTME: Loads crowdfund deployment addresses from deployment JSON files.
 // ABOUTME: Fetches from the Vite dev server plugin that serves deployments/.
 
-import { getDeploymentFileName } from './network'
+import { getDeploymentFileName, getHubChainId, assertDeploymentChainId } from './network'
 
 export interface CrowdfundDeployment {
   chainId: number
@@ -38,7 +38,12 @@ export async function loadDeployment(): Promise<CrowdfundDeployment> {
     )
   }
 
-  cachedDeployment = (await response.json()) as CrowdfundDeployment
+  const deployment = (await response.json()) as CrowdfundDeployment
+  // Fail loud if the manifest is for a different chain than this build targets —
+  // otherwise we'd talk to one network's addresses while the wallet expects another.
+  assertDeploymentChainId(deployment.chainId, getHubChainId(), fileName)
+
+  cachedDeployment = deployment
   return cachedDeployment
 }
 

@@ -1,0 +1,95 @@
+// ABOUTME: Startup environment validation for the committer.
+// ABOUTME: Hard-fails production builds that are missing critical VITE_* config.
+
+/** The subset of the Vite env we validate. All fields optional so the pure
+ *  function can be exercised with plain records in tests. */
+export interface EnvRecord {
+  PROD?: boolean
+  VITE_NETWORK?: string
+  VITE_WALLETCONNECT_PROJECT_ID?: string
+  VITE_CROWDFUND_INDEXER_URL?: string
+  VITE_CROWDFUND_PROFILE?: string
+  VITE_DEPLOYMENT_INSTANCE?: string
+  VITE_EXPECTED_CROWDFUND_ADDRESS?: string
+}
+
+export type EnvValidationResult = { ok: true } | { ok: false; errors: string[] }
+
+function missing(value?: string): boolean {
+  return value === undefined || value.trim() === ''
+}
+
+/**
+ * Validates the runtime environment for a production deploy.
+ *
+ * Enforces for any non-local PROD build (sepolia, mainnet, or an unset network —
+ * unset is itself a misconfiguration we want to surface loudly rather than let
+ * silently fall back to a local/localhost config). Dev builds always pass: they
+ * default to local and tolerate absent vars.
+ */
+export function validateEnv(env: EnvRecord): EnvValidationResult {
+  const isProd = env.PROD === true
+  const network = env.VITE_NETWORK?.trim()
+
+  if (!isProd || network === 'local') {
+    return { ok: true }
+  }
+
+  const errors: string[] = []
+
+  if (missing(network)) {
+    errors.push('VITE_NETWORK is not set (expected "sepolia" or "mainnet" for production).')
+  }
+  if (missing(env.VITE_WALLETCONNECT_PROJECT_ID)) {
+    errors.push(
+      'VITE_WALLETCONNECT_PROJECT_ID is not set — wallet connection will not work.',
+    )
+  }
+  if (missing(env.VITE_CROWDFUND_INDEXER_URL)) {
+    errors.push(
+      'VITE_CROWDFUND_INDEXER_URL is not set — no event indexer is configured.',
+    )
+  }
+  if (!missing(env.VITE_DEPLOYMENT_INSTANCE) && missing(env.VITE_CROWDFUND_PROFILE)) {
+    errors.push(
+      'VITE_CROWDFUND_PROFILE is not set while VITE_DEPLOYMENT_INSTANCE is — ' +
+        'the UI would apply mainnet sale constants to the deployed instance.',
+    )
+  }
+  // A non-mainnet profile (e.g. the medi/Sepolia profile) on a mainnet build would
+  // render $1k-scale sale numbers over the real $1.2M sale. Unset is allowed — it
+  // defaults to the mainnet profile.
+  if (
+    network === 'mainnet' &&
+    !missing(env.VITE_CROWDFUND_PROFILE) &&
+    env.VITE_CROWDFUND_PROFILE!.trim() !== 'mainnet'
+  ) {
+    errors.push(
+      `VITE_CROWDFUND_PROFILE is "${env.VITE_CROWDFUND_PROFILE!.trim()}" on a mainnet build — ` +
+        'mainnet must use the "mainnet" profile (or leave it unset, which defaults to mainnet).',
+    )
+  }
+  // The crowdfund address is the USDC approve/commit target. On mainnet it must be
+  // pinned to a trusted out-of-band value so the app can reject a compromised/wrong
+  // manifest fetched from armada-deployments; refuse to build without the anchor.
+  if (network === 'mainnet' && missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS)) {
+    errors.push(
+      'VITE_EXPECTED_CROWDFUND_ADDRESS is not set on a mainnet build — the committer cannot ' +
+        'verify the fetched crowdfund (USDC approve target) address against a trusted value.',
+    )
+  }
+  // If an expected address is supplied (any network), it must be a well-formed
+  // 20-byte hex address. Catch a typo here at startup rather than deferring to the
+  // manifest-load-time getAddress() in assertExpectedAddress. Format-only (no EIP-55
+  // checksum) so a lowercase-entered value is accepted.
+  if (
+    !missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS) &&
+    !/^0x[0-9a-fA-F]{40}$/.test(env.VITE_EXPECTED_CROWDFUND_ADDRESS!.trim())
+  ) {
+    errors.push(
+      'VITE_EXPECTED_CROWDFUND_ADDRESS is not a valid Ethereum address (expected 0x + 40 hex chars).',
+    )
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true }
+}

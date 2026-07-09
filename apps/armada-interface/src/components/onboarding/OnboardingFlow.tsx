@@ -14,15 +14,22 @@ import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 type Step = 'welcome' | 'sign' | 'checksum' | 'backup' | 'confirm-backup' | 'complete'
 
 const STEP_INDEX: Record<Step, number> = {
-  welcome: 1,
-  sign: 2,
-  checksum: 3,
-  backup: 4,
-  'confirm-backup': 5,
-  complete: 6,
+  welcome: 0,
+  sign: 1,
+  checksum: 2,
+  backup: 3,
+  'confirm-backup': 4,
+  complete: 5,
 }
 
-const TOTAL_STEPS = 6
+const TOTAL_STEPS = 5
+const STEP_LABELS = [
+  'Set up account',
+  'Set up account',
+  'Set up account',
+  'Set up account',
+  'Set up account',
+] as const
 
 export interface OnboardingFlowProps {
   /** Called when the user clicks Done on the final step. Parent should swap App-level mode to "app". */
@@ -36,7 +43,7 @@ export interface OnboardingFlowProps {
 }
 
 export function OnboardingFlow({ onDone, onRestore }: OnboardingFlowProps) {
-  const { state, enroll, exportBackup } = useShieldedWallet()
+  const { state, enroll, exportBackup, reset } = useShieldedWallet()
   const [step, setStep] = useState<Step>('welcome')
 
   // The live anti-phish checksum is derived once Sign completes and lives in the active wallet
@@ -47,8 +54,11 @@ export function OnboardingFlow({ onDone, onRestore }: OnboardingFlowProps) {
   return (
     <OnboardingShell
       title="Set up your account"
-      currentStep={STEP_INDEX[step]}
+      currentStep={Math.max(1, STEP_INDEX[step])}
       totalSteps={TOTAL_STEPS}
+      showIndicator={step !== 'welcome'}
+      indicatorStatus={step === 'complete' ? 'confirmed' : 'default'}
+      steps={[...STEP_LABELS]}
     >
       {step === 'welcome' && (
         <WelcomeStep onContinue={() => setStep('sign')} onRestore={onRestore} />
@@ -67,8 +77,11 @@ export function OnboardingFlow({ onDone, onRestore }: OnboardingFlowProps) {
       {step === 'checksum' && (
         <AntiPhishChecksumStep
           checksum={checksum ?? '—'}
-          onBack={() => setStep('sign')}
           onContinue={() => setStep('backup')}
+          onCancelSetup={async () => {
+            await reset()
+            setStep('welcome')
+          }}
         />
       )}
 

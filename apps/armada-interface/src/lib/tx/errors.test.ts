@@ -36,11 +36,25 @@ describe('classifyHandlerError', () => {
     expect(classifyHandlerError(outer, 'fallback').code).toBe('USER_REJECTED')
   })
 
-  it('falls through to OTHER with the raw error message preserved', () => {
-    const err = new Error('insufficient funds for gas')
+  it('falls through to OTHER, preserving an unrecognized message verbatim', () => {
+    const err = new Error('some unrecognized handler failure')
     const result = classifyHandlerError(err, 'fallback')
     expect(result.code).toBe('OTHER')
-    expect(result.message).toBe('insufficient funds for gas')
+    expect(result.message).toBe('some unrecognized handler failure')
+  })
+
+  it('maps a known revert pattern to friendly copy via mapRevertToMessage (P2)', () => {
+    const result = classifyHandlerError(new Error('execution reverted: insufficient funds for gas'), 'fallback')
+    expect(result.code).toBe('OTHER')
+    expect(result.message).toBe('Insufficient funds for gas')
+  })
+
+  it('truncates a multi-line viem dump at 200 chars so it does not reach ErrorStep verbatim (P2)', () => {
+    const long = 'x'.repeat(500)
+    const result = classifyHandlerError(new Error(long), 'fallback')
+    expect(result.code).toBe('OTHER')
+    expect(result.message.length).toBeLessThanOrEqual(201) // 200 chars + the ellipsis
+    expect(result.message.endsWith('…')).toBe(true)
   })
 
   it('uses the fallback message when the thrown value has none', () => {

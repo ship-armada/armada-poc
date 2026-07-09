@@ -1,11 +1,57 @@
-/* ABOUTME: App-level CSS entry. Dark-only theme tokens live in */
-/* ABOUTME: @armada/crowdfund-shared/styles/theme.css — swap values there. */
+/* ABOUTME: App-level CSS entry. Dark base tokens live in @armada/crowdfund-shared/styles/theme.css; */
+/* ABOUTME: the committer adds an opt-in [data-theme="light"] chrome override below (light mode is committer-only). */
 
 @import "tailwindcss";
 @source "../../shared/src";
+
+/* Drive Tailwind's `dark:` variant off our explicit data-theme attribute rather
+   than the OS prefers-color-scheme default. This makes both themes deterministic
+   regardless of the user's OS setting: `dark:` utilities apply iff <html> (or an
+   ancestor) is data-theme="dark" — which is our default. In light mode they all
+   switch off, so the shadcn primitives flip cleanly to the light palette below. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @plugin "tailwindcss-animate";
 @import "tw-animate";
 
 @import "@armada/ui/styles/tokens.css";
 @import "@armada/crowdfund-shared/styles/theme.css";
+@import "@armada/crowdfund-shared/styles/mobile-layout.css";
+
+/* Light mode (opt-in, committer-only) — override the shadcn chrome tokens so the
+   page + primitives flip with the @armada/ui cards. Values are DERIVED from the
+   designer's @armada/ui light surface palette (tokens.css [data-theme="light"])
+   so chrome matches the cards rather than inventing a separate brand palette.
+   Brand/semantic tokens (--primary, --accent, --destructive, --ring, charts,
+   status, graph hop colours) read on both themes and are left as the dark base.
+   Lives here, not in the shared dark-only theme.css, so observer/admin stay dark. */
+[data-theme="light"] {
+  --background: var(--primitives-color-neutral-50); /* #ffffff interior surface */
+  --background-deep: var(--primitives-color-neutral-0); /* #f1eeee page / gradient outer */
+  --foreground: var(--semantic-color-text-primary); /* #2e2323 */
+  --card: var(--primitives-color-neutral-50);
+  --card-foreground: var(--semantic-color-text-primary);
+  --popover: var(--primitives-color-neutral-50);
+  --popover-foreground: var(--semantic-color-text-primary);
+  --secondary: var(--primitives-color-neutral-200);
+  --secondary-foreground: var(--semantic-color-text-primary);
+  --muted: var(--primitives-color-neutral-100);
+  --muted-foreground: var(--semantic-color-text-secondary);
+  --border: var(--semantic-color-border-default);
+  --input: rgba(46, 35, 35, 0.14);
+
+  /* Splash backdrop behind the node graph / Observe view: the dark hero photo
+     reads as a murky smudge on a light surface, so hide just the photo layer and
+     keep a light-tuned wash — a faint brand-lavender vignette frame: clean page
+     in the center, a soft lavender tint fading in at the edges so the graph sits
+     in a subtle frame rather than on bare surface. */
+  --splash-image-opacity: 0;
+  --splash-wash-center: transparent;
+  --splash-wash-edge: color-mix(in srgb, var(--semantic-color-brand-lavender) 7%, transparent);
+  /* Light-tuned no-WebGL fallback photo (the only instance shown in light). Fade
+     it to a faint wash via opacity, and lift + heavily desaturate what shows so
+     it reads as a pale, near-greyscale backdrop rather than a dark block. */
+  --splash-image-shown-opacity: 0.18;
+  --splash-brightness: 1.4;
+  --splash-saturate: 0.15;
+}

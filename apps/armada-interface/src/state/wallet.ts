@@ -70,3 +70,10 @@ export interface SyncState {
 }
 
 export const syncStateAtom = atom<SyncState>({ status: 'idle', progress: 0 })
+
+/**
+ * Bumped to re-trigger the initial shielded-balance scan after a failure (the "Try Again" action).
+ * `useShieldedBalanceSync` includes this in its effect deps, so incrementing it tears down the
+ * current subscription and re-runs `refreshShieldedBalances`. Driven by `useSyncRetry`.
+ */
+export const syncRetryEpochAtom = atom<number>(0)

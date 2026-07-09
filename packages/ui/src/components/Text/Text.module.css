@@ -1,0 +1,6 @@
+/* ABOUTME: Text primitive — layout/color only; type metrics come from generated .armada-text-* classes. */
+
+.root {
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+}

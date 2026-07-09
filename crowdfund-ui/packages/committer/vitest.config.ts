@@ -12,6 +12,7 @@ export default defineConfig({
   },
   define: {
     'import.meta.env.VITE_NETWORK': '"local"',
+    'import.meta.env.VITE_CROWDFUND_PROFILE': '"mainnet"',
   },
   test: {
     globals: true,

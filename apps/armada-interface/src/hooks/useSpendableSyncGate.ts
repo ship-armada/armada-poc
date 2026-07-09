@@ -37,7 +37,7 @@ export function useSpendableSyncGate(): SpendableSyncGate {
   if (sync.status === 'failed') {
     return {
       blocked: true,
-      reason: 'Shielded-balance sync was interrupted. Reload the page to retry before submitting.',
+      reason: 'Shielded-balance sync was interrupted. Use "Try again" on the dashboard before submitting.',
     }
   }
 

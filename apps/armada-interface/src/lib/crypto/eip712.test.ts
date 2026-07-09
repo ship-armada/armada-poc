@@ -20,40 +20,56 @@ describe('VERIFYING_CONTRACT', () => {
     expect(VERIFYING_CONTRACT).toBe(expected)
   })
 
-  it('is the testnet identifier', () => {
-    expect(VERIFYING_CONTRACT_SOURCE).toBe('armada-enrollment:testnet:v1')
+  it('is the v2 testnet identifier (governance fork from v1)', () => {
+    expect(VERIFYING_CONTRACT_SOURCE).toBe('armada-enrollment:testnet:v2')
   })
 })
 
 describe('buildEnrollmentTypedData', () => {
   it('produces the four governance-frozen fields verbatim', () => {
-    const td = buildEnrollmentTypedData(1700000000000)
+    const td = buildEnrollmentTypedData(0n)
     expect(td.domain.name).toBe(DOMAIN_NAME)
     expect(td.domain.name).toBe('Armada Protocol')
     expect(td.domain.verifyingContract).toBe(VERIFYING_CONTRACT)
     expect(td.message.purpose).toBe(MESSAGE_PURPOSE)
     expect(td.message.purpose).toBe('Generate privacy keys (NOT a transaction)')
     expect(td.message.version).toBe(MESSAGE_VERSION)
-    expect(td.message.version).toBe('1')
+    expect(td.message.version).toBe('2')
   })
 
   it('omits chainId from the domain (per spec — chain-agnostic identity)', () => {
-    const td = buildEnrollmentTypedData(1700000000000)
+    const td = buildEnrollmentTypedData(0n)
     expect(td.domain).not.toHaveProperty('chainId')
     expect(td.types.EIP712Domain.find(f => f.name === 'chainId')).toBeUndefined()
   })
 
-  it('encodes issuedAt as a uint256 decimal string', () => {
-    const td = buildEnrollmentTypedData(1700000000000)
-    expect(td.message.issuedAt).toBe('1700000000000')
-    expect(td.types.Enrollment.find(f => f.name === 'issuedAt')?.type).toBe('uint256')
+  it('encodes account as a uint256 decimal string and defaults to 0', () => {
+    const td = buildEnrollmentTypedData()
+    expect(td.message.account).toBe('0')
+    expect(td.types.Enrollment.find(f => f.name === 'account')?.type).toBe('uint256')
   })
 
-  it('rejects invalid issuedAt values', () => {
-    expect(() => buildEnrollmentTypedData(0)).toThrow()
-    expect(() => buildEnrollmentTypedData(-1)).toThrow()
-    expect(() => buildEnrollmentTypedData(1.5)).toThrow()
-    expect(() => buildEnrollmentTypedData(NaN)).toThrow()
+  it('preserves the account value through the message', () => {
+    const td = buildEnrollmentTypedData(7n)
+    expect(td.message.account).toBe('7')
+  })
+
+  it('is deterministic — same account produces an identical message', () => {
+    // The whole point of the v2 amendment: re-running with the same input must yield the
+    // same bytes, otherwise the determinism-based recovery path can't work.
+    const a = buildEnrollmentTypedData(0n)
+    const b = buildEnrollmentTypedData(0n)
+    expect(a).toEqual(b)
+  })
+
+  it('does not include the v1 issuedAt field anymore', () => {
+    const td = buildEnrollmentTypedData(0n)
+    expect(td.message).not.toHaveProperty('issuedAt')
+    expect(td.types.Enrollment.find(f => f.name === 'issuedAt')).toBeUndefined()
+  })
+
+  it('rejects negative account values', () => {
+    expect(() => buildEnrollmentTypedData(-1n)).toThrow()
   })
 })
 

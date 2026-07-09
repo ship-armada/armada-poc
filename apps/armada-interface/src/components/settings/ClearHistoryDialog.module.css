@@ -1,0 +1,36 @@
+/* ABOUTME: ClearHistoryDialog styling — mirrors ResetWalletDialog layout but swaps the destructive red icon for a neutral text-secondary treatment since the action is reversible from chain. */
+/* ABOUTME: Reuses the same body/footer rhythm so adjacent dialogs in Settings feel cohesive. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.icon {
+  align-self: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--semantic-color-surface-sunken, var(--primitives-color-purple-900));
+  color: var(--semantic-color-text-secondary);
+  margin-bottom: var(--primitives-spacing-2);
+}
+
+.body {
+  color: var(--semantic-color-text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+.error {
+  color: var(--semantic-color-status-error);
+}
+
+.footer {
+  align-self: stretch;
+  margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+}

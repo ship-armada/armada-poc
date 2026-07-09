@@ -29,8 +29,10 @@ export interface ChainConfig {
    * Relayer-only knobs for the CCTP scan loop. Defaults below come from the chain's
    * characteristics — finality depth (reorg risk), public-RPC range caps, etc.
    *
-   * Per-knob env overrides honour the pattern `RELAYER_<KNOB>_<CHAIN_NAME_UPPER>` (e.g.
-   * `RELAYER_MAX_LOG_RANGE_ETHEREUM_SEPOLIA=200`). When unset, the default for the chain wins.
+   * Per-knob env overrides honour the pattern `RELAYER_<KNOB>_<CHAIN_NAME_UPPER>`, where the
+   * suffix derives from the chain's config `name` ("Hub", "Client A", "Client B" — NOT the
+   * underlying network name). So: `RELAYER_MAX_LOG_RANGE_HUB=200`,
+   * `RELAYER_CONFIRMATION_DEPTH_CLIENT_A=2`, etc. When unset, the default for the chain wins.
    */
   scanner: {
     /**
@@ -80,16 +82,31 @@ function toChainConfig(net: NetChainConfig, env: string): ChainConfig {
     deploymentFile: `${net.deploymentPrefix}${suffix}-v3.json`,
     privacyPoolDeploymentFile: `privacy-pool-${net.deploymentPrefix}${suffix}.json`,
     cctpDomain: net.cctpDomain,
-    scanner: scannerConfigForChain(net.name, env),
+    scanner: scannerConfigForChain(net.name, env, net.chainId),
   };
 }
 
 /**
- * Per-chain scanner defaults. Each value can be overridden by an env var of the form
- * `RELAYER_<KNOB>_<CHAIN>` — e.g. `RELAYER_MAX_LOG_RANGE_ETHEREUM_SEPOLIA=200`. The chain
- * suffix is the chain name uppercased with spaces/dashes → underscores.
+ * Chain-type classification for scanner defaults, keyed by chainId. The config `name` fields
+ * are role labels ("Hub", "Client A", "Client B") that say nothing about the underlying
+ * network, so classification MUST NOT match on names. A chainId absent from every set gets
+ * the conservative fallback defaults below.
  */
-function scannerConfigForChain(chainName: string, env: string): ChainConfig["scanner"] {
+const L1_CHAIN_IDS = new Set([1, 11155111]); // Ethereum mainnet, Ethereum Sepolia
+const BASE_LIKE_CHAIN_IDS = new Set([8453, 84532, 10, 11155420]); // Base, Base Sepolia, OP Mainnet, OP Sepolia
+const ARB_LIKE_CHAIN_IDS = new Set([42161, 421614]); // Arbitrum One, Arbitrum Sepolia
+
+/**
+ * Per-chain scanner defaults. Each value can be overridden by an env var of the form
+ * `RELAYER_<KNOB>_<CHAIN>` — e.g. `RELAYER_MAX_LOG_RANGE_HUB=200`. The chain suffix is the
+ * chain's config `name` ("Hub", "Client A", "Client B") uppercased with spaces/dashes →
+ * underscores: HUB, CLIENT_A, CLIENT_B.
+ */
+export function scannerConfigForChain(
+  chainName: string,
+  env: string,
+  chainId: number,
+): ChainConfig["scanner"] {
   // Anvil has no reorgs and no public-RPC caps — chunking would just slow tests down.
   if (env === "local") {
     return {
@@ -105,9 +122,9 @@ function scannerConfigForChain(chainName: string, env: string): ChainConfig["sca
   //   Ethereum Sepolia: ~12s blocks → 150 blocks ≈ 30 min
   //   Base Sepolia:     ~2s blocks  → 900 blocks ≈ 30 min
   //   Arbitrum Sepolia: ~0.25s      → 7200 blocks ≈ 30 min
-  const isL1 = /ethereum|mainnet|sepolia/i.test(chainName) && !/base|arb|op|optimism/i.test(chainName);
-  const isBaseLike = /base|optimism|op/i.test(chainName);
-  const isArbLike = /arbitrum|arb/i.test(chainName);
+  const isL1 = L1_CHAIN_IDS.has(chainId);
+  const isBaseLike = BASE_LIKE_CHAIN_IDS.has(chainId);
+  const isArbLike = ARB_LIKE_CHAIN_IDS.has(chainId);
 
   const defaultLookback = isL1 ? 150 : isBaseLike ? 900 : isArbLike ? 7_200 : 300;
   const defaultMaxLookback = defaultLookback * 10; // 5 hours of headroom at most

@@ -1,13 +1,24 @@
-/* ABOUTME: UnshieldInputStep layout — vertical stack of chain + (optional xchain notice) + recipient + amount + fee + footer. */
-/* ABOUTME: Xchain notice uses an amber tint so it reads as informational rather than alarming. */
+/* ABOUTME: Unshield input layout — amount group, then recipient 20px below the card. */
 
-.root {
+.withdrawContent {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-5);
+  width: 100%;
+}
+
+.amountGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  width: 100%;
+}
+
+.recipientSlot {
+  margin-top: var(--primitives-spacing-5);
 }
 
 .xchainNotice {
+  margin-top: var(--primitives-spacing-4);
   background: rgba(243, 208, 160, 0.08);
   border: 1px solid var(--semantic-color-border-amber);
   border-radius: calc(var(--semantic-borderRadius-input) * 1px);

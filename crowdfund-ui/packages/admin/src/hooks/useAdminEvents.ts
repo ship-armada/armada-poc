@@ -34,7 +34,7 @@ export function useAdminEvents(
 
       if (fromBlock > currentBlock) return
 
-      const logs = await fetchLogs(provider, contractAddress, fromBlock, currentBlock)
+      const { logs } = await fetchLogs(provider, contractAddress, fromBlock, currentBlock)
       const parsed = parseCrowdfundEvents(logs)
 
       if (parsed.length > 0) {

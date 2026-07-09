@@ -21,13 +21,34 @@ export interface RelayerStatusBannerProps {
  * read `preferencesAtom.submitFromWallet` directly at submit-time.
  */
 export function RelayerStatusBanner({ isOpen }: RelayerStatusBannerProps) {
-  const { isDegraded, data } = useRelayerHealth({ enabled: isOpen })
+  const { isDegraded, isConfigured, data } = useRelayerHealth({ enabled: isOpen })
   // preferencesAtom is `atomWithStorage` → persisted to localStorage. The action button's flip
   // therefore SURVIVES page reload + session restart; reverting requires the Settings toggle.
   const [prefs, setPrefs] = useAtom(preferencesAtom)
 
   // Already opted in? No nudge needed — handler will use the wallet path regardless of relayer state.
   if (prefs.submitFromWallet) return null
+
+  // No relayer configured for this build (P0-10) — distinct from "degraded". Be explicit and steer
+  // the user to the wallet-submit path, which works without a relayer.
+  if (!isConfigured) {
+    return (
+      <div className={styles.root} role="status" aria-live="polite">
+        <div className={styles.message}>
+          No relayer is configured for this site. You can still submit transactions from your own
+          wallet (you'll pay network gas).
+        </div>
+        <button
+          type="button"
+          className={styles.action}
+          onClick={() => setPrefs({ ...prefs, submitFromWallet: true })}
+        >
+          Submit from my wallet
+        </button>
+      </div>
+    )
+  }
+
   // Relayer's fine — no banner, default relayer-mediated path proceeds.
   if (!isDegraded) return null
 

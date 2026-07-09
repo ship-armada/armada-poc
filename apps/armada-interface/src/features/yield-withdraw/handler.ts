@@ -16,8 +16,9 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
 import { submitRelay, RelayerError } from '@/lib/relayer'
-import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
-import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
+import { advance, markFailed } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import { track } from '@/lib/telemetry'
@@ -86,7 +87,7 @@ async function runBuildProof(
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  const progress = createProofProgressWriter(record)
+  const progress = createProofProgressWriter(record, ctx.signal)
   const built = await buildYieldAdaptTransaction({
     walletId,
     encryptionKey,
@@ -124,19 +125,28 @@ async function runSubmitAndConfirm(
     throw new Error('Yield adapt-proof tx missing — re-run build-proof stage.')
   }
   const hubChainId = getNetworkConfig().hub.chainId
+  // `yieldTx` is persisted in artifacts at build-proof, so it survives a reload — no re-proving
+  // needed on resume. Only the broadcast itself must be guarded against re-entry.
+  const existingHash = record.artifacts.sourceTxHash
 
   // A6 wallet-override — submit the redeemAndShield wrapper calldata via the user's wallet.
   if (record.meta.useWalletOverride) {
-    await ensureChain(hubChainId)
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    const hash = await sendTransaction(wagmiConfig, {
-      to: yieldTx.to as `0x${string}`,
-      data: yieldTx.data as `0x${string}`,
-      value: BigInt(yieldTx.value),
-    })
-    const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
-    await ctx.upsert(broadcastRecord)
-    if (ctx.signal.aborted) throw new Error('cancelled')
+    // Idempotency guard (P0-1): never re-broadcast a tx we already sent. On re-entry skip to the
+    // receipt wait for the known hash.
+    let hash = existingHash
+    let broadcastRecord = record
+    if (!hash) {
+      await ensureChain(hubChainId)
+      if (ctx.signal.aborted) throw new Error('cancelled')
+      hash = await sendTransaction(wagmiConfig, {
+        to: yieldTx.to as `0x${string}`,
+        data: yieldTx.data as `0x${string}`,
+        value: BigInt(yieldTx.value),
+      })
+      const broadcast = await recordBroadcastHash(record, hash, ctx)
+      if (broadcast.dismissed) return
+      broadcastRecord = broadcast.record
+    }
     await waitForReceiptOrFail({ hash, signal: ctx.signal })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
@@ -145,33 +155,41 @@ async function runSubmitAndConfirm(
     return
   }
 
-  let submitResponse
-  try {
-    submitResponse = await submitRelay(
-      {
-        chainId: hubChainId,
-        to: yieldTx.to,
-        data: yieldTx.data,
-        feesCacheId: record.meta.feeCacheId,
-      },
-      ctx.signal,
-    )
-  } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+  // Idempotency guard (P0-1): once the relayer accepted the POST we persist the returned txHash.
+  // NEVER re-POST — a duplicate gets a 409 and surfaces a false failure. On re-entry skip to the
+  // status poll for the known hash.
+  let txHash = existingHash
+  let broadcastRecord = record
+  if (!txHash) {
+    let submitResponse
+    try {
+      submitResponse = await submitRelay(
+        {
+          chainId: hubChainId,
+          to: yieldTx.to,
+          data: yieldTx.data,
+          feesCacheId: record.meta.feeCacheId,
+        },
+        ctx.signal,
+      )
+    } catch (err) {
+      if (err instanceof RelayerError) {
+        track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+      }
+      throw err
     }
-    throw err
+
+    track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+    txHash = submitResponse.txHash as `0x${string}`
+    const broadcast = await recordBroadcastHash(record, txHash, ctx)
+    if (broadcast.dismissed) return
+    broadcastRecord = broadcast.record
   }
 
-  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
-
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
-
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
-    { signal: ctx.signal },
+    (signal) => pollRelayStatusOnce(txHash, signal, hubChainId),
+    { signal: ctx.signal, timeoutMs: pollBudgetMs(record) },
   )
 
   if (pollResult.status === 'aborted') throw new Error('cancelled')
@@ -180,7 +198,7 @@ async function runSubmitAndConfirm(
       code: 'POLL_TIMEOUT',
       message:
         'The relayer hasn\'t reported a final status. The transaction may still complete on chain — check the explorer.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     await ctx.upsert(markFailed(broadcastRecord, error))
     return
@@ -196,7 +214,7 @@ async function runSubmitAndConfirm(
     const error: TxError = {
       code: 'TX_REVERTED',
       message: final.error ?? 'Relayer-broadcast tx reverted on chain.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     await ctx.upsert(markFailed(broadcastRecord, error))
     return
@@ -209,6 +227,6 @@ async function runSubmitAndConfirm(
   }
 
   await ctx.upsert(advance(broadcastRecord, 'hub-confirmed', {
-    sourceTxHash: submitResponse.txHash as `0x${string}`,
+    sourceTxHash: txHash,
   }))
 }

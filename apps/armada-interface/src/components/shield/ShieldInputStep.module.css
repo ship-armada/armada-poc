@@ -1,21 +1,15 @@
-/* ABOUTME: ShieldInputStep layout — vertical stack of From + Amount + FeeSummary + edge-to-edge footer. */
-/* ABOUTME: Footer negates the ActionFlowShell body padding so it spans the dialog edges. */
-
-.root {
+.contentZone {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-5);
+  gap: var(--primitives-spacing-6);
+  width: 100%;
 }
 
-.xchainNotice {
-  background: rgba(243, 208, 160, 0.08);
-  border: 1px solid var(--semantic-color-border-amber);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  color: var(--semantic-color-text-amber);
-}
-
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+.question {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  color: var(--semantic-color-text-primary);
+  text-align: center;
+  margin: 0;
 }

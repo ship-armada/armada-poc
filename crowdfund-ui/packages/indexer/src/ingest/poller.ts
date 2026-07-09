@@ -4,6 +4,7 @@
 import type { IndexerStore } from '../db/store.js'
 import { backfillVerifiedRanges } from './backfill.js'
 import type { BackfillResult } from './backfill.js'
+import { sanitizeErrorMessage } from './errors.js'
 import { autoReconcileGaps } from './reconcile.js'
 import type { AutoReconcileOptions, AutoReconcileResult } from './reconcile.js'
 import type { RangeLogProvider, RangePipelineConfig } from './rpc.js'
@@ -126,7 +127,7 @@ async function withRetries<T>(
   }
 
   const kind = classifyRpcError(lastError)
-  throw new Error(`${kind}: ${getErrorMessage(lastError)}`)
+  throw new Error(`${kind}: ${sanitizeErrorMessage(getErrorMessage(lastError))}`)
 }
 
 export function createResilientRangeProvider(
@@ -221,13 +222,18 @@ export class CrowdfundIndexerPoller {
         auditProvider: resilientAuditProvider,
         auditProviderName: this.options.auditProviderName,
         maxBlockRange: this.options.maxBlockRange,
+        // Defer chunks that auto-reconcile is already backing off on, so a stuck range
+        // is not re-verified every poll cycle (and `attempts` is not double-incremented).
+        retryPolicy: this.options.reconcileOptions && this.options.reconcileOptions.maxAttempts > 0
+          ? { maxAttempts: this.options.reconcileOptions.maxAttempts }
+          : undefined,
       })
 
       this.logger.info(`Crowdfund indexer poll checked ${result.ranges.length} chunks; stoppedEarly=${result.stoppedEarly ? 'yes' : 'no'}`)
       await this.maybePublish(result)
       return { status: 'completed', backfill: result, reconcile }
     } catch (err) {
-      const message = getErrorMessage(err)
+      const message = sanitizeErrorMessage(getErrorMessage(err))
       await this.options.store.update((data) => ({
         ...data,
         lastError: message,
@@ -247,9 +253,21 @@ export class CrowdfundIndexerPoller {
     const interval = this.options.snapshotPublishIntervalMs ?? this.options.pollIntervalMs
     if (this.lastPublishedAt > 0 && now - this.lastPublishedAt < interval) return
 
-    await this.options.publishSnapshot()
-    this.lastPublishedAt = now
-    this.logger.info('Crowdfund indexer poll published snapshot')
+    // A publish/reconcile failure must not fail the ingest cycle — ingestion already
+    // succeeded by this point. Record it as lastError and retry next cycle (we leave
+    // lastPublishedAt unchanged so the interval gate does not defer the retry).
+    try {
+      await this.options.publishSnapshot()
+      this.lastPublishedAt = now
+      this.logger.info('Crowdfund indexer poll published snapshot')
+    } catch (err) {
+      const message = sanitizeErrorMessage(getErrorMessage(err))
+      this.logger.warn(`Crowdfund indexer poll snapshot publish failed: ${message}`)
+      await this.options.store.update((data) => ({
+        ...data,
+        lastError: message,
+      }))
+    }
   }
 
   private schedule(delayMs: number): void {

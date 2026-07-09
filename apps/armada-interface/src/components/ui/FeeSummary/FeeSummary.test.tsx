@@ -16,6 +16,12 @@ describe('<FeeSummary>', () => {
     expect(screen.getByText(/99\.75/)).toBeInTheDocument()
   })
 
+  it('renders unavailable copy (overriding loading) when the relayer is down (P1-28)', () => {
+    render(<FeeSummary fee={null} netAmount={100_000_000n} unavailable />)
+    expect(screen.getByText(/Unavailable — relayer may be down/i)).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
   it('renders the default labels', () => {
     render(<FeeSummary fee={0n} netAmount={0n} />)
     expect(screen.getByText('Estimated fee')).toBeInTheDocument()

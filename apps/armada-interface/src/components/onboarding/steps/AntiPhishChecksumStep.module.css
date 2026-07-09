@@ -1,33 +1,11 @@
-/* ABOUTME: AntiPhishChecksumStep layout — centered icon, headline, body, prominent monospace code block, edge-to-edge footer. */
-/* ABOUTME: Mirrors WelcomeStep's icon-chip pattern; code block is brand-accented to draw the eye. */
+/* ABOUTME: AntiPhishChecksumStep layout — centered headline, body, code block, edge-to-edge footer. */
 
 .root {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--primitives-spacing-3);
+  gap: var(--primitives-spacing-4);
   text-align: center;
-}
-
-.icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(196, 145, 229, 0.12);
-  color: var(--semantic-color-brand-lavender);
-  margin-bottom: var(--primitives-spacing-2);
-}
-
-.title {
-  font-family: "Charis SIL", serif;
-  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
-  line-height: var(--primitives-lineHeight-tight);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-primary);
-  margin: 0;
 }
 
 .body {
@@ -45,10 +23,21 @@
   border-radius: calc(var(--semantic-borderRadius-input) * 1px);
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
   color: var(--semantic-color-text-primary);
-  margin: var(--primitives-spacing-2) 0;
+  margin: 0;
+  width: max-content;
+  max-width: 100%;
+}
+
+.title {
+  margin: 0;
 }
 
 .footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-6) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+  margin-top: var(--primitives-spacing-8);
+}
+
+@media (max-width: 767px) {
+  .footer {
+    margin-top: var(--primitives-spacing-4);
+  }
 }

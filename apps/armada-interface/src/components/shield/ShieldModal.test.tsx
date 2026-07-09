@@ -10,6 +10,24 @@ import { activeRailgunWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { txListAtom } from '@/state/tx'
 import { withTestQueryClient } from '@/test-utils/queryClient'
+import type { TxRecord } from '@/lib/tx/types'
+
+/** A POLL_TIMEOUT'd shield of `amount` (6dp) for the active test wallet — may still be on-chain. */
+function unresolvedShield(amount: bigint): TxRecord {
+  return {
+    id: 'prior-shield',
+    kind: 'shield',
+    executionState: 'failed',
+    stage: 'submit-relayer',
+    stagesCompleted: ['build-proof'],
+    updatedSeq: 3,
+    createdAt: 0,
+    updatedAt: 0,
+    meta: { amount, feeCacheId: '', fromChainId: 31337 },
+    artifacts: { sourceTxHash: '0xfeed', error: { code: 'POLL_TIMEOUT', message: 't', txHash: '0xfeed' } },
+    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg-test', sourceChainId: 31337 },
+  } as TxRecord
+}
 
 // useDisplayFees calls wagmi's useReadContract which requires a WagmiProvider; these tests
 // don't mount one, so stub the hook with a deterministic DisplayFees value. The protocolFee
@@ -134,7 +152,7 @@ describe('<ShieldModal>', () => {
     // executionState is 'pending' which maps to the "Pending" chip. submit() awaits IDB
     // persistence so waitFor() handles the brief gap before the record reaches the atom.
     await waitFor(() => {
-      expect(screen.getByText('Pending')).toBeInTheDocument()
+      expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -150,8 +168,46 @@ describe('<ShieldModal>', () => {
       fireEvent.click(confirm)
     })
     await waitFor(() => {
-      expect(screen.getByText('Pending')).toBeInTheDocument()
+      expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
     })
     expect(store.get(txListAtom).length).toBe(1)
+  })
+
+  it('warns at review when an unresolved same-amount deposit may still be on-chain (S-L7)', () => {
+    const store = renderModal({ open: true, max: 10_000_000n })
+    store.set(txListAtom, [unresolvedShield(5_000_000n)])
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
+    expect(screen.getByText(/may still be processing on chain/i)).toBeInTheDocument()
+  })
+
+  it('does not warn when the unresolved deposit is a different amount (S-L7)', () => {
+    const store = renderModal({ open: true, max: 10_000_000n })
+    store.set(txListAtom, [unresolvedShield(5_000_000n)])
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
+    expect(screen.queryByText(/may still be processing/i)).toBeNull()
+  })
+
+  it('progress is dismissible — closing backgrounds the tx without cancelling it (S-M2)', async () => {
+    const store = renderModal({ open: true, max: 10_000_000n })
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
+    })
+    await waitFor(() => expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1))
+
+    // The Close affordance is present during progress now (was hidden pre-S-M2).
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    })
+
+    // Modal closed, but the record was NOT cancelled/dismissed — it keeps running in the
+    // background (and would surface in the dashboard InProgressCard).
+    expect(store.get(openModalAtom)).toBeNull()
+    const rec = store.get(txListAtom).find(t => t.kind === 'shield')
+    expect(rec).toBeDefined()
+    expect(['cancelled', 'dismissed']).not.toContain(rec!.executionState)
   })
 })

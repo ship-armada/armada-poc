@@ -12,9 +12,10 @@ vi.mock('./receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: receiptMock.waitForReceiptOrFail }
 })
 
-import { pollBudgetMs, pollRelayStatusOnce } from './poller'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from './poller'
 import { asTxError } from './receipt'
 import { lifecycleFor } from './lifecycles'
+import { beginHiddenCredit, markHidden, markVisible, __resetHiddenClock } from './hiddenClock'
 import type { TxRecord } from './types'
 
 const fetchMock = vi.fn()
@@ -182,5 +183,37 @@ describe('pollBudgetMs (P1-25)', () => {
     expect(pollBudgetMs(shieldRecord(SHORT_CAP - 5_000))).toBe(10_000)
     // Already over the cap → still floored to 10s, never negative, never the 30-min default.
     expect(pollBudgetMs(shieldRecord(SHORT_CAP + 60_000))).toBe(10_000)
+  })
+
+  it('credits tab-hidden time back to the budget (T-M5/S-M6)', () => {
+    __resetHiddenClock()
+    const rec = shieldRecord(SHORT_CAP - 30_000) // ~30s left without any credit
+    const created = rec.createdAt
+    beginHiddenCredit(rec.id, created)
+    markHidden(created + 1_000)
+    markVisible(created + 1_000 + 120_000) // 2 min hidden during the record's life
+    // ~30s base + 2 min credit ≈ 2.5 min — far above both the floor and the un-credited remaining.
+    expect(pollBudgetMs(rec)).toBeGreaterThan(2 * 60_000)
+    __resetHiddenClock()
+  })
+})
+
+describe('poll loop — final check before timeout (T-M5)', () => {
+  it('does one last pollOnce after the budget elapses so a just-landed result isn\'t a false timeout', async () => {
+    // The result lands on the 2nd tick, which happens AFTER timeoutMs has elapsed (the delay floor
+    // is 500ms; timeoutMs is 5ms). Old behaviour checked the clock before polling and returned
+    // `timeout` without the 2nd poll — a delivery that landed during the (throttled) interval was
+    // reported as POLL_TIMEOUT. The final-check fix catches it.
+    let calls = 0
+    const result = await poll<string>(
+      async () => {
+        calls += 1
+        return calls >= 2 ? 'landed' : null
+      },
+      { intervalMs: 20, jitter: 0, timeoutMs: 5 },
+    )
+    expect(result.status).toBe('done')
+    expect(result.value).toBe('landed')
+    expect(calls).toBe(2)
   })
 })

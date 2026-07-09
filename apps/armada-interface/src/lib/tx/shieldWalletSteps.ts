@@ -44,6 +44,19 @@ export function shieldWalletSteps(
   amount: bigint,
 ): WalletStep[] {
   const amountLabel = formatUsdcAmount(amount)
+
+  // Gasless path: the only wallet prompts (RAILGUN_SHIELD + EIP-2612 permit) happen during
+  // build-proof; the relayer broadcasts the submit, so there's no separate approve/submit prompt.
+  // Collapse to a single "Authorize deposit" row, done once build-proof has captured the signatures.
+  const useGasless = record ? (record.meta as { useGasless?: boolean }).useGasless === true : false
+  if (useGasless) {
+    const authorized = Boolean(record?.stagesCompleted.includes('build-proof'))
+    return [{
+      label: `Authorize ${amountLabel} USDC deposit`,
+      status: authorized ? 'done' : 'loading',
+    }]
+  }
+
   const artifacts = record ? shieldArtifacts(record) : {}
   const approveSkipped = artifacts.approveSkipped === true
   const approveDone = approveSkipped || Boolean(artifacts.approveTxHash)

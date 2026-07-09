@@ -34,6 +34,15 @@ vi.mock('@/lib/railgun/keyManager', () => ({
   getCreationBlock: vi.fn(() => null),
 }))
 
+// Executor is module-scope; mock the two functions lock() drives so we can assert ordering/args
+// without spinning up the real engine (jotai + storage) in the hook test.
+const cancelAllRunningMock = vi.hoisted(() => vi.fn())
+const clearResumedMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/tx/executor', () => ({
+  cancelAllRunning: cancelAllRunningMock,
+  clearResumed: clearResumedMock,
+}))
+
 // Mock the imperative wagmi action. The hook calls `signTypedData(wagmiConfig, args)` directly —
 // no React context required, no provider tree needed in consumer tests.
 vi.mock('wagmi/actions', () => ({
@@ -99,6 +108,8 @@ beforeEach(() => {
   mockGetRootSecret.mockReset()
   mockSignTypedData.mockReset()
   mockReadStoredWalletIdFor.mockReset()
+  cancelAllRunningMock.mockReset()
+  clearResumedMock.mockReset()
   // Default: wagmi returns a successful signature.
   mockSignTypedData.mockResolvedValue(SAMPLE_SIG_HEX)
   mockLockWallet.mockResolvedValue(undefined)
@@ -426,6 +437,24 @@ describe('lock', () => {
     await waitFor(() => {
       expect(store.get(shieldedWalletsAtom)[SAMPLE_STATE.id]?.status).toBe('locked')
     })
+  })
+
+  it('cancels in-flight txs + clears the resume guard while still unlocked, before lockWallet (T-M1)', async () => {
+    const store = createStore()
+    store.set(shieldedWalletsAtom, { [SAMPLE_STATE.id]: SAMPLE_STATE })
+    store.set(activeRailgunWalletIdAtom, SAMPLE_STATE.id)
+    const capture = renderWithStore(store)
+
+    await act(async () => {
+      await capture.current!.lock()
+    })
+
+    expect(cancelAllRunningMock).toHaveBeenCalledWith('manual-lock')
+    expect(clearResumedMock).toHaveBeenCalledWith(SAMPLE_STATE.id)
+    // Both must run BEFORE lockWallet zeroizes the key (terminal persists need it). (T-M1/W-5)
+    expect(cancelAllRunningMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockLockWallet.mock.invocationCallOrder[0]!,
+    )
   })
 
   it('is a no-op when there is no active wallet', async () => {

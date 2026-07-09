@@ -28,9 +28,11 @@ const hoisted = vi.hoisted(() => {
   const mockGetEvmAddress = vi.fn<() => string | null>(() => null)
   const mockGetWalletId = vi.fn<() => string>(() => 'mock-active-wallet-id')
   const mockToast = vi.fn()
-  return { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockGetWalletId, mockToast }
+  const mockCancelAllRunning = vi.fn()
+  const mockClearResumed = vi.fn()
+  return { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockGetWalletId, mockToast, mockCancelAllRunning, mockClearResumed }
 })
-const { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockGetWalletId, mockToast } = hoisted
+const { wagmiState, mockLockWallet, mockIsUnlocked, mockGetEvmAddress, mockGetWalletId, mockToast, mockCancelAllRunning, mockClearResumed } = hoisted
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({
@@ -58,6 +60,11 @@ vi.mock('@/lib/railgun/keyManager', () => ({
 
 vi.mock('@/lib/wagmi-adapter', () => ({
   walletClientToSigner: vi.fn(),
+}))
+
+vi.mock('@/lib/tx/executor', () => ({
+  cancelAllRunning: hoisted.mockCancelAllRunning,
+  clearResumed: hoisted.mockClearResumed,
 }))
 
 import { useWallet } from './useWallet'
@@ -90,6 +97,8 @@ beforeEach(() => {
   mockGetWalletId.mockReset()
   mockGetWalletId.mockReturnValue('mock-active-wallet-id')
   mockToast.mockReset()
+  mockCancelAllRunning.mockReset()
+  mockClearResumed.mockReset()
 })
 
 describe('useWallet — account-switch detection', () => {
@@ -137,6 +146,17 @@ describe('useWallet — account-switch detection', () => {
     renderWithStore()
     // The lock is fired synchronously on render via the effect's first run.
     expect(mockLockWallet).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the resume guard for the locked wallet on account-switch so switching back re-resumes (T-M1)', () => {
+    wagmiState.address = '0xnewAddress'
+    wagmiState.isConnected = true
+    mockIsUnlocked.mockReturnValue(true)
+    mockGetEvmAddress.mockReturnValue('0xoldaddress')
+    mockGetWalletId.mockReturnValue('rw-locked')
+    renderWithStore()
+    expect(mockCancelAllRunning).toHaveBeenCalledWith('account-switch')
+    expect(mockClearResumed).toHaveBeenCalledWith('rw-locked')
   })
 
   it('LOCKS when the user disconnects the wallet (address goes to undefined) while unlocked', () => {

@@ -152,6 +152,26 @@ export function markRecoveredComplete<K extends TxKind>(record: TxRecord<K>): Tx
 }
 
 /**
+ * Cross-chain kinds: a record's `sourceTxHash` is only the burn/source leg; terminal success
+ * additionally requires CCTP delivery (the mint) on the destination chain.
+ */
+const CROSS_CHAIN_KINDS: ReadonlySet<TxKind> = new Set(['shield-xchain', 'unshield-xchain'])
+
+/**
+ * Does an on-chain match on a record's `sourceTxHash` prove the WHOLE tx reached terminal success?
+ *
+ * True for same-chain kinds — the source tx IS the terminal event. False for cross-chain kinds:
+ * the source hash proves only the burn leg, so history recovery must NOT force-complete them from
+ * a `sourceTxHash` match (delivery on the destination chain is proven separately, by the mint /
+ * `destTxHash`, and watched by the executor). Without this gate a hub burn appearing in shielded
+ * history paints a false "Funds delivered" and can upgrade a real POLL_TIMEOUT failure to
+ * permanent false success. (T-H1)
+ */
+export function sourceHashProvesComplete(kind: TxKind): boolean {
+  return !CROSS_CHAIN_KINDS.has(kind)
+}
+
+/**
  * Merge artifacts without touching stage or executionState. Used by polling handlers that need
  * to persist progress (e.g. advancing a log-scan cursor between ticks) while the record stays in
  * `waiting`. Increments updatedSeq so OCC writes succeed in order.

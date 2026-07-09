@@ -11,7 +11,7 @@ import {
 } from '@/state/history'
 import { txListAtom, upsertTxAtom } from '@/state/tx'
 import { putTxIfFresh } from '@/lib/tx/storage'
-import { markRecoveredComplete } from '@/lib/tx/reducer'
+import { markRecoveredComplete, sourceHashProvesComplete } from '@/lib/tx/reducer'
 import {
   runHistoryScan,
   type HistoryMapContext,
@@ -72,6 +72,12 @@ async function runScanAndPersist(args: {
       const existing = findExistingByHash(sourceHash)
       if (existing) {
         if (existing.executionState === 'completed') continue
+        // T-H1: for a cross-chain kind the matched `sourceTxHash` is only the burn leg — CCTP
+        // delivery on the destination chain hasn't happened (and may never). Don't force-complete;
+        // leave the executor's delivery watcher authoritative. Without this, a hub burn surfacing
+        // in shielded history paints a false "Funds delivered" and upgrades a real POLL_TIMEOUT
+        // failure to permanent false success.
+        if (!sourceHashProvesComplete(existing.kind)) continue
         const upgraded = markRecoveredComplete(existing)
         try {
           const fresh = await putTxIfFresh(upgraded)
@@ -218,8 +224,16 @@ export function useHistoryRecovery(): void {
           // Live lookup (not a kickoff snapshot) so the reconcile upgrade builds on the latest
           // updatedSeq and clears OCC. Lowercased on both sides so on-chain hex-case variance
           // can't bypass the match.
+          // Match on sourceTxHash OR destTxHash (T-H2): a completed cross-chain shield stores the
+          // hub MINT hash in destTxHash (sourceTxHash holds the client burn). The SDK surfaces the
+          // hub mint as a Shield history item; matching only sourceTxHash misses the authored
+          // record and synthesizes a second permanent "Deposit" row for the same funds.
           findExistingByHash: (hash) =>
-            store.get(txListAtom).find(r => r.artifacts.sourceTxHash?.toLowerCase() === hash),
+            store.get(txListAtom).find(
+              r =>
+                r.artifacts.sourceTxHash?.toLowerCase() === hash ||
+                (r.artifacts as { destTxHash?: string }).destTxHash?.toLowerCase() === hash,
+            ),
           upsert,
           setStatus,
         })

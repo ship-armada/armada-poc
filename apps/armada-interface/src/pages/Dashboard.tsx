@@ -3,10 +3,9 @@
 
 import { useAtomValue } from 'jotai'
 import { BalanceHero } from '@/components/balance/BalanceHero'
-import { ActionGrid, RecentActivityCard } from '@/components/dashboard'
+import { ActionGrid, InProgressCard, RecentActivityCard } from '@/components/dashboard'
 import { SyncGate, isInitialSyncGated } from '@/components/sync'
 import { shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
-// TODO: re-import `InProgressCard` from '@/components/dashboard' when re-enabling the split layout below.
 import styles from './Dashboard.module.css'
 
 export function Dashboard() {
@@ -31,23 +30,16 @@ export function Dashboard() {
         <BalanceHero />
         <ActionGrid />
       </div>
-      <RecentActivityCard />
-      {/* In-Progress section + 7/5 split — temporarily hidden. To restore:
-            1. re-import InProgressCard above
-            2. delete the standalone <RecentActivityCard /> above
-            3. uncomment the block below
-          The `.split`, `.activity`, and `.progress` CSS classes are left intact in
-          Dashboard.module.css so the swap is purely a JSX edit.
-        ----------------------------------------------------------------------------------
-          <div className={styles.split}>
-            <div className={styles.activity}>
-              <RecentActivityCard />
-            </div>
-            <div className={styles.progress}>
-              <InProgressCard />
-            </div>
-          </div>
-       */}
+      {/* In-Progress (live, non-terminal txs) beside Recent Activity (terminal). S-M2 re-enables
+          this — backgrounded txs (dismissed from a modal's progress step) surface in InProgressCard. */}
+      <div className={styles.split}>
+        <div className={styles.activity}>
+          <RecentActivityCard />
+        </div>
+        <div className={styles.progress}>
+          <InProgressCard />
+        </div>
+      </div>
       {/* Privacy tagline — temporarily hidden; uncomment to restore.
           <p className={styles.footnote}>
             Your privacy is protected. All transactions are shielded.

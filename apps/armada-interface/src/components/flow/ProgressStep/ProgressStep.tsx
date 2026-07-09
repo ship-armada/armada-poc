@@ -4,6 +4,8 @@
 import { useAtomValue } from 'jotai'
 import type { TxRecord } from '@/lib/tx/types'
 import { TxActions, TxLifecycleStepper } from '@/components/tx'
+import { WalletConfirmList } from '../WalletConfirmList/WalletConfirmList'
+import { shieldWalletSteps } from '@/lib/tx/shieldWalletSteps'
 import { preferencesAtom } from '@/state/preferences'
 import styles from './ProgressStep.module.css'
 
@@ -29,8 +31,21 @@ export function ProgressStep({ record, technicalDetailsDefaultOpen }: ProgressSt
       </div>
     )
   }
+  // S-M4: shield / shield-xchain surface a wallet-prompt checklist (approve + deposit, or a single
+  // "Authorize deposit" row on the gasless path) so the user can see which wallet prompts are
+  // pending vs done. Other kinds rely on the stepper's submit-relayer row alone.
+  const isShieldKind = record.kind === 'shield' || record.kind === 'shield-xchain'
+
   return (
     <div className={styles.root}>
+      {isShieldKind ? (
+        <WalletConfirmList
+          steps={shieldWalletSteps(
+            record as TxRecord<'shield'> | TxRecord<'shield-xchain'>,
+            record.meta.amount,
+          )}
+        />
+      ) : null}
       <TxLifecycleStepper record={record} technicalDetailsDefaultOpen={defaultOpen} />
       {/* Cancel only — Retry on failure is handled by the modal's dedicated ErrorStep. */}
       <TxActions record={record} variant="cancel" />

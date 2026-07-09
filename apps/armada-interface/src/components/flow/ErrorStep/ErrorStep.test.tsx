@@ -98,6 +98,20 @@ describe('<ErrorStep>', () => {
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
+  it('defaults the primary button label to "Try again"', () => {
+    render(<ErrorStep onRetry={() => {}} />)
+    expect(screen.getByRole('button', { name: /Try again/ })).toBeInTheDocument()
+  })
+
+  it('renders a custom primaryLabel (S-M3 "Start over" for non-retryable failures)', () => {
+    const onRetry = vi.fn()
+    render(<ErrorStep onRetry={onRetry} primaryLabel="Start over" />)
+    expect(screen.queryByRole('button', { name: /Try again/ })).toBeNull()
+    const btn = screen.getByRole('button', { name: /Start over/ })
+    fireEvent.click(btn)
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
   it('omits the View Details button when onViewDetails is undefined', () => {
     render(<ErrorStep onRetry={() => {}} />)
     expect(screen.queryByRole('button', { name: /View details/ })).toBeNull()

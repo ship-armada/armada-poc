@@ -8,6 +8,7 @@ export const RELAYER_ENDPOINTS = {
   relay: '/relay',
   status: '/status', // suffix: `/${txHash}`
   health: '/health',
+  cctpStatus: '/cctp-status', // suffix: `/${messageHash}` — cross-chain delivery status (T-M7 Option B)
 } as const
 
 /** Error codes returned by the relayer (see `relayer/armada-relayer.ts`). */

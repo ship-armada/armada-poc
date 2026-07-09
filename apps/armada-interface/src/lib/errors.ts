@@ -17,3 +17,18 @@ export function isUserRejection(err: unknown): boolean {
   if (e.cause && e.cause !== err) return isUserRejection(e.cause)
   return false
 }
+
+/**
+ * Detect viem's `ChainMismatchError`. viem/wagmi throw this when an action is given an explicit
+ * `chainId` that doesn't match the connected wallet's current chain. We pin `chainId` on every
+ * submit-path read/write/receipt (W-3/W-4) so a mid-flow network switch surfaces this error
+ * instead of silently following the wrong chain; the tx error classifier maps it to actionable
+ * "switch back to <network>" copy. Recurses through `.cause` like the rejection predicate.
+ */
+export function isChainMismatchError(err: unknown): boolean {
+  if (!err) return false
+  const e = err as { name?: string; cause?: unknown }
+  if (e.name === 'ChainMismatchError') return true
+  if (e.cause && e.cause !== err) return isChainMismatchError(e.cause)
+  return false
+}

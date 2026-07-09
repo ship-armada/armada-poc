@@ -25,16 +25,17 @@ import {
   generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
-import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
+import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
+import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
-import { poll } from '@/lib/tx/poller'
+import { poll, pollBudgetMs } from '@/lib/tx/poller'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
 import { scanCctpDeliveryWindow } from '../unshield-xchain/scan'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -128,7 +129,7 @@ export const shieldXchainHandler: StageHandler<'shield-xchain'> = {
       }
     } catch (err) {
       if (ctx.signal.aborted) return
-      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Cross-chain deposit failed.', record.artifacts.sourceTxHash)))
+      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Cross-chain deposit failed.', record.artifacts.sourceTxHash, record.meta.fromChainId)))
     }
   },
 }
@@ -308,17 +309,31 @@ async function runDirectSubmit(
     abi: erc20Abi,
     functionName: 'allowance',
     args: [owner, privacyPoolClientAddress as `0x${string}`],
+    chainId: record.meta.fromChainId,
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // S-M4: thread a `working` record through the wallet prompts so the stepper shows "Confirm in
+  // your wallet" (markWaiting) while each prompt is open, and record the approve leg in artifacts
+  // (approveTxHash / approveSkipped) for the WalletConfirmList checklist.
+  let working: TxRecord<'shield-xchain'> = record
   if (allowance < record.meta.amount) {
+    working = markWaiting(working)
+    await ctx.upsert(working)
     const approveHash = await writeContract(wagmiConfig, {
       address: clientUsdcAddress as `0x${string}`,
       abi: erc20Abi,
       functionName: 'approve',
       args: [privacyPoolClientAddress as `0x${string}`, maxUint256],
+      chainId: record.meta.fromChainId,
     })
     await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    working = advance(working, 'submit-relayer', { approveTxHash: approveHash })
+    await ctx.upsert(working)
+  } else {
+    working = patchArtifacts(working, { approveSkipped: true })
+    await ctx.upsert(working)
   }
 
   const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
@@ -339,6 +354,23 @@ async function runDirectSubmit(
     ],
   })
 
+  // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+  // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+  await simulateOrThrow({
+    to: privacyPoolClientAddress as `0x${string}`,
+    data: calldata,
+    value: 0n,
+    account: owner,
+    chainId: record.meta.fromChainId,
+  })
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // S-M4: "Confirm in your wallet" for the crossChainShield prompt (after simulate so a doomed tx
+  // fails without prompting). finalizeBurnAndAdvance advances to client-burn-confirmed (active)
+  // once the prompt is confirmed, restoring "Submitting" copy.
+  working = markWaiting(working)
+  await ctx.upsert(working)
+
   const hash = await sendTransaction(wagmiConfig, {
     to: privacyPoolClientAddress as `0x${string}`,
     data: calldata,
@@ -346,7 +378,7 @@ async function runDirectSubmit(
     chainId: record.meta.fromChainId,
   })
 
-  await finalizeBurnAndAdvance(record, ctx, hash)
+  await finalizeBurnAndAdvance(working, ctx, hash)
 }
 
 /**
@@ -436,14 +468,14 @@ async function runGaslessSubmit(
         to: record.meta.wrapperAddress,
         data,
         feesCacheId: record.meta.feeCacheId,
+        idempotencyKey: record.id,
       },
       ctx.signal,
     )
   } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
-    }
-    throw err
+    // T-M3/S-M1: recover an already-broadcast hash from a DUPLICATE_TX so we resume polling
+    // instead of failing a tx the relayer already sent; non-recoverable errors rethrow.
+    submitResponse = handleRelaySubmitError(err, { id: record.id, kind: record.kind })
   }
 
   track('tx.relayer.submitted', { id: record.id, kind: record.kind })
@@ -578,24 +610,32 @@ async function runWaitForDelivery(
     : 0n
   const maxLogRange = BigInt(getNetworkConfig().maxLogRange)
 
-  // Derive the inner poll timeout from the per-kind lifecycle cap, minus elapsed time. The
-  // hardcoded 10min that lived here previously ignored the outer 60min xchain budget — a slow
-  // Iris attestation would time us out with ~50 min still on the lifecycle clock.
-  const lifecycle = lifecycleFor(record.kind)
-  const remainingBudgetMs = record.createdAt + lifecycle.maxDurationMs - Date.now()
-  const POLL_FLOOR_MS = 10_000
-  if (remainingBudgetMs < POLL_FLOOR_MS) {
-    track('tx.budget.tight', {
-      id: record.id,
-      kind: record.kind,
-      elapsedMs: Date.now() - record.createdAt,
-    })
-  }
-  const pollTimeoutMs = Math.max(POLL_FLOOR_MS, remainingBudgetMs)
+  // Derive the inner poll timeout from the per-kind lifecycle cap minus elapsed time, crediting
+  // back tab-hidden time (T-M5/S-M6) so a slow Iris attestation watched from a backgrounded tab
+  // doesn't time out with budget still on the clock. pollBudgetMs floors at 10s + emits
+  // tx.budget.tight when the floor engages.
+  const pollTimeoutMs = pollBudgetMs(record)
 
   const result = await poll<`0x${string}`>(
     async (signal) => {
       if (signal.aborted) return null
+      // T-M7 Option B primary: ask the relayer for authoritative CCTP delivery status (it performs
+      // the hub mint in both mock + real mode and tracks Iris). Falls through to the on-chain scan
+      // below when the endpoint is unavailable (not deployed / relayer down) — no hard dependency.
+      const messageHash = record.artifacts.messageHash
+      if (messageHash) {
+        const relayed = await fetchCctpDeliveryStatus(messageHash, signal)
+        if (relayed.kind === 'delivered') return relayed.destTxHash
+        if (relayed.kind === 'pending') return null
+        if (relayed.kind === 'failed') {
+          throw asTxError({
+            code: 'TX_REVERTED',
+            message: relayed.error ?? 'Cross-chain delivery failed on the hub chain.',
+            txHash: record.artifacts.sourceTxHash,
+          })
+        }
+        // relayed.kind === 'unavailable' → fall through to the on-chain scan.
+      }
       const outcome = await scanCctpDeliveryWindow<EthersScanLog>({
         getBlockNumber: async () => BigInt(await hubProvider.getBlockNumber()),
         // Filter on the MessageReceived topic only — V2 puts an Iris-assigned `eventNonce` in

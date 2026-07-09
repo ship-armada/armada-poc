@@ -10,6 +10,7 @@ import {
   computeFeeBreakdown,
   feeModelForKind,
   submitRelay,
+  fetchCctpDeliveryStatus,
   RelayerError,
   _fetchWithTimeout,
   type FeeSchedule,
@@ -467,6 +468,7 @@ describe('submitRelay', () => {
     to: '0x1111111111111111111111111111111111111111',
     data: '0xabcdef',
     feesCacheId: 'fee-123-1',
+    idempotencyKey: '01J-tx-ulid',
   }
 
   it('POSTs the request as JSON to /relay and returns the parsed RelayResponse', async () => {
@@ -491,6 +493,9 @@ describe('submitRelay', () => {
     expect(url).toBe(relayerEndpoint(RELAYER_ENDPOINTS.relay))
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual(validRequest)
+    // The client-generated idempotency key must travel in the POST body so the relayer can dedup
+    // a re-POST and return the already-broadcast hash (T-M3/S-M1).
+    expect(JSON.parse(init.body as string).idempotencyKey).toBe('01J-tx-ulid')
     // Header object is unioned; spot-check Content-Type without depending on object shape.
     expect(JSON.stringify(init.headers)).toContain('application/json')
   })
@@ -589,5 +594,59 @@ describe('submitRelay', () => {
     const err = await p
 
     expect(err).not.toBeInstanceOf(RelayerError)
+  })
+})
+
+describe('fetchCctpDeliveryStatus (T-M7 Option B)', () => {
+  const fetchMock = vi.fn()
+  const ORIGINAL_FETCH = globalThis.fetch
+  const HASH = '0xmessagehash'
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+  })
+  afterAll(() => { globalThis.fetch = ORIGINAL_FETCH })
+
+  function jsonRes(body: unknown, status = 200) {
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  it('maps a delivered body to the destination tx hash', async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes({ status: 'delivered', destTxHash: '0xdest', amount: '999', feeExecuted: '1' }))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'delivered', destTxHash: '0xdest', amount: '999', feeExecuted: '1' })
+  })
+
+  it('maps pending and failed', async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes({ status: 'pending' }))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'pending' })
+    fetchMock.mockResolvedValueOnce(jsonRes({ status: 'failed', error: 'mint reverted' }))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'failed', error: 'mint reverted' })
+  })
+
+  it('returns unavailable on 404 (endpoint not deployed) so the caller falls back to the scan', async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes({ error: 'not found' }, 404))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'unavailable' })
+  })
+
+  it('returns unavailable on a 5xx (relayer degraded)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes({ error: 'boom' }, 503))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'unavailable' })
+  })
+
+  it('returns unavailable on a network error (relayer down)', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'unavailable' })
+  })
+
+  it('returns unavailable on a malformed body (missing destTxHash on delivered)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes({ status: 'delivered' }))
+    expect(await fetchCctpDeliveryStatus(HASH)).toEqual({ kind: 'unavailable' })
+  })
+
+  it('propagates a caller abort rather than swallowing it as unavailable', async () => {
+    const ctrl = new AbortController()
+    fetchMock.mockImplementationOnce(() => { ctrl.abort(); return Promise.reject(new DOMException('aborted', 'AbortError')) })
+    await expect(fetchCctpDeliveryStatus(HASH, ctrl.signal)).rejects.toThrow()
   })
 })

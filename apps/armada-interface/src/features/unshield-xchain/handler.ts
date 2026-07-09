@@ -5,8 +5,8 @@ import { ethers } from 'ethers'
 import { encodeFunctionData, pad } from 'viem'
 import { getPublicClient, sendTransaction } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
 import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
@@ -28,7 +28,8 @@ import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,
 } from '@/lib/cctp'
-import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
+import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
+import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 
 // MessageReceived ABI — used by ethers.Interface.parseLog to decode `messageBody` from a raw log.
 // We route the destination scan through ethers (rather than viem) so the app-wide bisecting
@@ -48,7 +49,7 @@ type EthersScanLog = {
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
-import { scanCctpDeliveryWindow } from './scan'
+import { scanCctpDeliveryWindow, matchesXchainDelivery } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import type { StageHandler } from '@/lib/tx/executor'
 import type { TxError, TxRecord } from '@/lib/tx/types'
@@ -164,7 +165,7 @@ export const unshieldXchainHandler: StageHandler<'unshield-xchain'> = {
       }
     } catch (err) {
       if (ctx.signal.aborted) return
-      const failed = markFailed(record, classifyHandlerError(err, 'Cross-chain withdraw failed.', record.artifacts.sourceTxHash))
+      const failed = markFailed(record, classifyHandlerError(err, 'Cross-chain withdraw failed.', record.artifacts.sourceTxHash, getNetworkConfig().hub.chainId))
       await ctx.upsert(failed)
     }
   },
@@ -288,16 +289,30 @@ async function runSubmitAndBurn(
     if (!userHash) {
       await ensureChain(hubChainId)
       if (ctx.signal.aborted) throw new Error('cancelled')
+      // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+      // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+      const sender = record.walletContext.evmAddress
+      if (sender) {
+        await simulateOrThrow({
+          to: privacyPoolAddress as `0x${string}`,
+          data: calldata!,
+          value: 0n,
+          account: sender as `0x${string}`,
+          chainId: hubChainId,
+        })
+        if (ctx.signal.aborted) throw new Error('cancelled')
+      }
       userHash = await sendTransaction(wagmiConfig, {
         to: privacyPoolAddress as `0x${string}`,
         data: calldata!,
         value: 0n,
+        chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, userHash, ctx)
       if (broadcast.dismissed) return
       broadcastRecord = broadcast.record
     }
-    await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal })
+    await waitForReceiptOrFail({ hash: userHash, signal: ctx.signal, chainId: hubChainId })
     await extractCctpRefAndAdvance({
       ctx,
       record: broadcastRecord,
@@ -333,14 +348,14 @@ async function runSubmitAndBurn(
           to: privacyPoolAddress,
           data: calldata!,
           feesCacheId: record.meta.feeCacheId,
+          idempotencyKey: record.id,
         },
         ctx.signal,
       )
     } catch (err) {
-      if (err instanceof RelayerError) {
-        track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
-      }
-      throw err
+      // T-M3/S-M1: recover an already-broadcast hash from a DUPLICATE_TX so we resume polling
+      // instead of failing a tx the relayer already sent; non-recoverable errors rethrow.
+      submitResponse = handleRelaySubmitError(err, { id: record.id, kind: record.kind })
     }
 
     track('tx.relayer.submitted', { id: record.id, kind: record.kind })
@@ -485,6 +500,9 @@ async function runWaitForDelivery(
   }
   const destProvider = createProvider(destChain.rpcUrls)
   const destMessageReceivedTopic = messageReceivedTopic()
+  // T-M7: the burn for unshield-xchain happens on the hub, so a genuine delivery's CCTP
+  // sourceDomain is the hub's domain. Match on it to reject same-recipient transfers from elsewhere.
+  const hubDomain = getNetworkConfig().hub.domain
 
   // Park the record in 'waiting' so the stepper renders the "Waiting for cross-chain confirmation"
   // copy. The handler doesn't return here — poll() continues; the 'waiting' state is purely a
@@ -500,30 +518,33 @@ async function runWaitForDelivery(
     : 0n
   const maxLogRange = BigInt(getNetworkConfig().maxLogRange)
 
-  // Derive the inner polling timeout from the per-kind lifecycle cap, minus whatever time has
-  // already been spent on earlier stages. This keeps the inner poll honest about the global
-  // budget — previously a hardcoded 10min capped delivery polling well below the 60min xchain
-  // cap, so a slow Iris attestation timed us out even though the outer record had ~50 min left.
-  const lifecycle = lifecycleFor(record.kind)
-  const remainingBudgetMs = record.createdAt + lifecycle.maxDurationMs - Date.now()
-  // Floor at 10s so a record that's already past its cap fails fast rather than hanging on a
-  // single tick. Above 10s we trust the lifecycle's published budget. Emit telemetry when the
-  // clamp kicks in — sustained signal here means records are landing in polling with too little
-  // budget (typically a resume-after-crash close to maxDurationMs) and the lifecycle cap or
-  // resume policy may need adjustment.
-  const POLL_FLOOR_MS = 10_000
-  if (remainingBudgetMs < POLL_FLOOR_MS) {
-    track('tx.budget.tight', {
-      id: record.id,
-      kind: record.kind,
-      elapsedMs: Date.now() - record.createdAt,
-    })
-  }
-  const pollTimeoutMs = Math.max(POLL_FLOOR_MS, remainingBudgetMs)
+  // Derive the inner polling timeout from the per-kind lifecycle cap minus elapsed time, crediting
+  // back tab-hidden time (T-M5/S-M6) so a slow Iris attestation watched from a backgrounded tab
+  // isn't timed out with budget still on the clock. pollBudgetMs floors at 10s (so an over-budget
+  // record fails fast rather than hanging a tick) and emits tx.budget.tight when the floor engages.
+  const pollTimeoutMs = pollBudgetMs(record)
 
   const result = await poll<`0x${string}`>(
     async (signal) => {
       if (signal.aborted) return null
+      // T-M7 Option B primary: ask the relayer for authoritative CCTP delivery status (it performs
+      // the destination mint in both mock + real mode and tracks Iris). Falls through to the
+      // on-chain scan below when the endpoint is unavailable (not deployed / relayer down), so this
+      // layers on without a hard dependency.
+      const messageHash = record.artifacts.messageHash
+      if (messageHash) {
+        const relayed = await fetchCctpDeliveryStatus(messageHash, signal)
+        if (relayed.kind === 'delivered') return relayed.destTxHash
+        if (relayed.kind === 'pending') return null
+        if (relayed.kind === 'failed') {
+          throw asTxError({
+            code: 'TX_REVERTED',
+            message: relayed.error ?? 'Cross-chain delivery failed on the destination chain.',
+            txHash: record.artifacts.sourceTxHash,
+          })
+        }
+        // relayed.kind === 'unavailable' → fall through to the on-chain scan.
+      }
       // Bounded per-tick scan — never queries more than maxLogRange blocks in a single getLogs
       // call. Across many ticks the cursor marches forward chunk-by-chunk; once caught up to head,
       // ticks short-circuit on `no-new-blocks` until the next block lands.
@@ -544,8 +565,10 @@ async function runWaitForDelivery(
               topics: Array.from(log.topics),
               data: log.data,
             })
-            const body = parsed?.args.messageBody as string | undefined
-            return typeof body === 'string' && body.toLowerCase().includes(uniqueMarker)
+            return matchesXchainDelivery(
+              { messageBody: parsed?.args.messageBody, sourceDomain: parsed?.args.sourceDomain },
+              { recipientMarker: uniqueMarker, sourceDomain: hubDomain },
+            )
           } catch {
             // Foreign log on the same address (different ABI / unindexed topic mismatch) — skip
             // rather than fail the whole tick. The scanner continues to the next log.

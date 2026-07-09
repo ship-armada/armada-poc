@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getDefaultStore } from 'jotai'
-import { cancelAllRunning, cancelTx, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
+import { __setIsLeaderForTests, canRetryTx, cancelAllRunning, cancelTx, clearResumed, executeTx, registerHandler, resumeForWallet, retryTx, startEngine, type StageHandler } from './executor'
 import { advance, markFailed } from './reducer'
 import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
@@ -192,15 +192,34 @@ describe('expiry guard (P0-5)', () => {
 })
 
 describe('retryTx (P0-4)', () => {
+  // A handler that parks until aborted — registered so that retryTx's fire-and-forget executeTx
+  // can't mutate the record out from under the synchronous assertions. (Pre-S-M6 this leaned on
+  // tabVisibleAtom=false freezing the chain, but S-M6 exempts pre-broadcast records from the gate,
+  // so we freeze via a no-op handler instead.)
+  const parkUntilAbort: StageHandler<'shield'> = {
+    kind: 'shield',
+    resumableFrom: ['submit-relayer'],
+    run: (_record, ctx) =>
+      new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) return resolve()
+        ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+      }),
+  }
+
   beforeEach(async () => {
     const store = getDefaultStore()
     store.set(txListAtom, [])
-    // Park the chain at the visibility gate so the (module-registered) handler doesn't run and
-    // mutate the record out from under the synchronous assertions below.
-    store.set(tabVisibleAtom, false)
+    store.set(tabVisibleAtom, true)
     await cacheClear('txHistory')
     clearKeyManager()
     unlockForTest()
+    startEngine()
+    registerHandler(parkUntilAbort)
+  })
+
+  afterEach(() => {
+    // Tear down any chain the retry dispatched so it can't leak into the next test.
+    cancelAllRunning('test-cleanup')
   })
 
   it('accepts a retry from a retryable failed stage and marks the record retrying', () => {
@@ -327,6 +346,28 @@ describe('resumeForWallet (P0-2)', () => {
     expect(after[0]!.executionState).toBe('expired')
   })
 
+  it('clearResumed lifts the per-session idempotency guard so a re-unlock resumes again (T-M1)', async () => {
+    const walletId = 'rw-clear-resumed'
+    unlockForTest(walletId)
+    startEngine()
+
+    // First unlock: resume terminalizes the pre-broadcast record (INTERRUPTED).
+    await putTx(recordFor(walletId, { id: 'cr-1', executionState: 'active', stage: 'build-proof', updatedSeq: 1, artifacts: {} }))
+    await resumeForWallet(walletId)
+    expect((await loadAllTx(walletId)).find(r => r.id === 'cr-1')?.executionState).toBe('failed')
+
+    // A fresh non-terminal record + a second resume is SKIPPED by the idempotency Set — without
+    // clearing on lock, a re-unlock in the same session never re-attaches watchers (the T-M1 bug).
+    await putTx(recordFor(walletId, { id: 'cr-2', executionState: 'active', stage: 'build-proof', updatedSeq: 1, artifacts: {} }))
+    await resumeForWallet(walletId)
+    expect((await loadAllTx(walletId)).find(r => r.id === 'cr-2')?.executionState).toBe('active')
+
+    // After clearResumed (what lock now calls), the next resume processes cr-2.
+    clearResumed(walletId)
+    await resumeForWallet(walletId)
+    expect((await loadAllTx(walletId)).find(r => r.id === 'cr-2')?.executionState).toBe('failed')
+  })
+
   it('is a no-op while locked (no key to decrypt records)', async () => {
     const store = getDefaultStore()
     // Seed under one wallet, then lock.
@@ -390,5 +431,129 @@ describe('cancelAllRunning (P1-15)', () => {
   it('is a no-op when nothing is running', () => {
     // No executeTx calls → empty running set → no throw, no writes.
     expect(() => cancelAllRunning('account-switch')).not.toThrow()
+  })
+})
+
+describe('canRetryTx — fee-expired / duplicate are non-retryable (S-H1)', () => {
+  // A failed `submit-relayer` is normally retryable (the stage is in retryableStages).
+  function failedAtSubmit(error?: TxError): TxRecord {
+    return makeRecord({
+      executionState: 'failed',
+      stage: 'submit-relayer',
+      artifacts: error ? { error } : {},
+    })
+  }
+
+  it('allows retry for an ordinary failure at a retryable stage', () => {
+    // WHY: baseline — RPC_ERROR / OTHER at submit-relayer can legitimately re-send.
+    expect(canRetryTx(failedAtSubmit({ code: 'RPC_ERROR', message: 'relayer 502' }))).toBe(true)
+    expect(canRetryTx(failedAtSubmit())).toBe(true)
+  })
+
+  it('refuses retry for FEE_EXPIRED — re-POSTing the baked-in expired quote loops forever (S-H1)', () => {
+    // WHY (S-H1): the proof embeds the fee cacheId + amount; once the relayer rejects it as
+    // expired/insufficient, every retry re-fails identically. Only a fresh transaction recovers.
+    expect(canRetryTx(failedAtSubmit({ code: 'FEE_EXPIRED', message: 'quote expired' }))).toBe(false)
+  })
+
+  it('refuses retry for DUPLICATE_TX — the tx is already in flight (recover via /status, T-M3)', () => {
+    expect(canRetryTx(failedAtSubmit({ code: 'DUPLICATE_TX', message: 'already submitted' }))).toBe(false)
+  })
+})
+
+describe('retryTx — follower-tab leader guard (T-H3)', () => {
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    store.set(tabVisibleAtom, false)
+    await cacheClear('txHistory')
+    clearKeyManager()
+    unlockForTest()
+  })
+
+  it('refuses retry on a follower tab and does NOT wedge the record in retrying', () => {
+    // WHY (T-H3): on a follower, executeTx is a no-op. If retryTx still marked the record
+    // `retrying`, it would sit non-terminal forever — counted by pendingTxsAtom, deferring
+    // auto-lock and holding keys in memory. The guard must refuse before markRetrying.
+    __setIsLeaderForTests(false)
+    try {
+      const store = getDefaultStore()
+      const failed = makeRecord({
+        id: 'ulid-follower-retry',
+        executionState: 'failed',
+        stage: 'submit-relayer', // retryable stage — so only the leader guard can refuse here
+        updatedSeq: 3,
+      })
+      store.set(upsertTxAtom, failed)
+
+      expect(retryTx(failed.id)).toBe(false)
+
+      const after = store.get(txListAtom).find(t => t.id === failed.id)
+      expect(after?.executionState).toBe('failed') // not 'retrying' — no wedge
+      expect(after?.updatedSeq).toBe(3) // untouched
+    } finally {
+      __setIsLeaderForTests(true) // restore for any subsequent state
+    }
+  })
+})
+
+describe('visibility gate — pre-broadcast exemption (S-M6)', () => {
+  beforeEach(async () => {
+    const store = getDefaultStore()
+    store.set(txListAtom, [])
+    store.set(tabVisibleAtom, false) // tab hidden
+    await cacheClear('txHistory')
+    clearKeyManager()
+    unlockForTest()
+    startEngine()
+    __setIsLeaderForTests(true)
+  })
+
+  afterEach(() => {
+    cancelAllRunning('test-cleanup')
+    getDefaultStore().set(tabVisibleAtom, true)
+  })
+
+  it('runs a pre-broadcast (no-hash) record while hidden instead of parking it', async () => {
+    const store = getDefaultStore()
+    const ran = { value: false }
+    registerHandler({
+      kind: 'shield',
+      resumableFrom: ['submit-relayer'],
+      run: async (record, ctx) => {
+        ran.value = true
+        await ctx.upsert(advance(record, 'hub-confirmed', { sourceTxHash: '0xnew' }))
+      },
+    })
+    const rec = makeRecord({
+      id: 'sm6-nohash', executionState: 'pending', stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'], updatedSeq: 1, artifacts: {},
+    })
+    store.set(upsertTxAtom, rec)
+    executeTx('sm6-nohash')
+    await new Promise(r => setTimeout(r, 20))
+    expect(ran.value).toBe(true)
+    expect(store.get(txListAtom).find(t => t.id === 'sm6-nohash')?.executionState).toBe('completed')
+  })
+
+  it('parks a broadcast (has-hash) record while hidden', async () => {
+    const store = getDefaultStore()
+    const ran = { value: false }
+    registerHandler({
+      kind: 'shield',
+      resumableFrom: ['submit-relayer'],
+      run: async (record, ctx) => {
+        ran.value = true
+        await ctx.upsert(advance(record, 'hub-confirmed'))
+      },
+    })
+    const rec = makeRecord({
+      id: 'sm6-hash', executionState: 'waiting', stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'], updatedSeq: 1, artifacts: { sourceTxHash: '0xfeed' },
+    })
+    store.set(upsertTxAtom, rec)
+    executeTx('sm6-hash')
+    await new Promise(r => setTimeout(r, 20))
+    expect(ran.value).toBe(false) // parked at the visibility gate, handler never ran
   })
 })

@@ -72,6 +72,9 @@ describe('scrubEvent', () => {
 
 describe('initSentry', () => {
   it('is a no-op when VITE_SENTRY_DSN is unset', () => {
+    // Explicitly clear the DSN so the assertion doesn't depend on the developer's ambient env —
+    // a local .env.local with VITE_SENTRY_DSN set would otherwise make this fail spuriously.
+    vi.stubEnv('VITE_SENTRY_DSN', '')
     initSentry()
     expect(mockInit).not.toHaveBeenCalled()
   })

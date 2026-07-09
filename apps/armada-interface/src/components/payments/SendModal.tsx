@@ -19,7 +19,9 @@ import { parseUsdcInput } from '@/lib/format'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress, validateShieldedAddressStrict } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
+import { canRetryTx } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
+import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
   overlayIndicatorStep,
   overlayIndicatorStatus,
@@ -201,6 +203,15 @@ export function SendModal() {
         throw new Error('Could not fetch a current fee quote — please try again.')
       }
       const feeCacheId = activeQuote.cacheId
+      // S-M5: re-validate amount + the FRESH relayer fee against the balance before proof gen. All
+      // three kinds draw the fee from the shielded balance (fee-on-top) on the relayer path;
+      // wallet-override pays native gas separately, so no shielded fee applies there.
+      const freshFee = computedKind === 'transfer-shielded'
+        ? BigInt(activeQuote.fees.transfer)
+        : computedKind === 'unshield-local'
+          ? BigInt(activeQuote.fees.unshield)
+          : BigInt(activeQuote.fees.crossChainUnshield)
+      assertSpendableForFeeOnTop({ amount, fee: prefs.submitFromWallet ? 0n : freshFee, balance: max })
       if (computedKind === 'transfer-shielded') {
         // Strict-validate the user's typed 0zk recipient (bech32m checksum, not just shape) at the
         // funds-committing boundary — a transposed character would otherwise send a private
@@ -290,7 +301,7 @@ export function SendModal() {
     <DepositOverlayShell
       open
       onClose={close}
-      dismissible={step !== 'progress'}
+      dismissible={true}
       flowLabel="Send"
       currentStep={overlayIndicatorStep(step)}
       status={overlayIndicatorStatus(step)}
@@ -372,6 +383,11 @@ export function SendModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          primaryLabel={
+            errorAtStep === 'review' || (record != null && canRetryTx(record))
+              ? 'Try again'
+              : 'Start over'
+          }
           onRetry={
             errorAtStep === 'review'
               ? () => {
@@ -379,16 +395,25 @@ export function SendModal() {
                   setErrorAtStep(undefined)
                   setStep('review')
                 }
-              : () => {
-                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
-                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
-                  // the user on the error step with the honest error + explorer link, not flip to a
-                  // stuck spinner — that was the P0-4 no-op bug.
-                  setErrorAtStep(undefined)
-                  void activeTx?.retry()?.then((accepted) => {
-                    if (accepted) setStep('progress')
-                  })
-                }
+              : record != null && canRetryTx(record)
+                ? () => {
+                    // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                    // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                    // the user on the error step with the honest error + explorer link, not flip to a
+                    // stuck spinner — that was the P0-4 no-op bug.
+                    setErrorAtStep(undefined)
+                    void activeTx?.retry()?.then((accepted) => {
+                      if (accepted) setStep('progress')
+                    })
+                  }
+                : () => {
+                    // S-M3: build-proof / FEE_EXPIRED / DUPLICATE_TX failures aren't retryable in
+                    // place; return to the input step (form state preserved) so the user can start a
+                    // fresh transaction instead of clicking a dead "Try again".
+                    setSubmitError(null)
+                    setErrorAtStep(undefined)
+                    setStep('input')
+                  }
           }
         />
       )}

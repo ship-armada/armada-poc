@@ -53,6 +53,9 @@ export type EventRegistry = {
   'tx.relayer.submitted':     { id: string; kind: TxKind }
   'tx.relayer.confirmed':     { id: string; kind: TxKind }
   'tx.relayer.rejected':      { id: string; kind: TxKind; errorCode?: string }
+  // A DUPLICATE_TX (409) was recovered: the relayer had already broadcast this tx and reported its
+  // hash in the rejection message, so we resume polling on it instead of failing (T-M3/S-M1).
+  'tx.relayer.dup-recovered': { id: string; kind: TxKind }
   // Fired when an xchain handler enters runWaitForDelivery with less than the inner-poll floor
   // of lifecycle budget remaining. The handler clamps to a 10s minimum (rather than failing
   // immediately) but a sustained signal here indicates records being created with too little

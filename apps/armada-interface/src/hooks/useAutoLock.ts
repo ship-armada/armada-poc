@@ -35,6 +35,15 @@ const RESET_THROTTLE_MS = 1000
 const HIDDEN_GRACE_MS = 5 * 60_000
 
 /**
+ * Hard cap on how many times the lock is deferred because a tx is "in flight". Each deferral is
+ * ~1 minute, so this bounds the extra time keys stay in memory to ~5 minutes past the idle/hidden
+ * deadline. Without a cap, a single wedged non-terminal record (counted by pendingTxsAtom) would
+ * defer the security lock forever — holding the rootSecret in memory indefinitely. User activity
+ * resets the budget. (T-H3)
+ */
+const MAX_LOCK_DEFERRALS = 5
+
+/**
  * Mount once at the App root. Listens for user activity and locks the shielded wallet after the
  * configured idle period. When a non-terminal tx is in flight, locking is deferred to a minute later
  * so we don't yank the user out of a flow at the worst possible moment.
@@ -65,10 +74,16 @@ export function useAutoLock() {
 
     let lastReset = 0
     let timer: ReturnType<typeof setTimeout> | null = null
+    // Counts consecutive in-flight deferrals (idle + hidden paths share the budget). Reset by
+    // user activity / returning to the tab. Capped at MAX_LOCK_DEFERRALS so a wedged record can't
+    // hold keys forever. (T-H3)
+    let deferrals = 0
 
     function fire() {
-      if (hasInflight()) {
-        // Defer for a minute and re-check; locking mid-flow is worse than waiting a bit.
+      if (hasInflight() && deferrals < MAX_LOCK_DEFERRALS) {
+        // Defer for a minute and re-check; locking mid-flow is worse than waiting a bit — but only
+        // up to the cap, after which we lock regardless to bound key-in-memory time.
+        deferrals += 1
         const next = Date.now() + 60_000
         store.set(autoLockDeadlineAtom, next)
         timer = setTimeout(fire, 60_000)
@@ -81,6 +96,7 @@ export function useAutoLock() {
       const now = Date.now()
       if (now - lastReset < RESET_THROTTLE_MS) return
       lastReset = now
+      deferrals = 0 // user is present → restore the full deferral budget
       if (timer) clearTimeout(timer)
       store.set(autoLockDeadlineAtom, now + timeoutMs)
       timer = setTimeout(fire, timeoutMs)
@@ -91,20 +107,27 @@ export function useAutoLock() {
     // still hidden, lock — deferring just like the idle path when a tx is in flight, so we
     // don't yank the user out of mid-broadcast even when they've walked away.
     let hiddenTimer: ReturnType<typeof setTimeout> | null = null
+
+    // The grace (or a prior deferral) elapsed while still hidden. Lock unless a tx is in flight and
+    // we still have deferral budget — in which case re-check in 60s. W-8: the re-check is a clean
+    // 60s tick, NOT a fresh 5-min grace, so a wedged in-flight tx holds keys ~grace+5min, not ~30min.
+    function hiddenLockCheck() {
+      if (hasInflight() && deferrals < MAX_LOCK_DEFERRALS) {
+        deferrals += 1
+        hiddenTimer = setTimeout(hiddenLockCheck, 60_000)
+        return
+      }
+      lockRef.current()
+    }
+
     function onVisibilityChange() {
       if (document.visibilityState === 'hidden') {
         if (hiddenTimer) clearTimeout(hiddenTimer)
-        hiddenTimer = setTimeout(() => {
-          if (hasInflight()) {
-            // Same defer policy as the main fire() — re-check in a minute. Don't lock mid-flow.
-            hiddenTimer = setTimeout(onVisibilityChange, 60_000)
-            return
-          }
-          lockRef.current()
-        }, HIDDEN_GRACE_MS)
+        hiddenTimer = setTimeout(hiddenLockCheck, HIDDEN_GRACE_MS)
       } else if (hiddenTimer) {
         clearTimeout(hiddenTimer)
         hiddenTimer = null
+        deferrals = 0 // returned to the tab → restore the deferral budget
       }
     }
 

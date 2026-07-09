@@ -5,6 +5,7 @@ import { getDefaultStore } from 'jotai'
 import { track, trackError } from '../telemetry'
 import { lifecycleFor } from './lifecycles'
 import { markCancelled, markDismissed, markExpired, markFailed, markRetrying } from './reducer'
+import { beginHiddenCredit, endHiddenCredit, hiddenMsForRecord } from './hiddenClock'
 import { loadAllTx, putTxIfFresh } from './storage'
 import { isTerminalState } from './types'
 import type { StageFor, TxKind, TxRecord } from './types'
@@ -58,6 +59,13 @@ export function registerHandler<K extends TxKind>(handler: StageHandler<K>): voi
 
 export function getIsLeader(): boolean {
   return isLeader
+}
+
+/** Test-only: force the leader flag. Production leadership is owned by `startEngine` via
+ *  `navigator.locks`; jsdom has no locks API, so this lets tests exercise the follower-tab guards
+ *  (which a real second tab would hit) deterministically. */
+export function __setIsLeaderForTests(value: boolean): void {
+  isLeader = value
 }
 
 /**
@@ -128,8 +136,16 @@ export function executeTx(id: string): void {
 
   const controller = new AbortController()
   running.set(id, controller)
+  // Start crediting tab-hidden time against this record's wall-clock budget (T-M5 / S-M6).
+  // Idempotent — a resume re-attach keeps the original baseline.
+  beginHiddenCredit(id, Date.now())
   void runHandlerChain(record, handler, controller)
 }
+
+/** Error codes whose retry is structurally futile — the proof froze a now-invalid fee quote, or
+ *  the tx is already in flight. The only recovery is a fresh transaction (or, for DUPLICATE_TX,
+ *  the /status hash-recovery in T-M3). (S-H1) */
+const NON_RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set(['FEE_EXPIRED', 'DUPLICATE_TX'])
 
 /**
  * Returns true if `record` is in a state we'd allow the user to retry from. Two conditions:
@@ -146,6 +162,13 @@ export function canRetryTx(record: TxRecord): boolean {
     || record.executionState === 'expired'
     || record.executionState === 'cancelled'
   if (!isRecoverable) return false
+  // Some failures can't be fixed by re-running the stage: the proof bakes in a fee quote (cacheId
+  // + broadcaster-fee amount) the relayer now rejects, so a retry re-POSTs the same doomed quote
+  // forever (FEE_EXPIRED); a 409 means the tx is already in flight (DUPLICATE_TX). Offering Retry
+  // here is a guaranteed-failure loop — the only recovery is a fresh transaction. (S-H1)
+  if (record.artifacts.error && NON_RETRYABLE_ERROR_CODES.has(record.artifacts.error.code)) {
+    return false
+  }
   const lifecycle = lifecycleFor(record.kind)
   return (lifecycle.retryableStages as ReadonlyArray<string>).includes(record.stage as string)
 }
@@ -165,6 +188,17 @@ export function retryTx(id: string): boolean {
     trackError('tx.executor.retry', new Error('no record'), {
       scope: 'tx.executor',
       message: `retryTx called for unknown id ${id}`,
+    })
+    return false
+  }
+  if (!getIsLeader()) {
+    // Follower tab: executeTx is a no-op here, so marking the record `retrying` would wedge it in
+    // a non-terminal state forever — counted by pendingTxsAtom, which makes useAutoLock defer the
+    // security lock and keep keys in memory. Refuse before markRetrying. The UI also hides Retry
+    // on follower tabs (TxActions); this is the belt-and-suspenders guard. (T-H3)
+    trackError('tx.executor.retry', new Error('not leader'), {
+      scope: 'tx.executor',
+      message: `retry refused on follower tab for ${id}`,
     })
     return false
   }
@@ -229,6 +263,17 @@ export function cancelAllRunning(reason: string): void {
     // (honest "Stopped tracking" + explorer link) automatically — see WS1.2c.
     abortAndMark(id, 'cancel')
   }
+}
+
+/**
+ * Drop this tab's resume guard for `walletId`. `resumeForWallet` is idempotent per (walletId,
+ * session) via `resumedWallets`; without clearing it on lock, a re-unlock in the SAME session
+ * (manual lock → unlock, or account-switch → switch back) would early-return and never re-attach
+ * watchers to already-broadcast txs — leaving them un-tracked until a full reload. Lock paths call
+ * this alongside `cancelAllRunning`. (T-M1)
+ */
+export function clearResumed(walletId: string): void {
+  resumedWallets.delete(walletId)
 }
 
 function abortAndMark(id: string, kind: 'cancel' | 'dismiss'): void {
@@ -339,7 +384,15 @@ async function runHandlerChain(
   try {
     while (!controller.signal.aborted) {
       // Pause when the tab is hidden — even on the leader. Polite to API quotas.
-      if (!store.get(tabVisibleAtom)) {
+      //
+      // S-M6: but only once the tx has BROADCAST (has a sourceTxHash). A freshly-confirmed
+      // pre-broadcast record (build-proof + submit) must not be parked here — relayer-mediated
+      // flows need no further interaction, so parking would let it sit idle while the wall-clock
+      // budget burns and ultimately expire having done nothing. Pre-broadcast local work (proof
+      // gen, the submit POST / prompt) proceeds while hidden; once on-chain, the remaining work is
+      // RPC/delivery polling, which the in-handler poller runs regardless of visibility anyway.
+      const hasBroadcast = Boolean((current.artifacts as { sourceTxHash?: `0x${string}` }).sourceTxHash)
+      if (hasBroadcast && !store.get(tabVisibleAtom)) {
         await waitForVisibility(controller.signal)
         if (controller.signal.aborted) break
       }
@@ -375,9 +428,11 @@ async function runHandlerChain(
       // poller completing, or executeTx being called again) will resume.
       if (current.executionState === 'waiting') break
 
-      // Hard-cap on total lifecycle duration.
+      // Hard-cap on total lifecycle duration — crediting back time the tab was hidden so a
+      // backgrounded tab doesn't expire a tx that merely waited while the user was away (T-M5/S-M6).
       const lifecycle = lifecycleFor(current.kind)
-      if (Date.now() - current.createdAt > lifecycle.maxDurationMs) {
+      const elapsed = Date.now() - current.createdAt - hiddenMsForRecord(current.id, Date.now())
+      if (elapsed > lifecycle.maxDurationMs) {
         const expired = markExpired(current)
         await ctx.upsert(expired as TxRecord<TxKind>)
         track('tx.expired', { id: current.id, kind: current.kind })
@@ -391,6 +446,11 @@ async function runHandlerChain(
     })
   } finally {
     running.delete(initial.id)
+    // Free the hidden-credit snapshot once the record is settled. If the chain merely paused at
+    // 'waiting' (to be re-dispatched by a poller/external trigger), keep the snapshot so the credit
+    // survives the re-attach.
+    const latest = store.get(txListAtom).find(t => t.id === initial.id)
+    if (!latest || isTerminalState(latest.executionState)) endHiddenCredit(initial.id)
   }
 }
 

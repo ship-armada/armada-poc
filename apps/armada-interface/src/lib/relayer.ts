@@ -295,6 +295,17 @@ export interface RelayRequest {
   to: string
   data: string
   feesCacheId: string
+  /**
+   * Client-generated idempotency key (the tx record's ulid). Stable across retries / resume of the
+   * SAME tx and unique per new tx, so the relayer can deterministically recognise a re-POST and
+   * return the already-broadcast hash (200) instead of re-broadcasting or 409-ing (T-M3/S-M1).
+   *
+   * NOTE: requires the relayer-side change to honour it (persist key→txHash, return 200 on repeat);
+   * until that ships the relayer ignores this field and the client falls back to parsing the
+   * DUPLICATE_TX message (see `handleRelaySubmitError`). See the relayer implementation plan in
+   * `reports/relayer-idempotency-key-plan.md`.
+   */
+  idempotencyKey: string
 }
 
 export interface RelayResponse {
@@ -317,6 +328,19 @@ export class RelayerError extends Error {
     this.code = code
     this.httpStatus = httpStatus
   }
+}
+
+/**
+ * Pull the already-broadcast tx hash out of a DUPLICATE_TX rejection message (T-M3/S-M1). The
+ * relayer's dedup cache keys on our exact calldata and reports the prior hash in the message
+ * ("...already submitted as 0x<hash>"), so when a retry re-POSTs a tx the relayer already broadcast
+ * we can recover the hash and resume polling instead of failing. Returns null if no 32-byte hash is
+ * present (message format drift) — caller falls back to surfacing the failure.
+ */
+export function extractDuplicateTxHash(err: RelayerError): `0x${string}` | null {
+  if (err.code !== 'DUPLICATE_TX') return null
+  const match = err.message.match(/0x[0-9a-fA-F]{64}/)
+  return match ? (match[0] as `0x${string}`) : null
 }
 
 function statusToErrorCode(httpStatus: number): RelayerErrorCode {
@@ -469,4 +493,67 @@ export async function pollStatus(txHash: string, signal?: AbortSignal): Promise<
   }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as StatusResponse
+}
+
+/**
+ * Cross-chain CCTP delivery status, keyed by the source message hash (T-M7 Option B). The relayer
+ * performs the destination mint in BOTH modes (mock `cctp-relay` + real `iris-relay`) and tracks
+ * Iris attestation, so it's the authoritative source for "did the mint land + what's the
+ * destTxHash" — more precise than content-sniffing destination logs.
+ *
+ *  - `delivered` carries the destination mint tx hash (+ optional amount/feeExecuted for the caller
+ *    to verify within maxFee tolerance).
+ *  - `pending` → keep waiting.
+ *  - `failed` → the mint reverted on the destination; the caller terminates the record.
+ *  - `unavailable` → the endpoint isn't deployed (404) OR the relayer is unreachable (5xx / network
+ *    / timeout). The caller MUST fall back to the on-chain destination scan — today's behaviour —
+ *    so this layers on without a hard relayer dependency. Abort propagates (rethrown).
+ */
+export type CctpDeliveryStatus =
+  | { kind: 'delivered'; destTxHash: `0x${string}`; amount?: string; feeExecuted?: string }
+  | { kind: 'pending' }
+  | { kind: 'failed'; error?: string }
+  | { kind: 'unavailable' }
+
+interface CctpStatusBody {
+  status?: 'pending' | 'delivered' | 'failed'
+  destTxHash?: string
+  amount?: string
+  feeExecuted?: string
+  error?: string
+}
+
+export async function fetchCctpDeliveryStatus(
+  messageHash: string,
+  signal?: AbortSignal,
+): Promise<CctpDeliveryStatus> {
+  let res: Response
+  try {
+    res = await fetchWithTimeout(
+      `${relayerEndpoint(RELAYER_ENDPOINTS.cctpStatus)}/${messageHash}`,
+      { method: 'GET', headers: { Accept: 'application/json' } },
+      signal,
+      10_000,
+    )
+  } catch (err) {
+    // Caller-aborted → propagate so cancel stays cancel. Anything else (network down, our timeout)
+    // → treat as unavailable so the caller falls back to the on-chain scan.
+    if (signal?.aborted) throw err
+    return { kind: 'unavailable' }
+  }
+  // 404 (endpoint not deployed yet) or any non-2xx (relayer degraded) → fall back to the scan.
+  if (!res.ok) return { kind: 'unavailable' }
+  let body: CctpStatusBody
+  try {
+    body = (await res.json()) as CctpStatusBody
+  } catch {
+    return { kind: 'unavailable' }
+  }
+  if (body.status === 'delivered' && typeof body.destTxHash === 'string') {
+    return { kind: 'delivered', destTxHash: body.destTxHash as `0x${string}`, amount: body.amount, feeExecuted: body.feeExecuted }
+  }
+  if (body.status === 'failed') return { kind: 'failed', error: body.error }
+  if (body.status === 'pending') return { kind: 'pending' }
+  // Malformed/unknown body → don't trust it; fall back to the scan.
+  return { kind: 'unavailable' }
 }

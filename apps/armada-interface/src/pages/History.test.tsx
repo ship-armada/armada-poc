@@ -112,23 +112,23 @@ describe('<History>', () => {
 
   it('toggles the inline stepper open and closed on row click', () => {
     renderHistory([record('a', 'completed')])
-    // Initially no stepper.
-    expect(screen.queryByText(/Usually takes/)).toBeNull()
+    // Detect the expanded stepper by its always-present "Show technical details" disclosure —
+    // the ETA hint is suppressed for terminal records (T-L4), so it's not a reliable marker.
+    expect(screen.queryByText(/Show technical details/i)).toBeNull()
     fireEvent.click(screen.getByRole('button'))
-    // Expanded — TxLifecycleStepper renders its "Usually takes" ETA hint.
-    expect(screen.getByText(/Usually takes/)).toBeInTheDocument()
+    expect(screen.getByText(/Show technical details/i)).toBeInTheDocument()
     // Click again → collapses.
     fireEvent.click(screen.getByRole('button'))
-    expect(screen.queryByText(/Usually takes/)).toBeNull()
+    expect(screen.queryByText(/Show technical details/i)).toBeNull()
   })
 
   it('only allows one row expanded at a time', () => {
     renderHistory([record('a', 'completed'), record('bb', 'completed')])
     const buttons = screen.getAllByRole('button')
     fireEvent.click(buttons[0]!)
-    expect(screen.getAllByText(/Usually takes/).length).toBe(1)
+    expect(screen.getAllByText(/Show technical details/i).length).toBe(1)
     fireEvent.click(buttons[1]!)
     // First collapses, second expands — still exactly one.
-    expect(screen.getAllByText(/Usually takes/).length).toBe(1)
+    expect(screen.getAllByText(/Show technical details/i).length).toBe(1)
   })
 })

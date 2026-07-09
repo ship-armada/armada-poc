@@ -43,6 +43,25 @@ describe('shieldWalletSteps', () => {
     expect(steps[0].status).toBe('loading')
   })
 
+  it('gasless: collapses to a single "Authorize deposit" row, done once build-proof completes (S-M4)', () => {
+    const building: TxRecord<'shield'> = {
+      ...base,
+      meta: { ...base.meta, useGasless: true },
+      stage: 'build-proof',
+      stagesCompleted: [],
+    }
+    const buildingSteps = shieldWalletSteps(building, 5_000_000n)
+    expect(buildingSteps.map(s => s.label)).toEqual(['Authorize 5.00 USDC deposit'])
+    expect(buildingSteps[0].status).toBe('loading')
+
+    const authorized: TxRecord<'shield'> = {
+      ...building,
+      stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'],
+    }
+    expect(shieldWalletSteps(authorized, 5_000_000n)[0].status).toBe('done')
+  })
+
   it('wallet interactions incomplete until authorize, approve, and deposit submit', () => {
     const mid: TxRecord<'shield'> = {
       ...base,

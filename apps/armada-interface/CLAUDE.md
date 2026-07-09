@@ -35,7 +35,7 @@ src/
 │   ├── railgun/             SDK wrappers (wallet, init, network, keyManager, artifacts, database) — Phase 1 lifecycle wired; prover + sync still stubbed
 │   └── tx/                  lifecycle model — types, lifecycles, reducer, storage, poller
 ├── state/                   Jotai atoms (tx, wallet, fees, visibility, ui)
-├── hooks/                   per-concern hooks (useWallet, useShieldedWallet, useBalances, useYieldRate, useFees, useTx, useTxHistory, useCctpAttestation, useTabVisible)
+├── hooks/                   per-concern hooks (useWallet, useShieldedWallet, useBalances, useYieldRate, useFees, useTx, useTxHistory, useTabVisible)
 ├── components/              AppLayout, WalletConnector, plus subfolders for each feature (balance/, shield/, unshield/, yield/, payments/, tx/, settings/)
 └── pages/                   Dashboard, History, Settings, AddressBook
 ```

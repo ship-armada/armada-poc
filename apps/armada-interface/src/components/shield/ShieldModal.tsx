@@ -16,6 +16,7 @@ import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
 import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
+import { canRetryTx } from '@/lib/tx/executor'
 import {
   ProgressStep,
   ErrorStep,
@@ -29,6 +30,8 @@ import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
+import { activeTxListAtom } from '@/state/tx'
+import { hasUnresolvedShield } from '@/lib/tx/duplicateGuard'
 
 type LocalStep = FlowStep
 type SubmittedKind = 'shield' | 'shield-xchain'
@@ -70,6 +73,12 @@ export function ShieldModal() {
   const balances = useBalances()
   const max = balances.unshielded[fromChainId] ?? 0n
   const { value: amount } = parseUsdcInput(amountStr)
+
+  // S-L7: warn (non-blocking) at review when an unresolved same-amount deposit may still be on
+  // chain — between a POLL_TIMEOUT'd shield and history recovery confirming it, re-depositing the
+  // same amount would deposit twice. Reads the active wallet's tx list (scoped, wallet-switch safe).
+  const recentTxs = useAtomValue(activeTxListAtom)
+  const duplicateWarning = amount > 0n && hasUnresolvedShield(recentTxs, amount)
 
   // Cached deployment manifests — used to discover the per-chain wrapper address. Loaded once
   // at startup via the standard React Query pattern; rarely changes at runtime.
@@ -325,7 +334,7 @@ export function ShieldModal() {
     <DepositOverlayShell
       open={isOpen}
       onClose={close}
-      dismissible={step !== 'progress'}
+      dismissible={true}
       flowLabel="Deposit"
       currentStep={indicatorStep}
       status={indicatorStatus}
@@ -365,6 +374,7 @@ export function ShieldModal() {
           fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
           isSubmitting={isSubmitting}
+          duplicateWarning={duplicateWarning}
           onBack={() => setStep('input')}
           onConfirm={handleSubmit}
         />
@@ -376,6 +386,11 @@ export function ShieldModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          primaryLabel={
+            errorAtStep === 'review' || (record != null && canRetryTx(record))
+              ? 'Try again'
+              : 'Start over'
+          }
           onRetry={
             errorAtStep === 'review'
               ? () => {
@@ -383,16 +398,25 @@ export function ShieldModal() {
                   setErrorAtStep(undefined)
                   setStep('review')
                 }
-              : () => {
-                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
-                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
-                  // the user on the error step with the honest error + explorer link, not flip to a
-                  // stuck spinner — that was the P0-4 no-op bug.
-                  setErrorAtStep(undefined)
-                  void activeTx?.retry()?.then((accepted) => {
-                    if (accepted) setStep('progress')
-                  })
-                }
+              : record != null && canRetryTx(record)
+                ? () => {
+                    // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                    // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                    // the user on the error step with the honest error + explorer link, not flip to a
+                    // stuck spinner — that was the P0-4 no-op bug.
+                    setErrorAtStep(undefined)
+                    void activeTx?.retry()?.then((accepted) => {
+                      if (accepted) setStep('progress')
+                    })
+                  }
+                : () => {
+                    // S-M3: build-proof / FEE_EXPIRED / DUPLICATE_TX failures aren't retryable in
+                    // place; return to the input step (form state preserved) so the user can start a
+                    // fresh transaction instead of clicking a dead "Try again".
+                    setSubmitError(null)
+                    setErrorAtStep(undefined)
+                    setStep('input')
+                  }
           }
         />
       )}

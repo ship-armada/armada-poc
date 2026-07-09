@@ -50,6 +50,20 @@ export function isTerminalState(state: TxExecutionState): boolean {
   return (TERMINAL_STATES as ReadonlyArray<string>).includes(state)
 }
 
+/**
+ * Sort key for history ordering (T-L3). Terminal records anchor at `createdAt` so a row whose
+ * `updatedAt` was bumped by a late history-recovery reconcile (a week-old tx re-confirmed from
+ * chain) doesn't leap above newer activity. In-flight records use `updatedAt` so they bubble as
+ * their stage advances. Consumers sort descending: `(a, b) => historySortTime(b) - historySortTime(a)`.
+ */
+export function historySortTime(record: {
+  executionState: TxExecutionState
+  createdAt: number
+  updatedAt: number
+}): number {
+  return isTerminalState(record.executionState) ? record.createdAt : record.updatedAt
+}
+
 /* Stage unions — every TxKind declares its own sequence. Adding a stage means
  * adding to the union AND to the lifecycle definition in `lifecycles.ts`. */
 
@@ -313,6 +327,13 @@ export type TxErrorCode =
   | 'RPC_ERROR'
   | 'USER_REJECTED'
   | 'INTERRUPTED'
+  // The relayer rejected the proof's baked-in fee quote (expired / too low / insufficient). The
+  // cacheId + fee are frozen into the proof, so retrying re-POSTs the same doomed quote — only a
+  // fresh transaction recovers. Retry is gated off for this code (S-H1).
+  | 'FEE_EXPIRED'
+  // The relayer already has this transaction (HTTP 409). It WAS submitted; recovery is to fetch
+  // the hash via /status and resume watching rather than surface a failure (S-H2 / T-M3).
+  | 'DUPLICATE_TX'
   | 'CANCELLED'
   | 'DISMISSED'
   | 'OTHER'
@@ -384,6 +405,13 @@ export interface ArtifactsShield extends ArtifactsCommon {
   permitV?: number
   permitR?: `0x${string}`
   permitS?: `0x${string}`
+  /**
+   * Direct-path approve leg (S-M4). `approveTxHash` is set after the USDC `approve` confirms;
+   * `approveSkipped` is set when allowance already covered the amount (no approve prompt). Drives
+   * the WalletConfirmList checklist (`shieldWalletSteps`). Absent on the gasless path.
+   */
+  approveTxHash?: `0x${string}`
+  approveSkipped?: boolean
 }
 
 /**
@@ -429,6 +457,9 @@ export interface ArtifactsShieldXchain extends ArtifactsXchain {
   permitV?: number
   permitR?: `0x${string}`
   permitS?: `0x${string}`
+  /** Direct-path approve leg (S-M4) — see ArtifactsShield. Absent on the gasless path. */
+  approveTxHash?: `0x${string}`
+  approveSkipped?: boolean
 }
 
 export type ArtifactsFor<K extends TxKind> =

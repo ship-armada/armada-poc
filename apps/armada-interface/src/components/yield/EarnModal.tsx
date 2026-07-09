@@ -16,7 +16,9 @@ import { formatUsdcAmount, parseUsdcInput } from '@/lib/format'
 import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
+import { canRetryTx } from '@/lib/tx/executor'
 import { sharesToUsdc } from '@/lib/yield'
+import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
   overlayIndicatorStep,
   overlayIndicatorStatus,
@@ -214,6 +216,15 @@ export function EarnModal() {
       const broadcasterFeeAmount = BigInt(activeQuote.fees.crossContract)
       const broadcasterRailgunAddress = activeQuote.broadcasterRailgunAddress
       if (tab === 'add') {
+        // S-M5: a deposit unshields amount + fee from the shielded balance (fee-on-top), so
+        // re-validate against the FRESH fee before proof gen. Wallet-override pays native gas
+        // separately, so no shielded fee applies there. (Withdraw takes its fee from the redeemed
+        // output, not the share balance — no fee-on-top check needed.)
+        assertSpendableForFeeOnTop({
+          amount,
+          fee: effectiveUseWalletOverride ? 0n : broadcasterFeeAmount,
+          balance: max,
+        })
         setSubmittedKind('yield-deposit')
         submittedId = await txDeposit.submit({
           amount,
@@ -261,7 +272,7 @@ export function EarnModal() {
     <DepositOverlayShell
       open
       onClose={close}
-      dismissible={step !== 'progress'}
+      dismissible={true}
       flowLabel="Earn"
       currentStep={overlayIndicatorStep(step)}
       status={overlayIndicatorStatus(step)}
@@ -335,6 +346,11 @@ export function EarnModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          primaryLabel={
+            errorAtStep === 'review' || (record != null && canRetryTx(record))
+              ? 'Try again'
+              : 'Start over'
+          }
           onRetry={
             errorAtStep === 'review'
               ? () => {
@@ -342,16 +358,25 @@ export function EarnModal() {
                   setErrorAtStep(undefined)
                   setStep('review')
                 }
-              : () => {
-                  // Only advance to the progress step if the executor ACCEPTS the retry (marks the
-                  // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
-                  // the user on the error step with the honest error + explorer link, not flip to a
-                  // stuck spinner — that was the P0-4 no-op bug.
-                  setErrorAtStep(undefined)
-                  void activeTx?.retry()?.then((accepted) => {
-                    if (accepted) setStep('progress')
-                  })
-                }
+              : record != null && canRetryTx(record)
+                ? () => {
+                    // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                    // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                    // the user on the error step with the honest error + explorer link, not flip to a
+                    // stuck spinner — that was the P0-4 no-op bug.
+                    setErrorAtStep(undefined)
+                    void activeTx?.retry()?.then((accepted) => {
+                      if (accepted) setStep('progress')
+                    })
+                  }
+                : () => {
+                    // S-M3: build-proof / FEE_EXPIRED / DUPLICATE_TX failures aren't retryable in
+                    // place; return to the input step (form state preserved) so the user can start a
+                    // fresh transaction instead of clicking a dead "Try again".
+                    setSubmitError(null)
+                    setErrorAtStep(undefined)
+                    setStep('input')
+                  }
           }
         />
       )}

@@ -31,7 +31,7 @@ vi.mock('../cache', () => ({
 
 import { putTxIfFresh, putTx, loadAllTx, deleteTx } from './storage'
 import { setUnlocked, clear } from '../railgun/keyManager'
-import { isEncryptedBlob, wrap } from '../crypto/cache-cipher'
+import { isEncryptedBlob, unwrap, wrap } from '../crypto/cache-cipher'
 import type { TxRecord } from './types'
 
 function fixture(id: string, walletId: string, updatedSeq: number = 1): TxRecord<'shield'> {
@@ -106,6 +106,37 @@ describe('encrypted writes', () => {
     const b = hoisted.store.get('tx-1') as { nonce: string; ciphertext: string }
     expect(a.nonce).not.toBe(b.nonce)
     expect(a.ciphertext).not.toBe(b.ciphertext)
+  })
+
+  it('persists a terminal write even when the key is zeroized mid-write (W-5)', async () => {
+    // Repro of the account-switch / manual-lock race: cancelAllRunning kicks the terminal-record
+    // persist (fire-and-forget) while still unlocked, then lockWallet synchronously zeroizes the
+    // history key before the persist's async write runs. If the encryption happens AFTER the OCC
+    // read's await, getHistoryEncryptionKey() throws at write time and the cancelled/dismissed
+    // state is silently lost → the record later resurfaces as INTERRUPTED. The fix encrypts the
+    // envelope up-front (before the await), so the write survives the zeroize.
+    unlock('rg-1', 7)
+    const key = makeKey(7) // same bytes the keyManager holds; a separate, non-zeroized buffer
+    const record = {
+      ...fixture('tx-1', 'rg-1', 3),
+      executionState: 'cancelled' as const,
+      stage: 'submit-relayer' as const,
+    }
+    // Zeroize the keyManager DURING the OCC read's await — exactly when lockWallet would.
+    hoisted.cacheGet.mockImplementationOnce(async () => {
+      clear()
+      return undefined
+    })
+
+    await expect(putTxIfFresh(record)).resolves.toBe(true)
+
+    const stored = hoisted.store.get('tx-1')
+    expect(isEncryptedBlob(stored)).toBe(true)
+    // The persisted envelope decrypts back to the cancelled record under the original key.
+    expect(unwrap<TxRecord>(stored as never, key)).toMatchObject({
+      id: 'tx-1',
+      executionState: 'cancelled',
+    })
   })
 
   it('throws synchronously when the wallet is locked (no plaintext on disk)', async () => {
@@ -216,14 +247,15 @@ describe('encrypted reads (loadAllTx)', () => {
     expect(records.map(r => r.id)).toEqual(['mine'])
   })
 
-  it('sorts records by updatedAt desc', async () => {
+  it('sorts terminal records by createdAt desc, ignoring a bumped updatedAt (T-L3)', async () => {
     unlock('rg-1')
-    // updatedAt is set from id.length * 1000 in our fixture, so longer ids → later.
-    await putTx(fixture('a', 'rg-1'))      // updatedAt 1000
-    await putTx(fixture('aa', 'rg-1'))     // updatedAt 2000
-    await putTx(fixture('aaaa', 'rg-1'))   // updatedAt 4000
+    // All terminal (fixture default = completed). createdAt drives order; an `updatedAt` bumped by
+    // a late history-recovery reconcile must NOT float an old row to the top.
+    await putTx({ ...fixture('old', 'rg-1'), createdAt: 1_000, updatedAt: 99_000 }) // reconciled late
+    await putTx({ ...fixture('mid', 'rg-1'), createdAt: 2_000, updatedAt: 2_000 })
+    await putTx({ ...fixture('new', 'rg-1'), createdAt: 3_000, updatedAt: 3_000 })
     const records = await loadAllTx('rg-1')
-    expect(records.map(r => r.id)).toEqual(['aaaa', 'aa', 'a'])
+    expect(records.map(r => r.id)).toEqual(['new', 'mid', 'old'])
   })
 })
 

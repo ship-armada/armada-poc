@@ -7,6 +7,7 @@ import { getNetworkConfig } from '@/config/network'
 import { wagmiConfig } from '@/config/wagmi'
 import { ensureChain } from '@/lib/network-switch'
 import { waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
   getRailgunAddress as kmGetRailgunAddress,
   getSdkEncryptionKey as kmGetSdkEncryptionKey,
@@ -15,7 +16,8 @@ import {
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
-import { submitRelay, RelayerError } from '@/lib/relayer'
+import { submitRelay } from '@/lib/relayer'
+import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
@@ -47,7 +49,7 @@ export const yieldWithdrawHandler: StageHandler<'yield-withdraw'> = {
       }
     } catch (err) {
       if (ctx.signal.aborted) return
-      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Vault withdrawal failed.', record.artifacts.sourceTxHash)))
+      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Vault withdrawal failed.', record.artifacts.sourceTxHash, getNetworkConfig().hub.chainId)))
     }
   },
 }
@@ -138,16 +140,30 @@ async function runSubmitAndConfirm(
     if (!hash) {
       await ensureChain(hubChainId)
       if (ctx.signal.aborted) throw new Error('cancelled')
+      // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+      // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+      const sender = record.walletContext.evmAddress
+      if (sender) {
+        await simulateOrThrow({
+          to: yieldTx.to as `0x${string}`,
+          data: yieldTx.data as `0x${string}`,
+          value: BigInt(yieldTx.value),
+          account: sender as `0x${string}`,
+          chainId: hubChainId,
+        })
+        if (ctx.signal.aborted) throw new Error('cancelled')
+      }
       hash = await sendTransaction(wagmiConfig, {
         to: yieldTx.to as `0x${string}`,
         data: yieldTx.data as `0x${string}`,
         value: BigInt(yieldTx.value),
+        chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, hash, ctx)
       if (broadcast.dismissed) return
       broadcastRecord = broadcast.record
     }
-    await waitForReceiptOrFail({ hash, signal: ctx.signal })
+    await waitForReceiptOrFail({ hash, signal: ctx.signal, chainId: hubChainId })
     if (kmIsUnlocked()) {
       void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
     }
@@ -169,14 +185,14 @@ async function runSubmitAndConfirm(
           to: yieldTx.to,
           data: yieldTx.data,
           feesCacheId: record.meta.feeCacheId,
+          idempotencyKey: record.id,
         },
         ctx.signal,
       )
     } catch (err) {
-      if (err instanceof RelayerError) {
-        track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
-      }
-      throw err
+      // T-M3/S-M1: recover an already-broadcast hash from a DUPLICATE_TX so we resume polling
+      // instead of failing a tx the relayer already sent; non-recoverable errors rethrow.
+      submitResponse = handleRelaySubmitError(err, { id: record.id, kind: record.kind })
     }
 
     track('tx.relayer.submitted', { id: record.id, kind: record.kind })

@@ -2,7 +2,7 @@
 // ABOUTME: Rendered inside History's expanded detail and inside ProgressStep (cancel only). Operates on TxRecord directly — no `useTx` subscription needed.
 
 import { Button } from '@armada/ui'
-import { cancelTx, canRetryTx, dismissTx, retryTx } from '@/lib/tx/executor'
+import { cancelTx, canRetryTx, dismissTx, getIsLeader, retryTx } from '@/lib/tx/executor'
 import type { TxRecord } from '@/lib/tx/types'
 import styles from './TxActions.module.css'
 
@@ -29,6 +29,13 @@ function hasBroadcast(record: TxRecord): boolean {
 }
 
 export function TxActions({ record, variant = 'both' }: TxActionsProps) {
+  // Follower tabs can't drive the executor — handlers run only on the leader. A follower Retry
+  // would wedge the record in `retrying` (retryTx refuses, but the dead button is worse than
+  // absent), and a follower Cancel/Stop races the leader's authoritative state. Hide all actions;
+  // the follower stays a passive observer. In v1 a follower never gains leadership (no failover),
+  // so this is stable. (T-H3)
+  if (!getIsLeader()) return null
+
   const isInFlight = PRE_TERMINAL_STATES.has(record.executionState)
   const canRetry = variant === 'both' && canRetryTx(record)
 

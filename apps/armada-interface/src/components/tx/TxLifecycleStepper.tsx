@@ -9,7 +9,7 @@ import { TechnicalDetailsDisclosure } from '../ui/TechnicalDetailsDisclosure'
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { stepperEta } from '@/lib/tx/eta'
 import { nowAtom } from '@/state/time'
-import { getChainById } from '@/config/network'
+import { getChainById, getNetworkConfig } from '@/config/network'
 import type { TxRecord, TxExecutionState } from '@/lib/tx/types'
 import styles from './TxLifecycleStepper.module.css'
 
@@ -210,7 +210,16 @@ function TxLink({ hash, chainId }: { hash: `0x${string}`; chainId: number }) {
   )
 }
 
-function destinationChainIdFor(record: TxRecord): number | undefined {
+/**
+ * Which chain the `destTxHash` lives on, so its explorer link points to the right chain (T-L5).
+ * `unshield-xchain` delivers to `meta.toChainId`; `shield-xchain` mints on the HUB (its burn is on
+ * the client chain). Without the shield-xchain case the link fell back to the SOURCE chain — a dead
+ * link. Exported for unit testing.
+ */
+export function destinationChainIdFor(record: TxRecord): number | undefined {
+  if (record.kind === 'shield-xchain') {
+    return getNetworkConfig().hub.chainId
+  }
   if (record.kind === 'unshield-xchain') {
     return (record.meta as { toChainId?: number }).toChainId
   }

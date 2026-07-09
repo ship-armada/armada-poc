@@ -3,7 +3,8 @@
 
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { TxLifecycleStepper } from './TxLifecycleStepper'
+import { TxLifecycleStepper, destinationChainIdFor } from './TxLifecycleStepper'
+import { getNetworkConfig } from '@/config/network'
 import type { TxRecord } from '@/lib/tx/types'
 
 function shieldRecord(overrides?: Partial<TxRecord<'shield'>>): TxRecord<'shield'> {
@@ -119,5 +120,21 @@ describe('<TxLifecycleStepper>', () => {
   it('shows no live ETA for a terminal record (T-L4)', () => {
     render(<TxLifecycleStepper record={shieldRecord({ executionState: 'completed', stage: 'hub-confirmed', createdAt: 0 })} />)
     expect(screen.queryByText(/Usually takes|Taking longer|elapsed/)).toBeNull()
+  })
+})
+
+describe('destinationChainIdFor (T-L5)', () => {
+  it('returns the hub chain for shield-xchain (mints on the hub) — not the source chain', () => {
+    const rec = { kind: 'shield-xchain', meta: {} } as unknown as TxRecord
+    expect(destinationChainIdFor(rec)).toBe(getNetworkConfig().hub.chainId)
+  })
+
+  it('returns meta.toChainId for unshield-xchain', () => {
+    const rec = { kind: 'unshield-xchain', meta: { toChainId: 31338 } } as unknown as TxRecord
+    expect(destinationChainIdFor(rec)).toBe(31338)
+  })
+
+  it('returns undefined for same-chain kinds (link falls back to the source chain)', () => {
+    expect(destinationChainIdFor({ kind: 'shield', meta: {} } as unknown as TxRecord)).toBeUndefined()
   })
 })

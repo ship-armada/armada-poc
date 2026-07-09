@@ -20,7 +20,6 @@ One concern per hook. Hooks own the React lifecycle (effects, subscriptions, tim
 | `useTx({ kind })` | Per-tx submit/track/retry/cancel. Multi-instance — each call owns a ulid. | Working — all kinds run end-to-end via registered handlers; submit/retry/cancel wired |
 | `useTxHistory()` | Hydrates `txListAtom` from IDB on `activeRailgunWalletIdAtom` change (V2 Phase 6); clears the atom on lock. Only hydrates records belonging to the active walletId. | Working |
 | `useTxResume()` | On unlock (leader tab only), calls `executor.resumeForWallet(walletId)` — re-attaches watchers to already-broadcast txs (has `sourceTxHash`) and fails pre-broadcast interruptions as `INTERRUPTED`. Idempotent per (walletId, session). Mount once at App root. | Working |
-| `useCctpAttestation(record)` | Polls Iris for a specific xchain tx record. | Stub — **UNUSED** (no consumers). The xchain handlers poll the destination balance directly (`features/unshield-xchain/scan.ts`); slated for removal in a cleanup pass. |
 
 ## Conventions
 

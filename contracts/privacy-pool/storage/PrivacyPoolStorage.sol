@@ -38,6 +38,16 @@ abstract contract PrivacyPoolStorage {
     // MODULE ADDRESSES
     // ══════════════════════════════════════════════════════════════════════════
 
+    /// @dev The four module addresses below are set once in initialize() and are INTENTIONALLY
+    ///      IMMUTABLE — there is deliberately no setter for any of them. Each module holds fund
+    ///      custody (Shield/Transact) or proof/tree logic (Verifier/Merkle); a swappable module
+    ///      would let the owner redirect funds or accept forged proofs, reintroducing the trust
+    ///      assumption rejected in issue #55. Mutable configuration lives in the setters on
+    ///      PrivacyPool (fees, treasury, privileged callers, hook routers, fee module, pause
+    ///      controller). NOTE: the VerifierModule contract is immutable, but its verification KEYS
+    ///      remain owner-settable via setVerificationKey (needed for circuit/key upgrades) — that
+    ///      key-custody risk is tracked separately in issue #349. See .claude/ARCHITECTURE_NOTES.md.
+
     /// @notice Address of ShieldModule implementation
     address public shieldModule;
 

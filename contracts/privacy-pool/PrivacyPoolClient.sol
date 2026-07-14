@@ -146,7 +146,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         // Encode shield payload and execute CCTP burn in helper (avoids stack-too-deep)
         _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, destinationCaller, integrator);
 
-        emit CrossChainShieldInitiated(msg.sender, amount, npk, 0);
+        emit CrossChainShieldInitiated(amount, npk, 0);
 
         return 0;
     }

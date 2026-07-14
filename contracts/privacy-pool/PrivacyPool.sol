@@ -34,6 +34,10 @@ import "../railgun/logic/Snark.sol";
 contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     using SafeERC20 for IERC20;
 
+    /// @notice Maximum settable shield fee in basis points (10%), matching ArmadaFeeModule.MAX_BPS.
+    /// @dev Bounds setShieldFee so a single mis-proposal cannot brick shields by consuming all deposited value.
+    uint256 public constant MAX_SHIELD_FEE_BPS = 1000;
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -278,7 +282,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      */
     function setShieldFee(uint120 _feeBps) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
-        require(_feeBps <= 10000, "PrivacyPool: Fee too high");
+        require(_feeBps <= MAX_SHIELD_FEE_BPS, "PrivacyPool: Fee too high");
         shieldFee = _feeBps;
     }
 

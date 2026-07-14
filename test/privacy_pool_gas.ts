@@ -154,6 +154,12 @@ describe("Privacy Pool Gas Profiling", function () {
     await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
     await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.client, ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32));
     await clientTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32));
+
+    // Pin the CCTP destinationCaller (issue #64). This gas benchmark relays by calling
+    // receiveMessage directly from `relayer` (no CCTPHookRouter), so the pinned destinationCaller
+    // must equal the relayer for the mock's `destinationCaller == msg.sender` check to pass.
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(relayerAddress, 32));
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(relayerAddress, 32));
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -367,9 +373,7 @@ describe("Privacy Pool Gas Profiling", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("cctp-key"));
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        amount, 0, 0, npk, encBundle, shieldKey, ethers.ZeroHash
-      ,
-      ethers.ZeroAddress);
+        amount, 0, 0, npk, encBundle, shieldKey, ethers.ZeroAddress);
       const receipt = await tx.wait();
       recordGas("crossChainShield (client-side)", Number(receipt!.gasUsed));
 
@@ -431,7 +435,6 @@ describe("Privacy Pool Gas Profiling", function () {
         txData,
         DOMAINS.client,
         bobAddr,
-        ethers.ZeroHash,
         0 // maxFee
       );
       const receipt = await tx.wait();

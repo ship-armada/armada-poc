@@ -10,7 +10,6 @@ import {
 
 const USER = '0x1111111111111111111111111111111111111111' as const
 const INTEGRATOR = '0x2222222222222222222222222222222222222222' as const
-const DEST_CALLER = ('0x' + 'cc'.repeat(32)) as `0x${string}`
 
 function baseRequest() {
   return {
@@ -33,7 +32,6 @@ function baseRequest() {
       ] as const,
       shieldKey: ('0x' + '44'.repeat(32)) as `0x${string}`,
     },
-    destinationCaller: DEST_CALLER,
     integrator: INTEGRATOR,
   }
 }
@@ -41,14 +39,14 @@ function baseRequest() {
 describe('buildGaslessCrossChainShieldCalldata', () => {
   it('pins the gaslessCrossChainShield selector', () => {
     // WHY: the relayer's gasless-fee-verifier.ts hardcodes the gaslessCrossChainShield selector
-    // (`0xa608b736`, the first 4 bytes of keccak256("gaslessCrossChainShield((address,uint256,
+    // (`0x742d0b54`, the first 4 bytes of keccak256("gaslessCrossChainShield((address,uint256,
     // uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,
-    // bytes32,address))")). A wrapper-signature refactor (arg reorder, struct rename) would
-    // change the selector and silently produce calldata the relayer rejects as INVALID_DATA.
-    // Hardcoding rather than recomputing so the test fails LOUDLY on drift instead of silently
-    // agreeing with whatever the new shape became.
+    // address))")). A wrapper-signature refactor (arg reorder, struct rename) would change the
+    // selector and silently produce calldata the relayer rejects as INVALID_DATA. Hardcoding
+    // rather than recomputing so the test fails LOUDLY on drift instead of silently agreeing with
+    // whatever the new shape became. (destinationCaller was removed per issue #64 — pinned on-chain.)
     const data = buildGaslessCrossChainShieldCalldata(baseRequest())
-    expect(slice(data, 0, 4)).toBe('0xa608b736')
+    expect(slice(data, 0, 4)).toBe('0x742d0b54')
   })
 
   it('round-trips through viem decoder with all PermitInput + CrossChainParams args intact', () => {
@@ -78,18 +76,14 @@ describe('buildGaslessCrossChainShieldCalldata', () => {
     expect(dest.npk).toBe(input.shieldRequest.npk)
     expect(dest.encryptedBundle).toEqual(input.shieldRequest.encryptedBundle)
     expect(dest.shieldKey).toBe(input.shieldRequest.shieldKey)
-    expect(dest.destinationCaller).toBe(input.destinationCaller)
     expect(dest.integrator).toBe(input.integrator)
   })
 
-  it('zero destinationCaller (any relayer) and standard finality threshold encode cleanly', () => {
-    // WHY: a permissive destinationCaller `0x00…00` IS a legal CCTP input (lets any relayer
-    // call receiveMessage). The default is the hub HookRouter, but local-mode deployments may
-    // not have one configured. Pin that the builder doesn't reject the zero-bytes32 input —
-    // viem treats bytes32 as fixed-size and would throw on a malformed value.
+  it('standard finality threshold (0) encodes cleanly', () => {
+    // WHY: minFinalityThreshold 0 is the STANDARD default (the contract resolves 0 → STANDARD).
+    // Pin that the builder encodes the zero value cleanly rather than rejecting it.
     const input = {
       ...baseRequest(),
-      destinationCaller: ('0x' + '00'.repeat(32)) as `0x${string}`,
       minFinalityThreshold: 0,
     }
     const data = buildGaslessCrossChainShieldCalldata(input)
@@ -98,7 +92,6 @@ describe('buildGaslessCrossChainShieldCalldata', () => {
       data,
     })
     const [, dest] = decoded.args
-    expect(dest.destinationCaller).toBe(input.destinationCaller)
     expect(dest.minFinalityThreshold).toBe(0)
   })
 })

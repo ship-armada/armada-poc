@@ -482,6 +482,16 @@ library BurnMessageV2 {
         require(messageBody.length >= MIN_BURN_MESSAGE_LENGTH, "BurnMessageV2: message too short");
         return uint256(bytes32(messageBody[MAX_FEE_OFFSET:MAX_FEE_OFFSET + 32]));
     }
+
+    /**
+     * @notice Get the messageSender from a burn message
+     * @dev The address that called depositForBurn on the source chain (as bytes32). Distinct from
+     *      the MessageV2 envelope sender, which is the source TokenMessenger.
+     */
+    function getMessageSender(bytes calldata messageBody) internal pure returns (bytes32) {
+        require(messageBody.length >= MIN_BURN_MESSAGE_LENGTH, "BurnMessageV2: message too short");
+        return bytes32(messageBody[MESSAGE_SENDER_OFFSET:MESSAGE_SENDER_OFFSET + 32]);
+    }
 }
 
 // ============================================================================

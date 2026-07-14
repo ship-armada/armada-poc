@@ -644,6 +644,112 @@ describe("Privacy Pool Integration", function () {
     });
   });
 
+  describe("Cross-Chain Source Pool Authentication (#366)", function () {
+    // WHY: The CCTP receive handlers must authenticate the *source pool* — the burn message's
+    // messageSender (the depositForBurn caller on the source chain), NOT the envelope sender (which is
+    // the source TokenMessenger). Without this, cross-chain shield/unshield authenticity rests entirely
+    // on Circle's attestation with no on-chain backstop, and shields from unconfigured domains or
+    // arbitrary source contracts are accepted. Legitimate flows are covered by the tests above; these
+    // exercise the rejection paths.
+    const SRC_AUTH_AMOUNT = ethers.parseUnits("10", 6);
+    const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+    const clientBytes32 = () => ethers.zeroPadValue(clientAddress, 32);
+
+    // Produce a genuine cross-chain shield message from the client pool. Its burn messageSender is the
+    // client pool (the depositForBurn caller), so a correctly-configured hub accepts it — each test then
+    // flips the hub's remotePools config to trip the auth revert while relaying this same message.
+    async function buildClientShieldMessage(): Promise<string> {
+      await clientUsdc.mint(aliceAddress, SRC_AUTH_AMOUNT);
+      await clientUsdc.connect(alice).approve(clientAddress, SRC_AUTH_AMOUNT);
+      const npk = ethers.zeroPadValue(
+        ethers.toBeHex(BigInt(ethers.keccak256(ethers.toUtf8Bytes("src-auth-npk"))) % SNARK_SCALAR_FIELD),
+        32,
+      );
+      const encryptedBundle: [string, string, string] = [
+        ethers.keccak256(ethers.toUtf8Bytes("enc1")),
+        ethers.keccak256(ethers.toUtf8Bytes("enc2")),
+        ethers.keccak256(ethers.toUtf8Bytes("enc3")),
+      ];
+      const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("src-auth-key"));
+      const tx = await privacyPoolClient.connect(alice).crossChainShield(
+        SRC_AUTH_AMOUNT, 0, 0, npk, encryptedBundle, shieldKey, ethers.ZeroHash, ethers.ZeroAddress,
+      );
+      const receipt = await tx.wait();
+      for (const log of receipt!.logs) {
+        try {
+          const parsed = clientMessageTransmitter.interface.parseLog(log);
+          if (parsed?.name === "MessageSent") return parsed.args.message;
+        } catch {
+          // Not from this contract
+        }
+      }
+      throw new Error("MessageSent event not found");
+    }
+
+    afterEach(async function () {
+      // Restore the correct remote pool so later tests are unaffected.
+      await privacyPool.setRemotePool(DOMAINS.client, clientBytes32());
+    });
+
+    // WHY: The hub must not accept cross-chain shields from a domain with no configured remote pool.
+    it("hub rejects cross-chain shield from an unconfigured source domain", async function () {
+      const message = await buildClientShieldMessage();
+      await privacyPool.setRemotePool(DOMAINS.client, ethers.ZeroHash); // deauthorize the domain
+      await expect(
+        hubHookRouter.connect(relayer).relayWithHook(message, "0x"),
+      ).to.be.revertedWith("PrivacyPool: unconfigured source domain");
+    });
+
+    // WHY: Core #366 defense — even a CCTP-delivered shield must originate from our deployed client
+    // pool. Configuring a different remote pool makes the legit client-pool messageSender no longer
+    // match, so the shield is rejected.
+    it("hub rejects cross-chain shield from an untrusted source pool", async function () {
+      const message = await buildClientShieldMessage();
+      await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(bobAddress, 32)); // wrong pool
+      await expect(
+        hubHookRouter.connect(relayer).relayWithHook(message, "0x"),
+      ).to.be.revertedWith("PrivacyPool: untrusted source pool");
+    });
+
+    // WHY: Client mirror — an unshield whose burn messageSender is not the configured hubPool must be
+    // rejected. Crafted directly (the source-pool check fires before any payout, so no proof/USDC is
+    // needed); the client TokenMessenger is impersonated so the caller check passes.
+    it("client rejects cross-chain unshield from an untrusted source pool", async function () {
+      const coder = ethers.AbiCoder.defaultAbiCoder();
+      // CCTPPayload{ messageType: UNSHIELD(1), data: "0x" } — data unused, the auth check reverts first.
+      const hookData = coder.encode(["tuple(uint8 messageType, bytes data)"], [[1, "0x"]]);
+      // BurnMessageV2 with messageSender = bob (NOT the hubPool).
+      const messageBody = ethers.solidityPacked(
+        ["uint32", "bytes32", "bytes32", "uint256", "bytes32", "uint256", "uint256", "uint256", "bytes"],
+        [
+          1,                                                    // version
+          ethers.zeroPadValue(await clientUsdc.getAddress(), 32), // burnToken
+          ethers.zeroPadValue(clientAddress, 32),               // mintRecipient
+          SRC_AUTH_AMOUNT,                                      // amount
+          ethers.zeroPadValue(bobAddress, 32),                 // messageSender (untrusted)
+          0,                                                   // maxFee
+          0,                                                   // feeExecuted
+          0,                                                   // expirationBlock
+          hookData,
+        ],
+      );
+
+      const tmAddress = await clientTokenMessenger.getAddress();
+      // Fund via setBalance — the mock TokenMessenger has no receive()/fallback to accept a transfer.
+      await ethers.provider.send("hardhat_setBalance", [tmAddress, "0x56BC75E2D63100000"]); // 100 ETH
+      const tmSigner = await ethers.getImpersonatedSigner(tmAddress);
+
+      await expect(
+        privacyPoolClient.connect(tmSigner).handleReceiveFinalizedMessage(
+          DOMAINS.hub,      // remoteDomain (matches hubDomain)
+          ethers.ZeroHash,  // envelope sender (unused for auth)
+          2000,             // finalityThresholdExecuted = STANDARD
+          messageBody,
+        ),
+      ).to.be.revertedWith("PrivacyPoolClient: untrusted source pool");
+    });
+  });
+
   describe("Verification Keys", function () {
     it("should have verification keys loaded", async function () {
       // Check that verification keys are set for common circuit configurations

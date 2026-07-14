@@ -8,15 +8,21 @@ import type { TxKind } from '@/lib/tx/types'
 
 export type { NativeGasEstimate }
 
-/** Conservative gas units per flow for fee tooltip display. */
+/**
+ * Gas units per flow for fee tooltip display. The five same-chain / yield flows are set from measured
+ * Sepolia `gasUsed` plus ~10-15% headroom (see issue #331). The two -xchain flows are unmeasured and
+ * kept at their prior conservative estimates.
+ * TODO(#331): set shield-xchain / unshield-xchain from real Sepolia gasUsed once measured
+ * (relayer-side re-tune tracked in ship-armada/armada-relayer#16).
+ */
 const GAS_UNITS: Partial<Record<TxKind, bigint>> = {
-  shield: 450_000n,
+  shield: 1_000_000n,
   'shield-xchain': 600_000n,
-  'unshield-local': 550_000n,
+  'unshield-local': 1_400_000n,
   'unshield-xchain': 650_000n,
-  'transfer-shielded': 550_000n,
-  'yield-deposit': 500_000n,
-  'yield-withdraw': 500_000n,
+  'transfer-shielded': 1_300_000n,
+  'yield-deposit': 2_000_000n,
+  'yield-withdraw': 2_000_000n,
 }
 
 export function useNativeGasEstimate(

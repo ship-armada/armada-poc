@@ -608,6 +608,7 @@ describe("Privacy Pool Integration", function () {
         DOMAINS.client,
         bobAddress,         // finalRecipient on client chain
         MAX_FEE,
+        ethers.ZeroHash,
       );
       const receipt = await tx.wait();
 

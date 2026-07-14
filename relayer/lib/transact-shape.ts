@@ -31,13 +31,14 @@ export const LEND_AND_SHIELD_SELECTOR = "0xf2987ad1";
 export const REDEEM_AND_SHIELD_SELECTOR = "0x0793b70e";
 
 /**
- * PrivacyPool.atomicCrossChainUnshield(Transaction, uint32, address, uint256) — A5 cross-chain
- * unshield. The Transaction struct burns shielded USDC into the pool's own EOA and the surrounding
- * wrapper args drive the CCTP burn-and-mint to a different chain. Same single-Transaction-in-arg-0
- * shape as the yield wrappers, so the synthetic-transact rewrite applies here too. The CCTP
- * destinationCaller is pinned on-chain (issue #64), so it is no longer a call argument.
+ * PrivacyPool.atomicCrossChainUnshield(Transaction, uint32, address, uint256, bytes32) — A5
+ * cross-chain unshield. The Transaction struct burns shielded USDC into the pool's own EOA and the
+ * surrounding wrapper args drive the CCTP burn-and-mint to a different chain. Same
+ * single-Transaction-in-arg-0 shape as the yield wrappers, so the synthetic-transact rewrite applies
+ * here too. The CCTP destinationCaller is pinned on-chain (issue #64); the trailing bytes32 is an
+ * opaque uniqueNonce for off-chain delivery matching (issue #287).
  */
-export const ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR = "0xb8843aaa";
+export const ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR = "0x2bcba06a";
 
 /** The wrappers that need synthetic-transact re-encoding before the SDK helper can decode. */
 export const WRAPPER_SELECTORS: ReadonlySet<string> = new Set([
@@ -102,5 +103,5 @@ export const TRANSACT_ABI: readonly string[] = [
 export const WRAPPER_ABIS: readonly string[] = [
   `function lendAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext)`,
   `function redeemAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext)`,
-  `function atomicCrossChainUnshield(${TRANSACTION_STRUCT} _transaction, uint32 destinationDomain, address finalRecipient, uint256 maxFee)`,
+  `function atomicCrossChainUnshield(${TRANSACTION_STRUCT} _transaction, uint32 destinationDomain, address finalRecipient, uint256 maxFee, bytes32 uniqueNonce)`,
 ];

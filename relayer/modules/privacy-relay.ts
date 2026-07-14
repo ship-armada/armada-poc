@@ -27,6 +27,12 @@ import {
   GASLESS_CROSS_CHAIN_SHIELD_SELECTOR,
   verifyGaslessFee,
 } from "./gasless-fee-verifier";
+import {
+  TRANSACT_SELECTOR,
+  LEND_AND_SHIELD_SELECTOR,
+  REDEEM_AND_SHIELD_SELECTOR,
+  ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR,
+} from "../lib/transact-shape";
 import type { Counters } from "./counters";
 
 // ============ Constants ============
@@ -49,11 +55,15 @@ import type { Counters } from "./counters";
  *   - `gaslessCrossChainShield((permitInput),(dest))` — client `GaslessShieldWrapperClient`.
  *     Fee lives at `permitInput.fee`. Same atomic enforcement on the wrapper side.
  */
+// Selectors are sourced from the shared constants (lib/transact-shape + gasless-fee-verifier) rather
+// than hardcoded literals, so a wrapper-signature change updates the constant and this allowlist in
+// lockstep — no silent drift. (atomicCrossChainUnshield's selector changed with #64 and again with
+// #287; the literal here previously drifted.)
 const ALLOWED_SELECTORS: Record<string, string> = {
-  "0xd8ae136a": "transact",
-  "0xf2987ad1": "lendAndShield",
-  "0x0793b70e": "redeemAndShield",
-  "0xe484d408": "atomicCrossChainUnshield",
+  [TRANSACT_SELECTOR]: "transact",
+  [LEND_AND_SHIELD_SELECTOR]: "lendAndShield",
+  [REDEEM_AND_SHIELD_SELECTOR]: "redeemAndShield",
+  [ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR]: "atomicCrossChainUnshield",
   [GASLESS_SHIELD_SELECTOR]: "gaslessShield",
   [GASLESS_CROSS_CHAIN_SHIELD_SELECTOR]: "gaslessCrossChainShield",
 };

@@ -492,7 +492,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await privacyPool.atomicCrossChainUnshield(
-        tx, DOMAINS.client, bobAddress, 0
+        tx, DOMAINS.client, bobAddress, 0, ethers.ZeroHash
       );
 
       // Verify nullifier is spent
@@ -539,7 +539,7 @@ describe("Privacy Pool Adversarial", function () {
       await expect(
         privacyPool
           .connect(attacker)
-          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, 0)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, 0, ethers.ZeroHash)
       )
         .to.emit(poolAsTransact, "CrossChainUnshieldInitiated")
         .withArgs(DOMAINS.client, attackerAddress, unshieldAmount, 0);
@@ -551,7 +551,7 @@ describe("Privacy Pool Adversarial", function () {
       await expect(
         privacyPool
           .connect(bob)
-          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, 0)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Note already spent");
     });
   });
@@ -706,7 +706,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Use local unshield");
     });
 
@@ -730,7 +730,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, 0)
+        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Unknown destination");
     });
 
@@ -754,7 +754,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Invalid recipient");
     });
 
@@ -770,7 +770,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Must include unshield");
     });
 
@@ -796,7 +796,7 @@ describe("Privacy Pool Adversarial", function () {
       // maxFee = 100 USDC >> base amount of ~10 USDC
       await expect(
         privacyPool.atomicCrossChainUnshield(
-          tx, DOMAINS.client, bobAddress, ethers.parseUnits("100", 6)
+          tx, DOMAINS.client, bobAddress, ethers.parseUnits("100", 6), ethers.ZeroHash
         )
       ).to.be.revertedWith("TransactModule: maxFee exceeds base");
     });

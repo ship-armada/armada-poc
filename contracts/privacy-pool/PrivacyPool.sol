@@ -166,16 +166,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @return success Always returns true on success (reverts on failure)
      */
     function handleReceiveFinalizedMessage(
-        uint32,
+        uint32 sourceDomain,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPool: Insufficient finality");
-        (sender); // Silence unused variable warning
+        (sender); // envelope sender is the source TokenMessenger; source pool is authenticated in _handleCCTPMessage
 
-        return _handleCCTPMessage(messageBody);
+        return _handleCCTPMessage(sourceDomain, messageBody);
     }
 
     /**
@@ -190,24 +190,25 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @return success Always returns true on success (reverts on failure)
      */
     function handleReceiveUnfinalizedMessage(
-        uint32,
+        uint32 sourceDomain,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
         require(finalityThresholdExecuted >= CCTPFinality.FAST, "PrivacyPool: Finality below minimum");
-        (sender); // Silence unused variable warning
+        (sender); // envelope sender is the source TokenMessenger; source pool is authenticated in _handleCCTPMessage
 
-        return _handleCCTPMessage(messageBody);
+        return _handleCCTPMessage(sourceDomain, messageBody);
     }
 
     /**
      * @notice Shared CCTP message processing logic for both finalized and unfinalized paths
+     * @param sourceDomain CCTP domain the message originated from (from the MessageV2 envelope)
      * @param messageBody BurnMessageV2 encoded message containing hookData
      * @return success Always returns true on success (reverts on failure)
      */
-    function _handleCCTPMessage(bytes calldata messageBody) internal returns (bool) {
+    function _handleCCTPMessage(uint32 sourceDomain, bytes calldata messageBody) internal returns (bool) {
         // Decode the BurnMessageV2 to get amount, feeExecuted, and hookData
         (
             uint256 grossAmount,
@@ -224,6 +225,19 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
         // Route based on message type
         if (payload.messageType == MessageType.SHIELD) {
+            // Authenticate the source pool: the burn message's messageSender is the address that
+            // called depositForBurn on the source chain (i.e. the remote PrivacyPoolClient), which
+            // must match the configured remote pool for this domain. The handler's envelope `sender`
+            // is the source TokenMessenger, not the pool, so it cannot be used here. This is a
+            // defense-in-depth backstop on top of CCTP's attestation and rejects shields from
+            // unconfigured domains or arbitrary source contracts.
+            bytes32 sourcePool = remotePools[sourceDomain];
+            require(sourcePool != bytes32(0), "PrivacyPool: unconfigured source domain");
+            require(
+                BurnMessageV2.getMessageSender(messageBody) == sourcePool,
+                "PrivacyPool: untrusted source pool"
+            );
+
             // Cross-chain shield from Client
             ShieldData memory shieldData = CCTPPayloadLib.decodeShieldData(payload.data);
 

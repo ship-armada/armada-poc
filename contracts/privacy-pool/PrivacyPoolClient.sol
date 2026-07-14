@@ -234,6 +234,16 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
 
         // Route based on message type
         if (payload.messageType == MessageType.UNSHIELD) {
+            // Authenticate the source pool: the burn message's messageSender is the address that
+            // called depositForBurn on the Hub (i.e. the Hub PrivacyPool), which must match the
+            // configured hubPool. The envelope sender is the Hub TokenMessenger, not the pool, so it
+            // cannot be used here. The handlers already enforce remoteDomain == hubDomain. This is a
+            // defense-in-depth backstop on top of CCTP's attestation.
+            require(
+                BurnMessageV2.getMessageSender(messageBody) == hubPool,
+                "PrivacyPoolClient: untrusted source pool"
+            );
+
             // Cross-chain unshield from Hub
             UnshieldData memory unshieldData = CCTPPayloadLib.decodeUnshieldData(payload.data);
 

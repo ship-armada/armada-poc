@@ -129,6 +129,8 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData for off-chain delivery
+     *        matching (issue #287). Not fund-relevant.
      * @return nonce CCTP message nonce
      * @dev The CCTP destinationCaller is pinned at the contract level to remoteHookRouters[destinationDomain]
      *      (see setRemoteHookRouter) — it is not caller-supplied, so a burn can only be delivered through
@@ -138,13 +140,14 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) external override returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
                 ITransactModule.atomicCrossChainUnshield,
-                (_transaction, destinationDomain, finalRecipient, maxFee)
+                (_transaction, destinationDomain, finalRecipient, maxFee, uniqueNonce)
             )
         );
         return abi.decode(result, (uint64));

@@ -2,7 +2,7 @@
 // ABOUTME: Same handler covers Withdraw modal (destination ≠ hub) and Send-External tab (destination ≠ hub) — same contract path, different UI entry.
 
 import { ethers } from 'ethers'
-import { encodeFunctionData, pad } from 'viem'
+import { encodeFunctionData, keccak256, toBytes } from 'viem'
 import { getPublicClient, sendTransaction } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
@@ -113,10 +113,21 @@ const PRIVACY_POOL_XCHAIN_UNSHIELD_ABI = [
       { name: 'destinationDomain', type: 'uint32' },
       { name: 'finalRecipient', type: 'address' },
       { name: 'maxFee', type: 'uint256' },
+      { name: 'uniqueNonce', type: 'bytes32' },
     ],
     outputs: [],
   },
 ] as const
+
+/**
+ * Per-transaction CCTP delivery marker (issue #287). Derived deterministically from the record's ulid
+ * so submit-time calldata and scan-time matching compute the identical value with no persisted/threaded
+ * state, and two same-recipient unshields get distinct markers. Echoed into the CCTP hookData's
+ * `UnshieldData.uniqueNonce`; the destination-scan predicate searches `messageBody` for it.
+ */
+function deliveryNonce(recordId: string): `0x${string}` {
+  return keccak256(toBytes(recordId))
+}
 
 /**
  * Stage map for `unshield-xchain` (A5 — relayer-mediated hub burn):
@@ -269,6 +280,7 @@ async function runSubmitAndBurn(
       destinationDomain,
       record.meta.recipient as `0x${string}`,
       maxFee,
+      deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
     )
   }
 
@@ -477,13 +489,10 @@ async function runWaitForDelivery(
   // bytes32(0) on outbound MessageSent; the destination contract emits an Iris-assigned
   // `eventNonce` which isn't derivable from the source side. So we drop the topic filter and
   // identify ours by looking inside the messageBody's hookData for a unique-per-tx marker.
-  // For unshield-xchain the hookData encodes only `recipient`; two parallel unshields to the
-  // same recipient would be indistinguishable by content. Combined with the burn-time
-  // `destFromBlock` cursor this is correct for in-series flows, and the rare parallel-same-
-  // recipient case is acceptable (either delivery satisfies one of the two records — both
-  // ultimately resolve as the second delivery lands).
-  const recipientBytes32 = pad(record.meta.recipient as `0x${string}`, { size: 32 })
-  const uniqueMarker = recipientBytes32.slice(2).toLowerCase()
+  // issue #287: the CCTP hookData now carries a per-transaction `uniqueNonce` (UnshieldData) derived
+  // from the record's ulid, so two parallel same-recipient unshields get distinct, unambiguous
+  // markers. We match the destination delivery on that nonce (recomputed here — no persisted state).
+  const uniqueMarker = deliveryNonce(record.id).slice(2).toLowerCase()
   // Build an ethers JsonRpcProvider for the destination chain. We deliberately bypass viem here
   // so the app-wide bisecting `eth_getLogs` patch (lib/rpc-bisecting.ts, installed in main.tsx)
   // applies — free-tier RPCs (Alchemy = 10-block cap) reject the configured 5_000-block window
@@ -546,7 +555,7 @@ async function runWaitForDelivery(
         getBlockNumber: async () => BigInt(await destProvider.getBlockNumber()),
         // Filter on the MessageReceived topic only — V2 puts an Iris-assigned `eventNonce` in
         // the indexed `nonce` topic that we can't predict source-side. The matchPredicate below
-        // narrows by hookData content (uniqueMarker = pad32(recipient)).
+        // narrows by hookData content (uniqueMarker = per-tx uniqueNonce, issue #287).
         getLogsForRange: (fromBlock, toBlock) => destProvider.getLogs({
           address: destMessageTransmitter,
           topics: [destMessageReceivedTopic],
@@ -561,7 +570,7 @@ async function runWaitForDelivery(
             })
             return matchesXchainDelivery(
               { messageBody: parsed?.args.messageBody, sourceDomain: parsed?.args.sourceDomain },
-              { recipientMarker: uniqueMarker, sourceDomain: hubDomain },
+              { marker: uniqueMarker, sourceDomain: hubDomain },
             )
           } catch {
             // Foreign log on the same address (different ABI / unindexed topic mismatch) — skip
@@ -657,6 +666,7 @@ function encodeAtomicCrossChainUnshield(
   destinationDomain: number,
   finalRecipient: `0x${string}`,
   maxFee: bigint,
+  uniqueNonce: `0x${string}`,
 ): `0x${string}` {
   return encodeFunctionData({
     abi: PRIVACY_POOL_XCHAIN_UNSHIELD_ABI,
@@ -669,6 +679,7 @@ function encodeAtomicCrossChainUnshield(
       destinationDomain,
       finalRecipient,
       maxFee,
+      uniqueNonce,
     ],
   })
 }

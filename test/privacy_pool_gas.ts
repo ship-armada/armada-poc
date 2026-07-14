@@ -435,7 +435,8 @@ describe("Privacy Pool Gas Profiling", function () {
         txData,
         DOMAINS.client,
         bobAddr,
-        0 // maxFee
+        0, // maxFee
+        ethers.ZeroHash
       );
       const receipt = await tx.wait();
       recordGas("atomicCrossChainUnshield", Number(receipt!.gasUsed));

@@ -107,6 +107,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData so off-chain wallets can
+     *        match the destination delivery to this specific unshield (issue #287). Not fund-relevant.
      * @return nonce CCTP message nonce for tracking
      * @dev The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] (not
      *      caller-supplied), so the burn can only be delivered through the destination chain's
@@ -116,7 +118,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) external override onlyDelegatecall returns (uint64 nonce) {
         // Post-wind-down SC emergency pause: block ALL operations including unshields.
         _requireNotEmergencyPaused();
@@ -128,7 +131,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         _processAtomicUnshieldTransaction(_transaction);
 
         // Execute the CCTP burn and return nonce
-        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, maxFee);
+        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, maxFee, uniqueNonce);
     }
 
     /**
@@ -190,32 +193,27 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) internal returns (uint64 nonce) {
-        // Unshield is free per spec — the full preimage value is bridged.
-        // `fee` is retained at zero solely so the Unshield event below keeps its 4-field
-        // shape for downstream log parsers.
+        // Unshield is free per spec — the full preimage value is bridged. The Unshield event's fee
+        // field is emitted as 0 to keep its 4-field shape for downstream log parsers.
         uint120 base = _transaction.unshieldPreimage.value;
-        uint120 fee = 0;
 
         // Validate maxFee does not exceed the bridged amount
         require(maxFee <= base, "TransactModule: maxFee exceeds base");
 
         // Encode CCTP payload
         bytes memory hookData = CCTPPayloadLib.encodeUnshield(
-            UnshieldData({ recipient: finalRecipient })
+            UnshieldData({ recipient: finalRecipient, uniqueNonce: uniqueNonce })
         );
 
         // Burn via CCTP
         IERC20(usdc).safeApprove(tokenMessenger, base);
 
-        // Use configured finality threshold (STANDARD by default, FAST if enabled)
-        uint32 finality = defaultFinalityThreshold > 0
-            ? defaultFinalityThreshold
-            : CCTPFinality.STANDARD;
-
         // destinationCaller is pinned to the destination chain's hook router (validated non-zero in
         // _validateAtomicUnshieldInputs) so the message can only be delivered via its CCTPHookRouter.
+        // Finality: STANDARD by default, FAST if enabled (inlined to keep the stack shallow).
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             base,
             destinationDomain,
@@ -223,14 +221,14 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             usdc,
             remoteHookRouters[destinationDomain],
             maxFee,
-            finality,
+            defaultFinalityThreshold > 0 ? defaultFinalityThreshold : CCTPFinality.STANDARD,
             hookData
         );
         nonce = 0; // CCTP V2 depositForBurnWithHook does not return nonce
 
         // Emit events
         emit CrossChainUnshieldInitiated(destinationDomain, finalRecipient, base, nonce);
-        emit Unshield(finalRecipient, _transaction.unshieldPreimage.token, base, fee);
+        emit Unshield(finalRecipient, _transaction.unshieldPreimage.token, base, 0);
 
         // Update last event block
         lastEventBlock = block.number;

@@ -103,7 +103,7 @@ contract OnlyDelegatecallTest is Test {
         });
 
         vm.expectRevert(bytes(EXPECTED_REVERT));
-        transactModule.atomicCrossChainUnshield(txn, 1, address(1), 0);
+        transactModule.atomicCrossChainUnshield(txn, 1, address(1), 0, bytes32(0));
     }
 
     // ═══════════════════════════════════════════════════════════════════

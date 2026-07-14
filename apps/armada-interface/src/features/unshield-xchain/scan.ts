@@ -80,20 +80,17 @@ export async function scanCctpDeliveryWindow<TLog extends ScanLog>(
 /**
  * Does a destination CCTP `MessageReceived` event match THIS unshield-xchain record's delivery? (T-M7)
  *
- * The V2 destination scan can't filter on the source nonce, so we identify our delivery by content.
- * Beyond the recipient marker in the hookData, we also require the event's CCTP `sourceDomain` to be
- * the hub's domain — so an unrelated CCTP transfer to the same recipient from a DIFFERENT source
- * chain can't false-complete the record with the wrong destTxHash.
- *
- * Burn-amount-within-maxFee matching (the other half of T-M7) is deferred to the full Iris-nonce
- * correlation: it needs byte-offset parsing of the CCTP BurnMessage, and a wrong offset would
- * silently break delivery detection (funds appear stuck) — too risky for this quick tightening.
+ * The V2 destination CCTP `nonce` is Iris-assigned and unpredictable source-side, so we identify our
+ * delivery by content: a per-transaction `uniqueNonce` marker in the hookData (issue #287) — distinct
+ * even between two same-recipient unshields. We also require the event's CCTP `sourceDomain` to be the
+ * hub's domain, so an unrelated CCTP transfer from a DIFFERENT source chain can't false-complete the
+ * record with the wrong destTxHash.
  */
 export function matchesXchainDelivery(
   args: { messageBody?: unknown; sourceDomain?: unknown },
-  expected: { recipientMarker: string; sourceDomain: number },
+  expected: { marker: string; sourceDomain: number },
 ): boolean {
   if (Number(args.sourceDomain) !== expected.sourceDomain) return false
   const body = args.messageBody
-  return typeof body === 'string' && body.toLowerCase().includes(expected.recipientMarker)
+  return typeof body === 'string' && body.toLowerCase().includes(expected.marker)
 }

@@ -4,18 +4,18 @@ import { describe, it, expect, vi } from 'vitest'
 import { scanCctpDeliveryWindow, matchesXchainDelivery } from './scan'
 
 describe('matchesXchainDelivery (T-M7)', () => {
-  const marker = 'abc123' // pad32(recipient) tail, lowercase
-  const expected = { recipientMarker: marker, sourceDomain: 100 }
+  const marker = 'abc123' // per-tx uniqueNonce hex tail, lowercase (issue #287)
+  const expected = { marker, sourceDomain: 100 }
 
-  it('matches when the recipient marker is in the body AND the source domain is the hub', () => {
+  it('matches when the uniqueNonce marker is in the body AND the source domain is the hub', () => {
     expect(matchesXchainDelivery({ messageBody: `0xdeadABC123beef`, sourceDomain: 100 }, expected)).toBe(true)
   })
 
-  it('rejects a same-recipient transfer from a DIFFERENT source domain', () => {
+  it('rejects a transfer from a DIFFERENT source domain', () => {
     expect(matchesXchainDelivery({ messageBody: `0xdeadabc123beef`, sourceDomain: 6 }, expected)).toBe(false)
   })
 
-  it('rejects when the recipient marker is absent even if the source domain matches', () => {
+  it('rejects when the uniqueNonce marker is absent even if the source domain matches', () => {
     expect(matchesXchainDelivery({ messageBody: `0xdeadbeef`, sourceDomain: 100 }, expected)).toBe(false)
   })
 

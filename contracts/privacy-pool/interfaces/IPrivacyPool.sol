@@ -83,6 +83,7 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData for off-chain delivery matching (issue #287)
      * @return nonce CCTP message nonce
      * @dev The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] at the contract
      *      level (see setRemoteHookRouter) — it is not caller-supplied.
@@ -91,7 +92,8 @@ interface IPrivacyPool is IMessageHandlerV2 {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) external returns (uint64 nonce);
 
     // ══════════════════════════════════════════════════════════════════════════

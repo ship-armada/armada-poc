@@ -493,7 +493,7 @@ describe("Privacy Pool Integration Hardening", function () {
       });
 
       const unshieldTx = await privacyPool.atomicCrossChainUnshield(
-        unshieldTxData, DOMAINS.client, bobAddress, 0
+        unshieldTxData, DOMAINS.client, bobAddress, 0, ethers.ZeroHash
       );
       const unshieldReceipt = await unshieldTx.wait();
 

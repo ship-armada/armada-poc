@@ -1,5 +1,5 @@
-// ABOUTME: PoC for the tree-rollover event desync — router's getInsertionTreeNumberAndStartingIndex
-// ABOUTME: drops the rollover branch, so Shield/Transact events report the wrong position at a tree boundary.
+// ABOUTME: Regression guard for the tree-rollover event position — the router's
+// ABOUTME: getInsertionTreeNumberAndStartingIndex must roll over at a tree boundary in sync with MerkleModule.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -11,7 +11,7 @@ import "../contracts/privacy-pool/modules/MerkleModule.sol";
 import "../contracts/privacy-pool/storage/PrivacyPoolStorage.sol";
 
 /// @dev Minimal harness that shares PrivacyPoolStorage's layout so we can exercise the REAL
-///      MerkleModule.getInsertionTreeNumberAndStartingIndex (the correct, rollover-aware version)
+///      MerkleModule.getInsertionTreeNumberAndStartingIndex (the rollover-aware reference version)
 ///      via delegatecall for an identical tree state.
 contract MerkleProbe is PrivacyPoolStorage {
     function setTreeState(uint256 _treeNumber, uint256 _nextLeafIndex) external {
@@ -28,14 +28,14 @@ contract MerkleProbe is PrivacyPoolStorage {
     }
 }
 
-/// @title RolloverDesyncPoC — proves the router and the module disagree at a tree boundary.
-/// @dev The router (`PrivacyPool.getInsertionTreeNumberAndStartingIndex`, PrivacyPool.sol:444) ignores
-///      its argument and always returns `(treeNumber, nextLeafIndex)`. The module version
-///      (`MerkleModule.sol:166`) correctly returns `(treeNumber + 1, 0)` when the batch overflows the
-///      current tree — but it is dead code, because modules call this via `IMerkleModule(address(this))`,
-///      which resolves to the router's own function. `insertLeaves` DOES roll the tree over, so the
-///      Shield/Transact event position emitted for a boundary-crossing batch points at the wrong tree/index,
-///      and off-chain wallets can never build a valid spend proof for those notes.
+/// @title RolloverDesyncPoC — guards against a router/module desync at a tree boundary.
+/// @dev Modules read the insertion position via `IMerkleModule(address(this))`, which resolves to the
+///      router's own `PrivacyPool.getInsertionTreeNumberAndStartingIndex`, NOT the MerkleModule
+///      delegatecall copy. `insertLeaves` rolls the tree over at the 2**TREE_DEPTH boundary
+///      (via `_newTree`), so the router getter must apply the same rollover — otherwise the
+///      Shield/Transact event emitted for a boundary-crossing batch would report a stale (tree, index)
+///      and off-chain wallets could never build a valid spend proof for those notes. These tests pin
+///      the router getter to the MerkleModule reference at and away from the boundary.
 contract RolloverDesyncPoC is Test {
     uint256 constant TREE_DEPTH = 16;
     uint256 constant MAX_LEAVES = 2 ** TREE_DEPTH; // 65536
@@ -54,7 +54,12 @@ contract RolloverDesyncPoC is Test {
         probe = new MerkleProbe();
     }
 
-    function test_routerAndModuleDisagreeAtTreeBoundary() public {
+    /// @dev WHY: A batch that crosses the 2**TREE_DEPTH boundary must be reported at the next tree,
+    ///      index 0 — the position where insertLeaves actually places it. Before the fix the router
+    ///      ignored its argument and returned the stale pre-rollover position, desyncing the emitted
+    ///      event from the real insertion and bricking those notes. This pins the router to the
+    ///      rollover-aware MerkleModule reference at the boundary.
+    function test_routerRollsOverAtTreeBoundary() public {
         uint256 currentTree = 3;
         uint256 nearFull = MAX_LEAVES - 1; // 65535: only one slot left in the current tree
         uint256 batch = 10; // inserting 10 leaves overflows the current tree
@@ -74,25 +79,18 @@ contract RolloverDesyncPoC is Test {
         (uint256 moduleTree, uint256 moduleIndex) = probe.callModule(address(merkleModule), batch);
         console2.log("module says  -> tree:", moduleTree, "index:", moduleIndex);
 
-        // Router ignores the overflow and returns the stale pre-rollover position.
-        assertEq(routerTree, currentTree, "router returns stale tree number");
-        assertEq(routerIndex, nearFull, "router returns stale leaf index");
+        // Router must roll over to the next tree at index 0 — where insertLeaves actually places the leaves.
+        assertEq(routerTree, currentTree + 1, "router rolls to next tree");
+        assertEq(routerIndex, 0, "router starts new tree at index 0");
 
-        // Module correctly rolls over to the next tree at index 0 — this is where insertLeaves
-        // actually places the leaves.
-        assertEq(moduleTree, currentTree + 1, "module rolls to next tree");
-        assertEq(moduleIndex, 0, "module starts new tree at index 0");
-
-        // The desync: the emitted event position does NOT match the real insertion position.
-        assertTrue(
-            routerTree != moduleTree || routerIndex != moduleIndex,
-            "expected router/module disagreement at boundary"
-        );
-        console2.log("DESYNC CONFIRMED: boundary-crossing batch is emitted at the wrong tree/index");
+        // Router and module now agree at the boundary — the emitted event position matches the real
+        // insertion position.
+        assertEq(routerTree, moduleTree, "router/module agree on tree at boundary");
+        assertEq(routerIndex, moduleIndex, "router/module agree on index at boundary");
     }
 
-    /// @dev Away from a boundary, the two agree — confirming the bug is specifically the missing
-    ///      rollover branch, not a general mismatch.
+    /// @dev WHY: Away from a boundary the router and module must also agree — confirming the rollover
+    ///      branch only triggers on overflow and does not perturb the common case.
     function test_routerAndModuleAgreeAwayFromBoundary() public {
         uint256 currentTree = 3;
         uint256 index = 1000;
@@ -107,5 +105,7 @@ contract RolloverDesyncPoC is Test {
 
         assertEq(routerTree, moduleTree, "trees agree away from boundary");
         assertEq(routerIndex, moduleIndex, "indices agree away from boundary");
+        assertEq(routerTree, currentTree, "no rollover away from boundary");
+        assertEq(routerIndex, index, "index unchanged away from boundary");
     }
 }

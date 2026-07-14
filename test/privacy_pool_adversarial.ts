@@ -597,9 +597,12 @@ describe("Privacy Pool Adversarial", function () {
       expect(await privacyPoolClient.hubDomain()).to.equal(DOMAINS.hub);
     });
 
-    it("setShieldFee rejects fee > 10000 bps", async function () {
+    // WHY: The shield fee is capped at MAX_SHIELD_FEE_BPS (1000 = 10%) so a single
+    // owner/governance mis-proposal cannot brick shields by consuming all deposited
+    // value. Just over the cap must revert.
+    it("setShieldFee rejects fee > MAX_SHIELD_FEE_BPS (1000 bps)", async function () {
       await expect(
-        privacyPool.setShieldFee(10001)
+        privacyPool.setShieldFee(1001)
       ).to.be.revertedWith("PrivacyPool: Fee too high");
     });
   });
@@ -647,9 +650,10 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("ShieldModule: Invalid npk");
     });
 
-    it("shield fee boundary: exactly 10000 bps accepted", async function () {
-      // 10000 bps = 100% fee (edge case)
-      await privacyPool.setShieldFee(10000);
+    // WHY: The cap is inclusive — exactly MAX_SHIELD_FEE_BPS (1000 = 10%) is the
+    // highest fee governance can set and must be accepted.
+    it("shield fee boundary: exactly 1000 bps (10%) accepted", async function () {
+      await privacyPool.setShieldFee(1000);
       // Reset to normal after
       await privacyPool.setShieldFee(50);
     });

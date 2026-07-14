@@ -399,6 +399,15 @@ describe("Privacy Pool Integration", function () {
       });
       expect(event).to.not.be.undefined;
 
+      // WHY: CrossChainShieldInitiated must NOT emit the initiating EOA — doing so would
+      // broadcast an indexed, filterable EOA -> NPK link (see issue #65). Assert the event
+      // carries only (amount, npk, nonce) and has no `sender` field.
+      const parsedEvent = privacyPoolClient.interface.parseLog(event as any);
+      expect(parsedEvent?.args.sender).to.be.undefined;
+      expect(parsedEvent?.args.amount).to.equal(SHIELD_AMOUNT);
+      expect(parsedEvent?.args.npk).to.equal(npk);
+      expect(parsedEvent?.args.length).to.equal(3);
+
       // Verify USDC was burned on client
       const aliceBalance = await clientUsdc.balanceOf(aliceAddress);
       expect(aliceBalance).to.equal(0);

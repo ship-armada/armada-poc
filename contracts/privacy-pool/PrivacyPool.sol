@@ -442,12 +442,22 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
     /**
      * @notice Get the tree number and starting index for new commitments
+     * @dev Modules reach this via IMerkleModule(address(this)), so this router copy — not the
+     *      MerkleModule delegatecall version — is what actually resolves. It must apply the same
+     *      rollover as MerkleModule.insertLeaves/_newTree: when a batch would overflow the current
+     *      tree, insertion rolls to (treeNumber + 1, 0). Omitting that branch makes the emitted
+     *      Shield/Transact event report a stale position at a tree boundary, leaving those notes
+     *      unlocatable for a spend proof.
+     * @param _newCommitments Number of commitments about to be inserted
      * @return treeNum Tree number where commitments will be inserted
      * @return startIndex Starting leaf index within that tree
      */
     function getInsertionTreeNumberAndStartingIndex(
-        uint256
+        uint256 _newCommitments
     ) external view returns (uint256 treeNum, uint256 startIndex) {
+        if ((nextLeafIndex + _newCommitments) > (2 ** TREE_DEPTH)) {
+            return (treeNumber + 1, 0);
+        }
         return (treeNumber, nextLeafIndex);
     }
 

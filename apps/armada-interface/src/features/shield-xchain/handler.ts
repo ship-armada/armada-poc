@@ -1,7 +1,7 @@
 // ABOUTME: Cross-chain shield handler — dual-mode (direct user-wallet submit OR Phase B4 permit-based gasless via GaslessShieldWrapperClient).
 // ABOUTME: Mirrors unshield-xchain but flipped direction: burn on CLIENT → mint on HUB. Hub-side delivery polling identical across both submission modes.
 
-import { encodeFunctionData, pad } from 'viem'
+import { encodeFunctionData } from 'viem'
 import {
   getPublicClient,
   readContract,
@@ -75,7 +75,6 @@ const PRIVACY_POOL_CLIENT_SHIELD_ABI = [
       { name: 'npk', type: 'bytes32' },
       { name: 'encryptedBundle', type: 'bytes32[3]' },
       { name: 'shieldKey', type: 'bytes32' },
-      { name: 'destinationCaller', type: 'bytes32' },
       { name: 'integrator', type: 'address' },
     ],
     outputs: [{ name: 'nonce', type: 'uint64' }],
@@ -336,9 +335,11 @@ async function runDirectSubmit(
     await ctx.upsert(working)
   }
 
-  const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
+  const { maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
 
   // 2. Submit the cross-chain shield on the CLIENT chain via the connected wallet.
+  //    The CCTP destinationCaller is pinned to hubHookRouter by PrivacyPoolClient (issue #64) — not
+  //    passed here.
   const calldata = encodeFunctionData({
     abi: PRIVACY_POOL_CLIENT_SHIELD_ABI,
     functionName: 'crossChainShield',
@@ -349,7 +350,6 @@ async function runDirectSubmit(
       shieldRequest.npk as `0x${string}`,
       shieldRequest.encryptedBundle as readonly [`0x${string}`, `0x${string}`, `0x${string}`],
       shieldRequest.shieldKey as `0x${string}`,
-      destinationCaller,
       ethers.ZeroAddress as `0x${string}`, // integrator: no fee routing for direct user shields
     ],
   })
@@ -434,8 +434,10 @@ async function runGaslessSubmit(
     })
   }
 
-  const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
+  const { maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
 
+  // The CCTP destinationCaller is pinned to hubHookRouter by PrivacyPoolClient (issue #64) — it is no
+  // longer part of the signed CrossChainParams struct.
   const data = buildGaslessCrossChainShieldCalldata({
     user: ownerCaptured as `0x${string}`,
     totalAmount: record.meta.amount,
@@ -456,7 +458,6 @@ async function runGaslessSubmit(
       ],
       shieldKey: shieldRequest.shieldKey as `0x${string}`,
     },
-    destinationCaller,
     integrator: ethers.ZeroAddress as `0x${string}`,
   })
 
@@ -485,23 +486,14 @@ async function runGaslessSubmit(
 
 /**
  * Per-submit CCTP params resolved from the loaded deployment + network mode. Shared across both
- * direct and gasless submit branches so the on-chain inputs (destinationCaller, maxFee,
- * minFinalityThreshold) stay identical regardless of who broadcasts the tx.
+ * direct and gasless submit branches so the on-chain inputs (maxFee, minFinalityThreshold) stay
+ * identical regardless of who broadcasts the tx. The CCTP destinationCaller is no longer resolved
+ * here — PrivacyPoolClient pins it to its configured hubHookRouter at the contract level (issue #64).
  */
 async function resolveCctpSubmitParams(record: TxRecord<'shield-xchain'>): Promise<{
-  destinationCaller: `0x${string}`
   maxFee: bigint
   minFinalityThreshold: number
 }> {
-  // destinationCaller = the HUB's hookRouter, in bytes32 form. Constrains who can call
-  // receiveMessage on the hub MessageTransmitter so only our atomic-delivery path executes.
-  const deployments = await loadDeployments()
-  const hubHookRouter = deployments.hub.contracts.hookRouter
-  const destinationCaller =
-    hubHookRouter && hubHookRouter !== ethers.ZeroAddress
-      ? pad(hubHookRouter as `0x${string}`, { size: 32 })
-      : (`0x${'00'.repeat(32)}` as `0x${string}`)
-
   // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
   // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
   // Computed locally from amount, no relayer round-trip needed.
@@ -511,7 +503,7 @@ async function resolveCctpSubmitParams(record: TxRecord<'shield-xchain'>): Promi
   // to STANDARD as the safe default. CCTPHookRouter on the hub handles both threshold values.
   const minFinalityThreshold = getNetworkConfig().mode === 'sepolia' ? 1000 : 0
 
-  return { destinationCaller, maxFee, minFinalityThreshold }
+  return { maxFee, minFinalityThreshold }
 }
 
 /**

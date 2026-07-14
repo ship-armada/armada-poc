@@ -21,7 +21,6 @@ contract MockPrivacyPoolClient {
     uint32 public lastMinFinalityThreshold;
     bytes32 public lastNpk;
     bytes32 public lastShieldKey;
-    bytes32 public lastDestinationCaller;
     address public lastIntegrator;
     uint256 public callCount;
 
@@ -36,7 +35,6 @@ contract MockPrivacyPoolClient {
         bytes32 npk,
         bytes32[3] calldata /* encryptedBundle */,
         bytes32 shieldKey,
-        bytes32 destinationCaller,
         address integrator
     ) external returns (uint64) {
         // Mirror the real client: pull amount from msg.sender (the wrapper).
@@ -54,7 +52,6 @@ contract MockPrivacyPoolClient {
         lastMinFinalityThreshold = minFinalityThreshold;
         lastNpk = npk;
         lastShieldKey = shieldKey;
-        lastDestinationCaller = destinationCaller;
         lastIntegrator = integrator;
         callCount++;
         return stubNonce;
@@ -140,7 +137,6 @@ contract GaslessShieldWrapperClientTest is Test {
             npk: bytes32(uint256(0xBEEF)),
             encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)],
             shieldKey: bytes32(0),
-            destinationCaller: bytes32(0),
             integrator: integrator
         });
     }
@@ -179,7 +175,7 @@ contract GaslessShieldWrapperClientTest is Test {
         // WHY: symmetric with the hub wrapper's shieldRequestHash test. The event surfaces
         // keccak256(abi.encode(dest)) so the user can verify off-chain that the relayer honoured
         // the cross-chain destination they signed against (npk, ciphertext, finality, maxFee,
-        // integrator, destinationCaller, …). A refactor that changed the hash shape (e.g.
+        // integrator, …). A refactor that changed the hash shape (e.g.
         // hashed individual fields, used encodePacked) would silently break that primitive.
         // Pin the exact digest shape.
         uint256 totalAmount = 6 * ONE_USDC;

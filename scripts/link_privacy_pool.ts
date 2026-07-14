@@ -108,6 +108,17 @@ async function main() {
     await setRemoteTx.wait();
     console.log(`  Remote pool set for domain ${clientConfig.domain}`);
 
+    // Set the client's hook router on Hub — pinned as the CCTP destinationCaller for Hub->client
+    // unshield burns, so a burn to this domain can only be delivered via the client's CCTPHookRouter.
+    if (clientDeployment.contracts.hookRouter) {
+      const clientHookRouterBytes32 = ethers.zeroPadValue(clientDeployment.contracts.hookRouter, 32);
+      console.log(`  Setting remote hook router on Hub...`);
+      await (await privacyPool.setRemoteHookRouter(clientConfig.domain, clientHookRouterBytes32, nm.override())).wait();
+      console.log(`  Remote hook router set for domain ${clientConfig.domain}`);
+    } else {
+      console.log(`  Warning: ${clientConfig.name} has no hookRouter — remoteHookRouter NOT set (unshields to this domain will revert)`);
+    }
+
     // In mock mode, we need to configure TokenMessenger cross-references
     // In real CCTP mode, Circle manages this - skip
     if (!isCCTPReal()) {
@@ -157,13 +168,27 @@ async function main() {
 
     const clientPoolContract = new ethers.Contract(
       clientDeployment.contracts.privacyPoolClient,
-      ["function setHookRouter(address _hookRouter) external"],
+      [
+        "function setHookRouter(address _hookRouter) external",
+        "function setHubHookRouter(bytes32 _hubHookRouter) external",
+      ],
       clientSigner
     );
 
     console.log(`Setting hookRouter on ${clientConfig.name} PrivacyPoolClient...`);
     await (await clientPoolContract.setHookRouter(clientDeployment.contracts.hookRouter)).wait();
     console.log(`  hookRouter set to: ${clientDeployment.contracts.hookRouter}`);
+
+    // Pin the Hub's hook router as the CCTP destinationCaller for client->Hub shield burns, so a
+    // shield can only be delivered via the Hub's CCTPHookRouter.
+    if (hubHookRouterAddress) {
+      const hubHookRouterBytes32 = ethers.zeroPadValue(hubHookRouterAddress, 32);
+      console.log(`Setting hubHookRouter on ${clientConfig.name} PrivacyPoolClient...`);
+      await (await clientPoolContract.setHubHookRouter(hubHookRouterBytes32)).wait();
+      console.log(`  hubHookRouter set to: ${hubHookRouterAddress}`);
+    } else {
+      console.log(`  Warning: Hub has no hookRouter — hubHookRouter NOT set (shields from ${clientConfig.name} will revert)`);
+    }
     console.log("");
   }
 

@@ -112,7 +112,6 @@ const PRIVACY_POOL_XCHAIN_UNSHIELD_ABI = [
       ] },
       { name: 'destinationDomain', type: 'uint32' },
       { name: 'finalRecipient', type: 'address' },
-      { name: 'destinationCaller', type: 'bytes32' },
       { name: 'maxFee', type: 'uint256' },
     ],
     outputs: [],
@@ -242,7 +241,6 @@ async function runSubmitAndBurn(
     if (!destClientDeployment) {
       throw new Error(`No deployment for destination chain ${record.meta.toChainId}`)
     }
-    const destHookRouter = destClientDeployment.contracts.hookRouter
 
     // Build the Transaction struct (decoded from the SDK's populated transact() calldata). The
     // broadcaster fee must be passed here EXACTLY as it was passed to generateXchainUnshieldProof —
@@ -256,11 +254,8 @@ async function runSubmitAndBurn(
     })
     if (ctx.signal.aborted) throw new Error('cancelled')
 
-    // destinationCaller: bytes32 form of the destination hook router; restricts who can call
-    // receiveMessage on the destination MessageTransmitter (the router atomically delivers).
-    const destinationCaller = destHookRouter && destHookRouter !== ethers.ZeroAddress
-      ? pad(destHookRouter as `0x${string}`, { size: 32 })
-      : `0x${'00'.repeat(32)}` as `0x${string}`
+    // The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] by PrivacyPool
+    // (issue #64) — it is not passed here.
 
     // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
     // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
@@ -273,7 +268,6 @@ async function runSubmitAndBurn(
       txStruct,
       destinationDomain,
       record.meta.recipient as `0x${string}`,
-      destinationCaller,
       maxFee,
     )
   }
@@ -662,7 +656,6 @@ function encodeAtomicCrossChainUnshield(
   transactionStruct: unknown,
   destinationDomain: number,
   finalRecipient: `0x${string}`,
-  destinationCaller: `0x${string}`,
   maxFee: bigint,
 ): `0x${string}` {
   return encodeFunctionData({
@@ -675,7 +668,6 @@ function encodeAtomicCrossChainUnshield(
       transactionStruct as any,
       destinationDomain,
       finalRecipient,
-      destinationCaller,
       maxFee,
     ],
   })

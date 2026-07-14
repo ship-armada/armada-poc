@@ -47,6 +47,9 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
     /// @notice Emitted when default finality threshold is changed
     event DefaultFinalityThresholdSet(uint32 threshold);
 
+    /// @notice Emitted when the Hub CCTP hook router is set
+    event HubHookRouterSet(bytes32 hubHookRouter);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -85,10 +88,10 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      * @param npk Note public key
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption
-     * @param destinationCaller Address allowed to call receiveMessage on Hub (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param integrator Integrator address for fee split (address(0) for no integrator)
      * @return nonce CCTP message nonce
+     * @dev The CCTP destinationCaller is pinned to hubHookRouter at the contract level (see
+     *      setHubHookRouter) — it is not caller-supplied.
      */
     function crossChainShield(
         uint256 amount,
@@ -97,7 +100,6 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
-        bytes32 destinationCaller,
         address integrator
     ) external returns (uint64 nonce);
 
@@ -117,6 +119,12 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
      * @param _hookRouter Address of the CCTPHookRouter contract
      */
     function setHookRouter(address _hookRouter) external;
+
+    /**
+     * @notice Set the Hub chain's CCTP hook router (as bytes32), pinned as the outbound shield destinationCaller
+     * @param _hubHookRouter Hub CCTPHookRouter address (as bytes32)
+     */
+    function setHubHookRouter(bytes32 _hubHookRouter) external;
 
     /**
      * @notice Set the default finality threshold for outbound CCTP burns
@@ -151,4 +159,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
 
     /// @notice CCTP Hook Router address
     function hookRouter() external view returns (address);
+
+    /// @notice Hub chain's CCTP hook router (as bytes32), pinned as the outbound shield destinationCaller
+    function hubHookRouter() external view returns (bytes32);
 }

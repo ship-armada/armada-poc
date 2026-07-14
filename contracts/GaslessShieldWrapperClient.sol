@@ -40,7 +40,7 @@ contract GaslessShieldWrapperClient {
      * @dev `destHash` is `keccak256(abi.encode(dest))` — the digest of the `CrossChainParams`
      *      the wrapper executed. Lets the user verify off-chain that the relayer honored the
      *      cross-chain destination they signed against (npk, ciphertext, finality, maxFee,
-     *      integrator, destinationCaller, …). Symmetric with the hub wrapper's
+     *      integrator, …). Symmetric with the hub wrapper's
      *      `shieldRequestHash`.
      */
     event GaslessShield(
@@ -118,13 +118,14 @@ contract GaslessShieldWrapperClient {
     }
 
     /// @dev CCTP V2 cross-chain shield destination args, grouped for stack-shallow reasons.
+    /// @dev The CCTP destinationCaller is not included: PrivacyPoolClient pins it to its configured
+    ///      hubHookRouter at the contract level, so it is neither caller- nor signer-supplied.
     struct CrossChainParams {
         uint256 maxFee;
         uint32 minFinalityThreshold;
         bytes32 npk;
         bytes32[3] encryptedBundle;
         bytes32 shieldKey;
-        bytes32 destinationCaller;
         address integrator;
     }
 
@@ -191,7 +192,6 @@ contract GaslessShieldWrapperClient {
             dest.npk,
             dest.encryptedBundle,
             dest.shieldKey,
-            dest.destinationCaller,
             dest.integrator
         );
 

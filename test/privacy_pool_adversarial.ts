@@ -152,6 +152,13 @@ describe("Privacy Pool Adversarial", function () {
 
     // Link deployments
     await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
+
+    // Pin the CCTP destinationCaller (issue #64). These tests do not relay through a CCTPHookRouter,
+    // so the pinned value only needs to be non-zero for the shield/unshield paths to pass their
+    // "hook router configured" guard; the relayer address is used as a stand-in.
+    const hookRouterStandIn = ethers.zeroPadValue(await relayer.getAddress(), 32);
+    await privacyPoolClient.setHubHookRouter(hookRouterStandIn);
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, hookRouterStandIn);
     await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.client, ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32));
     await clientTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32));
   });
@@ -485,7 +492,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await privacyPool.atomicCrossChainUnshield(
-        tx, DOMAINS.client, bobAddress, ethers.ZeroHash, 0
+        tx, DOMAINS.client, bobAddress, 0
       );
 
       // Verify nullifier is spent
@@ -532,7 +539,7 @@ describe("Privacy Pool Adversarial", function () {
       await expect(
         privacyPool
           .connect(attacker)
-          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, ethers.ZeroHash, 0)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, 0)
       )
         .to.emit(poolAsTransact, "CrossChainUnshieldInitiated")
         .withArgs(DOMAINS.client, attackerAddress, unshieldAmount, 0);
@@ -544,7 +551,7 @@ describe("Privacy Pool Adversarial", function () {
       await expect(
         privacyPool
           .connect(bob)
-          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, ethers.ZeroHash, 0)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Note already spent");
     });
   });
@@ -699,7 +706,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Use local unshield");
     });
 
@@ -723,7 +730,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Unknown destination");
     });
 
@@ -747,7 +754,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, 0)
       ).to.be.revertedWith("TransactModule: Invalid recipient");
     });
 
@@ -763,7 +770,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 0)
       ).to.be.revertedWith("TransactModule: Must include unshield");
     });
 
@@ -789,7 +796,7 @@ describe("Privacy Pool Adversarial", function () {
       // maxFee = 100 USDC >> base amount of ~10 USDC
       await expect(
         privacyPool.atomicCrossChainUnshield(
-          tx, DOMAINS.client, bobAddress, ethers.ZeroHash, ethers.parseUnits("100", 6)
+          tx, DOMAINS.client, bobAddress, ethers.parseUnits("100", 6)
         )
       ).to.be.revertedWith("TransactModule: maxFee exceeds base");
     });
@@ -946,9 +953,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(alice).crossChainShield(
           0, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
-        ,
-        ethers.ZeroAddress)
+          ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Amount must be > 0");
     });
 
@@ -958,9 +963,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(alice).crossChainShield(
           amount, amount, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
-        ,
-        ethers.ZeroAddress)
+          ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Fee exceeds amount");
     });
 
@@ -985,9 +988,7 @@ describe("Privacy Pool Adversarial", function () {
         freshClient.connect(alice).crossChainShield(
           amount, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
-        ,
-        ethers.ZeroAddress)
+          ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Hub not configured");
     });
   });

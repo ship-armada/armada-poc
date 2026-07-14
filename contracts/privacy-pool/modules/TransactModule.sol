@@ -107,15 +107,15 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @return nonce CCTP message nonce for tracking
+     * @dev The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] (not
+     *      caller-supplied), so the burn can only be delivered through the destination chain's
+     *      CCTPHookRouter — a caller cannot leave it bytes32(0) and let a third party strand the funds.
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) external override onlyDelegatecall returns (uint64 nonce) {
         // Post-wind-down SC emergency pause: block ALL operations including unshields.
@@ -128,7 +128,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         _processAtomicUnshieldTransaction(_transaction);
 
         // Execute the CCTP burn and return nonce
-        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee);
+        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, maxFee);
     }
 
     /**
@@ -146,6 +146,10 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             "TransactModule: Must include unshield"
         );
         require(remotePools[destinationDomain] != bytes32(0), "TransactModule: Unknown destination");
+        require(
+            remoteHookRouters[destinationDomain] != bytes32(0),
+            "TransactModule: Hook router not configured"
+        );
 
         // Validate the transaction proof
         (bool valid, string memory reason) = _validateTransaction(_transaction);
@@ -186,7 +190,6 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) internal returns (uint64 nonce) {
         // Unshield is free per spec — the full preimage value is bridged.
@@ -211,12 +214,14 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             ? defaultFinalityThreshold
             : CCTPFinality.STANDARD;
 
+        // destinationCaller is pinned to the destination chain's hook router (validated non-zero in
+        // _validateAtomicUnshieldInputs) so the message can only be delivered via its CCTPHookRouter.
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             base,
             destinationDomain,
             remotePools[destinationDomain],
             usdc,
-            destinationCaller,
+            remoteHookRouters[destinationDomain],
             maxFee,
             finality,
             hookData

@@ -128,23 +128,23 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
      * @return nonce CCTP message nonce
+     * @dev The CCTP destinationCaller is pinned at the contract level to remoteHookRouters[destinationDomain]
+     *      (see setRemoteHookRouter) — it is not caller-supplied, so a burn can only be delivered through
+     *      the destination chain's CCTPHookRouter.
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
         uint256 maxFee
     ) external override returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
                 ITransactModule.atomicCrossChainUnshield,
-                (_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee)
+                (_transaction, destinationDomain, finalRecipient, maxFee)
             )
         );
         return abi.decode(result, (uint64));
@@ -270,6 +270,19 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         remotePools[domain] = poolAddress;
         emit RemotePoolSet(domain, poolAddress);
+    }
+
+    /**
+     * @notice Set the CCTP hook router on a remote (destination) domain
+     * @dev Pinned as the CCTP destinationCaller for outbound unshield burns to that domain, so the
+     *      message can only be delivered through that chain's CCTPHookRouter (which fires the mint hook).
+     * @param domain CCTP domain ID of the remote chain
+     * @param routerAddress Address of the remote CCTPHookRouter (as bytes32)
+     */
+    function setRemoteHookRouter(uint32 domain, bytes32 routerAddress) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        remoteHookRouters[domain] = routerAddress;
+        emit RemoteHookRouterSet(domain, routerAddress);
     }
 
     /**

@@ -270,6 +270,11 @@ describe("Privacy Pool Integration", function () {
     await privacyPool.setHookRouter(await hubHookRouter.getAddress());
     await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
 
+    // Pin the CCTP destinationCaller (hook router) on-chain (#64). The
+    // destinationCaller arg is no longer passed per-call; it is fixed here.
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(await hubHookRouter.getAddress(), 32));
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(await clientHookRouter.getAddress(), 32));
+
     // Set mock MessageTransmitter relayer to hookRouter
     // (so hookRouter can call receiveMessage on mock)
     // setRelayer() requires msg.sender == current relayer
@@ -376,7 +381,6 @@ describe("Privacy Pool Integration", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("shield-key"));
 
       // Execute cross-chain shield
-      // Use bytes32(0) for destinationCaller to allow any relayer
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
         SHIELD_AMOUNT,
         0,               // maxFee = 0 (no CCTP fee for this test)
@@ -384,9 +388,7 @@ describe("Privacy Pool Integration", function () {
         npk,
         encryptedBundle,
         shieldKey,
-        ethers.ZeroHash  // destinationCaller = 0 (any relayer can submit)
-      ,
-      ethers.ZeroAddress);
+        ethers.ZeroAddress);
       const receipt = await tx.wait();
 
       // Check event was emitted
@@ -439,9 +441,7 @@ describe("Privacy Pool Integration", function () {
         npk,
         encryptedBundle,
         shieldKey,
-        ethers.ZeroHash  // destinationCaller = 0 (any relayer)
-      ,
-      ethers.ZeroAddress);
+        ethers.ZeroAddress);
       const receipt = await tx.wait();
 
       // Extract MessageSent(bytes) event — contains the full encoded MessageV2
@@ -597,9 +597,6 @@ describe("Privacy Pool Integration", function () {
         },
       };
 
-      // Set destinationCaller = relayer address (bytes32)
-      const destinationCaller = ethers.ZeroHash; // Allow any relayer
-
       // Record balances before
       const recipientBalanceBefore = await clientUsdc.balanceOf(bobAddress);
       const clientHookRouterAddress = await clientHookRouter.getAddress();
@@ -610,7 +607,6 @@ describe("Privacy Pool Integration", function () {
         transaction,
         DOMAINS.client,
         bobAddress,         // finalRecipient on client chain
-        destinationCaller,
         MAX_FEE,
       );
       const receipt = await tx.wait();
@@ -672,7 +668,7 @@ describe("Privacy Pool Integration", function () {
       ];
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("src-auth-key"));
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        SRC_AUTH_AMOUNT, 0, 0, npk, encryptedBundle, shieldKey, ethers.ZeroHash, ethers.ZeroAddress,
+        SRC_AUTH_AMOUNT, 0, 0, npk, encryptedBundle, shieldKey, ethers.ZeroAddress,
       );
       const receipt = await tx.wait();
       for (const log of receipt!.logs) {

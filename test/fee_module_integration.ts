@@ -247,6 +247,8 @@ describe("Fee Module Integration", function () {
 
     await privacyPool.setHookRouter(await hubHookRouter.getAddress());
     await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(await hubHookRouter.getAddress(), 32));
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(await clientHookRouter.getAddress(), 32));
     await hubMessageTransmitter.connect(relayer).setRelayer(await hubHookRouter.getAddress());
     await clientMessageTransmitter.connect(relayer).setRelayer(await clientHookRouter.getAddress());
 
@@ -395,7 +397,6 @@ describe("Fee Module Integration", function () {
         npk,
         encryptedBundle,
         shieldKey,
-        ethers.ZeroHash,
         ethers.ZeroAddress  // no integrator
       );
       const receipt = await tx.wait();

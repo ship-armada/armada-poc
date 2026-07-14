@@ -38,7 +38,7 @@ const HUB_IFACE = new ethers.Interface([
 ]);
 
 const CLIENT_IFACE = new ethers.Interface([
-  "function gaslessCrossChainShield((address user, uint256 totalAmount, uint256 fee, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permitInput, (uint256 maxFee, uint32 minFinalityThreshold, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller, address integrator) dest)",
+  "function gaslessCrossChainShield((address user, uint256 totalAmount, uint256 fee, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permitInput, (uint256 maxFee, uint32 minFinalityThreshold, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, address integrator) dest)",
 ]);
 
 function encodeHubShield(fee: bigint): string {
@@ -85,7 +85,6 @@ function encodeClientShield(fee: bigint): string {
       "0x" + "24".repeat(32), // npk
       ["0x" + "00".repeat(32), "0x" + "00".repeat(32), "0x" + "00".repeat(32)], // encryptedBundle
       "0x" + "00".repeat(32), // shieldKey
-      "0x" + "00".repeat(32), // destinationCaller
       "0x" + "26".repeat(20), // integrator
     ],
   ]);
@@ -111,7 +110,7 @@ describe("verifyGaslessFee", () => {
     // ABLOWED_SELECTORS table.
     const expected = ethers
       .id(
-        "gaslessCrossChainShield((address,uint256,uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,bytes32,address))",
+        "gaslessCrossChainShield((address,uint256,uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,address))",
       )
       .slice(0, 10);
     expect(GASLESS_CROSS_CHAIN_SHIELD_SELECTOR).to.equal(expected);

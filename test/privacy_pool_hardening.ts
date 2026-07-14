@@ -161,6 +161,10 @@ describe("Privacy Pool Integration Hardening", function () {
     await privacyPool.setHookRouter(await hubHookRouter.getAddress());
     await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
 
+    // Pin the destinationCaller (hook router) on-chain for cross-chain shield/unshield
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(await hubHookRouter.getAddress(), 32));
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(await clientHookRouter.getAddress(), 32));
+
     // Set mock MessageTransmitter relayer to hookRouter (so hookRouter can call receiveMessage)
     await hubMessageTransmitter.connect(relayer).setRelayer(await hubHookRouter.getAddress());
     await clientMessageTransmitter.connect(relayer).setRelayer(await clientHookRouter.getAddress());
@@ -442,9 +446,8 @@ describe("Privacy Pool Integration Hardening", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("rt-key"));
 
       const clientTx = await privacyPoolClient.connect(alice).crossChainShield(
-        SHIELD_AMOUNT, 0, 0, npk, encBundle, shieldKey, ethers.ZeroHash
-      ,
-      ethers.ZeroAddress);
+        SHIELD_AMOUNT, 0, 0, npk, encBundle, shieldKey, ethers.ZeroAddress
+      );
       const clientReceipt = await clientTx.wait();
 
       // Step 2: Relay to Hub — extract full MessageV2 from MessageSent(bytes) event
@@ -490,7 +493,7 @@ describe("Privacy Pool Integration Hardening", function () {
       });
 
       const unshieldTx = await privacyPool.atomicCrossChainUnshield(
-        unshieldTxData, DOMAINS.client, bobAddress, ethers.ZeroHash, 0
+        unshieldTxData, DOMAINS.client, bobAddress, 0
       );
       const unshieldReceipt = await unshieldTx.wait();
 

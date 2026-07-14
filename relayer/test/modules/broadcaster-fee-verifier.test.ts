@@ -120,7 +120,6 @@ function encodeWrapperCalldata(
       emptyTransaction(),
       0, // destinationDomain (uint32)
       ethers.ZeroAddress, // finalRecipient
-      "0x" + "00".repeat(32), // destinationCaller (bytes32)
       0n, // maxFee (uint256)
     ]);
   }

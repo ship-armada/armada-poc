@@ -177,11 +177,18 @@ abstract contract PrivacyPoolStorage {
     /// @dev When address(0), ShieldModule falls back to the flat shieldFee calculation.
     address public feeModule;
 
+    /// @notice CCTP hook router on each remote (destination) domain, as bytes32.
+    /// @dev Used as the CCTP `destinationCaller` for outbound unshield burns so the message can only be
+    ///      delivered through that chain's CCTPHookRouter (which fires the mint hook). Pinning this at the
+    ///      contract level removes the caller-supplied `destinationCaller` footgun: bytes32(0) would let
+    ///      any third party call receiveMessage directly, skip the hook, and strand the funds.
+    mapping(uint32 => bytes32) public remoteHookRouters;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[46] private __gap;
+    uint256[45] private __gap;
 }

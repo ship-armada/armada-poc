@@ -259,7 +259,10 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     function redeemAndShield(
         Transaction calldata _transaction,
         bytes32 _npk,
-        ShieldCiphertext calldata _shieldCiphertext
+        ShieldCiphertext calldata _shieldCiphertext,
+        bytes32 _feeNpk,
+        ShieldCiphertext calldata _feeShieldCiphertext,
+        uint256 _feeAmount
     ) external nonReentrant returns (uint256 assets) {
         _requireAuthorizedOrWithdrawOnly();
         require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
@@ -270,13 +273,19 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
             "ArmadaYieldAdapter: invalid adaptContract"
         );
 
-        // 2. Verify adaptParams binds the npk and ciphertext
+        // 2. Verify adaptParams binds the user's shield destination, the relayer's fee-shield
+        //    destination, and the fee amount. Binding all three makes the fee relayer-immutable: the
+        //    submitter cannot redirect the fee to a different note or inflate the amount.
         require(
             YieldAdaptParams.verify(
                 _transaction.boundParams.adaptParams,
                 _npk,
                 _shieldCiphertext.encryptedBundle,
-                _shieldCiphertext.shieldKey
+                _shieldCiphertext.shieldKey,
+                _feeNpk,
+                _feeShieldCiphertext.encryptedBundle,
+                _feeShieldCiphertext.shieldKey,
+                _feeAmount
             ),
             "ArmadaYieldAdapter: adaptParams mismatch"
         );
@@ -300,26 +309,57 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         shareToken.approve(address(vault), shares);
         assets = vault.redeem(shares, address(this), address(this));
 
-        // 7. Build shield request for USDC
-        ShieldRequest[] memory shieldRequests = new ShieldRequest[](1);
+        // 7. Shield the redeemed proceeds: (assets - fee) to the user and, if fee > 0, the fee to the
+        //    relayer's own 0zk destination — both from proceeds, in a single privileged (fee-exempt)
+        //    shield. The fee is bound in adaptParams (step 2), so it is the user's committed
+        //    amount/recipient, not relayer-supplied. The relayer is paid to its shielded address, just
+        //    like every other tx type — self-funding, single Transaction (see issue #312).
+        require(_feeAmount <= assets, "ArmadaYieldAdapter: fee exceeds proceeds");
+        // Defensive: a non-zero fee must have a real destination. adaptParams already pins feeNpk to
+        // the user's committed value, but a frontend bug committing feeNpk == 0 with feeAmount > 0 would
+        // shield the fee to an unspendable note (burning it). Refuse rather than silently burn funds.
+        require(_feeAmount == 0 || _feeNpk != bytes32(0), "ArmadaYieldAdapter: fee without destination");
+        usdc.approve(privacyPool, assets);
+        _shieldProceeds(_npk, _shieldCiphertext, _feeNpk, _feeShieldCiphertext, _feeAmount, assets);
+
+        emit RedeemAndShield(_npk, shares, assets);
+    }
+
+    /**
+     * @notice Shield the redeemed proceeds — (assets - fee) to the user and, when fee > 0, the fee to
+     *         the relayer's 0zk destination — in one privileged (fee-exempt) shield call.
+     * @dev Extracted to keep redeemAndShield below the stack-depth limit. Values are set here (from the
+     *      redeemed proceeds); the shield destinations (npk + ciphertext) come from adaptParams-verified
+     *      inputs, so neither recipient can be altered by the submitter.
+     */
+    function _shieldProceeds(
+        bytes32 _npk,
+        ShieldCiphertext calldata _shieldCiphertext,
+        bytes32 _feeNpk,
+        ShieldCiphertext calldata _feeShieldCiphertext,
+        uint256 _feeAmount,
+        uint256 _assets
+    ) internal {
+        ShieldRequest[] memory shieldRequests = new ShieldRequest[](_feeAmount > 0 ? 2 : 1);
         shieldRequests[0] = ShieldRequest({
             preimage: CommitmentPreimage({
-                npk: _npk,  // User's npk from verified adaptParams
-                token: TokenData({
-                    tokenType: TokenType.ERC20,
-                    tokenAddress: address(usdc),
-                    tokenSubID: 0
-                }),
-                value: uint120(assets)
+                npk: _npk, // User's npk from verified adaptParams
+                token: TokenData({ tokenType: TokenType.ERC20, tokenAddress: address(usdc), tokenSubID: 0 }),
+                value: uint120(_assets - _feeAmount)
             }),
             ciphertext: _shieldCiphertext
         });
-
-        // 8. Shield USDC to user's npk
-        usdc.approve(privacyPool, assets);
+        if (_feeAmount > 0) {
+            shieldRequests[1] = ShieldRequest({
+                preimage: CommitmentPreimage({
+                    npk: _feeNpk, // Relayer's 0zk npk from verified adaptParams
+                    token: TokenData({ tokenType: TokenType.ERC20, tokenAddress: address(usdc), tokenSubID: 0 }),
+                    value: uint120(_feeAmount)
+                }),
+                ciphertext: _feeShieldCiphertext
+            });
+        }
         IPrivacyPool(privacyPool).shield(shieldRequests, address(0));
-
-        emit RedeemAndShield(_npk, shares, assets);
     }
 
     // ============ View Functions ============

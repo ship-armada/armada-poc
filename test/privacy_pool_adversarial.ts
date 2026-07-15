@@ -343,6 +343,43 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Already initialized");
     });
 
+    // WHY: #368 — initialize() runs in a separate tx after deploy and sets owner/treasury/modules. It
+    // must be callable ONLY by the deployer, or a front-runner could initialize a freshly-deployed pool
+    // with attacker-controlled owner + malicious module addresses before the deployer's own init lands.
+    it("initialize rejects a non-deployer (front-run) on PrivacyPool", async function () {
+      const freshPool = await (await ethers.getContractFactory("PrivacyPool")).deploy();
+      await expect(
+        freshPool.connect(attacker).initialize(
+          await shieldModule.getAddress(),
+          await transactModule.getAddress(),
+          await merkleModule.getAddress(),
+          await verifierModule.getAddress(),
+          await hubTokenMessenger.getAddress(),
+          await hubMessageTransmitter.getAddress(),
+          await hubUsdc.getAddress(),
+          DOMAINS.hub,
+          attackerAddress, // attacker tries to seize ownership
+          attackerAddress
+        )
+      ).to.be.revertedWith("PrivacyPool: Only deployer");
+    });
+
+    // WHY: #368 — same front-run protection for the client contract.
+    it("initialize rejects a non-deployer (front-run) on PrivacyPoolClient", async function () {
+      const freshClient = await (await ethers.getContractFactory("PrivacyPoolClient")).deploy();
+      await expect(
+        freshClient.connect(attacker).initialize(
+          await clientTokenMessenger.getAddress(),
+          await clientMessageTransmitter.getAddress(),
+          await clientUsdc.getAddress(),
+          DOMAINS.client,
+          DOMAINS.hub,
+          ethers.zeroPadValue(privacyPoolAddress, 32),
+          attackerAddress
+        )
+      ).to.be.revertedWith("PrivacyPoolClient: Only deployer");
+    });
+
     it("non-owner cannot call setPrivilegedShieldCaller", async function () {
       await expect(
         privacyPool.connect(attacker).setPrivilegedShieldCaller(attackerAddress, true)

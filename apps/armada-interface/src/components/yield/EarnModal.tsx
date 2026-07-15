@@ -73,17 +73,14 @@ export function EarnModal() {
   const syncGate = useSpendableSyncGate()
   // A4 — yield ops are relayer-mediated. Fee comes from the quote's crossContract tier.
   const yieldKind: 'yield-deposit' | 'yield-withdraw' = tab === 'add' ? 'yield-deposit' : 'yield-withdraw'
-  // yield-withdraw is (still) forced to user-wallet submission. The original blocker — the SDK's
-  // one-Transaction-per-token shape not fitting `redeemAndShield` — is RESOLVED by #312's
-  // fee-from-proceeds design: redeem is now a single Transaction and the relayer fee is paid from the
-  // redeemed USDC by SHIELDING it to the relayer's 0zk address (bound in adaptParams), so no separate
-  // broadcaster Transaction is generated and the relayer is still paid to its shielded address. The
-  // only remaining gate for gasless withdraw is the relayer verifier: it must accept the new
-  // `redeemAndShield` selector and confirm the fee-shield output targets its 0zk address for >= the
-  // required amount. No /fees change is needed (the fee uses the relayer's existing 0zk address). Until
-  // the verifier lands, withdraw stays wallet-submit. Tracked at #312.
-  const forceWalletForWithdraw = tab === 'withdraw'
-  const effectiveUseWalletOverride = prefs.submitFromWallet || forceWalletForWithdraw
+  // yield-withdraw now uses the same submission model as every other kind: the user's `submitFromWallet`
+  // preference decides wallet vs. relayer. #312's fee-from-proceeds design removed the old blocker — the
+  // withdraw is a single Transaction and the relayer fee is shielded to the relayer's 0zk address (bound
+  // in adaptParams), so it fits the standard relayer/broadcaster path. NOTE: for the relayer (gasless)
+  // path to succeed end-to-end, the relayer's broadcaster-fee verifier must accept the new
+  // `redeemAndShield` selector and confirm the fee-shield output targets its 0zk address — tracked at
+  // #312 (relayer side). Users can fall back to wallet submission via the `submitFromWallet` preference.
+  const effectiveUseWalletOverride = prefs.submitFromWallet
   // When the user-wallet path is in effect, no broadcaster fee is baked into the proof — the
   // user pays gas in ETH instead.
   const fee: bigint = effectiveUseWalletOverride ? 0n : userFeeForKind(yieldKind, amount, quote)
@@ -296,10 +293,9 @@ export function EarnModal() {
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}
             gasChainId={hubChainId}
-            // Add tab → relayer-mediated (gasless). Withdraw tab → force-routed through wallet
-            // because `redeemAndShield`'s multi-Transaction shape doesn't fit the broadcaster
-            // path today (tracked at ship-armada/armada-poc#312). `effectiveUseWalletOverride`
-            // already encodes this; the input step shows the gas notice when it's true.
+            // Both tabs are relayer-mediated (gasless) unless the user opts into wallet submission
+            // via `submitFromWallet`. `effectiveUseWalletOverride` encodes that; the input step shows
+            // the gas notice when it's true.
             gaslessMode={!effectiveUseWalletOverride}
             rate={yieldRate}
             continueBlockedReason={withdrawFeeBlockedReason}

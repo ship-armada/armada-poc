@@ -259,7 +259,9 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     function redeemAndShield(
         Transaction calldata _transaction,
         bytes32 _npk,
-        ShieldCiphertext calldata _shieldCiphertext
+        ShieldCiphertext calldata _shieldCiphertext,
+        address _feeRecipient,
+        uint256 _feeAmount
     ) external nonReentrant returns (uint256 assets) {
         _requireAuthorizedOrWithdrawOnly();
         require(privacyPool != address(0), "ArmadaYieldAdapter: no privacyPool");
@@ -270,13 +272,17 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
             "ArmadaYieldAdapter: invalid adaptContract"
         );
 
-        // 2. Verify adaptParams binds the npk and ciphertext
+        // 2. Verify adaptParams binds the npk, ciphertext, and broadcaster fee (recipient + amount).
+        //    Binding the fee into the proof makes it relayer-immutable: the submitter cannot redirect
+        //    the fee or inflate the amount beyond what the user committed to.
         require(
             YieldAdaptParams.verify(
                 _transaction.boundParams.adaptParams,
                 _npk,
                 _shieldCiphertext.encryptedBundle,
-                _shieldCiphertext.shieldKey
+                _shieldCiphertext.shieldKey,
+                _feeRecipient,
+                _feeAmount
             ),
             "ArmadaYieldAdapter: adaptParams mismatch"
         );
@@ -300,7 +306,17 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         shareToken.approve(address(vault), shares);
         assets = vault.redeem(shares, address(this), address(this));
 
-        // 7. Build shield request for USDC
+        // 7. Pay the broadcaster (relayer) fee out of the redeemed proceeds. The fee is bound in
+        //    adaptParams (step 2), so it is the user's committed amount/recipient, not relayer-supplied.
+        //    Fee-from-proceeds keeps the whole withdraw a single Transaction and is self-funding — no
+        //    separately-shielded USDC is needed to pay the relayer (see issue #312).
+        require(_feeAmount <= assets, "ArmadaYieldAdapter: fee exceeds proceeds");
+        uint256 shieldedAmount = assets - _feeAmount;
+        if (_feeAmount > 0) {
+            usdc.safeTransfer(_feeRecipient, _feeAmount);
+        }
+
+        // 8. Build shield request for the remaining USDC
         ShieldRequest[] memory shieldRequests = new ShieldRequest[](1);
         shieldRequests[0] = ShieldRequest({
             preimage: CommitmentPreimage({
@@ -310,13 +326,13 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
                     tokenAddress: address(usdc),
                     tokenSubID: 0
                 }),
-                value: uint120(assets)
+                value: uint120(shieldedAmount)
             }),
             ciphertext: _shieldCiphertext
         });
 
-        // 8. Shield USDC to user's npk
-        usdc.approve(privacyPool, assets);
+        // 9. Shield the remaining USDC to user's npk
+        usdc.approve(privacyPool, shieldedAmount);
         IPrivacyPool(privacyPool).shield(shieldRequests, address(0));
 
         emit RedeemAndShield(_npk, shares, assets);

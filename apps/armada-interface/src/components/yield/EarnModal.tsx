@@ -73,13 +73,14 @@ export function EarnModal() {
   const syncGate = useSpendableSyncGate()
   // A4 — yield ops are relayer-mediated. Fee comes from the quote's crossContract tier.
   const yieldKind: 'yield-deposit' | 'yield-withdraw' = tab === 'add' ? 'yield-deposit' : 'yield-withdraw'
-  // TEMP — yield-withdraw is forced to user-wallet submission because the broadcaster-fee
-  // mechanism doesn't fit the current `ArmadaYieldAdapter.redeemAndShield` shape. The SDK
-  // generates one Transaction per token (shares unshield to adapter + USDC unshield to
-  // broadcaster), but the adapter only consumes a single Transaction whose unshieldPreimage
-  // MUST be shares. Tracked at ship-armada/armada-poc#312 (multi-Transaction adapter).
-  // yield-deposit is unaffected — input and broadcaster fee are both USDC, so the SDK fits
-  // them in a single Transaction.
+  // yield-withdraw is (still) forced to user-wallet submission. The original blocker — the SDK's
+  // one-Transaction-per-token shape not fitting `redeemAndShield` — is RESOLVED by #312's
+  // fee-from-proceeds design: redeem is now a single Transaction and the relayer fee is paid from the
+  // redeemed USDC (bound in adaptParams), so no separate broadcaster Transaction is generated. The
+  // remaining gate for gasless withdraw is relayer-side: fee-from-proceeds pays the relayer's EVM
+  // address on-chain, but /fees advertises only the relayer's shielded (0zk) address — so the relayer
+  // must expose an EVM fee-recipient and its verifier must check (feeRecipient, feeAmount) from the
+  // redeemAndShield calldata. Until that lands, withdraw stays wallet-submit. Tracked at #312.
   const forceWalletForWithdraw = tab === 'withdraw'
   const effectiveUseWalletOverride = prefs.submitFromWallet || forceWalletForWithdraw
   // When the user-wallet path is in effect, no broadcaster fee is baked into the proof — the

@@ -53,6 +53,26 @@ function encodeYieldAdaptParams(
 }
 
 /**
+ * Withdraw (redeem) variant that also binds the broadcaster fee (recipient + amount) into adaptParams.
+ * The adapter pays this fee from the redeemed USDC proceeds and shields the remainder — a single
+ * Transaction, self-funding, and relayer-immutable (issue #312). Must match Solidity
+ * YieldAdaptParams.encode(npk, bundle, shieldKey, feeRecipient, feeAmount).
+ */
+function encodeYieldAdaptParamsWithFee(
+  npk: string,
+  encryptedBundle: [string, string, string],
+  shieldKey: string,
+  feeRecipient: string,
+  feeAmount: bigint,
+): string {
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
+    ['bytes32', 'bytes32[3]', 'bytes32', 'address', 'uint256'],
+    [npk, encryptedBundle, shieldKey, feeRecipient, feeAmount],
+  )
+  return ethers.keccak256(encoded)
+}
+
+/**
  * Normalize the SDK's proved Transaction tuple into the shape the adapter ABI expects. The
  * SDK returns ethers v6 Result proxies with maybe-numeric / maybe-string fields; the adapter
  * call needs strict bigint / hex types. Adapted from the legacy normalizeTransactionForAdapter.
@@ -148,7 +168,7 @@ function normalizeTransactionForAdapter(tx: unknown, hubChainId: number): unknow
  */
 const ADAPTER_ABI = [
   'function lendAndShield(tuple(tuple(tuple(uint256 x, uint256 y) a, tuple(uint256[2] x, uint256[2] y) b, tuple(uint256 x, uint256 y) c) proof, bytes32 merkleRoot, bytes32[] nullifiers, bytes32[] commitments, tuple(uint16 treeNumber, uint72 minGasPrice, uint8 unshield, uint64 chainID, address adaptContract, bytes32 adaptParams, tuple(bytes32[4] ciphertext, bytes32 blindedSenderViewingKey, bytes32 blindedReceiverViewingKey, bytes annotationData, bytes memo)[] commitmentCiphertext) boundParams, tuple(bytes32 npk, tuple(uint8 tokenType, address tokenAddress, uint256 tokenSubID) token, uint120 value) unshieldPreimage) _transaction, bytes32 _npk, tuple(bytes32[3] encryptedBundle, bytes32 shieldKey) _shieldCiphertext) returns (uint256)',
-  'function redeemAndShield(tuple(tuple(tuple(uint256 x, uint256 y) a, tuple(uint256[2] x, uint256[2] y) b, tuple(uint256 x, uint256 y) c) proof, bytes32 merkleRoot, bytes32[] nullifiers, bytes32[] commitments, tuple(uint16 treeNumber, uint72 minGasPrice, uint8 unshield, uint64 chainID, address adaptContract, bytes32 adaptParams, tuple(bytes32[4] ciphertext, bytes32 blindedSenderViewingKey, bytes32 blindedReceiverViewingKey, bytes annotationData, bytes memo)[] commitmentCiphertext) boundParams, tuple(bytes32 npk, tuple(uint8 tokenType, address tokenAddress, uint256 tokenSubID) token, uint120 value) unshieldPreimage) _transaction, bytes32 _npk, tuple(bytes32[3] encryptedBundle, bytes32 shieldKey) _shieldCiphertext) returns (uint256)',
+  'function redeemAndShield(tuple(tuple(tuple(uint256 x, uint256 y) a, tuple(uint256[2] x, uint256[2] y) b, tuple(uint256 x, uint256 y) c) proof, bytes32 merkleRoot, bytes32[] nullifiers, bytes32[] commitments, tuple(uint16 treeNumber, uint72 minGasPrice, uint8 unshield, uint64 chainID, address adaptContract, bytes32 adaptParams, tuple(bytes32[4] ciphertext, bytes32 blindedSenderViewingKey, bytes32 blindedReceiverViewingKey, bytes annotationData, bytes memo)[] commitmentCiphertext) boundParams, tuple(bytes32 npk, tuple(uint8 tokenType, address tokenAddress, uint256 tokenSubID) token, uint120 value) unshieldPreimage) _transaction, bytes32 _npk, tuple(bytes32[3] encryptedBundle, bytes32 shieldKey) _shieldCiphertext, address _feeRecipient, uint256 _feeAmount) returns (uint256)',
 ]
 
 export interface YieldAdaptProofResult {
@@ -213,11 +233,26 @@ export async function buildYieldAdaptTransaction(opts: {
   ] as [string, string, string]
   const shieldKey = String(shieldRequest.ciphertext.shieldKey)
 
-  const adaptParams = encodeYieldAdaptParams(npk, encryptedBundle, shieldKey)
+  // Redeem (withdraw) pays the broadcaster fee contract-side from the redeemed USDC proceeds, bound
+  // into adaptParams — NOT via the SDK broadcaster-fee leg, which would spend a second token (USDC)
+  // and produce a second Transaction the adapter can't consume (issue #312). Lend keeps the SDK leg
+  // (input and fee are both USDC → a single Transaction already).
+  const isRedeem = opts.mode === 'redeem'
+  const feeAmount = isRedeem ? (opts.broadcasterFee?.amount ?? 0n) : 0n
+  const feeRecipient =
+    isRedeem && feeAmount > 0n
+      ? (opts.broadcasterFee?.recipientAddress ?? ethers.ZeroAddress)
+      : ethers.ZeroAddress
+
+  const adaptParams = isRedeem
+    ? encodeYieldAdaptParamsWithFee(npk, encryptedBundle, shieldKey, feeRecipient, feeAmount)
+    : encodeYieldAdaptParams(npk, encryptedBundle, shieldKey)
 
   // Generate the cross-contract-calls proof. The unshield recipient is the adapter address;
-  // the proof binds via adaptContract + adaptParams so the adapter cannot redirect.
-  const sendWithPublicWallet = opts.broadcasterFee === null
+  // the proof binds via adaptContract + adaptParams so the adapter cannot redirect. Redeem never
+  // binds an SDK broadcaster into the proof (its fee is contract-side); lend may.
+  const sdkBroadcasterFee = isRedeem ? undefined : (opts.broadcasterFee ?? undefined)
+  const sendWithPublicWallet = isRedeem ? true : opts.broadcasterFee === null
   // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
   // blocks the main thread for 20-30s.
   await yieldToPaint()
@@ -237,7 +272,7 @@ export async function buildYieldAdaptTransaction(opts: {
       },
     ],
     [], // nftAmountRecipients
-    opts.broadcasterFee ?? undefined,
+    sdkBroadcasterFee,
     sendWithPublicWallet,
     { contract: opts.adapterAddress, parameters: adaptParams },
     false, // useDummyProof
@@ -249,13 +284,19 @@ export async function buildYieldAdaptTransaction(opts: {
   }
 
   const transaction = normalizeTransactionForAdapter(provedTransactions[0], opts.hubChainId)
-  const functionName = opts.mode === 'lend' ? 'lendAndShield' : 'redeemAndShield'
   const iface = new ethers.Interface(ADAPTER_ABI)
-  const data = iface.encodeFunctionData(functionName, [
-    transaction,
-    npk,
-    { encryptedBundle, shieldKey },
-  ]) as `0x${string}`
+  // redeemAndShield additionally takes (feeRecipient, feeAmount), verified against adaptParams.
+  const data = (
+    isRedeem
+      ? iface.encodeFunctionData('redeemAndShield', [
+          transaction,
+          npk,
+          { encryptedBundle, shieldKey },
+          feeRecipient,
+          feeAmount,
+        ])
+      : iface.encodeFunctionData('lendAndShield', [transaction, npk, { encryptedBundle, shieldKey }])
+  ) as `0x${string}`
 
   return {
     transaction: {

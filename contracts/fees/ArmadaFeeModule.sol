@@ -44,7 +44,9 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /// @dev Governance-tunable via `setHarvestInterval`. Bounded by MIN/MAX_HARVEST_INTERVAL.
     uint256 public harvestInterval;
 
-    /// @notice Volume tiers (sorted descending by threshold). Max 10.
+    /// @notice Volume tiers. Order is not significant — `_getTieredTake` scans all tiers and picks
+    ///         the highest threshold that is <= the integrator's volume (order-independent best match),
+    ///         so `addTier`/`setTier` impose no ordering or duplicate constraint. Max MAX_TIERS.
     Tier[] internal _tiers;
 
     /// @notice Per-integrator registration and stats

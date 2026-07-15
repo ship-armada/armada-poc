@@ -102,9 +102,11 @@ Governance can adjust:
 | Base Armada take | 50 bps | `setBaseArmadaTake(bps)` |
 | Volume threshold | $250k | `setTier(index, threshold, takeBps)` |
 | Armada take after threshold | 40 bps | `setTier(index, threshold, takeBps)` |
-| Yield fee | 15% | `setYieldFee(pct)` |
+| Yield fee | 15% (1500 bps) | `setYieldFee(bps)` |
 
-Governance can add additional tiers via `addTier(threshold, takeBps)`.
+`setYieldFee` takes **basis points**, not a percentage, bounded to `MIN_YIELD_FEE_BPS`–`MAX_YIELD_FEE_BPS` (see Safety Bounds). 15% is passed as `1500`.
+
+Governance can add tiers via `addTier(threshold, takeBps)` and remove one by index via `removeTier(index)` (swap-and-pop, so the last tier's index changes on removal).
 
 ### Custom Integrator Terms
 
@@ -124,21 +126,43 @@ Use cases:
 - Ecosystem grants (waived volume threshold)
 - Promotional periods
 
+### Safety Bounds
+
+The contract hard-caps every governance-tunable fee input. All setters revert outside these bounds:
+
+| Constant | Value | Applies to |
+|----------|-------|-----------|
+| `MAX_TIERS` | 10 | Max number of volume tiers (`addTier`) |
+| `MAX_BPS` | 1000 (10%) | Any single Armada-take component — base take, tier take, custom take |
+| `MIN_YIELD_FEE_BPS` | 100 (1%) | Lower bound on `setYieldFee` |
+| `MAX_YIELD_FEE_BPS` | 5000 (50%) | Upper bound on `setYieldFee` |
+| `MAX_INTEGRATOR_FEE_BPS` | 500 (5%) | Integrator base fee (`setIntegratorFee`) |
+
+Harvest cadence is separately bounded by `MIN_HARVEST_INTERVAL`/`MAX_HARVEST_INTERVAL` (`setHarvestInterval`).
+
 ---
 
 ## On-Chain Queries
 
 ```solidity
-// Integrator stats
-function getIntegratorVolume(address integrator) external view returns (uint256);
-function getIntegratorEarnings(address integrator) external view returns (uint256);
-function getIntegratorBaseFee(address integrator) external view returns (uint256);
+// Integrator stats & terms
+// IntegratorInfo bundles { baseFee, cumulativeVolume, cumulativeEarnings, registered };
+// CustomTerms bundles { customArmadaTakeBps, customVolumeThreshold, active }.
+function getIntegratorInfo(address integrator) external view returns (IntegratorInfo memory);
+function getIntegratorTerms(address integrator) external view returns (CustomTerms memory);
 function getIntegratorBonus(address integrator) external view returns (uint256);
-function getIntegratorTotalFee(address integrator) external view returns (uint256);
 
 // Fee calculation
+function calculateShieldFee(address integrator, uint256 amount)
+    external view returns (uint256 armadaTake, uint256 integratorFee, uint256 totalFee);
 function getArmadaTake(address integrator) external view returns (uint256);
 function getUserFee(address integrator) external view returns (uint256);
+
+// Tiers & yield config
+function getTiers() external view returns (Tier[] memory);
+function getTierCount() external view returns (uint256);
+function getYieldFeeBps() external view returns (uint256);
+function getHarvestInterval() external view returns (uint256);
 ```
 
 ---
@@ -146,6 +170,9 @@ function getUserFee(address integrator) external view returns (uint256);
 ## Events
 
 ```solidity
+// NOTE: the canonical home/name of the per-shield event is an OPEN design question (issue #167).
+// The fee module currently emits `ShieldFeeRecorded` (below) rather than this `Shield` shape; the
+// pool's ShieldModule separately emits its own `Shield` event. This block is not yet reconciled.
 event Shield(
     address indexed asset,
     uint256 amount,
@@ -155,15 +182,36 @@ event Shield(
     uint256 integratorFeeEarned
 );
 
-event IntegratorFeeUpdated(
+// As implemented on the fee module today:
+event ShieldFeeRecorded(
+    address indexed asset,
     address indexed integrator,
-    uint256 newFeeBps
+    uint256 amount,
+    uint256 armadaTakeBps,
+    uint256 armadaTakePaid,
+    uint256 integratorFeePaid,
+    uint256 integratorCumulativeVolume
+);
+
+event IntegratorRegistered(
+    address indexed integrator,
+    uint256 baseFee
+);
+
+event TierAdded(
+    uint256 index,
+    uint256 volumeThreshold,
+    uint256 armadaTakeBps
 );
 
 event TierUpdated(
-    uint256 indexed tierIndex,
+    uint256 index,
     uint256 volumeThreshold,
     uint256 armadaTakeBps
+);
+
+event TierRemoved(
+    uint256 index
 );
 ```
 

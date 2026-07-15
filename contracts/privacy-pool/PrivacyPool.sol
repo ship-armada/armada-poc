@@ -48,6 +48,19 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         deployer = msg.sender;
     }
 
+    /// @notice Reentrancy guard for the router's state-changing entry points.
+    /// @dev Hardening (no known exploit today — nullifiers are marked before transfers, event indices
+    ///      computed after, and the shield balance check self-reverts on a nested same-token shield);
+    ///      guards against a malicious token's transfer hook re-entering a guarded entry, and future-
+    ///      proofs against ordering changes (#369). 0-based so a fresh slot needs no init. Module
+    ///      self-calls (e.g. IMerkleModule(address(this)).insertLeaves) are unguarded and don't trip it.
+    modifier nonReentrant() {
+        require(_reentrancyStatus == 0, "PrivacyPool: reentrant call");
+        _reentrancyStatus = 1;
+        _;
+        _reentrancyStatus = 0;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -122,7 +135,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _shieldRequests Array of shield requests
      * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override {
+    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override nonReentrant {
         _delegatecall(shieldModule, abi.encodeCall(IShieldModule.shield, (_shieldRequests, integrator)));
     }
 
@@ -130,7 +143,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @notice Execute private transactions (transfers and/or unshields)
      * @param _transactions Array of transactions to process
      */
-    function transact(Transaction[] calldata _transactions) external override {
+    function transact(Transaction[] calldata _transactions) external override nonReentrant {
         _delegatecall(transactModule, abi.encodeCall(ITransactModule.transact, (_transactions)));
     }
 
@@ -153,7 +166,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address finalRecipient,
         uint256 maxFee,
         bytes32 uniqueNonce
-    ) external override returns (uint64) {
+    ) external override nonReentrant returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
@@ -297,6 +310,39 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(msg.sender == owner, "PrivacyPool: Only owner");
         remoteHookRouters[domain] = routerAddress;
         emit RemoteHookRouterSet(domain, routerAddress);
+    }
+
+    /**
+     * @notice Add tokens to the shield blocklist (governance kill-switch for a compromised/incompatible token).
+     * @dev Faithful port of Railgun's TokenBlocklist: blocked tokens cannot be SHIELDED, but existing notes
+     *      remain transferable and UNSHIELDABLE so holders can always exit. Non-exhaustive by nature. Idempotent.
+     *      USDC (the pool's core asset) can never be blocked — doing so would make in-flight cross-chain shields
+     *      undeliverable (burned on the client, unmintable on the hub) and strand funds. (#369)
+     * @param _tokens Token addresses to block
+     */
+    function addToBlocklist(address[] calldata _tokens) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            require(_tokens[i] != usdc, "PrivacyPool: cannot block USDC");
+            if (!tokenBlocklist[_tokens[i]]) {
+                tokenBlocklist[_tokens[i]] = true;
+                emit AddToBlocklist(_tokens[i]);
+            }
+        }
+    }
+
+    /**
+     * @notice Remove tokens from the shield blocklist. Idempotent.
+     * @param _tokens Token addresses to unblock
+     */
+    function removeFromBlocklist(address[] calldata _tokens) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            if (tokenBlocklist[_tokens[i]]) {
+                delete tokenBlocklist[_tokens[i]];
+                emit RemoveFromBlocklist(_tokens[i]);
+            }
+        }
     }
 
     /**

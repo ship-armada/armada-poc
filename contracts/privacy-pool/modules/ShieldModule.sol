@@ -10,6 +10,7 @@ import "../interfaces/IMerkleModule.sol";
 import "../types/CCTPTypes.sol";
 import "../../railgun/logic/Poseidon.sol";
 import "../../governance/IShieldPauseController.sol";
+import "../../governance/IArmadaGovernance.sol";
 import "../../fees/IArmadaFeeModule.sol";
 
 /**
@@ -135,7 +136,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         uint256 fee = 0;
         CommitmentPreimage memory adjustedPreimage = _request.preimage;
 
-        if (!privilegedShieldCallers[msg.sender]) {
+        if (!_isPrivilegedShieldCaller(msg.sender)) {
             if (feeModule != address(0)) {
                 // Fee module path: centralized fee calculation with integrator support
                 uint256 amount = uint256(_request.preimage.value);
@@ -206,6 +207,21 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
+     * @notice True if `caller` is a trusted yield adapter per the governance registry.
+     * @dev Fee-exempt shield path (issue #370). The gate is `authorized OR withdraw-only`, mirroring
+     *      ArmadaYieldAdapter._requireAuthorizedOrWithdrawOnly, so an adapter's wind-down exit re-shields
+     *      stay fee-exempt until it is fully deauthorized (at which point the adapter blocks itself, so
+     *      there is no dangling privilege). When adapterRegistry is unset, no caller is privileged.
+     *      The `||` short-circuits, so the common authorized case is a single STATICCALL.
+     */
+    function _isPrivilegedShieldCaller(address caller) internal view returns (bool) {
+        address reg = adapterRegistry;
+        if (reg == address(0)) return false;
+        return IAdapterRegistry(reg).authorizedAdapters(caller)
+            || IAdapterRegistry(reg).withdrawOnlyAdapters(caller);
+    }
+
+    /**
      * @notice Validate a commitment preimage (calldata version)
      * @param _note The commitment preimage to validate
      */
@@ -250,7 +266,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
 
         IERC20 token = IERC20(_note.token.tokenAddress);
 
-        if (privilegedShieldCallers[msg.sender]) {
+        if (_isPrivilegedShieldCaller(msg.sender)) {
             // Privileged callers (e.g. yield adapter) bypass all fees
             adjustedNote = CommitmentPreimage({
                 npk: _note.npk,

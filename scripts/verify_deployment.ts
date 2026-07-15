@@ -247,17 +247,28 @@ async function checkPrivacyPoolWiring(
     }
   }
 
-  // Yield adapter is privileged shield caller
-  if (yieldManifest?.contracts?.armadaYieldAdapter) {
+  // Yield adapter shield privilege is driven by the governance adapter registry (issue #370):
+  // the pool must point at the registry, and the registry must have the adapter authorized.
+  if (yieldManifest?.contracts?.armadaYieldAdapter && govManifest?.contracts?.adapterRegistry) {
+    const adapterAddr = yieldManifest.contracts.armadaYieldAdapter;
+    const registryAddr = govManifest.contracts.adapterRegistry;
     try {
-      const isPrivileged = await pool.privilegedShieldCallers(yieldManifest.contracts.armadaYieldAdapter);
-      if (isPrivileged) {
-        pass(GROUP, "Yield adapter is privileged shield caller");
+      const poolRegistry: string = await pool.adapterRegistry();
+      if (poolRegistry.toLowerCase() === registryAddr.toLowerCase()) {
+        pass(GROUP, "Pool adapterRegistry points at governance registry");
       } else {
-        fail(GROUP, "Yield adapter is privileged shield caller", "Adapter not authorized");
+        fail(GROUP, "Pool adapterRegistry points at governance registry", `got ${poolRegistry}`);
+      }
+
+      const registry = await ethers.getContractAt("AdapterRegistry", registryAddr);
+      const isAuthorized = await registry.authorizedAdapters(adapterAddr);
+      if (isAuthorized) {
+        pass(GROUP, "Yield adapter authorized in registry (fee-exempt shield path)");
+      } else {
+        fail(GROUP, "Yield adapter authorized in registry (fee-exempt shield path)", "Adapter not authorized");
       }
     } catch {
-      fail(GROUP, "Yield adapter is privileged shield caller", "Error reading privilegedShieldCallers");
+      fail(GROUP, "Yield adapter shield privilege via registry", "Error reading adapterRegistry/authorizedAdapters");
     }
   }
 }

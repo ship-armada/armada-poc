@@ -315,6 +315,10 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         //    amount/recipient, not relayer-supplied. The relayer is paid to its shielded address, just
         //    like every other tx type — self-funding, single Transaction (see issue #312).
         require(_feeAmount <= assets, "ArmadaYieldAdapter: fee exceeds proceeds");
+        // Defensive: a non-zero fee must have a real destination. adaptParams already pins feeNpk to
+        // the user's committed value, but a frontend bug committing feeNpk == 0 with feeAmount > 0 would
+        // shield the fee to an unspendable note (burning it). Refuse rather than silently burn funds.
+        require(_feeAmount == 0 || _feeNpk != bytes32(0), "ArmadaYieldAdapter: fee without destination");
         usdc.approve(privacyPool, assets);
         _shieldProceeds(_npk, _shieldCiphertext, _feeNpk, _feeShieldCiphertext, _feeAmount, assets);
 

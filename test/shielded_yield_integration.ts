@@ -737,6 +737,118 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
         )
       ).to.be.revertedWith("ArmadaYieldAdapter: adaptParams mismatch");
     });
+
+    // Build a redeem Transaction after lending `lendAmount`, with the given fee shield destination
+    // bound into adaptParams. Returns everything needed to call redeemAndShield.
+    async function lendThenRedeemInputs(seed: string, feeNpk: string, feeAmount: bigint) {
+      const lendAmount = ethers.parseUnits("1000", 6);
+      await shieldAndGetRoot(lendAmount);
+      const npk = validNpk();
+      const encryptedBundle: [string, string, string] = [
+        ethers.keccak256(ethers.toUtf8Bytes(`enc1-${seed}`)),
+        ethers.keccak256(ethers.toUtf8Bytes(`enc2-${seed}`)),
+        ethers.keccak256(ethers.toUtf8Bytes(`enc3-${seed}`)),
+      ];
+      const shieldKey = ethers.keccak256(ethers.toUtf8Bytes(`key-${seed}`));
+      const lendTx = await makeLendTransaction({
+        merkleRoot: await privacyPool.merkleRoot(),
+        nullifier: ethers.keccak256(ethers.toUtf8Bytes(`null-lend-${seed}`)),
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(adapterAddress, 32),
+          tokenAddress: usdcAddress,
+          value: lendAmount,
+        },
+        adaptContract: adapterAddress,
+        adaptParams: encodeYieldAdaptParams(npk, encryptedBundle, shieldKey),
+        npk,
+        encryptedBundle,
+        shieldKey,
+      });
+      await armadaYieldAdapter.lendAndShield(lendTx, npk, { encryptedBundle, shieldKey });
+      const shares = await armadaYieldVault.balanceOf(privacyPoolAddress);
+
+      const feeBundle: [string, string, string] = [
+        ethers.keccak256(ethers.toUtf8Bytes(`r1-${seed}`)),
+        ethers.keccak256(ethers.toUtf8Bytes(`r2-${seed}`)),
+        ethers.keccak256(ethers.toUtf8Bytes(`r3-${seed}`)),
+      ];
+      const feeShieldKey = ethers.keccak256(ethers.toUtf8Bytes(`rkey-${seed}`));
+      const redeemAdaptParams = encodeYieldAdaptParamsWithFee(
+        npk,
+        encryptedBundle,
+        shieldKey,
+        feeNpk,
+        feeBundle,
+        feeShieldKey,
+        feeAmount
+      );
+      const unshieldHash = computeCommitmentHash(
+        BigInt(ethers.zeroPadValue(adapterAddress, 32)),
+        BigInt(vaultAddress),
+        shares
+      );
+      const redeemTx = {
+        proof: { a: { x: 0, y: 0 }, b: { x: [0, 0], y: [0, 0] }, c: { x: 0, y: 0 } },
+        merkleRoot: await privacyPool.merkleRoot(),
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes(`null-redeem-${seed}`))],
+        commitments: [unshieldHash],
+        boundParams: {
+          treeNumber: 0,
+          minGasPrice: 0,
+          unshield: 1,
+          chainID: (await ethers.provider.getNetwork()).chainId,
+          adaptContract: adapterAddress,
+          adaptParams: redeemAdaptParams,
+          commitmentCiphertext: [],
+        },
+        unshieldPreimage: {
+          npk: ethers.zeroPadValue(adapterAddress, 32),
+          token: { tokenType: 0, tokenAddress: vaultAddress, tokenSubID: 0 },
+          value: shares,
+        },
+      };
+      return { redeemTx, npk, encryptedBundle, shieldKey, feeBundle, feeShieldKey };
+    }
+
+    // WHY: the fee is paid from the redeemed proceeds, so a fee that exceeds the redeemed assets must
+    // revert (rather than underflow the user's shield or over-pay the relayer). Guards issue #312.
+    it("reverts when the fee amount exceeds the redeemed proceeds", async function () {
+      const feeNpk = ethers.zeroPadValue(
+        ethers.toBeHex(BigInt(ethers.keccak256(ethers.toUtf8Bytes("relayer-npk-fx"))) % SNARK_SCALAR_FIELD),
+        32
+      );
+      // Far larger than any assets the pool's cumulative shares can redeem to — guarantees the
+      // fee-exceeds-proceeds guard trips. The revert rolls back the redeem, so no state leaks.
+      const feeAmount = ethers.parseUnits("1000000000", 6);
+      const io = await lendThenRedeemInputs("fx", feeNpk, feeAmount);
+      await expect(
+        armadaYieldAdapter.redeemAndShield(
+          io.redeemTx,
+          io.npk,
+          { encryptedBundle: io.encryptedBundle, shieldKey: io.shieldKey },
+          feeNpk,
+          { encryptedBundle: io.feeBundle, shieldKey: io.feeShieldKey },
+          feeAmount
+        )
+      ).to.be.revertedWith("ArmadaYieldAdapter: fee exceeds proceeds");
+    });
+
+    // WHY: a fund-custody contract must not silently burn a fee to an unspendable note. A non-zero fee
+    // committed with a zero destination npk (e.g. a frontend bug) must revert, not shield to npk 0.
+    it("reverts when a non-zero fee has a zero destination npk", async function () {
+      const feeAmount = ethers.parseUnits("5", 6);
+      const io = await lendThenRedeemInputs("zn", ethers.ZeroHash, feeAmount);
+      await expect(
+        armadaYieldAdapter.redeemAndShield(
+          io.redeemTx,
+          io.npk,
+          { encryptedBundle: io.encryptedBundle, shieldKey: io.shieldKey },
+          ethers.ZeroHash,
+          { encryptedBundle: io.feeBundle, shieldKey: io.feeShieldKey },
+          feeAmount
+        )
+      ).to.be.revertedWith("ArmadaYieldAdapter: fee without destination");
+    });
   });
 
   describe("fee exemption", function () {

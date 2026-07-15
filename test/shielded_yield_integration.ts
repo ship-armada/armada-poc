@@ -209,7 +209,9 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
 
     await armadaYieldVault.setAdapter(adapterAddress);
     await armadaYieldAdapter.setPrivacyPool(privacyPoolAddress);
-    await privacyPool.setPrivilegedShieldCaller(adapterAddress, true);
+    // Shield-fee exemption is driven by the registry (#370): the adapter is authorized above,
+    // so pointing the pool at the same registry grants it the fee-exempt shield path.
+    await privacyPool.setAdapterRegistry(await mockRegistry.getAddress());
 
     await hubUsdc.mint(aliceAddress, ethers.parseUnits("100000", 6));
   });

@@ -59,6 +59,10 @@ describe("Privacy Pool Adversarial", function () {
   let privacyPoolAddress: string;
   let clientAddress: string;
 
+  // Governance adapter registry driving fee-exempt shield privilege (#370). Deployer acts as the
+  // registry timelock in this harness so tests can authorize/deauthorize adapters directly.
+  let adapterRegistry: Contract;
+
   let poseidon: any;
   let F: any;
 
@@ -122,6 +126,13 @@ describe("Privacy Pool Adversarial", function () {
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
     await privacyPool.setTestingMode(true);
     await privacyPool.setShieldFee(50); // 0.50%
+
+    // Point the pool at a real AdapterRegistry (set-once) so shield-fee exemption is derived from
+    // governance state, not an owner flag (#370). Deployer stands in for the registry's timelock.
+    const AdapterRegistry = await ethers.getContractFactory("AdapterRegistry");
+    adapterRegistry = await AdapterRegistry.deploy(deployerAddress);
+    await adapterRegistry.waitForDeployment();
+    await privacyPool.setAdapterRegistry(await adapterRegistry.getAddress());
 
     // ──── Deploy Client Chain ────
     clientUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -380,10 +391,42 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Only deployer");
     });
 
-    it("non-owner cannot call setPrivilegedShieldCaller", async function () {
+    it("non-owner cannot call setAdapterRegistry", async function () {
+      // WHY: shield privilege now flows from the registry pointer; a non-owner must not be able
+      //      to set it. The owner check is enforced ahead of the set-once guard (#370).
       await expect(
-        privacyPool.connect(attacker).setPrivilegedShieldCaller(attackerAddress, true)
+        privacyPool.connect(attacker).setAdapterRegistry(attackerAddress)
       ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
+
+    it("setAdapterRegistry is set-once — a second owner call reverts", async function () {
+      // WHY: set-once is the crux of the #370 fix — after the one-time link-step set, the owner has
+      //      NO path to repoint the registry (which would otherwise re-open the timelock half-bypass).
+      //      The shared pool already has the registry set in before(), so any further set must revert.
+      await expect(
+        privacyPool.setAdapterRegistry(attackerAddress)
+      ).to.be.revertedWith("PrivacyPool: registry already set");
+    });
+
+    it("setAdapterRegistry rejects the zero address (on a fresh, unset pool)", async function () {
+      // WHY: address(0) means "nobody privileged", so setting it would be a silent no-op that reads
+      //      as configured — reject it. Needs a fresh pool since the shared one is already set.
+      const freshPool = await (await ethers.getContractFactory("PrivacyPool")).deploy();
+      await freshPool.initialize(
+        await shieldModule.getAddress(),
+        await transactModule.getAddress(),
+        await merkleModule.getAddress(),
+        await verifierModule.getAddress(),
+        await hubTokenMessenger.getAddress(),
+        await hubMessageTransmitter.getAddress(),
+        await hubUsdc.getAddress(),
+        DOMAINS.hub,
+        deployerAddress,
+        deployerAddress
+      );
+      await expect(
+        freshPool.setAdapterRegistry(ethers.ZeroAddress)
+      ).to.be.revertedWith("PrivacyPool: zero registry");
     });
   });
 
@@ -392,26 +435,98 @@ describe("Privacy Pool Adversarial", function () {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("Privileged Shield Callers", function () {
-    it("privileged caller bypasses shield fee", async function () {
+    // Deploy a fresh ShieldForwarder (a stand-in for a trusted caller like the yield adapter) and
+    // shield `amount` through it, returning the treasury/pool balance deltas. A fresh forwarder per
+    // test keeps registry state isolated. The 50 bps fee configured in before() makes exemption
+    // observable — with a zero fee, privileged and non-privileged paths would be indistinguishable.
+    async function shieldThroughForwarder(amount: bigint): Promise<{ forwarderAddr: string; treasuryDelta: bigint; poolDelta: bigint }> {
       const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
       const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
-      await privacyPool.setPrivilegedShieldCaller(await forwarder.getAddress(), true);
-
-      const amount = ethers.parseUnits("100", 6);
-      await hubUsdc.mint(await forwarder.getAddress(), amount);
+      const forwarderAddr = await forwarder.getAddress();
       const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
 
       const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
       const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
+      return {
+        forwarderAddr,
+        treasuryDelta: (await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore,
+        poolDelta: (await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore,
+      };
+    }
 
-      const req = makeShieldRequest(usdcAddr, amount);
-      await forwarder.approveAndShield(usdcAddr, amount, [req]);
+    it("registry-authorized caller bypasses shield fee (#370)", async function () {
+      // WHY: an adapter authorized in the timelock-governed registry is the trusted yield path and
+      //      shields fee-free. Privilege is derived from the registry, not an owner-set flag.
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      const forwarderAddr = await forwarder.getAddress();
+      await adapterRegistry.authorizeAdapter(forwarderAddr);
 
-      const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
-      const poolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(0n);
-      expect(poolAfter - poolBefore).to.equal(amount);
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(0n);
+      expect((await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore).to.equal(amount);
+    });
+
+    it("withdraw-only adapter still bypasses shield fee (#370)", async function () {
+      // WHY: during wind-down (deauthorized → withdraw-only) the adapter still re-shields user exit
+      //      proceeds; taxing those would eat into user funds. Gate is authorized OR withdraw-only,
+      //      matching ArmadaYieldAdapter's own lifecycle. Deauthorize transitions to withdraw-only.
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      const forwarderAddr = await forwarder.getAddress();
+      await adapterRegistry.authorizeAdapter(forwarderAddr);
+      await adapterRegistry.deauthorizeAdapter(forwarderAddr); // → withdraw-only
+      expect(await adapterRegistry.withdrawOnlyAdapters(forwarderAddr)).to.equal(true);
+
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
+
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(0n);
+      expect((await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore).to.equal(amount);
+    });
+
+    it("fully-deauthorized adapter pays shield fee (#370)", async function () {
+      // WHY: fullDeauthorize removes all privilege — the ex-adapter now pays fees like anyone else.
+      //      This is the revoke path that the old owner-set flag failed to clear (the core defect).
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      const forwarderAddr = await forwarder.getAddress();
+      await adapterRegistry.authorizeAdapter(forwarderAddr);
+      await adapterRegistry.deauthorizeAdapter(forwarderAddr);
+      await adapterRegistry.fullDeauthorizeAdapter(forwarderAddr); // → no access
+
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
+
+      const expectedFee = amount * 50n / 10000n;
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(expectedFee);
+      expect((await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore).to.equal(amount - expectedFee);
+    });
+
+    it("caller not in the registry pays shield fee (#370)", async function () {
+      // WHY: the fail-closed default — an address the registry has never authorized is not privileged
+      //      and pays the standard fee, even though the pool has a registry configured.
+      const amount = ethers.parseUnits("100", 6);
+      const { treasuryDelta, poolDelta } = await shieldThroughForwarder(amount);
+      const expectedFee = amount * 50n / 10000n;
+      expect(treasuryDelta).to.equal(expectedFee);
+      expect(poolDelta).to.equal(amount - expectedFee);
     });
 
     it("non-privileged caller pays shield fee", async function () {

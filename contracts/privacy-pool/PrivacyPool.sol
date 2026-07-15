@@ -388,13 +388,20 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
-     * @notice Set privileged shield caller (bypasses shield/unshield fees)
-     * @param caller Address to configure (e.g. yield adapter)
-     * @param privileged True to exempt from fees
+     * @notice Set the governance adapter registry that determines fee-exempt shield privilege.
+     * @dev Set-once (issue #370): callable only while unset and only with a non-zero address. After the
+     *      first successful call — done at deploy/link time — the owner has no path to grant or change
+     *      shield privilege; trust flows solely from the timelock-governed registry. Shield-fee exemption
+     *      is derived from IAdapterRegistry (authorized OR withdraw-only), replacing the retired owner-set
+     *      privilegedShieldCallers flag.
+     * @param _adapterRegistry Address of the AdapterRegistry contract
      */
-    function setPrivilegedShieldCaller(address caller, bool privileged) external override {
+    function setAdapterRegistry(address _adapterRegistry) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
-        privilegedShieldCallers[caller] = privileged;
+        require(adapterRegistry == address(0), "PrivacyPool: registry already set");
+        require(_adapterRegistry != address(0), "PrivacyPool: zero registry");
+        adapterRegistry = _adapterRegistry;
+        emit AdapterRegistrySet(_adapterRegistry);
     }
 
     /**

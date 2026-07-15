@@ -32,6 +32,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when fee module is set
     event FeeModuleSet(address indexed feeModule);
 
+    /// @notice Emitted when the governance adapter registry is set (set-once, issue #370)
+    event AdapterRegistrySet(address indexed adapterRegistry);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -155,11 +158,11 @@ interface IPrivacyPool is IMessageHandlerV2 {
     function setTestingMode(bool enabled) external;
 
     /**
-     * @notice Set privileged shield caller (bypasses shield/unshield fees)
-     * @param caller Address to configure (e.g. yield adapter)
-     * @param privileged True to exempt from fees
+     * @notice Set the governance adapter registry that determines fee-exempt shield privilege.
+     * @dev Set-once: callable only while unset and only with a non-zero address (issue #370).
+     * @param _adapterRegistry Address of the AdapterRegistry contract
      */
-    function setPrivilegedShieldCaller(address caller, bool privileged) external;
+    function setAdapterRegistry(address _adapterRegistry) external;
 
     /**
      * @notice Set the fee module address (ArmadaFeeModule proxy)

@@ -202,7 +202,9 @@ describe("Fee Module Integration", function () {
     await mockRegistry.setAuthorized(adapterAddress, true);
     await armadaYieldVault.setAdapter(adapterAddress);
     await armadaYieldAdapter.setPrivacyPool(privacyPoolAddress);
-    await privacyPool.setPrivilegedShieldCaller(adapterAddress, true);
+    // Shield-fee exemption is driven by the registry (#370): the adapter is authorized above,
+    // so pointing the pool at the same registry grants it the fee-exempt shield path.
+    await privacyPool.setAdapterRegistry(await mockRegistry.getAddress());
 
     // ── Deploy Client chain ──
     clientUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");

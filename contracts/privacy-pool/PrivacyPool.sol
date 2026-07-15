@@ -38,6 +38,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     /// @dev Bounds setShieldFee so a single mis-proposal cannot brick shields by consuming all deposited value.
     uint256 public constant MAX_SHIELD_FEE_BPS = 1000;
 
+    /// @notice The address that deployed this contract; the only address permitted to call initialize().
+    /// @dev initialize() runs in a separate tx after deployment and sets owner/treasury/modules. Gating it
+    ///      to the deployer prevents a front-runner from initializing the pool with malicious params on a
+    ///      public chain before the deployer's own init lands (issue #368).
+    address private immutable deployer;
+
+    constructor() {
+        deployer = msg.sender;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -67,6 +77,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address _owner,
         address payable _treasury
     ) external override {
+        require(msg.sender == deployer, "PrivacyPool: Only deployer");
         require(!initialized, "PrivacyPool: Already initialized");
         require(_shieldModule != address(0), "PrivacyPool: zero shieldModule");
         require(_transactModule != address(0), "PrivacyPool: zero transactModule");

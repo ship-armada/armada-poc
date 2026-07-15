@@ -26,6 +26,11 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     // STATE VARIABLES
     // ══════════════════════════════════════════════════════════════════════════
 
+    /// @notice The address that deployed this contract; the only address permitted to call initialize().
+    /// @dev Gates the separate-tx initialize() to the deployer so a front-runner cannot initialize the
+    ///      client with malicious params on a public chain before the deployer's own init lands (#368).
+    address private immutable deployer;
+
     /// @notice Whether the contract has been initialized
     bool public initialized;
 
@@ -67,6 +72,10 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
 
+    constructor() {
+        deployer = msg.sender;
+    }
+
     /**
      * @notice Initialize the PrivacyPoolClient contract
      * @param _tokenMessenger CCTP TokenMessenger address
@@ -86,6 +95,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes32 _hubPool,
         address _owner
     ) external override {
+        require(msg.sender == deployer, "PrivacyPoolClient: Only deployer");
         require(!initialized, "PrivacyPoolClient: Already initialized");
 
         tokenMessenger = _tokenMessenger;

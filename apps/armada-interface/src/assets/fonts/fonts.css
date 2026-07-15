@@ -1,0 +1,41 @@
+/* ABOUTME: Self-hosted @font-face for Charis SIL / Geist / Geist Mono (issue #329) — removes the
+   ABOUTME: fonts.googleapis.com / fonts.gstatic.com runtime origins. woff2 vendored from Fontsource. */
+
+/* Exact family names ("Charis SIL", "Geist", "Geist Mono") are kept so the @armada/ui design tokens
+   that reference them are unchanged. */
+
+@font-face {
+  font-family: 'Charis SIL';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./charis-sil-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Charis SIL';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./charis-sil-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Charis SIL';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./charis-sil-latin-400-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./geist-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./geist-mono-latin-wght-normal.woff2') format('woff2-variations');
+}

@@ -4,6 +4,9 @@
 @import "tailwindcss";
 @source "../../../packages/ui/src";
 
+/* Self-hosted Charis SIL / Geist / Geist Mono (issue #329) — no fonts.googleapis.com/gstatic at runtime. */
+@import "./assets/fonts/fonts.css";
+
 @import "@armada/ui/styles/tokens.css";
 @import "@armada/ui/styles/global.css";
 

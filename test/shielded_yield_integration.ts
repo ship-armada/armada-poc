@@ -46,22 +46,28 @@ function encodeYieldAdaptParams(
 }
 
 /**
- * Encode the withdraw (redeem) YieldAdaptParams with the broadcaster fee bound in.
- * Must match Solidity YieldAdaptParams.encode(npk, bundle, shieldKey, feeRecipient, feeAmount).
+ * Encode the withdraw (redeem) YieldAdaptParams with the broadcaster fee bound in. The fee is paid as
+ * a SHIELD to the relayer's own 0zk destination, so both the user's and the relayer's shield
+ * destinations (npk + bundle + shieldKey) plus the amount are committed. Must match Solidity
+ * YieldAdaptParams.encode(npk, bundle, shieldKey, feeNpk, feeBundle, feeShieldKey, feeAmount).
  */
 function encodeYieldAdaptParamsWithFee(
   npk: string,
   encryptedBundle: [string, string, string],
   shieldKey: string,
-  feeRecipient: string,
+  feeNpk: string,
+  feeEncryptedBundle: [string, string, string],
+  feeShieldKey: string,
   feeAmount: bigint
 ): string {
   const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-    ["bytes32", "bytes32[3]", "bytes32", "address", "uint256"],
-    [npk, encryptedBundle, shieldKey, feeRecipient, feeAmount]
+    ["bytes32", "bytes32[3]", "bytes32", "bytes32", "bytes32[3]", "bytes32", "uint256"],
+    [npk, encryptedBundle, shieldKey, feeNpk, feeEncryptedBundle, feeShieldKey, feeAmount]
   );
   return ethers.keccak256(encoded);
 }
+
+const ZERO_BUNDLE: [string, string, string] = [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash];
 
 describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
   let hubUsdc: Contract;
@@ -435,15 +441,18 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       const shares = await armadaYieldVault.balanceOf(privacyPoolAddress);
       expect(shares).to.be.gt(0n);
 
-      // No broadcaster fee for this base case: withdraw adaptParams still uses the 5-arg (fee-bound)
-      // scheme with (feeRecipient=0, feeAmount=0).
-      const feeRecipient = ethers.ZeroAddress;
+      // No broadcaster fee for this base case: withdraw adaptParams still uses the fee-bound scheme
+      // with a zeroed relayer destination and feeAmount 0.
+      const feeNpk = ethers.ZeroHash;
+      const feeShieldKey = ethers.ZeroHash;
       const feeAmount = 0n;
       const redeemAdaptParams = encodeYieldAdaptParamsWithFee(
         npk,
         encryptedBundle,
         shieldKey,
-        feeRecipient,
+        feeNpk,
+        ZERO_BUNDLE,
+        feeShieldKey,
         feeAmount
       );
       const unshieldHash = computeCommitmentHash(
@@ -484,14 +493,16 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
         redeemTx,
         npk,
         { encryptedBundle, shieldKey },
-        feeRecipient,
+        feeNpk,
+        { encryptedBundle: ZERO_BUNDLE, shieldKey: feeShieldKey },
         feeAmount
       );
       await armadaYieldAdapter.redeemAndShield(
         redeemTx,
         npk,
         { encryptedBundle, shieldKey },
-        feeRecipient,
+        feeNpk,
+        { encryptedBundle: ZERO_BUNDLE, shieldKey: feeShieldKey },
         feeAmount
       );
 
@@ -503,10 +514,11 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       expect(poolUsdcAfter - poolUsdcBefore).to.be.closeTo(assets, 10n);
     });
 
-    // WHY: issue #312 — the relayer fee is paid from the redeemed USDC proceeds (bound in adaptParams),
-    // not from a separate USDC unshield. Verifies the fee lands at the committed recipient and the
-    // remainder (assets - fee) is what gets shielded back, with value conserved.
-    it("pays the broadcaster fee from proceeds and shields the remainder", async function () {
+    // WHY: issue #312 — the relayer fee is paid from the redeemed USDC proceeds by SHIELDING it to the
+    // relayer's own 0zk destination (bound in adaptParams), NOT by a public EVM transfer. Verifies both
+    // shields happen (user + relayer), ALL proceeds stay in the pool (nothing leaves to an EVM address),
+    // and value is conserved.
+    it("shields the broadcaster fee to the relayer's 0zk destination and the remainder to the user", async function () {
       const lendAmount = ethers.parseUnits("1000", 6);
       await shieldAndGetRoot(lendAmount);
 
@@ -538,14 +550,26 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       const shares = await armadaYieldVault.balanceOf(privacyPoolAddress);
       expect(shares).to.be.gt(0n);
 
-      // The relayer that will be paid the broadcaster fee, and the fee amount — both bound in adaptParams.
-      const feeRecipient = await relayer.getAddress();
+      // The relayer's OWN 0zk shield destination (distinct from the user's) + the fee amount — all
+      // committed in adaptParams so the submitter can neither redirect nor inflate the fee.
+      const feeNpk = ethers.zeroPadValue(
+        ethers.toBeHex(BigInt(ethers.keccak256(ethers.toUtf8Bytes("relayer-npk"))) % SNARK_SCALAR_FIELD),
+        32
+      );
+      const feeBundle: [string, string, string] = [
+        ethers.keccak256(ethers.toUtf8Bytes("relayer-enc1")),
+        ethers.keccak256(ethers.toUtf8Bytes("relayer-enc2")),
+        ethers.keccak256(ethers.toUtf8Bytes("relayer-enc3")),
+      ];
+      const feeShieldKey = ethers.keccak256(ethers.toUtf8Bytes("relayer-key"));
       const feeAmount = ethers.parseUnits("5", 6);
       const redeemAdaptParams = encodeYieldAdaptParamsWithFee(
         npk,
         encryptedBundle,
         shieldKey,
-        feeRecipient,
+        feeNpk,
+        feeBundle,
+        feeShieldKey,
         feeAmount
       );
 
@@ -575,36 +599,56 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
         },
       };
 
-      const relayerUsdcBefore = await hubUsdc.balanceOf(feeRecipient);
+      const relayerEvmBefore = await hubUsdc.balanceOf(await relayer.getAddress());
       const poolUsdcBefore = await hubUsdc.balanceOf(privacyPoolAddress);
 
+      const feeCiphertext = { encryptedBundle: feeBundle, shieldKey: feeShieldKey };
       const assets = await armadaYieldAdapter.redeemAndShield.staticCall(
         redeemTx,
         npk,
         { encryptedBundle, shieldKey },
-        feeRecipient,
+        feeNpk,
+        feeCiphertext,
         feeAmount
       );
       expect(assets).to.be.gt(feeAmount); // sanity: proceeds exceed the fee
 
-      await armadaYieldAdapter.redeemAndShield(
+      const tx = await armadaYieldAdapter.redeemAndShield(
         redeemTx,
         npk,
         { encryptedBundle, shieldKey },
-        feeRecipient,
+        feeNpk,
+        feeCiphertext,
         feeAmount
       );
+      const receipt = await tx.wait();
 
-      const relayerUsdcAfter = await hubUsdc.balanceOf(feeRecipient);
       const poolUsdcAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+      const relayerEvmAfter = await hubUsdc.balanceOf(await relayer.getAddress());
 
-      // Fee lands at the committed recipient; the pool receives only (assets - fee); value conserved.
-      expect(relayerUsdcAfter - relayerUsdcBefore).to.equal(feeAmount);
-      expect(poolUsdcAfter - poolUsdcBefore).to.be.closeTo(assets - feeAmount, 10n);
+      // The fee is SHIELDED, not transferred publicly: ALL proceeds stay in the pool and no EVM
+      // address (here the relayer's) is credited.
+      expect(poolUsdcAfter - poolUsdcBefore).to.be.closeTo(assets, 10n);
+      expect(relayerEvmAfter - relayerEvmBefore).to.equal(0n);
+
+      // Exactly two shield commitments were created: the user's (assets - fee) and the relayer's fee.
+      // The Shield event is emitted by ShieldModule (via delegatecall), so parse with its interface.
+      const shieldEvent = receipt!.logs
+        .map((log: any) => {
+          try {
+            return shieldModule.interface.parseLog(log);
+          } catch {
+            return null;
+          }
+        })
+        .find((p: any) => p?.name === "Shield");
+      expect(shieldEvent, "Shield event emitted").to.not.be.undefined;
+      expect(shieldEvent!.args.commitments.length).to.equal(2);
     });
 
-    // WHY: the fee is bound in adaptParams, so a submitter that inflates feeAmount (to skim more of
-    // the user's proceeds) must fail the adaptParams check — the core relayer-immutability property.
+    // WHY: the fee (relayer shield destination + amount) is bound in adaptParams, so a submitter that
+    // inflates feeAmount (to skim more of the user's proceeds) must fail the adaptParams check — the
+    // core relayer-immutability property.
     it("reverts when the submitted fee does not match the adaptParams commitment", async function () {
       const lendAmount = ethers.parseUnits("1000", 6);
       await shieldAndGetRoot(lendAmount);
@@ -635,13 +679,24 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       await armadaYieldAdapter.lendAndShield(lendTx, npk, { encryptedBundle, shieldKey });
       const shares = await armadaYieldVault.balanceOf(privacyPoolAddress);
 
-      const feeRecipient = await relayer.getAddress();
+      const feeNpk = ethers.zeroPadValue(
+        ethers.toBeHex(BigInt(ethers.keccak256(ethers.toUtf8Bytes("relayer-npk-mm"))) % SNARK_SCALAR_FIELD),
+        32
+      );
+      const feeBundle: [string, string, string] = [
+        ethers.keccak256(ethers.toUtf8Bytes("relayer-enc1-mm")),
+        ethers.keccak256(ethers.toUtf8Bytes("relayer-enc2-mm")),
+        ethers.keccak256(ethers.toUtf8Bytes("relayer-enc3-mm")),
+      ];
+      const feeShieldKey = ethers.keccak256(ethers.toUtf8Bytes("relayer-key-mm"));
       const committedFee = ethers.parseUnits("5", 6);
       const redeemAdaptParams = encodeYieldAdaptParamsWithFee(
         npk,
         encryptedBundle,
         shieldKey,
-        feeRecipient,
+        feeNpk,
+        feeBundle,
+        feeShieldKey,
         committedFee
       );
       const unshieldHash = computeCommitmentHash(
@@ -676,7 +731,8 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           redeemTx,
           npk,
           { encryptedBundle, shieldKey },
-          feeRecipient,
+          feeNpk,
+          { encryptedBundle: feeBundle, shieldKey: feeShieldKey },
           committedFee * 2n
         )
       ).to.be.revertedWith("ArmadaYieldAdapter: adaptParams mismatch");

@@ -76,11 +76,12 @@ export function EarnModal() {
   // yield-withdraw is (still) forced to user-wallet submission. The original blocker — the SDK's
   // one-Transaction-per-token shape not fitting `redeemAndShield` — is RESOLVED by #312's
   // fee-from-proceeds design: redeem is now a single Transaction and the relayer fee is paid from the
-  // redeemed USDC (bound in adaptParams), so no separate broadcaster Transaction is generated. The
-  // remaining gate for gasless withdraw is relayer-side: fee-from-proceeds pays the relayer's EVM
-  // address on-chain, but /fees advertises only the relayer's shielded (0zk) address — so the relayer
-  // must expose an EVM fee-recipient and its verifier must check (feeRecipient, feeAmount) from the
-  // redeemAndShield calldata. Until that lands, withdraw stays wallet-submit. Tracked at #312.
+  // redeemed USDC by SHIELDING it to the relayer's 0zk address (bound in adaptParams), so no separate
+  // broadcaster Transaction is generated and the relayer is still paid to its shielded address. The
+  // only remaining gate for gasless withdraw is the relayer verifier: it must accept the new
+  // `redeemAndShield` selector and confirm the fee-shield output targets its 0zk address for >= the
+  // required amount. No /fees change is needed (the fee uses the relayer's existing 0zk address). Until
+  // the verifier lands, withdraw stays wallet-submit. Tracked at #312.
   const forceWalletForWithdraw = tab === 'withdraw'
   const effectiveUseWalletOverride = prefs.submitFromWallet || forceWalletForWithdraw
   // When the user-wallet path is in effect, no broadcaster fee is baked into the proof — the

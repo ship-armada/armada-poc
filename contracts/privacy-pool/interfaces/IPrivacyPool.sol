@@ -17,6 +17,8 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when a remote pool address is configured
     event RemotePoolSet(uint32 indexed domain, bytes32 poolAddress);
     event RemoteHookRouterSet(uint32 indexed domain, bytes32 routerAddress);
+    event AddToBlocklist(address indexed token);
+    event RemoveFromBlocklist(address indexed token);
 
     /// @notice Emitted when testing mode is changed
     event TestingModeSet(bool enabled);
@@ -114,6 +116,18 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param routerAddress Address of the remote CCTPHookRouter (as bytes32)
      */
     function setRemoteHookRouter(uint32 domain, bytes32 routerAddress) external;
+
+    /**
+     * @notice Add tokens to the shield blocklist (governance kill-switch). Cannot block USDC.
+     * @param _tokens Token addresses to block
+     */
+    function addToBlocklist(address[] calldata _tokens) external;
+
+    /**
+     * @notice Remove tokens from the shield blocklist.
+     * @param _tokens Token addresses to unblock
+     */
+    function removeFromBlocklist(address[] calldata _tokens) external;
 
     /**
      * @notice Set a verification key for a circuit configuration

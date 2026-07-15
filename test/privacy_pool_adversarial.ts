@@ -1226,4 +1226,126 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Finality below minimum");
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // TOKEN BLOCKLIST (#369)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Token Blocklist (#369)", function () {
+    let tokenX: Contract;
+    let tokenXAddr: string;
+
+    beforeEach(async function () {
+      // A second, standard ERC-20 (not USDC). The pool is multi-asset, so this is normally shieldable.
+      tokenX = await (await ethers.getContractFactory("MockUSDCV2")).deploy("TokenX", "TKX");
+      tokenXAddr = await tokenX.getAddress();
+      await tokenX.mint(aliceAddress, ethers.parseUnits("100", 6));
+      await tokenX.connect(alice).approve(privacyPoolAddress, ethers.parseUnits("100", 6));
+    });
+
+    // WHY: #369 — restoring Railgun's blocklist gives governance a kill-switch for an incompatible/
+    // compromised token. Before the setter existed the mapping was a permanent no-op.
+    it("blocks shielding a blocklisted token", async function () {
+      await privacyPool.addToBlocklist([tokenXAddr]);
+      const req = makeShieldRequest(tokenXAddr, ethers.parseUnits("10", 6));
+      await expect(
+        privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
+      ).to.be.revertedWith("ShieldModule: Token blocked");
+    });
+
+    // WHY: the block is reversible governance, not permanent — removeFromBlocklist re-enables shielding.
+    it("re-enables shielding after removeFromBlocklist", async function () {
+      await privacyPool.addToBlocklist([tokenXAddr]);
+      await privacyPool.removeFromBlocklist([tokenXAddr]);
+      const req = makeShieldRequest(tokenXAddr, ethers.parseUnits("10", 6));
+      await expect(privacyPool.connect(alice).shield([req], ethers.ZeroAddress)).to.not.be.reverted;
+    });
+
+    // WHY: Railgun semantics — a blocklisted token stays UNSHIELDABLE so holders can always exit; the
+    // check is shield-only. Shield first (allowed), then block, then confirm the unshield isn't gated.
+    it("still allows unshielding a token after it is blocklisted (exit path)", async function () {
+      const value = ethers.parseUnits("100", 6);
+      const npk = validNpk();
+      await privacyPool.connect(alice).shield([makeShieldRequest(tokenXAddr, value, npk)], ethers.ZeroAddress);
+      await privacyPool.addToBlocklist([tokenXAddr]);
+
+      const base = value - (value * 50n) / 10000n; // net of the 0.50% shield fee
+      const commitHash = computeCommitmentHash(BigInt(npk), BigInt(tokenXAddr), base);
+      const unshieldTx = makeTransaction({
+        merkleRoot: await privacyPool.merkleRoot(),
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("blocked-exit-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: { npk, token: { tokenType: 0, tokenAddress: tokenXAddr, tokenSubID: 0 }, value: base },
+      });
+      await expect(privacyPool.transact([unshieldTx])).to.not.be.reverted;
+    });
+
+    // WHY: #369 core-asset guard — blocklisting USDC would make in-flight cross-chain shields
+    // undeliverable (burned on client, unmintable on hub → stranded). Must be impossible.
+    it("cannot blocklist USDC (protects the cross-chain shield path)", async function () {
+      await expect(
+        privacyPool.addToBlocklist([await hubUsdc.getAddress()])
+      ).to.be.revertedWith("PrivacyPool: cannot block USDC");
+    });
+
+    // WHY: the blocklist is a governance lever — only the owner may modify it.
+    it("only the owner can modify the blocklist", async function () {
+      await expect(
+        privacyPool.connect(attacker).addToBlocklist([tokenXAddr])
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+      await expect(
+        privacyPool.connect(attacker).removeFromBlocklist([tokenXAddr])
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // REENTRANCY GUARD (#369)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Reentrancy Guard (#369)", function () {
+    let evil: Contract;
+    let evilAddr: string;
+
+    beforeEach(async function () {
+      evil = await (await ethers.getContractFactory("MaliciousReentrantToken")).deploy();
+      evilAddr = await evil.getAddress();
+      await evil.mint(aliceAddress, ethers.parseUnits("100", 6));
+      await evil.connect(alice).approve(privacyPoolAddress, ethers.parseUnits("100", 6));
+    });
+
+    // WHY: #369 hardening — a malicious token's transferFrom hook, fired during the shield deposit
+    // (_transferTokenIn), must not be able to re-enter ANY guarded entry. Covers all three targets.
+    for (const [target, name] of [[1, "shield"], [2, "transact"], [3, "atomicCrossChainUnshield"]] as const) {
+      it(`reverts when a shield deposit's transferFrom hook re-enters ${name}`, async function () {
+        await evil.setAttack(privacyPoolAddress, target);
+        const req = makeShieldRequest(evilAddr, ethers.parseUnits("10", 6));
+        await expect(
+          privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
+        ).to.be.revertedWith("PrivacyPool: reentrant call");
+      });
+    }
+
+    // WHY: the OUT hook — an unshield payout's transfer hook (_transferTokenOut) re-entering a guarded
+    // entry must also revert. Shield with the attack off (creates a note), then unshield with it on.
+    it("reverts when an unshield payout's transfer hook re-enters transact", async function () {
+      await evil.setAttack(privacyPoolAddress, 0);
+      const value = ethers.parseUnits("100", 6);
+      const npk = validNpk();
+      await privacyPool.connect(alice).shield([makeShieldRequest(evilAddr, value, npk)], ethers.ZeroAddress);
+
+      await evil.setAttack(privacyPoolAddress, 2); // re-enter transact from the payout transfer hook
+      const base = value - (value * 50n) / 10000n;
+      const commitHash = computeCommitmentHash(BigInt(npk), BigInt(evilAddr), base);
+      const unshieldTx = makeTransaction({
+        merkleRoot: await privacyPool.merkleRoot(),
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("evil-out-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: { npk, token: { tokenType: 0, tokenAddress: evilAddr, tokenSubID: 0 }, value: base },
+      });
+      await expect(privacyPool.transact([unshieldTx])).to.be.revertedWith("PrivacyPool: reentrant call");
+    });
+  });
 });

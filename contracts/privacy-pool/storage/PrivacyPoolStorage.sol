@@ -194,11 +194,17 @@ abstract contract PrivacyPoolStorage {
     ///      any third party call receiveMessage directly, skip the hook, and strand the funds.
     mapping(uint32 => bytes32) public remoteHookRouters;
 
+    /// @notice Reentrancy guard status for the router's state-changing entry points.
+    /// @dev 0 = NOT_ENTERED, 1 = ENTERED. 0-based so a fresh slot needs no constructor init and the
+    ///      value lives in shared pool storage (per the "all pool state in PrivacyPoolStorage" rule).
+    ///      Used by PrivacyPool's nonReentrant modifier on shield / transact / atomicCrossChainUnshield.
+    uint256 internal _reentrancyStatus;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[45] private __gap;
+    uint256[44] private __gap;
 }

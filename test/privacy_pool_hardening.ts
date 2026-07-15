@@ -28,6 +28,17 @@ import {
 } from "../lib/artifacts";
 
 const DOMAINS = { hub: 100, client: 101 };
+
+const CCTP_BINDING_DOMAIN_TAG = ethers.keccak256(ethers.toUtf8Bytes("ArmadaCCTPUnshield.v1"));
+// CCTPBindingLib.encode(recipient, domain, maxFee) — adaptParams binding for xchain unshield (#364/#378).
+function encodeCctpBinding(recipient: string, domain: number, maxFee: bigint): string {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "address", "uint32", "uint256"],
+      [CCTP_BINDING_DOMAIN_TAG, recipient, domain, maxFee]
+    )
+  );
+}
 const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
 describe("Privacy Pool Integration Hardening", function () {
@@ -214,6 +225,7 @@ describe("Privacy Pool Integration Hardening", function () {
     unshield?: number;
     unshieldPreimage?: any;
     ciphertextCount?: number;
+    adaptParams?: string;
   }) {
     const unshieldType = opts.unshield ?? 0;
     const ciphertextCount = opts.ciphertextCount ??
@@ -238,7 +250,7 @@ describe("Privacy Pool Integration Hardening", function () {
         unshield: unshieldType,
         chainID: 31337,
         adaptContract: ethers.ZeroAddress,
-        adaptParams: ethers.ZeroHash,
+        adaptParams: opts.adaptParams ?? ethers.ZeroHash,
         commitmentCiphertext: ciphertext,
       },
       unshieldPreimage: opts.unshieldPreimage ?? {
@@ -485,6 +497,7 @@ describe("Privacy Pool Integration Hardening", function () {
         nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("roundtrip-null"))],
         commitments: [unshieldCommitHash],
         unshield: 1,
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, 0n),
         unshieldPreimage: {
           npk: ethers.zeroPadValue(privacyPoolAddress, 32),
           token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },

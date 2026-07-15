@@ -9,6 +9,7 @@ import "../interfaces/ITransactModule.sol";
 import "../interfaces/IMerkleModule.sol";
 import "../interfaces/IVerifierModule.sol";
 import "../types/CCTPTypes.sol";
+import "../CCTPBindingLib.sol";
 import "../../cctp/ICCTPV2.sol";
 import "../../railgun/logic/Poseidon.sol";
 import "../../governance/IShieldPauseController.sol";
@@ -125,7 +126,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         _requireNotEmergencyPaused();
 
         // Validate inputs
-        _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient);
+        _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient, maxFee);
 
         // Validate and process the transaction (nullify, accumulate commitments)
         _processAtomicUnshieldTransaction(_transaction);
@@ -140,7 +141,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
     function _validateAtomicUnshieldInputs(
         Transaction calldata _transaction,
         uint32 destinationDomain,
-        address finalRecipient
+        address finalRecipient,
+        uint256 maxFee
     ) internal view {
         require(destinationDomain != localDomain, "TransactModule: Use local unshield");
         require(finalRecipient != address(0), "TransactModule: Invalid recipient");
@@ -152,6 +154,27 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         require(
             remoteHookRouters[destinationDomain] != bytes32(0),
             "TransactModule: Hook router not configured"
+        );
+
+        // Bind the CCTP destination (recipient + domain + fee) to the proof. These are plaintext
+        // arguments the SNARK does not otherwise cover; without this a relayer/front-runner could
+        // resubmit the victim's identical proof with finalRecipient = attacker and steal every
+        // cross-chain exit (issue #364, generalized to the full tuple in #378). boundParams.adaptParams
+        // IS committed by the circuit, so the prover sets it to CCTPBindingLib.encode(...) and we reject
+        // any mismatch here. This also blocks hijacking a local unshield (adaptParams == 0) through this
+        // path. No circuit change; destinationCaller is already pinned on-chain per #64.
+        require(
+            _transaction.boundParams.adaptContract == address(0),
+            "TransactModule: unexpected adaptContract"
+        );
+        require(
+            CCTPBindingLib.verify(
+                _transaction.boundParams.adaptParams,
+                finalRecipient,
+                destinationDomain,
+                maxFee
+            ),
+            "TransactModule: destination not bound to proof"
         );
 
         // Validate the transaction proof
@@ -356,6 +379,13 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
 
         // Get recipient from npk (address encoded as bytes32)
         address recipient = address(uint160(uint256(_note.npk)));
+
+        // Never unshield to the pool itself. An xchain-unshield proof unshields to the pool (its USDC is
+        // burned via CCTP in atomicCrossChainUnshield, which does not call this function). Blocking
+        // recipient == pool here stops a griefing replay: submitting that same proof through the plain
+        // transact() path would otherwise send USDC pool->pool and destroy the note with funds stranded
+        // (issue #364 cross-path replay). No legitimate unshield targets the pool address.
+        require(recipient != address(this), "TransactModule: unshield to pool");
 
         // Unshield is free per spec — the full preimage value is paid out. The trailing
         // 0 in the Unshield event preserves the 4-field shape for downstream log parsers.

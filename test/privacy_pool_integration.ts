@@ -32,6 +32,18 @@ import {
 } from "../lib/artifacts";
 
 // CCTP Domain IDs
+// Compute CCTPBindingLib.encode(recipient, domain, maxFee) — the adaptParams commitment that binds the
+// cross-chain unshield destination into the proof (#364/#378). Must match the Solidity library.
+const CCTP_BINDING_DOMAIN_TAG = ethers.keccak256(ethers.toUtf8Bytes("ArmadaCCTPUnshield.v1"));
+function encodeCctpBinding(recipient: string, domain: number, maxFee: bigint): string {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "address", "uint32", "uint256"],
+      [CCTP_BINDING_DOMAIN_TAG, recipient, domain, maxFee]
+    )
+  );
+}
+
 const DOMAINS = {
   hub: 100,
   client: 101,
@@ -583,7 +595,8 @@ describe("Privacy Pool Integration", function () {
           unshield: 1, // UnshieldType.NORMAL
           chainID: 31337,
           adaptContract: ethers.ZeroAddress,
-          adaptParams: ethers.ZeroHash,
+          // Bind the CCTP destination (recipient + domain + fee) into the proof (#364/#378).
+          adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, MAX_FEE),
           commitmentCiphertext: [], // length = commitments.length - 1 = 0
         },
         unshieldPreimage: {

@@ -190,6 +190,18 @@ describe("Privacy Pool Adversarial", function () {
     };
   }
 
+  // Compute CCTPBindingLib.encode(recipient, domain, maxFee) — the adaptParams commitment that binds
+  // the cross-chain unshield destination into the proof (#364/#378). Must match the Solidity library.
+  const CCTP_BINDING_DOMAIN_TAG = ethers.keccak256(ethers.toUtf8Bytes("ArmadaCCTPUnshield.v1"));
+  function encodeCctpBinding(recipient: string, domain: number, maxFee: bigint): string {
+    return ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["bytes32", "address", "uint32", "uint256"],
+        [CCTP_BINDING_DOMAIN_TAG, recipient, domain, maxFee]
+      )
+    );
+  }
+
   function makeTransaction(opts: {
     merkleRoot: string;
     nullifiers: string[];
@@ -197,6 +209,7 @@ describe("Privacy Pool Adversarial", function () {
     unshield?: number;
     unshieldPreimage?: any;
     ciphertextCount?: number;
+    adaptParams?: string;
   }) {
     const unshieldType = opts.unshield ?? 0;
     const ciphertextCount = opts.ciphertextCount ??
@@ -221,7 +234,7 @@ describe("Privacy Pool Adversarial", function () {
         unshield: unshieldType,
         chainID: 31337,
         adaptContract: ethers.ZeroAddress,
-        adaptParams: ethers.ZeroHash,
+        adaptParams: opts.adaptParams ?? ethers.ZeroHash,
         commitmentCiphertext: ciphertext,
       },
       unshieldPreimage: opts.unshieldPreimage ?? {
@@ -484,6 +497,7 @@ describe("Privacy Pool Adversarial", function () {
         nullifiers: [nullifier],
         commitments: [commitHash],
         unshield: 1,
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, 0n),
         unshieldPreimage: {
           npk: ethers.zeroPadValue(privacyPoolAddress, 32),
           token: { tokenType: 0, tokenAddress: await hubUsdc.getAddress(), tokenSubID: 0 },
@@ -500,59 +514,121 @@ describe("Privacy Pool Adversarial", function () {
       expect(isSpent).to.be.true;
     });
 
-    // WHY: PoC for #364. The cross-chain unshield destination (`finalRecipient`) is a plaintext
-    // argument that never enters proof validation and is not committed by `hashBoundParams`, unlike
-    // the local unshield path where the recipient is derived from the proof-bound note npk. This
-    // verifies that an attacker can front-run a victim's cross-chain unshield with the identical
-    // proof and redirect the funds — a direct theft of every cross-chain exit.
-    it("PoC #364: attacker front-runs a cross-chain unshield and redirects the funds", async function () {
+    // WHY: #364/#378 regression (this was the PoC that demonstrated the theft; it now asserts the fix).
+    // The cross-chain unshield destination (recipient + domain + maxFee) is bound into the proof via
+    // boundParams.adaptParams (CCTPBindingLib). An attacker resubmitting the victim's identical proof
+    // with a redirected finalRecipient no longer validates — the submitted args don't hash to the
+    // proof-committed adaptParams — so the theft reverts and the victim's note is untouched.
+    it("#364: attacker cannot redirect a cross-chain exit — destination is bound to the proof", async function () {
       const usdcAddr = await hubUsdc.getAddress();
       const root = await shieldAndGetRoot(ethers.parseUnits("200", 6));
       const unshieldAmount = ethers.parseUnits("50", 6);
-      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("poc364-nullifier"));
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("bind364-nullifier"));
 
-      // The unshield note is bound to a specific npk via the commitment hash (a SNARK public
-      // input). Here the npk encodes the VICTIM (bob) — the note cryptographically "belongs" to bob.
-      const victimNpk = ethers.zeroPadValue(bobAddress, 32);
-      const commitHash = computeCommitmentHash(BigInt(bobAddress), BigInt(usdcAddr), BigInt(unshieldAmount));
-
+      // The xchain unshield note unshields to the pool (its USDC is burned via CCTP); the destination
+      // recipient is bound separately via adaptParams — here to the VICTIM (bob).
+      const poolNpk = ethers.zeroPadValue(privacyPoolAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(privacyPoolAddress), BigInt(usdcAddr), BigInt(unshieldAmount));
+      const bindingToBob = encodeCctpBinding(bobAddress, DOMAINS.client, 0n);
       const buildTx = () =>
         makeTransaction({
           merkleRoot: root,
           nullifiers: [nullifier],
           commitments: [commitHash],
           unshield: 1,
+          adaptParams: bindingToBob,
           unshieldPreimage: {
-            npk: victimNpk,
+            npk: poolNpk,
             token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
             value: unshieldAmount,
           },
         });
 
-      // The CrossChainUnshieldInitiated event is emitted (via delegatecall) from the pool's
-      // address using TransactModule's ABI, so decode it through a TransactModule-at-pool handle.
-      const poolAsTransact = transactModule.attach(privacyPoolAddress);
-
-      // Bob would submit this with finalRecipient = bob. But `finalRecipient` never enters proof
-      // validation, so the attacker resubmits the IDENTICAL transaction (same proof, same note,
-      // same nullifier) with finalRecipient = attacker.
+      // Attacker resubmits bob's IDENTICAL transaction with finalRecipient = attacker → reverts; the
+      // nullifier is NOT consumed (the whole tx rolls back).
       await expect(
         privacyPool
           .connect(attacker)
           .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, 0, ethers.ZeroHash)
-      )
-        .to.emit(poolAsTransact, "CrossChainUnshieldInitiated")
-        .withArgs(DOMAINS.client, attackerAddress, unshieldAmount, 0);
+      ).to.be.revertedWith("TransactModule: destination not bound to proof");
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.false;
 
-      // The note's npk encoded BOB, yet the CCTP burn was directed to the ATTACKER — the recipient
-      // is unbound. The nullifier is now spent, so bob's own (identical, correct) submission
-      // reverts: his funds are already gone to the attacker.
-      expect(await privacyPool.nullifiers(0, nullifier)).to.be.true;
+      // Bob's correct submission (finalRecipient matches the binding) succeeds.
+      const poolAsTransact = transactModule.attach(privacyPoolAddress);
       await expect(
         privacyPool
           .connect(bob)
           .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, 0, ethers.ZeroHash)
-      ).to.be.revertedWith("TransactModule: Note already spent");
+      )
+        .to.emit(poolAsTransact, "CrossChainUnshieldInitiated")
+        .withArgs(DOMAINS.client, bobAddress, unshieldAmount, 0);
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.true;
+    });
+
+    // WHY: #378 — the binding covers the whole tuple, so an inflated maxFee (which would let the CCTP
+    // fee starve the payout) must also fail, not just a redirected recipient. (Domain-redirect is
+    // covered by the CCTPBindingLib Foundry fuzz — an unconfigured domain reverts earlier here.)
+    it("#378: rejects an inflated maxFee not bound in the proof", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("200", 6));
+      const amount = ethers.parseUnits("40", 6);
+      const poolNpk = ethers.zeroPadValue(privacyPoolAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(privacyPoolAddress), BigInt(usdcAddr), BigInt(amount));
+      const binding = encodeCctpBinding(bobAddress, DOMAINS.client, 1n); // bound maxFee = 1
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("bind-fee-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        adaptParams: binding,
+        unshieldPreimage: { npk: poolNpk, token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 }, value: amount },
+      });
+      await expect(
+        privacyPool.connect(attacker).atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 2, ethers.ZeroHash)
+      ).to.be.revertedWith("TransactModule: destination not bound to proof");
+    });
+
+    // WHY: #364 (bidirectional) — a valid LOCAL unshield proof carries adaptParams == 0, which can
+    // never satisfy the binding, so it cannot be hijacked into a cross-chain exit to an attacker.
+    it("#364: rejects a local unshield hijacked through atomicCrossChainUnshield", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("100", 6));
+      const amount = ethers.parseUnits("30", 6);
+      const commitHash = computeCommitmentHash(BigInt(bobAddress), BigInt(usdcAddr), BigInt(amount));
+      const localTx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("hijack-null"))],
+        commitments: [commitHash],
+        unshield: 1, // adaptParams defaults to ZeroHash — a plain/local unshield
+        unshieldPreimage: { npk: ethers.zeroPadValue(bobAddress, 32), token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 }, value: amount },
+      });
+      await expect(
+        privacyPool.connect(attacker).atomicCrossChainUnshield(localTx, DOMAINS.client, attackerAddress, 0, ethers.ZeroHash)
+      ).to.be.revertedWith("TransactModule: destination not bound to proof");
+    });
+
+    // WHY: #364 cross-path replay — an xchain-unshield proof unshields to the pool (npk = pool).
+    // Replaying it through the plain transact() path would send USDC pool->pool and destroy the note
+    // with funds stranded; the _transferTokenOut guard reverts it, leaving the note intact.
+    it("#364: xchain-unshield proof replayed through transact() reverts (no pool->pool strand)", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("100", 6));
+      const amount = ethers.parseUnits("25", 6);
+      const poolNpk = ethers.zeroPadValue(privacyPoolAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(privacyPoolAddress), BigInt(usdcAddr), BigInt(amount));
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("replay-null"));
+      const xchainTx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitHash],
+        unshield: 1,
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, 0n),
+        unshieldPreimage: { npk: poolNpk, token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 }, value: amount },
+      });
+      await expect(
+        privacyPool.connect(attacker).transact([xchainTx])
+      ).to.be.revertedWith("TransactModule: unshield to pool");
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.false;
     });
   });
 
@@ -786,6 +862,9 @@ describe("Privacy Pool Adversarial", function () {
         nullifiers: [nullifier],
         commitments: [commitHash],
         unshield: 1,
+        // Bind the (recipient, domain, maxFee) so the tx passes the adaptParams binding and reaches the
+        // maxFee-vs-base check inside _executeCCTPBurn (the case under test).
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, ethers.parseUnits("100", 6)),
         unshieldPreimage: {
           npk: ethers.zeroPadValue(privacyPoolAddress, 32),
           token: { tokenType: 0, tokenAddress: await hubUsdc.getAddress(), tokenSubID: 0 },

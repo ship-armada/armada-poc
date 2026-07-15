@@ -199,8 +199,17 @@ export async function generateXchainUnshieldProof(opts: {
       {
         tokenAddress: opts.tokenAddress,
         amount: opts.amount,
-        // The PrivacyPool itself receives the USDC — it then forwards via CCTP. The actual user
-        // recipient is encoded in the atomicCrossChainUnshield args (not the proof).
+        // The PrivacyPool itself receives the USDC — it then forwards via CCTP.
+        //
+        // TODO(#399): the hub now BINDS the destination (recipient, domain, maxFee) into the proof via
+        // boundParams.adaptParams (#364/#378, PR #398). This plain generateUnshieldProof sets
+        // adaptParams = 0, which the updated atomicCrossChainUnshield REJECTS. Switch this +
+        // buildXchainUnshieldTransactionStruct to generateProofTransactions(..., relayAdaptID = {
+        // contract: ZeroAddress, parameters: encodeCctpBinding(finalRecipient, destinationDomain,
+        // maxFee) }) — the yield.ts pattern. recipientAddress stays the pool (npk = pool; the cross-path
+        // replay is closed by a contract-side _transferTokenOut guard). Needs a real-proof e2e — see
+        // #399. Coupled: the pool must not be redeployed until this lands, or cross-chain unshields
+        // revert. `encodeCctpBinding` is ready in lib/railgun/cctpBinding.ts.
         recipientAddress: opts.privacyPoolAddress,
       },
     ],

@@ -6,6 +6,9 @@
 // in this module don't blow up before any user code runs. Production cost: one extra microtask
 // the first time initRailgunEngine() runs.
 import { getDefaultStore } from 'jotai'
+// Type-only import — erased at compile time (verbatimModuleSyntax), so it does NOT trigger the
+// jsdom-crashing module-load the runtime `import()` calls below guard against.
+import type { Artifact } from '@railgun-community/shared-models'
 import { createWebDatabase } from './database'
 import { createBrowserArtifactStore } from './artifacts'
 import { initializeProver } from './prover'
@@ -118,7 +121,7 @@ const ARMADA_SHAPES: Array<[number, number]> = [
 ]
 
 async function loadArmadaCircuits(
-  overrideArtifact: (variant: string, artifact: { wasm: Uint8Array; zkey: Uint8Array; vkey: unknown }) => void,
+  overrideArtifact: (variant: string, artifact: Artifact) => void,
 ): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('[railgun] Loading Armada circuit artifacts...')
@@ -145,7 +148,9 @@ async function loadArmadaCircuits(
       const zkey = new Uint8Array(await zkeyRes.arrayBuffer())
       const vkey = await vkeyRes.json()
 
-      overrideArtifact(variant, { wasm, zkey, vkey })
+      // `dat` is the native-prover witness calculator; we use the snarkjs (wasm) path, so it's
+      // unused. The SDK's Artifact type still requires the key — pass it explicitly as undefined.
+      overrideArtifact(variant, { wasm, zkey, vkey, dat: undefined })
     } catch (err) {
       // Non-fatal — the SDK will fall back to IPFS for this shape
       // eslint-disable-next-line no-console

@@ -1,12 +1,15 @@
+// ABOUTME: Serves compiled Armada circuit artifacts (WASM/ZKEY/VKEY) to the Railgun engine,
+// ABOUTME: replacing the unlicensed railgun-circuit-test-artifacts package.
+
 /**
  * Armada Circuit Artifact Provider
  *
- * Serves compiled Armada circuit artifacts (WASM/ZKEY/VKEY) to the Railgun engine,
- * replacing the unlicensed railgun-circuit-test-artifacts package.
- *
- * Build artifacts live in /Users/andrewburger/armada/armada-circuits/build/<N>x<M>/
- * and are produced by:
- *   cd armada-circuits && npm run compile && npm run setup:dev
+ * Build artifacts live in <repo-parent>/armada-circuits/build/<N>x<M>/ and are
+ * installed from the pinned canonical release by:
+ *   scripts/fetch-circuits.sh
+ * (or built from source: cd armada-circuits && npm run compile && npm run setup:dev —
+ * note that setup output is non-reproducible, so a locally built set will NOT match
+ * the vkeys registered on any shared deployment.)
  *
  * This module exposes the same interface as railgun-circuit-test-artifacts:
  *   getArtifact(nullifiers, commitments) → { wasm, zkey, vkey }
@@ -79,7 +82,7 @@ export function getArtifact(nullifiers: number, commitments: number): CachedArti
   if (!fs.existsSync(zkeyFile)) {
     throw new Error(
       `Armada circuit artifacts not found for shape ${key}. ` +
-      `Run: cd armada-circuits && npm run compile && npm run setup:dev. ` +
+      `Run scripts/fetch-circuits.sh to install the pinned release. ` +
       `Expected: ${zkeyFile}`
     );
   }

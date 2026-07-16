@@ -111,7 +111,7 @@ async function getArtifacts(inputs: {
   } catch (error) {
     throw new Error(
       `Failed to load Armada artifacts for ${key}. ` +
-        `Run: cd armada-circuits && npm run compile && npm run setup:dev. Error: ${error}`
+        `Run scripts/fetch-circuits.sh to install the pinned release. Error: ${error}`
     );
   }
 }

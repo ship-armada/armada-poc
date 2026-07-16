@@ -1,11 +1,13 @@
+// ABOUTME: Captures reference proof vectors from a live local deployment as JSON fixtures
+// ABOUTME: for differential testing against Armada's independent circuit set.
+
 /**
  * Capture reference proof vectors from a live local deployment.
  *
  * Produces JSON fixtures for differential testing against Armada's
  * independent circuit set.
  *
- * Prerequisites:
- *   cd /Users/andrewburger/armada/armada-poc
+ * Prerequisites (from the repo root):
  *   npm run chains          # terminal 1 — start Anvil
  *   source config/local.env && npm run setup  # terminal 2 — deploy
  *   npx hardhat run scripts/capture/capture-reference-vectors.ts --network hub

@@ -173,7 +173,7 @@ function serveCircuitArtifacts() {
 
           if (!fs.existsSync(filepath)) {
             res.statusCode = 404
-            res.end(`Not found: ${shape}/${filetype}. Run: cd armada-circuits && npm run compile && npm run setup:dev`)
+            res.end(`Not found: ${shape}/${filetype}. Run scripts/fetch-circuits.sh from the repo root to install the pinned release`)
             return
           }
 

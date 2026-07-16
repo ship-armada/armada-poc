@@ -1,11 +1,13 @@
+// ABOUTME: Captures reference proof vectors for multiple circuit shapes (1x1, 1x2, 2x2, 3x2, unshield)
+// ABOUTME: as JSON fixtures for differential testing in the armada-circuits repo.
+
 /**
  * Capture reference proof vectors for multiple circuit shapes.
  *
  * This script captures 2x2 transfer and 1x1 exact-spend vectors.
  * Each shape is captured from a clean state (fresh engine init + wallets).
  *
- * Prerequisites:
- *   cd /Users/andrewburger/armada/armada-poc
+ * Prerequisites (from the repo root):
  *   npm run chains          # terminal 1 — start Anvil
  *   source config/local.env && npm run setup  # terminal 2 — deploy
  *   npx hardhat run scripts/capture/capture-multi-shape.ts --network hub

@@ -1,0 +1,282 @@
+/* ABOUTME: Styling for ObserveStatusCard — frosted card + sale bar modeled on the hero Progress card, table modeled on the crowdfund participants list. */
+/* ABOUTME: Uses @armada/ui semantic tokens (the committer loads tokens.css), matching the recipes in Progress.module.css and HeroParticipantsPanel.module.css. */
+
+/* ── Card chrome (Progress.module.css recipe) ── */
+.card {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--semantic-spacing-card-padding);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 72%, transparent);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--primitives-spacing-3);
+}
+
+.saleSize {
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+/* ── Sale progress bar (Progress.module.css recipe) ── */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+.progressHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+}
+
+.progressKey {
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: 500;
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.progressMax {
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.progressAmount {
+  margin: 0 0 var(--primitives-spacing-5);
+  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--semantic-color-text-primary);
+}
+
+.barWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.barTrack {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 10px;
+  overflow: visible;
+}
+
+.barFillGradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  z-index: 1;
+  background: linear-gradient(
+    to right,
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-amber) 55%,
+    var(--semantic-color-brand-amber-dark) 100%
+  );
+  pointer-events: none;
+}
+
+.barFillOverMin {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 1;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    var(--semantic-color-brand-lavender) 0%,
+    var(--primitives-color-purple-600) 28%,
+    var(--primitives-color-purple-700) 50%,
+    var(--primitives-color-purple-600) 72%,
+    var(--semantic-color-brand-lavender) 100%
+  );
+  background-size: 280% 100%;
+  animation: barOverMinShine 2.2s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes barOverMinShine {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barFillOverMin {
+    animation: none;
+    background: var(--semantic-color-brand-lavender);
+    background-size: auto;
+  }
+}
+
+.threshold {
+  position: absolute;
+  top: calc(-1 * var(--primitives-spacing-2));
+  bottom: calc(-1 * var(--primitives-spacing-2));
+  width: 1px;
+  z-index: 2;
+  background: var(--semantic-color-text-primary);
+  pointer-events: none;
+}
+
+.barLabels {
+  position: relative;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  margin-top: var(--primitives-spacing-5);
+  height: 20px;
+}
+
+.labelLeft {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+}
+
+.labelMinRaise {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--primitives-spacing-1);
+}
+
+.statValue {
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: 700;
+  line-height: var(--primitives-lineHeight-none);
+  color: var(--semantic-color-text-primary);
+}
+
+.statKey {
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: 300;
+  line-height: var(--primitives-lineHeight-none);
+  color: var(--semantic-color-text-muted);
+}
+
+/* ── Per-hop table (HeroParticipantsPanel list recipe) ── */
+.tableShell {
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+  border-radius: 12px;
+  background: var(--primitives-color-neutral-50);
+  overflow: hidden;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-5);
+  text-align: right;
+  white-space: nowrap;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+  background: var(--semantic-color-surface-default);
+  border-bottom: 1px solid var(--semantic-color-border-default);
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+
+.table td {
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-5);
+  text-align: right;
+  white-space: nowrap;
+  font-size: var(--semantic-component-tag-font-size);
+  color: var(--semantic-color-text-primary);
+}
+
+.table tbody tr + tr td {
+  border-top: 1px solid var(--semantic-color-border-default);
+}
+
+.table tbody tr:hover td {
+  background: color-mix(in srgb, var(--semantic-color-surface-raised) 34%, transparent);
+}
+
+.hopCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  color: var(--semantic-color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--primitives-letterSpacing-wide);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.fillOk {
+  color: var(--semantic-color-status-success);
+}
+
+.fillWarn {
+  color: var(--semantic-color-status-warning);
+}
+
+.fillOver {
+  color: var(--semantic-color-status-error);
+}
+
+/* Hop-2 (floor hop, no ceiling) — neutral, since "fill vs ceiling" doesn't apply. */
+.fillFloor {
+  color: var(--semantic-color-text-muted);
+}

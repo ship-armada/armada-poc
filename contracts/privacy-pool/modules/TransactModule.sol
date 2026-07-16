@@ -9,6 +9,7 @@ import "../interfaces/ITransactModule.sol";
 import "../interfaces/IMerkleModule.sol";
 import "../interfaces/IVerifierModule.sol";
 import "../types/CCTPTypes.sol";
+import "../CCTPBindingLib.sol";
 import "../../cctp/ICCTPV2.sol";
 import "../../railgun/logic/Poseidon.sol";
 import "../../governance/IShieldPauseController.sol";
@@ -107,28 +108,31 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData so off-chain wallets can
+     *        match the destination delivery to this specific unshield (issue #287). Not fund-relevant.
      * @return nonce CCTP message nonce for tracking
+     * @dev The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] (not
+     *      caller-supplied), so the burn can only be delivered through the destination chain's
+     *      CCTPHookRouter — a caller cannot leave it bytes32(0) and let a third party strand the funds.
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) external override onlyDelegatecall returns (uint64 nonce) {
         // Post-wind-down SC emergency pause: block ALL operations including unshields.
         _requireNotEmergencyPaused();
 
         // Validate inputs
-        _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient);
+        _validateAtomicUnshieldInputs(_transaction, destinationDomain, finalRecipient, maxFee);
 
         // Validate and process the transaction (nullify, accumulate commitments)
         _processAtomicUnshieldTransaction(_transaction);
 
         // Execute the CCTP burn and return nonce
-        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee);
+        nonce = _executeCCTPBurn(_transaction, destinationDomain, finalRecipient, maxFee, uniqueNonce);
     }
 
     /**
@@ -137,7 +141,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
     function _validateAtomicUnshieldInputs(
         Transaction calldata _transaction,
         uint32 destinationDomain,
-        address finalRecipient
+        address finalRecipient,
+        uint256 maxFee
     ) internal view {
         require(destinationDomain != localDomain, "TransactModule: Use local unshield");
         require(finalRecipient != address(0), "TransactModule: Invalid recipient");
@@ -146,6 +151,31 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             "TransactModule: Must include unshield"
         );
         require(remotePools[destinationDomain] != bytes32(0), "TransactModule: Unknown destination");
+        require(
+            remoteHookRouters[destinationDomain] != bytes32(0),
+            "TransactModule: Hook router not configured"
+        );
+
+        // Bind the CCTP destination (recipient + domain + fee) to the proof. These are plaintext
+        // arguments the SNARK does not otherwise cover; without this a relayer/front-runner could
+        // resubmit the victim's identical proof with finalRecipient = attacker and steal every
+        // cross-chain exit (issue #364, generalized to the full tuple in #378). boundParams.adaptParams
+        // IS committed by the circuit, so the prover sets it to CCTPBindingLib.encode(...) and we reject
+        // any mismatch here. This also blocks hijacking a local unshield (adaptParams == 0) through this
+        // path. No circuit change; destinationCaller is already pinned on-chain per #64.
+        require(
+            _transaction.boundParams.adaptContract == address(0),
+            "TransactModule: unexpected adaptContract"
+        );
+        require(
+            CCTPBindingLib.verify(
+                _transaction.boundParams.adaptParams,
+                finalRecipient,
+                destinationDomain,
+                maxFee
+            ),
+            "TransactModule: destination not bound to proof"
+        );
 
         // Validate the transaction proof
         (bool valid, string memory reason) = _validateTransaction(_transaction);
@@ -186,46 +216,42 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) internal returns (uint64 nonce) {
-        // Unshield is free per spec — the full preimage value is bridged.
-        // `fee` is retained at zero solely so the Unshield event below keeps its 4-field
-        // shape for downstream log parsers.
+        // Unshield is free per spec — the full preimage value is bridged. The Unshield event's fee
+        // field is emitted as 0 to keep its 4-field shape for downstream log parsers.
         uint120 base = _transaction.unshieldPreimage.value;
-        uint120 fee = 0;
 
         // Validate maxFee does not exceed the bridged amount
         require(maxFee <= base, "TransactModule: maxFee exceeds base");
 
         // Encode CCTP payload
         bytes memory hookData = CCTPPayloadLib.encodeUnshield(
-            UnshieldData({ recipient: finalRecipient })
+            UnshieldData({ recipient: finalRecipient, uniqueNonce: uniqueNonce })
         );
 
         // Burn via CCTP
         IERC20(usdc).safeApprove(tokenMessenger, base);
 
-        // Use configured finality threshold (STANDARD by default, FAST if enabled)
-        uint32 finality = defaultFinalityThreshold > 0
-            ? defaultFinalityThreshold
-            : CCTPFinality.STANDARD;
-
+        // destinationCaller is pinned to the destination chain's hook router (validated non-zero in
+        // _validateAtomicUnshieldInputs) so the message can only be delivered via its CCTPHookRouter.
+        // Finality: STANDARD by default, FAST if enabled (inlined to keep the stack shallow).
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             base,
             destinationDomain,
             remotePools[destinationDomain],
             usdc,
-            destinationCaller,
+            remoteHookRouters[destinationDomain],
             maxFee,
-            finality,
+            defaultFinalityThreshold > 0 ? defaultFinalityThreshold : CCTPFinality.STANDARD,
             hookData
         );
         nonce = 0; // CCTP V2 depositForBurnWithHook does not return nonce
 
         // Emit events
         emit CrossChainUnshieldInitiated(destinationDomain, finalRecipient, base, nonce);
-        emit Unshield(finalRecipient, _transaction.unshieldPreimage.token, base, fee);
+        emit Unshield(finalRecipient, _transaction.unshieldPreimage.token, base, 0);
 
         // Update last event block
         lastEventBlock = block.number;
@@ -353,6 +379,13 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
 
         // Get recipient from npk (address encoded as bytes32)
         address recipient = address(uint160(uint256(_note.npk)));
+
+        // Never unshield to the pool itself. An xchain-unshield proof unshields to the pool (its USDC is
+        // burned via CCTP in atomicCrossChainUnshield, which does not call this function). Blocking
+        // recipient == pool here stops a griefing replay: submitting that same proof through the plain
+        // transact() path would otherwise send USDC pool->pool and destroy the note with funds stranded
+        // (issue #364 cross-path replay). No legitimate unshield targets the pool address.
+        require(recipient != address(this), "TransactModule: unshield to pool");
 
         // Unshield is free per spec — the full preimage value is paid out. The trailing
         // 0 in the Unshield event preserves the 4-field shape for downstream log parsers.

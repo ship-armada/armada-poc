@@ -12,27 +12,32 @@ import { ethers } from "ethers";
 import {
   ChainConfig,
   allChains,
-  accounts,
+  relayerPrivateKey,
   armadaRelayerSettings,
 } from "../config";
 import * as fs from "fs";
 import * as path from "path";
 import { CursorStore } from "../lib/cursor-store";
+import { createStaticProvider } from "../lib/static-provider";
 import { getLogsChunked } from "../lib/get-logs-chunked";
 import { RpcTimeoutError, withTimeout } from "../lib/rpc-utils";
 import { classifyChainHealth, rollupStatus } from "../lib/health-classifier";
+import { NonceCoordinator } from "../lib/nonce-coordinator";
+import {
+  RetryQueueStore,
+  type PersistedRetryEntry,
+  type PersistedMessageEvent,
+} from "../lib/retry-queue-store";
+import {
+  DeadLetterStore,
+  type DeadLetterRecord,
+  type DeadLetterReason,
+} from "../lib/dead-letter-store";
+import type { CctpDeliveryStore } from "./cctp-delivery-store";
 import type { ChainHealth, RelayerHealth } from "../types";
 
 /** Where per-chain cursor files live — shared with iris-relay. Module-relative. */
 const RELAYER_STATE_DIR = path.join(__dirname, "..", "state");
-
-// ============ Constants ============
-
-/** MessageV2 version number */
-const MESSAGE_VERSION = 1;
-
-/** Finality threshold for standard finality */
-const FINALITY_STANDARD = 2000;
 
 // ============ Types ============
 
@@ -57,6 +62,9 @@ interface ChainState {
   messageTransmitter: string;
   tokenMessenger: string;
   hookRouter: string | null;
+  /** Cached contract instances (built once at init) so the hot relay path doesn't reconstruct them. */
+  messageTransmitterContract: ethers.Contract;
+  hookRouterContract: ethers.Contract | null;
   domain: number;
   /**
    * Highest block fully scanned (inclusive). Loaded from disk on cold start; advanced via the
@@ -64,7 +72,6 @@ interface ChainState {
    */
   lastProcessedBlock: number;
   processedMessages: Set<string>; // "sourceDomain-nonce" format
-  pendingNonce: number | null;
   /** Last scan error, or null when most recent tick succeeded. Replaces the silent catch. */
   lastError: { message: string; at: number } | null;
   /** Unix ms of the last successful scan tick. Used by the /health endpoint. */
@@ -87,6 +94,20 @@ interface RetryEntry {
 
 /** Max retry attempts before giving up */
 const MAX_RETRIES = 5;
+
+/**
+ * Timeout (ms) for the inline `tx.wait()` confirmation. Deliberately longer than the per-call RPC
+ * timeout — tx.wait legitimately blocks for a block time — but bounded so a chain that stops mining
+ * mid-wait can't hang the relay loop forever. On local Anvil mining is instant so this never fires.
+ */
+const RELAY_CONFIRM_TIMEOUT_MS = 60_000;
+
+/**
+ * Cap on the in-memory processed-message set per chain. It's not persisted (the cursor prevents
+ * re-scan within a process lifetime), but an unbounded Set would still leak on a long-running
+ * deployment. Far above any realistic POC/testnet volume; the oldest entries are evicted first.
+ */
+const PROCESSED_SET_CAP = 50_000;
 
 /** Base delay for exponential backoff (2 seconds) */
 const RETRY_BASE_DELAY_MS = 2000;
@@ -129,6 +150,10 @@ const MESSAGE_SENT_ABI = [
   "event MessageSent(bytes message)",
 ];
 
+/** Hoisted once — Interface construction parses ABI fragments; avoid doing it per log / per tick. */
+const MESSAGE_SENT_IFACE = new ethers.Interface(MESSAGE_SENT_ABI);
+const MESSAGE_SENT_TOPIC = MESSAGE_SENT_IFACE.getEvent("MessageSent")!.topicHash;
+
 const MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes calldata message, bytes calldata attestation) external returns (bool)",
   "function relayer() view returns (address)",
@@ -138,20 +163,6 @@ const MESSAGE_TRANSMITTER_ABI = [
 const HOOK_ROUTER_ABI = [
   "function relayWithHook(bytes calldata message, bytes calldata attestation) external returns (bool)",
 ];
-
-// ============ Domain Mapping ============
-
-const CHAIN_TO_DOMAIN: Record<number, number> = {
-  31337: 100, // Hub
-  31338: 101, // Client A
-  31339: 102, // Client B
-};
-
-const DOMAIN_TO_CHAIN: Record<number, number> = {
-  100: 31337,
-  101: 31338,
-  102: 31339,
-};
 
 // ============ Helpers ============
 
@@ -216,10 +227,43 @@ function parseBurnMessageFee(messageBody: string): { amount: bigint; maxFee: big
   return { amount, maxFee };
 }
 
+/** Serialise an in-memory MessageEvent for persistence (bigint nonce → decimal string). */
+function serializeMessageEvent(event: MessageEvent): PersistedMessageEvent {
+  return {
+    nonce: event.nonce.toString(),
+    sourceDomain: event.sourceDomain,
+    destinationDomain: event.destinationDomain,
+    sender: event.sender,
+    recipient: event.recipient,
+    destinationCaller: event.destinationCaller,
+    minFinalityThreshold: event.minFinalityThreshold,
+    messageBody: event.messageBody,
+    rawMessage: event.rawMessage,
+    txHash: event.txHash,
+    blockNumber: event.blockNumber,
+  };
+}
+
+/** Inverse of serializeMessageEvent — rebuild the in-memory event (string nonce → bigint). */
+function deserializeMessageEvent(persisted: PersistedMessageEvent): MessageEvent {
+  return {
+    nonce: BigInt(persisted.nonce),
+    sourceDomain: persisted.sourceDomain,
+    destinationDomain: persisted.destinationDomain,
+    sender: persisted.sender,
+    recipient: persisted.recipient,
+    destinationCaller: persisted.destinationCaller,
+    minFinalityThreshold: persisted.minFinalityThreshold,
+    messageBody: persisted.messageBody,
+    rawMessage: persisted.rawMessage,
+    txHash: persisted.txHash,
+    blockNumber: persisted.blockNumber,
+  };
+}
+
 function parseMessageEvent(log: ethers.Log): MessageEvent | null {
   try {
-    const iface = new ethers.Interface(MESSAGE_SENT_ABI);
-    const parsed = iface.parseLog({
+    const parsed = MESSAGE_SENT_IFACE.parseLog({
       topics: log.topics as string[],
       data: log.data,
     });
@@ -251,17 +295,45 @@ export class CCTPRelayModule {
   private retryQueue: RetryEntry[] = [];
   private getMinFee: (() => Promise<bigint>) | null;
   private cursorStore: CursorStore;
+  /**
+   * Durable backing for `retryQueue`. Without it, a restart while a failed message is queued for
+   * retry loses the entry — and because the scan cursor has already advanced past the message
+   * (relayMessage swallows failures and returns false), the scanner never re-discovers it, so the
+   * source-chain burn is stranded forever.
+   */
+  private retryQueueStore: RetryQueueStore;
+  private deadLetterStore: DeadLetterStore;
+  /** Per-source-chain dead-letter records (keyed by chain name), in memory for synchronous health. */
+  private deadLetters: Map<string, DeadLetterRecord[]> = new Map();
+  /**
+   * Process-wide nonce authority, shared with the privacy relay's WalletManager. Even in mock
+   * mode the relayer submits both CCTP receives and (potentially) privacy-relay txs from the same
+   * EOA on the hub chain, so one coordinator keeps their nonce streams from colliding.
+   */
+  private nonceCoordinator: NonceCoordinator;
+  /** Cross-chain delivery index surfaced via /cctp-status. Best-effort writes (frontend has a scan fallback). */
+  private deliveryStore: CctpDeliveryStore;
 
   /**
+   * @param nonceCoordinator Shared per-chain nonce authority (see field doc).
+   * @param deliveryStore Cross-chain delivery index written on relay success/failure.
    * @param getMinFee Optional async function that returns the minimum acceptable
    *   maxFee (in USDC raw units) for cross-chain shield relay. If provided,
    *   messages with insufficient maxFee will be skipped. If null, all messages
    *   are relayed (backward-compatible behavior).
    */
-  constructor(getMinFee?: () => Promise<bigint>) {
+  constructor(
+    nonceCoordinator: NonceCoordinator,
+    deliveryStore: CctpDeliveryStore,
+    getMinFee?: () => Promise<bigint>,
+  ) {
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
     this.getMinFee = getMinFee || null;
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
+    this.nonceCoordinator = nonceCoordinator;
+    this.deliveryStore = deliveryStore;
+    this.retryQueueStore = new RetryQueueStore(RELAYER_STATE_DIR);
+    this.deadLetterStore = new DeadLetterStore(RELAYER_STATE_DIR);
   }
 
   /**
@@ -270,30 +342,17 @@ export class CCTPRelayModule {
   async initialize(): Promise<boolean> {
     console.log("[cctp-relay] Initializing CCTP relay module...");
 
-    const deploymentFiles: Record<number, string> = {
-      31337: "hub-v3.json",
-      31338: "client-v3.json",
-      31339: "clientB-v3.json",
-    };
-
-    /** Privacy pool deployment files — used to load hookRouter address */
-    const privacyPoolFiles: Record<number, string> = {
-      31337: "privacy-pool-hub.json",
-      31338: "privacy-pool-client.json",
-      31339: "privacy-pool-clientB.json",
-    };
-
     let allInitialized = true;
 
     for (const chainConfig of allChains) {
-      const deploymentFile = deploymentFiles[chainConfig.chainId];
-      if (!deploymentFile) {
-        console.log(`  [cctp-relay] No deployment mapping for chain ${chainConfig.chainId}`);
-        continue;
-      }
-
-      const ppFile = privacyPoolFiles[chainConfig.chainId];
-      const state = await this.initChain(chainConfig, deploymentFile, ppFile);
+      // Deployment file names + CCTP domain come from config.ts (the single source of truth),
+      // not a hardcoded Anvil-chain-id map — so this works on any configured network, not just
+      // local 31337-31339.
+      const state = await this.initChain(
+        chainConfig,
+        chainConfig.deploymentFile,
+        chainConfig.privacyPoolDeploymentFile,
+      );
       if (state) {
         this.chains.set(state.domain, state);
         console.log(
@@ -313,7 +372,150 @@ export class CCTPRelayModule {
     console.log(
       `[cctp-relay] Initialized ${this.chains.size}/${allChains.length} chains`
     );
+
+    // Restore any retry-queue entries persisted before a previous shutdown/crash. Done AFTER the
+    // chains map is populated so each entry's source chain can be re-resolved by domain.
+    await this.loadRetryQueue();
+    // Restore dead-letter records so getHealth reports an accurate count across restarts.
+    await this.loadDeadLetters();
+
     return allInitialized;
+  }
+
+  /** Rehydrate per-chain dead-letter records from disk. Best-effort — a read error starts empty. */
+  private async loadDeadLetters(): Promise<void> {
+    let total = 0;
+    for (const state of this.chains.values()) {
+      try {
+        const data = await this.deadLetterStore.read(state.config.name);
+        if (data && data.records.length > 0) {
+          this.deadLetters.set(state.config.name, data.records);
+          total += data.records.length;
+        }
+      } catch (err: any) {
+        console.error(
+          `[cctp-relay] ${state.config.name}: failed to read dead-letter records (${err.message}). Starting empty for this chain.`,
+        );
+      }
+    }
+    if (total > 0) {
+      console.warn(
+        `[cctp-relay] Restored ${total} dead-letter record(s) — these messages were never relayed (see relayer/state/deadletter-*.json).`,
+      );
+    }
+  }
+
+  /**
+   * Permanently give up on a message: record it durably and mark it processed so a rescan won't
+   * re-relay it. `messageKey` is the `${sourceDomain}-${nonce}` id used in processedMessages.
+   */
+  private async deadLetter(
+    event: MessageEvent,
+    sourceState: ChainState,
+    reason: DeadLetterReason,
+  ): Promise<void> {
+    const messageKey = `${event.sourceDomain}-${event.nonce}`;
+    const record: DeadLetterRecord = {
+      id: messageKey,
+      sourceTxHash: event.txHash,
+      rawMessage: event.rawMessage,
+      reason,
+      sourceDomain: event.sourceDomain,
+      destinationDomain: event.destinationDomain,
+      at: Date.now(),
+    };
+    const list = this.deadLetters.get(sourceState.config.name) ?? [];
+    list.push(record);
+    this.deadLetters.set(sourceState.config.name, list);
+    this.markProcessed(sourceState, messageKey);
+    // Surface the permanent failure on /cctp-status so the frontend stops waiting (fails the tx).
+    this.deliveryStore.markFailed(ethers.keccak256(event.rawMessage), `dead-letter: ${reason}`);
+    console.error(
+      `[cctp-relay] DEAD-LETTER (${reason}): ${messageKey} (source tx ${event.txHash}). Recorded for manual relay.`,
+    );
+    try {
+      await this.deadLetterStore.write(sourceState.config.name, list);
+    } catch (err: any) {
+      console.error(
+        `[cctp-relay] ${sourceState.config.name}: failed to persist dead-letter record (${err.message}).`,
+      );
+    }
+  }
+
+  /**
+   * Mark a message processed (dedup), evicting the oldest entries when the per-chain set exceeds
+   * PROCESSED_SET_CAP. Safe to evict: the scan cursor has advanced past these messages, so they
+   * can't be re-scanned within this process lifetime.
+   */
+  private markProcessed(state: ChainState, key: string): void {
+    state.processedMessages.add(key);
+    if (state.processedMessages.size > PROCESSED_SET_CAP) {
+      const overflow = state.processedMessages.size - PROCESSED_SET_CAP;
+      let i = 0;
+      for (const k of state.processedMessages) {
+        state.processedMessages.delete(k); // Set iterates in insertion order → oldest first
+        if (++i >= overflow) break;
+      }
+    }
+  }
+
+  /**
+   * Rehydrate `retryQueue` from disk. Each persisted entry's `sourceState` is re-resolved by
+   * domain (runtime objects aren't serialised). Entries whose source chain is no longer configured
+   * are dropped with a warning rather than silently retained against a missing chain.
+   */
+  private async loadRetryQueue(): Promise<void> {
+    let data;
+    try {
+      data = await this.retryQueueStore.read();
+    } catch (err: any) {
+      console.error(
+        `[cctp-relay] Failed to read persisted retry queue (${err.message}). Starting with an empty queue; check relayer/state/cctp-retry-queue.json.`,
+      );
+      return;
+    }
+    if (!data || data.entries.length === 0) return;
+
+    let restored = 0;
+    let dropped = 0;
+    for (const persisted of data.entries) {
+      const sourceState = this.getChainByDomain(persisted.event.sourceDomain);
+      if (!sourceState) {
+        console.warn(
+          `[cctp-relay] Dropping persisted retry entry for source domain ${persisted.event.sourceDomain} (tx ${persisted.event.txHash}) — chain not configured.`,
+        );
+        dropped++;
+        continue;
+      }
+      this.retryQueue.push({
+        event: deserializeMessageEvent(persisted.event),
+        sourceState,
+        attempts: persisted.attempts,
+        nextRetryAt: persisted.nextRetryAt,
+      });
+      restored++;
+    }
+    console.log(
+      `[cctp-relay] Restored ${restored} retry-queue entr${restored === 1 ? "y" : "ies"} from disk${dropped > 0 ? ` (dropped ${dropped} for unconfigured chains)` : ""}.`,
+    );
+    // Re-persist so the file reflects the post-load state (drops removed).
+    if (dropped > 0) await this.persistRetryQueue();
+  }
+
+  /** Snapshot the current retry queue to disk. Awaited by callers after every queue mutation. */
+  private async persistRetryQueue(): Promise<void> {
+    try {
+      const entries: PersistedRetryEntry[] = this.retryQueue.map((r) => ({
+        event: serializeMessageEvent(r.event),
+        attempts: r.attempts,
+        nextRetryAt: r.nextRetryAt,
+      }));
+      await this.retryQueueStore.write(entries);
+    } catch (err: any) {
+      console.error(
+        `[cctp-relay] Failed to persist retry queue (${err.message}). In-memory queue is correct; next mutation will retry the write.`,
+      );
+    }
   }
 
   /**
@@ -346,8 +548,9 @@ export class CCTPRelayModule {
         }
       }
 
-      const provider = new ethers.JsonRpcProvider(chainConfig.rpc);
-      const wallet = new ethers.Wallet(accounts.deployer.privateKey, provider);
+      // Pinned static provider (main's RPC-quota optimization) + our dedicated relayer key.
+      const provider = createStaticProvider(chainConfig.rpc, chainConfig.chainId);
+      const wallet = new ethers.Wallet(relayerPrivateKey, provider);
 
       // Verify connection up-front with the same timeout we'll use during polling.
       const currentBlock = Number(
@@ -358,7 +561,7 @@ export class CCTPRelayModule {
         ),
       );
 
-      const domain = CHAIN_TO_DOMAIN[chainConfig.chainId] || deployment.domain;
+      const domain = chainConfig.cctpDomain ?? deployment.domain;
 
       // Load persisted cursor or bootstrap from lookback — same logic as iris-relay.
       const lastProcessedBlock = await this.resolveBootCursor(chainConfig, currentBlock);
@@ -370,10 +573,13 @@ export class CCTPRelayModule {
         messageTransmitter,
         tokenMessenger,
         hookRouter,
+        messageTransmitterContract: new ethers.Contract(messageTransmitter, MESSAGE_TRANSMITTER_ABI, wallet),
+        hookRouterContract: hookRouter
+          ? new ethers.Contract(hookRouter, HOOK_ROUTER_ABI, wallet)
+          : null,
         domain,
         lastProcessedBlock,
         processedMessages: new Set(),
-        pendingNonce: null,
         lastError: null,
         lastScanAt: 0,
         lastChainHead: 0,
@@ -488,71 +694,77 @@ export class CCTPRelayModule {
         console.log(
           `  [cctp-relay] SKIPPING: maxFee ${burnFee.maxFee} < minFee ${minFee} — insufficient fee`
         );
-        sourceState.processedMessages.add(messageKey);
+        // Dead-letter rather than silently marking processed: the burn is final, so a message we
+        // refuse to relay for fee reasons leaves the user's USDC stranded and needs visibility +
+        // a durable record for manual relay or a fee-policy change. deadLetter also marks it
+        // processed so the scanner won't re-attempt it.
+        await this.deadLetter(event, sourceState, "fee-too-low");
         return false;
       }
       console.log(`  Fee check passed: maxFee ${burnFee.maxFee} >= minFee ${minFee}`);
     }
 
+    // /cctp-status delivery index is keyed by the SOURCE messageHash (keccak256 of the MessageSent
+    // bytes) — the same value the frontend captures at burn time. Mark "in flight" before relaying.
+    const messageHash = ethers.keccak256(event.rawMessage);
+    this.deliveryStore.markPending(messageHash, { amount: burnFee?.amount.toString() });
+
     try {
-      const messageTransmitter = new ethers.Contract(
-        destState.messageTransmitter,
-        MESSAGE_TRANSMITTER_ABI,
-        destState.wallet
-      );
-
-      // Get or initialize nonce for destination chain
-      if (destState.pendingNonce === null) {
-        destState.pendingNonce = await destState.provider.getTransactionCount(
-          destState.wallet.address,
-          "pending"
-        );
-        console.log(
-          `  Initialized tx nonce for ${destState.config.name}: ${destState.pendingNonce}`
-        );
-      }
-
-      const txNonce = destState.pendingNonce;
-
       const encodedMessage = event.rawMessage;
       console.log(
         `\n  Encoded MessageV2 length: ${(encodedMessage.length - 2) / 2} bytes`
       );
 
-      // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch
-      let tx: ethers.ContractTransactionResponse;
-      if (destState.hookRouter) {
-        const hookRouter = new ethers.Contract(
-          destState.hookRouter,
-          HOOK_ROUTER_ABI,
-          destState.wallet
-        );
-        console.log(
-          `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
-        );
-        tx = await hookRouter.relayWithHook(
-          encodedMessage,
-          "0x", // Empty attestation — mock skips verification
-          { nonce: txNonce }
-        );
-      } else {
-        console.log(
-          `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
-        );
-        tx = await messageTransmitter.receiveMessage(
-          encodedMessage,
-          "0x", // Empty attestation — mock skips verification
-          { nonce: txNonce }
-        );
-      }
-
-      destState.pendingNonce = txNonce + 1;
+      // Allocate the nonce + broadcast through the shared coordinator (keyed by chainId). Only the
+      // broadcast runs inside the critical section; tx.wait() happens after so the per-chain nonce
+      // mutex isn't held across the full confirmation latency.
+      const tx = await this.nonceCoordinator.withNonce(
+        destState.config.chainId,
+        destState.provider,
+        destState.wallet.address,
+        (txNonce) => {
+          // Use hookRouter.relayWithHook() to atomically call receiveMessage + hook dispatch.
+          // Contracts are built once at init and cached on ChainState.
+          if (destState.hookRouterContract) {
+            console.log(
+              `  Sending relayWithHook to ${destState.config.name} via CCTPHookRouter (tx nonce: ${txNonce})...`
+            );
+            return withTimeout(
+              destState.hookRouterContract.relayWithHook(
+                encodedMessage,
+                "0x", // Empty attestation — mock skips verification
+                { nonce: txNonce }
+              ) as Promise<ethers.ContractTransactionResponse>,
+              destState.config.scanner.rpcTimeoutMs,
+              `relayWithHook ${destState.config.name}`,
+            );
+          }
+          console.log(
+            `  Sending receiveMessage to ${destState.config.name} (tx nonce: ${txNonce})...`
+          );
+          return withTimeout(
+            destState.messageTransmitterContract.receiveMessage(
+              encodedMessage,
+              "0x", // Empty attestation — mock skips verification
+              { nonce: txNonce }
+            ) as Promise<ethers.ContractTransactionResponse>,
+            destState.config.scanner.rpcTimeoutMs,
+            `receiveMessage ${destState.config.name}`,
+          );
+        }
+      );
 
       console.log(`  Tx hash: ${tx.hash}`);
-      const receipt = await tx.wait();
+      const receipt = await withTimeout(
+        tx.wait(),
+        RELAY_CONFIRM_TIMEOUT_MS,
+        `tx.wait ${destState.config.name} ${tx.hash.slice(0, 12)}`,
+      );
       console.log(`  Confirmed in block ${receipt?.blockNumber}`);
 
-      sourceState.processedMessages.add(messageKey);
+      this.markProcessed(sourceState, messageKey);
+      // Authoritative delivery signal for /cctp-status — the destination mint confirmed.
+      this.deliveryStore.markDelivered(messageHash, tx.hash, { amount: burnFee?.amount.toString() });
 
       console.log(`  Relay successful`);
       return true;
@@ -562,34 +774,38 @@ export class CCTPRelayModule {
         e.message?.includes("Message already processed")
       ) {
         console.log(`  Already processed on-chain, marking as done`);
-        sourceState.processedMessages.add(messageKey);
+        this.markProcessed(sourceState, messageKey);
         return false;
       }
       if (e.message?.includes("nonce") || e.message?.includes("NONCE")) {
         console.log(`  Nonce error detected, will refresh on next attempt`);
-        destState.pendingNonce = null;
+        this.nonceCoordinator.reset(destState.config.chainId);
       }
       console.error(`  [cctp-relay] Relay failed: ${e.message || e}`);
 
-      // Add to retry queue if not already being retried
-      this.enqueueRetry(event, sourceState, 0);
+      // Add to retry queue if not already being retried (persisted so a restart resumes it).
+      await this.enqueueRetry(event, sourceState, 0);
       return false;
     }
   }
 
   /**
-   * Add a failed message to the retry queue with exponential backoff
+   * Add a failed message to the retry queue with exponential backoff. Persists the queue on every
+   * enqueue so a restart doesn't strand the message (its scan cursor has already advanced past it).
    */
-  private enqueueRetry(
+  private async enqueueRetry(
     event: MessageEvent,
     sourceState: ChainState,
     currentAttempts: number
-  ): void {
+  ): Promise<void> {
     if (currentAttempts >= MAX_RETRIES) {
       console.error(
         `[cctp-relay] Max retries (${MAX_RETRIES}) reached for message ` +
           `${event.sourceDomain}-${event.nonce}. Giving up.`
       );
+      // Record durably instead of dropping into a log line — the burn is final, so this message's
+      // USDC is stranded until manually relayed.
+      await this.deadLetter(event, sourceState, "retries-exhausted");
       return;
     }
 
@@ -615,6 +831,7 @@ export class CCTPRelayModule {
       attempts: nextAttempt,
       nextRetryAt: Date.now() + delay,
     });
+    await this.persistRetryQueue();
   }
 
   /**
@@ -623,6 +840,7 @@ export class CCTPRelayModule {
   private async processRetryQueue(): Promise<void> {
     const now = Date.now();
     const ready = this.retryQueue.filter((r) => r.nextRetryAt <= now);
+    if (ready.length === 0) return;
 
     for (const entry of ready) {
       const messageKey = `${entry.event.sourceDomain}-${entry.event.nonce}`;
@@ -643,10 +861,13 @@ export class CCTPRelayModule {
 
       const success = await this.relayMessageRetry(entry);
       if (!success && entry.attempts < MAX_RETRIES) {
-        // Re-queue with incremented attempt count
-        this.enqueueRetry(entry.event, entry.sourceState, entry.attempts);
+        // Re-queue with incremented attempt count (persists internally).
+        await this.enqueueRetry(entry.event, entry.sourceState, entry.attempts);
       }
     }
+    // Persist the net queue state: entries removed above on success / give-up aren't re-added by
+    // enqueueRetry, so without this their removal wouldn't be durable until the next enqueue.
+    await this.persistRetryQueue();
   }
 
   /**
@@ -662,50 +883,50 @@ export class CCTPRelayModule {
     }
 
     try {
-      if (destState.pendingNonce === null) {
-        destState.pendingNonce = await destState.provider.getTransactionCount(
-          destState.wallet.address,
-          "pending"
-        );
-      }
-
-      const txNonce = destState.pendingNonce;
       const encodedMessage = event.rawMessage;
 
-      // Use hookRouter.relayWithHook() if available
-      let tx: ethers.ContractTransactionResponse;
-      if (destState.hookRouter) {
-        const hookRouter = new ethers.Contract(
-          destState.hookRouter,
-          HOOK_ROUTER_ABI,
-          destState.wallet
-        );
-        tx = await hookRouter.relayWithHook(
-          encodedMessage,
-          "0x",
-          { nonce: txNonce }
-        );
-      } else {
-        const messageTransmitter = new ethers.Contract(
-          destState.messageTransmitter,
-          MESSAGE_TRANSMITTER_ABI,
-          destState.wallet
-        );
-        tx = await messageTransmitter.receiveMessage(
-          encodedMessage,
-          "0x",
-          { nonce: txNonce }
-        );
-      }
+      // Same coordinator-mediated broadcast as relayMessage — only the broadcast is inside the
+      // per-chain critical section; tx.wait() runs after.
+      const tx = await this.nonceCoordinator.withNonce(
+        destState.config.chainId,
+        destState.provider,
+        destState.wallet.address,
+        (txNonce) => {
+          // Use the cached hookRouter contract if available.
+          if (destState.hookRouterContract) {
+            return withTimeout(
+              destState.hookRouterContract.relayWithHook(
+                encodedMessage,
+                "0x",
+                { nonce: txNonce }
+              ) as Promise<ethers.ContractTransactionResponse>,
+              destState.config.scanner.rpcTimeoutMs,
+              `relayWithHook ${destState.config.name}`,
+            );
+          }
+          return withTimeout(
+            destState.messageTransmitterContract.receiveMessage(
+              encodedMessage,
+              "0x",
+              { nonce: txNonce }
+            ) as Promise<ethers.ContractTransactionResponse>,
+            destState.config.scanner.rpcTimeoutMs,
+            `receiveMessage ${destState.config.name}`,
+          );
+        }
+      );
 
-      destState.pendingNonce = txNonce + 1;
-
-      const receipt = await tx.wait();
+      const receipt = await withTimeout(
+        tx.wait(),
+        RELAY_CONFIRM_TIMEOUT_MS,
+        `tx.wait ${destState.config.name} ${tx.hash.slice(0, 12)}`,
+      );
       console.log(
         `[cctp-relay] Retry successful for ${messageKey} in block ${receipt?.blockNumber}`
       );
 
-      sourceState.processedMessages.add(messageKey);
+      this.markProcessed(sourceState, messageKey);
+      this.deliveryStore.markDelivered(ethers.keccak256(event.rawMessage), tx.hash);
       return true;
     } catch (e: any) {
       if (
@@ -713,11 +934,11 @@ export class CCTPRelayModule {
         e.message?.includes("Message already processed")
       ) {
         console.log(`  [cctp-relay] ${messageKey} already processed on-chain`);
-        sourceState.processedMessages.add(messageKey);
+        this.markProcessed(sourceState, messageKey);
         return true; // Considered success
       }
       if (e.message?.includes("nonce") || e.message?.includes("NONCE")) {
-        destState.pendingNonce = null;
+        this.nonceCoordinator.reset(destState.config.chainId);
       }
       console.error(`  [cctp-relay] Retry failed for ${messageKey}: ${e.message || e}`);
       return false;
@@ -755,25 +976,24 @@ export class CCTPRelayModule {
       const fromBlock = state.lastProcessedBlock + 1;
       const toBlock = effectiveHead;
 
-      const iface = new ethers.Interface(MESSAGE_SENT_ABI);
-      const eventTopic = iface.getEvent("MessageSent")?.topicHash;
-      if (!eventTopic) {
-        console.error("[cctp-relay] Failed to get MessageSent event topic");
-        return;
-      }
-
       await getLogsChunked(state.provider, {
         fromBlock,
         toBlock,
         maxRange: maxLogRange,
+        // Bound each getLogs call so a wedged RPC can't pin the poll loop (or stop()).
+        perCallTimeoutMs: rpcTimeoutMs,
+        // We ingest via onChunk and discard the return — don't double-buffer the logs.
+        collect: false,
         filter: {
           address: state.messageTransmitter,
-          topics: [eventTopic],
+          topics: [MESSAGE_SENT_TOPIC], // hoisted to module scope
         },
-        // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor
-        // is always ≤ what's been processed. relayMessage is async and we await it inside the
-        // chunk so a relay failure on chunk N stops the scan there with the cursor pointing at
-        // chunk N-1's end — next tick re-attempts chunk N from the start.
+        // Ingest + cursor-advance happen INSIDE the per-chunk callback so the on-disk cursor is
+        // always ≤ what's been processed. NOTE: relayMessage swallows relay failures (returns
+        // false) and enqueues them on the DURABLE retry queue rather than throwing — so the cursor
+        // DOES advance past a failed message, and recovery is owned by the persisted retry queue
+        // (rehydrated on the next boot), not by re-scanning. A thrown error here (e.g. the cursor
+        // write or a parse fault) still halts the scan with the cursor at chunk N-1's end.
         onChunk: async ({ fromBlock: chunkFrom, toBlockInclusive, logs }) => {
           if (logs.length > 0) {
             console.log(
@@ -950,6 +1170,7 @@ export class CCTPRelayModule {
         lastScanAt: state.lastScanAt,
         lastError: state.lastError,
         pendingCount: pendingBySource.get(state.domain) ?? 0,
+        deadLetterCount: this.deadLetters.get(state.config.name)?.length ?? 0,
       });
     }
 

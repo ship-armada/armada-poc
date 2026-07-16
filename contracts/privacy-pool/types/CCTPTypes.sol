@@ -53,9 +53,14 @@ struct ShieldData {
  *      Client just needs to know where to forward the USDC
  *
  * @param recipient Address to receive USDC on client chain
+ * @param uniqueNonce Opaque per-transaction marker (caller-supplied) so off-chain wallets can
+ *        match a destination CCTP delivery to the specific unshield that produced it. Two unshields
+ *        to the same recipient would otherwise produce bit-identical hookData and be indistinguishable
+ *        from chain state (issue #287). Not proof-bound and not fund-relevant — purely a matching aid.
  */
 struct UnshieldData {
     address recipient;
+    bytes32 uniqueNonce;
 }
 
 /**

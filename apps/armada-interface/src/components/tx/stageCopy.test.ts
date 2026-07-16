@@ -20,6 +20,12 @@ describe('stageCopy', () => {
   it('falls back to the raw stage string for unknown stages', () => {
     expect(stageCopy('shield', 'made-up-stage')).toBe('made-up-stage')
   })
+
+  it("resolves the received kind's single 'observed' stage", () => {
+    // WHY: synthetic received-transfer records carry a single terminal 'observed' stage; the
+    // stepper/row read its copy via stageCopy. Guards against the new kind landing with no entry.
+    expect(stageCopy('transfer-shielded-received', 'observed')).toBe('Received')
+  })
 })
 
 describe('kindTitle', () => {
@@ -28,6 +34,7 @@ describe('kindTitle', () => {
     expect(kindTitle('unshield-local')).toBe('Withdraw')
     expect(kindTitle('unshield-xchain')).toBe('Withdraw')
     expect(kindTitle('transfer-shielded')).toBe('Private transfer')
+    expect(kindTitle('transfer-shielded-received')).toBe('Received')
     expect(kindTitle('yield-deposit')).toBe('Vault deposit')
     expect(kindTitle('yield-withdraw')).toBe('Vault withdrawal')
   })

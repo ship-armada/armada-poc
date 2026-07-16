@@ -1,0 +1,33 @@
+/* ABOUTME: ReceiveDialog styles — single helper line + address card + full-width copy CTA. */
+/* ABOUTME: Address renders in monospace with word-break: break-all so the 76-char 0zk… string wraps cleanly inside the modal body. */
+
+.copy {
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  margin: 0 0 var(--primitives-spacing-4);
+}
+
+.addressCard {
+  background: var(--semantic-color-surface-sunken, var(--primitives-color-purple-900));
+  border: 1px solid var(--semantic-color-border-subtle, var(--primitives-color-purple-800));
+  border-radius: 12px;
+  padding: var(--primitives-spacing-4);
+  margin-bottom: var(--primitives-spacing-4);
+}
+
+.address {
+  display: block;
+  font-family: var(--primitives-fontFamily-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-primary);
+  word-break: break-all;
+  text-align: left;
+  /* Tabular figures keep the 0zk fingerprint aligned even when copy state swaps in. */
+  font-variant-numeric: tabular-nums;
+}
+
+.copyButton {
+  width: 100%;
+}

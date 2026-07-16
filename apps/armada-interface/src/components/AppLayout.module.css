@@ -1,0 +1,94 @@
+/* ABOUTME: AppLayout-local style overrides — feathered mask on the @armada/ui NavBar so the frosted-glass pill */
+/* ABOUTME: fades out at its left/right edges instead of cutting hard against the page gradient. */
+
+/* Applied via NavBar's `className` passthrough — merged with the shared `.navBar` class on the
+   same element, so the mask layers onto the existing pill (bg + backdrop-filter + border-radius).
+   Two linear-gradient mask layers combined via `intersect` so the visible region is the inner
+   rectangle where BOTH masks are opaque, with all four edges fading to transparent. The
+   horizontal fade (28px) sits inside the NavItem's 40px inner padding so item text stays opaque;
+   the vertical fade (6px) sits inside the 12px NavItem inner padding for the same reason. */
+.navBar {
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      black 14px,
+      black calc(100% - 14px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      black 6px,
+      black calc(100% - 6px),
+      transparent 100%
+    );
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      black 14px,
+      black calc(100% - 14px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      black 6px,
+      black calc(100% - 6px),
+      transparent 100%
+    );
+  -webkit-mask-composite: source-in;
+}
+
+/* Network badge — flat fill + white text to match the wallet pill (no border). Sourced from the
+   same tokens as @armada/ui's WalletButton so the two read as a set in the header. */
+.networkBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--semantic-component-navitem-radius);
+  background: var(--semantic-component-navbar-bg);
+  color: var(--semantic-color-text-primary);
+  white-space: nowrap;
+}
+
+/* Status-strip overlay — pulled out of flow so a transient sync/recovery banner appearing or
+   disappearing never reflows the page content beneath it (was the source of a momentary
+   dashboard "jump"). Pinned just below the fixed header (top matches <main>'s 5rem padding),
+   below the header's z-40 and any modal. pointer-events pass through the empty area; the strips
+   themselves stay interactive (e.g. the Retry button). */
+.bannerOverlay {
+  position: absolute;
+  top: 5rem;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--primitives-spacing-6);
+  pointer-events: none;
+}
+
+.bannerOverlay > * {
+  pointer-events: auto;
+}
+
+/* Active page indicator — bolder weight only. Targets NavItem's `aria-current="page"`
+   attribute (set by the shared component when `active === true`) so this rule is scoped
+   without forking the design-system primitive. */
+.navBar [aria-current="page"] {
+  font-weight: var(--primitives-fontWeight-semibold);
+}
+
+/* App-local radius override — the design-system NavBar + NavItem both ship with full pill
+   corners (100px) which the crowdfund apps keep. armada-interface's chrome reads better with a
+   tight `xs` corner on both the container and each item. Scoped via the local .navBar class +
+   the button element inside it so the design-system tokens stay untouched. */
+.navBar,
+.navBar button {
+  border-radius: calc(var(--primitives-borderRadius-xs) * 1px);
+}

@@ -1,10 +1,79 @@
 // ABOUTME: IndexedDB-backed ArtifactStore for the Railgun SDK — caches ZK circuit artifacts (zkey/wasm/vkey) across reloads.
 // ABOUTME: Ported from usdc-v2-frontend/src/lib/railgun/artifacts.ts; same DB name + store name so users with the legacy app's cache see it preserved.
 
+import type { Artifact } from '@railgun-community/shared-models'
+
 // The SDK's ArtifactStore class lives in @railgun-community/wallet — which transitively pulls
 // circomlibjs and crashes at module-load under jsdom. We dynamic-import it so vitest can load
 // callers (init.ts, wallet.ts) without instantiating the engine surface. One import per session.
 type RailgunSdk = typeof import('@railgun-community/wallet')
+
+// Variants the demo's tx kinds actually exercise (small-UTXO unshield / transfer / yield). The
+// heavy 8x4 (large multi-input) variant is intentionally NOT preloaded — it's ~30 MB and rarely
+// hit; the SDK's IPFS read-through cache (createBrowserArtifactStore) covers it when it is.
+const PRELOAD_VARIANTS = [
+  { nullifiers: 1, commitments: 2 },
+  { nullifiers: 2, commitments: 2 },
+  { nullifiers: 2, commitments: 3 },
+] as const
+
+function variantId(c: { nullifiers: number; commitments: number }): string {
+  return `${c.nullifiers}x${c.commitments}`
+}
+
+function variantDir(c: { nullifiers: number; commitments: number }): string {
+  return `${c.nullifiers.toString().padStart(2, '0')}x${c.commitments.toString().padStart(2, '0')}`
+}
+
+async function fetchArtifactBinary(url: string): Promise<Uint8Array> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`artifact fetch ${url} → ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
+}
+
+async function fetchArtifactJson(url: string): Promise<object> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`artifact fetch ${url} → ${res.status}`)
+  return res.json() as Promise<object>
+}
+
+/** Probe whether self-hosted artifacts are served at /artifacts (the prebuild copies them in). */
+async function originArtifactsAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`/artifacts/${variantDir(PRELOAD_VARIANTS[0])}/vkey.json`, { method: 'HEAD' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Preload the demo-critical circuit artifacts from the app's OWN origin (`/artifacts/...`) into the
+ * SDK's in-memory override cache, so the first proof doesn't fetch ~10 MB from a public IPFS gateway
+ * at click time mid-demo (P0-12). Fire-and-forget after engine init, off the critical path.
+ *
+ * Silent no-op when the artifacts aren't served (the SDK's IPFS read-through cache then handles it),
+ * and per-variant failures don't abort the rest. The IDB read-through dedupes across reloads, so
+ * this only does real network work once per browser. (Renamed from the dead `loadTestArtifacts`.)
+ */
+export async function preloadArtifactsFromOrigin(): Promise<void> {
+  if (!(await originArtifactsAvailable())) return
+  const { overrideArtifact } = await import('@railgun-community/wallet')
+  for (const c of PRELOAD_VARIANTS) {
+    try {
+      const dir = variantDir(c)
+      const [zkey, wasm, vkey] = await Promise.all([
+        fetchArtifactBinary(`/artifacts/${dir}/zkey`),
+        fetchArtifactBinary(`/artifacts/${dir}/circuit.wasm`),
+        fetchArtifactJson(`/artifacts/${dir}/vkey.json`),
+      ])
+      overrideArtifact(variantId(c), { zkey, wasm, vkey, dat: undefined } as Artifact)
+    } catch {
+      // One variant failing (404 / partial deploy) must not abort the others or crash the app —
+      // the SDK's IPFS fallback covers the gap. Silent: no console in lib/railgun (secret hygiene).
+    }
+  }
+}
 
 const ARTIFACT_DB_NAME = 'railgun-artifacts'
 const ARTIFACT_STORE_NAME = 'artifacts'

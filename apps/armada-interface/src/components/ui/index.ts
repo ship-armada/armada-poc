@@ -33,3 +33,15 @@ export type { TabsProps, TabItem } from './Tabs'
 
 export { TechnicalDetailsDisclosure } from './TechnicalDetailsDisclosure'
 export type { TechnicalDetailsDisclosureProps } from './TechnicalDetailsDisclosure'
+
+export { Tooltip } from './Tooltip'
+export type { TooltipProps } from './Tooltip'
+
+export { EstimatedFeeValue } from './EstimatedFeeValue'
+export type { EstimatedFeeValueProps } from './EstimatedFeeValue'
+
+export { FeeBreakdownTooltip } from './FeeBreakdownTooltip'
+export type { FeeBreakdownTooltipProps } from './FeeBreakdownTooltip'
+
+export { GasBalanceNotice } from './GasBalanceNotice'
+export type { GasBalanceNoticeProps } from './GasBalanceNotice'

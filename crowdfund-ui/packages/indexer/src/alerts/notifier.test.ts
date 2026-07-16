@@ -2,7 +2,7 @@
 // ABOUTME: Stubs fetch to verify routing per severity and payload shape.
 
 import { describe, expect, it } from 'vitest'
-import { createDiscordNotifier } from './notifier.js'
+import { createDiscordNotifier, NoWebhookConfiguredError } from './notifier.js'
 import type { AlertEvent } from './types.js'
 
 function buildEvent(severity: AlertEvent['severity']): AlertEvent {
@@ -39,13 +39,27 @@ describe('Discord notifier', () => {
     expect(payload.content).toContain('OPERATIONS.md §7')
   })
 
-  it('skips delivery when severity has no webhook', async () => {
+  it('passes an abort signal so a hung webhook cannot stall forever', async () => {
+    let seenSignal: AbortSignal | null | undefined
+    const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
+      seenSignal = init?.signal
+      return new Response(null, { status: 204 })
+    }
+    const notifier = createDiscordNotifier({
+      webhooks: { P0: 'https://discord.test/p0' },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    await notifier.send(buildEvent('P0'))
+    expect(seenSignal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('throws NoWebhookConfiguredError (does not silently drop) when severity has no webhook', async () => {
     let called = false
     const notifier = createDiscordNotifier({
       webhooks: { P0: 'https://discord.test/p0' },
       fetchImpl: (async () => { called = true; return new Response() }) as unknown as typeof fetch,
     })
-    await notifier.send(buildEvent('P2'))
+    await expect(notifier.send(buildEvent('P2'))).rejects.toBeInstanceOf(NoWebhookConfiguredError)
     expect(called).toBe(false)
   })
 

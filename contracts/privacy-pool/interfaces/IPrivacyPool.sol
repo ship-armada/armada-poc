@@ -16,6 +16,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
 
     /// @notice Emitted when a remote pool address is configured
     event RemotePoolSet(uint32 indexed domain, bytes32 poolAddress);
+    event RemoteHookRouterSet(uint32 indexed domain, bytes32 routerAddress);
+    event AddToBlocklist(address indexed token);
+    event RemoveFromBlocklist(address indexed token);
 
     /// @notice Emitted when testing mode is changed
     event TestingModeSet(bool enabled);
@@ -28,6 +31,9 @@ interface IPrivacyPool is IMessageHandlerV2 {
 
     /// @notice Emitted when fee module is set
     event FeeModuleSet(address indexed feeModule);
+
+    /// @notice Emitted when the governance adapter registry is set (set-once, issue #370)
+    event AdapterRegistrySet(address indexed adapterRegistry);
 
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -81,17 +87,18 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData for off-chain delivery matching (issue #287)
      * @return nonce CCTP message nonce
+     * @dev The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] at the contract
+     *      level (see setRemoteHookRouter) — it is not caller-supplied.
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) external returns (uint64 nonce);
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -104,6 +111,26 @@ interface IPrivacyPool is IMessageHandlerV2 {
      * @param poolAddress Address of the remote contract (as bytes32)
      */
     function setRemotePool(uint32 domain, bytes32 poolAddress) external;
+
+    /**
+     * @notice Set the CCTP hook router on a remote (destination) domain, pinned as the outbound
+     *         unshield destinationCaller for that domain
+     * @param domain CCTP domain ID of the remote chain
+     * @param routerAddress Address of the remote CCTPHookRouter (as bytes32)
+     */
+    function setRemoteHookRouter(uint32 domain, bytes32 routerAddress) external;
+
+    /**
+     * @notice Add tokens to the shield blocklist (governance kill-switch). Cannot block USDC.
+     * @param _tokens Token addresses to block
+     */
+    function addToBlocklist(address[] calldata _tokens) external;
+
+    /**
+     * @notice Remove tokens from the shield blocklist.
+     * @param _tokens Token addresses to unblock
+     */
+    function removeFromBlocklist(address[] calldata _tokens) external;
 
     /**
      * @notice Set a verification key for a circuit configuration
@@ -131,11 +158,11 @@ interface IPrivacyPool is IMessageHandlerV2 {
     function setTestingMode(bool enabled) external;
 
     /**
-     * @notice Set privileged shield caller (bypasses shield/unshield fees)
-     * @param caller Address to configure (e.g. yield adapter)
-     * @param privileged True to exempt from fees
+     * @notice Set the governance adapter registry that determines fee-exempt shield privilege.
+     * @dev Set-once: callable only while unset and only with a non-zero address (issue #370).
+     * @param _adapterRegistry Address of the AdapterRegistry contract
      */
-    function setPrivilegedShieldCaller(address caller, bool privileged) external;
+    function setAdapterRegistry(address _adapterRegistry) external;
 
     /**
      * @notice Set the fee module address (ArmadaFeeModule proxy)

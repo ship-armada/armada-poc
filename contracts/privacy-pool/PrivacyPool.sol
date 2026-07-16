@@ -34,6 +34,33 @@ import "../railgun/logic/Snark.sol";
 contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     using SafeERC20 for IERC20;
 
+    /// @notice Maximum settable shield fee in basis points (10%), matching ArmadaFeeModule.MAX_BPS.
+    /// @dev Bounds setShieldFee so a single mis-proposal cannot brick shields by consuming all deposited value.
+    uint256 public constant MAX_SHIELD_FEE_BPS = 1000;
+
+    /// @notice The address that deployed this contract; the only address permitted to call initialize().
+    /// @dev initialize() runs in a separate tx after deployment and sets owner/treasury/modules. Gating it
+    ///      to the deployer prevents a front-runner from initializing the pool with malicious params on a
+    ///      public chain before the deployer's own init lands (issue #368).
+    address private immutable deployer;
+
+    constructor() {
+        deployer = msg.sender;
+    }
+
+    /// @notice Reentrancy guard for the router's state-changing entry points.
+    /// @dev Hardening (no known exploit today — nullifiers are marked before transfers, event indices
+    ///      computed after, and the shield balance check self-reverts on a nested same-token shield);
+    ///      guards against a malicious token's transfer hook re-entering a guarded entry, and future-
+    ///      proofs against ordering changes (#369). 0-based so a fresh slot needs no init. Module
+    ///      self-calls (e.g. IMerkleModule(address(this)).insertLeaves) are unguarded and don't trip it.
+    modifier nonReentrant() {
+        require(_reentrancyStatus == 0, "PrivacyPool: reentrant call");
+        _reentrancyStatus = 1;
+        _;
+        _reentrancyStatus = 0;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -63,6 +90,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         address _owner,
         address payable _treasury
     ) external override {
+        require(msg.sender == deployer, "PrivacyPool: Only deployer");
         require(!initialized, "PrivacyPool: Already initialized");
         require(_shieldModule != address(0), "PrivacyPool: zero shieldModule");
         require(_transactModule != address(0), "PrivacyPool: zero transactModule");
@@ -107,7 +135,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _shieldRequests Array of shield requests
      * @param integrator Integrator address for fee split (address(0) for no integrator)
      */
-    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override {
+    function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override nonReentrant {
         _delegatecall(shieldModule, abi.encodeCall(IShieldModule.shield, (_shieldRequests, integrator)));
     }
 
@@ -115,7 +143,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @notice Execute private transactions (transfers and/or unshields)
      * @param _transactions Array of transactions to process
      */
-    function transact(Transaction[] calldata _transactions) external override {
+    function transact(Transaction[] calldata _transactions) external override nonReentrant {
         _delegatecall(transactModule, abi.encodeCall(ITransactModule.transact, (_transactions)));
     }
 
@@ -124,23 +152,26 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Target client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData for off-chain delivery
+     *        matching (issue #287). Not fund-relevant.
      * @return nonce CCTP message nonce
+     * @dev The CCTP destinationCaller is pinned at the contract level to remoteHookRouters[destinationDomain]
+     *      (see setRemoteHookRouter) — it is not caller-supplied, so a burn can only be delivered through
+     *      the destination chain's CCTPHookRouter.
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee
-    ) external override returns (uint64) {
+        uint256 maxFee,
+        bytes32 uniqueNonce
+    ) external override nonReentrant returns (uint64) {
         bytes memory result = _delegatecall(
             transactModule,
             abi.encodeCall(
                 ITransactModule.atomicCrossChainUnshield,
-                (_transaction, destinationDomain, finalRecipient, destinationCaller, maxFee)
+                (_transaction, destinationDomain, finalRecipient, maxFee, uniqueNonce)
             )
         );
         return abi.decode(result, (uint64));
@@ -166,16 +197,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @return success Always returns true on success (reverts on failure)
      */
     function handleReceiveFinalizedMessage(
-        uint32,
+        uint32 sourceDomain,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPool: Insufficient finality");
-        (sender); // Silence unused variable warning
+        (sender); // envelope sender is the source TokenMessenger; source pool is authenticated in _handleCCTPMessage
 
-        return _handleCCTPMessage(messageBody);
+        return _handleCCTPMessage(sourceDomain, messageBody);
     }
 
     /**
@@ -190,24 +221,25 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @return success Always returns true on success (reverts on failure)
      */
     function handleReceiveUnfinalizedMessage(
-        uint32,
+        uint32 sourceDomain,
         bytes32 sender,
         uint32 finalityThresholdExecuted,
         bytes calldata messageBody
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
         require(finalityThresholdExecuted >= CCTPFinality.FAST, "PrivacyPool: Finality below minimum");
-        (sender); // Silence unused variable warning
+        (sender); // envelope sender is the source TokenMessenger; source pool is authenticated in _handleCCTPMessage
 
-        return _handleCCTPMessage(messageBody);
+        return _handleCCTPMessage(sourceDomain, messageBody);
     }
 
     /**
      * @notice Shared CCTP message processing logic for both finalized and unfinalized paths
+     * @param sourceDomain CCTP domain the message originated from (from the MessageV2 envelope)
      * @param messageBody BurnMessageV2 encoded message containing hookData
      * @return success Always returns true on success (reverts on failure)
      */
-    function _handleCCTPMessage(bytes calldata messageBody) internal returns (bool) {
+    function _handleCCTPMessage(uint32 sourceDomain, bytes calldata messageBody) internal returns (bool) {
         // Decode the BurnMessageV2 to get amount, feeExecuted, and hookData
         (
             uint256 grossAmount,
@@ -224,6 +256,19 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
         // Route based on message type
         if (payload.messageType == MessageType.SHIELD) {
+            // Authenticate the source pool: the burn message's messageSender is the address that
+            // called depositForBurn on the source chain (i.e. the remote PrivacyPoolClient), which
+            // must match the configured remote pool for this domain. The handler's envelope `sender`
+            // is the source TokenMessenger, not the pool, so it cannot be used here. This is a
+            // defense-in-depth backstop on top of CCTP's attestation and rejects shields from
+            // unconfigured domains or arbitrary source contracts.
+            bytes32 sourcePool = remotePools[sourceDomain];
+            require(sourcePool != bytes32(0), "PrivacyPool: unconfigured source domain");
+            require(
+                BurnMessageV2.getMessageSender(messageBody) == sourcePool,
+                "PrivacyPool: untrusted source pool"
+            );
+
             // Cross-chain shield from Client
             ShieldData memory shieldData = CCTPPayloadLib.decodeShieldData(payload.data);
 
@@ -255,6 +300,52 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
+     * @notice Set the CCTP hook router on a remote (destination) domain
+     * @dev Pinned as the CCTP destinationCaller for outbound unshield burns to that domain, so the
+     *      message can only be delivered through that chain's CCTPHookRouter (which fires the mint hook).
+     * @param domain CCTP domain ID of the remote chain
+     * @param routerAddress Address of the remote CCTPHookRouter (as bytes32)
+     */
+    function setRemoteHookRouter(uint32 domain, bytes32 routerAddress) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        remoteHookRouters[domain] = routerAddress;
+        emit RemoteHookRouterSet(domain, routerAddress);
+    }
+
+    /**
+     * @notice Add tokens to the shield blocklist (governance kill-switch for a compromised/incompatible token).
+     * @dev Faithful port of Railgun's TokenBlocklist: blocked tokens cannot be SHIELDED, but existing notes
+     *      remain transferable and UNSHIELDABLE so holders can always exit. Non-exhaustive by nature. Idempotent.
+     *      USDC (the pool's core asset) can never be blocked — doing so would make in-flight cross-chain shields
+     *      undeliverable (burned on the client, unmintable on the hub) and strand funds. (#369)
+     * @param _tokens Token addresses to block
+     */
+    function addToBlocklist(address[] calldata _tokens) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            require(_tokens[i] != usdc, "PrivacyPool: cannot block USDC");
+            if (!tokenBlocklist[_tokens[i]]) {
+                tokenBlocklist[_tokens[i]] = true;
+                emit AddToBlocklist(_tokens[i]);
+            }
+        }
+    }
+
+    /**
+     * @notice Remove tokens from the shield blocklist. Idempotent.
+     * @param _tokens Token addresses to unblock
+     */
+    function removeFromBlocklist(address[] calldata _tokens) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            if (tokenBlocklist[_tokens[i]]) {
+                delete tokenBlocklist[_tokens[i]];
+                emit RemoveFromBlocklist(_tokens[i]);
+            }
+        }
+    }
+
+    /**
      * @notice Set a verification key for a circuit configuration
      * @param _nullifiers Number of nullifiers
      * @param _commitments Number of commitments
@@ -278,7 +369,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      */
     function setShieldFee(uint120 _feeBps) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
-        require(_feeBps <= 10000, "PrivacyPool: Fee too high");
+        require(_feeBps <= MAX_SHIELD_FEE_BPS, "PrivacyPool: Fee too high");
         shieldFee = _feeBps;
     }
 
@@ -297,13 +388,20 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
-     * @notice Set privileged shield caller (bypasses shield/unshield fees)
-     * @param caller Address to configure (e.g. yield adapter)
-     * @param privileged True to exempt from fees
+     * @notice Set the governance adapter registry that determines fee-exempt shield privilege.
+     * @dev Set-once (issue #370): callable only while unset and only with a non-zero address. After the
+     *      first successful call — done at deploy/link time — the owner has no path to grant or change
+     *      shield privilege; trust flows solely from the timelock-governed registry. Shield-fee exemption
+     *      is derived from IAdapterRegistry (authorized OR withdraw-only), replacing the retired owner-set
+     *      privilegedShieldCallers flag.
+     * @param _adapterRegistry Address of the AdapterRegistry contract
      */
-    function setPrivilegedShieldCaller(address caller, bool privileged) external override {
+    function setAdapterRegistry(address _adapterRegistry) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
-        privilegedShieldCallers[caller] = privileged;
+        require(adapterRegistry == address(0), "PrivacyPool: registry already set");
+        require(_adapterRegistry != address(0), "PrivacyPool: zero registry");
+        adapterRegistry = _adapterRegistry;
+        emit AdapterRegistrySet(_adapterRegistry);
     }
 
     /**
@@ -438,12 +536,22 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
     /**
      * @notice Get the tree number and starting index for new commitments
+     * @dev Modules reach this via IMerkleModule(address(this)), so this router copy — not the
+     *      MerkleModule delegatecall version — is what actually resolves. It must apply the same
+     *      rollover as MerkleModule.insertLeaves/_newTree: when a batch would overflow the current
+     *      tree, insertion rolls to (treeNumber + 1, 0). Omitting that branch makes the emitted
+     *      Shield/Transact event report a stale position at a tree boundary, leaving those notes
+     *      unlocatable for a spend proof.
+     * @param _newCommitments Number of commitments about to be inserted
      * @return treeNum Tree number where commitments will be inserted
      * @return startIndex Starting leaf index within that tree
      */
     function getInsertionTreeNumberAndStartingIndex(
-        uint256
+        uint256 _newCommitments
     ) external view returns (uint256 treeNum, uint256 startIndex) {
+        if ((nextLeafIndex + _newCommitments) > (2 ** TREE_DEPTH)) {
+            return (treeNumber + 1, 0);
+        }
         return (treeNumber, nextLeafIndex);
     }
 

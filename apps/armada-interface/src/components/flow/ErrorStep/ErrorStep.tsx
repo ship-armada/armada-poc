@@ -38,6 +38,18 @@ const COPY_BY_CODE: Record<TxError['code'], { title: string; body?: string }> = 
     title: 'Action declined',
     body: 'You declined the prompt in your wallet. Nothing was submitted.',
   },
+  INTERRUPTED: {
+    title: 'Transaction interrupted',
+    body: 'This transaction was interrupted before it was sent — nothing left your wallet. Start a new transaction.',
+  },
+  FEE_EXPIRED: {
+    title: 'Fee quote expired',
+    body: 'The quoted fee was no longer valid when the relayer received your transaction. Nothing was sent — start a new transaction to get a fresh quote.',
+  },
+  DUPLICATE_TX: {
+    title: 'Already submitted',
+    body: 'The relayer already has this transaction — it may still complete. Check the explorer to confirm.',
+  },
   CANCELLED: {
     title: 'Cancelled',
     body: 'No transaction was sent.',
@@ -68,8 +80,14 @@ export interface ErrorStepProps {
    * chain the hash lives on.
    */
   explorerUrl?: string
-  /** Try Again handler. Omit to disable the button (failing stage is not in lifecycle.retryableStages). */
+  /** Primary action handler. Omit to disable the button. */
   onRetry?: () => void
+  /**
+   * Primary button label. Defaults to "Try again". Modals pass "Start over" when the failing stage
+   * isn't retryable in place (e.g. build-proof, FEE_EXPIRED) and the action returns to the form for
+   * a fresh transaction rather than re-running the dead stage. (S-M3)
+   */
+  primaryLabel?: string
   /** View Details handler — typically expands the TechnicalDetailsDisclosure inside the body. */
   onViewDetails?: () => void
 }
@@ -79,6 +97,7 @@ export function ErrorStep({
   message,
   explorerUrl,
   onRetry,
+  primaryLabel = 'Try again',
   onViewDetails,
 }: ErrorStepProps) {
   const copy = error ? COPY_BY_CODE[error.code] : undefined
@@ -107,7 +126,7 @@ export function ErrorStep({
       ) : null}
       <FlowFooter
         className={styles.footer}
-        primary={{ label: 'Try again', onClick: onRetry, disabled: !onRetry }}
+        primary={{ label: primaryLabel, onClick: onRetry, disabled: !onRetry }}
         secondary={
           onViewDetails ? { label: 'View details', onClick: onViewDetails } : undefined
         }

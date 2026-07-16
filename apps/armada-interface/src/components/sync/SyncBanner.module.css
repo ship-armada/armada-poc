@@ -31,6 +31,20 @@
   min-width: 0;
 }
 
+.retry {
+  flex-shrink: 0;
+  padding: var(--primitives-spacing-1) var(--primitives-spacing-3);
+  border-radius: 999px;
+  border: 1px solid var(--semantic-color-status-error);
+  background: transparent;
+  color: var(--semantic-color-status-error);
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+
 .progressTrack {
   flex-shrink: 0;
   display: block;

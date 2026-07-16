@@ -1,12 +1,11 @@
 // ABOUTME: Cross-chain shield handler — dual-mode (direct user-wallet submit OR Phase B4 permit-based gasless via GaslessShieldWrapperClient).
 // ABOUTME: Mirrors unshield-xchain but flipped direction: burn on CLIENT → mint on HUB. Hub-side delivery polling identical across both submission modes.
 
-import { encodeFunctionData, pad } from 'viem'
+import { encodeFunctionData } from 'viem'
 import {
   getPublicClient,
   readContract,
   sendTransaction,
-  signMessage,
   writeContract,
 } from 'wagmi/actions'
 import { erc20Abi, maxUint256 } from 'viem'
@@ -23,19 +22,20 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   createShieldRequest,
-  deriveShieldPrivateKey,
-  SHIELD_SIGNATURE_MESSAGE,
+  generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
-import { cctpMaxFeeForKind, submitRelay, RelayerError } from '@/lib/relayer'
+import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
+import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
-import { poll } from '@/lib/tx/poller'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
+import { poll, pollBudgetMs } from '@/lib/tx/poller'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { lifecycleFor } from '@/lib/tx/lifecycles'
 import { track } from '@/lib/telemetry'
 import { scanCctpDeliveryWindow } from '../unshield-xchain/scan'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -75,7 +75,6 @@ const PRIVACY_POOL_CLIENT_SHIELD_ABI = [
       { name: 'npk', type: 'bytes32' },
       { name: 'encryptedBundle', type: 'bytes32[3]' },
       { name: 'shieldKey', type: 'bytes32' },
-      { name: 'destinationCaller', type: 'bytes32' },
       { name: 'integrator', type: 'address' },
     ],
     outputs: [{ name: 'nonce', type: 'uint64' }],
@@ -129,7 +128,7 @@ export const shieldXchainHandler: StageHandler<'shield-xchain'> = {
       }
     } catch (err) {
       if (ctx.signal.aborted) return
-      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Cross-chain deposit failed.', record.artifacts.sourceTxHash)))
+      await ctx.upsert(markFailed(record, classifyHandlerError(err, 'Cross-chain deposit failed.', record.artifacts.sourceTxHash, record.meta.fromChainId)))
     }
   },
 }
@@ -167,10 +166,10 @@ async function runBuildProof(
   await ensureChain(record.meta.fromChainId)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Same flow as same-chain shield: prompt RAILGUN_SHIELD, derive the per-session key, ask the
-  // engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK construction —
-  // only what we do with the result on-chain.
-  const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
+  // Same flow as same-chain shield: generate an ephemeral per-deposit shieldPrivateKey and ask
+  // the engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK
+  // construction — only what we do with the result on-chain. See lib/railgun/shield.ts for why
+  // randomness is correct (the Railgun-convention wallet prompt is unnecessary in our model).
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Determine the value that lands in the shielded commitment. Gasless path: the wrapper takes
@@ -187,7 +186,7 @@ async function runBuildProof(
       'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
     )
   }
-  const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
+  const shieldPrivateKey = generateRandomShieldPrivateKey()
   const request = await createShieldRequest(
     railgunAddress,
     shieldValue,
@@ -277,6 +276,15 @@ async function runDirectSubmit(
   ctx: Parameters<typeof shieldXchainHandler.run>[1],
 ): Promise<void> {
   const artifacts = record.artifacts
+
+  // Idempotency guard (P0-1): once the client-chain crossChainShield broadcast we persist its
+  // hash. NEVER re-send — a second crossChainShield is a second real USDC burn. On re-entry
+  // (Retry after a delivery timeout / resume-on-reload) finalize on the known hash instead.
+  if (artifacts.sourceTxHash) {
+    await finalizeBurnAndAdvance(record, ctx, artifacts.sourceTxHash)
+    return
+  }
+
   const shieldRequest = artifacts.shieldRequest!
   const privacyPoolClientAddress = artifacts.privacyPoolClientAddress!
   const clientUsdcAddress = artifacts.clientUsdcAddress!
@@ -300,22 +308,38 @@ async function runDirectSubmit(
     abi: erc20Abi,
     functionName: 'allowance',
     args: [owner, privacyPoolClientAddress as `0x${string}`],
+    chainId: record.meta.fromChainId,
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // S-M4: thread a `working` record through the wallet prompts so the stepper shows "Confirm in
+  // your wallet" (markWaiting) while each prompt is open, and record the approve leg in artifacts
+  // (approveTxHash / approveSkipped) for the WalletConfirmList checklist.
+  let working: TxRecord<'shield-xchain'> = record
   if (allowance < record.meta.amount) {
+    working = markWaiting(working)
+    await ctx.upsert(working)
     const approveHash = await writeContract(wagmiConfig, {
       address: clientUsdcAddress as `0x${string}`,
       abi: erc20Abi,
       functionName: 'approve',
       args: [privacyPoolClientAddress as `0x${string}`, maxUint256],
+      chainId: record.meta.fromChainId,
     })
     await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    working = advance(working, 'submit-relayer', { approveTxHash: approveHash })
+    await ctx.upsert(working)
+  } else {
+    working = patchArtifacts(working, { approveSkipped: true })
+    await ctx.upsert(working)
   }
 
-  const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
+  const { maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
 
   // 2. Submit the cross-chain shield on the CLIENT chain via the connected wallet.
+  //    The CCTP destinationCaller is pinned to hubHookRouter by PrivacyPoolClient (issue #64) — not
+  //    passed here.
   const calldata = encodeFunctionData({
     abi: PRIVACY_POOL_CLIENT_SHIELD_ABI,
     functionName: 'crossChainShield',
@@ -326,10 +350,26 @@ async function runDirectSubmit(
       shieldRequest.npk as `0x${string}`,
       shieldRequest.encryptedBundle as readonly [`0x${string}`, `0x${string}`, `0x${string}`],
       shieldRequest.shieldKey as `0x${string}`,
-      destinationCaller,
       ethers.ZeroAddress as `0x${string}`, // integrator: no fee routing for direct user shields
     ],
   })
+
+  // S-M8: pre-flight simulate so an on-chain revert surfaces as a typed PRE_FLIGHT_REVERT
+  // ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback "gas limit too high".
+  await simulateOrThrow({
+    to: privacyPoolClientAddress as `0x${string}`,
+    data: calldata,
+    value: 0n,
+    account: owner,
+    chainId: record.meta.fromChainId,
+  })
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // S-M4: "Confirm in your wallet" for the crossChainShield prompt (after simulate so a doomed tx
+  // fails without prompting). finalizeBurnAndAdvance advances to client-burn-confirmed (active)
+  // once the prompt is confirmed, restoring "Submitting" copy.
+  working = markWaiting(working)
+  await ctx.upsert(working)
 
   const hash = await sendTransaction(wagmiConfig, {
     to: privacyPoolClientAddress as `0x${string}`,
@@ -338,7 +378,7 @@ async function runDirectSubmit(
     chainId: record.meta.fromChainId,
   })
 
-  await finalizeBurnAndAdvance(record, ctx, hash)
+  await finalizeBurnAndAdvance(working, ctx, hash)
 }
 
 /**
@@ -357,6 +397,15 @@ async function runGaslessSubmit(
   ctx: Parameters<typeof shieldXchainHandler.run>[1],
 ): Promise<void> {
   const artifacts = record.artifacts
+
+  // Idempotency guard (P0-1): never re-POST a gasless cross-chain shield we already submitted —
+  // a duplicate gets a 409 and a fresh POST against an expired permit is doomed. On re-entry
+  // finalize on the known hash instead.
+  if (artifacts.sourceTxHash) {
+    await finalizeBurnAndAdvance(record, ctx, artifacts.sourceTxHash)
+    return
+  }
+
   const shieldRequest = artifacts.shieldRequest!
   const permitV = artifacts.permitV
   const permitR = artifacts.permitR
@@ -376,8 +425,19 @@ async function runGaslessSubmit(
     throw new Error('Shield-xchain gasless submit requires a connected EVM wallet; none captured at submit time.')
   }
 
-  const { destinationCaller, maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
+  // Permit-deadline guard (P0-1): an expired EIP-2612 permit makes the wrapper call revert, so
+  // POSTing is doomed. Fail with honest copy. Nothing was sent (PRE_FLIGHT_REVERT).
+  if (record.meta.permitDeadline * 1000 <= Date.now()) {
+    throw asTxError({
+      code: 'PRE_FLIGHT_REVERT',
+      message: 'This quote expired before it could be submitted. Start a new transaction.',
+    })
+  }
 
+  const { maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
+
+  // The CCTP destinationCaller is pinned to hubHookRouter by PrivacyPoolClient (issue #64) — it is no
+  // longer part of the signed CrossChainParams struct.
   const data = buildGaslessCrossChainShieldCalldata({
     user: ownerCaptured as `0x${string}`,
     totalAmount: record.meta.amount,
@@ -398,7 +458,6 @@ async function runGaslessSubmit(
       ],
       shieldKey: shieldRequest.shieldKey as `0x${string}`,
     },
-    destinationCaller,
     integrator: ethers.ZeroAddress as `0x${string}`,
   })
 
@@ -410,14 +469,14 @@ async function runGaslessSubmit(
         to: record.meta.wrapperAddress,
         data,
         feesCacheId: record.meta.feeCacheId,
+        idempotencyKey: record.id,
       },
       ctx.signal,
     )
   } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
-    }
-    throw err
+    // T-M3/S-M1: recover an already-broadcast hash from a DUPLICATE_TX so we resume polling
+    // instead of failing a tx the relayer already sent; non-recoverable errors rethrow.
+    submitResponse = handleRelaySubmitError(err, { id: record.id, kind: record.kind })
   }
 
   track('tx.relayer.submitted', { id: record.id, kind: record.kind })
@@ -427,23 +486,14 @@ async function runGaslessSubmit(
 
 /**
  * Per-submit CCTP params resolved from the loaded deployment + network mode. Shared across both
- * direct and gasless submit branches so the on-chain inputs (destinationCaller, maxFee,
- * minFinalityThreshold) stay identical regardless of who broadcasts the tx.
+ * direct and gasless submit branches so the on-chain inputs (maxFee, minFinalityThreshold) stay
+ * identical regardless of who broadcasts the tx. The CCTP destinationCaller is no longer resolved
+ * here — PrivacyPoolClient pins it to its configured hubHookRouter at the contract level (issue #64).
  */
 async function resolveCctpSubmitParams(record: TxRecord<'shield-xchain'>): Promise<{
-  destinationCaller: `0x${string}`
   maxFee: bigint
   minFinalityThreshold: number
 }> {
-  // destinationCaller = the HUB's hookRouter, in bytes32 form. Constrains who can call
-  // receiveMessage on the hub MessageTransmitter so only our atomic-delivery path executes.
-  const deployments = await loadDeployments()
-  const hubHookRouter = deployments.hub.contracts.hookRouter
-  const destinationCaller =
-    hubHookRouter && hubHookRouter !== ethers.ZeroAddress
-      ? pad(hubHookRouter as `0x${string}`, { size: 32 })
-      : (`0x${'00'.repeat(32)}` as `0x${string}`)
-
   // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
   // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
   // Computed locally from amount, no relayer round-trip needed.
@@ -453,7 +503,7 @@ async function resolveCctpSubmitParams(record: TxRecord<'shield-xchain'>): Promi
   // to STANDARD as the safe default. CCTPHookRouter on the hub handles both threshold values.
   const minFinalityThreshold = getNetworkConfig().mode === 'sepolia' ? 1000 : 0
 
-  return { destinationCaller, maxFee, minFinalityThreshold }
+  return { maxFee, minFinalityThreshold }
 }
 
 /**
@@ -473,9 +523,9 @@ async function finalizeBurnAndAdvance(
   // record MUST be threaded into the final advance below — `record` is now stale (lower
   // updatedSeq than the atom/IDB) so an advance from it would produce an equal-seq write that
   // OCC silently drops, leaving the executor looping on this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: hash })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  const broadcast = await recordBroadcastHash(record, hash, ctx)
+  if (broadcast.dismissed) return
+  const broadcastRecord = broadcast.record
 
   // Use the client chain's public client to wait for the receipt + extract the CCTP MessageSent
   // event. The receipt is on the source chain regardless of who broadcast the tx, so this works
@@ -552,24 +602,32 @@ async function runWaitForDelivery(
     : 0n
   const maxLogRange = BigInt(getNetworkConfig().maxLogRange)
 
-  // Derive the inner poll timeout from the per-kind lifecycle cap, minus elapsed time. The
-  // hardcoded 10min that lived here previously ignored the outer 60min xchain budget — a slow
-  // Iris attestation would time us out with ~50 min still on the lifecycle clock.
-  const lifecycle = lifecycleFor(record.kind)
-  const remainingBudgetMs = record.createdAt + lifecycle.maxDurationMs - Date.now()
-  const POLL_FLOOR_MS = 10_000
-  if (remainingBudgetMs < POLL_FLOOR_MS) {
-    track('tx.budget.tight', {
-      id: record.id,
-      kind: record.kind,
-      elapsedMs: Date.now() - record.createdAt,
-    })
-  }
-  const pollTimeoutMs = Math.max(POLL_FLOOR_MS, remainingBudgetMs)
+  // Derive the inner poll timeout from the per-kind lifecycle cap minus elapsed time, crediting
+  // back tab-hidden time (T-M5/S-M6) so a slow Iris attestation watched from a backgrounded tab
+  // doesn't time out with budget still on the clock. pollBudgetMs floors at 10s + emits
+  // tx.budget.tight when the floor engages.
+  const pollTimeoutMs = pollBudgetMs(record)
 
   const result = await poll<`0x${string}`>(
     async (signal) => {
       if (signal.aborted) return null
+      // T-M7 Option B primary: ask the relayer for authoritative CCTP delivery status (it performs
+      // the hub mint in both mock + real mode and tracks Iris). Falls through to the on-chain scan
+      // below when the endpoint is unavailable (not deployed / relayer down) — no hard dependency.
+      const messageHash = record.artifacts.messageHash
+      if (messageHash) {
+        const relayed = await fetchCctpDeliveryStatus(messageHash, signal)
+        if (relayed.kind === 'delivered') return relayed.destTxHash
+        if (relayed.kind === 'pending') return null
+        if (relayed.kind === 'failed') {
+          throw asTxError({
+            code: 'TX_REVERTED',
+            message: relayed.error ?? 'Cross-chain delivery failed on the hub chain.',
+            txHash: record.artifacts.sourceTxHash,
+          })
+        }
+        // relayed.kind === 'unavailable' → fall through to the on-chain scan.
+      }
       const outcome = await scanCctpDeliveryWindow<EthersScanLog>({
         getBlockNumber: async () => BigInt(await hubProvider.getBlockNumber()),
         // Filter on the MessageReceived topic only — V2 puts an Iris-assigned `eventNonce` in
@@ -602,6 +660,9 @@ async function runWaitForDelivery(
       if (outcome.kind === 'no-new-blocks') return null
 
       scanFromBlock = outcome.nextScanFromBlock
+      // A cancel/dismiss may have fired during the async scan above. Skip the cursor persist so we
+      // don't resurrect a record abortAndMark has already moved to a terminal state. (P0-3 WS1.2b)
+      if (signal.aborted) return null
       cursor = patchArtifacts(cursor, { destFromBlock: scanFromBlock.toString() })
       await ctx.upsert(cursor)
       return null

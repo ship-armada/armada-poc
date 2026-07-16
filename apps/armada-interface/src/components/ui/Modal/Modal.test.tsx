@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
+import { OVERLAY_EXIT_MS } from '@/constants/overlayMotion'
 import { Modal } from './Modal'
 
 describe('<Modal>', () => {
@@ -80,7 +81,7 @@ describe('<Modal>', () => {
       </Modal>,
     )
     const dialog = screen.getByRole('dialog')
-    const backdrop = dialog.parentElement as HTMLElement
+    const backdrop = dialog.parentElement?.parentElement as HTMLElement
     fireEvent.mouseDown(backdrop)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -123,7 +124,32 @@ describe('<Modal>', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
 
+  it('sets data-exiting on close and unmounts after exit duration', () => {
+    vi.useFakeTimers()
+    const { rerender } = render(
+      <Modal open onClose={() => {}} title="Hello">
+        <div>body</div>
+      </Modal>,
+    )
+    const dialog = screen.getByRole('dialog', { name: 'Hello' })
+    expect(dialog).not.toHaveAttribute('data-exiting')
+
+    rerender(
+      <Modal open={false} onClose={() => {}} title="Hello">
+        <div>body</div>
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog', { name: 'Hello' })).toHaveAttribute('data-exiting', 'true')
+
+    act(() => {
+      vi.advanceTimersByTime(OVERLAY_EXIT_MS)
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    vi.useRealTimers()
+  })
+
   it('locks body scroll while open and restores on close', () => {
+    vi.useFakeTimers()
     document.body.style.overflow = 'auto'
     const { rerender } = render(
       <Modal open onClose={() => {}}>
@@ -136,7 +162,12 @@ describe('<Modal>', () => {
         <div>body</div>
       </Modal>,
     )
+    expect(document.body.style.overflow).toBe('hidden')
+    act(() => {
+      vi.advanceTimersByTime(OVERLAY_EXIT_MS)
+    })
     expect(document.body.style.overflow).toBe('auto')
+    vi.useRealTimers()
   })
 
   it('restores focus to the previously focused element on close', () => {

@@ -1,0 +1,479 @@
+/* ABOUTME: CSS Module for Step2Commit — see Step2Commit.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/*
+  Figma: 480x500px, 32px padding all sides
+  gap 44px between Steps / content / button row (space-between)
+  Content block: title + amount + available, centered
+  Allocation bar: 6px, radius 999px
+  Button row: two 202px buttons, gap 12px, 48px height
+*/
+
+.shell {
+  width: 480px;
+  height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ── Content ── */
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* ── Input block ── */
+.inputBlock {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  align-items: center;
+}
+
+/* Hop badge above the title in the single-hop variant — colored dot + label
+ * mirroring the multi-hop variant's row styling so the two paths read the
+ * same. */
+.hopBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.hopBadgeDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hopBadgeLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+}
+
+.title {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+}
+
+.maxLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  text-align: center;
+}
+
+/* Centered amount with caret to the right of digits (display layer + transparent input) */
+.amountWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: text;
+  width: 100%;
+  min-height: calc(var(--primitives-fontSize-6xl) * 1.1 * 1px);
+}
+
+.amountField {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.amountDisplay,
+.amountInput {
+  font-family: var(--primitives-fontFamily-display);
+  font-size: calc(var(--primitives-fontSize-6xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: 1.1;
+}
+
+.amountInput {
+  font-variant-numeric: tabular-nums;
+}
+
+.amountDisplay {
+  display: block;
+  color: var(--semantic-color-text-primary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.amountDisplayActive {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.amountInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  color: transparent;
+  caret-color: var(--semantic-color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.amountInput:not(:placeholder-shown) {
+  caret-color: var(--semantic-color-brand-lavender);
+}
+
+.amountInput::placeholder {
+  color: transparent;
+  opacity: 0;
+}
+
+.amountInput::-webkit-outer-spin-button,
+.amountInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.availableLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: var(--primitives-letterSpacing-wider);
+}
+
+/* ── Allocation block — pinned above button row ── */
+.allocationBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.barTrack {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--semantic-color-border-default);
+  overflow: hidden;
+}
+
+.barFillExisting,
+.barFillNew {
+  height: 100%;
+  min-width: 0;
+  transition: width 150ms ease;
+}
+
+.barFillExisting {
+  border-radius: 999px 0 0 999px;
+  background: var(--primitives-color-purple-700);
+}
+
+.barFillExisting:only-child {
+  border-radius: 999px;
+}
+
+.barFillNew {
+  border-radius: 0 999px 999px 0;
+  background: var(--semantic-color-brand-lavender);
+}
+
+.barFillNew:first-child {
+  border-radius: 999px;
+}
+
+.allocationRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.allocationLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.allocationLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.infoTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: help;
+  line-height: 0;
+}
+
+.infoTrigger:hover .infoIcon {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+.allocationRight {
+  display: flex;
+  align-items: baseline;
+  gap: var(--primitives-spacing-1);
+  min-width: 9ch;
+  justify-content: flex-end;
+}
+
+.allocationValue,
+.allocationValueActive {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+  text-align: right;
+}
+
+.allocationValue {
+  color: var(--semantic-color-text-muted);
+}
+
+.allocationValueActive {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.allocationDivider {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.allocationMax {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+/* ── Button row ── */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  flex-shrink: 0;
+  margin-top: var(--primitives-spacing-11);
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
+/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
+ * Ported from the armada-crowdfund mockup mobile rework. */
+@media (max-width: 767px) {
+  .buttonRow {
+    flex-direction: column-reverse;
+    margin-top: 0;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}
+
+/* Visually hidden — accessible but not visible */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Multi-hop input variant ──
+ * Each hop is a single horizontal row (hop chip + cap label + amount
+ * input) with no surrounding card — kept flat so the modal stays compact
+ * when the user is eligible at 2-3 hops. */
+.multiList {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.multiTitle {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+  text-align: center;
+}
+
+/* "Available {balance}" sits directly under the title (was lower down
+ * in v0 of the multi-hop variant). Caps/uppercase to match the single-
+ * hop variant's `.availableLabel` styling. */
+.multiAvailableLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  margin: var(--primitives-spacing-2) 0 var(--primitives-spacing-4);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: var(--primitives-letterSpacing-wider);
+}
+
+.multiRow {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  /* No background, no border, no internal padding — flat row inside the
+   * shell's main padding. The amount input keeps its own large font so
+   * the entry stays the visual anchor of the row. */
+}
+
+.multiRowLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  flex-shrink: 0;
+}
+
+.multiHopDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.multiHopLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+}
+
+/* Sits between the hop label and the amount input. `flex: 1` lets it
+ * absorb the remaining horizontal space so the amount input always
+ * snaps to the right edge of the row. */
+.multiCapLabel {
+  flex: 1;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.multiAmountInput {
+  font-family: var(--primitives-fontFamily-display);
+  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  /* Match the single-hop variant's resting placeholder color (white) by
+   * coloring the actual input text the same — when empty the browser
+   * renders the placeholder "0", when populated the typed digits sit in
+   * the same color. Focus state shifts to lavender like single-hop. */
+  color: var(--semantic-color-text-primary);
+  caret-color: var(--semantic-color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: right;
+  /* Cap the width so the input doesn't overflow into long rows; the
+   * field still right-aligns its digits. */
+  width: 9ch;
+  flex-shrink: 0;
+  padding: 0;
+  -moz-appearance: textfield;
+}
+
+.multiAmountInput::placeholder {
+  color: var(--semantic-color-text-primary);
+  opacity: 1;
+}
+
+.multiAmountInput:focus {
+  color: var(--semantic-color-brand-lavender);
+  caret-color: var(--semantic-color-brand-lavender);
+}
+
+.multiAmountInput:focus::placeholder {
+  color: var(--semantic-color-brand-lavender);
+  opacity: 0.6;
+}
+
+.multiAmountInput::-webkit-outer-spin-button,
+.multiAmountInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Shared by both variants — single-hop renders it under the "Available
+ * {balance}" line; multi-hop renders it under the allocation row. */
+.overBalance {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-status-error);
+  text-align: center;
+  margin: 0;
+}

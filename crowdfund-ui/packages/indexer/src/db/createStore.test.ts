@@ -15,7 +15,6 @@ const originalGenericDatabaseUrl = process.env.DATABASE_URL
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 100,
   confirmedHead: 100,
   ingestedCursor: 99,

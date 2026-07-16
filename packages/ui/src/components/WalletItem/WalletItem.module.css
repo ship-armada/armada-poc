@@ -1,0 +1,77 @@
+/* ABOUTME: CSS Module for WalletItem — full-width clickable row with icon + name + optional balance. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-4);
+  width: 100%;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-default);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 150ms ease;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--semantic-color-surface-hover);
+}
+
+.item:disabled {
+  cursor: not-allowed;
+}
+
+.item:disabled:hover {
+  background: var(--semantic-color-surface-raised);
+}
+
+.item:disabled .name {
+  color: var(--semantic-color-text-muted);
+}
+
+.item:disabled .iconSlot,
+.item:disabled .icon {
+  opacity: 0.5;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: var(--primitives-borderRadius-sm);
+  object-fit: contain;
+}
+
+.iconSlot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.iconPlaceholder {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: var(--primitives-borderRadius-sm);
+  background: var(--semantic-color-surface-raised);
+}
+
+.name {
+  flex: 1;
+  font-family: var(--primitives-fontFamily-ui);
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  color: var(--semantic-color-text-primary);
+}
+
+.balance {
+  font-family: var(--primitives-fontFamily-ui);
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+}

@@ -1,41 +1,58 @@
-/* ABOUTME: Step indicator styling — small uppercase label + thin gap-separated tick segments. */
-/* ABOUTME: Filled segments use the brand lavender token; unfilled use a muted neutral. Transitions respect reduced-motion. */
+/* ABOUTME: Step indicator styling — crowdfund Steps baseline: label row + segmented bar. */
+/* ABOUTME: Active segments use brand lavender; inactive use border-default. */
 
-.root {
+.container {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-2);
+  gap: var(--primitives-spacing-3);
   width: 100%;
 }
 
-.label {
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stepName {
+  font-family: var(--primitives-fontFamily-ui);
+  font-weight: var(--primitives-fontWeight-medium);
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
-  line-height: var(--primitives-lineHeight-tight);
-  letter-spacing: var(--primitives-letterSpacing-wider);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+}
+
+.stepCount {
+  font-family: var(--primitives-fontFamily-ui);
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-widest);
   text-transform: uppercase;
   color: var(--semantic-color-text-muted);
 }
 
-.track {
+.progressBar {
   display: flex;
   gap: var(--primitives-spacing-2);
   width: 100%;
 }
 
-.tick {
-  flex: 1 1 0;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--primitives-color-neutral-200);
-  transition: background 180ms ease;
+.segment {
+  flex: 1;
+  height: calc(var(--primitives-borderWidth-default) * 5px);
+  border-radius: calc(var(--primitives-borderWidth-default) * 2px);
+  background-color: var(--primitives-color-neutral-200);
 }
 
-.filled {
-  background: var(--semantic-color-brand-lavender);
+.segment.active {
+  background-color: var(--semantic-color-brand-lavender);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tick {
-    transition: none;
-  }
+.segment.error {
+  background-color: var(--semantic-color-status-error);
+}
+
+.segment.confirmed {
+  background-color: var(--semantic-color-status-success);
 }

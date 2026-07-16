@@ -1,7 +1,50 @@
-# `relayer/state/` — per-chain scan cursors
+# `relayer/state/` — relayer persistent state
 
 This directory holds the relayer's persistent state for the CCTP scan loop. The directory itself
-is committed (so a fresh clone has the README) but the cursor files inside are gitignored.
+is committed (so a fresh clone has the README) but the state files inside are gitignored.
+
+All state files use the same atomic tmpfile + rename write primitive (`lib/json-state-store.ts`)
+with per-key write serialisation and schema-versioned payloads, so a `kill -9` mid-write never
+leaves a torn file. Files:
+
+| File | Written by | Purpose |
+|------|-----------|---------|
+| `cursor-<chain>.json` | `lib/cursor-store.ts` | Per-chain scan cursor (highest block ingested). |
+| `pending-<chain>.json` | `lib/pending-state-store.ts` | iris relay's in-flight messages + delivered-dedup records. |
+| `cctp-retry-queue.json` | `lib/retry-queue-store.ts` | mock CCTP relay's failed-message retry queue. |
+| `deadletter-<chain>.json` | `lib/dead-letter-store.ts` | Messages permanently given up on (surfaced as `/health` `deadLetterCount`). |
+| `idempotency-records.json` | `modules/idempotency-store.ts` | `/relay` idempotency-key → broadcast txHash, so a re-POST (even after restart) returns the same hash instead of double-broadcasting. |
+| `cctp-delivery-records.json` | `modules/cctp-delivery-store.ts` | Cross-chain delivery index (source `messageHash` → status/destTxHash), served by `GET /cctp-status/:messageHash`. |
+| `railgun-db/` | Railgun engine | The relayer's `0zk` wallet LevelDB (broadcaster-fee viewing key). |
+
+Deleting any file is operator-actionable recovery: the relayer re-bootstraps that piece of state
+(the scanner re-discovers messages from chain via the cursor). The exceptions worth understanding
+are below.
+
+## Pending / retry / dead-letter files
+
+- **`pending-<chain>.json`** — survives a restart so an in-flight message awaiting Iris attestation
+  isn't forgotten, and a delivered message isn't re-relayed (it's in the processed-dedup set, which
+  is pruned by age). Schema v3 (`{ key, at }` processed records; v1/v2 auto-migrate forward).
+- **`cctp-retry-queue.json`** — a failed mock-relay message that's queued for retry. WITHOUT this,
+  a restart while a relay is queued would strand the message (its scan cursor already advanced past
+  it). Single global file; the bigint nonce is serialised as a decimal string.
+- **`deadletter-<chain>.json`** — a non-empty file means USDC may be stranded (retries exhausted /
+  attestation expired / fee too low) and needs manual relay. Each record keeps the raw message
+  bytes so an operator can relay it by hand. `/health` reports the per-chain count.
+- **`idempotency-records.json`** — one record per `/relay` POST that carried an `idempotencyKey`
+  (the client tx ulid), mapping key → broadcast txHash. A repeat POST with the same key returns the
+  cached hash (HTTP 200) instead of re-broadcasting, even across a relayer restart. Entries evict
+  after 24h (well past the tx lifecycle). Deleting the file only loses cross-restart dedup for
+  in-flight txs; the in-memory calldata cache still guards same-process duplicates.
+- **`cctp-delivery-records.json`** — cross-chain delivery status keyed by the source CCTP
+  `messageHash` (`pending` / `delivered` + destTxHash / `failed`). Written by whichever relay mode
+  is active (mock `cctp-relay` or real `iris-relay`) and served by `GET /cctp-status/:messageHash`,
+  which the frontend polls to confirm a cross-chain shield/unshield delivery. Deleting it only
+  forces the frontend back to its on-chain destination scan (its built-in fallback); entries evict
+  after ~90 min.
+
+## Cursor files
 
 ## Cursor files
 

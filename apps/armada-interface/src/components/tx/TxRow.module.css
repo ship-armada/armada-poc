@@ -1,14 +1,13 @@
-/* ABOUTME: TxRow styling — horizontal layout with body (title/amount/optional stage+progress) on left, status+time on right. */
-/* ABOUTME: Clickable variant adds hover background. Progress bar uses brand lavender for filled segments. */
+/* ABOUTME: TxRow styling — three-column row: leading lavender kind glyph | title (+ optional subline/progress) | signed amount + (time or status chip). */
+/* ABOUTME: Inflow amounts colored green; outflows default. Hairline divider between rows; the parent list controls top-of-first behaviour. */
 
 .root {
   display: flex;
-  align-items: flex-start;
-  gap: var(--primitives-spacing-4);
-  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-3);
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   width: 100%;
   text-align: left;
   color: inherit;
@@ -20,13 +19,25 @@ button.root {
 }
 
 .clickable:hover {
-  background: var(--semantic-color-surface-raised);
-  border-color: var(--semantic-color-border-default);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .clickable:focus-visible {
   outline: 2px solid var(--semantic-color-border-focus);
   outline-offset: 2px;
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(196, 145, 229, 0.12);
+  color: var(--semantic-color-brand-lavender);
 }
 
 .body {
@@ -37,13 +48,6 @@ button.root {
   gap: var(--primitives-spacing-1);
 }
 
-.titleRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--primitives-spacing-3);
-}
-
 .title {
   color: var(--semantic-color-text-primary);
   font-weight: var(--primitives-fontWeight-medium);
@@ -52,6 +56,11 @@ button.root {
 .amount {
   color: var(--semantic-color-text-primary);
   font-variant-numeric: tabular-nums;
+  font-weight: var(--primitives-fontWeight-medium);
+}
+
+.amountInflow {
+  color: var(--semantic-color-status-success);
 }
 
 .subline {
@@ -92,11 +101,11 @@ button.root {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--primitives-spacing-1);
+  gap: 2px;
   flex-shrink: 0;
 }
 
 .time {
   color: var(--semantic-color-text-muted);
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
 }

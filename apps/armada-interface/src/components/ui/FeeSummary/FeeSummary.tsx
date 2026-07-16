@@ -37,6 +37,11 @@ export interface FeeSummaryProps {
   secondaryFeeLabel?: string
   /** Whether the fee quote is currently being refreshed; shows a subtle "refreshing…" hint. */
   isRefreshing?: boolean
+  /**
+   * The relayer fee quote is unavailable (relayer down / unreachable after repeated retries).
+   * Replaces the fee value with honest copy instead of an indefinite "Loading…". (P1-28)
+   */
+  unavailable?: boolean
   className?: string
 }
 
@@ -48,6 +53,7 @@ export function FeeSummary({
   secondaryFee,
   secondaryFeeLabel,
   isRefreshing,
+  unavailable,
   className,
 }: FeeSummaryProps) {
   const cls = [styles.root, className].filter(Boolean).join(' ')
@@ -57,7 +63,9 @@ export function FeeSummary({
       <div className={styles.row}>
         <dt className={styles.label}>{feeLabel}</dt>
         <dd className={styles.value}>
-          {fee === null ? (
+          {unavailable ? (
+            <span className={styles.loading}>Unavailable — relayer may be down</span>
+          ) : fee === null ? (
             <span className={styles.loading}>Loading…</span>
           ) : fee === 0n ? (
             <span className={styles.zeroFee}>No fee</span>

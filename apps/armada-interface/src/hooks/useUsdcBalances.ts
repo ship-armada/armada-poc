@@ -16,6 +16,28 @@ import { trackError } from '@/lib/telemetry'
 const POLL_INTERVAL_MS = 15_000
 
 /**
+ * Fold fulfilled per-chain query results into the prior balances map. Returns the SAME `prev`
+ * reference when nothing actually changed, so a poll tick that re-reads identical balances does
+ * not create a new object and therefore does not notify `usdcBalancesAtom` subscribers (no
+ * downstream re-render). Unfulfilled entries (no `data`) are skipped so one slow chain doesn't
+ * blank the others.
+ */
+export function mergeUsdcBalances(
+  prev: Record<number, bigint>,
+  results: ReadonlyArray<{ data?: { chainId: number; balance: bigint } }>,
+): Record<number, bigint> {
+  let changed = false
+  const next = { ...prev }
+  for (const r of results) {
+    if (r.data && next[r.data.chainId] !== r.data.balance) {
+      next[r.data.chainId] = r.data.balance
+      changed = true
+    }
+  }
+  return changed ? next : prev
+}
+
+/**
  * Reads the connected wallet's public USDC balance on every configured chain (hub + clients)
  * every 15s and mirrors them into `usdcBalancesAtom`. The ShieldModal reads this atom to
  * populate its MAX based on the currently-selected `fromChainId`.
@@ -37,6 +59,11 @@ export function useUsdcBalances(): void {
     queryFn: () => loadDeployments(),
     staleTime: Infinity,
     gcTime: Infinity,
+    // A flaky first manifest load otherwise leaves `pairs` empty (no balances, blank MAX) until a
+    // window refocus happens to retrigger. Retry with capped exponential backoff so it self-heals.
+    // `staleTime: Infinity` still means it never re-fetches once it has succeeded. (P2/WS3.4)
+    retry: true,
+    retryDelay: attempt => Math.min(1_000 * 2 ** attempt, 30_000),
   })
 
   const pairs = deployments.data
@@ -60,7 +87,7 @@ export function useUsdcBalances(): void {
   const results = useQueries({
     queries: pairs.map(pair => ({
       queryKey: ['usdc-balance', pair.chainId, pair.usdcAddress, address] as const,
-      queryFn: async (): Promise<{ chainId: number; balance: bigint }> => {
+      queryFn: async (): Promise<{ chainId: number; balance: bigint; address: string }> => {
         const balance = await readContract(wagmiConfig, {
           address: pair.usdcAddress,
           abi: erc20Abi,
@@ -68,34 +95,41 @@ export function useUsdcBalances(): void {
           args: [address as `0x${string}`],
           chainId: pair.chainId,
         })
-        return { chainId: pair.chainId, balance }
+        // Tag with the address this balance was read for, so the mirror effect can reject a prior
+        // account's results that useQueries still returns for one render after a switch. (W-2)
+        return { chainId: pair.chainId, balance, address: address as string }
       },
       enabled: !!address,
       refetchInterval: tabVisible ? POLL_INTERVAL_MS : false,
       refetchIntervalInBackground: false,
-      placeholderData: (prev: { chainId: number; balance: bigint } | undefined) => prev,
+      // No cross-key placeholderData: `(prev) => prev` would carry the PREVIOUS account's balance
+      // into the new (address-keyed) query while it loads, so account B briefly showed account A's
+      // USDC. Same-address poll refetches keep their data via the stable query key — they don't
+      // need a placeholder. (W-2)
       staleTime: 0,
     })),
   })
 
-  // Clear the atom when the wallet disconnects so stale balances from a prior session don't
-  // linger on the UI.
+  // Clear the atom on EVERY address change — disconnect OR account switch — so a prior account's
+  // balances never linger. On an A→B switch both addresses are truthy, so a disconnect-only guard
+  // would leave A's USDC showing in the pill / ShieldModal MAX (spendable!) until B's reads land.
+  // Re-population follows from the mirror effect below once B's queries resolve. (W-2)
   useEffect(() => {
-    if (!address) setBalances({})
+    setBalances({})
   }, [address, setBalances])
 
-  // Mirror fulfilled results into the atom. Re-runs on every render whose results array changes
-  // (i.e. on each fulfilled query). Skipping unfulfilled (loading / error) entries so a single
-  // slow chain doesn't blank the others.
+  // Mirror fulfilled results into the atom. Re-runs on every render whose `results` array changes
+  // (React Query hands back a fresh array each poll tick even when the values are identical), so
+  // `mergeUsdcBalances` returns the SAME map reference when nothing changed — no atom write, no
+  // re-render of MAX-button consumers on a steady-state poll.
   useEffect(() => {
     if (!address) return
-    setBalances(prev => {
-      const next = { ...prev }
-      for (const r of results) {
-        if (r.data) next[r.data.chainId] = r.data.balance
-      }
-      return next
-    })
+    // Only fold in results read for the CURRENT address. useQueries hands back the prior account's
+    // resolved results for one render after an address change (observers re-subscribe async);
+    // without this filter the mirror would re-write account A's balances right after the clear
+    // effect wiped them, defeating W-2.
+    const current = results.filter(r => r.data?.address === address)
+    setBalances(prev => mergeUsdcBalances(prev, current))
   }, [results, address, setBalances])
 
   // Surface persistent failures via telemetry (once per error transition per chain).

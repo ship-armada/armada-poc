@@ -1,0 +1,275 @@
+/* ABOUTME: CSS Module for MyPositionSplit — see MyPositionSplit.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+.page {
+  min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--semantic-color-surface-bg);
+  color: var(--semantic-color-text-primary);
+}
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: var(--primitives-spacing-6);
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: calc(56px + var(--primitives-spacing-8)) var(--primitives-spacing-6) var(--primitives-spacing-6);
+}
+
+.graphColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sphereFrame {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: calc(100vh - 56px - var(--primitives-spacing-8) - var(--primitives-spacing-6));
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  border: 1px solid var(--semantic-color-border-default);
+  background: var(--semantic-color-surface-raised);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.sidebarColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidebarStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  height: 100%;
+  min-height: 0;
+}
+
+/* ── Position card ── */
+
+.positionCard {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--semantic-spacing-card-padding);
+  min-width: 0;
+}
+
+.cardHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-3);
+}
+
+.positionFooter {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  padding-top: var(--primitives-spacing-10);
+}
+
+.barSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+}
+
+.pageTitle {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-snug);
+  color: var(--semantic-color-text-primary);
+}
+
+.metaTags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--primitives-spacing-3);
+}
+
+.statsRow {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--primitives-spacing-10);
+}
+
+.statBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+.statLabelRow {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+}
+
+.statLabel {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-normal);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.statAmount,
+.statAmountAccent {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-4xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: 1;
+  color: var(--semantic-color-text-primary);
+}
+
+.statAmountAccent {
+  color: var(--semantic-color-text-lavender);
+}
+
+.infoTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: help;
+  line-height: 0;
+}
+
+.infoTrigger:hover .infoIcon {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.infoIcon {
+  width: calc(var(--primitives-fontSize-xl) * 1px);
+  height: calc(var(--primitives-fontSize-xl) * 1px);
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+  transition: color 150ms ease;
+}
+
+.barTrack {
+  width: 100%;
+  height: 3px;
+  background: var(--semantic-color-border-default);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: linear-gradient(
+    90deg,
+    var(--primitives-color-purple-300),
+    var(--primitives-color-amber-300)
+  );
+}
+
+.barLabels {
+  display: flex;
+  justify-content: space-between;
+}
+
+.barCaption {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-secondary);
+}
+
+/* ── Invites container ── */
+
+.inviteCard {
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--semantic-spacing-card-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  min-width: 0;
+}
+
+.inviteTitle {
+  margin: 0;
+  flex-shrink: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-snug);
+  color: var(--semantic-color-text-primary);
+}
+
+.slotList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.slotList > * {
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(360px, 45vh) auto;
+    padding:
+      calc(56px + var(--primitives-spacing-5))
+      var(--primitives-spacing-5)
+      var(--primitives-spacing-6);
+    gap: var(--primitives-spacing-5);
+  }
+
+  .sphereFrame {
+    min-height: 360px;
+  }
+
+  .sidebarStack {
+    height: auto;
+    gap: var(--primitives-spacing-5);
+  }
+
+  .inviteCard {
+    flex: 0 0 auto;
+    max-height: none;
+  }
+
+  .slotList {
+    overflow: visible;
+  }
+}

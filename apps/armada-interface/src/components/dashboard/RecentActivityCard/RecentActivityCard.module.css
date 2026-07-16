@@ -5,6 +5,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--primitives-spacing-2);
+  /* Matches the ActionCard sheen — default card surface on the left fades to a slightly
+     warmer near-black at the right edge. Overrides the Card primitive's flat fill. */
+  background: linear-gradient(90deg, var(--semantic-color-surface-default) 0%, #221D24 100%);
 }
 
 .list {
@@ -13,7 +16,13 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-1);
+}
+
+/* Hairline between rows — keeps the table from reading as a wall of stacked rows
+   without adding a heavy full grid. First row stays borderless so the card edge
+   does the visual job there. */
+.list > li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .viewAll {

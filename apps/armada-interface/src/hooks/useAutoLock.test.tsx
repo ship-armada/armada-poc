@@ -105,6 +105,28 @@ describe('useAutoLock', () => {
     expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
   })
 
+  it('locks after the deferral cap even while a tx stays in flight (T-H3)', () => {
+    // WHY (T-H3): a wedged non-terminal record would otherwise defer the lock forever — keeping the
+    // rootSecret in memory indefinitely. After MAX_LOCK_DEFERRALS (~5 × 1 min) past the idle
+    // deadline, the lock must fire regardless of the still-"in flight" record.
+    const store = setupStore({ unlocked: true, autoLockMinutes: 5, withInflightTx: true })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    // 5-min idle deadline + 4 one-minute deferral ticks (budget = 5): still deferring → unlocked.
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000 + 4 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
+    // The next tick exhausts the deferral budget → lock fires despite the tx still in flight.
+    act(() => {
+      vi.advanceTimersByTime(2 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
+  })
+
   it('resets the timer on user activity', () => {
     const store = setupStore({ unlocked: true, autoLockMinutes: 5 })
     render(
@@ -131,6 +153,102 @@ describe('useAutoLock', () => {
     // One more minute past the reset's full 5 — should lock now.
     act(() => {
       vi.advanceTimersByTime(2 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
+  })
+
+  it('locks 5 minutes after the tab becomes hidden, before the idle timeout would fire', () => {
+    // Phase 5 hidden-grace: when the document hides, we lock faster than the idle timer
+    // (15-min default → 5-min hidden grace). The user briefly switching tabs is not punished
+    // (covered by the visible-cancels-grace test below), but a tab they walked away from gets
+    // locked sooner than a foreground idle tab.
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15 })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    // Hide the document → starts a 5-min hidden-grace timer.
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // 4 minutes hidden — not yet locked.
+    act(() => {
+      vi.advanceTimersByTime(4 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
+    // 1 more minute (total 5) — grace expires, lock fires.
+    act(() => {
+      vi.advanceTimersByTime(1 * 60_000 + 1)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
+  })
+
+  it('cancels the hidden grace when the tab becomes visible again', () => {
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15 })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // 4 minutes hidden, then visible again — grace cancelled.
+    act(() => {
+      vi.advanceTimersByTime(4 * 60_000)
+    })
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // Advance another 2 minutes (would have crossed the hidden grace if not cancelled).
+    act(() => {
+      vi.advanceTimersByTime(2 * 60_000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
+  })
+
+  it('hidden + in-flight: re-checks on the 60s timer (not the full grace) and locks at the cap (W-8)', () => {
+    // W-8: a deferral while hidden must re-check in 60s increments, not re-arm a fresh 5-min grace
+    // each time — otherwise an in-flight tx holds keys in memory ~30min instead of ~10min. After
+    // the grace, MAX_LOCK_DEFERRALS (5) × 60s exhausts the budget and the lock fires.
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15, withInflightTx: true })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // 5-min grace elapses while in flight → first deferral; not locked yet.
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000 + 1)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('unlocked')
+    // Re-checks every 60s (NOT another 5-min grace): 5 × 60s exhausts the cap → lock. With the bug
+    // (re-arming the full grace) the wallet would still be unlocked this soon.
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000 + 1000)
+    })
+    expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
+    // Reset for sibling tests that assume a visible document.
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+  })
+
+  it('locks synchronously on beforeunload (best-effort zeroize before the page is torn down)', () => {
+    const store = setupStore({ unlocked: true, autoLockMinutes: 15 })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    act(() => {
+      window.dispatchEvent(new Event('beforeunload'))
     })
     expect(store.get(shieldedWalletsAtom)['rg-1']?.status).toBe('locked')
   })

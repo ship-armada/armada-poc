@@ -3,6 +3,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -52,6 +53,33 @@ export default defineConfig({
     react(),
     tailwindcss(),
     serveDeployments(),
+    // Sentry sourcemap upload. Self-disabling when `SENTRY_AUTH_TOKEN` is
+    // unset, so local dev builds incur zero overhead and Netlify previews
+    // without Sentry env vars still build cleanly. Must run last so the
+    // bundle is finalised before sourcemaps are uploaded.
+    sentryVitePlugin({
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+      // Don't phone home build telemetry to Sentry.
+      telemetry: false,
+      release: process.env.VITE_SENTRY_RELEASE
+        ? { name: process.env.VITE_SENTRY_RELEASE }
+        : undefined,
+      // Upload sourcemaps to Sentry, then delete the .map files from dist/ so
+      // they are never published with the deployed bundle (sourcemap: 'hidden'
+      // already strips the //# sourceMappingURL reference, but the files
+      // themselves would otherwise ship at guessable names).
+      // CAVEAT: this whole plugin no-ops when SENTRY_AUTH_TOKEN is unset
+      // (`disable` above), so a build without the token still emits .map files
+      // into dist/. SENTRY_AUTH_TOKEN must be set as a Netlify build var for
+      // production deploys — see netlify.toml.
+      sourcemaps: {
+        assets: ['./dist/**'],
+        filesToDeleteAfterUpload: ['./dist/**/*.map'],
+      },
+    }),
   ],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
@@ -66,5 +94,12 @@ export default defineConfig({
     fs: {
       allow: ['../../..'],
     },
+  },
+  build: {
+    // `hidden` generates sourcemaps for the Sentry plugin to upload, then
+    // strips the `//# sourceMappingURL=...` reference from the emitted JS so
+    // the maps aren't reachable from the deployed bundle. Sentry still
+    // symbolicates events because it has the maps server-side.
+    sourcemap: 'hidden',
   },
 })

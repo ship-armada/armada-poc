@@ -22,3 +22,4 @@
 .warning { background: var(--semantic-component-tag-dot-warning); }
 .error   { background: var(--semantic-component-tag-dot-error); }
 .neutral { background: var(--semantic-component-tag-dot-neutral); }
+.lavender { background-color: var(--semantic-component-tag-dot-lavender); }

@@ -51,6 +51,13 @@ export interface RelayRequest {
   to: string;
   data: string;
   feesCacheId: string;
+  /**
+   * Client-generated idempotency key (the tx record's ulid) — stable across retries/resume of the
+   * same tx, unique per new tx. Optional for backward compatibility: when present the relayer
+   * dedups durably (restart-safe) and returns the already-broadcast hash on a repeat; when absent
+   * it falls back to the in-memory calldata dedup in wallet-manager.
+   */
+  idempotencyKey?: string;
 }
 
 export interface RelayResponse {
@@ -152,6 +159,12 @@ export interface ChainHealth {
   lastError: { message: string; at: number } | null;
   /** Number of in-flight messages awaiting Iris attestation OR destination confirmation (iris-relay only; cctp-relay reports 0). */
   pendingCount: number;
+  /**
+   * Count of messages permanently given up on for THIS source chain — retries exhausted,
+   * attestation expired, or fee too low. Persisted across restarts. A non-zero value means USDC
+   * may be stranded and needs manual relay (records live in relayer/state/deadletter-<chain>.json).
+   */
+  deadLetterCount: number;
 }
 
 export interface RelayerHealth {

@@ -7,6 +7,7 @@ import { Provider, createStore } from 'jotai'
 import { MemoryRouter } from 'react-router-dom'
 import { RecentActivityCard } from './RecentActivityCard'
 import { txListAtom } from '@/state/tx'
+import { activeRailgunWalletIdAtom } from '@/state/wallet'
 import type { TxRecord } from '@/lib/tx/types'
 
 function record(
@@ -35,6 +36,8 @@ function record(
 
 function renderWith(records: TxRecord[], opts: { onSelect?: (r: TxRecord) => void } = {}) {
   const store = createStore()
+  // V2 Phase 6: card reads activeTxListAtom; active id must match the seeded records' walletId.
+  store.set(activeRailgunWalletIdAtom, 'rg')
   store.set(txListAtom, records)
   return render(
     <Provider store={store}>

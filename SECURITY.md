@@ -32,7 +32,7 @@ We ask that you do not publicly disclose the vulnerability until we have had a r
 ### Out of Scope
 
 - Third-party dependencies (OpenZeppelin, Railgun, Circle CCTP) — report upstream
-- Frontend applications (`usdc-v2-frontend/`, `crowdfund-ui/`) — temporary UIs, not production
+- Frontend applications (`apps/armada-interface/`, `crowdfund-ui/`) — UIs, not core protocol
 - Known findings documented in `reports/slither-report.txt`
 - Mock contracts used only in local/test environments
 
@@ -107,4 +107,4 @@ Classify severity (Critical / High / Medium / Low) based on:
 - [Threat Model — Yield](reports/threat-model-yield.md)
 - [Manual Security Review](reports/manual-review-security.md)
 - [Slither Report](reports/slither-report.txt)
-- [Audit Reports](audit-reports/)
+- [LLM-Generated Analysis Snapshot, Feb 2026](_legacy/llm-analysis-2026-02/) — AI-assisted review, not a professional audit; predates several contract subsystems

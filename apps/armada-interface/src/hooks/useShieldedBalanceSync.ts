@@ -3,7 +3,13 @@
 
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { activeShieldedWalletAtom, shieldedUsdcAtom, yieldSharesAtom } from '@/state/wallet'
+import {
+  activeShieldedWalletAtom,
+  shieldedUsdcAtom,
+  syncRetryEpochAtom,
+  syncStateAtom,
+  yieldSharesAtom,
+} from '@/state/wallet'
 import { loadDeployments, loadYieldDeployment } from '@/config/deployments'
 import {
   getShieldedERC20Balance,
@@ -28,14 +34,22 @@ export function useShieldedBalanceSync(): void {
   const active = useAtomValue(activeShieldedWalletAtom)
   const setShieldedUsdc = useSetAtom(shieldedUsdcAtom)
   const setYieldShares = useSetAtom(yieldSharesAtom)
+  const setSyncState = useSetAtom(syncStateAtom)
+  // Bumped by useSyncRetry ("Try Again"). Included in the effect deps so a bump re-runs the
+  // subscribe + initial-scan path below.
+  const retryEpoch = useAtomValue(syncRetryEpochAtom)
   const latestWalletIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (active?.status !== 'unlocked') {
-      // Lock / reset path — drop balance state so stale data doesn't linger past a session.
+      // Lock / reset / account-switch path — drop balance state so stale data doesn't linger past
+      // a session, AND reset the sync gate to idle. Without the sync reset, the NEXT wallet
+      // inherits this one's 'complete' status, so its dashboard renders ungated with a null
+      // balance and enabled spend buttons until its own first scan event fires. (W-1)
       latestWalletIdRef.current = null
       setShieldedUsdc(null)
       setYieldShares(null)
+      setSyncState({ status: 'idle', progress: 0 })
       return
     }
 
@@ -89,6 +103,11 @@ export function useShieldedBalanceSync(): void {
         await refreshShieldedBalances(walletId)
         await refreshAll()
       } catch (err) {
+        // The scan never started (e.g. RPC unreachable), so the SDK's merkletree callback won't
+        // fire 'Incomplete' to mark the sync failed. Mark it here so the gate can offer Try Again.
+        if (!cancelled && latestWalletIdRef.current === walletId) {
+          setSyncState({ status: 'failed', progress: 0 })
+        }
         trackError('useShieldedBalanceSync.init', err, {
           scope: 'shielded.balance',
           message: 'subscribe + initial scan failed',
@@ -100,5 +119,5 @@ export function useShieldedBalanceSync(): void {
       cancelled = true
       if (unsubscribe) unsubscribe()
     }
-  }, [active?.id, active?.status, setShieldedUsdc, setYieldShares])
+  }, [active?.id, active?.status, retryEpoch, setShieldedUsdc, setYieldShares, setSyncState])
 }

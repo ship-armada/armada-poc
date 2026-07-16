@@ -1,2 +1,3 @@
-// ABOUTME: Barrel export for the sync chrome (currently just SyncBanner).
+// ABOUTME: Barrel export for the sync chrome (SyncBanner strip + full-area SyncGate).
 export { SyncBanner } from './SyncBanner'
+export { SyncGate, isInitialSyncGated } from './SyncGate'

@@ -3,8 +3,9 @@
 
 import { JsonRpcProvider } from 'ethers'
 import type { IndexerStore } from '../db/store.js'
+import { sanitizeErrorMessage } from './errors.js'
 import { createRangeDigest, getContiguousVerifiedCursor } from './ranges.js'
-import type { BlockRange, IndexedRawLog, IndexerStoreData, IngestRangeRecord } from '../types.js'
+import type { BlockRange, IndexedRawLog, IngestRangeRecord } from '../types.js'
 
 export interface RpcLog {
   blockNumber: number
@@ -99,8 +100,8 @@ function toIndexedRawLog(
   }
 }
 
-function getExistingAttempts(data: IndexerStoreData, range: BlockRange): number {
-  return data.ranges.find((record) => record.fromBlock === range.fromBlock && record.toBlock === range.toBlock)?.attempts ?? 0
+function getExistingAttempts(ranges: readonly IngestRangeRecord[], range: BlockRange): number {
+  return ranges.find((record) => record.fromBlock === range.fromBlock && record.toBlock === range.toBlock)?.attempts ?? 0
 }
 
 function createRecord(
@@ -126,17 +127,6 @@ function createRecord(
   }
 }
 
-function promoteVerifiedCursor(data: IndexerStoreData): IndexerStoreData {
-  const verifiedCursor = getContiguousVerifiedCursor(data.ranges, data.cursor.verifiedCursor)
-  return {
-    ...data,
-    cursor: {
-      ...data.cursor,
-      verifiedCursor,
-    },
-  }
-}
-
 export function createJsonRpcRangeProvider(url: string): RangeLogProvider {
   return new JsonRpcProvider(url) as unknown as RangeLogProvider
 }
@@ -158,25 +148,24 @@ export async function stageRange(input: StageRangeInput): Promise<IngestRangeRec
   const timestamp = nowIso()
   try {
     const logs = await fetchIndexedLogs(input.provider, input, input.range)
-    const current = await input.store.read()
-    const attempts = getExistingAttempts(current, input.range) + 1
+    const meta = await input.store.readMeta()
+    const attempts = getExistingAttempts(meta.ranges, input.range) + 1
     const record = createRecord(input.range, 'staged', input.providerName, attempts, logs, timestamp, null)
-    await input.store.upsertRawLogs(logs)
-    await input.store.update((data) => ({
-      ...data,
-      ranges: [...data.ranges.filter((range) => range.fromBlock !== input.range.fromBlock || range.toBlock !== input.range.toBlock), record],
+    await input.store.appendRawLogs(logs)
+    await input.store.patchRange(record)
+    await input.store.patchMeta({
       cursor: {
-        ...data.cursor,
-        ingestedCursor: Math.max(data.cursor.ingestedCursor, input.range.toBlock),
+        ...meta.cursor,
+        ingestedCursor: Math.max(meta.cursor.ingestedCursor, input.range.toBlock),
       },
       lastIngestedAt: timestamp,
       lastError: null,
-    }))
+    })
     return record
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown range staging error'
-    const current = await input.store.read()
-    const attempts = getExistingAttempts(current, input.range) + 1
+    const message = sanitizeErrorMessage(err instanceof Error ? err.message : 'Unknown range staging error')
+    const meta = await input.store.readMeta()
+    const attempts = getExistingAttempts(meta.ranges, input.range) + 1
     const record: IngestRangeRecord = {
       ...input.range,
       status: 'failed',
@@ -189,11 +178,8 @@ export async function stageRange(input: StageRangeInput): Promise<IngestRangeRec
       lastError: message,
       nextRetryAt: null,
     }
-    await input.store.upsertRange(record)
-    await input.store.update((data) => ({
-      ...data,
-      lastError: message,
-    }))
+    await input.store.patchRange(record)
+    await input.store.patchMeta({ lastError: message })
     return record
   }
 }
@@ -212,27 +198,32 @@ export async function verifyRange(input: VerifyRangeInput): Promise<IngestRangeR
     const record: IngestRangeRecord = {
       ...staged,
       status,
-      provider: status === 'verified' ? auditProviderName : `${staged.provider}/${auditProviderName}`,
+      // Record both who staged the data and who audited it (e.g. "primary/audit"), so a
+      // verified record does not lose its staging provider. Single-provider self-audit
+      // reads as "primary/primary", which usefully signals no independent verification.
+      provider: `${staged.provider}/${auditProviderName}`,
       verifiedAt: status === 'verified' ? timestamp : null,
       lastError: status === 'verified' ? null : `Digest mismatch: staged ${staged.digest}, audit ${auditDigest}`,
     }
 
-    await input.store.upsertRange(record)
+    await input.store.patchRange(record)
     if (status === 'verified') {
-      await input.store.update((data) => promoteVerifiedCursor({
-        ...data,
+      // Recompute the contiguous verified cursor from the freshly-written ranges.
+      const meta = await input.store.readMeta()
+      await input.store.patchMeta({
+        cursor: {
+          ...meta.cursor,
+          verifiedCursor: getContiguousVerifiedCursor(meta.ranges, meta.cursor.verifiedCursor),
+        },
         lastVerifiedAt: timestamp,
         lastError: null,
-      }))
+      })
     } else {
-      await input.store.update((data) => ({
-        ...data,
-        lastError: record.lastError,
-      }))
+      await input.store.patchMeta({ lastError: record.lastError })
     }
     return record
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown range verification error'
+    const message = sanitizeErrorMessage(err instanceof Error ? err.message : 'Unknown range verification error')
     const record: IngestRangeRecord = {
       ...staged,
       status: 'failed',
@@ -241,11 +232,8 @@ export async function verifyRange(input: VerifyRangeInput): Promise<IngestRangeR
       lastError: message,
       nextRetryAt: null,
     }
-    await input.store.upsertRange(record)
-    await input.store.update((data) => ({
-      ...data,
-      lastError: message,
-    }))
+    await input.store.patchRange(record)
+    await input.store.patchMeta({ lastError: message })
     return record
   }
 }

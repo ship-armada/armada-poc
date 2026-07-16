@@ -9,6 +9,8 @@ import {
   formatArm,
   truncateAddress,
   formatCountdown,
+  formatTimeLeft,
+  formatTimeLeftDetail,
   hopLabel,
   phaseName,
   phaseColor,
@@ -80,8 +82,40 @@ describe('parseUsdcInput', () => {
     expect(parseUsdcInput('1.123456')).toEqual({ value: 1_123_456n })
   })
 
+  it('scales without float error (string-based, not Math.floor)', () => {
+    // 8469.8 * 1e6 === 8469799999.999… — Math.floor would drop a µUSDC.
+    expect(parseUsdcInput('8469.8')).toEqual({ value: 8_469_800_000n })
+    expect(parseUsdcInput('1026.82')).toEqual({ value: 1_026_820_000n })
+  })
+
+  it('handles a leading decimal and trailing dot', () => {
+    expect(parseUsdcInput('.5')).toEqual({ value: 500_000n })
+    expect(parseUsdcInput('5.')).toEqual({ value: 5_000_000n })
+  })
+
   it('parses zero', () => {
     expect(parseUsdcInput('0')).toEqual({ value: 0n })
+  })
+
+  it('parses with exact decimal precision — no float rounding (P1-21)', () => {
+    // WHY: the parseFloat impl returned 8164999n for "8.165" (8.165 * 1e6 is 8164999.99… in
+    // IEEE-754, Math.floor dropped the cent). Pure decimal-string assembly is exact. Locked
+    // regression cases — kept in lockstep with apps/armada-interface/src/lib/format.test.ts.
+    expect(parseUsdcInput('8.165')).toEqual({ value: 8_165_000n })
+    expect(parseUsdcInput('1.000001')).toEqual({ value: 1_000_001n })
+    expect(parseUsdcInput('1e3')).toEqual({ value: 0n, error: 'invalid' })
+  })
+
+  it('rejects malformed decimal shapes as invalid', () => {
+    expect(parseUsdcInput('1,000')).toEqual({ value: 0n, error: 'invalid' })
+    expect(parseUsdcInput('1.2.3')).toEqual({ value: 0n, error: 'invalid' })
+    expect(parseUsdcInput('.')).toEqual({ value: 0n, error: 'invalid' })
+    expect(parseUsdcInput('+5')).toEqual({ value: 0n, error: 'invalid' })
+  })
+
+  it('accepts bare leading/trailing dot forms exactly', () => {
+    expect(parseUsdcInput('.5')).toEqual({ value: 500_000n })
+    expect(parseUsdcInput('5.')).toEqual({ value: 5_000_000n })
   })
 })
 
@@ -125,6 +159,58 @@ describe('formatCountdown', () => {
 
   it('shows 0m for very short durations', () => {
     expect(formatCountdown(30)).toBe('0m')
+  })
+})
+
+describe('formatTimeLeft', () => {
+  it('returns empty string at or past the deadline', () => {
+    expect(formatTimeLeft(0)).toBe('')
+    expect(formatTimeLeft(-100)).toBe('')
+    expect(formatTimeLeft(Number.NaN)).toBe('')
+  })
+
+  it('shows whole days only while at least one day remains (floors)', () => {
+    // 2d16h floors to "2 days" — no rounding up to 3.
+    expect(formatTimeLeft(2 * 86400 + 16 * 3600)).toBe('2 days')
+    expect(formatTimeLeft(2 * 86400)).toBe('2 days')
+  })
+
+  it('uses the singular for exactly one day', () => {
+    expect(formatTimeLeft(86400)).toBe('1 day')
+    expect(formatTimeLeft(86400 + 23 * 3600)).toBe('1 day')
+  })
+
+  it('drops to hours and minutes under one day', () => {
+    expect(formatTimeLeft(13 * 3600 + 24 * 60)).toBe('13h 24m')
+    expect(formatTimeLeft(3600)).toBe('1h 0m')
+  })
+
+  it('shows minutes only under one hour', () => {
+    expect(formatTimeLeft(9 * 60)).toBe('9m')
+  })
+
+  it('rounds a sub-minute sliver up to 1m so it never reads 0m', () => {
+    expect(formatTimeLeft(30)).toBe('1m')
+  })
+})
+
+describe('formatTimeLeftDetail', () => {
+  it('returns empty string at or past the deadline', () => {
+    expect(formatTimeLeftDetail(0, 1_700_000_000)).toBe('')
+    expect(formatTimeLeftDetail(-1, 1_700_000_000)).toBe('')
+  })
+
+  it('shows only the local end timestamp, prefixed with "Ends" and no year', () => {
+    const detail = formatTimeLeftDetail(2 * 86400, 1_700_000_000)
+    // The timestamp text is timezone-dependent, so assert the shape: an "Ends "
+    // prefix, a 4-digit year nowhere in the string, and a single line.
+    expect(detail.startsWith('Ends ')).toBe(true)
+    expect(detail).not.toMatch(/\b\d{4}\b/)
+    expect(detail).not.toContain('\n')
+  })
+
+  it('returns empty when the deadline is unknown', () => {
+    expect(formatTimeLeftDetail(22 * 60, 0)).toBe('')
   })
 })
 

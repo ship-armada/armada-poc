@@ -1,10 +1,19 @@
-/* ABOUTME: SendInputStep layout — tabs at top, conditional chain selector, optional xchain notice, recipient + amount + fee + footer. */
-/* ABOUTME: Mirrors UnshieldInputStep's stack so the Private/External tabs feel like switching between sibling experiences. */
+/* ABOUTME: SendInputStep layout — amount card first, recipient below card (tabs live in overlay header). */
+/* ABOUTME: Mirrors UnshieldInputStep stack for amount + recipient ordering. */
 
-.root {
+.sendContent {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-5);
+  gap: var(--primitives-spacing-6);
+  width: 100%;
+}
+
+.amountGroup {
+  width: 100%;
+}
+
+.recipientSlot {
+  width: 100%;
 }
 
 .xchainNotice {

@@ -2,9 +2,9 @@
 // ABOUTME: Stores cursors, range verification records, raw logs, and snapshot metadata in durable tables.
 
 import { Pool } from 'pg'
-import { getLogIdentity } from '../ingest/ranges.js'
+import { getLogDedupeKey } from '../ingest/ranges.js'
 import { createEmptyStoreData } from './fileStore.js'
-import type { IndexerStore } from './store.js'
+import type { IndexerMeta, IndexerMetaPatch, IndexerStore } from './store.js'
 import type { CursorState, IndexedRawLog, IndexerStoreData, IngestRangeRecord, IngestRangeStatus } from '../types.js'
 import type { PoolClient, PoolConfig, QueryResult } from 'pg'
 
@@ -21,7 +21,6 @@ interface DbClient {
 interface CursorRow {
   deploy_block: number
   confirmation_depth: number
-  overlap_window: number
   chain_head: number
   confirmed_head: number
   ingested_cursor: number
@@ -67,7 +66,6 @@ CREATE TABLE IF NOT EXISTS crowdfund_indexer_cursor (
   id boolean PRIMARY KEY DEFAULT true CHECK (id),
   deploy_block integer NOT NULL,
   confirmation_depth integer NOT NULL,
-  overlap_window integer NOT NULL,
   chain_head integer NOT NULL,
   confirmed_head integer NOT NULL,
   ingested_cursor integer NOT NULL,
@@ -148,7 +146,6 @@ function toCursor(row: CursorRow): CursorState {
   return {
     deployBlock: row.deploy_block,
     confirmationDepth: row.confirmation_depth,
-    overlapWindow: row.overlap_window,
     chainHead: row.chain_head,
     confirmedHead: row.confirmed_head,
     ingestedCursor: row.ingested_cursor,
@@ -196,21 +193,20 @@ function rangeKey(range: Pick<IngestRangeRecord, 'fromBlock' | 'toBlock'>): stri
 
 function dedupeLogs(logs: readonly IndexedRawLog[]): IndexedRawLog[] {
   const records = new Map<string, IndexedRawLog>()
-  for (const log of logs) records.set(getLogIdentity(log), log)
+  for (const log of logs) records.set(getLogDedupeKey(log), log)
   return [...records.values()]
 }
 
 async function ensureSeedRows(client: DbClient, initialCursor: CursorState): Promise<void> {
   await client.query(
     `INSERT INTO crowdfund_indexer_cursor (
-      id, deploy_block, confirmation_depth, overlap_window, chain_head, confirmed_head, ingested_cursor, verified_cursor
+      id, deploy_block, confirmation_depth, chain_head, confirmed_head, ingested_cursor, verified_cursor
     )
-    VALUES (true, $1, $2, $3, $4, $5, $6, $7)
+    VALUES (true, $1, $2, $3, $4, $5, $6)
     ON CONFLICT (id) DO NOTHING`,
     [
       initialCursor.deployBlock,
       initialCursor.confirmationDepth,
-      initialCursor.overlapWindow,
       initialCursor.chainHead,
       initialCursor.confirmedHead,
       initialCursor.ingestedCursor,
@@ -218,6 +214,122 @@ async function ensureSeedRows(client: DbClient, initialCursor: CursorState): Pro
     ],
   )
   await client.query('INSERT INTO crowdfund_indexer_metadata (id) VALUES (true) ON CONFLICT (id) DO NOTHING')
+}
+
+// Per-row upsert helpers. These hold the single source of truth for each table's write
+// SQL and are reused both by the whole-store writeWithClient and by the narrow ops, so
+// the two paths can never drift.
+
+async function upsertCursorRow(client: DbClient, cursor: CursorState): Promise<void> {
+  await client.query(
+    `INSERT INTO crowdfund_indexer_cursor (
+      id, deploy_block, confirmation_depth, chain_head, confirmed_head, ingested_cursor, verified_cursor
+    )
+    VALUES (true, $1, $2, $3, $4, $5, $6)
+    ON CONFLICT (id) DO UPDATE SET
+      deploy_block = EXCLUDED.deploy_block,
+      confirmation_depth = EXCLUDED.confirmation_depth,
+      chain_head = EXCLUDED.chain_head,
+      confirmed_head = EXCLUDED.confirmed_head,
+      ingested_cursor = EXCLUDED.ingested_cursor,
+      verified_cursor = EXCLUDED.verified_cursor,
+      updated_at = now()`,
+    [
+      cursor.deployBlock,
+      cursor.confirmationDepth,
+      cursor.chainHead,
+      cursor.confirmedHead,
+      cursor.ingestedCursor,
+      cursor.verifiedCursor,
+    ],
+  )
+}
+
+type MetadataFields = Pick<
+  IndexerStoreData,
+  'lastIngestedAt' | 'lastVerifiedAt' | 'lastReconciledAt' | 'lastError' | 'latestSnapshotHash' | 'latestStaticSnapshotUrl'
+>
+
+async function upsertMetadataRow(client: DbClient, data: MetadataFields): Promise<void> {
+  await client.query(
+    `INSERT INTO crowdfund_indexer_metadata (
+      id, last_ingested_at, last_verified_at, last_reconciled_at, last_error, latest_snapshot_hash, latest_static_snapshot_url
+    )
+    VALUES (true, $1, $2, $3, $4, $5, $6)
+    ON CONFLICT (id) DO UPDATE SET
+      last_ingested_at = EXCLUDED.last_ingested_at,
+      last_verified_at = EXCLUDED.last_verified_at,
+      last_reconciled_at = EXCLUDED.last_reconciled_at,
+      last_error = EXCLUDED.last_error,
+      latest_snapshot_hash = EXCLUDED.latest_snapshot_hash,
+      latest_static_snapshot_url = EXCLUDED.latest_static_snapshot_url,
+      updated_at = now()`,
+    [
+      data.lastIngestedAt,
+      data.lastVerifiedAt,
+      data.lastReconciledAt,
+      data.lastError,
+      data.latestSnapshotHash,
+      data.latestStaticSnapshotUrl,
+    ],
+  )
+}
+
+async function upsertRangeRow(client: DbClient, range: IngestRangeRecord): Promise<void> {
+  await client.query(
+    `INSERT INTO crowdfund_indexer_ranges (
+      from_block, to_block, status, provider, attempts, log_count, digest, fetched_at, verified_at, last_error, next_retry_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ON CONFLICT (from_block, to_block) DO UPDATE SET
+      status = EXCLUDED.status,
+      provider = EXCLUDED.provider,
+      attempts = EXCLUDED.attempts,
+      log_count = EXCLUDED.log_count,
+      digest = EXCLUDED.digest,
+      fetched_at = EXCLUDED.fetched_at,
+      verified_at = EXCLUDED.verified_at,
+      last_error = EXCLUDED.last_error,
+      next_retry_at = EXCLUDED.next_retry_at,
+      updated_at = now()`,
+    [
+      range.fromBlock,
+      range.toBlock,
+      range.status,
+      range.provider,
+      range.attempts,
+      range.logCount,
+      range.digest,
+      range.fetchedAt,
+      range.verifiedAt,
+      range.lastError,
+      range.nextRetryAt,
+    ],
+  )
+}
+
+async function upsertRawLogRow(client: DbClient, log: IndexedRawLog): Promise<void> {
+  await client.query(
+    `INSERT INTO crowdfund_indexer_raw_logs (
+      chain_id, contract_address, block_number, block_hash, transaction_hash, log_index, topics, data
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+    ON CONFLICT (chain_id, contract_address, transaction_hash, log_index) DO UPDATE SET
+      block_number = EXCLUDED.block_number,
+      block_hash = EXCLUDED.block_hash,
+      topics = EXCLUDED.topics,
+      data = EXCLUDED.data`,
+    [
+      log.chainId,
+      log.contractAddress.toLowerCase(),
+      log.blockNumber,
+      log.blockHash,
+      log.transactionHash,
+      log.logIndex,
+      JSON.stringify(log.topics),
+      log.data,
+    ],
+  )
 }
 
 export class PostgresIndexerStore implements IndexerStore {
@@ -334,108 +446,86 @@ export class PostgresIndexerStore implements IndexerStore {
   }
 
   private async writeWithClient(client: DbClient, data: IndexerStoreData): Promise<void> {
-    await client.query(
-      `INSERT INTO crowdfund_indexer_cursor (
-        id, deploy_block, confirmation_depth, overlap_window, chain_head, confirmed_head, ingested_cursor, verified_cursor
-      )
-      VALUES (true, $1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (id) DO UPDATE SET
-        deploy_block = EXCLUDED.deploy_block,
-        confirmation_depth = EXCLUDED.confirmation_depth,
-        overlap_window = EXCLUDED.overlap_window,
-        chain_head = EXCLUDED.chain_head,
-        confirmed_head = EXCLUDED.confirmed_head,
-        ingested_cursor = EXCLUDED.ingested_cursor,
-        verified_cursor = EXCLUDED.verified_cursor,
-        updated_at = now()`,
-      [
-        data.cursor.deployBlock,
-        data.cursor.confirmationDepth,
-        data.cursor.overlapWindow,
-        data.cursor.chainHead,
-        data.cursor.confirmedHead,
-        data.cursor.ingestedCursor,
-        data.cursor.verifiedCursor,
-      ],
-    )
-    await client.query(
-      `INSERT INTO crowdfund_indexer_metadata (
-        id, last_ingested_at, last_verified_at, last_reconciled_at, last_error, latest_snapshot_hash, latest_static_snapshot_url
-      )
-      VALUES (true, $1, $2, $3, $4, $5, $6)
-      ON CONFLICT (id) DO UPDATE SET
-        last_ingested_at = EXCLUDED.last_ingested_at,
-        last_verified_at = EXCLUDED.last_verified_at,
-        last_reconciled_at = EXCLUDED.last_reconciled_at,
-        last_error = EXCLUDED.last_error,
-        latest_snapshot_hash = EXCLUDED.latest_snapshot_hash,
-        latest_static_snapshot_url = EXCLUDED.latest_static_snapshot_url,
-        updated_at = now()`,
-      [
-        data.lastIngestedAt,
-        data.lastVerifiedAt,
-        data.lastReconciledAt,
-        data.lastError,
-        data.latestSnapshotHash,
-        data.latestStaticSnapshotUrl,
-      ],
-    )
+    await upsertCursorRow(client, data.cursor)
+    await upsertMetadataRow(client, data)
+    for (const range of sortRanges(data.ranges)) await upsertRangeRow(client, range)
+    for (const log of sortLogs(dedupeLogs(data.rawLogs))) await upsertRawLogRow(client, log)
+  }
 
-    for (const range of sortRanges(data.ranges)) {
-      await client.query(
-        `INSERT INTO crowdfund_indexer_ranges (
-          from_block, to_block, status, provider, attempts, log_count, digest, fetched_at, verified_at, last_error, next_retry_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        ON CONFLICT (from_block, to_block) DO UPDATE SET
-          status = EXCLUDED.status,
-          provider = EXCLUDED.provider,
-          attempts = EXCLUDED.attempts,
-          log_count = EXCLUDED.log_count,
-          digest = EXCLUDED.digest,
-          fetched_at = EXCLUDED.fetched_at,
-          verified_at = EXCLUDED.verified_at,
-          last_error = EXCLUDED.last_error,
-          next_retry_at = EXCLUDED.next_retry_at,
-          updated_at = now()`,
-        [
-          range.fromBlock,
-          range.toBlock,
-          range.status,
-          range.provider,
-          range.attempts,
-          range.logCount,
-          range.digest,
-          range.fetchedAt,
-          range.verifiedAt,
-          range.lastError,
-          range.nextRetryAt,
-        ],
-      )
-    }
+  // --- Narrow operations: touch only affected rows, no whole-store read or rewrite. ---
 
-    for (const log of sortLogs(dedupeLogs(data.rawLogs))) {
-      await client.query(
-        `INSERT INTO crowdfund_indexer_raw_logs (
-          chain_id, contract_address, block_number, block_hash, transaction_hash, log_index, topics, data
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-        ON CONFLICT (chain_id, contract_address, transaction_hash, log_index) DO UPDATE SET
-          block_number = EXCLUDED.block_number,
-          block_hash = EXCLUDED.block_hash,
-          topics = EXCLUDED.topics,
-          data = EXCLUDED.data`,
-        [
-          log.chainId,
-          log.contractAddress.toLowerCase(),
-          log.blockNumber,
-          log.blockHash,
-          log.transactionHash,
-          log.logIndex,
-          JSON.stringify(log.topics),
-          log.data,
-        ],
-      )
+  async readMeta(): Promise<IndexerMeta> {
+    await this.ensureReady()
+    const cursor = await this.pool.query<CursorRow>('SELECT * FROM crowdfund_indexer_cursor WHERE id = true')
+    if (cursor.rows.length === 0) {
+      const { rawLogs: _rawLogs, ...meta } = createEmptyStoreData(this.initialCursor)
+      return meta
     }
+    const metadata = await this.pool.query<MetadataRow>('SELECT * FROM crowdfund_indexer_metadata WHERE id = true')
+    const ranges = await this.pool.query<RangeRow>('SELECT * FROM crowdfund_indexer_ranges ORDER BY from_block, to_block')
+    const meta = metadata.rows[0]
+    return {
+      cursor: toCursor(cursor.rows[0]),
+      ranges: ranges.rows.map(toRange),
+      lastIngestedAt: meta ? toIso(meta.last_ingested_at) : null,
+      lastVerifiedAt: meta ? toIso(meta.last_verified_at) : null,
+      lastReconciledAt: meta ? toIso(meta.last_reconciled_at) : null,
+      lastError: meta?.last_error ?? null,
+      latestSnapshotHash: meta?.latest_snapshot_hash ?? null,
+      latestStaticSnapshotUrl: meta?.latest_static_snapshot_url ?? null,
+    }
+  }
+
+  async readLogs(upToBlock?: number): Promise<readonly IndexedRawLog[]> {
+    await this.ensureReady()
+    const result = upToBlock === undefined
+      ? await this.pool.query<RawLogRow>(
+          'SELECT * FROM crowdfund_indexer_raw_logs ORDER BY block_number, log_index, transaction_hash',
+        )
+      : await this.pool.query<RawLogRow>(
+          'SELECT * FROM crowdfund_indexer_raw_logs WHERE block_number <= $1 ORDER BY block_number, log_index, transaction_hash',
+          [upToBlock],
+        )
+    return result.rows.map(toRawLog)
+  }
+
+  async appendRawLogs(logs: readonly IndexedRawLog[]): Promise<void> {
+    await this.ensureReady()
+    const deduped = sortLogs(dedupeLogs(logs))
+    if (deduped.length === 0) return
+    await this.withTransaction(async (client) => {
+      for (const log of deduped) await upsertRawLogRow(client, log)
+    })
+  }
+
+  async patchRange(record: IngestRangeRecord): Promise<void> {
+    await this.ensureReady()
+    await upsertRangeRow(this.pool, record)
+  }
+
+  async patchMeta(patch: IndexerMetaPatch): Promise<void> {
+    await this.ensureReady()
+    await this.withTransaction(async (client) => {
+      if (patch.cursor) await upsertCursorRow(client, patch.cursor)
+
+      const columns: Array<{ col: string; value: string | null }> = []
+      if (patch.lastIngestedAt !== undefined) columns.push({ col: 'last_ingested_at', value: patch.lastIngestedAt })
+      if (patch.lastVerifiedAt !== undefined) columns.push({ col: 'last_verified_at', value: patch.lastVerifiedAt })
+      if (patch.lastReconciledAt !== undefined) columns.push({ col: 'last_reconciled_at', value: patch.lastReconciledAt })
+      if (patch.lastError !== undefined) columns.push({ col: 'last_error', value: patch.lastError })
+      if (patch.latestSnapshotHash !== undefined) columns.push({ col: 'latest_snapshot_hash', value: patch.latestSnapshotHash })
+      if (patch.latestStaticSnapshotUrl !== undefined) {
+        columns.push({ col: 'latest_static_snapshot_url', value: patch.latestStaticSnapshotUrl })
+      }
+
+      if (columns.length > 0) {
+        const sets = columns.map((c, i) => `${c.col} = $${i + 1}`)
+        sets.push('updated_at = now()')
+        await client.query(
+          `UPDATE crowdfund_indexer_metadata SET ${sets.join(', ')} WHERE id = true`,
+          columns.map((c) => c.value),
+        )
+      }
+    })
   }
 }

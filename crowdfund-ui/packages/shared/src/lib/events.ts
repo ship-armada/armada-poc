@@ -37,7 +37,9 @@ export interface CrowdfundEvent {
   readonly args: Record<string, unknown>
 }
 
-const VALID_EVENT_TYPES = new Set<string>([
+/** The full set of event names ArmadaCrowdfund emits — single source of truth
+ *  for both log parsing and indexer-snapshot validation. */
+export const VALID_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
   'ArmLoaded',
   'SeedAdded',
   'Invited',

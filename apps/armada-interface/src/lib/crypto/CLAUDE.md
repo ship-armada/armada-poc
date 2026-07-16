@@ -1,6 +1,6 @@
 # lib/crypto/
 
-Pure-logic crypto primitives for the signature-derived key system. No React, no Railgun SDK, no DOM dependencies beyond `globalThis.crypto.getRandomValues`. Spec: `specs/TX_SIGNING.md`.
+Pure-logic crypto primitives for the signature-derived key system. No React, no Railgun SDK, no DOM dependencies beyond `globalThis.crypto.getRandomValues`. Spec: `specs/TX_SIGNING.md` + `specs/TX_SIGNING_V2_AMENDMENT.md` (v2 governance fork — `issuedAt` removed, deterministic by design, re-signing promoted to primary recovery path, `account: uint256` added).
 
 ## Contents
 

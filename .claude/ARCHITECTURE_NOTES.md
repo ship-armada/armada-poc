@@ -247,3 +247,15 @@ Preventing double-spends across chains is the hard part. Options:
 - Nullifier synchronization strategy for cross-chain
 - Yield distribution mechanism details
 - Circuit proving system choice (Groth16 vs Plonk/Halo2)
+
+---
+
+## PrivacyPool Module Immutability (Design Decision)
+
+**Decision:** The PrivacyPool's four modules — `shieldModule`, `transactModule`, `merkleModule`, `verifierModule` — are **immutable by design**. They are assigned once in `PrivacyPool.initialize()` and there is deliberately **no setter** for any of them. This is intentional, not an oversight (resolves issue #79).
+
+**Rationale.** Each of the four modules holds either **fund custody** (`ShieldModule`, `TransactModule`) or **proof/tree logic** (`VerifierModule`, `MerkleModule`). A swappable module would let whoever controls the pool owner redirect user funds or install logic that accepts forged proofs — reintroducing exactly the trust assumption that issue #55 rejected. Keeping the modules fixed means the custody and verification codepaths are pinned at deploy time and cannot be re-pointed at malicious code.
+
+**Mutable surface.** The values that are genuinely safe to change already have owner-gated setters on `PrivacyPool`: shield fee, hook router / remote hook routers, remote pools, fee module, shield-pause controller, default finality threshold (treasury is set once at init and is immutable thereafter). Shield-fee exemption is derived from the timelock-governed `adapterRegistry`, whose pointer is owner-gated but **set-once** (issue #370) — after it is set at link time the owner cannot change it, so it is not an ongoing mutable knob. Configuration is mutable; the core custody/verification modules are not.
+
+**Known nuance (not a contradiction).** The `VerifierModule` *contract* is immutable, but its verification **keys** remain owner-settable via `setVerificationKey` — a deliberate operational need for circuit/key upgrades. Module immutability alone therefore does not fully protect proof verification: a compromised owner key could install a bad verifying key. That key-custody risk is tracked separately in issue #349 (PrivacyPool owner is a permanent deployer EOA) and is out of scope for the module-immutability decision.

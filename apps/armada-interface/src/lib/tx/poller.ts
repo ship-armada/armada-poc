@@ -1,8 +1,12 @@
 // ABOUTME: Abortable, jittered, backoff-aware polling loop for non-terminal tx stages.
 // ABOUTME: Each TxKind's stage determines which `pollOnce` adapter to use (Iris, RPC receipt, relayer /status, etc.).
 
-import { pollStatus, type StatusResponse } from '../relayer'
-import { trackError } from '../telemetry'
+import { pollStatus, RelayerError, type StatusResponse } from '../relayer'
+import { track, trackError } from '../telemetry'
+import { hiddenMsForRecord } from './hiddenClock'
+import { lifecycleFor } from './lifecycles'
+import { extractTxError, waitForReceiptOrFail } from './receipt'
+import type { TxRecord } from './types'
 
 export interface PollOptions {
   /** Base interval between polls (ms). Default 10s. */
@@ -29,6 +33,28 @@ const DEFAULTS = {
   maxBackoffMultiplier: 6,
 } as const
 
+const POLL_BUDGET_FLOOR_MS = 10_000
+
+/**
+ * Derive an inner poll timeout from a record's per-kind lifecycle cap minus elapsed wall-clock.
+ * Without this, same-chain relayer status polls inherit poller's 30-min default — 3× past their
+ * 10-min lifecycle budget, so a wedged relayer pins the flow long after the record should have
+ * expired. Floors at 10s so an already-over-budget record fails fast rather than hanging on a
+ * single tick, and emits `tx.budget.tight` when the floor engages (sustained signal = records are
+ * entering polling with too little budget — usually a resume close to maxDurationMs). (P1-25)
+ */
+export function pollBudgetMs(record: TxRecord): number {
+  // Credit time the tab spent hidden during this record's life (T-M5/S-M6) so a backgrounded tab
+  // doesn't POLL_TIMEOUT a delivery that was simply waiting while hidden.
+  const now = Date.now()
+  const remaining =
+    record.createdAt + lifecycleFor(record.kind).maxDurationMs + hiddenMsForRecord(record.id, now) - now
+  if (remaining < POLL_BUDGET_FLOOR_MS) {
+    track('tx.budget.tight', { id: record.id, kind: record.kind, elapsedMs: Date.now() - record.createdAt })
+  }
+  return Math.max(POLL_BUDGET_FLOOR_MS, remaining)
+}
+
 function jittered(base: number, jitter: number): number {
   const delta = base * jitter * (Math.random() * 2 - 1)
   return Math.max(500, base + delta)
@@ -50,8 +76,6 @@ export async function poll<T>(
   let errorStreak = 0
 
   while (!o.signal?.aborted) {
-    if (Date.now() - startedAt > o.timeoutMs) return { status: 'timeout' }
-
     let value: T | null = null
     try {
       value = await pollOnce(o.signal ?? new AbortController().signal)
@@ -64,6 +88,12 @@ export async function poll<T>(
     if (value !== null && value !== undefined) {
       return { status: 'done', value }
     }
+
+    // T-M5: check the budget AFTER a poll attempt, not before. The pre-poll check returned
+    // POLL_TIMEOUT without one last look — so a delivery that landed during the previous interval
+    // (common when hidden-tab timer throttling stretched it past the budget) surfaced as a false
+    // timeout. Polling first means the iteration where the clock runs out still gets a final check.
+    if (Date.now() - startedAt > o.timeoutMs) return { status: 'timeout' }
 
     const baseDelay = errorStreak > 0
       ? Math.min(o.intervalMs * 2 ** Math.min(errorStreak, 6), o.intervalMs * o.maxBackoffMultiplier)
@@ -97,16 +127,32 @@ export async function poll<T>(
  * The poll loop treats any non-null return as terminal, so the caller switches on
  * `result.value.status` to distinguish confirmed (success) from failed (markFailed).
  *
- * Network/HTTP errors from `pollStatus` propagate as throws — the poll loop's exponential backoff
- * + error-streak counter handles transient relayer hiccups. A wedged status endpoint surfaces as a
- * lifecycle `timeout` rather than a per-tick failure.
+ * Network / 5xx errors from `pollStatus` propagate as throws — the poll loop's exponential backoff
+ * + error-streak counter handles transient relayer hiccups.
  *
- * Dormant in A1 alongside `submitRelay`. Handlers wire it in A3+.
+ * Relayer-404 fallback (P1-25): a 404 means the relayer doesn't know this hash — almost always
+ * because it restarted and lost its in-memory status map. The tx is already on chain (we hold its
+ * hash), so rather than poll the relayer's memory to a lifecycle timeout, we fall back to the RPC
+ * receipt on `fallbackChainId` and translate it into a terminal StatusResponse. 5xx / network
+ * errors are NOT treated this way — they rethrow so the poll loop backs off and retries.
  */
 export async function pollRelayStatusOnce(
   txHash: string,
   signal: AbortSignal,
+  fallbackChainId?: number,
 ): Promise<StatusResponse | null> {
-  const status = await pollStatus(txHash, signal)
-  return status.status === 'pending' ? null : status
+  try {
+    const status = await pollStatus(txHash, signal)
+    return status.status === 'pending' ? null : status
+  } catch (err) {
+    if (!(err instanceof RelayerError) || err.httpStatus !== 404) throw err
+    try {
+      await waitForReceiptOrFail({ hash: txHash as `0x${string}`, signal, chainId: fallbackChainId })
+      return { status: 'confirmed' }
+    } catch (receiptErr) {
+      const tx = extractTxError(receiptErr)
+      if (tx?.code === 'TX_REVERTED') return { status: 'failed', error: tx.message }
+      throw receiptErr // POLL_TIMEOUT / RPC error — let the poll loop back off and retry
+    }
+  }
 }

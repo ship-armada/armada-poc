@@ -71,16 +71,17 @@ interface ITransactModule {
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Client chain's CCTP domain
      * @param finalRecipient Address to receive USDC on client chain
-     * @param destinationCaller Address allowed to call receiveMessage on Client (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param maxFee Maximum CCTP relayer fee in USDC raw units (deducted from burn amount at protocol level, 0 = no fee)
+     * @param uniqueNonce Opaque per-tx marker echoed into the CCTP hookData for off-chain delivery matching (issue #287)
      * @return nonce CCTP message nonce for tracking
+     * @dev The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] at the contract
+     *      level — it is not caller-supplied.
      */
     function atomicCrossChainUnshield(
         Transaction calldata _transaction,
         uint32 destinationDomain,
         address finalRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee
+        uint256 maxFee,
+        bytes32 uniqueNonce
     ) external returns (uint64 nonce);
 }

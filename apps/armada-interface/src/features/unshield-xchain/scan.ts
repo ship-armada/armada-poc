@@ -76,3 +76,21 @@ export async function scanCctpDeliveryWindow<TLog extends ScanLog>(
 
   return { kind: 'no-match', nextScanFromBlock: toBlock + 1n, scannedTo: toBlock }
 }
+
+/**
+ * Does a destination CCTP `MessageReceived` event match THIS unshield-xchain record's delivery? (T-M7)
+ *
+ * The V2 destination CCTP `nonce` is Iris-assigned and unpredictable source-side, so we identify our
+ * delivery by content: a per-transaction `uniqueNonce` marker in the hookData (issue #287) — distinct
+ * even between two same-recipient unshields. We also require the event's CCTP `sourceDomain` to be the
+ * hub's domain, so an unrelated CCTP transfer from a DIFFERENT source chain can't false-complete the
+ * record with the wrong destTxHash.
+ */
+export function matchesXchainDelivery(
+  args: { messageBody?: unknown; sourceDomain?: unknown },
+  expected: { marker: string; sourceDomain: number },
+): boolean {
+  if (Number(args.sourceDomain) !== expected.sourceDomain) return false
+  const body = args.messageBody
+  return typeof body === 'string' && body.toLowerCase().includes(expected.marker)
+}

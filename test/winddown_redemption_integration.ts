@@ -180,7 +180,7 @@ describe("Wind-Down & Redemption Integration", function () {
     await armToken.setWindDownContract(await windDown.getAddress());
 
     // RevenueCounter: set wind-down contract for freeze() at trigger time.
-    await revenueCounter.setWindDownContract(await windDown.getAddress());
+    await revenueCounter.connect(await asTimelock()).setWindDownContract(await windDown.getAddress());
 
     // Redemption: wire wind-down reference (deployer-only one-time setter).
     // ArmadaRedemption reads windDown.triggerTime() to enforce REDEMPTION_DELAY.
@@ -847,6 +847,97 @@ describe("Wind-Down & Redemption Integration", function () {
   });
 
   // ============================================================
+  // RedemptionRouter (contingency periphery, issue #256)
+  // ============================================================
+
+  describe("RedemptionRouter", function () {
+    // WHY: The router is the runbook's answer to the forgotten-token footgun —
+    // redeem() pays only the assets the caller lists, so a direct caller who
+    // omits a swept token forfeits it irreversibly. These tests exercise the
+    // full production flow the runbook prescribes: trigger → sweep everything →
+    // deploy router with the complete swept list → users redeemAll through it.
+    let weth: any;
+    let router: any;
+
+    // Sort ascending by numeric address value, matching the contract's ordering
+    // requirement (JS string compare is not equivalent — see the unsorted-tokens
+    // test above).
+    function sortTokens(addrs: string[]): string[] {
+      return [...addrs].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1));
+    }
+
+    beforeEach(async function () {
+      // Second treasury asset so the multi-token forgetting scenario is real.
+      const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
+      weth = await MockUSDCV2.deploy("Wrapped ETH", "WETH");
+      await weth.waitForDeployment();
+      await weth.mint(await treasuryContract.getAddress(), ethers.parseUnits("100", 18));
+
+      // Trigger and sweep ALL assets (the runbook's window checklist).
+      await time.increaseTo(windDownDeadline + 1);
+      await windDown.triggerWindDown();
+      await windDown.sweepToken(await usdc.getAddress());
+      await windDown.sweepToken(await weth.getAddress());
+      await windDown.sweepETH();
+
+      // Deploy the router with the complete swept list — in production this is
+      // scripts/deploy-redemption-router.ts reading TokenSwept events.
+      const RedemptionRouter = await ethers.getContractFactory("RedemptionRouter");
+      router = await RedemptionRouter.deploy(
+        await armToken.getAddress(),
+        await redemption.getAddress(),
+        sortTokens([await usdc.getAddress(), await weth.getAddress()]),
+      );
+      await router.waitForDeployment();
+
+      await advancePastRedemptionDelay();
+    });
+
+    it("redeemAll claims every swept asset in one call, leaving no residue", async function () {
+      await armToken.connect(alice).approve(await router.getAddress(), ethers.MaxUint256);
+
+      const ethBefore = await ethers.provider.getBalance(alice.address);
+      const tx = await router.connect(alice).redeemAll(ALICE_AMOUNT, alice.address);
+      const receipt = await tx.wait();
+      const gasCost = receipt.gasUsed * receipt.gasPrice;
+
+      // Alice holds 600k of 1.2M circulating = 50% of every asset.
+      expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
+      expect(await weth.balanceOf(alice.address)).to.equal(ethers.parseUnits("50", 18));
+      expect(await ethers.provider.getBalance(alice.address)).to.equal(
+        ethBefore - gasCost + ethers.parseEther("5"),
+      );
+
+      // ARM locked in the core contract; router retains nothing.
+      expect(await armToken.balanceOf(await redemption.getAddress())).to.equal(ALICE_AMOUNT);
+      expect(await armToken.balanceOf(await router.getAddress())).to.equal(0n);
+      expect(await usdc.balanceOf(await router.getAddress())).to.equal(0n);
+      expect(await weth.balanceOf(await router.getAddress())).to.equal(0n);
+      expect(await ethers.provider.getBalance(await router.getAddress())).to.equal(0n);
+    });
+
+    it("router and direct redemption interleave with pro-rata parity", async function () {
+      // WHY: Sequential correctness must hold across mixed paths — a router
+      // user and a direct caller with the full list must end up identical.
+      await armToken.connect(alice).approve(await router.getAddress(), ethers.MaxUint256);
+      await router.connect(alice).redeemAll(ALICE_AMOUNT, alice.address);
+
+      await armToken.connect(bob).approve(await redemption.getAddress(), ethers.MaxUint256);
+      await redemption.connect(bob).redeem(
+        BOB_AMOUNT,
+        sortTokens([await usdc.getAddress(), await weth.getAddress()]),
+        bob.address,
+      );
+
+      expect(await usdc.balanceOf(alice.address)).to.equal(await usdc.balanceOf(bob.address));
+      expect(await weth.balanceOf(alice.address)).to.equal(await weth.balanceOf(bob.address));
+      // Both drained their full share: contract is empty after both redeem.
+      expect(await usdc.balanceOf(await redemption.getAddress())).to.equal(0n);
+      expect(await weth.balanceOf(await redemption.getAddress())).to.equal(0n);
+    });
+  });
+
+  // ============================================================
   // End-to-End: Full Wind-Down Lifecycle
   // ============================================================
 
@@ -1178,7 +1269,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     // Wire governance contracts
     await armToken.setWindDownContract(await windDown.getAddress());
     await redemption.setWindDown(await windDown.getAddress());
-    await revenueCounter.setWindDownContract(await windDown.getAddress());
+    await revenueCounter.connect(await asTimelock()).setWindDownContract(await windDown.getAddress());
 
     const timelockSigner = await asTimelock();
     await governor.connect(timelockSigner).setSecurityCouncil(carol.address);

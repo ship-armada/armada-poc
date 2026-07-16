@@ -2,25 +2,46 @@
 // ABOUTME: Gates the Sign CTA on wagmi connection state; surfaces a "Connect wallet" button (RainbowKit) when disconnected. No mnemonic display — the recovery secret is root_secret, exported as an encrypted backup in later steps.
 
 import { useState } from 'react'
-import { PenLine } from 'lucide-react'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useAtomValue } from 'jotai'
-import { FlowFooter } from '@/components/flow/FlowFooter'
+import { Button, Text } from '@armada/ui'
+import {
+  isNonDeterministicSignerError,
+  type NonDeterministicSignerErrorReason,
+} from '@/lib/crypto/determinism'
+import { normalizeEnrollmentError } from '@/lib/railgun/enrollmentErrors'
+import { retryRailgunEngineInit } from '@/lib/railgun/init'
 import { railgunEngineAtom } from '@/state/wallet'
-import styles from './WelcomeStep.module.css'
+import styles from './SignEnrollmentStep.module.css'
 
 export interface SignEnrollmentStepProps {
-  /** Called to trigger the wagmi sign prompt. Wired to useShieldedWallet().enroll() by the parent. */
+  /**
+   * Called to trigger the wagmi sign prompt. Wired to `useShieldedWallet().signIn()` by the
+   * parent. The function may throw `NonDeterministicSignerError`; when it does AND
+   * `onSignerIncompatible` is supplied, we hand the typed error to the parent to render a
+   * dedicated error screen instead of dumping the message into an inline alert.
+   */
   onSign: () => Promise<void>
   onBack: () => void
+  /**
+   * Optional callback for the typed `NonDeterministicSignerError` path. When undefined, the
+   * error is rendered inline like any other error (back-compat for OnboardingFlow v1). When
+   * supplied, the inline error is suppressed and the parent owns the screen transition.
+   */
+  onSignerIncompatible?: (reason: NonDeterministicSignerErrorReason) => void
 }
 
-export function SignEnrollmentStep({ onSign, onBack }: SignEnrollmentStepProps) {
+export function SignEnrollmentStep({
+  onSign,
+  onBack,
+  onSignerIncompatible,
+}: SignEnrollmentStepProps) {
   const { isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const engine = useAtomValue(railgunEngineAtom)
   const [submitting, setSubmitting] = useState(false)
+  const [retryingEngine, setRetryingEngine] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // While submitting, the parent's enroll() runs initRailgunEngine first (engine state goes
@@ -35,7 +56,16 @@ export function SignEnrollmentStep({ onSign, onBack }: SignEnrollmentStepProps) 
     try {
       await onSign()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Signing failed.')
+      // V2 amendment: a typed NonDeterministicSignerError gets a dedicated screen owned by the
+      // parent. We don't render the message inline because the parent screen carries the
+      // wallet-compatibility list + paste/backup fallback CTAs that the user needs to act on.
+      // Without an onSignerIncompatible callback (legacy callers / OnboardingFlow v1), fall back
+      // to the inline error rendering so we never silently swallow the error.
+      if (isNonDeterministicSignerError(err) && onSignerIncompatible) {
+        onSignerIncompatible(err.reason)
+        return
+      }
+      setError(normalizeEnrollmentError(err).message)
     } finally {
       setSubmitting(false)
     }
@@ -45,43 +75,77 @@ export function SignEnrollmentStep({ onSign, onBack }: SignEnrollmentStepProps) 
   // We intentionally do not auto-fire the sign after connect; the user explicitly clicks twice
   // so the wallet prompts (connect + sign) don't feel chained or surprising.
   const submittingLabel = warming ? 'Warming up engine…' : 'Waiting for signature…'
-  const primary = isConnected
-    ? {
-        label: submitting ? submittingLabel : 'Sign enrollment message',
-        onClick: handleSign,
-        disabled: submitting,
-      }
-    : {
-        label: 'Connect wallet',
-        onClick: openConnectModal,
-        disabled: !openConnectModal,
-      }
+  const primaryLabel = isConnected
+    ? submitting
+      ? submittingLabel
+      : 'Sign message'
+    : 'Connect wallet'
+  const primaryDisabled = isConnected ? submitting : !openConnectModal
+  const primaryLoading = isConnected && submitting
+  const primaryOnClick = isConnected ? handleSign : openConnectModal ?? undefined
 
   return (
     <div className={styles.root}>
-      <div className={styles.icon} aria-hidden="true">
-        <PenLine size={40} />
-      </div>
-      <h3 className={styles.title}>Sign to generate your keys</h3>
+      <Text variant="display-lg" as="h2" className={styles.title}>
+        Sign to generate your keys
+      </Text>
       <p className={styles.body}>
-        Your privacy keys are derived from a signature your EVM wallet produces against a fixed
-        message. The signing prompt explains that this is <strong>not a transaction</strong> — no
+        Your shielded wallet keys are derived from a signature your EVM wallet produces against a fixed
+        message. This is <strong>not a transaction</strong> — no
         funds move, no chain state changes.
       </p>
-      {!isConnected ? (
-        <p className={styles.body} style={{ color: 'var(--semantic-color-text-muted)' }}>
-          Connect your EVM wallet to continue. Your signature stays in this browser — Armada
-          never receives your private key.
+      <p className={styles.bodyMuted}>
+        Your wallet will prompt twice on first setup — we use both signatures to confirm sign-in
+        recovery will work later.
+      </p>
+      <p className={styles.bodyMuted}>
+        Before signing, check that your wallet's prompt shows this site's URL — that is the only
+        reliable way to tell a real Armada session from a phishing site.
+      </p>
+      {error ? (
+        <p role="alert" className={styles.error}>
+          {error}
         </p>
       ) : null}
-      {error ? (
-        <div role="alert" style={{ color: 'var(--semantic-color-status-error)' }}>{error}</div>
+      {engine.state === 'failed' ? (
+        <button
+          type="button"
+          className={styles.retryLink}
+          disabled={submitting || retryingEngine}
+          onClick={async () => {
+            setRetryingEngine(true)
+            setError(null)
+            try {
+              await retryRailgunEngineInit()
+            } catch (err) {
+              setError(normalizeEnrollmentError(err).message)
+            } finally {
+              setRetryingEngine(false)
+            }
+          }}
+        >
+          {retryingEngine ? 'Retrying engine setup…' : 'Retry engine setup'}
+        </button>
       ) : null}
-      <FlowFooter
-        className={styles.footer}
-        primary={primary}
-        secondary={{ label: 'Back', onClick: onBack, disabled: submitting }}
-      />
+      <div className={styles.actions}>
+        <Button
+          variant="primary"
+          size="md"
+          label={primaryLabel}
+          showIcon={false}
+          disabled={primaryDisabled}
+          loading={primaryLoading}
+          onClick={primaryOnClick}
+        />
+        <Button
+          variant="ghost"
+          size="md"
+          label="Back"
+          showIcon={false}
+          disabled={submitting}
+          onClick={onBack}
+        />
+      </div>
     </div>
   )
 }

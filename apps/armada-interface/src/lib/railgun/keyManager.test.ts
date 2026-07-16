@@ -10,6 +10,7 @@ import {
   getRailgunAddress,
   getChecksum,
   getCreationBlock,
+  getHistoryEncryptionKey,
   deriveChecksum,
   clear,
 } from './keyManager'
@@ -17,6 +18,10 @@ import {
 function makeState(seed = 1, creationBlock: number | null = 100) {
   const rootSecret = new Uint8Array(32)
   for (let i = 0; i < 32; i++) rootSecret[i] = (seed + i) & 0xff
+  // Phase 7: keyManager now also holds a historyEncryptionKey for at-rest tx-record AES-GCM.
+  // Fixture uses a distinct seed so a copy-paste of rootSecret won't mask a bug.
+  const historyEncryptionKey = new Uint8Array(32)
+  for (let i = 0; i < 32; i++) historyEncryptionKey[i] = (seed + 64 + i) & 0xff
   return {
     rootSecret,
     walletId: 'wallet-id-xyz',
@@ -24,6 +29,9 @@ function makeState(seed = 1, creationBlock: number | null = 100) {
     railgunAddress: '0zk1qexample…',
     checksum: 'a3f2 91c8 b7e0',
     creationBlock,
+    evmAddress: null as `0x${string}` | null,
+    account: 0n,
+    historyEncryptionKey,
   }
 }
 
@@ -60,6 +68,9 @@ describe('setUnlocked + getters', () => {
         railgunAddress: 'z',
         checksum: 'cs',
         creationBlock: 0,
+        evmAddress: null,
+        account: 0n,
+        historyEncryptionKey: new Uint8Array(32),
       }),
     ).toThrow(/32 bytes/)
   })
@@ -110,6 +121,33 @@ describe('clear() zeroizes the rootSecret buffer (best-effort)', () => {
     setUnlocked(s)
     clear()
     expect(buffer.every(b => b === 0)).toBe(true)
+  })
+
+  it('also zeroizes the historyEncryptionKey buffer (Phase 7)', () => {
+    const s = makeState()
+    const buffer = s.historyEncryptionKey
+    expect(buffer.some(b => b !== 0)).toBe(true)
+    setUnlocked(s)
+    clear()
+    expect(buffer.every(b => b === 0)).toBe(true)
+  })
+})
+
+describe('getHistoryEncryptionKey (Phase 7)', () => {
+  it('exposes the stored key when unlocked', () => {
+    const s = makeState()
+    setUnlocked(s)
+    expect(getHistoryEncryptionKey()).toBe(s.historyEncryptionKey)
+  })
+
+  it('throws when locked', () => {
+    expect(() => getHistoryEncryptionKey()).toThrow(/locked/)
+  })
+
+  it('throws after clear()', () => {
+    setUnlocked(makeState())
+    clear()
+    expect(() => getHistoryEncryptionKey()).toThrow(/locked/)
   })
 })
 

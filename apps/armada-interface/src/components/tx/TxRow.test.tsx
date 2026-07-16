@@ -63,4 +63,27 @@ describe('<TxRow>', () => {
     fireEvent.click(btn!)
     expect(onClick).toHaveBeenCalledTimes(1)
   })
+
+  it('renders a synthetic received-transfer record with the "Received" title and no status chip', () => {
+    // WHY: incoming transfers are reconstructed from chain as terminal (completed) records with a
+    // single 'observed' stage. They must render in the activity list like any other row — title
+    // from kindTitle, no Pending chip (completed surfaces the relative time instead).
+    const received: TxRecord<'transfer-shielded-received'> = {
+      id: 'synth:0xabc:TransferReceiveERC20s',
+      kind: 'transfer-shielded-received',
+      executionState: 'completed',
+      stage: 'observed',
+      stagesCompleted: ['observed'],
+      updatedSeq: 0,
+      createdAt: Date.now() - 120_000,
+      updatedAt: Date.now() - 120_000,
+      meta: { amount: 5_000_000n },
+      artifacts: {},
+      walletContext: { evmAddress: undefined, railgunWalletId: 'rg', sourceChainId: 31337 },
+    }
+    render(<TxRow record={received} />)
+    expect(screen.getByText('Received')).toBeInTheDocument()
+    expect(screen.getByText('$5')).toBeInTheDocument()
+    expect(screen.queryByText('Pending')).toBeNull()
+  })
 })

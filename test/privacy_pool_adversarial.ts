@@ -59,6 +59,10 @@ describe("Privacy Pool Adversarial", function () {
   let privacyPoolAddress: string;
   let clientAddress: string;
 
+  // Governance adapter registry driving fee-exempt shield privilege (#370). Deployer acts as the
+  // registry timelock in this harness so tests can authorize/deauthorize adapters directly.
+  let adapterRegistry: Contract;
+
   let poseidon: any;
   let F: any;
 
@@ -123,6 +127,13 @@ describe("Privacy Pool Adversarial", function () {
     await privacyPool.setTestingMode(true);
     await privacyPool.setShieldFee(50); // 0.50%
 
+    // Point the pool at a real AdapterRegistry (set-once) so shield-fee exemption is derived from
+    // governance state, not an owner flag (#370). Deployer stands in for the registry's timelock.
+    const AdapterRegistry = await ethers.getContractFactory("AdapterRegistry");
+    adapterRegistry = await AdapterRegistry.deploy(deployerAddress);
+    await adapterRegistry.waitForDeployment();
+    await privacyPool.setAdapterRegistry(await adapterRegistry.getAddress());
+
     // ──── Deploy Client Chain ────
     clientUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
 
@@ -152,6 +163,13 @@ describe("Privacy Pool Adversarial", function () {
 
     // Link deployments
     await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
+
+    // Pin the CCTP destinationCaller (issue #64). These tests do not relay through a CCTPHookRouter,
+    // so the pinned value only needs to be non-zero for the shield/unshield paths to pass their
+    // "hook router configured" guard; the relayer address is used as a stand-in.
+    const hookRouterStandIn = ethers.zeroPadValue(await relayer.getAddress(), 32);
+    await privacyPoolClient.setHubHookRouter(hookRouterStandIn);
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, hookRouterStandIn);
     await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.client, ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32));
     await clientTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32));
   });
@@ -183,6 +201,18 @@ describe("Privacy Pool Adversarial", function () {
     };
   }
 
+  // Compute CCTPBindingLib.encode(recipient, domain, maxFee) — the adaptParams commitment that binds
+  // the cross-chain unshield destination into the proof (#364/#378). Must match the Solidity library.
+  const CCTP_BINDING_DOMAIN_TAG = ethers.keccak256(ethers.toUtf8Bytes("ArmadaCCTPUnshield.v1"));
+  function encodeCctpBinding(recipient: string, domain: number, maxFee: bigint): string {
+    return ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["bytes32", "address", "uint32", "uint256"],
+        [CCTP_BINDING_DOMAIN_TAG, recipient, domain, maxFee]
+      )
+    );
+  }
+
   function makeTransaction(opts: {
     merkleRoot: string;
     nullifiers: string[];
@@ -190,6 +220,7 @@ describe("Privacy Pool Adversarial", function () {
     unshield?: number;
     unshieldPreimage?: any;
     ciphertextCount?: number;
+    adaptParams?: string;
   }) {
     const unshieldType = opts.unshield ?? 0;
     const ciphertextCount = opts.ciphertextCount ??
@@ -214,7 +245,7 @@ describe("Privacy Pool Adversarial", function () {
         unshield: unshieldType,
         chainID: 31337,
         adaptContract: ethers.ZeroAddress,
-        adaptParams: ethers.ZeroHash,
+        adaptParams: opts.adaptParams ?? ethers.ZeroHash,
         commitmentCiphertext: ciphertext,
       },
       unshieldPreimage: opts.unshieldPreimage ?? {
@@ -323,10 +354,79 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("PrivacyPoolClient: Already initialized");
     });
 
-    it("non-owner cannot call setPrivilegedShieldCaller", async function () {
+    // WHY: #368 — initialize() runs in a separate tx after deploy and sets owner/treasury/modules. It
+    // must be callable ONLY by the deployer, or a front-runner could initialize a freshly-deployed pool
+    // with attacker-controlled owner + malicious module addresses before the deployer's own init lands.
+    it("initialize rejects a non-deployer (front-run) on PrivacyPool", async function () {
+      const freshPool = await (await ethers.getContractFactory("PrivacyPool")).deploy();
       await expect(
-        privacyPool.connect(attacker).setPrivilegedShieldCaller(attackerAddress, true)
+        freshPool.connect(attacker).initialize(
+          await shieldModule.getAddress(),
+          await transactModule.getAddress(),
+          await merkleModule.getAddress(),
+          await verifierModule.getAddress(),
+          await hubTokenMessenger.getAddress(),
+          await hubMessageTransmitter.getAddress(),
+          await hubUsdc.getAddress(),
+          DOMAINS.hub,
+          attackerAddress, // attacker tries to seize ownership
+          attackerAddress
+        )
+      ).to.be.revertedWith("PrivacyPool: Only deployer");
+    });
+
+    // WHY: #368 — same front-run protection for the client contract.
+    it("initialize rejects a non-deployer (front-run) on PrivacyPoolClient", async function () {
+      const freshClient = await (await ethers.getContractFactory("PrivacyPoolClient")).deploy();
+      await expect(
+        freshClient.connect(attacker).initialize(
+          await clientTokenMessenger.getAddress(),
+          await clientMessageTransmitter.getAddress(),
+          await clientUsdc.getAddress(),
+          DOMAINS.client,
+          DOMAINS.hub,
+          ethers.zeroPadValue(privacyPoolAddress, 32),
+          attackerAddress
+        )
+      ).to.be.revertedWith("PrivacyPoolClient: Only deployer");
+    });
+
+    it("non-owner cannot call setAdapterRegistry", async function () {
+      // WHY: shield privilege now flows from the registry pointer; a non-owner must not be able
+      //      to set it. The owner check is enforced ahead of the set-once guard (#370).
+      await expect(
+        privacyPool.connect(attacker).setAdapterRegistry(attackerAddress)
       ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
+
+    it("setAdapterRegistry is set-once — a second owner call reverts", async function () {
+      // WHY: set-once is the crux of the #370 fix — after the one-time link-step set, the owner has
+      //      NO path to repoint the registry (which would otherwise re-open the timelock half-bypass).
+      //      The shared pool already has the registry set in before(), so any further set must revert.
+      await expect(
+        privacyPool.setAdapterRegistry(attackerAddress)
+      ).to.be.revertedWith("PrivacyPool: registry already set");
+    });
+
+    it("setAdapterRegistry rejects the zero address (on a fresh, unset pool)", async function () {
+      // WHY: address(0) means "nobody privileged", so setting it would be a silent no-op that reads
+      //      as configured — reject it. Needs a fresh pool since the shared one is already set.
+      const freshPool = await (await ethers.getContractFactory("PrivacyPool")).deploy();
+      await freshPool.initialize(
+        await shieldModule.getAddress(),
+        await transactModule.getAddress(),
+        await merkleModule.getAddress(),
+        await verifierModule.getAddress(),
+        await hubTokenMessenger.getAddress(),
+        await hubMessageTransmitter.getAddress(),
+        await hubUsdc.getAddress(),
+        DOMAINS.hub,
+        deployerAddress,
+        deployerAddress
+      );
+      await expect(
+        freshPool.setAdapterRegistry(ethers.ZeroAddress)
+      ).to.be.revertedWith("PrivacyPool: zero registry");
     });
   });
 
@@ -335,26 +435,98 @@ describe("Privacy Pool Adversarial", function () {
   // ═══════════════════════════════════════════════════════════════════
 
   describe("Privileged Shield Callers", function () {
-    it("privileged caller bypasses shield fee", async function () {
+    // Deploy a fresh ShieldForwarder (a stand-in for a trusted caller like the yield adapter) and
+    // shield `amount` through it, returning the treasury/pool balance deltas. A fresh forwarder per
+    // test keeps registry state isolated. The 50 bps fee configured in before() makes exemption
+    // observable — with a zero fee, privileged and non-privileged paths would be indistinguishable.
+    async function shieldThroughForwarder(amount: bigint): Promise<{ forwarderAddr: string; treasuryDelta: bigint; poolDelta: bigint }> {
       const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
       const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
-      await privacyPool.setPrivilegedShieldCaller(await forwarder.getAddress(), true);
-
-      const amount = ethers.parseUnits("100", 6);
-      await hubUsdc.mint(await forwarder.getAddress(), amount);
+      const forwarderAddr = await forwarder.getAddress();
       const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
 
       const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
       const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
+      return {
+        forwarderAddr,
+        treasuryDelta: (await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore,
+        poolDelta: (await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore,
+      };
+    }
 
-      const req = makeShieldRequest(usdcAddr, amount);
-      await forwarder.approveAndShield(usdcAddr, amount, [req]);
+    it("registry-authorized caller bypasses shield fee (#370)", async function () {
+      // WHY: an adapter authorized in the timelock-governed registry is the trusted yield path and
+      //      shields fee-free. Privilege is derived from the registry, not an owner-set flag.
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      const forwarderAddr = await forwarder.getAddress();
+      await adapterRegistry.authorizeAdapter(forwarderAddr);
 
-      const treasuryAfter = await hubUsdc.balanceOf(deployerAddress);
-      const poolAfter = await hubUsdc.balanceOf(privacyPoolAddress);
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(0n);
-      expect(poolAfter - poolBefore).to.equal(amount);
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(0n);
+      expect((await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore).to.equal(amount);
+    });
+
+    it("withdraw-only adapter still bypasses shield fee (#370)", async function () {
+      // WHY: during wind-down (deauthorized → withdraw-only) the adapter still re-shields user exit
+      //      proceeds; taxing those would eat into user funds. Gate is authorized OR withdraw-only,
+      //      matching ArmadaYieldAdapter's own lifecycle. Deauthorize transitions to withdraw-only.
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      const forwarderAddr = await forwarder.getAddress();
+      await adapterRegistry.authorizeAdapter(forwarderAddr);
+      await adapterRegistry.deauthorizeAdapter(forwarderAddr); // → withdraw-only
+      expect(await adapterRegistry.withdrawOnlyAdapters(forwarderAddr)).to.equal(true);
+
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
+
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(0n);
+      expect((await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore).to.equal(amount);
+    });
+
+    it("fully-deauthorized adapter pays shield fee (#370)", async function () {
+      // WHY: fullDeauthorize removes all privilege — the ex-adapter now pays fees like anyone else.
+      //      This is the revoke path that the old owner-set flag failed to clear (the core defect).
+      const ShieldForwarder = await ethers.getContractFactory("ShieldForwarder");
+      const forwarder = await ShieldForwarder.deploy(privacyPoolAddress);
+      const forwarderAddr = await forwarder.getAddress();
+      await adapterRegistry.authorizeAdapter(forwarderAddr);
+      await adapterRegistry.deauthorizeAdapter(forwarderAddr);
+      await adapterRegistry.fullDeauthorizeAdapter(forwarderAddr); // → no access
+
+      const amount = ethers.parseUnits("100", 6);
+      const usdcAddr = await hubUsdc.getAddress();
+      await hubUsdc.mint(forwarderAddr, amount);
+      const treasuryBefore = await hubUsdc.balanceOf(deployerAddress);
+      const poolBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await forwarder.approveAndShield(usdcAddr, amount, [makeShieldRequest(usdcAddr, amount)]);
+
+      const expectedFee = amount * 50n / 10000n;
+      expect((await hubUsdc.balanceOf(deployerAddress)) - treasuryBefore).to.equal(expectedFee);
+      expect((await hubUsdc.balanceOf(privacyPoolAddress)) - poolBefore).to.equal(amount - expectedFee);
+    });
+
+    it("caller not in the registry pays shield fee (#370)", async function () {
+      // WHY: the fail-closed default — an address the registry has never authorized is not privileged
+      //      and pays the standard fee, even though the pool has a registry configured.
+      const amount = ethers.parseUnits("100", 6);
+      const { treasuryDelta, poolDelta } = await shieldThroughForwarder(amount);
+      const expectedFee = amount * 50n / 10000n;
+      expect(treasuryDelta).to.equal(expectedFee);
+      expect(poolDelta).to.equal(amount - expectedFee);
     });
 
     it("non-privileged caller pays shield fee", async function () {
@@ -477,6 +649,7 @@ describe("Privacy Pool Adversarial", function () {
         nullifiers: [nullifier],
         commitments: [commitHash],
         unshield: 1,
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, 0n),
         unshieldPreimage: {
           npk: ethers.zeroPadValue(privacyPoolAddress, 32),
           token: { tokenType: 0, tokenAddress: await hubUsdc.getAddress(), tokenSubID: 0 },
@@ -485,12 +658,129 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await privacyPool.atomicCrossChainUnshield(
-        tx, DOMAINS.client, bobAddress, ethers.ZeroHash, 0
+        tx, DOMAINS.client, bobAddress, 0, ethers.ZeroHash
       );
 
       // Verify nullifier is spent
       const isSpent = await privacyPool.nullifiers(0, nullifier);
       expect(isSpent).to.be.true;
+    });
+
+    // WHY: #364/#378 regression (this was the PoC that demonstrated the theft; it now asserts the fix).
+    // The cross-chain unshield destination (recipient + domain + maxFee) is bound into the proof via
+    // boundParams.adaptParams (CCTPBindingLib). An attacker resubmitting the victim's identical proof
+    // with a redirected finalRecipient no longer validates — the submitted args don't hash to the
+    // proof-committed adaptParams — so the theft reverts and the victim's note is untouched.
+    it("#364: attacker cannot redirect a cross-chain exit — destination is bound to the proof", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("200", 6));
+      const unshieldAmount = ethers.parseUnits("50", 6);
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("bind364-nullifier"));
+
+      // The xchain unshield note unshields to the pool (its USDC is burned via CCTP); the destination
+      // recipient is bound separately via adaptParams — here to the VICTIM (bob).
+      const poolNpk = ethers.zeroPadValue(privacyPoolAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(privacyPoolAddress), BigInt(usdcAddr), BigInt(unshieldAmount));
+      const bindingToBob = encodeCctpBinding(bobAddress, DOMAINS.client, 0n);
+      const buildTx = () =>
+        makeTransaction({
+          merkleRoot: root,
+          nullifiers: [nullifier],
+          commitments: [commitHash],
+          unshield: 1,
+          adaptParams: bindingToBob,
+          unshieldPreimage: {
+            npk: poolNpk,
+            token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
+            value: unshieldAmount,
+          },
+        });
+
+      // Attacker resubmits bob's IDENTICAL transaction with finalRecipient = attacker → reverts; the
+      // nullifier is NOT consumed (the whole tx rolls back).
+      await expect(
+        privacyPool
+          .connect(attacker)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, attackerAddress, 0, ethers.ZeroHash)
+      ).to.be.revertedWith("TransactModule: destination not bound to proof");
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.false;
+
+      // Bob's correct submission (finalRecipient matches the binding) succeeds.
+      const poolAsTransact = transactModule.attach(privacyPoolAddress);
+      await expect(
+        privacyPool
+          .connect(bob)
+          .atomicCrossChainUnshield(buildTx(), DOMAINS.client, bobAddress, 0, ethers.ZeroHash)
+      )
+        .to.emit(poolAsTransact, "CrossChainUnshieldInitiated")
+        .withArgs(DOMAINS.client, bobAddress, unshieldAmount, 0);
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.true;
+    });
+
+    // WHY: #378 — the binding covers the whole tuple, so an inflated maxFee (which would let the CCTP
+    // fee starve the payout) must also fail, not just a redirected recipient. (Domain-redirect is
+    // covered by the CCTPBindingLib Foundry fuzz — an unconfigured domain reverts earlier here.)
+    it("#378: rejects an inflated maxFee not bound in the proof", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("200", 6));
+      const amount = ethers.parseUnits("40", 6);
+      const poolNpk = ethers.zeroPadValue(privacyPoolAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(privacyPoolAddress), BigInt(usdcAddr), BigInt(amount));
+      const binding = encodeCctpBinding(bobAddress, DOMAINS.client, 1n); // bound maxFee = 1
+      const tx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("bind-fee-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        adaptParams: binding,
+        unshieldPreimage: { npk: poolNpk, token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 }, value: amount },
+      });
+      await expect(
+        privacyPool.connect(attacker).atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 2, ethers.ZeroHash)
+      ).to.be.revertedWith("TransactModule: destination not bound to proof");
+    });
+
+    // WHY: #364 (bidirectional) — a valid LOCAL unshield proof carries adaptParams == 0, which can
+    // never satisfy the binding, so it cannot be hijacked into a cross-chain exit to an attacker.
+    it("#364: rejects a local unshield hijacked through atomicCrossChainUnshield", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("100", 6));
+      const amount = ethers.parseUnits("30", 6);
+      const commitHash = computeCommitmentHash(BigInt(bobAddress), BigInt(usdcAddr), BigInt(amount));
+      const localTx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("hijack-null"))],
+        commitments: [commitHash],
+        unshield: 1, // adaptParams defaults to ZeroHash — a plain/local unshield
+        unshieldPreimage: { npk: ethers.zeroPadValue(bobAddress, 32), token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 }, value: amount },
+      });
+      await expect(
+        privacyPool.connect(attacker).atomicCrossChainUnshield(localTx, DOMAINS.client, attackerAddress, 0, ethers.ZeroHash)
+      ).to.be.revertedWith("TransactModule: destination not bound to proof");
+    });
+
+    // WHY: #364 cross-path replay — an xchain-unshield proof unshields to the pool (npk = pool).
+    // Replaying it through the plain transact() path would send USDC pool->pool and destroy the note
+    // with funds stranded; the _transferTokenOut guard reverts it, leaving the note intact.
+    it("#364: xchain-unshield proof replayed through transact() reverts (no pool->pool strand)", async function () {
+      const usdcAddr = await hubUsdc.getAddress();
+      const root = await shieldAndGetRoot(ethers.parseUnits("100", 6));
+      const amount = ethers.parseUnits("25", 6);
+      const poolNpk = ethers.zeroPadValue(privacyPoolAddress, 32);
+      const commitHash = computeCommitmentHash(BigInt(privacyPoolAddress), BigInt(usdcAddr), BigInt(amount));
+      const nullifier = ethers.keccak256(ethers.toUtf8Bytes("replay-null"));
+      const xchainTx = makeTransaction({
+        merkleRoot: root,
+        nullifiers: [nullifier],
+        commitments: [commitHash],
+        unshield: 1,
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, 0n),
+        unshieldPreimage: { npk: poolNpk, token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 }, value: amount },
+      });
+      await expect(
+        privacyPool.connect(attacker).transact([xchainTx])
+      ).to.be.revertedWith("TransactModule: unshield to pool");
+      expect(await privacyPool.nullifiers(0, nullifier)).to.be.false;
     });
   });
 
@@ -542,9 +832,12 @@ describe("Privacy Pool Adversarial", function () {
       expect(await privacyPoolClient.hubDomain()).to.equal(DOMAINS.hub);
     });
 
-    it("setShieldFee rejects fee > 10000 bps", async function () {
+    // WHY: The shield fee is capped at MAX_SHIELD_FEE_BPS (1000 = 10%) so a single
+    // owner/governance mis-proposal cannot brick shields by consuming all deposited
+    // value. Just over the cap must revert.
+    it("setShieldFee rejects fee > MAX_SHIELD_FEE_BPS (1000 bps)", async function () {
       await expect(
-        privacyPool.setShieldFee(10001)
+        privacyPool.setShieldFee(1001)
       ).to.be.revertedWith("PrivacyPool: Fee too high");
     });
   });
@@ -592,9 +885,10 @@ describe("Privacy Pool Adversarial", function () {
       ).to.be.revertedWith("ShieldModule: Invalid npk");
     });
 
-    it("shield fee boundary: exactly 10000 bps accepted", async function () {
-      // 10000 bps = 100% fee (edge case)
-      await privacyPool.setShieldFee(10000);
+    // WHY: The cap is inclusive — exactly MAX_SHIELD_FEE_BPS (1000 = 10%) is the
+    // highest fee governance can set and must be accepted.
+    it("shield fee boundary: exactly 1000 bps (10%) accepted", async function () {
+      await privacyPool.setShieldFee(1000);
       // Reset to normal after
       await privacyPool.setShieldFee(50);
     });
@@ -640,7 +934,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.hub, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Use local unshield");
     });
 
@@ -664,7 +958,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, 999, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Unknown destination");
     });
 
@@ -688,7 +982,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, ethers.ZeroAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Invalid recipient");
     });
 
@@ -704,7 +998,7 @@ describe("Privacy Pool Adversarial", function () {
       });
 
       await expect(
-        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, ethers.ZeroHash, 0)
+        privacyPool.atomicCrossChainUnshield(tx, DOMAINS.client, bobAddress, 0, ethers.ZeroHash)
       ).to.be.revertedWith("TransactModule: Must include unshield");
     });
 
@@ -720,6 +1014,9 @@ describe("Privacy Pool Adversarial", function () {
         nullifiers: [nullifier],
         commitments: [commitHash],
         unshield: 1,
+        // Bind the (recipient, domain, maxFee) so the tx passes the adaptParams binding and reaches the
+        // maxFee-vs-base check inside _executeCCTPBurn (the case under test).
+        adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, ethers.parseUnits("100", 6)),
         unshieldPreimage: {
           npk: ethers.zeroPadValue(privacyPoolAddress, 32),
           token: { tokenType: 0, tokenAddress: await hubUsdc.getAddress(), tokenSubID: 0 },
@@ -730,7 +1027,7 @@ describe("Privacy Pool Adversarial", function () {
       // maxFee = 100 USDC >> base amount of ~10 USDC
       await expect(
         privacyPool.atomicCrossChainUnshield(
-          tx, DOMAINS.client, bobAddress, ethers.ZeroHash, ethers.parseUnits("100", 6)
+          tx, DOMAINS.client, bobAddress, ethers.parseUnits("100", 6), ethers.ZeroHash
         )
       ).to.be.revertedWith("TransactModule: maxFee exceeds base");
     });
@@ -887,9 +1184,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(alice).crossChainShield(
           0, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
-        ,
-        ethers.ZeroAddress)
+          ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Amount must be > 0");
     });
 
@@ -899,9 +1194,7 @@ describe("Privacy Pool Adversarial", function () {
         privacyPoolClient.connect(alice).crossChainShield(
           amount, amount, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
-        ,
-        ethers.ZeroAddress)
+          ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Fee exceeds amount");
     });
 
@@ -926,9 +1219,7 @@ describe("Privacy Pool Adversarial", function () {
         freshClient.connect(alice).crossChainShield(
           amount, 0, 0, validNpk(),
           [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
-          ethers.ZeroHash, ethers.ZeroHash
-        ,
-        ethers.ZeroAddress)
+          ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Hub not configured");
     });
   });
@@ -1048,6 +1339,128 @@ describe("Privacy Pool Adversarial", function () {
           ethers.ZeroHash
         )
       ).to.be.revertedWith("PrivacyPoolClient: Finality below minimum");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // TOKEN BLOCKLIST (#369)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Token Blocklist (#369)", function () {
+    let tokenX: Contract;
+    let tokenXAddr: string;
+
+    beforeEach(async function () {
+      // A second, standard ERC-20 (not USDC). The pool is multi-asset, so this is normally shieldable.
+      tokenX = await (await ethers.getContractFactory("MockUSDCV2")).deploy("TokenX", "TKX");
+      tokenXAddr = await tokenX.getAddress();
+      await tokenX.mint(aliceAddress, ethers.parseUnits("100", 6));
+      await tokenX.connect(alice).approve(privacyPoolAddress, ethers.parseUnits("100", 6));
+    });
+
+    // WHY: #369 — restoring Railgun's blocklist gives governance a kill-switch for an incompatible/
+    // compromised token. Before the setter existed the mapping was a permanent no-op.
+    it("blocks shielding a blocklisted token", async function () {
+      await privacyPool.addToBlocklist([tokenXAddr]);
+      const req = makeShieldRequest(tokenXAddr, ethers.parseUnits("10", 6));
+      await expect(
+        privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
+      ).to.be.revertedWith("ShieldModule: Token blocked");
+    });
+
+    // WHY: the block is reversible governance, not permanent — removeFromBlocklist re-enables shielding.
+    it("re-enables shielding after removeFromBlocklist", async function () {
+      await privacyPool.addToBlocklist([tokenXAddr]);
+      await privacyPool.removeFromBlocklist([tokenXAddr]);
+      const req = makeShieldRequest(tokenXAddr, ethers.parseUnits("10", 6));
+      await expect(privacyPool.connect(alice).shield([req], ethers.ZeroAddress)).to.not.be.reverted;
+    });
+
+    // WHY: Railgun semantics — a blocklisted token stays UNSHIELDABLE so holders can always exit; the
+    // check is shield-only. Shield first (allowed), then block, then confirm the unshield isn't gated.
+    it("still allows unshielding a token after it is blocklisted (exit path)", async function () {
+      const value = ethers.parseUnits("100", 6);
+      const npk = validNpk();
+      await privacyPool.connect(alice).shield([makeShieldRequest(tokenXAddr, value, npk)], ethers.ZeroAddress);
+      await privacyPool.addToBlocklist([tokenXAddr]);
+
+      const base = value - (value * 50n) / 10000n; // net of the 0.50% shield fee
+      const commitHash = computeCommitmentHash(BigInt(npk), BigInt(tokenXAddr), base);
+      const unshieldTx = makeTransaction({
+        merkleRoot: await privacyPool.merkleRoot(),
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("blocked-exit-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: { npk, token: { tokenType: 0, tokenAddress: tokenXAddr, tokenSubID: 0 }, value: base },
+      });
+      await expect(privacyPool.transact([unshieldTx])).to.not.be.reverted;
+    });
+
+    // WHY: #369 core-asset guard — blocklisting USDC would make in-flight cross-chain shields
+    // undeliverable (burned on client, unmintable on hub → stranded). Must be impossible.
+    it("cannot blocklist USDC (protects the cross-chain shield path)", async function () {
+      await expect(
+        privacyPool.addToBlocklist([await hubUsdc.getAddress()])
+      ).to.be.revertedWith("PrivacyPool: cannot block USDC");
+    });
+
+    // WHY: the blocklist is a governance lever — only the owner may modify it.
+    it("only the owner can modify the blocklist", async function () {
+      await expect(
+        privacyPool.connect(attacker).addToBlocklist([tokenXAddr])
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+      await expect(
+        privacyPool.connect(attacker).removeFromBlocklist([tokenXAddr])
+      ).to.be.revertedWith("PrivacyPool: Only owner");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // REENTRANCY GUARD (#369)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Reentrancy Guard (#369)", function () {
+    let evil: Contract;
+    let evilAddr: string;
+
+    beforeEach(async function () {
+      evil = await (await ethers.getContractFactory("MaliciousReentrantToken")).deploy();
+      evilAddr = await evil.getAddress();
+      await evil.mint(aliceAddress, ethers.parseUnits("100", 6));
+      await evil.connect(alice).approve(privacyPoolAddress, ethers.parseUnits("100", 6));
+    });
+
+    // WHY: #369 hardening — a malicious token's transferFrom hook, fired during the shield deposit
+    // (_transferTokenIn), must not be able to re-enter ANY guarded entry. Covers all three targets.
+    for (const [target, name] of [[1, "shield"], [2, "transact"], [3, "atomicCrossChainUnshield"]] as const) {
+      it(`reverts when a shield deposit's transferFrom hook re-enters ${name}`, async function () {
+        await evil.setAttack(privacyPoolAddress, target);
+        const req = makeShieldRequest(evilAddr, ethers.parseUnits("10", 6));
+        await expect(
+          privacyPool.connect(alice).shield([req], ethers.ZeroAddress)
+        ).to.be.revertedWith("PrivacyPool: reentrant call");
+      });
+    }
+
+    // WHY: the OUT hook — an unshield payout's transfer hook (_transferTokenOut) re-entering a guarded
+    // entry must also revert. Shield with the attack off (creates a note), then unshield with it on.
+    it("reverts when an unshield payout's transfer hook re-enters transact", async function () {
+      await evil.setAttack(privacyPoolAddress, 0);
+      const value = ethers.parseUnits("100", 6);
+      const npk = validNpk();
+      await privacyPool.connect(alice).shield([makeShieldRequest(evilAddr, value, npk)], ethers.ZeroAddress);
+
+      await evil.setAttack(privacyPoolAddress, 2); // re-enter transact from the payout transfer hook
+      const base = value - (value * 50n) / 10000n;
+      const commitHash = computeCommitmentHash(BigInt(npk), BigInt(evilAddr), base);
+      const unshieldTx = makeTransaction({
+        merkleRoot: await privacyPool.merkleRoot(),
+        nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("evil-out-null"))],
+        commitments: [commitHash],
+        unshield: 1,
+        unshieldPreimage: { npk, token: { tokenType: 0, tokenAddress: evilAddr, tokenSubID: 0 }, value: base },
+      });
+      await expect(privacyPool.transact([unshieldTx])).to.be.revertedWith("PrivacyPool: reentrant call");
     });
   });
 });

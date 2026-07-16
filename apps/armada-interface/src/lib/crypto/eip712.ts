@@ -1,21 +1,24 @@
-// ABOUTME: EIP-712 enrollment typed-data builder + signature normalization, per specs/TX_SIGNING.md.
-// ABOUTME: Chain-agnostic domain (no chainId, frozen verifyingContract). Signature normalized to 65 bytes r||s||v before any HKDF use.
+// ABOUTME: EIP-712 enrollment typed-data builder + signature normalization, per specs/TX_SIGNING.md + V2_AMENDMENT.
+// ABOUTME: Chain-agnostic domain (no chainId, frozen verifyingContract). Deterministic by design — same input → same signature. Signature normalized to 65 bytes r||s||v before any HKDF use.
 
 import { hexToBytes, keccak256, toBytes } from 'viem'
 
 /**
- * Phase 1 testnet `verifyingContract` value. Per the spec this is repurposed from EIP-712's
- * intended semantics ("address of the contract that will verify the signature") to "a
- * governance-frozen 20-byte protocol identity constant that wallets display during signing."
+ * v2 testnet `verifyingContract` value. Per the parent spec §"Enrollment Flow → Governance-frozen
+ * signing domain" this is repurposed from EIP-712's intended semantics ("address of the contract
+ * that will verify the signature") to "a governance-frozen 20-byte protocol identity constant
+ * that wallets display during signing."
  *
  * Derived deterministically so anyone reading the code can re-compute and verify it isn't a typo:
- *   first_20_bytes(keccak256(utf8("armada-enrollment:testnet:v1")))
+ *   first_20_bytes(keccak256(utf8("armada-enrollment:testnet:v2")))
  *
- * Identity stability: changing this string forks every user's shielded identity. For testnet this
- * is fine (identity is disposable). Pre-mainnet a new constant will be chosen — testnet keys are
- * intentionally not interoperable with mainnet keys.
+ * Identity stability: changing this string forks every user's shielded identity. The v1 → v2
+ * rotation is the governance fork accompanying the shielded-wallet redesign (see
+ * specs/TX_SIGNING_V2_AMENDMENT.md). For testnet this is fine (identity is disposable). Pre-
+ * mainnet a new constant will be chosen — testnet keys are intentionally not interoperable with
+ * mainnet keys.
  */
-export const VERIFYING_CONTRACT_SOURCE = 'armada-enrollment:testnet:v1'
+export const VERIFYING_CONTRACT_SOURCE = 'armada-enrollment:testnet:v2'
 export const VERIFYING_CONTRACT: `0x${string}` = (() => {
   const hash = keccak256(toBytes(VERIFYING_CONTRACT_SOURCE)) // 32-byte 0x-prefixed hex
   // Take the first 20 bytes (the leading 40 hex chars after the 0x).
@@ -23,12 +26,17 @@ export const VERIFYING_CONTRACT: `0x${string}` = (() => {
 })()
 
 /**
- * The four identity-determining fields. Per spec §"Enrollment Flow", changing ANY of these after
- * launch permanently forks user identity with no migration path. Treat as immutable.
+ * The four identity-determining fields. Per spec §"Enrollment Flow → Governance-frozen signing
+ * domain", changing ANY of these after launch permanently forks user identity with no migration
+ * path. Treat as immutable. The v2 amendment is the conscious governance action that rotates
+ * VERIFYING_CONTRACT_SOURCE + MESSAGE_VERSION while preserving DOMAIN_NAME + MESSAGE_PURPOSE.
  */
 export const DOMAIN_NAME = 'Armada Protocol'
 export const MESSAGE_PURPOSE = 'Generate privacy keys (NOT a transaction)'
-export const MESSAGE_VERSION = '1'
+export const MESSAGE_VERSION = '2'
+
+/** Schema version tag — used by App.tsx bootstrap to wipe stale v1 state on first run. */
+export const SCHEMA_VERSION = 2
 
 /**
  * The EIP-712 typed-data structure passed to `signTypedData_v4`.
@@ -37,8 +45,18 @@ export const MESSAGE_VERSION = '1'
  * same root_secret on any chain. EIP-712 permits omitting domain fields; the EIP712Domain types
  * array MUST reflect only the fields actually present, or the domain hash diverges.
  *
- * Note on `issuedAt`: spec mandates millisecond precision + monotonic non-reuse to ensure payload
- * uniqueness even against deterministic-signing wallets (RFC 6979).
+ * Note on determinism (v2 amendment): the v1 spec used a millisecond `issuedAt` field to force
+ * payload uniqueness. v2 deliberately removes that field so that signing the same message with
+ * the same EOA key reproduces the same signature bytes — a precondition for re-signing as a
+ * recovery path. RFC 6979 deterministic ECDSA gives us this property for all supported EOA
+ * wallets; we verify it at first enrollment by double-signing and comparing bytes, and on every
+ * subsequent sign-in by re-deriving the walletId and comparing it against the cached value.
+ * Wallets that fail the determinism check fall back to the paste-secret or backup-file recovery
+ * paths (parent spec §"Session Management" items 1 and 2 — unchanged).
+ *
+ * Note on `account`: serves the same forward-compatibility role as BIP-44's account index. The v1
+ * UI exposes account 0 only; the plumbing accepts N ≥ 0 so multi-identity-per-EVM-wallet can ship
+ * later without another schema fork.
  */
 export interface EnrollmentTypedData {
   readonly domain: {
@@ -52,14 +70,14 @@ export interface EnrollmentTypedData {
   readonly primaryType: 'Enrollment'
   readonly message: {
     readonly purpose: string
-    readonly issuedAt: string // uint256 as decimal string (ms)
     readonly version: string
+    readonly account: string // uint256 as decimal string
   }
 }
 
-export function buildEnrollmentTypedData(issuedAtMs: number): EnrollmentTypedData {
-  if (!Number.isFinite(issuedAtMs) || issuedAtMs <= 0 || !Number.isInteger(issuedAtMs)) {
-    throw new Error('issuedAtMs must be a positive integer (Unix epoch ms)')
+export function buildEnrollmentTypedData(account: bigint = 0n): EnrollmentTypedData {
+  if (account < 0n) {
+    throw new Error('account must be a non-negative bigint')
   }
   return {
     domain: {
@@ -74,15 +92,15 @@ export function buildEnrollmentTypedData(issuedAtMs: number): EnrollmentTypedDat
       ],
       Enrollment: [
         { name: 'purpose', type: 'string' },
-        { name: 'issuedAt', type: 'uint256' },
         { name: 'version', type: 'string' },
+        { name: 'account', type: 'uint256' },
       ],
     },
     primaryType: 'Enrollment',
     message: {
       purpose: MESSAGE_PURPOSE,
-      issuedAt: String(issuedAtMs),
       version: MESSAGE_VERSION,
+      account: account.toString(10),
     },
   }
 }

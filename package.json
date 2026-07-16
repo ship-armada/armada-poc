@@ -3,7 +3,6 @@
   "version": "0.4.0",
   "private": true,
   "workspaces": [
-    "usdc-v2-frontend",
     "crowdfund-ui/packages/*",
     "packages/*",
     "packages/ui/showcase",
@@ -48,7 +47,7 @@
     "deploy:revenue-lock-cohort": "hardhat run scripts/deploy_revenue_lock_cohort.ts --network hub",
     "test": "hardhat test test/privacy_pool_integration.ts",
     "test:governance": "hardhat test test/governance_integration.ts test/governance_adversarial.ts test/governance_veto.ts",
-    "test:crowdfund": "hardhat test test/crowdfund_integration.ts test/crowdfund_adversarial.ts",
+    "test:crowdfund": "hardhat test test/crowdfund_integration.ts test/crowdfund_adversarial.ts test/crowdfund_multicall.ts",
     "test:all": "hardhat test",
     "test:mcp": "npx mocha --require ts-node/register mcp-server/test/unit.test.ts",
     "test:mcp:integration": "npx mocha --require ts-node/register mcp-server/test/integration.test.ts",
@@ -65,7 +64,7 @@
     "clean": "find deployments -name '*.json' ! -name '*sepolia*' -delete 2>/dev/null; rm -rf artifacts cache typechain-types data/railgun-db",
     "clean:all": "rm -rf deployments/*.json artifacts cache typechain-types data/railgun-db",
     "governance-ui": "npm run --prefix governance-ui dev",
-    "demo": "cd usdc-v2-frontend && npm run dev",
+    "demo": "npm run dev --workspace=@armada/interface",
     "crowdfund:observer": "npm run dev --workspace=@armada/crowdfund-observer",
     "crowdfund:committer": "npm run dev --workspace=@armada/crowdfund-committer",
     "crowdfund:admin": "npm run dev --workspace=@armada/crowdfund-admin",
@@ -74,8 +73,9 @@
     "crowdfund:indexer": "npm run dev --workspace=@armada/crowdfund-indexer",
     "crowdfund:indexer:cli": "npm run cli --workspace=@armada/crowdfund-indexer",
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
-    "demo:build": "cd usdc-v2-frontend && npm run build",
+    "demo:build": "npm run build --workspace=@armada/interface",
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",
+    "setup:mainnet": "npx ts-node scripts/deploy_mainnet.ts",
     "setup:sepolia:phase1": "npx ts-node scripts/deploy_sepolia.ts --phase 1",
     "setup:sepolia:phase2": "npx ts-node scripts/deploy_sepolia.ts --phase 2",
     "setup:sepolia:phase3": "npx ts-node scripts/deploy_sepolia.ts --phase 3",
@@ -98,9 +98,11 @@
     "link:sepolia": "hardhat run scripts/link_privacy_pool.ts --network sepoliaHub",
     "relayer:sepolia": "npx ts-node relayer/armada-relayer.ts",
     "test:sepolia": "npx ts-node scripts/test_sepolia.ts",
+    "fetch-deployment": "npx ts-node scripts/fetch-deployment.ts",
     "verify:snark": "hardhat run scripts/verify_snark_mode.ts --network hub",
     "verify:snark:sepolia": "hardhat run scripts/verify_snark_mode.ts --network sepoliaHub",
     "prepare": "git config core.hooksPath .githooks",
+    "postinstall": "node scripts/ensure-linux-native-modules.mjs",
     "check:anvil-addresses": "./scripts/check-anvil-addresses.sh",
     "check:sizes": "node scripts/check-contract-sizes.js",
     "slither": "slither . --config-file slither.config.json",
@@ -149,5 +151,10 @@
     "hardhat": "^2.19.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.57.1",
+    "lightningcss-linux-x64-gnu": "1.30.2",
+    "@tailwindcss/oxide-linux-x64-gnu": "4.1.18"
   }
 }

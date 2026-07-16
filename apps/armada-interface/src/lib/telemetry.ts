@@ -1,7 +1,8 @@
-// ABOUTME: Structured console-only telemetry — typed event registry (compile-time privacy enforcement) + scoped error reporter.
-// ABOUTME: Plan §16 + reviewer #12. Never emit amounts, recipients, mnemonics, attestation bytes, addresses, memo fields.
+// ABOUTME: Structured telemetry — typed event registry (compile-time privacy enforcement) + scoped error reporter.
+// ABOUTME: Console always; `trackError` also forwards to Sentry (no-op unless a DSN is configured). Plan §16 + reviewer #12. Never emit amounts, recipients, mnemonics, attestation bytes, addresses, memo fields.
 
 import type { TxKind, TxRecord, TxStage } from './tx/types'
+import { captureError } from './sentry'
 
 /* ------------------------------------------------------------------ *
  *  EventRegistry — the canonical, allowlisted set of telemetry events.
@@ -30,12 +31,19 @@ export type EventRegistry = {
   'shielded.locked':          { walletId: string }
   'shielded.exported':        { walletId: string }                             // Settings → Export recovery phrase; phrase content NEVER logged
   'shielded.reset':           { walletId: string }                             // Settings → Reset private wallet; id pre-clear so we can trace
+  // One-shot schema-version migration on cold boot. `from`/`to` are integers (the schemaVersion
+  // tags). Emitted once per cold boot when the local schema is older than the bundled version.
+  'shielded.schema-migration': { from: number; to: number }
+  // User pressed "Try Again" on a failed initial balance sync. No identifiers — just the action.
+  'shielded.syncRetry':       Record<string, never>
 
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }
   'tx.expired':               { id: string; kind: TxKind }
   'tx.cancelled':             { id: string; kind: TxKind }
+  'tx.interrupted':           { id: string; kind: TxKind }
+  'tx.cancel-all':            { reason: string; count: number }
 
   // Relayer-mediated submit (Phase A). Fired by handlers that delegate broadcast to the relayer
   // instead of sending from the user's wallet. errorCode on `rejected` is the typed RelayerErrorCode
@@ -45,6 +53,9 @@ export type EventRegistry = {
   'tx.relayer.submitted':     { id: string; kind: TxKind }
   'tx.relayer.confirmed':     { id: string; kind: TxKind }
   'tx.relayer.rejected':      { id: string; kind: TxKind; errorCode?: string }
+  // A DUPLICATE_TX (409) was recovered: the relayer had already broadcast this tx and reported its
+  // hash in the rejection message, so we resume polling on it instead of failing (T-M3/S-M1).
+  'tx.relayer.dup-recovered': { id: string; kind: TxKind }
   // Fired when an xchain handler enters runWaitForDelivery with less than the inner-poll floor
   // of lifecycle budget remaining. The handler clamps to a 10s minimum (rather than failing
   // immediately) but a sustained signal here indicates records being created with too little
@@ -55,6 +66,12 @@ export type EventRegistry = {
   'tx.engine.no-handler':     { kind: TxKind }
 
   'tx.history.hydrated':      { count: number }
+  // Chain-driven history recovery + incoming-transfer detection (Phase 9). `durationMs` covers
+  // the SDK call + mapping; `itemCount` is the raw SDK return size; `recordCount` is what we
+  // actually wrote (mapped + non-duplicate). Distinguishes Unknown-heavy chain history from
+  // genuinely-empty wallets.
+  'tx.history.scan.started':  { walletId: string; fromBlock: number | null }
+  'tx.history.scan.completed':{ walletId: string; itemCount: number; recordCount: number; durationMs: number }
   'tx.storage.stale-write':   { id: string; existingSeq: number; incomingSeq: number }
 
   'config.deployments.loaded':{ chainCount: number }
@@ -111,12 +128,31 @@ export function trackTxTransition(
   })
 }
 
+/** Max characters of an error message we retain. See `trackError`. */
+const ERROR_MESSAGE_MAX_CHARS = 200
+
 /**
  * Caught error — pass a stable scope tag + the raw error. Props are
  * primitives only (`ErrorProps`) so an accidental object dump doesn't slip
  * sensitive data through.
+ *
+ * Two sinks with different payloads:
+ *  - Console: the message reduced to its first line, capped at 200 chars. SDK / RPC / wallet errors
+ *    carry long multi-line payloads (request bodies, calldata, stack-laden strings) that may embed
+ *    sensitive material; truncating bounds what we print.
+ *  - Sentry (only when a DSN is configured — otherwise a no-op): the FULL error object, so stacks
+ *    are useful for triage. The remote-sink leak risk this guards against is handled at that
+ *    boundary by `lib/sentry.ts`'s `beforeSend` scrubber (redacts 0zk / EVM addresses + long hex)
+ *    plus `sendDefaultPii: false`. Keep the two in lockstep: widen the scrubber before widening
+ *    what reaches Sentry.
  */
 export function trackError(scope: string, err: unknown, props: ErrorProps = {}): void {
-  const message = err instanceof Error ? err.message : String(err)
+  const raw = err instanceof Error ? err.message : String(err)
+  const firstLine = raw.split('\n', 1)[0] ?? ''
+  const message =
+    firstLine.length > ERROR_MESSAGE_MAX_CHARS
+      ? `${firstLine.slice(0, ERROR_MESSAGE_MAX_CHARS)}…`
+      : firstLine
   emit('error', 'error', { scope, message, ...props })
+  captureError(err, { scope, context: props })
 }

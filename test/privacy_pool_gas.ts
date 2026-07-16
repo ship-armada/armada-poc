@@ -28,6 +28,17 @@ import {
 } from "../lib/artifacts";
 
 const DOMAINS = { hub: 100, client: 101 };
+
+const CCTP_BINDING_DOMAIN_TAG = ethers.keccak256(ethers.toUtf8Bytes("ArmadaCCTPUnshield.v1"));
+// CCTPBindingLib.encode(recipient, domain, maxFee) — adaptParams binding for xchain unshield (#364/#378).
+function encodeCctpBinding(recipient: string, domain: number, maxFee: bigint): string {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "address", "uint32", "uint256"],
+      [CCTP_BINDING_DOMAIN_TAG, recipient, domain, maxFee]
+    )
+  );
+}
 const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
 describe("Privacy Pool Gas Profiling", function () {
@@ -154,6 +165,12 @@ describe("Privacy Pool Gas Profiling", function () {
     await privacyPool.setRemotePool(DOMAINS.client, ethers.zeroPadValue(clientAddress, 32));
     await hubTokenMessenger.setRemoteTokenMessenger(DOMAINS.client, ethers.zeroPadValue(await clientTokenMessenger.getAddress(), 32));
     await clientTokenMessenger.setRemoteTokenMessenger(DOMAINS.hub, ethers.zeroPadValue(await hubTokenMessenger.getAddress(), 32));
+
+    // Pin the CCTP destinationCaller (issue #64). This gas benchmark relays by calling
+    // receiveMessage directly from `relayer` (no CCTPHookRouter), so the pinned destinationCaller
+    // must equal the relayer for the mock's `destinationCaller == msg.sender` check to pass.
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(relayerAddress, 32));
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(relayerAddress, 32));
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -195,6 +212,7 @@ describe("Privacy Pool Gas Profiling", function () {
     unshield?: number;
     unshieldPreimage?: any;
     ciphertextCount?: number;
+    adaptParams?: string;
   }) {
     const unshieldType = opts.unshield ?? 0;
     const ciphertextCount = opts.ciphertextCount ??
@@ -219,7 +237,7 @@ describe("Privacy Pool Gas Profiling", function () {
         unshield: unshieldType,
         chainID: 31337,
         adaptContract: ethers.ZeroAddress,
-        adaptParams: ethers.ZeroHash,
+        adaptParams: opts.adaptParams ?? ethers.ZeroHash,
         commitmentCiphertext: ciphertext,
       },
       unshieldPreimage: opts.unshieldPreimage ?? {
@@ -367,9 +385,7 @@ describe("Privacy Pool Gas Profiling", function () {
       const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("cctp-key"));
 
       const tx = await privacyPoolClient.connect(alice).crossChainShield(
-        amount, 0, 0, npk, encBundle, shieldKey, ethers.ZeroHash
-      ,
-      ethers.ZeroAddress);
+        amount, 0, 0, npk, encBundle, shieldKey, ethers.ZeroAddress);
       const receipt = await tx.wait();
       recordGas("crossChainShield (client-side)", Number(receipt!.gasUsed));
 
@@ -416,6 +432,7 @@ describe("Privacy Pool Gas Profiling", function () {
         nullifiers: [ethers.keccak256(ethers.toUtf8Bytes("atomic-unshield-gas-null"))],
         commitments: [changeCommit, unshieldCommitHash],
         unshield: 1,
+        adaptParams: encodeCctpBinding(bobAddr, DOMAINS.client, 0n),
         unshieldPreimage: {
           npk: ethers.zeroPadValue(bobAddr, 32),
           token: { tokenType: 0, tokenAddress: usdcAddr, tokenSubID: 0 },
@@ -431,8 +448,8 @@ describe("Privacy Pool Gas Profiling", function () {
         txData,
         DOMAINS.client,
         bobAddr,
-        ethers.ZeroHash,
-        0 // maxFee
+        0, // maxFee
+        ethers.ZeroHash
       );
       const receipt = await tx.wait();
       recordGas("atomicCrossChainUnshield", Number(receipt!.gasUsed));

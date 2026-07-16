@@ -26,6 +26,11 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     // STATE VARIABLES
     // ══════════════════════════════════════════════════════════════════════════
 
+    /// @notice The address that deployed this contract; the only address permitted to call initialize().
+    /// @dev Gates the separate-tx initialize() to the deployer so a front-runner cannot initialize the
+    ///      client with malicious params on a public chain before the deployer's own init lands (#368).
+    address private immutable deployer;
+
     /// @notice Whether the contract has been initialized
     bool public initialized;
 
@@ -53,6 +58,12 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     /// @notice CCTP Hook Router address (authorized to call handleReceiveFinalizedMessage)
     address public override hookRouter;
 
+    /// @notice Hub chain's CCTP Hook Router address, as bytes32.
+    /// @dev Pinned as the CCTP destinationCaller for outbound shield burns, so the message can only be
+    ///      delivered through the Hub's CCTPHookRouter (which fires the mint hook). Removes the
+    ///      caller-supplied destinationCaller footgun — bytes32(0) would let a third party strand funds.
+    bytes32 public override hubHookRouter;
+
     /// @notice Default finality threshold for outbound CCTP burns (STANDARD=2000, FAST=1000)
     /// @dev Used as fallback when user passes 0 to crossChainShield
     uint32 public defaultFinalityThreshold;
@@ -60,6 +71,10 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
+
+    constructor() {
+        deployer = msg.sender;
+    }
 
     /**
      * @notice Initialize the PrivacyPoolClient contract
@@ -80,6 +95,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes32 _hubPool,
         address _owner
     ) external override {
+        require(msg.sender == deployer, "PrivacyPoolClient: Only deployer");
         require(!initialized, "PrivacyPoolClient: Already initialized");
 
         tokenMessenger = _tokenMessenger;
@@ -117,10 +133,11 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      * @param npk Note public key (recipient's key for claiming the note)
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption by recipient
-     * @param destinationCaller Address allowed to call receiveMessage on Hub (bytes32).
-     *        Use bytes32(0) to allow any relayer, or specify a relayer address for MEV protection.
      * @param integrator Integrator address for fee split (address(0) for no integrator)
      * @return nonce CCTP message nonce
+     * @dev The CCTP destinationCaller is pinned to hubHookRouter (not caller-supplied), so the burn can
+     *      only be delivered through the Hub's CCTPHookRouter — a caller cannot leave it bytes32(0) and
+     *      let a third party call receiveMessage directly and strand the funds.
      */
     function crossChainShield(
         uint256 amount,
@@ -129,12 +146,12 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
-        bytes32 destinationCaller,
         address integrator
     ) external override returns (uint64) {
         require(amount > 0, "PrivacyPoolClient: Amount must be > 0");
         require(maxFee < amount, "PrivacyPoolClient: Fee exceeds amount");
         require(hubPool != bytes32(0), "PrivacyPoolClient: Hub not configured");
+        require(hubHookRouter != bytes32(0), "PrivacyPoolClient: Hook router not configured");
 
         // Transfer USDC from user to this contract
         IERC20(usdc).safeTransferFrom(msg.sender, address(this), amount);
@@ -144,9 +161,9 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         IERC20(usdc).safeApprove(tokenMessenger, amount);
 
         // Encode shield payload and execute CCTP burn in helper (avoids stack-too-deep)
-        _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, destinationCaller, integrator);
+        _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, integrator);
 
-        emit CrossChainShieldInitiated(msg.sender, amount, npk, 0);
+        emit CrossChainShieldInitiated(amount, npk, 0);
 
         return 0;
     }
@@ -234,6 +251,16 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
 
         // Route based on message type
         if (payload.messageType == MessageType.UNSHIELD) {
+            // Authenticate the source pool: the burn message's messageSender is the address that
+            // called depositForBurn on the Hub (i.e. the Hub PrivacyPool), which must match the
+            // configured hubPool. The envelope sender is the Hub TokenMessenger, not the pool, so it
+            // cannot be used here. The handlers already enforce remoteDomain == hubDomain. This is a
+            // defense-in-depth backstop on top of CCTP's attestation.
+            require(
+                BurnMessageV2.getMessageSender(messageBody) == hubPool,
+                "PrivacyPoolClient: untrusted source pool"
+            );
+
             // Cross-chain unshield from Hub
             UnshieldData memory unshieldData = CCTPPayloadLib.decodeUnshieldData(payload.data);
 
@@ -260,7 +287,6 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         bytes32 npk,
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
-        bytes32 destinationCaller,
         address integrator
     ) internal {
         bytes memory hookData = CCTPPayloadLib.encodeShield(ShieldData({
@@ -271,12 +297,14 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
             integrator: integrator
         }));
 
+        // destinationCaller is pinned to the Hub's hook router (validated non-zero in crossChainShield)
+        // so the message can only be delivered via the Hub's CCTPHookRouter.
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
             amount,
             hubDomain,
             hubPool,
             usdc,
-            destinationCaller,
+            hubHookRouter,
             maxFee,
             _resolveFinality(minFinalityThreshold),
             hookData
@@ -327,6 +355,18 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPoolClient: Only owner");
         hookRouter = _hookRouter;
+    }
+
+    /**
+     * @notice Set the Hub chain's CCTP hook router (as bytes32)
+     * @dev Pinned as the CCTP destinationCaller for outbound shield burns, so a shield can only be
+     *      delivered through the Hub's CCTPHookRouter. Must be set before crossChainShield can be used.
+     * @param _hubHookRouter Hub CCTPHookRouter address (as bytes32)
+     */
+    function setHubHookRouter(bytes32 _hubHookRouter) external override {
+        require(msg.sender == owner, "PrivacyPoolClient: Only owner");
+        hubHookRouter = _hubHookRouter;
+        emit HubHookRouterSet(_hubHookRouter);
     }
 
     /**

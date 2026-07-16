@@ -1,0 +1,70 @@
+/* ABOUTME: Styling for NonDeterministicSignerScreen — mirrors SignEnrollmentStep + AntiPhishChecksumStep visual rhythm so the error screen feels native to the onboarding flow. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+}
+
+.title {
+  margin: 0;
+}
+
+.body {
+  margin: 0;
+  color: var(--semantic-color-text-secondary);
+}
+
+.lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  margin-block-start: var(--primitives-spacing-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+.listHeading {
+  margin: 0;
+  color: var(--semantic-color-text-muted);
+}
+
+.listItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+}
+
+.listItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--primitives-spacing-2);
+  color: var(--semantic-color-text-primary);
+}
+
+.checkIcon {
+  display: inline-block;
+  min-width: 1ch;
+  color: var(--semantic-color-text-success, var(--semantic-color-text-primary));
+}
+
+.crossIcon {
+  display: inline-block;
+  min-width: 1ch;
+  color: var(--semantic-color-text-danger, var(--semantic-color-text-secondary));
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  margin-block-start: var(--primitives-spacing-3);
+}

@@ -56,7 +56,7 @@ const PRIVACY_POOL_CLIENT_ABI = [
   "function localDomain() view returns (uint32)",
   "function hubDomain() view returns (uint32)",
   "function hubPool() view returns (bytes32)",
-  "function crossChainShield(uint256 amount, uint256 maxFee, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller) external returns (uint64)",
+  "function crossChainShield(uint256 amount, uint256 maxFee, uint32 minFinalityThreshold, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, address integrator) external returns (uint64)",
 ];
 
 // ============================================================================
@@ -454,13 +454,13 @@ async function testCrossChainShield(config: ReturnType<typeof getNetworkConfig>,
   const shieldTx = await client.crossChainShield(
     amount,
     MAX_FEE,
+    0, // minFinalityThreshold: 0 → contract resolves to STANDARD
     npk,
     encryptedBundle,
     shieldKey,
-    ethers.ZeroHash, // any relayer can relay
+    ethers.ZeroAddress, // integrator: none
     fees2
-  ,
-  ethers.ZeroAddress);
+  );
   info(`Tx: ${shieldTx.hash}`);
   const receipt = await waitForTx(shieldTx);
   passed(`Cross-chain shield initiated in block ${receipt.blockNumber}`);

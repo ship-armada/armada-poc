@@ -1,4 +1,4 @@
-/* ABOUTME: Settings page layout — vertical stack of section Cards. Same top-align opt-out as Dashboard/History. */
+/* ABOUTME: Settings page layout — vertical stack of section Cards. Horizontally auto-centered in AppLayout's top-aligned <main>, like Dashboard/History. */
 /* ABOUTME: Toggle switch is a styled checkbox; section title is a small uppercase eyebrow inside each Card. */
 
 .page {

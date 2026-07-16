@@ -79,7 +79,7 @@ contract AdapterRegistryEnforcementTest is Test {
     function test_redeemAndShield_revertsWhenNotAuthorized() public {
         // Registry: adapter is NOT authorized and NOT withdraw-only
         vm.expectRevert("ArmadaYieldAdapter: not authorized or withdraw-only");
-        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext());
+        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext(), bytes32(0), _dummyCiphertext(), 0);
     }
 
     function test_redeemAndShield_passesAuthCheckWhenAuthorized() public {
@@ -88,7 +88,7 @@ contract AdapterRegistryEnforcementTest is Test {
 
         // Should pass auth check but revert later (no privacy pool)
         vm.expectRevert("ArmadaYieldAdapter: no privacyPool");
-        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext());
+        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext(), bytes32(0), _dummyCiphertext(), 0);
     }
 
     function test_redeemAndShield_passesAuthCheckWhenWithdrawOnly() public {
@@ -97,7 +97,7 @@ contract AdapterRegistryEnforcementTest is Test {
 
         // Should pass auth check but revert later (no privacy pool)
         vm.expectRevert("ArmadaYieldAdapter: no privacyPool");
-        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext());
+        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext(), bytes32(0), _dummyCiphertext(), 0);
     }
 
     // ======== Constructor validation ========
@@ -129,7 +129,7 @@ contract AdapterRegistryEnforcementTest is Test {
 
         // redeemAndShield still works (passes auth, reverts on privacyPool)
         vm.expectRevert("ArmadaYieldAdapter: no privacyPool");
-        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext());
+        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext(), bytes32(0), _dummyCiphertext(), 0);
     }
 
     function test_lifecycle_fullDeauthBlocksEverything() public {
@@ -138,6 +138,6 @@ contract AdapterRegistryEnforcementTest is Test {
         adapter.lendAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext());
 
         vm.expectRevert("ArmadaYieldAdapter: not authorized or withdraw-only");
-        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext());
+        adapter.redeemAndShield(_dummyTransaction(), bytes32(0), _dummyCiphertext(), bytes32(0), _dummyCiphertext(), 0);
     }
 }

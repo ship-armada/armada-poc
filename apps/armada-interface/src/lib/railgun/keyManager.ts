@@ -27,6 +27,31 @@ interface UnlockedState {
    * chain rescan (correct, slow).
    */
   creationBlock: number | null
+  /**
+   * The EVM address this unlock is bound to. Set by signIn() to the connected wagmi address;
+   * set by paste/backup unlock paths to the EVM address connected at the time of unlock (so
+   * subsequent account-switch detection still works). `null` only when the unlock happened
+   * with no EVM wallet connected at all — rare; account-switch detection is a no-op in that
+   * case (`useWallet` compares against null and matches).
+   *
+   * Lowercase-normalized to match the per-EVM-address localStorage map keys. wagmi returns
+   * checksummed addresses; we lowercase here at the boundary and never round-trip the
+   * checksummed form so map lookups never miss due to case.
+   */
+  evmAddress: `0x${string}` | null
+  /**
+   * BIP-44-style account index used to derive this wallet. v1 UI exposes only `0n`; the
+   * plumbing supports N ≥ 0 for future multi-identity-per-EVM-wallet (each value of `account`
+   * produces a different signature → different root_secret → different shielded identity).
+   */
+  account: bigint
+  /**
+   * 32-byte AES-256 key for at-rest encryption of cache records (tx history, in Phase 7).
+   * Derived from root_secret via HKDF-Expand with `info='armada-tx-history:v1'` — distinct
+   * from sdkEncryptionKey so a leak of one doesn't compromise the other. Same lifecycle as
+   * rootSecret: zeroized on `clear()`.
+   */
+  historyEncryptionKey: Uint8Array
 }
 
 let unlocked: UnlockedState | null = null
@@ -80,6 +105,35 @@ export function getCreationBlock(): number | null {
 }
 
 /**
+ * Returns the EVM address this unlock is bound to. Does NOT throw when locked — the wagmi
+ * account-change effect in `useWallet` consults this value defensively before deciding whether
+ * to auto-lock. Callers receive `null` when either the wallet is locked OR the unlock happened
+ * with no EVM wallet connected.
+ *
+ * Always lowercase — wagmi gives checksummed addresses; we normalize at the keyManager boundary
+ * so comparisons against a freshly-arrived wagmi address are direct (also lowercased) without
+ * the caller having to remember the convention.
+ */
+export function getEvmAddress(): `0x${string}` | null {
+  return unlocked?.evmAddress ?? null
+}
+
+/** Returns the account index this unlock is bound to. Same lock-safe semantics as above. */
+export function getAccount(): bigint | null {
+  return unlocked?.account ?? null
+}
+
+/**
+ * Returns the 32-byte AES-256 history-encryption key. Throws when locked — there's no safe
+ * fallback for the storage layer; refusing to operate on the cache when no key is available
+ * is correct (an unencrypted write would create an unrecoverable plaintext record on disk).
+ */
+export function getHistoryEncryptionKey(): Uint8Array {
+  if (!unlocked) throw new Error('keyManager: wallet is locked')
+  return unlocked.historyEncryptionKey
+}
+
+/**
  * Re-compute the checksum from the current rootSecret. Used by UI surfaces that need to compare
  * against a stored value (mismatch → possible compromise). Cheap (one SHA256).
  */
@@ -96,6 +150,10 @@ export function deriveChecksum(): string {
 export function clear(): void {
   if (unlocked) {
     unlocked.rootSecret.fill(0)
+    // Same best-effort zeroize for the history-encryption key — once we drop the reference V8
+    // will reclaim it on the next GC, but explicitly clobbering the bytes closes the window
+    // during which a heap scrape could recover the key.
+    unlocked.historyEncryptionKey.fill(0)
   }
   unlocked = null
 }

@@ -2,6 +2,7 @@
 // ABOUTME: Dynamic-imports the Railgun SDK + shared-models to dodge jsdom's circomlibjs crash; the populated calldata gets POSTed to /relay by features/unshield/handler.
 
 import { loadHubNetwork } from './network'
+import { yieldToPaint } from '@/lib/paint'
 
 type RailgunSdk = typeof import('@railgun-community/wallet')
 type SharedModels = typeof import('@railgun-community/shared-models')
@@ -87,6 +88,9 @@ export async function generateUnshieldProofForRecipient(opts: {
     sharedModels(),
   ])
   const sendWithPublicWallet = opts.broadcasterFee === null
+  // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
+  // blocks the main thread for 20-30s.
+  await yieldToPaint()
   await generateUnshieldProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -183,6 +187,9 @@ export async function generateXchainUnshieldProof(opts: {
     sharedModels(),
   ])
   const sendWithPublicWallet = opts.broadcasterFee === null
+  // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
+  // blocks the main thread for 20-30s.
+  await yieldToPaint()
   await generateUnshieldProof(
     TXIDVersion.V2_PoseidonMerkle,
     NetworkName.Hardhat,
@@ -192,8 +199,17 @@ export async function generateXchainUnshieldProof(opts: {
       {
         tokenAddress: opts.tokenAddress,
         amount: opts.amount,
-        // The PrivacyPool itself receives the USDC — it then forwards via CCTP. The actual user
-        // recipient is encoded in the atomicCrossChainUnshield args (not the proof).
+        // The PrivacyPool itself receives the USDC — it then forwards via CCTP.
+        //
+        // TODO(#399): the hub now BINDS the destination (recipient, domain, maxFee) into the proof via
+        // boundParams.adaptParams (#364/#378, PR #398). This plain generateUnshieldProof sets
+        // adaptParams = 0, which the updated atomicCrossChainUnshield REJECTS. Switch this +
+        // buildXchainUnshieldTransactionStruct to generateProofTransactions(..., relayAdaptID = {
+        // contract: ZeroAddress, parameters: encodeCctpBinding(finalRecipient, destinationDomain,
+        // maxFee) }) — the yield.ts pattern. recipientAddress stays the pool (npk = pool; the cross-path
+        // replay is closed by a contract-side _transferTokenOut guard). Needs a real-proof e2e — see
+        // #399. Coupled: the pool must not be redeployed until this lands, or cross-chain unshields
+        // revert. `encodeCctpBinding` is ready in lib/railgun/cctpBinding.ts.
         recipientAddress: opts.privacyPoolAddress,
       },
     ],

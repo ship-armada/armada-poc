@@ -42,7 +42,7 @@ npm run test:governance     # Governance lifecycle + adversarial tests
 npm run test:crowdfund      # Crowdfund lifecycle + adversarial tests
 
 # Crowdfund testing tools
-npm run crowdfund:observer  # Start crowdfund observer UI (port 5173)
+npm run crowdfund:observer  # Start crowdfund observer UI (port 5173) — DEPRECATED standalone app; components live on in shared
 npm run crowdfund:committer # Start crowdfund committer UI (port 5174)
 npm run crowdfund:admin     # Start crowdfund admin UI (port 5175)
 npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
@@ -50,6 +50,11 @@ npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
 # Sepolia testnet
 npm run setup:sepolia       # Deploy to Sepolia (requires config/secrets.env)
 npm run relayer:sepolia     # Start relayer in real CCTP mode (Iris attestation)
+
+# Named deployment instances (pulls manifests from armada-deployments repo)
+npm run fetch-deployment -- medi2   # → deployments/instances/medi2/
+# Then point an app at it:
+VITE_NETWORK=sepolia VITE_DEPLOYMENT_INSTANCE=medi2 npm run crowdfund:committer
 ```
 
 ## Known POC Shortcuts (Do Not Replicate)
@@ -91,15 +96,20 @@ When writing new code, follow production security practices even though these le
 | `test/` | Hardhat/Mocha integration tests (TypeScript) |
 | `test-foundry/` | Foundry fuzz, invariant, and Halmos symbolic tests (Solidity) |
 | `scripts/` | Hardhat deployment and utility scripts |
+| `tasks/` | Hardhat CLI tasks (crowdfund, governance operations) |
 | `relayer/` | Node.js relayer service |
-| `usdc-v2-frontend/` | Temporary React frontend |
-| `crowdfund-ui/` | Crowdfund UIs — observer, committer, admin (React, Vite, Jotai) |
+| `apps/` | `armada-interface` — user app for shield/unshield/yield/payments (React, Vite); Launch 2 |
+| `crowdfund-ui/` | Crowdfund UIs — committer, admin (React, Vite, Jotai); observer is deprecated as a standalone app |
+| `governance-ui/` | Standalone governance proposal builder (React, Vite); not in npm workspaces |
+| `packages/` | Shared workspace packages — `@armada/ui` design system + showcase |
 | `lib/` | Foundry deps (forge-std, halmos) + Railgun SDK helpers |
 | `config/` | Environment configs (local.env, sepolia.env, networks.ts) |
+| `deploy/` | Crowdfund indexer deployment infra (Docker, nginx, backup scripts) |
 | `deployments/` | Generated deployment manifests (Sepolia ones are committed) |
-| `audit-reports/` | AI-assisted security audit (57 findings, Trail of Bits methodology) |
+| `specs/` | Specifications — governance, crowdfund, fee structure, ARM token, operations, monitoring |
+| `docs/` | Operational runbooks (e.g. wind-down redemption) |
+| `_legacy/llm-analysis-2026-02/` | LLM-generated security analysis snapshot (Feb 2026, formerly `audit-reports/`) — historical, predates fee module/governance/July review |
 | `reports/` | Threat models, formal verification notes, analysis reports |
-| `docs/` | Implementation plans and specs |
 | `mcp-server/` | MCP server exposing read-only dev tools for AI coding agents |
 | `_legacy/` | Deprecated earlier approach — do not modify |
 
@@ -141,11 +151,12 @@ Contracts must be deployed in this order (the `npm run setup` script handles thi
 2. Aave mock (hub only)
 3. Governance (hub only) — must precede PrivacyPool (treasury address) and Yield (adapter registry)
 4. PrivacyPool modules (all chains)
-5. Yield contracts (hub only)
-6. Pool linking (hub — connects clients to hub, authorizes adapter in governance registry)
-7. Fee module (hub only) — wires into PrivacyPool + YieldVault; timelock calls use Anvil impersonation locally
-8. Faucets (all chains)
-9. Crowdfund (hub only)
+5. Gasless-shield wrapper (all chains) — permit-based gasless shield path
+6. Yield contracts (hub only)
+7. Pool linking (hub — connects clients to hub, authorizes adapter in governance registry)
+8. Fee module (hub only) — wires into PrivacyPool + YieldVault; timelock calls use Anvil impersonation locally
+9. Faucets (all chains)
+10. Crowdfund (hub only)
 
 If you need to redeploy a single component, understand its dependencies first.
 
@@ -155,7 +166,8 @@ The following are intentional design decisions or inherited code that may look l
 
 - **Railgun internals** (`contracts/railgun/logic/`) — Adapted from Railgun's open-source codebase. Changes break ZK circuit compatibility silently.
 - **Non-standard ERC-4626 vault** (`ArmadaYieldVault`) — Intentionally deviates from the standard. Do not "fix" it to conform.
-- **Frontend legacy code** (`usdc-v2-frontend/`) — Residual Namada/Noble/Cosmos code paths are harmless. The frontend is temporary and will be replaced.
+- **Frozen Launch 1 interfaces** (`IShieldPauseController`, `IFeeCollector` in `contracts/governance/`) — These are consumed by immutable governance contracts deployed at the crowdfund launch. Once Launch 1 ships, changing their function signatures or semantics breaks the Launch 2 privacy-pool/fee-module integration. Treat as external ABI. See `.context/two-launch-feasibility.md`.
+- **`apps/armada-interface`** — The current user app (Launch 2). Residual Namada/Noble/Cosmos code paths inherited from the earlier frontend are harmless. (The predecessor `usdc-v2-frontend` now lives in `_legacy/`.)
 - **Testing mode / verification bypass code** — These POC shortcuts exist in the codebase. Do not remove them (they're tracked), but never enable them without human instruction.
 - **`_legacy/` directory** — Deprecated earlier approach. Do not modify or reference in new code.
 

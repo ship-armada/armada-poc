@@ -6,6 +6,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { History } from './History'
 import { txListAtom } from '@/state/tx'
+import { activeRailgunWalletIdAtom } from '@/state/wallet'
 import type { TxExecutionState, TxRecord } from '@/lib/tx/types'
 
 function record(
@@ -30,6 +31,9 @@ function record(
 
 function renderHistory(records: TxRecord[]) {
   const store = createStore()
+  // V2 Phase 6 scoping: History now reads activeTxListAtom (filters by active walletId).
+  // Tests seed records bound to 'rg'; the active id must match for them to render.
+  store.set(activeRailgunWalletIdAtom, 'rg')
   store.set(txListAtom, records)
   render(
     <Provider store={store}>
@@ -87,7 +91,11 @@ describe('<History>', () => {
       record('b', 'failed'),
     ])
     fireEvent.click(screen.getByRole('tab', { name: 'Complete' }))
-    expect(screen.getAllByRole('status').length).toBe(1)
+    // Completed rows deliberately render NO status chip (TxRow.showChip — the chip only carries
+    // information for non-completed states), so count rows via the amount line instead: exactly
+    // the completed record's "$1" renders; the failed record is filtered out.
+    expect(screen.getAllByText('$1').length).toBe(1)
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('groups failed/expired/cancelled under the Failed filter', () => {
@@ -104,23 +112,23 @@ describe('<History>', () => {
 
   it('toggles the inline stepper open and closed on row click', () => {
     renderHistory([record('a', 'completed')])
-    // Initially no stepper.
-    expect(screen.queryByText(/Usually takes/)).toBeNull()
+    // Detect the expanded stepper by its always-present "Show technical details" disclosure —
+    // the ETA hint is suppressed for terminal records (T-L4), so it's not a reliable marker.
+    expect(screen.queryByText(/Show technical details/i)).toBeNull()
     fireEvent.click(screen.getByRole('button'))
-    // Expanded — TxLifecycleStepper renders its "Usually takes" ETA hint.
-    expect(screen.getByText(/Usually takes/)).toBeInTheDocument()
+    expect(screen.getByText(/Show technical details/i)).toBeInTheDocument()
     // Click again → collapses.
     fireEvent.click(screen.getByRole('button'))
-    expect(screen.queryByText(/Usually takes/)).toBeNull()
+    expect(screen.queryByText(/Show technical details/i)).toBeNull()
   })
 
   it('only allows one row expanded at a time', () => {
     renderHistory([record('a', 'completed'), record('bb', 'completed')])
     const buttons = screen.getAllByRole('button')
     fireEvent.click(buttons[0]!)
-    expect(screen.getAllByText(/Usually takes/).length).toBe(1)
+    expect(screen.getAllByText(/Show technical details/i).length).toBe(1)
     fireEvent.click(buttons[1]!)
     // First collapses, second expands — still exactly one.
-    expect(screen.getAllByText(/Usually takes/).length).toBe(1)
+    expect(screen.getAllByText(/Show technical details/i).length).toBe(1)
   })
 })

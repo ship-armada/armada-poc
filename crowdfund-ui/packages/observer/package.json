@@ -1,5 +1,6 @@
 {
   "name": "@armada/crowdfund-observer",
+  "description": "DEPRECATED as a standalone app (not part of the mainnet launch). Its view components live in @armada/crowdfund-shared and remain in use by the committer.",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,6 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc -b --force --noEmit",
+    "clean": "rm -f tsconfig.tsbuildinfo tsconfig.app.tsbuildinfo tsconfig.node.tsbuildinfo",
     "test": "vitest run",
     "test:watch": "vitest"
   },

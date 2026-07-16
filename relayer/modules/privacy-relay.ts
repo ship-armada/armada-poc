@@ -17,6 +17,7 @@
 import { RelayError } from "../types";
 import type { RelayRequest, TransactionStatus } from "../types";
 import type { WalletManager } from "./wallet-manager";
+import { WalletLockedError } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
 import type { VerifierContext } from "./broadcaster-fee-verifier";
 import { verifyBroadcasterFee } from "./broadcaster-fee-verifier";
@@ -26,6 +27,12 @@ import {
   GASLESS_CROSS_CHAIN_SHIELD_SELECTOR,
   verifyGaslessFee,
 } from "./gasless-fee-verifier";
+import {
+  TRANSACT_SELECTOR,
+  LEND_AND_SHIELD_SELECTOR,
+  REDEEM_AND_SHIELD_SELECTOR,
+  ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR,
+} from "../lib/transact-shape";
 import type { Counters } from "./counters";
 
 // ============ Constants ============
@@ -48,11 +55,15 @@ import type { Counters } from "./counters";
  *   - `gaslessCrossChainShield((permitInput),(dest))` — client `GaslessShieldWrapperClient`.
  *     Fee lives at `permitInput.fee`. Same atomic enforcement on the wrapper side.
  */
+// Selectors are sourced from the shared constants (lib/transact-shape + gasless-fee-verifier) rather
+// than hardcoded literals, so a wrapper-signature change updates the constant and this allowlist in
+// lockstep — no silent drift. (atomicCrossChainUnshield's selector changed with #64 and again with
+// #287; the literal here previously drifted.)
 const ALLOWED_SELECTORS: Record<string, string> = {
-  "0xd8ae136a": "transact",
-  "0xf2987ad1": "lendAndShield",
-  "0x0793b70e": "redeemAndShield",
-  "0xe484d408": "atomicCrossChainUnshield",
+  [TRANSACT_SELECTOR]: "transact",
+  [LEND_AND_SHIELD_SELECTOR]: "lendAndShield",
+  [REDEEM_AND_SHIELD_SELECTOR]: "redeemAndShield",
+  [ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR]: "atomicCrossChainUnshield",
   [GASLESS_SHIELD_SELECTOR]: "gaslessShield",
   [GASLESS_CROSS_CHAIN_SHIELD_SELECTOR]: "gaslessCrossChainShield",
 };
@@ -186,8 +197,12 @@ export class PrivacyRelay {
       );
     }
 
-    // 3. Validate fee cache ID against THIS chain's schedule
-    if (!feeCalculator.validateFeesCacheId(feesCacheId)) {
+    // 3. Resolve the EXACT schedule this quote's cacheId was issued from (current, or the one-deep
+    // previous if still within the variance buffer). We verify the paid fee against THIS schedule's
+    // prices below — never a freshly-regenerated one — so honest proofs built against a quote that
+    // expired mid-flight aren't spuriously rejected by an upward gas-price re-quote.
+    const quotedSchedule = feeCalculator.getScheduleByCacheId(feesCacheId);
+    if (!quotedSchedule) {
       throw new RelayError(
         "FEE_EXPIRED",
         `Fee quote has expired or is invalid for chain ${chainId}. Please re-fetch fees.`,
@@ -216,8 +231,7 @@ export class PrivacyRelay {
     //    - Proof-bearing selectors: fee is encrypted inside a SNARK commitment ciphertext;
     //      verifier decrypts under the relayer's viewing key. Hub-only today — Phase A doesn't
     //      run any non-hub proof-bearing flow.
-    const fees = await feeCalculator.getCurrentFees();
-    const advertisedFee = advertisedFeeForSelector(selector, fees.fees);
+    const advertisedFee = advertisedFeeForSelector(selector, quotedSchedule.fees);
     try {
       if (GASLESS_SELECTORS.has(selector)) {
         verifyGaslessFee(
@@ -273,6 +287,16 @@ export class PrivacyRelay {
       this.counters.inc(`submitSuccess.${selectorName}`);
       return { txHash: result.txHash };
     } catch (e: any) {
+      // Lost the per-chain lock race to a concurrent submit on this chain. This is a transient
+      // "try again shortly" condition, not a real submission failure — surface it as RELAYER_BUSY
+      // (503) so the client retries, instead of SUBMISSION_FAILED (502).
+      if (e instanceof WalletLockedError) {
+        this.counters.inc(`submitFail.${selectorName}.RELAYER_BUSY`);
+        throw new RelayError(
+          "RELAYER_BUSY",
+          `Relayer wallet on chain ${chainId} is busy processing another transaction. Please retry shortly.`,
+        );
+      }
       const code = e.message?.includes("Duplicate") ? "DUPLICATE_TX" : "SUBMISSION_FAILED";
       this.counters.inc(`submitFail.${selectorName}.${code}`);
       if (code === "DUPLICATE_TX") {

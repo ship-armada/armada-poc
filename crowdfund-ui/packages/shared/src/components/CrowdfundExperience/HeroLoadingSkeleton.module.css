@@ -1,0 +1,148 @@
+/* ABOUTME: Skeleton + shimmer keyframes for the CrowdfundExperience loading state. */
+/* ABOUTME: Co-located with the hero — not promoted to @armada/ui until the designer ships a skeleton primitive. */
+
+.block {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 6%, transparent);
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+}
+
+.block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--semantic-color-text-primary) 10%, transparent) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: shimmer 1400ms ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block::after {
+    animation: none;
+  }
+}
+
+/* ----- Hero-specific compositions ----- */
+
+.progressCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  padding: var(--primitives-spacing-6);
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--semantic-color-surface-default) 55%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+}
+
+.progressNumber {
+  height: 48px;
+  width: 280px;
+}
+
+.progressTag {
+  height: 24px;
+  width: 100px;
+  border-radius: 999px;
+}
+
+.progressTrack {
+  height: 14px;
+  width: 100%;
+  border-radius: 999px;
+}
+
+.progressFootRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-4);
+}
+
+.progressFootTag {
+  height: 16px;
+  width: 110px;
+  border-radius: 999px;
+}
+
+.participantsCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-5);
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--semantic-color-surface-default) 55%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.participantsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+}
+
+.participantsHeaderLeft {
+  height: 18px;
+  width: 140px;
+}
+
+.participantsHeaderRight {
+  height: 16px;
+  width: 80px;
+}
+
+.participantRow {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+}
+
+.participantAvatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.participantAddress {
+  height: 14px;
+  flex: 1 1 auto;
+}
+
+.participantHop {
+  height: 16px;
+  width: 56px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.participantAmount {
+  height: 14px;
+  width: 72px;
+  flex: 0 0 auto;
+}

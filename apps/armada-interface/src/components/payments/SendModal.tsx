@@ -1,7 +1,7 @@
 // ABOUTME: SendModal — pay someone in USDC, either privately (0zk → 0zk) or to an external wallet (0x). Picks among three kinds based on the tab + destination chain.
 // ABOUTME: Mounts three useTx hooks (transfer-shielded / unshield-local / unshield-xchain); submitted-kind state locks the subscription for the rest of the flow. External-tab + xchain reuses unshield-xchain — same contract path, different UI entry.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
@@ -17,23 +17,27 @@ import {
 } from '@/config/deployments'
 import { parseUsdcInput } from '@/lib/format'
 import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
-import { isShieldedAddress } from '@/lib/address'
+import { isShieldedAddress, validateShieldedAddressStrict } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
+import { canRetryTx } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
+import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
-  ActionFlowShell,
+  overlayIndicatorStep,
+  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
-import { SendInputStep, type SendTab } from './SendInputStep'
+import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { SendInputStepContent, SendInputStepFooter, type SendTab } from './SendInputStep'
+import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { SendReviewStep } from './SendReviewStep'
 import { SendCompleteStep } from './SendCompleteStep'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 
 type LocalStep = FlowStep
-const STEPS: ReadonlyArray<FlowVisibleStep> = ['input', 'review', 'progress', 'complete']
 
 type SubmittedKind = 'transfer-shielded' | 'unshield-local' | 'unshield-xchain'
 
@@ -60,6 +64,9 @@ export function SendModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
+  const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Source data
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
@@ -112,7 +119,6 @@ export function SendModal() {
 
   const computedKind: SubmittedKind = computeKind(tab, destChainId, hubChainId)
   const isXchain = computedKind === 'unshield-xchain'
-  const isLocalUnshield = computedKind === 'unshield-local'
   // Display fee per (kind, amount, quote):
   //   transfer-shielded → relayer's `transfer` tier from the quote (A4); 0n pre-quote-load
   //   unshield-local    → relayer's `unshield` tier from the quote (A3+); 0n pre-quote-load
@@ -127,13 +133,32 @@ export function SendModal() {
   // shared helper — see `lib/relayer.ts::computeFeeBreakdown`. The xchain branch uses
   // `secondaryFee` to model the CCTP fee being deducted from the recipient mint, separate from
   // the broadcaster fee on top.
+  // useDisplayFees normalizes shape (protocolFee + nativeGas) — 0n for these kinds today, but
+  // routes through DepositAmountCard's tooltip via flowBreakdown below.
+  const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
+    computedKind,
+    amount,
+    tab === 'external' && isXchain ? destChainId : hubChainId,
+    quote,
+  )
   const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
     computedKind,
     amount,
     fee,
     max,
-    { secondaryFee: cctpFee },
+    { secondaryFee: cctpFee, protocolFee: displayFees.protocolFee },
   )
+  const flowBreakdown = {
+    broadcasterFee: fee,
+    cctpFee: isXchain ? cctpFee : undefined,
+    recipientReceives,
+    totalDeducted,
+    recipientLabel: 'Recipient receives',
+  }
+  // Inclusive Fee total surfaced on both the input card's FEE row and the review FeeSummary —
+  // broadcaster + on-chain protocol + CCTP (when applicable). The breakdown tooltip exposes the
+  // individual components.
+  const displayedFee = fee + displayFees.protocolFee + cctpFee
 
   // Reset local state on close.
   useEffect(() => {
@@ -165,15 +190,39 @@ export function SendModal() {
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setIsSubmitting(true)
     setSubmitError(null)
     try {
+      // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
+      let submittedId: string | null = null
       // Re-quote if the cached fee is stale — see ShieldModal for the rationale.
       const activeQuote = quote && !isStale ? quote : await refresh()
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
       }
       const feeCacheId = activeQuote.cacheId
+      // S-M5: re-validate amount + the FRESH relayer fee against the balance before proof gen. All
+      // three kinds draw the fee from the shielded balance (fee-on-top) on the relayer path;
+      // wallet-override pays native gas separately, so no shielded fee applies there.
+      const freshFee = computedKind === 'transfer-shielded'
+        ? BigInt(activeQuote.fees.transfer)
+        : computedKind === 'unshield-local'
+          ? BigInt(activeQuote.fees.unshield)
+          : BigInt(activeQuote.fees.crossChainUnshield)
+      assertSpendableForFeeOnTop({ amount, fee: prefs.submitFromWallet ? 0n : freshFee, balance: max })
       if (computedKind === 'transfer-shielded') {
+        // Strict-validate the user's typed 0zk recipient (bech32m checksum, not just shape) at the
+        // funds-committing boundary — a transposed character would otherwise send a private
+        // transfer to a valid-shaped but wrong/unspendable address. The input step's regex is only
+        // a fast pre-filter; this is the authoritative check.
+        if (!(await validateShieldedAddressStrict(recipient))) {
+          throw new Error(
+            'That shielded (0zk) address is not valid — double-check it for typos. Funds sent to a ' +
+              'malformed shielded address cannot be recovered.',
+          )
+        }
         // Same address-shape guard as unshield-local — both paths now embed a broadcaster
         // output, so a malformed published address would doom proof gen the same way.
         if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
@@ -183,7 +232,7 @@ export function SendModal() {
           )
         }
         setSubmittedKind('transfer-shielded')
-        await txTransfer.submit({
+        submittedId = await txTransfer.submit({
           amount,
           feeCacheId,
           recipient,
@@ -204,7 +253,7 @@ export function SendModal() {
         setSubmittedKind('unshield-local')
         // Freeze the broadcaster context with the rest of the submit state — same rationale as
         // UnshieldModal: the proof must embed these EXACT values to pass the relayer's verifier.
-        await txUnshieldLocal.submit({
+        submittedId = await txUnshieldLocal.submit({
           amount,
           feeCacheId,
           recipient,
@@ -224,7 +273,7 @@ export function SendModal() {
           )
         }
         setSubmittedKind('unshield-xchain')
-        await txUnshieldXchain.submit({
+        submittedId = await txUnshieldXchain.submit({
           amount,
           feeCacheId,
           toChainId: destChainId,
@@ -234,50 +283,71 @@ export function SendModal() {
           useWalletOverride: prefs.submitFromWallet,
         })
       }
+      if (submittedId === null) return
       setStep('progress')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
       setErrorAtStep('review')
+    } finally {
+      submittingRef.current = false
+      setIsSubmitting(false)
     }
   }
 
   if (!isOpen) return null
 
   return (
-    <ActionFlowShell
+    <DepositOverlayShell
       open
       onClose={close}
-      title="Send"
-      step={step}
-      steps={STEPS}
-      errorAtStep={errorAtStep}
+      dismissible={true}
+      flowLabel="Send"
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
-        <SendInputStep
-          tab={tab}
-          onTabChange={t => {
-            setTab(t)
-            setRecipient('') // recipient format differs between tabs; clear on switch
-          }}
-          destChainId={destChainId}
-          onDestChainIdChange={setDestChainId}
-          recipient={recipient}
-          onRecipientChange={setRecipient}
-          amountStr={amountStr}
-          onAmountChange={setAmountStr}
-          max={inputMax}
-          fee={fee}
-          cctpFee={cctpFee}
-          totalDeducted={totalDeducted}
-          isXchain={isXchain}
-          isLocalUnshield={isLocalUnshield}
-          isFeeRefreshing={isStale}
-          destDeploymentError={destDeploymentError}
-          onCancel={close}
-          onContinue={() => setStep('review')}
-        />
+        <>
+          <SendInputStepContent
+            tab={tab}
+            onTabChange={t => {
+              setTab(t)
+              setRecipient('') // recipient format differs between tabs; clear on switch
+            }}
+            destChainId={destChainId}
+            onDestChainIdChange={setDestChainId}
+            recipient={recipient}
+            onRecipientChange={setRecipient}
+            amountStr={amountStr}
+            onAmountChange={setAmountStr}
+            max={max}
+            maxInput={inputMax}
+            displayFees={displayFees}
+            flowBreakdown={flowBreakdown}
+            feeLoading={feeLoading}
+            // The user always signs on HUB regardless of tab — `transfer-shielded` runs the
+            // proof-bearing tx on hub, `unshield-local` likewise, and `unshield-xchain` signs
+            // `atomicCrossChainUnshield` on hub before CCTP delivers on the destination chain.
+            // Previously `tab === 'external' && isXchain ? destChainId : hubChainId` wrongly
+            // warned about ETH on the destination chain — no destination-chain tx is ever sent
+            // from the user's wallet.
+            gasChainId={hubChainId}
+            // SendModal's three kinds default to the relayer path; user pays gas only when
+            // they've toggled Preferences → "Submit transactions from my wallet".
+            gaslessMode={!prefs.submitFromWallet}
+            destDeploymentError={destDeploymentError}
+          />
+          <SendInputStepFooter
+            tab={tab}
+            recipient={recipient}
+            amountStr={amountStr}
+            maxInput={inputMax}
+            destDeploymentError={destDeploymentError}
+            onCancel={close}
+            onContinue={() => setStep('review')}
+          />
+        </>
       )}
       {step === 'review' && (
         <SendReviewStep
@@ -285,12 +355,12 @@ export function SendModal() {
           destChainId={destChainId}
           recipient={recipient}
           amount={amount}
-          fee={fee}
-          cctpFee={cctpFee}
+          fee={displayedFee}
           totalDeducted={totalDeducted}
           isXchain={isXchain}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
+          isSubmitting={isSubmitting}
           onConfirm={handleSubmit}
         />
       )}
@@ -313,9 +383,40 @@ export function SendModal() {
           error={record?.artifacts.error ?? null}
           message={submitError ?? undefined}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
-          onRetry={errorAtStep === 'review' ? () => setStep('review') : () => activeTx?.retry()}
+          primaryLabel={
+            errorAtStep === 'review' || (record != null && canRetryTx(record))
+              ? 'Try again'
+              : 'Start over'
+          }
+          onRetry={
+            errorAtStep === 'review'
+              ? () => {
+                  setSubmitError(null)
+                  setErrorAtStep(undefined)
+                  setStep('review')
+                }
+              : record != null && canRetryTx(record)
+                ? () => {
+                    // Only advance to the progress step if the executor ACCEPTS the retry (marks the
+                    // record `retrying` + re-dispatches). A refused retry (not retryable) must leave
+                    // the user on the error step with the honest error + explorer link, not flip to a
+                    // stuck spinner — that was the P0-4 no-op bug.
+                    setErrorAtStep(undefined)
+                    void activeTx?.retry()?.then((accepted) => {
+                      if (accepted) setStep('progress')
+                    })
+                  }
+                : () => {
+                    // S-M3: build-proof / FEE_EXPIRED / DUPLICATE_TX failures aren't retryable in
+                    // place; return to the input step (form state preserved) so the user can start a
+                    // fresh transaction instead of clicking a dead "Try again".
+                    setSubmitError(null)
+                    setErrorAtStep(undefined)
+                    setStep('input')
+                  }
+          }
         />
       )}
-    </ActionFlowShell>
+    </DepositOverlayShell>
   )
 }

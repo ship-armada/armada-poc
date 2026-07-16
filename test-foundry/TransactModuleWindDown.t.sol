@@ -209,7 +209,7 @@ contract TransactModuleWindDownTest is Test {
 
         Transaction memory tx0 = _buildMinimalTransaction(UnshieldType.NORMAL);
 
-        try pool.atomicCrossChainUnshield(tx0, 1, address(0xBEEF), bytes32(0), 0) {
+        try pool.atomicCrossChainUnshield(tx0, 1, address(0xBEEF), 0, bytes32(0)) {
             // Success — guard didn't block
         } catch Error(string memory reason) {
             assertTrue(

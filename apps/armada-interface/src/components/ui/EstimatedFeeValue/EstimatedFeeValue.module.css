@@ -1,0 +1,13 @@
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  justify-content: flex-end;
+}
+
+.value {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
+}

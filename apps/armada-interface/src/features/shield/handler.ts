@@ -1,14 +1,14 @@
 // ABOUTME: Shield stage handler — dual-mode (direct user-wallet submit OR Phase B3 permit-based gasless via wrapper).
-// ABOUTME: build-proof signs RAILGUN_SHIELD (+ permit when gasless); submit-relayer either writeContract or POST /relay.
+// ABOUTME: build-proof generates an ephemeral shieldPrivateKey (+ EIP-2612 permit when gasless); submit-relayer either writeContract or POST /relay.
 
 import {
   readContract,
-  signMessage,
   writeContract,
 } from 'wagmi/actions'
-import { waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
+import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
-import { erc20Abi, maxUint256 } from 'viem'
+import { encodeFunctionData, erc20Abi, maxUint256 } from 'viem'
 import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
 import { getIntegratorAddress } from '@/config/network'
@@ -20,15 +20,16 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
   createShieldRequest,
-  deriveShieldPrivateKey,
-  SHIELD_SIGNATURE_MESSAGE,
+  generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
-import { submitRelay, RelayerError } from '@/lib/relayer'
-import { poll, pollRelayStatusOnce } from '@/lib/tx/poller'
+import { submitRelay } from '@/lib/relayer'
+import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
+import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { ensureChain } from '@/lib/network-switch'
-import { advance, markFailed, patchArtifacts } from '@/lib/tx/reducer'
+import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
+import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
 import type { TxError, TxRecord } from '@/lib/tx/types'
@@ -121,7 +122,7 @@ export const shieldHandler: StageHandler<'shield'> = {
       // The throw bubbling up here is the cooperative response to the abort signal — no-op so we
       // don't clobber the cancelled/dismissed record with a failed one.
       if (ctx.signal.aborted) return
-      const failed = markFailed(record, classifyHandlerError(err, 'Shield failed.', record.artifacts.sourceTxHash))
+      const failed = markFailed(record, classifyHandlerError(err, 'Shield failed.', record.artifacts.sourceTxHash, record.meta.fromChainId))
       await ctx.upsert(failed)
     }
   },
@@ -150,10 +151,11 @@ async function runBuildProof(
   await ensureChain(record.meta.fromChainId)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Sign 'RAILGUN_SHIELD' through wagmi. The active wallet client = the user's MetaMask.
-  // signMessage prompts the user; rejection bubbles up as a Viem error.
-  const sigHex = await signMessage(wagmiConfig, { message: SHIELD_SIGNATURE_MESSAGE })
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  // shieldPrivateKey is an ephemeral per-deposit ECIES sender secret — used once at note
+  // construction, never re-needed (the recipient's chain scan uses the on-chain `shieldKey` +
+  // their viewing key to decrypt). Random generation eliminates the Railgun-convention
+  // `personal_sign('RAILGUN_SHIELD')` wallet prompt; see lib/railgun/shield.ts for the full
+  // rationale.
 
   // Determine the value that lands in the shielded commitment. For the gasless path the wrapper
   // takes `amount` from the user via permit, sends `fee` to the relayer, and shields the
@@ -170,7 +172,7 @@ async function runBuildProof(
       'Shield amount must be greater than the relayer fee. Lower the fee or raise the amount.',
     )
   }
-  const shieldPrivateKey = deriveShieldPrivateKey(sigHex)
+  const shieldPrivateKey = generateRandomShieldPrivateKey()
   const request = await createShieldRequest(
     railgunAddress,
     shieldValue,
@@ -263,75 +265,118 @@ async function runDirectSubmit(
   const privacyPoolAddress = artifacts.privacyPoolAddress!
   const usdcAddress = artifacts.usdcAddress!
 
-  // The user may have changed networks between build-proof and submit; re-assert here.
-  await ensureChain(record.meta.fromChainId)
-  if (ctx.signal.aborted) throw new Error('cancelled')
+  // Idempotency guard (P0-1): once the shield has broadcast we persist its hash. NEVER re-send —
+  // a second writeContract(shield) is a second real USDC deposit. On re-entry (Retry after a
+  // POLL_TIMEOUT, or resume-on-reload) skip straight to waiting on the known receipt.
+  let shieldHash = artifacts.sourceTxHash
+  let broadcastRecord = record
+  if (!shieldHash) {
+    // The user may have changed networks between build-proof and submit; re-assert here.
+    await ensureChain(record.meta.fromChainId)
+    if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // 1. Ensure USDC allowance. We use the connected wallet's address (looked up via wagmi's
-  //    getAccount under writeContract's hood). readContract is synchronous-ish; signal-checked
-  //    around each long step.
-  const ownerCaptured = record.walletContext.evmAddress
-  if (!ownerCaptured) {
-    throw new Error('Shield requires a connected EVM wallet; none captured at submit time.')
-  }
-  const owner = ownerCaptured as `0x${string}`
-  const allowance = await readContract(wagmiConfig, {
-    address: usdcAddress as `0x${string}`,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: [owner, privacyPoolAddress as `0x${string}`],
-  })
-  if (ctx.signal.aborted) throw new Error('cancelled')
-
-  if (allowance < record.meta.amount) {
-    // Approve max — same UX trade-off as the legacy app (one approval, all future shields free).
-    const approveHash = await writeContract(wagmiConfig, {
+    // 1. Ensure USDC allowance. We use the connected wallet's address (looked up via wagmi's
+    //    getAccount under writeContract's hood). readContract is synchronous-ish; signal-checked
+    //    around each long step.
+    const ownerCaptured = record.walletContext.evmAddress
+    if (!ownerCaptured) {
+      throw new Error('Shield requires a connected EVM wallet; none captured at submit time.')
+    }
+    const owner = ownerCaptured as `0x${string}`
+    const allowance = await readContract(wagmiConfig, {
       address: usdcAddress as `0x${string}`,
       abi: erc20Abi,
-      functionName: 'approve',
-      args: [privacyPoolAddress as `0x${string}`, maxUint256],
+      functionName: 'allowance',
+      args: [owner, privacyPoolAddress as `0x${string}`],
+      chainId: record.meta.fromChainId,
     })
-    await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal })
     if (ctx.signal.aborted) throw new Error('cancelled')
-  }
 
-  // 2. Submit the shield tx. Compose the tuple from the stored artifacts.
-  const shieldRequestTuple = {
-    preimage: {
-      npk: shieldRequest.npk as `0x${string}`,
-      token: {
-        tokenType: 0, // 0 = ERC20 per RailgunSmartWallet's TokenType enum
-        tokenAddress: usdcAddress as `0x${string}`,
-        tokenSubID: 0n,
+    // S-M4: thread a `working` record through the wallet prompts so the stepper shows "Confirm in
+    // your wallet" (markWaiting) while each MetaMask prompt is open, and so the approve leg is
+    // recorded in artifacts (approveTxHash / approveSkipped) for the WalletConfirmList checklist.
+    let working: TxRecord<'shield'> = record
+    if (allowance < record.meta.amount) {
+      // Approve max — same UX trade-off as the legacy app (one approval, all future shields free).
+      working = markWaiting(working)
+      await ctx.upsert(working)
+      const approveHash = await writeContract(wagmiConfig, {
+        address: usdcAddress as `0x${string}`,
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [privacyPoolAddress as `0x${string}`, maxUint256],
+        chainId: record.meta.fromChainId,
+      })
+      await waitForReceiptOrFail({ hash: approveHash, signal: ctx.signal, chainId: record.meta.fromChainId })
+      if (ctx.signal.aborted) throw new Error('cancelled')
+      // Approve confirmed → back to active, record the leg.
+      working = advance(working, 'submit-relayer', { approveTxHash: approveHash })
+      await ctx.upsert(working)
+    } else {
+      // No approve prompt — record it as skipped so the wallet-step list omits the Approve row.
+      working = patchArtifacts(working, { approveSkipped: true })
+      await ctx.upsert(working)
+    }
+
+    // 2. Submit the shield tx. Compose the tuple from the stored artifacts.
+    const shieldRequestTuple = {
+      preimage: {
+        npk: shieldRequest.npk as `0x${string}`,
+        token: {
+          tokenType: 0, // 0 = ERC20 per RailgunSmartWallet's TokenType enum
+          tokenAddress: usdcAddress as `0x${string}`,
+          tokenSubID: 0n,
+        },
+        value: BigInt(shieldRequest.value),
       },
-      value: BigInt(shieldRequest.value),
-    },
-    ciphertext: {
-      encryptedBundle: shieldRequest.encryptedBundle as readonly [`0x${string}`, `0x${string}`, `0x${string}`],
-      shieldKey: shieldRequest.shieldKey as `0x${string}`,
-    },
+      ciphertext: {
+        encryptedBundle: shieldRequest.encryptedBundle as readonly [`0x${string}`, `0x${string}`, `0x${string}`],
+        shieldKey: shieldRequest.shieldKey as `0x${string}`,
+      },
+    }
+    // S-M8: pre-flight simulate the shield call so an on-chain revert surfaces as a typed
+    // PRE_FLIGHT_REVERT ("nothing was sent") instead of MetaMask's opaque 30M-gas-fallback
+    // "gas limit too high". Encode the same calldata writeContract will send.
+    const shieldCalldata = encodeFunctionData({
+      abi: PRIVACY_POOL_SHIELD_ABI,
+      functionName: 'shield',
+      args: [[shieldRequestTuple], getIntegratorAddress()],
+    })
+    await simulateOrThrow({
+      to: privacyPoolAddress as `0x${string}`,
+      data: shieldCalldata,
+      value: 0n,
+      account: owner,
+      chainId: record.meta.fromChainId,
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    // S-M4: "Confirm in your wallet" for the shield prompt (after simulate so a doomed tx fails
+    // without prompting). Flips back to active below once the prompt is confirmed.
+    working = markWaiting(working)
+    await ctx.upsert(working)
+    shieldHash = await writeContract(wagmiConfig, {
+      address: privacyPoolAddress as `0x${string}`,
+      abi: PRIVACY_POOL_SHIELD_ABI,
+      functionName: 'shield',
+      args: [[shieldRequestTuple], getIntegratorAddress()],
+      chainId: record.meta.fromChainId,
+    })
+    // Persist the source tx hash immediately so any subsequent failure (timeout, revert, cancel)
+    // carries the hash for the explorer-link UX, and so the idempotency guard above sees it on
+    // re-entry. recordBroadcastHash re-reads the latest record (fresh seq) — we thread `working`
+    // (whose upserts moved the seq forward) so the hash write isn't OCC-dropped.
+    const broadcast = await recordBroadcastHash(working, shieldHash, ctx)
+    if (broadcast.dismissed) return
+    // Prompt confirmed → active ("Submitting transaction") for the receipt wait below.
+    broadcastRecord = advance(broadcast.record, 'submit-relayer')
+    await ctx.upsert(broadcastRecord)
   }
-  const shieldHash = await writeContract(wagmiConfig, {
-    address: privacyPoolAddress as `0x${string}`,
-    abi: PRIVACY_POOL_SHIELD_ABI,
-    functionName: 'shield',
-    args: [[shieldRequestTuple], getIntegratorAddress()],
-  })
-  // Persist the source tx hash immediately so any subsequent failure (timeout, revert, cancel)
-  // carries the hash for the explorer-link UX. Writing as a patch — not an `advance` — because
-  // we're still inside the submit-relayer stage waiting for the receipt. We MUST thread the
-  // patched record forward to the final advance: `record` is now stale (updatedSeq lower than
-  // what's in the atom/IDB), so building advance from `record` would produce an equal-seq
-  // write that OCC silently drops, leaving the executor stuck re-entering this stage.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: shieldHash })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
 
   // 3. Wait for confirmation. The SDK's merkle scan will pick up the new commitment via the
   //    onBalanceUpdate callback — but we also kick a refresh explicitly so the UI doesn't have
   //    to wait for the SDK's poll interval. Timeout-and-signal-aware so a wedged RPC doesn't
   //    pin this handler for the full 10-min lifecycle cap.
-  await waitForReceiptOrFail({ hash: shieldHash, signal: ctx.signal })
+  await waitForReceiptOrFail({ hash: shieldHash, signal: ctx.signal, chainId: record.meta.fromChainId })
 
   if (kmIsUnlocked()) {
     // Fire-and-forget — failures here are non-fatal (the periodic refresh would catch it).
@@ -354,79 +399,96 @@ async function runGaslessSubmit(
   record: TxRecord<'shield'>,
   ctx: Parameters<typeof shieldHandler.run>[1],
 ): Promise<void> {
-  const artifacts = record.artifacts
-  const shieldRequest = artifacts.shieldRequest!
-  const usdcAddress = artifacts.usdcAddress!
-  const permitV = artifacts.permitV
-  const permitR = artifacts.permitR
-  const permitS = artifacts.permitS
-  if (permitV === undefined || permitR === undefined || permitS === undefined) {
-    throw new Error('Shield gasless submit requires permit (v, r, s) in artifacts — re-run build-proof.')
-  }
-  if (
-    record.meta.feeAmount === undefined ||
-    record.meta.wrapperAddress === undefined ||
-    record.meta.permitDeadline === undefined
-  ) {
-    throw new Error('Shield gasless submit requires gasless meta fields — re-run build-proof.')
-  }
-  const ownerCaptured = record.walletContext.evmAddress
-  if (!ownerCaptured) {
-    throw new Error('Shield gasless submit requires a connected EVM wallet; none captured at submit time.')
-  }
-
-  const data = buildGaslessShieldCalldata({
-    user: ownerCaptured as `0x${string}`,
-    totalAmount: record.meta.amount,
-    fee: record.meta.feeAmount,
-    deadline: BigInt(record.meta.permitDeadline),
-    v: permitV,
-    r: permitR as `0x${string}`,
-    s: permitS as `0x${string}`,
-    shieldRequest: {
-      npk: shieldRequest.npk as `0x${string}`,
-      value: BigInt(shieldRequest.value),
-      encryptedBundle: shieldRequest.encryptedBundle as readonly [
-        `0x${string}`,
-        `0x${string}`,
-        `0x${string}`,
-      ],
-      shieldKey: shieldRequest.shieldKey as `0x${string}`,
-    },
-    tokenAddress: usdcAddress as `0x${string}`,
-    integrator: getIntegratorAddress() as `0x${string}`,
-  })
-
-  let submitResponse
-  try {
-    submitResponse = await submitRelay(
-      {
-        chainId: record.meta.fromChainId,
-        to: record.meta.wrapperAddress,
-        data,
-        feesCacheId: record.meta.feeCacheId,
-      },
-      ctx.signal,
-    )
-  } catch (err) {
-    if (err instanceof RelayerError) {
-      track('tx.relayer.rejected', { id: record.id, kind: record.kind, errorCode: err.code })
+  // Idempotency guard (P0-1): once the relayer accepted the gaslessShield POST we persist the
+  // returned txHash. NEVER re-POST — the relayer answers a duplicate with 409 and the user sees a
+  // false failure, and a fresh POST against an expired permit is doomed. On re-entry skip to the
+  // status poll for the known hash.
+  let txHash = record.artifacts.sourceTxHash
+  let broadcastRecord = record
+  if (!txHash) {
+    const artifacts = record.artifacts
+    const shieldRequest = artifacts.shieldRequest!
+    const usdcAddress = artifacts.usdcAddress!
+    const permitV = artifacts.permitV
+    const permitR = artifacts.permitR
+    const permitS = artifacts.permitS
+    if (permitV === undefined || permitR === undefined || permitS === undefined) {
+      throw new Error('Shield gasless submit requires permit (v, r, s) in artifacts — re-run build-proof.')
     }
-    throw err
+    if (
+      record.meta.feeAmount === undefined ||
+      record.meta.wrapperAddress === undefined ||
+      record.meta.permitDeadline === undefined
+    ) {
+      throw new Error('Shield gasless submit requires gasless meta fields — re-run build-proof.')
+    }
+    const ownerCaptured = record.walletContext.evmAddress
+    if (!ownerCaptured) {
+      throw new Error('Shield gasless submit requires a connected EVM wallet; none captured at submit time.')
+    }
+
+    // Permit-deadline guard (P0-1): an expired EIP-2612 permit makes the wrapper call revert, so
+    // re-POSTing is doomed. Fail with honest copy instead. Nothing was sent (PRE_FLIGHT_REVERT).
+    if (record.meta.permitDeadline * 1000 <= Date.now()) {
+      throw asTxError({
+        code: 'PRE_FLIGHT_REVERT',
+        message: 'This quote expired before it could be submitted. Start a new transaction.',
+      })
+    }
+
+    const data = buildGaslessShieldCalldata({
+      user: ownerCaptured as `0x${string}`,
+      totalAmount: record.meta.amount,
+      fee: record.meta.feeAmount,
+      deadline: BigInt(record.meta.permitDeadline),
+      v: permitV,
+      r: permitR as `0x${string}`,
+      s: permitS as `0x${string}`,
+      shieldRequest: {
+        npk: shieldRequest.npk as `0x${string}`,
+        value: BigInt(shieldRequest.value),
+        encryptedBundle: shieldRequest.encryptedBundle as readonly [
+          `0x${string}`,
+          `0x${string}`,
+          `0x${string}`,
+        ],
+        shieldKey: shieldRequest.shieldKey as `0x${string}`,
+      },
+      tokenAddress: usdcAddress as `0x${string}`,
+      integrator: getIntegratorAddress() as `0x${string}`,
+    })
+
+    let submitResponse
+    try {
+      submitResponse = await submitRelay(
+        {
+          chainId: record.meta.fromChainId,
+          to: record.meta.wrapperAddress,
+          data,
+          feesCacheId: record.meta.feeCacheId,
+          idempotencyKey: record.id,
+        },
+        ctx.signal,
+      )
+    } catch (err) {
+      // T-M3/S-M1: recover an already-broadcast hash from a DUPLICATE_TX so we resume polling
+      // instead of failing a tx the relayer already sent; non-recoverable errors rethrow.
+      submitResponse = handleRelaySubmitError(err, { id: record.id, kind: record.kind })
+    }
+
+    track('tx.relayer.submitted', { id: record.id, kind: record.kind })
+
+    // Persist the relayer-broadcast txHash immediately — same OCC-correct patch-then-advance
+    // dance the unshield handler uses, and the marker the idempotency guard above reads on re-entry.
+    txHash = submitResponse.txHash as `0x${string}`
+    const broadcast = await recordBroadcastHash(record, txHash, ctx)
+    if (broadcast.dismissed) return
+    broadcastRecord = broadcast.record
   }
-
-  track('tx.relayer.submitted', { id: record.id, kind: record.kind })
-
-  // Persist the relayer-broadcast txHash immediately — same OCC-correct patch-then-advance
-  // dance the unshield handler uses. Building the final advance from the stale `record` would
-  // race the patch's updatedSeq increment and silently drop the terminal transition.
-  const broadcastRecord = patchArtifacts(record, { sourceTxHash: submitResponse.txHash as `0x${string}` })
-  await ctx.upsert(broadcastRecord)
-  if (ctx.signal.aborted) throw new Error('cancelled')
 
   const pollResult = await poll(
-    (signal) => pollRelayStatusOnce(submitResponse.txHash, signal),
-    { signal: ctx.signal },
+    (signal) => pollRelayStatusOnce(txHash, signal, record.meta.fromChainId),
+    { signal: ctx.signal, timeoutMs: pollBudgetMs(record) },
   )
 
   if (pollResult.status === 'aborted') throw new Error('cancelled')
@@ -435,7 +497,7 @@ async function runGaslessSubmit(
       code: 'POLL_TIMEOUT',
       message:
         "The relayer hasn't reported a final status. The transaction may still complete on chain — check the explorer.",
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     const failed = markFailed(broadcastRecord, error)
     await ctx.upsert(failed)
@@ -451,7 +513,7 @@ async function runGaslessSubmit(
     const error: TxError = {
       code: 'TX_REVERTED',
       message: final.error ?? 'Relayer-broadcast tx reverted on chain.',
-      txHash: submitResponse.txHash as `0x${string}`,
+      txHash,
     }
     const failed = markFailed(broadcastRecord, error)
     await ctx.upsert(failed)
@@ -465,7 +527,7 @@ async function runGaslessSubmit(
   }
 
   const completed = advance(broadcastRecord, 'hub-confirmed', {
-    sourceTxHash: submitResponse.txHash as `0x${string}`,
+    sourceTxHash: txHash,
   })
   await ctx.upsert(completed)
 }

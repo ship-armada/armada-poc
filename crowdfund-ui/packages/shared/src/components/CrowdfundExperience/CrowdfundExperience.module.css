@@ -1,0 +1,321 @@
+/* ABOUTME: CSS Module for CrowdfundExperience — see CrowdfundExperience.tsx for usage. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+
+/* Panel cross-fade / slide between crowdfund and my position views */
+.page {
+  --panel-transition-duration: 480ms;
+  --panel-transition-gap: 180ms;
+  --panel-transition-ease: cubic-bezier(0.32, 0, 0.15, 1);
+  --hero-corner-max-height: calc(
+    100vh - var(--primitives-spacing-6) - var(--primitives-spacing-6) - 56px - var(--primitives-spacing-6)
+  );
+}
+
+/* Wrapper around the graph + corners. On desktop it fills the page so the
+ * absolutely-positioned graph host and corners resolve exactly as before; on
+ * mobile it becomes the vertical flex stack (Progress → Participate → Graph →
+ * Participants, ordered via CSS `order`). */
+.experienceLayout {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+}
+
+.graphHost {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Mobile-only participant list; hidden on desktop (the desktop
+ * HeroParticipantsPanel handles that viewport). */
+.mobileParticipantsStack {
+  display: none;
+}
+
+/* Mobile-only frosted band behind the floating header so content scrolling
+ * under the transparent header doesn't bleed through. Hidden on desktop;
+ * shown in the ≤767px block below. Mirrors the Observe page's header backdrop. */
+.mobileHeaderBackdrop {
+  display: none;
+}
+
+/* Wraps the @armada/ui Progress card so the "Details" affordance can be
+ * absolutely positioned over its top-right corner. Mirrors the card's own
+ * responsive width (582px, narrowing to 480px at ≤1440px) so the wrapper stays
+ * flush to the card — keeping `.detailsBtn` aligned to the card's right edge and
+ * the card the same width as the participants button row, which also narrows to
+ * 480px at ≤1440px. */
+.progressWrap {
+  position: relative;
+  width: 582px;
+  max-width: 100%;
+}
+
+@media (max-width: 1440px) {
+  .progressWrap {
+    width: 100%;
+    max-width: 480px;
+  }
+}
+
+/* "Details" affordance overlaid on the Progress card's top-right corner, level
+ * with the card title. Text-only (no border/background) so it reads as a quiet
+ * secondary action. */
+.detailsBtn {
+  position: absolute;
+  /* Nudge down so the Details text baseline sits on the card title's baseline
+   * (the title is 20px, this is 11px — the offset accounts for the ascent
+   * difference). */
+  top: calc(var(--semantic-spacing-card-padding) + 8px);
+  right: calc(var(--semantic-spacing-card-padding) + 8px);
+  z-index: 3;
+  padding: 0;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.detailsBtn:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.detailsBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+  border-radius: var(--semantic-component-navitem-radius);
+}
+
+.leftCorner,
+.rightCorner {
+  pointer-events: none;
+}
+
+.leftCorner > .cornerLayerVisible,
+.rightCorner > .cornerLayerVisible {
+  pointer-events: auto;
+}
+
+.leftCorner {
+  --hero-progress-card-height: 520px;
+  display: grid;
+  align-items: end;
+  justify-items: stretch;
+}
+
+.rightCorner {
+  position: absolute;
+  right: var(--primitives-spacing-6);
+  bottom: var(--primitives-spacing-6); /* bottom gutter, matching the left/right page gutter */
+  z-index: 11;
+  width: 480px;
+  max-width: calc(100vw - var(--primitives-spacing-6) * 2);
+  display: grid;
+  align-items: end;
+  justify-items: stretch;
+}
+
+.cornerLayer {
+  grid-area: 1 / 1;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  transition:
+    opacity var(--panel-transition-duration) var(--panel-transition-ease),
+    transform var(--panel-transition-duration) var(--panel-transition-ease),
+    visibility 0s linear var(--panel-transition-duration);
+  will-change: opacity, transform;
+}
+
+.cornerLayerMotionOff,
+.cornerLayerNoMotion {
+  transition: none;
+}
+
+.cornerLayerVisible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  z-index: 1;
+  transition-delay: 0s;
+}
+
+.cornerLayerHidden {
+  opacity: 0;
+  transform: translateY(48px);
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Participate card is intrinsic width — keep it right-aligned in the wide column */
+.rightParticipateLayer {
+  align-items: flex-end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cornerLayer {
+    transition: opacity 120ms ease;
+  }
+
+  .cornerLayerHidden {
+    transform: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .rightCorner {
+    width: min(480px, calc(100vw - var(--primitives-spacing-6) * 2));
+  }
+}
+
+/* Mobile — scrollable vertical stack: Progress → Participate → Graph →
+ * Participants. The corners drop from absolute to in-flow flex items ordered
+ * via `order`; the desktop participants panel is hidden in favor of the
+ * mobileParticipantsStack. Adapted from the armada-crowdfund mockup, retargeted
+ * to our HeroParticipantsPanel structure (no CrowdfundLeftColumn). */
+@media (max-width: 767px) {
+  .page {
+    height: auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* Frosted band behind the floating header (below it at z-30, above content),
+   * masked to fade out below the header band so it's near-invisible unscrolled. */
+  .mobileHeaderBackdrop {
+    display: block;
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    height: 120px;
+    z-index: 30;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--semantic-color-surface-default) 70%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+  }
+
+  .experienceLayout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--primitives-spacing-5);
+    min-height: 0;
+    /* Clear the fixed AppHeader (top: spacing-6 inset + 56px tall) so the
+     * stacked content starts below it instead of under it. */
+    padding:
+      calc(var(--primitives-spacing-6) + 56px + var(--primitives-spacing-3))
+      var(--primitives-spacing-5)
+      var(--primitives-spacing-6);
+    box-sizing: border-box;
+  }
+
+  .graphHost {
+    position: relative;
+    order: 3;
+    flex: 0 0 auto;
+    width: 100%;
+    height: min(360px, 52vh);
+    min-height: 280px;
+    border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+    border: 1px solid var(--semantic-color-border-default);
+    background: var(--semantic-color-surface-raised);
+    overflow: hidden;
+    z-index: 1;
+  }
+
+  /* WebGL unavailable (`?nowebgl` / unsupported / context lost) — drop the graph
+   * card entirely on mobile rather than showing the static fallback splash.
+   * Desktop keeps the fallback (the graph host is the full-bleed background). */
+  .graphHostHiddenMobile {
+    display: none;
+  }
+
+  .leftCorner {
+    position: relative;
+    order: 1;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    z-index: 2;
+    align-items: stretch;
+  }
+
+  .rightCorner {
+    position: relative;
+    order: 2;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: none;
+    z-index: 2;
+    align-items: stretch;
+  }
+
+  .cornerLayer {
+    justify-content: flex-start;
+    transition: none;
+  }
+
+  .rightParticipateLayer {
+    align-items: stretch;
+  }
+
+  .cornerLayerHidden {
+    display: none;
+  }
+
+  .cornerLayerVisible {
+    transform: none;
+  }
+
+  /* The desktop participants list/controls are replaced by the
+   * mobileParticipantsStack below the graph — hide them so only the Progress
+   * card remains in the left column. */
+  .hideOnMobileStack {
+    display: none;
+  }
+
+  /* Summary (Progress) card stretches full-width on mobile — lifts the ≤1440px
+   * 480px cap so it matches the other full-width stacked panels. */
+  .progressWrap {
+    width: 100%;
+    max-width: none;
+  }
+
+  .mobileParticipateCard {
+    width: 100% !important;
+    height: 240px !important;
+    max-width: none;
+  }
+
+  .mobileParticipantsStack {
+    display: block;
+    order: 4;
+    width: 100%;
+  }
+
+  .leftCorner[class*='leftCornerExpanded'] {
+    z-index: 10;
+  }
+
+  /* My Position view has no graph on mobile — the position cards stack alone. */
+  .experienceLayoutMyPosition .graphHost {
+    display: none;
+  }
+}

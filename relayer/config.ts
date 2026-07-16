@@ -29,8 +29,10 @@ export interface ChainConfig {
    * Relayer-only knobs for the CCTP scan loop. Defaults below come from the chain's
    * characteristics — finality depth (reorg risk), public-RPC range caps, etc.
    *
-   * Per-knob env overrides honour the pattern `RELAYER_<KNOB>_<CHAIN_NAME_UPPER>` (e.g.
-   * `RELAYER_MAX_LOG_RANGE_ETHEREUM_SEPOLIA=200`). When unset, the default for the chain wins.
+   * Per-knob env overrides honour the pattern `RELAYER_<KNOB>_<CHAIN_NAME_UPPER>`, where the
+   * suffix derives from the chain's config `name` ("Hub", "Client A", "Client B" — NOT the
+   * underlying network name). So: `RELAYER_MAX_LOG_RANGE_HUB=200`,
+   * `RELAYER_CONFIRMATION_DEPTH_CLIENT_A=2`, etc. When unset, the default for the chain wins.
    */
   scanner: {
     /**
@@ -80,16 +82,31 @@ function toChainConfig(net: NetChainConfig, env: string): ChainConfig {
     deploymentFile: `${net.deploymentPrefix}${suffix}-v3.json`,
     privacyPoolDeploymentFile: `privacy-pool-${net.deploymentPrefix}${suffix}.json`,
     cctpDomain: net.cctpDomain,
-    scanner: scannerConfigForChain(net.name, env),
+    scanner: scannerConfigForChain(net.name, env, net.chainId),
   };
 }
 
 /**
- * Per-chain scanner defaults. Each value can be overridden by an env var of the form
- * `RELAYER_<KNOB>_<CHAIN>` — e.g. `RELAYER_MAX_LOG_RANGE_ETHEREUM_SEPOLIA=200`. The chain
- * suffix is the chain name uppercased with spaces/dashes → underscores.
+ * Chain-type classification for scanner defaults, keyed by chainId. The config `name` fields
+ * are role labels ("Hub", "Client A", "Client B") that say nothing about the underlying
+ * network, so classification MUST NOT match on names. A chainId absent from every set gets
+ * the conservative fallback defaults below.
  */
-function scannerConfigForChain(chainName: string, env: string): ChainConfig["scanner"] {
+const L1_CHAIN_IDS = new Set([1, 11155111]); // Ethereum mainnet, Ethereum Sepolia
+const BASE_LIKE_CHAIN_IDS = new Set([8453, 84532, 10, 11155420]); // Base, Base Sepolia, OP Mainnet, OP Sepolia
+const ARB_LIKE_CHAIN_IDS = new Set([42161, 421614]); // Arbitrum One, Arbitrum Sepolia
+
+/**
+ * Per-chain scanner defaults. Each value can be overridden by an env var of the form
+ * `RELAYER_<KNOB>_<CHAIN>` — e.g. `RELAYER_MAX_LOG_RANGE_HUB=200`. The chain suffix is the
+ * chain's config `name` ("Hub", "Client A", "Client B") uppercased with spaces/dashes →
+ * underscores: HUB, CLIENT_A, CLIENT_B.
+ */
+export function scannerConfigForChain(
+  chainName: string,
+  env: string,
+  chainId: number,
+): ChainConfig["scanner"] {
   // Anvil has no reorgs and no public-RPC caps — chunking would just slow tests down.
   if (env === "local") {
     return {
@@ -105,9 +122,9 @@ function scannerConfigForChain(chainName: string, env: string): ChainConfig["sca
   //   Ethereum Sepolia: ~12s blocks → 150 blocks ≈ 30 min
   //   Base Sepolia:     ~2s blocks  → 900 blocks ≈ 30 min
   //   Arbitrum Sepolia: ~0.25s      → 7200 blocks ≈ 30 min
-  const isL1 = /ethereum|mainnet|sepolia/i.test(chainName) && !/base|arb|op|optimism/i.test(chainName);
-  const isBaseLike = /base|optimism|op/i.test(chainName);
-  const isArbLike = /arbitrum|arb/i.test(chainName);
+  const isL1 = L1_CHAIN_IDS.has(chainId);
+  const isBaseLike = BASE_LIKE_CHAIN_IDS.has(chainId);
+  const isArbLike = ARB_LIKE_CHAIN_IDS.has(chainId);
 
   const defaultLookback = isL1 ? 150 : isBaseLike ? 900 : isArbLike ? 7_200 : 300;
   const defaultMaxLookback = defaultLookback * 10; // 5 hours of headroom at most
@@ -203,6 +220,25 @@ export const relayerSettings = {
   pollIntervalMs: isLocal() ? 2000 : netConfig.iris.pollIntervalMs,
 };
 
+/**
+ * Private key the relayer's hot wallet signs with on EVERY chain and code path (privacy relay +
+ * CCTP relay). Prefer a DEDICATED `RELAYER_PRIVATE_KEY` so a relayer-host compromise doesn't also
+ * compromise the deployer/admin key. When unset, falls back to the deployer key (the long-standing
+ * behaviour) with a loud warning on non-local environments.
+ */
+export const relayerPrivateKey: string = (() => {
+  const dedicated = process.env.RELAYER_PRIVATE_KEY?.trim();
+  if (dedicated) return dedicated;
+  if (!isLocal()) {
+    console.warn(
+      "[config] WARNING: relayer is using the DEPLOYER key (RELAYER_PRIVATE_KEY unset). On a " +
+        "shared/VPS host this means a relayer compromise is also a protocol-admin compromise. Set " +
+        "RELAYER_PRIVATE_KEY to a dedicated, minimally-funded hot-wallet key.",
+    );
+  }
+  return accounts.deployer.privateKey;
+})();
+
 // CCTP finality mode from unified config
 function getCCTPFinalityMode(): "fast" | "standard" {
   return netConfig.cctpFinalityMode;
@@ -250,7 +286,43 @@ export const armadaRelayerSettings = {
    * relayer state (only the engine's leveldown sees derived keys).
    */
   railgunWalletMnemonic: process.env.RELAYER_RAILGUN_MNEMONIC ?? "",
+  /**
+   * HTTP request hardening for the public, unauthenticated API. Per-IP token-bucket rate limits
+   * (requests/minute) bound the cost-amplification of anonymous /relay (SNARK decrypt + estimateGas)
+   * and /status fan-out; the body limit caps JSON payload size deliberately rather than relying on
+   * Express's silent 100kb default. All env-overridable.
+   */
+  rateLimit: {
+    relayPerMin: envInt("RELAYER_RATE_LIMIT_RELAY_PER_MIN", 10),
+    getPerMin: envInt("RELAYER_RATE_LIMIT_GET_PER_MIN", 60),
+    /** Honour X-Forwarded-For (first hop) when behind a known reverse proxy. Default OFF — trusting
+     *  it blindly lets any client spoof its rate-limit key. */
+    trustProxy: envBool("RELAYER_TRUST_PROXY", false),
+  },
+  /**
+   * Max JSON request body in bytes. A multi-commitment `transact()` proof, hex-encoded inside JSON,
+   * can run to tens of KB; 256KB is a generous-but-bounded ceiling. Override via RELAYER_MAX_BODY_BYTES.
+   */
+  maxRequestBodyBytes: envInt("RELAYER_MAX_BODY_BYTES", 256 * 1024),
 };
+
+/** Parse a non-negative integer env var, falling back to `fallback` when unset/empty. */
+function envInt(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Invalid env var ${key}=${raw} — expected a non-negative number`);
+  }
+  return parsed;
+}
+
+/** Parse a boolean env var ("1"/"true"/"yes" → true). Falls back when unset/empty. */
+function envBool(key: string, fallback: boolean): boolean {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
 
 // Legacy config export for backward compatibility
 export const config = {

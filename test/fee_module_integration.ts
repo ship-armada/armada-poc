@@ -202,7 +202,9 @@ describe("Fee Module Integration", function () {
     await mockRegistry.setAuthorized(adapterAddress, true);
     await armadaYieldVault.setAdapter(adapterAddress);
     await armadaYieldAdapter.setPrivacyPool(privacyPoolAddress);
-    await privacyPool.setPrivilegedShieldCaller(adapterAddress, true);
+    // Shield-fee exemption is driven by the registry (#370): the adapter is authorized above,
+    // so pointing the pool at the same registry grants it the fee-exempt shield path.
+    await privacyPool.setAdapterRegistry(await mockRegistry.getAddress());
 
     // ── Deploy Client chain ──
     clientUsdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -247,6 +249,8 @@ describe("Fee Module Integration", function () {
 
     await privacyPool.setHookRouter(await hubHookRouter.getAddress());
     await privacyPoolClient.setHookRouter(await clientHookRouter.getAddress());
+    await privacyPoolClient.setHubHookRouter(ethers.zeroPadValue(await hubHookRouter.getAddress(), 32));
+    await privacyPool.setRemoteHookRouter(DOMAINS.client, ethers.zeroPadValue(await clientHookRouter.getAddress(), 32));
     await hubMessageTransmitter.connect(relayer).setRelayer(await hubHookRouter.getAddress());
     await clientMessageTransmitter.connect(relayer).setRelayer(await clientHookRouter.getAddress());
 
@@ -395,7 +399,6 @@ describe("Fee Module Integration", function () {
         npk,
         encryptedBundle,
         shieldKey,
-        ethers.ZeroHash,
         ethers.ZeroAddress  // no integrator
       );
       const receipt = await tx.wait();

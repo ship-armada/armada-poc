@@ -2,7 +2,8 @@
 // ABOUTME: Local mode registers Anvil chains; sepolia mode registers Sepolia + Base/Arb Sepolia.
 
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
-import { http } from 'wagmi'
+import { fallback, http } from 'viem'
+import type { Transport } from 'viem'
 import { sepolia, baseSepolia, arbitrumSepolia, hardhat } from 'wagmi/chains'
 import type { Chain } from 'wagmi/chains'
 import { getNetworkConfig, isLocalMode, type ChainIdentity } from './network'
@@ -33,12 +34,23 @@ function resolveChainsForMode(): readonly [Chain, ...Chain[]] {
   return [sepolia, baseSepolia, arbitrumSepolia]
 }
 
-function buildTransports(chains: readonly Chain[], chainIdentities: readonly ChainIdentity[]) {
-  const transports: Record<number, ReturnType<typeof http>> = {}
+// Exported for unit tests (single vs fallback transport selection). App code uses `wagmiConfig`.
+export function buildTransports(chains: readonly Chain[], chainIdentities: readonly ChainIdentity[]) {
+  const transports: Record<number, Transport> = {}
   for (const chain of chains) {
     const identity = chainIdentities.find(c => c.chainId === chain.id)
-    const primaryRpc = identity?.rpcUrls[0]
-    transports[chain.id] = http(primaryRpc)
+    const urls = identity?.rpcUrls ?? []
+    // Each URL gets a 15s timeout so a black-holed endpoint fails over promptly instead of
+    // hanging on viem's default. With ≥2 configured URLs, `fallback` rotates to the next on
+    // error (P1-18). Single-URL chains (all of local; sepolia without VITE_SEPOLIA_RPC_FALLBACK)
+    // keep single-transport behavior. No identity → viem's default public RPC for the chain.
+    if (urls.length === 0) {
+      transports[chain.id] = http()
+    } else if (urls.length === 1) {
+      transports[chain.id] = http(urls[0], { timeout: 15_000 })
+    } else {
+      transports[chain.id] = fallback(urls.map(u => http(u, { timeout: 15_000 })))
+    }
   }
   return transports
 }

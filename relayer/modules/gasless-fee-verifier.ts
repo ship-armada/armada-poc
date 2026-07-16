@@ -39,12 +39,13 @@ export const GASLESS_SHIELD_SELECTOR = ethers.id(
 ).slice(0, 10);
 
 /**
- * Client wrapper entry: `gaslessCrossChainShield((address,uint256,uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,bytes32,address))`.
+ * Client wrapper entry: `gaslessCrossChainShield((address,uint256,uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,address))`.
  *
- * Same pinning rationale as above.
+ * Same pinning rationale as above. (destinationCaller was removed from CrossChainParams per issue
+ * #64 — PrivacyPoolClient pins it to hubHookRouter on-chain.)
  */
 export const GASLESS_CROSS_CHAIN_SHIELD_SELECTOR = ethers.id(
-  "gaslessCrossChainShield((address,uint256,uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,bytes32,address))",
+  "gaslessCrossChainShield((address,uint256,uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,address))",
 ).slice(0, 10);
 
 const GASLESS_SHIELD_ABI = [
@@ -52,8 +53,12 @@ const GASLESS_SHIELD_ABI = [
 ];
 
 const GASLESS_CROSS_CHAIN_SHIELD_ABI = [
-  "function gaslessCrossChainShield((address user, uint256 totalAmount, uint256 fee, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permitInput, (uint256 maxFee, uint32 minFinalityThreshold, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, bytes32 destinationCaller, address integrator) dest)",
+  "function gaslessCrossChainShield((address user, uint256 totalAmount, uint256 fee, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permitInput, (uint256 maxFee, uint32 minFinalityThreshold, bytes32 npk, bytes32[3] encryptedBundle, bytes32 shieldKey, address integrator) dest)",
 ];
+
+/** Interfaces hoisted to module scope — built once instead of per /relay request. */
+const GASLESS_SHIELD_IFACE = new ethers.Interface(GASLESS_SHIELD_ABI);
+const GASLESS_CROSS_CHAIN_SHIELD_IFACE = new ethers.Interface(GASLESS_CROSS_CHAIN_SHIELD_ABI);
 
 // ============ Verifier Context ============
 
@@ -106,10 +111,9 @@ export function verifyGaslessFee(
   const selector = request.data.slice(0, 10);
   let fee: bigint;
   if (selector === GASLESS_SHIELD_SELECTOR) {
-    const iface = new ethers.Interface(GASLESS_SHIELD_ABI);
     let decoded: ethers.Result;
     try {
-      decoded = iface.decodeFunctionData("gaslessShield", request.data);
+      decoded = GASLESS_SHIELD_IFACE.decodeFunctionData("gaslessShield", request.data);
     } catch (e: any) {
       throw new RelayError(
         "INVALID_DATA",
@@ -119,10 +123,9 @@ export function verifyGaslessFee(
     // Args: [user, totalAmount, fee, deadline, v, r, s, shieldRequest, integrator]
     fee = BigInt(decoded[2]);
   } else if (selector === GASLESS_CROSS_CHAIN_SHIELD_SELECTOR) {
-    const iface = new ethers.Interface(GASLESS_CROSS_CHAIN_SHIELD_ABI);
     let decoded: ethers.Result;
     try {
-      decoded = iface.decodeFunctionData("gaslessCrossChainShield", request.data);
+      decoded = GASLESS_CROSS_CHAIN_SHIELD_IFACE.decodeFunctionData("gaslessCrossChainShield", request.data);
     } catch (e: any) {
       throw new RelayError(
         "INVALID_DATA",

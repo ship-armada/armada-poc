@@ -1,9 +1,9 @@
 // ABOUTME: Unit tests for the alert evaluator — dispatch, dedupe, state persistence.
 // ABOUTME: Uses in-memory notifier and state store; no external IO.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { evaluateAndDispatch } from './evaluator.js'
-import { createInMemoryNotifier } from './notifier.js'
+import { createInMemoryNotifier, NoWebhookConfiguredError, type Notifier } from './notifier.js'
 import { createInMemoryAlertStateStore } from './state.js'
 import type { AlertContext, AlertEvent } from './types.js'
 
@@ -83,6 +83,63 @@ describe('evaluateAndDispatch', () => {
     })
     expect(second.delivered).toHaveLength(1)
     expect(second.delivered[0].dedupeKey).toBe('A4:100')
+  })
+
+  it('survives a mid-loop delivery failure and re-attempts only the failed alert', async () => {
+    const sampleA4: AlertEvent = { id: 'A4', severity: 'P2', dedupeKey: 'A4:80', title: 't', body: 'b', runbook: 'r' }
+    const delivered: string[] = []
+    // Notifier that throws for A11 only; succeeds for everything else.
+    let failA11 = true
+    const notifier: Notifier = {
+      async send(event) {
+        if (event.dedupeKey === 'A11' && failA11) throw new Error('Discord webhook P0 returned 503: unavailable')
+        delivered.push(event.dedupeKey)
+      },
+    }
+    const state = createInMemoryAlertStateStore()
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const evaluate = () => [SAMPLE_A1, SAMPLE_A11, sampleA4]
+      const first = await evaluateAndDispatch({ context: MINIMAL_CTX, notifier, stateStore: state, evaluate })
+
+      expect(first.delivered.map((e) => e.dedupeKey)).toEqual(['A1', 'A4:80'])
+      expect(first.failed.map((e) => e.dedupeKey)).toEqual(['A11'])
+      // The two successes were persisted despite A11 throwing in between them.
+      expect(Array.from((await state.read()).firedKeys).sort()).toEqual(['A1', 'A4:80'])
+
+      // Next tick with a healthy webhook re-attempts only the previously-failed A11.
+      failA11 = false
+      const second = await evaluateAndDispatch({ context: MINIMAL_CTX, notifier, stateStore: state, evaluate })
+      expect(second.delivered.map((e) => e.dedupeKey)).toEqual(['A11'])
+      expect(second.skipped.map((e) => e.dedupeKey)).toEqual(['A1', 'A4:80'])
+      expect(second.failed).toEqual([])
+    } finally {
+      stderrSpy.mockRestore()
+    }
+  })
+
+  it('does not dedupe an alert whose severity has no webhook, so it delivers once configured', async () => {
+    const state = createInMemoryAlertStateStore()
+    const evaluate = () => [SAMPLE_A1]
+    let hasWebhook = false
+    const notifier: Notifier = {
+      async send(event) {
+        if (!hasWebhook) throw new NoWebhookConfiguredError(`no webhook configured for severity ${event.severity}`)
+      },
+    }
+
+    const first = await evaluateAndDispatch({ context: MINIMAL_CTX, notifier, stateStore: state, evaluate })
+    expect(first.undelivered.map((e) => e.id)).toEqual(['A1'])
+    expect(first.delivered).toEqual([])
+    expect(first.failed).toEqual([])
+    // Crucially: not recorded as fired, so a missing webhook never silently consumes it.
+    expect(Array.from((await state.read()).firedKeys)).toEqual([])
+
+    // Once a webhook exists, the same still-true alert delivers on the next tick.
+    hasWebhook = true
+    const second = await evaluateAndDispatch({ context: MINIMAL_CTX, notifier, stateStore: state, evaluate })
+    expect(second.delivered.map((e) => e.id)).toEqual(['A1'])
+    expect(Array.from((await state.read()).firedKeys)).toEqual(['A1'])
   })
 
   it('persists state only when delivering at least one alert', async () => {

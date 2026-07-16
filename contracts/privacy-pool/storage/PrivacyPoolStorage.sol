@@ -38,6 +38,16 @@ abstract contract PrivacyPoolStorage {
     // MODULE ADDRESSES
     // ══════════════════════════════════════════════════════════════════════════
 
+    /// @dev The four module addresses below are set once in initialize() and are INTENTIONALLY
+    ///      IMMUTABLE — there is deliberately no setter for any of them. Each module holds fund
+    ///      custody (Shield/Transact) or proof/tree logic (Verifier/Merkle); a swappable module
+    ///      would let the owner redirect funds or accept forged proofs, reintroducing the trust
+    ///      assumption rejected in issue #55. Mutable configuration lives in the setters on
+    ///      PrivacyPool (fees, treasury, adapter registry (set-once), hook routers, fee module,
+    ///      pause controller). NOTE: the VerifierModule contract is immutable, but its verification KEYS
+    ///      remain owner-settable via setVerificationKey (needed for circuit/key upgrades) — that
+    ///      key-custody risk is tracked separately in issue #349. See .claude/ARCHITECTURE_NOTES.md.
+
     /// @notice Address of ShieldModule implementation
     address public shieldModule;
 
@@ -88,7 +98,10 @@ abstract contract PrivacyPoolStorage {
     /// @notice NFT fee in basis points, default 0 for POC (required for SDK compatibility)
     uint120 public nftFee;
 
-    /// @notice Addresses that bypass shield/unshield fees (e.g. yield adapter)
+    /// @notice DEPRECATED — owner-set fee-exempt shield privilege. Superseded by the timelock-governed
+    ///         `adapterRegistry` (issue #370): ShieldModule now derives shield-fee exemption from the
+    ///         registry, not this map. Slot retained (never removed/reordered) for storage-layout stability
+    ///         with the delegatecall modules; no longer read or written. Always the zero default.
     mapping(address => bool) public privilegedShieldCallers;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -177,11 +190,33 @@ abstract contract PrivacyPoolStorage {
     /// @dev When address(0), ShieldModule falls back to the flat shieldFee calculation.
     address public feeModule;
 
+    /// @notice CCTP hook router on each remote (destination) domain, as bytes32.
+    /// @dev Used as the CCTP `destinationCaller` for outbound unshield burns so the message can only be
+    ///      delivered through that chain's CCTPHookRouter (which fires the mint hook). Pinning this at the
+    ///      contract level removes the caller-supplied `destinationCaller` footgun: bytes32(0) would let
+    ///      any third party call receiveMessage directly, skip the hook, and strand the funds.
+    mapping(uint32 => bytes32) public remoteHookRouters;
+
+    /// @notice Reentrancy guard status for the router's state-changing entry points.
+    /// @dev 0 = NOT_ENTERED, 1 = ENTERED. 0-based so a fresh slot needs no constructor init and the
+    ///      value lives in shared pool storage (per the "all pool state in PrivacyPoolStorage" rule).
+    ///      Used by PrivacyPool's nonReentrant modifier on shield / transact / atomicCrossChainUnshield.
+    uint256 internal _reentrancyStatus;
+
+    /// @notice Governance adapter registry (timelock-owned) that authoritatively determines which
+    ///         callers are fee-exempt trusted yield adapters (issue #370).
+    /// @dev Read by ShieldModule to gate shield-fee exemption (authorized OR withdraw-only). When
+    ///      address(0), no caller is privileged — the safe default. Set once via
+    ///      PrivacyPool.setAdapterRegistry (immutable after the first non-zero set), so once configured
+    ///      the owner has no path to grant shield privilege. Replaces the retired owner-set
+    ///      privilegedShieldCallers flag.
+    address public adapterRegistry;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[46] private __gap;
+    uint256[43] private __gap;
 }

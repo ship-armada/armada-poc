@@ -20,7 +20,6 @@ const tempDirs: string[] = []
 const cursor: CursorState = {
   deployBlock: 100,
   confirmationDepth: 12,
-  overlapWindow: 100,
   chainHead: 150,
   confirmedHead: 138,
   ingestedCursor: 99,
@@ -167,6 +166,15 @@ describe('getExhaustedRepairRanges', () => {
   it('returns an empty list when maxAttempts is non-positive (auto-repair disabled)', () => {
     const ranges = [makeRange({ status: 'failed', attempts: 99 })]
     expect(getExhaustedRepairRanges(ranges, 0)).toEqual([])
+  })
+
+  it('ignores an exhausted range fully covered by verified ranges', () => {
+    const ranges = [
+      makeRange({ fromBlock: 100, toBlock: 199, status: 'failed', attempts: 6 }),
+      makeRange({ fromBlock: 100, toBlock: 149, status: 'verified', attempts: 1 }),
+      makeRange({ fromBlock: 150, toBlock: 199, status: 'verified', attempts: 1 }),
+    ]
+    expect(getExhaustedRepairRanges(ranges, 3)).toEqual([])
   })
 })
 

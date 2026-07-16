@@ -2,7 +2,7 @@
 // ABOUTME: After Download, advances on Continue; before Download the Continue CTA is disabled so the user can't skip the backup.
 
 import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Download } from 'lucide-react'
+import { Text } from '@armada/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import type { BackupBlob } from '@/lib/crypto/kdf'
 import styles from './PassphraseStep.module.css'
@@ -67,20 +67,28 @@ export function BackupPassphraseStep({
 
   return (
     <form className={styles.root} onSubmit={handleSubmit}>
-      <div className={styles.headline}>Create your backup</div>
+      <Text variant="display-lg" as="h2" className={styles.headline}>
+        Create your backup
+      </Text>
       <p className={styles.body}>
         Choose a passphrase to encrypt a backup of your recovery secret. You'll need this passphrase
         and the downloaded file together to restore your account.
       </p>
       <div className={styles.field}>
-        <label htmlFor={`${idBase}-pass`} className={styles.label}>
-          Passphrase
-        </label>
+        <div className={styles.labelRow}>
+          <label htmlFor={`${idBase}-pass`} className={styles.label}>
+            Passphrase
+          </label>
+          <span id={`${idBase}-pass-hint`} className={styles.labelHint}>
+            Min {minLength} characters
+          </span>
+        </div>
         <input
           id={`${idBase}-pass`}
           type="password"
           autoComplete="new-password"
           className={styles.input}
+          aria-describedby={`${idBase}-pass-hint`}
           value={passphrase}
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
             setPassphrase(e.target.value)
@@ -112,22 +120,22 @@ export function BackupPassphraseStep({
         </div>
       ) : null}
       {downloaded ? (
-        <div style={{ color: 'var(--semantic-color-status-success)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Download size={16} aria-hidden="true" /> Backup downloaded. Keep this file safe.
-        </div>
+        <p className={styles.success}>Backup downloaded. Keep this file safe.</p>
       ) : null}
       <FlowFooter
         className={styles.footer}
+        layout="stack"
         primary={
           downloaded
-            ? { label: 'Continue', type: 'button', onClick: onContinue }
+            ? { label: 'Continue', type: 'button', onClick: onContinue, showIcon: false }
             : {
                 label: downloading ? 'Encrypting…' : 'Download backup',
                 type: 'submit',
                 disabled: !passphrasesMatch || downloading,
+                showIcon: false,
               }
         }
-        secondary={{ label: 'Back', onClick: onBack, disabled: downloading }}
+        secondary={{ label: 'Back', onClick: onBack, disabled: downloading, showIcon: false }}
       />
     </form>
   )

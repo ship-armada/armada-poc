@@ -37,7 +37,6 @@ export const GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI = [
           { name: 'npk', type: 'bytes32' },
           { name: 'encryptedBundle', type: 'bytes32[3]' },
           { name: 'shieldKey', type: 'bytes32' },
-          { name: 'destinationCaller', type: 'bytes32' },
           { name: 'integrator', type: 'address' },
         ],
       },
@@ -65,8 +64,6 @@ export interface BuildGaslessCrossChainShieldCalldataInput {
   minFinalityThreshold: number
   /** Built-by-`createShieldRequest()` against the HUB usdc address (commitment lives on hub). */
   shieldRequest: ShieldRequestData
-  /** Hub HookRouter address in bytes32 form — locks destinationCaller; pass `0x00…00` to allow any. */
-  destinationCaller: `0x${string}`
   /** Integrator address for the pool's fee split; address(0) for none. */
   integrator: `0x${string}`
 }
@@ -106,7 +103,6 @@ export function buildGaslessCrossChainShieldCalldata(
           `0x${string}`,
         ],
         shieldKey: input.shieldRequest.shieldKey,
-        destinationCaller: input.destinationCaller,
         integrator: input.integrator,
       },
     ],

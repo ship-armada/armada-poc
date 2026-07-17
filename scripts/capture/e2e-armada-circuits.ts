@@ -202,7 +202,11 @@ async function main() {
   await shutdownEngine();
 }
 
-main().catch(async (err) => {
+main().then(() => {
+  // Ethers JsonRpcProviders keep polling for blocks, holding the event loop
+  // open after the engine unloads; exit explicitly once work is done.
+  process.exit(0);
+}).catch(async (err) => {
   console.error('\n❌ E2E test failed:', err);
   try { await shutdownEngine(); } catch { /* ignore */ }
   process.exit(1);

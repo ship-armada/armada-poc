@@ -302,14 +302,7 @@ async function main() {
     cctpRelayModule = irisRelay;
   } else {
     console.log("[armada] Initializing MOCK CCTP relay module...");
-    const cctpRelay = new CCTPRelayModule(nonceCoordinator, cctpDeliveryStore, async () => {
-      // CCTP mock relay reads from the hub schedule today — keeps existing behaviour.
-      const hubCalc = feeCalculators.get(hubChain.chainId)!;
-      const fees = await hubCalc.getCurrentFees();
-      const shieldFee = BigInt(fees.fees.crossChainShield);
-      const unshieldFee = BigInt(fees.fees.crossChainUnshield);
-      return shieldFee < unshieldFee ? shieldFee : unshieldFee;
-    });
+    const cctpRelay = new CCTPRelayModule(nonceCoordinator, cctpDeliveryStore);
     const initialized = await cctpRelay.initialize();
     if (!initialized) {
       console.warn("[armada] Some CCTP chains failed to initialize.");

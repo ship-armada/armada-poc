@@ -1,7 +1,9 @@
 // ABOUTME: SDK-side helpers for unshield — generateUnshieldProof + populateProvedUnshield with broadcaster-fee (relayer-mediated) support.
 // ABOUTME: Dynamic-imports the Railgun SDK + shared-models to dodge jsdom's circomlibjs crash; the populated calldata gets POSTed to /relay by features/unshield/handler.
 
+import { ethers } from 'ethers'
 import { loadHubNetwork } from './network'
+import { encodeCctpBinding } from './cctpBinding'
 import { yieldToPaint } from '@/lib/paint'
 
 type RailgunSdk = typeof import('@railgun-community/wallet')
@@ -164,144 +166,165 @@ export async function populateUnshieldTransaction(opts: {
 }
 
 /**
- * Cross-chain unshield: the proof is generated with the PrivacyPool itself as the unshield
- * recipient (the pool effectively burns the shielded UTXO and emits CCTP messages to deliver
- * USDC to the real recipient on a different chain). Same SDK fn, different recipient.
+ * Cross-chain unshield: generate the proof AND return the ready-to-encode Transaction struct in a
+ * single call. The proof is generated with the PrivacyPool itself as the unshield recipient (the
+ * pool burns the shielded UTXO and emits CCTP messages to deliver USDC to the real recipient on a
+ * different chain).
  *
- * `broadcasterFee`: A5 — when present, embeds a broadcaster-fee output to the relayer's 0zk
- * address so the relayer-mediated hub burn pays the relayer in the same atomic tx. When null,
- * falls back to a direct user-submitted hub burn (kept for the A6 wallet-override fallback).
+ * The CCTP destination (`finalRecipient`, `destinationDomain`, `maxFee`) is bound into the proof's
+ * `boundParams.adaptParams` via `encodeCctpBinding`. The hub `TransactModule` re-derives that hash
+ * from the submitted `atomicCrossChainUnshield` arguments and rejects any mismatch, so a relayer or
+ * front-runner cannot redirect the exit (#364/#378/#399). `adaptContract` is `ZeroAddress` — this is
+ * a plain unshield-to-pool, NOT a relay-adapt cross-contract call, and the contract requires
+ * `adaptContract == address(0)`.
+ *
+ * `broadcasterFee`: A5 — when present, embeds a broadcaster-fee output to the relayer's 0zk address
+ * so the relayer-mediated hub burn pays the relayer in the same atomic tx. When null, falls back to
+ * a direct user-submitted hub burn (kept for the A6 wallet-override fallback).
+ *
+ * Uses `generateProofTransactions` (not `generateUnshieldProof`) because only the lower-level API
+ * accepts a `relayAdaptID`, and it returns the proved Transaction struct directly — no populate +
+ * calldata-decode round-trip. Mirrors the yield.ts pattern.
  */
-export async function generateXchainUnshieldProof(opts: {
+export async function buildXchainUnshieldTransaction(opts: {
   walletId: string
   encryptionKey: string
   tokenAddress: string
   privacyPoolAddress: string
   amount: bigint
   broadcasterFee: BroadcasterFeeRecipient | null
+  finalRecipient: string
+  destinationDomain: number
+  maxFee: bigint
+  hubChainId: number
   onProgress?: (fraction: number) => void
-}): Promise<void> {
+}): Promise<{ transaction: unknown }> {
   await loadHubNetwork()
-  const [{ generateUnshieldProof }, { TXIDVersion, NetworkName }] = await Promise.all([
+  const [{ generateProofTransactions }, { TXIDVersion, ProofType, NetworkName }] = await Promise.all([
     railgunSdk(),
     sharedModels(),
   ])
+
+  const adaptParams = encodeCctpBinding(opts.finalRecipient, opts.destinationDomain, opts.maxFee)
+
   const sendWithPublicWallet = opts.broadcasterFee === null
   // Yield one frame so the caller's "Generating proof…" state paints before the WASM proof gen
   // blocks the main thread for 20-30s.
   await yieldToPaint()
-  await generateUnshieldProof(
-    TXIDVersion.V2_PoseidonMerkle,
+  const { provedTransactions } = await generateProofTransactions(
+    ProofType.Unshield,
     NetworkName.Hardhat,
     opts.walletId,
+    TXIDVersion.V2_PoseidonMerkle,
     opts.encryptionKey,
+    false, // showSenderAddressToRecipient
+    undefined, // memoText
     [
       {
         tokenAddress: opts.tokenAddress,
         amount: opts.amount,
         // The PrivacyPool itself receives the USDC — it then forwards via CCTP.
-        //
-        // TODO(#399): the hub now BINDS the destination (recipient, domain, maxFee) into the proof via
-        // boundParams.adaptParams (#364/#378, PR #398). This plain generateUnshieldProof sets
-        // adaptParams = 0, which the updated atomicCrossChainUnshield REJECTS. Switch this +
-        // buildXchainUnshieldTransactionStruct to generateProofTransactions(..., relayAdaptID = {
-        // contract: ZeroAddress, parameters: encodeCctpBinding(finalRecipient, destinationDomain,
-        // maxFee) }) — the yield.ts pattern. recipientAddress stays the pool (npk = pool; the cross-path
-        // replay is closed by a contract-side _transferTokenOut guard). Needs a real-proof e2e — see
-        // #399. Coupled: the pool must not be redeployed until this lands, or cross-chain unshields
-        // revert. `encodeCctpBinding` is ready in lib/railgun/cctpBinding.ts.
         recipientAddress: opts.privacyPoolAddress,
       },
     ],
     [], // nftAmountRecipients
     opts.broadcasterFee ?? undefined,
     sendWithPublicWallet,
+    { contract: ethers.ZeroAddress, parameters: adaptParams },
+    false, // useDummyProof
     undefined, // overallBatchMinGasPrice — A6/follow-up
     (progress) => opts.onProgress?.(progress / 100),
   )
+  if (!provedTransactions.length) {
+    throw new Error('buildXchainUnshieldTransaction: SDK returned no proved transactions')
+  }
+  return { transaction: normalizeTransaction(provedTransactions[0], opts.hubChainId) }
 }
 
 /**
- * Populate the proof + decode the engine's `transact([tx])` calldata to extract the single
- * inner `Transaction` struct. We need the struct (not the calldata) because the cross-chain
- * entry point is `atomicCrossChainUnshield(tx, ...)` — same struct, different surrounding args.
- *
- * Returns a deeply-cloned mutable object with bigints restored (ethers v6 returns frozen
- * Result proxies and large-magnitude integers are stringified during the JSON deep-clone).
+ * Coerce the SDK's proved Transaction struct into the exact tuple shape the on-chain
+ * `atomicCrossChainUnshield` ABI expects: strict bigint / hex types on every field. Adapted from
+ * the yield.ts adapter normalizer.
  */
-export async function buildXchainUnshieldTransactionStruct(opts: {
-  walletId: string
-  tokenAddress: string
-  privacyPoolAddress: string
-  amount: bigint
-  broadcasterFee: BroadcasterFeeRecipient | null
-}): Promise<unknown> {
-  const [{ populateProvedUnshield }, { TXIDVersion, NetworkName }] = await Promise.all([
-    railgunSdk(),
-    sharedModels(),
-  ])
-  const { ethers } = await import('ethers')
-
-  // A5: broadcaster mode flips sendWithPublicWallet to false → SDK selects Type1 (legacy) gas
-  // because the broadcaster flow needs `overallBatchMinGasPrice`, which only Type1 supports.
-  // Type2 here surfaces the SDK's "expected Type1, received Type2" runtime error. Direct submit
-  // (broadcasterFee=null) keeps Type2 to match what MetaMask sends.
-  const sendWithPublicWallet = opts.broadcasterFee === null
-  const gasDetails = await buildGasDetails(sendWithPublicWallet)
-  const result = await populateProvedUnshield(
-    TXIDVersion.V2_PoseidonMerkle,
-    NetworkName.Hardhat,
-    opts.walletId,
-    [
-      {
-        tokenAddress: opts.tokenAddress,
-        amount: opts.amount,
-        recipientAddress: opts.privacyPoolAddress,
-      },
-    ],
-    [], // nftAmountRecipients
-    opts.broadcasterFee ?? undefined,
-    sendWithPublicWallet,
-    undefined, // overallBatchMinGasPrice — A6/follow-up
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    gasDetails as any,
-  )
-  const calldata = result.transaction.data
-  if (!calldata) {
-    throw new Error('buildXchainUnshieldTransactionStruct: SDK returned no calldata')
+function normalizeTransaction(tx: unknown, hubChainId: number): unknown {
+  const toBigInt = (v: unknown): bigint => {
+    if (v == null) return 0n
+    if (typeof v === 'bigint') return v
+    if (typeof v === 'number' || typeof v === 'string') return BigInt(v)
+    return 0n
   }
-
-  // The SDK populates `transact([transaction])`; decode and pull the single inner struct.
-  const TRANSACT_ABI = [
-    'function transact((tuple(tuple(uint256 x, uint256 y) a, tuple(uint256[2] x, uint256[2] y) b, tuple(uint256 x, uint256 y) c) proof, bytes32 merkleRoot, bytes32[] nullifiers, bytes32[] commitments, tuple(uint16 treeNumber, uint72 minGasPrice, uint8 unshield, uint64 chainID, address adaptContract, bytes32 adaptParams, tuple(bytes32[4] ciphertext, bytes32 blindedSenderViewingKey, bytes32 blindedReceiverViewingKey, bytes annotationData, bytes memo)[] commitmentCiphertext) boundParams, tuple(bytes32 npk, tuple(uint8 tokenType, address tokenAddress, uint256 tokenSubID) token, uint120 value) unshieldPreimage)[] _transactions)',
+  const toHex = (v: unknown): string => {
+    if (v == null) return ethers.ZeroHash
+    if (typeof v === 'string' && v.startsWith('0x')) return v
+    try {
+      return ethers.hexlify(v as ethers.BytesLike)
+    } catch {
+      return ethers.ZeroHash
+    }
+  }
+  const t = tx as Record<string, unknown>
+  const bp = t.boundParams as Record<string, unknown> | undefined
+  const rawCiphertext = (bp?.commitmentCiphertext ?? []) as Array<Record<string, unknown> | null | undefined>
+  const defaultCiphertext: [string, string, string, string] = [
+    ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash,
   ]
-  const iface = new ethers.Interface(TRANSACT_ABI)
-  const decoded = iface.decodeFunctionData('transact', calldata)
-  const transactions = decoded[0]
-  if (!transactions || transactions.length === 0) {
-    throw new Error('buildXchainUnshieldTransactionStruct: no transactions in decoded calldata')
+  const commitmentCiphertext = rawCiphertext
+    .filter((c): c is Record<string, unknown> => c != null)
+    .map((c) => {
+      const ct = c.ciphertext as string[] | undefined
+      const arr = Array.isArray(ct) && ct.length >= 4
+        ? [ct[0], ct[1], ct[2], ct[3]] as [string, string, string, string]
+        : defaultCiphertext
+      return {
+        ciphertext: arr,
+        blindedSenderViewingKey: (c.blindedSenderViewingKey ?? ethers.ZeroHash) as string,
+        blindedReceiverViewingKey: (c.blindedReceiverViewingKey ?? ethers.ZeroHash) as string,
+        annotationData: (c.annotationData ?? '0x') as string,
+        memo: (c.memo ?? '0x') as string,
+      }
+    })
+
+  const up = t.unshieldPreimage as Record<string, unknown> | undefined
+  const token = (up?.token ?? {}) as Record<string, unknown>
+  const unshieldPreimage = {
+    npk: toHex(up?.npk) || ethers.ZeroHash,
+    token: {
+      tokenType: Number(token.tokenType ?? 0),
+      tokenAddress: (token.tokenAddress != null ? String(token.tokenAddress) : ethers.ZeroAddress) as string,
+      tokenSubID: toBigInt(token.tokenSubID),
+    },
+    value: toBigInt(up?.value),
   }
 
-  // ethers v6 returns frozen `Result` proxies. Deep-clone via JSON (with bigint stringification)
-  // and restore bigints where the contract expects them. Same trick the legacy app uses.
-  const raw = transactions[0]
-  const cloned = JSON.parse(
-    JSON.stringify(raw, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
-  )
-  function restoreBigints(value: unknown): unknown {
-    if (value === null || value === undefined) return value
-    if (typeof value === 'string' && /^\d+$/.test(value) && value.length > 15) {
-      return BigInt(value)
-    }
-    if (Array.isArray(value)) return value.map(restoreBigints)
-    if (typeof value === 'object') {
-      const out: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        out[k] = restoreBigints(v)
-      }
-      return out
-    }
-    return value
+  const proof = t.proof as Record<string, unknown> | undefined
+  const pa = (proof?.a ?? {}) as Record<string, unknown>
+  const pb = (proof?.b ?? {}) as Record<string, unknown>
+  const pc = (proof?.c ?? {}) as Record<string, unknown>
+  const pbx = pb.x as unknown[] | undefined
+  const pby = pb.y as unknown[] | undefined
+  const snarkProof = {
+    a: { x: toBigInt(pa.x), y: toBigInt(pa.y) },
+    b: {
+      x: [toBigInt(pbx?.[0]), toBigInt(pbx?.[1])] as [bigint, bigint],
+      y: [toBigInt(pby?.[0]), toBigInt(pby?.[1])] as [bigint, bigint],
+    },
+    c: { x: toBigInt(pc.x), y: toBigInt(pc.y) },
   }
-  return restoreBigints(cloned)
+
+  return {
+    proof: snarkProof,
+    merkleRoot: toHex(t.merkleRoot) || ethers.ZeroHash,
+    nullifiers: ((t.nullifiers ?? []) as unknown[]).map((n) => toHex(n) || ethers.ZeroHash) as string[],
+    commitments: ((t.commitments ?? []) as unknown[]).map((c) => toHex(c) || ethers.ZeroHash) as string[],
+    boundParams: {
+      treeNumber: Number(bp?.treeNumber ?? 0),
+      minGasPrice: toBigInt(bp?.minGasPrice),
+      unshield: Number(bp?.unshield ?? 1),
+      chainID: toBigInt(bp?.chainID) || BigInt(hubChainId),
+      adaptContract: (bp?.adaptContract != null ? String(bp.adaptContract) : ethers.ZeroAddress) as string,
+      adaptParams: toHex(bp?.adaptParams) || ethers.ZeroHash,
+      commitmentCiphertext,
+    },
+    unshieldPreimage,
+  }
 }

@@ -362,6 +362,17 @@ export interface ArtifactsCommon {
 }
 
 export interface ArtifactsXchain extends ArtifactsCommon {
+  /**
+   * Cross-chain unshield: the fully-encoded `atomicCrossChainUnshield` calldata built during
+   * build-proof, so submit-relayer can dispatch it without re-running the ~20-30s proof. The
+   * destination binding (recipient + domain + maxFee) is baked into the proof at build time, so
+   * these bytes are immutable once persisted. `value` stringified for IDB serializability.
+   */
+  unshieldTx?: {
+    to: `0x${string}`
+    data: `0x${string}`
+    value: string
+  }
   /** Iris message hash, used to poll attestations. */
   messageHash?: `0x${string}`
   /** Attestation bytes once Iris returns 'complete'. */

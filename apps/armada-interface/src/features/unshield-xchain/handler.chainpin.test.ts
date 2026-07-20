@@ -20,8 +20,7 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
 
 // Mock the Railgun SDK wrapper so importing the handler doesn't transitively load circomlibjs.
 vi.mock('@/lib/railgun/unshield', () => ({
-  buildXchainUnshieldTransactionStruct: vi.fn(),
-  generateXchainUnshieldProof: vi.fn(),
+  buildXchainUnshieldTransaction: vi.fn(),
 }))
 vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
 vi.mock('@/lib/railgun/keyManager', () => ({
@@ -75,7 +74,16 @@ function overrideRecordWithHash(): TxRecord<'unshield-xchain'> {
       broadcasterRailgunAddress: '0zk1relayer',
       useWalletOverride: true,
     },
-    artifacts: { sourceTxHash: '0xfeed' },
+    // A record at submit-relayer always carries the encoded calldata persisted at build-proof —
+    // required now that runSubmitAndBurn dispatches from artifacts rather than re-proving.
+    artifacts: {
+      sourceTxHash: '0xfeed',
+      unshieldTx: {
+        to: '0x5555555555555555555555555555555555555555',
+        data: '0xdeadbeef',
+        value: '0',
+      },
+    },
     walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'unshield-xchain'>
 }

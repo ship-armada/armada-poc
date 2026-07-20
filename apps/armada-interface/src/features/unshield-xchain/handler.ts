@@ -20,8 +20,7 @@ import {
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
-  buildXchainUnshieldTransactionStruct,
-  generateXchainUnshieldProof,
+  buildXchainUnshieldTransaction,
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
 import {
@@ -206,23 +205,63 @@ async function runBuildProof(
   const deployments = await loadDeployments()
   const tokenAddress = deployments.hub.cctp.usdc
   const privacyPoolAddress = deployments.hub.contracts.privacyPool
+  const hubChainId = getNetworkConfig().hub.chainId
+
+  // Resolve the CCTP destination tuple. It is bound into the proof AND passed as the on-chain
+  // atomicCrossChainUnshield args below; both MUST match or the hub rejects with
+  // "destination not bound to proof" (#399).
+  const destChain = getNetworkConfig().clients.find(c => c.chainId === record.meta.toChainId)
+  if (!destChain) {
+    throw new Error(`Unknown destination chain ${record.meta.toChainId}`)
+  }
+  const destinationDomain = destChain.domain
+  const destClientDeployment = deployments.clients.find(c => c.chainId === record.meta.toChainId)
+  if (!destClientDeployment) {
+    throw new Error(`No deployment for destination chain ${record.meta.toChainId}`)
+  }
+  // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the actual
+  // fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom. Fee is
+  // deducted from the amount minted on the destination — recipient receives (amount − feeExecuted).
+  const maxFee = cctpMaxFeeForKind('unshield-xchain', record.meta.amount)
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
-  await generateXchainUnshieldProof({
+  const built = await buildXchainUnshieldTransaction({
     walletId,
     encryptionKey,
     tokenAddress,
     privacyPoolAddress,
     amount: record.meta.amount,
     broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
+    finalRecipient: record.meta.recipient,
+    destinationDomain,
+    maxFee,
+    hubChainId,
     onProgress: progress.write,
   })
 
   if (ctx.signal.aborted) throw new Error('cancelled')
-  // Advance from the LIVE record (progress bumps incremented updatedSeq).
-  await ctx.upsert(advance(progress.latest(), 'submit-relayer'))
+
+  // The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] by PrivacyPool
+  // (issue #64) — it is not passed here.
+  const calldata = encodeAtomicCrossChainUnshield(
+    built.transaction,
+    destinationDomain,
+    record.meta.recipient as `0x${string}`,
+    maxFee,
+    deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
+  )
+
+  // Advance from the LIVE record (progress bumps incremented updatedSeq). Persist the encoded
+  // calldata so submit-relayer dispatches it without re-proving.
+  await ctx.upsert(advance(progress.latest(), 'submit-relayer', {
+    unshieldTx: {
+      to: privacyPoolAddress as `0x${string}`,
+      data: calldata,
+      value: '0',
+    },
+  }))
 }
 
 async function runSubmitAndBurn(
@@ -230,59 +269,15 @@ async function runSubmitAndBurn(
   ctx: Parameters<typeof unshieldXchainHandler.run>[1],
 ): Promise<void> {
   const deployments = await loadDeployments()
-  const privacyPoolAddress = deployments.hub.contracts.privacyPool
   const hubChainId = getNetworkConfig().hub.chainId
-  const existingHash = record.artifacts.sourceTxHash
-
-  // Build the hub-burn calldata only when we still need to broadcast. On re-entry (Retry /
-  // resume-on-reload) the hash is already persisted; rebuilding it would re-run the SDK proof
-  // (whose in-memory cache doesn't survive a reload) and serve no purpose. (P0-1)
-  let calldata: `0x${string}` | undefined
-  if (!existingHash) {
-    const walletId = kmGetWalletId()
-    const tokenAddress = deployments.hub.cctp.usdc
-
-    // Map destination chain id → CCTP domain. Both come from the network config.
-    const destChain = getNetworkConfig().clients.find(c => c.chainId === record.meta.toChainId)
-    if (!destChain) {
-      throw new Error(`Unknown destination chain ${record.meta.toChainId}`)
-    }
-    const destinationDomain = destChain.domain
-    const destClientDeployment = deployments.clients.find(c => c.chainId === record.meta.toChainId)
-    if (!destClientDeployment) {
-      throw new Error(`No deployment for destination chain ${record.meta.toChainId}`)
-    }
-
-    // Build the Transaction struct (decoded from the SDK's populated transact() calldata). The
-    // broadcaster fee must be passed here EXACTLY as it was passed to generateXchainUnshieldProof —
-    // the SDK's in-memory proof cache is keyed by it, and a mismatch throws "proof not found".
-    const txStruct = await buildXchainUnshieldTransactionStruct({
-      walletId,
-      tokenAddress,
-      privacyPoolAddress,
-      amount: record.meta.amount,
-      broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
-    })
-    if (ctx.signal.aborted) throw new Error('cancelled')
-
-    // The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] by PrivacyPool
-    // (issue #64) — it is not passed here.
-
-    // maxFee = upper bound CCTP's MessageTransmitter accepts for `feeExecuted`. Iris sets the
-    // actual fee (1–1.3 bps depending on chain); we pass 2× the realistic estimate as headroom.
-    // Fee is deducted from the amount minted on the destination — recipient receives
-    // (amount − feeExecuted). The modal's Review step shows the realistic fee (without the bound
-    // multiplier) so the user sees what they will actually pay, not the contract bound.
-    const maxFee = cctpMaxFeeForKind('unshield-xchain', record.meta.amount)
-
-    calldata = encodeAtomicCrossChainUnshield(
-      txStruct,
-      destinationDomain,
-      record.meta.recipient as `0x${string}`,
-      maxFee,
-      deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
-    )
+  const unshieldTx = record.artifacts.unshieldTx
+  if (!unshieldTx) {
+    throw new Error('Cross-chain unshield tx missing — re-run build-proof stage.')
   }
+  // `unshieldTx` (the encoded atomicCrossChainUnshield calldata) is persisted at build-proof, so it
+  // survives a reload — no re-proving on resume. Only the broadcast itself is guarded against
+  // re-entry via the sourceTxHash idempotency check below. (P0-1)
+  const existingHash = record.artifacts.sourceTxHash
 
   // A6 wallet-override path — submit the wrapper calldata via the user's EVM wallet. The
   // CCTP-message extraction + destination polling are identical to the relayer path; the only
@@ -300,18 +295,18 @@ async function runSubmitAndBurn(
       const sender = record.walletContext.evmAddress
       if (sender) {
         await simulateOrThrow({
-          to: privacyPoolAddress as `0x${string}`,
-          data: calldata!,
-          value: 0n,
+          to: unshieldTx.to,
+          data: unshieldTx.data,
+          value: BigInt(unshieldTx.value),
           account: sender as `0x${string}`,
           chainId: hubChainId,
         })
         if (ctx.signal.aborted) throw new Error('cancelled')
       }
       userHash = await sendTransaction(wagmiConfig, {
-        to: privacyPoolAddress as `0x${string}`,
-        data: calldata!,
-        value: 0n,
+        to: unshieldTx.to,
+        data: unshieldTx.data,
+        value: BigInt(unshieldTx.value),
         chainId: hubChainId,
       })
       const broadcast = await recordBroadcastHash(record, userHash, ctx)
@@ -351,8 +346,8 @@ async function runSubmitAndBurn(
       submitResponse = await submitRelay(
         {
           chainId: hubChainId,
-          to: privacyPoolAddress,
-          data: calldata!,
+          to: unshieldTx.to,
+          data: unshieldTx.data,
           feesCacheId: record.meta.feeCacheId,
           idempotencyKey: record.id,
         },

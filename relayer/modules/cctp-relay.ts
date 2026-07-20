@@ -293,7 +293,6 @@ export class CCTPRelayModule {
   private isRunning: boolean = false;
   private pollIntervalMs: number;
   private retryQueue: RetryEntry[] = [];
-  private getMinFee: (() => Promise<bigint>) | null;
   private cursorStore: CursorStore;
   /**
    * Durable backing for `retryQueue`. Without it, a restart while a failed message is queued for
@@ -317,18 +316,12 @@ export class CCTPRelayModule {
   /**
    * @param nonceCoordinator Shared per-chain nonce authority (see field doc).
    * @param deliveryStore Cross-chain delivery index written on relay success/failure.
-   * @param getMinFee Optional async function that returns the minimum acceptable
-   *   maxFee (in USDC raw units) for cross-chain shield relay. If provided,
-   *   messages with insufficient maxFee will be skipped. If null, all messages
-   *   are relayed (backward-compatible behavior).
    */
   constructor(
     nonceCoordinator: NonceCoordinator,
     deliveryStore: CctpDeliveryStore,
-    getMinFee?: () => Promise<bigint>,
   ) {
     this.pollIntervalMs = armadaRelayerSettings.cctpPollIntervalMs;
-    this.getMinFee = getMinFee || null;
     this.cursorStore = new CursorStore(RELAYER_STATE_DIR);
     this.nonceCoordinator = nonceCoordinator;
     this.deliveryStore = deliveryStore;
@@ -687,22 +680,9 @@ export class CCTPRelayModule {
     console.log(`  maxFee:              ${maxFeeDisplay}`);
     console.log(`  Source Tx:           ${event.txHash}`);
 
-    // Validate maxFee covers our minimum required fee
-    if (this.getMinFee && burnFee) {
-      const minFee = await this.getMinFee();
-      if (burnFee.maxFee < minFee) {
-        console.log(
-          `  [cctp-relay] SKIPPING: maxFee ${burnFee.maxFee} < minFee ${minFee} — insufficient fee`
-        );
-        // Dead-letter rather than silently marking processed: the burn is final, so a message we
-        // refuse to relay for fee reasons leaves the user's USDC stranded and needs visibility +
-        // a durable record for manual relay or a fee-policy change. deadLetter also marks it
-        // processed so the scanner won't re-attempt it.
-        await this.deadLetter(event, sourceState, "fee-too-low");
-        return false;
-      }
-      console.log(`  Fee check passed: maxFee ${burnFee.maxFee} >= minFee ${minFee}`);
-    }
+    // No relayer-side fee gate in mock mode: the real/Iris path delegates all fee decisions to
+    // Circle and has no such gate, so there is no production counterpart to mirror here. The mock
+    // relays every message regardless of the burn's maxFee.
 
     // /cctp-status delivery index is keyed by the SOURCE messageHash (keccak256 of the MessageSent
     // bytes) — the same value the frontend captures at burn time. Mark "in flight" before relaying.

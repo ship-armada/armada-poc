@@ -22,9 +22,11 @@
  * Selector support (extended through Phase A4 + A5):
  *   - `transact(Transaction[])` — vanilla. SDK helper decodes directly.
  *   - `lendAndShield(Transaction, bytes32, ShieldCiphertext)` on ArmadaYieldAdapter — wrapper.
- *   - `redeemAndShield(Transaction, bytes32, ShieldCiphertext)` on ArmadaYieldAdapter — wrapper.
  *   - `atomicCrossChainUnshield(Transaction, uint32, address, bytes32, uint256)` on the
  *     PrivacyPool itself — A5 cross-chain unshield wrapper.
+ *
+ *   `redeemAndShield` is NOT here: its fee is paid contract-side from the redeemed proceeds (issue
+ *   #312), not as a broadcaster output inside the proof, so `redeem-fee-verifier.ts` handles it.
  *
  *   For all wrapper selectors the SDK's decoder doesn't know the function name (it expects
  *   `transact` or `relay`), so we decode the wrapper ourselves, lift the embedded Transaction

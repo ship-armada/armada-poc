@@ -128,7 +128,7 @@ export class HttpApi {
     // POST /relay — Submit a shielded transaction
     this.app.post("/relay", this.rateLimitGuard(this.relayLimiter), async (req, res) => {
       try {
-        const { chainId, to, data, feesCacheId, idempotencyKey } = req.body as RelayRequest;
+        const { chainId, to, data, feesCacheId, idempotencyKey, feeShieldRandom } = req.body as RelayRequest;
 
         // Basic request validation
         if (!chainId || !to || !data || !feesCacheId) {
@@ -156,7 +156,7 @@ export class HttpApi {
         // key fall through to the legacy submit (calldata dedup in wallet-manager still applies).
         if (idempotencyKey) {
           const outcome = await this.idempotencyStore.submitOnce(idempotencyKey, async () => {
-            const r = await this.privacyRelay.handleRelayRequest({ chainId, to, data, feesCacheId });
+            const r = await this.privacyRelay.handleRelayRequest({ chainId, to, data, feesCacheId, feeShieldRandom });
             return { txHash: r.txHash, chainId };
           });
           if (outcome.replayed) {
@@ -172,6 +172,7 @@ export class HttpApi {
           to,
           data,
           feesCacheId,
+          feeShieldRandom,
         });
 
         res.json({ txHash: result.txHash, status: "pending" });

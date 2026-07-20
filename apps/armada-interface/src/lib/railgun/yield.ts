@@ -177,6 +177,12 @@ const ADAPTER_ABI = [
 export interface YieldAdaptProofResult {
   /** Ready-to-send tx (to = adapterAddress, data = encoded calldata, value = 0). */
   transaction: { to: `0x${string}`; data: `0x${string}`; value: bigint }
+  /**
+   * Redeem-with-fee only: the 16-byte hex `random` of the fee note shielded to the relayer. The
+   * relayer-mediated submit passes this on the /relay request so the relayer can recompute the fee
+   * note's `npk` and confirm it's addressed to itself (#312). Undefined for lend / fee-less / direct.
+   */
+  feeShieldRandom?: string
 }
 
 /**
@@ -249,8 +255,11 @@ export async function buildYieldAdaptTransaction(opts: {
   let feeNpk = ethers.ZeroHash
   let feeEncryptedBundle: [string, string, string] = [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash]
   let feeShieldKey = ethers.ZeroHash
+  // Surfaced in the result so the relayer-mediated submit can verify the fee note is addressed to it
+  // (the relayer recomputes npk = Poseidon(itsMPK, feeShieldRandom); see redeem-fee-verifier). #312
+  let feeShieldRandom: string | undefined
   if (isRedeem && feeAmount > 0n && opts.broadcasterFee) {
-    const feeShieldRandom = ByteUtils.randomHex(16)
+    feeShieldRandom = ByteUtils.randomHex(16)
     const feeShieldReqs = await RelayAdaptHelper.generateRelayShieldRequests(
       feeShieldRandom,
       [{ tokenAddress: opts.shieldOutputToken, recipientAddress: opts.broadcasterFee.recipientAddress }],
@@ -339,5 +348,6 @@ export async function buildYieldAdaptTransaction(opts: {
       data,
       value: 0n,
     },
+    feeShieldRandom,
   }
 }

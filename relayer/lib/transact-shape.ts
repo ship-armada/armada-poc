@@ -4,7 +4,9 @@
  * The relayer's verifier handles two flavours of calldata:
  *   1. Vanilla `transact(Transaction[])` — the SDK's calldata decoder accepts this directly.
  *   2. Wrapper functions that EMBED a single Transaction struct as their first argument
- *      (`lendAndShield`, `redeemAndShield`, and eventually `atomicCrossChainUnshield` in A5).
+ *      (`lendAndShield`, `atomicCrossChainUnshield`) whose broadcaster fee is an OUTPUT inside that
+ *      Transaction. (`redeemAndShield` also embeds a Transaction, but its fee is contract-side —
+ *      issue #312 — so it is verified separately by `redeem-fee-verifier.ts`, not this path.)
  *      The SDK's decoder is hard-coded to two function names and doesn't know our wrappers, so
  *      we decode them ourselves, lift the embedded Transaction, and re-encode it as a synthetic
  *      `transact([transaction])` call against the PrivacyPool address — same shape, same
@@ -27,8 +29,15 @@ export const TRANSACT_SELECTOR = "0xd8ae136a";
 /** ArmadaYieldAdapter.lendAndShield(Transaction, bytes32, ShieldCiphertext) — yield deposit. */
 export const LEND_AND_SHIELD_SELECTOR = "0xf2987ad1";
 
-/** ArmadaYieldAdapter.redeemAndShield(Transaction, bytes32, ShieldCiphertext) — yield withdraw. */
-export const REDEEM_AND_SHIELD_SELECTOR = "0x0793b70e";
+/**
+ * ArmadaYieldAdapter.redeemAndShield(Transaction, bytes32, ShieldCiphertext, bytes32, ShieldCiphertext,
+ * uint256) — yield withdraw. The fee is paid contract-side from the redeemed proceeds (issue #312),
+ * shielded to the relayer's own 0zk note via `_feeNpk`/`_feeShieldCiphertext`/`_feeAmount`. It is NOT a
+ * broadcaster output inside the embedded Transaction, so redeem is verified by `redeem-fee-verifier.ts`
+ * (npk + amount), NOT the broadcaster-output path — hence it is absent from WRAPPER_SELECTORS /
+ * WRAPPER_ABIS below and carries its own `REDEEM_AND_SHIELD_ABI`.
+ */
+export const REDEEM_AND_SHIELD_SELECTOR = "0x7e220759";
 
 /**
  * PrivacyPool.atomicCrossChainUnshield(Transaction, uint32, address, uint256, bytes32) — A5
@@ -40,10 +49,13 @@ export const REDEEM_AND_SHIELD_SELECTOR = "0x0793b70e";
  */
 export const ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR = "0x2bcba06a";
 
-/** The wrappers that need synthetic-transact re-encoding before the SDK helper can decode. */
+/**
+ * The wrappers that carry a broadcaster-fee OUTPUT inside their embedded Transaction and so need
+ * synthetic-transact re-encoding before the SDK helper can decode. `redeemAndShield` is deliberately
+ * NOT here — its fee is contract-side (issue #312) and verified by `redeem-fee-verifier.ts`.
+ */
 export const WRAPPER_SELECTORS: ReadonlySet<string> = new Set([
   LEND_AND_SHIELD_SELECTOR,
-  REDEEM_AND_SHIELD_SELECTOR,
   ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR,
 ]);
 
@@ -102,6 +114,14 @@ export const TRANSACT_ABI: readonly string[] = [
  *  fee-payment verification. */
 export const WRAPPER_ABIS: readonly string[] = [
   `function lendAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext)`,
-  `function redeemAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext)`,
   `function atomicCrossChainUnshield(${TRANSACTION_STRUCT} _transaction, uint32 destinationDomain, address finalRecipient, uint256 maxFee, bytes32 uniqueNonce)`,
+];
+
+/**
+ * Full redeemAndShield ABI (6-arg, fee-bearing — issue #312). Used by `redeem-fee-verifier.ts` to
+ * decode `_feeNpk` (arg 3) and `_feeAmount` (arg 5) — the fee destination + amount the relayer must
+ * verify pay it. The embedded struct fragments MUST stay in sync with the contract (see file header).
+ */
+export const REDEEM_AND_SHIELD_ABI: readonly string[] = [
+  `function redeemAndShield(${TRANSACTION_STRUCT} _transaction, bytes32 _npk, ${SHIELD_CIPHERTEXT_STRUCT} _shieldCiphertext, bytes32 _feeNpk, ${SHIELD_CIPHERTEXT_STRUCT} _feeShieldCiphertext, uint256 _feeAmount)`,
 ];

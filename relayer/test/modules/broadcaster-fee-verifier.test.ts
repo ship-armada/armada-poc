@@ -109,7 +109,7 @@ function emptyShieldCiphertext(): unknown {
 }
 
 function encodeWrapperCalldata(
-  fnName: "lendAndShield" | "redeemAndShield" | "atomicCrossChainUnshield",
+  fnName: "lendAndShield" | "atomicCrossChainUnshield",
 ): string {
   const iface = new ethers.Interface(WRAPPER_ABIS);
   if (fnName === "atomicCrossChainUnshield") {
@@ -283,22 +283,8 @@ describe("verifyBroadcasterFee", () => {
       expect(decoded[0].length).to.equal(1);
     });
 
-    it("decodes redeemAndShield the same way", async () => {
-      // WHY: same selector category, symmetric path. Asserting both wrappers traverse the
-      // normaliser independently — a copy-paste bug that hard-coded one selector in the route
-      // would silently break the other.
-      const rec = recordingStubWallet({ [USDC_ADDRESS.toLowerCase()]: ADVERTISED_FEE });
-      const wrapperCalldata = encodeWrapperCalldata("redeemAndShield");
-
-      const paid = await verifyBroadcasterFee(
-        ctxFor(rec.wallet),
-        { to: "0x4444444444444444444444444444444444444444", data: wrapperCalldata },
-        ADVERTISED_FEE,
-      );
-
-      expect(paid).to.equal(ADVERTISED_FEE);
-      expect(rec.lastRequest()?.data?.slice(0, 10)).to.equal("0xd8ae136a");
-    });
+    // NOTE: redeemAndShield is intentionally NOT verified here — its fee is contract-side (#312),
+    // covered by redeem-fee-verifier.test.ts. It was removed from WRAPPER_ABIS/WRAPPER_SELECTORS.
 
     it("rejects unknown selectors with INVALID_DATA (not FEE_INSUFFICIENT)", async () => {
       // WHY: keep the security framing honest. FEE_INSUFFICIENT means "we tried to verify and

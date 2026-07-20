@@ -179,6 +179,16 @@ async function doInit(): Promise<void> {
   // routes to the sanctioned telemetry channel rather than console — keeping errors visible
   // without the verbose leak. Secret-handling rules still hold: secrets-bearing scopes
   // (wallet.ts, keyManager.ts) never log; the SDK's logs are about engine lifecycle, not keys.
+  // The engine subscribes to ALL events (`'*'`) on the PrivacyPool contract, then rejects any log
+  // that isn't one of its four 1-topic events (Nullified/Shield/Transact/Unshield). Armada's pool
+  // emits additional events — some with indexed params, so >1 topic — at that same address, so every
+  // successful pool tx trips one of these two guards. The engine catches + swallows them internally
+  // (they never affect tree sync), but they still reach this error logger. Demote them so they don't
+  // spam the console (DEV) or generate false-alarm Sentry events (prod). Genuine SDK errors still flow.
+  const isBenignEngineEventNoise = (err: Error): boolean =>
+    err.message === 'Requires one topic for railgun events' ||
+    err.message === 'Event topic not recognized'
+
   const debugLogging = import.meta.env.DEV
   setLoggers(
     debugLogging
@@ -189,10 +199,16 @@ async function doInit(): Promise<void> {
       : () => {},
     debugLogging
       ? (err: Error) => {
+          if (isBenignEngineEventNoise(err)) {
+            // eslint-disable-next-line no-console
+            console.debug('[railgun] (benign engine event noise)', err.message)
+            return
+          }
           // eslint-disable-next-line no-console
           console.error('[railgun]', err)
         }
       : (err: Error) => {
+          if (isBenignEngineEventNoise(err)) return
           trackError('railgun.sdk', err)
         },
   )

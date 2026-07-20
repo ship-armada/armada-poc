@@ -115,6 +115,9 @@ async function runBuildProof(
       data: built.transaction.data,
       value: built.transaction.value.toString(),
     },
+    // Persisted so submit-relayer can hand the relayer the fee note's random to verify the fee is
+    // shielded to it (#312). Undefined on the wallet-override / fee-less path.
+    feeShieldRandom: built.feeShieldRandom,
   }))
 }
 
@@ -186,6 +189,8 @@ async function runSubmitAndConfirm(
           data: yieldTx.data,
           feesCacheId: record.meta.feeCacheId,
           idempotencyKey: record.id,
+          // Redeem fee is contract-side (#312); the relayer needs this to verify the fee note is its own.
+          feeShieldRandom: record.artifacts.feeShieldRandom,
         },
         ctx.signal,
       )

@@ -21,6 +21,7 @@ import { WalletLockedError } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
 import type { VerifierContext } from "./broadcaster-fee-verifier";
 import { verifyBroadcasterFee } from "./broadcaster-fee-verifier";
+import { verifyRedeemFee } from "./redeem-fee-verifier";
 import type { GaslessVerifierContext } from "./gasless-fee-verifier";
 import {
   GASLESS_SHIELD_SELECTOR,
@@ -59,7 +60,7 @@ import type { Counters } from "./counters";
 // than hardcoded literals, so a wrapper-signature change updates the constant and this allowlist in
 // lockstep — no silent drift. (atomicCrossChainUnshield's selector changed with #64 and again with
 // #287; the literal here previously drifted.)
-const ALLOWED_SELECTORS: Record<string, string> = {
+export const ALLOWED_SELECTORS: Record<string, string> = {
   [TRANSACT_SELECTOR]: "transact",
   [LEND_AND_SHIELD_SELECTOR]: "lendAndShield",
   [REDEEM_AND_SHIELD_SELECTOR]: "redeemAndShield",
@@ -87,7 +88,7 @@ const GASLESS_SELECTORS: ReadonlySet<string> = new Set([
  * Gasless wrapper selectors map to `shield` / `shieldXchain` — their gas profile is the wrapper
  * call + the underlying pool entry (`PrivacyPool.shield(...)` / `PrivacyPoolClient.crossChainShield(...)`).
  */
-function advertisedFeeForSelector(
+export function advertisedFeeForSelector(
   selector: string,
   fees: {
     transfer: string;
@@ -100,15 +101,15 @@ function advertisedFeeForSelector(
   },
 ): bigint {
   switch (selector) {
-    case "0xd8ae136a": {
+    case TRANSACT_SELECTOR: {
       const t = BigInt(fees.transfer);
       const u = BigInt(fees.unshield);
       return t < u ? t : u;
     }
-    case "0xf2987ad1":
-    case "0x0793b70e":
+    case LEND_AND_SHIELD_SELECTOR:
+    case REDEEM_AND_SHIELD_SELECTOR:
       return BigInt(fees.crossContract);
-    case "0xe484d408":
+    case ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR:
       return BigInt(fees.crossChainUnshield);
     case GASLESS_SHIELD_SELECTOR:
       return BigInt(fees.shield);
@@ -176,7 +177,7 @@ export class PrivacyRelay {
   async handleRelayRequest(
     request: RelayRequest,
   ): Promise<{ txHash: string }> {
-    const { chainId, to, data, feesCacheId } = request;
+    const { chainId, to, data, feesCacheId, feeShieldRandom } = request;
 
     // 1. Validate chain ID — must be one of the configured chains
     const feeCalculator = this.feeCalculators.get(chainId);
@@ -239,6 +240,11 @@ export class PrivacyRelay {
           { chainId, to, data },
           advertisedFee,
         );
+      } else if (selector === REDEEM_AND_SHIELD_SELECTOR) {
+        // Redeem's fee is shielded to the relayer contract-side (issue #312), not embedded as a
+        // broadcaster output in the proof. Verify the fee note is ours via the frontend-supplied
+        // shield random. See redeem-fee-verifier.
+        verifyRedeemFee(this.verifierContext, { data }, advertisedFee, feeShieldRandom);
       } else {
         await verifyBroadcasterFee(this.verifierContext, { to, data }, advertisedFee);
       }

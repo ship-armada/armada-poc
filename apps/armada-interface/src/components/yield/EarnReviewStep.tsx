@@ -74,16 +74,10 @@ export function EarnReviewStep({
         feeLabel="Relayer fee"
       />
       {tab === 'withdraw' ? (
-        <>
-          <div className={styles.slippageNotice}>
-            The vault rate moves with each new block. Your final USDC may differ slightly from
-            this quote.
-          </div>
-          <div className={styles.slippageNotice}>
-            Withdrawals require a wallet signature and a small amount of ETH for gas. Relayer-
-            mediated withdraw is tracked as a follow-up.
-          </div>
-        </>
+        <div className={styles.slippageNotice}>
+          The vault rate moves with each new block. Your final USDC may differ slightly from
+          this quote.
+        </div>
       ) : null}
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">

@@ -59,7 +59,7 @@ import type { Counters } from "./counters";
 // than hardcoded literals, so a wrapper-signature change updates the constant and this allowlist in
 // lockstep — no silent drift. (atomicCrossChainUnshield's selector changed with #64 and again with
 // #287; the literal here previously drifted.)
-const ALLOWED_SELECTORS: Record<string, string> = {
+export const ALLOWED_SELECTORS: Record<string, string> = {
   [TRANSACT_SELECTOR]: "transact",
   [LEND_AND_SHIELD_SELECTOR]: "lendAndShield",
   [REDEEM_AND_SHIELD_SELECTOR]: "redeemAndShield",
@@ -87,7 +87,7 @@ const GASLESS_SELECTORS: ReadonlySet<string> = new Set([
  * Gasless wrapper selectors map to `shield` / `shieldXchain` — their gas profile is the wrapper
  * call + the underlying pool entry (`PrivacyPool.shield(...)` / `PrivacyPoolClient.crossChainShield(...)`).
  */
-function advertisedFeeForSelector(
+export function advertisedFeeForSelector(
   selector: string,
   fees: {
     transfer: string;
@@ -100,15 +100,15 @@ function advertisedFeeForSelector(
   },
 ): bigint {
   switch (selector) {
-    case "0xd8ae136a": {
+    case TRANSACT_SELECTOR: {
       const t = BigInt(fees.transfer);
       const u = BigInt(fees.unshield);
       return t < u ? t : u;
     }
-    case "0xf2987ad1":
-    case "0x0793b70e":
+    case LEND_AND_SHIELD_SELECTOR:
+    case REDEEM_AND_SHIELD_SELECTOR:
       return BigInt(fees.crossContract);
-    case "0xe484d408":
+    case ATOMIC_CROSS_CHAIN_UNSHIELD_SELECTOR:
       return BigInt(fees.crossChainUnshield);
     case GASLESS_SHIELD_SELECTOR:
       return BigInt(fees.shield);
